@@ -123,42 +123,39 @@ class ClassificationProvider(OpenAIChatMixin):
                 self._stats["attempts"] += 1
                 return self._create_completion(**params)
             except openai.BadRequestError as e:
-                if compat_retries >= self._MAX_COMPAT_RETRIES:
-                    log.warning(
-                        "Max compat retries reached", model=model, error=e,
-                    )
-                    self._stats["api_errors"] += 1
-                    return None
-                if self._is_temperature_error(e) and "temperature" in params:
-                    log.warning(
-                        "Model does not support temperature; retrying with defaults",
-                        model=model,
-                    )
-                    self._stats["temperature_retries"] += 1
-                    params = dict(params)
-                    params.pop("temperature", None)
-                    compat_retries += 1
-                    continue
-                if self._is_response_format_error(e) and "response_format" in params:
-                    log.warning(
-                        "Model does not support response_format; retrying without it",
-                        model=model,
-                    )
-                    self._stats["response_format_retries"] += 1
-                    params = dict(params)
-                    params.pop("response_format", None)
-                    compat_retries += 1
-                    continue
-                if self._is_max_tokens_error(e) and "max_tokens" in params:
-                    log.warning(
-                        "Model does not support max_tokens; retrying without it",
-                        model=model,
-                    )
-                    self._stats["max_tokens_retries"] += 1
-                    params = dict(params)
-                    params.pop("max_tokens", None)
-                    compat_retries += 1
-                    continue
+                # Try compat adjustments only while below the retry bound.
+                if compat_retries < self._MAX_COMPAT_RETRIES:
+                    if self._is_temperature_error(e) and "temperature" in params:
+                        log.warning(
+                            "Model does not support temperature; retrying with defaults",
+                            model=model,
+                        )
+                        self._stats["temperature_retries"] += 1
+                        params = dict(params)
+                        params.pop("temperature", None)
+                        compat_retries += 1
+                        continue
+                    if self._is_response_format_error(e) and "response_format" in params:
+                        log.warning(
+                            "Model does not support response_format; retrying without it",
+                            model=model,
+                        )
+                        self._stats["response_format_retries"] += 1
+                        params = dict(params)
+                        params.pop("response_format", None)
+                        compat_retries += 1
+                        continue
+                    if self._is_max_tokens_error(e) and "max_tokens" in params:
+                        log.warning(
+                            "Model does not support max_tokens; retrying without it",
+                            model=model,
+                        )
+                        self._stats["max_tokens_retries"] += 1
+                        params = dict(params)
+                        params.pop("max_tokens", None)
+                        compat_retries += 1
+                        continue
+                # Unrecognized error or compat retries exhausted — give up.
                 log.warning("Classification request rejected", model=model, error=e)
                 self._stats["api_errors"] += 1
                 return None

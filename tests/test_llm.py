@@ -1,7 +1,7 @@
 """Tests for common.llm — shared LLM helpers."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from common.llm import OpenAIChatMixin, unique_models
 

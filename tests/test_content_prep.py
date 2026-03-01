@@ -166,20 +166,19 @@ def test_max_char_truncation_note_format():
 # ---------------------------------------------------------------------------
 
 
+class _FakeMatch:
+    """Simulates a regex match whose group(0) returns arbitrary text."""
+
+    def __init__(self, text):
+        self._text = text
+
+    def group(self, n=0):
+        return self._text
+
+
 def test_extract_page_numbers_no_digits_fallback():
     """When a page header match contains no digits, fall back to 1-based index."""
-    import re
-
-    # Create mock matches whose group(0) contains no digits at all.
-    # This is defensive — PAGE_HEADER_RE always has digits, but we test the fallback.
-    class FakeMatch:
-        def __init__(self, text):
-            self._text = text
-
-        def group(self, n=0):
-            return self._text
-
-    matches = [FakeMatch("--- Page --- "), FakeMatch("--- Page ---")]
+    matches = [_FakeMatch("--- Page --- "), _FakeMatch("--- Page ---")]
     numbers = _extract_page_numbers(matches)
     # First match: no digits → len(numbers)+1 = 1
     # Second match: no digits → len(numbers)+1 = 2
@@ -188,19 +187,10 @@ def test_extract_page_numbers_no_digits_fallback():
 
 def test_extract_page_numbers_mixed_digits_and_no_digits():
     """Mix of normal matches (with digits) and one without digits."""
-    import re
-
-    class FakeMatch:
-        def __init__(self, text):
-            self._text = text
-
-        def group(self, n=0):
-            return self._text
-
     matches = [
-        FakeMatch("--- Page 5 ---"),
-        FakeMatch("--- Page ---"),   # no digits
-        FakeMatch("--- Page 10 ---"),
+        _FakeMatch("--- Page 5 ---"),
+        _FakeMatch("--- Page ---"),   # no digits
+        _FakeMatch("--- Page 10 ---"),
     ]
     numbers = _extract_page_numbers(matches)
     # First: digit 5

@@ -193,8 +193,8 @@ def test_content_none_handled(settings, mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_create_with_compat_max_retries_returns_none(settings, mocker):
-    """After 3 compat retries (temperature, response_format, max_tokens), return None."""
+def test_create_with_compat_exhausts_all_params_then_rejects(settings, mocker):
+    """After stripping all 3 compat params, a 4th error falls through to rejection."""
     settings.CLASSIFY_MAX_TOKENS = 100
     settings.LLM_PROVIDER = "openai"
     provider = ClassificationProvider(settings)
@@ -203,13 +203,13 @@ def test_create_with_compat_max_retries_returns_none(settings, mocker):
     mock_create = mocker.patch(
         "classifier.provider.ClassificationProvider._create_completion"
     )
-    # Each error strips one param: temperature, then response_format, then max_tokens,
-    # then the 4th attempt hits the _MAX_COMPAT_RETRIES bound (3 retries used up).
+    # Each error strips one param: temperature, then response_format, then max_tokens.
+    # The 4th error is unrecognised (the stripped param is no longer in the dict),
+    # so it falls through to "Classification request rejected".
     err_temp = create_bad_request_error("temperature unsupported for this model")
     err_fmt = create_bad_request_error("response_format is not supported")
     err_max = create_bad_request_error("max_tokens is not supported")
-    # After all 3 compat retries used, any further BadRequestError triggers the bound.
-    err_final = create_bad_request_error("temperature unsupported again")
+    err_final = create_bad_request_error("something else entirely")
 
     mock_create.side_effect = [err_temp, err_fmt, err_max, err_final]
 
@@ -217,10 +217,38 @@ def test_create_with_compat_max_retries_returns_none(settings, mocker):
     result = provider._create_with_compat(params, "test-model")
 
     assert result is None
-    assert provider._stats["api_errors"] >= 1
+    assert provider._stats["api_errors"] == 1
     assert provider._stats["temperature_retries"] == 1
     assert provider._stats["response_format_retries"] == 1
     assert provider._stats["max_tokens_retries"] == 1
+
+
+def test_create_with_compat_bound_prevents_further_retries(settings, mocker):
+    """When _MAX_COMPAT_RETRIES is reached, compat adjustments stop even if recognisable."""
+    settings.CLASSIFY_MAX_TOKENS = 100
+    settings.LLM_PROVIDER = "openai"
+    provider = ClassificationProvider(settings)
+    provider._reset_stats()
+    # Lower the bound to 1 so we can hit it without exhausting all params.
+    provider._MAX_COMPAT_RETRIES = 1
+
+    mock_create = mocker.patch(
+        "classifier.provider.ClassificationProvider._create_completion"
+    )
+    err_temp = create_bad_request_error("temperature unsupported for this model")
+    # Second error is also a compat error (response_format) but bound is already hit.
+    err_fmt = create_bad_request_error("response_format is not supported")
+
+    mock_create.side_effect = [err_temp, err_fmt]
+
+    params = provider._build_params("test-model", [{"role": "user", "content": "hi"}])
+    result = provider._create_with_compat(params, "test-model")
+
+    assert result is None
+    # Only 1 compat retry happened (temperature), then bound prevented the second.
+    assert provider._stats["temperature_retries"] == 1
+    assert provider._stats["response_format_retries"] == 0
+    assert provider._stats["api_errors"] == 1
 
 
 # ---------------------------------------------------------------------------
