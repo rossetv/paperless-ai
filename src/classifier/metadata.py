@@ -25,6 +25,9 @@ from .result import ClassificationResult
 
 log = structlog.get_logger(__name__)
 
+# Splits locale-style strings like "en-US" or "pt_BR" on the separator.
+_LOCALE_SEP_RE: re.Pattern[str] = re.compile(r"[-_]")
+
 
 def parse_document_date(value: str) -> str | None:
     """
@@ -80,7 +83,7 @@ def normalize_language(language: str) -> str | None:
     if len(language) == 2 and language.isalpha():
         return language
     if "-" in language or "_" in language:
-        prefix = re.split(r"[-_]", language, maxsplit=1)[0]
+        prefix = _LOCALE_SEP_RE.split(language, maxsplit=1)[0]
         if len(prefix) == 2 and prefix.isalpha():
             return prefix
     return "und"

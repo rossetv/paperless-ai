@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import re
 
+# Strips everything except lowercase letters, digits, and whitespace.
+_STRIP_NON_ALNUM_RE: re.Pattern[str] = re.compile(r"[^a-z0-9\s]")
+
 # Common corporate suffixes stripped when comparing organisation names.
 # Kept as a set for O(1) membership tests.
 COMPANY_SUFFIXES: frozenset[str] = frozenset({
@@ -58,7 +61,7 @@ def normalize_name(value: str) -> str:
     >>> normalize_name("Revolut Ltd.")
     'revolut'
     """
-    cleaned = re.sub(r"[^a-z0-9\s]", "", value.lower())
+    cleaned = _STRIP_NON_ALNUM_RE.sub("", value.lower())
     parts = cleaned.split()
     while parts and parts[-1] in COMPANY_SUFFIXES:
         parts.pop()

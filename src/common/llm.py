@@ -7,7 +7,7 @@ classification reuse the same retry behavior and logging patterns.
 
 import openai
 
-from .utils import retry
+from .retry import retry
 
 RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.APIConnectionError,

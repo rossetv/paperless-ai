@@ -63,7 +63,7 @@ def test_process_handles_refresh_failure(settings, mock_doc):
     ocr_provider.transcribe_image.assert_not_called()
 
 
-@patch("ocr.worker.convert_from_bytes")
+@patch("ocr.image_converter.convert_from_bytes")
 def test_process_handles_corrupted_image(mock_convert, settings, mock_doc):
     """_bytes_to_images raising RuntimeError should mark error instead of infinite retry."""
     paperless = MagicMock()
@@ -188,3 +188,70 @@ def test_log_ocr_stats_empty_stats(settings, mock_doc):
     processor = DocumentProcessor(mock_doc, paperless, ocr_provider, settings)
     # Should not raise
     processor._log_ocr_stats()
+
+
+def test_process_returns_when_claim_fails(settings, mock_doc):
+    """Line 86: When processing tag claim fails, process returns early."""
+    paperless = MagicMock()
+    base_doc = {"id": 1, "tags": [10], "title": "Test"}
+    # Claim will see processing tag already present → claim fails
+    claimed_doc = {"id": 1, "tags": [10, 99], "title": "Test"}
+    paperless.get_document.side_effect = [
+        dict(base_doc),     # process refresh
+        dict(claimed_doc),  # claim refresh — tag already present
+    ]
+    ocr_provider = MagicMock()
+
+    processor = DocumentProcessor(mock_doc, paperless, ocr_provider, settings)
+    processor.process()
+
+    paperless.download_content.assert_not_called()
+    ocr_provider.transcribe_image.assert_not_called()
+
+
+def test_process_image_close_failure_logged(settings, mock_doc):
+    """Lines 109-110: image.close() failure is logged but doesn't crash."""
+    paperless = MagicMock()
+    processing_tag = settings.OCR_PROCESSING_TAG_ID
+    base_doc = {"id": 1, "tags": [10], "title": "Test"}
+    claimed_doc = {"id": 1, "tags": [10, processing_tag], "title": "Test"}
+    paperless.get_document.side_effect = [
+        dict(base_doc),      # process refresh
+        dict(base_doc),      # claim refresh
+        dict(claimed_doc),   # claim verify
+        dict(claimed_doc),   # _update_paperless_document get_document
+        dict(claimed_doc),   # release
+        dict(claimed_doc),   # extra
+    ]
+    paperless.download_content.return_value = (b"dummy", "image/png")
+
+    img = MagicMock()
+    img.close.side_effect = OSError("cannot close")
+    ocr_provider = MagicMock()
+    ocr_provider.transcribe_image.return_value = ("text", "model-a")
+
+    processor = DocumentProcessor(mock_doc, paperless, ocr_provider, settings)
+
+    with patch.object(processor, '_bytes_to_images', return_value=[img]):
+        processor.process()
+
+    img.close.assert_called_once()
+    paperless.update_document.assert_called_once()
+
+
+def test_update_document_discards_processing_tag(settings, mock_doc):
+    """Line 269: OCR_PROCESSING_TAG_ID is removed from final tags."""
+    paperless = MagicMock()
+    processing_tag = settings.OCR_PROCESSING_TAG_ID
+    paperless.get_document.return_value = {"id": 1, "tags": [10, processing_tag, 42]}
+    ocr_provider = MagicMock()
+    processor = DocumentProcessor(mock_doc, paperless, ocr_provider, settings)
+
+    processor._update_paperless_document("good text", {"model-a"})
+
+    args, _ = paperless.update_document.call_args
+    tag_set = set(args[2])
+    assert processing_tag not in tag_set
+    assert settings.PRE_TAG_ID not in tag_set
+    assert settings.POST_TAG_ID in tag_set
+    assert 42 in tag_set

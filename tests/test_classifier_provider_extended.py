@@ -186,3 +186,108 @@ def test_content_none_handled(settings, mocker):
     # None content on primary → parse error → fallback succeeds
     assert result is not None
     assert model == "fallback-model"
+
+
+# ---------------------------------------------------------------------------
+# Lines 127-131: _create_with_compat hitting _MAX_COMPAT_RETRIES bound
+# ---------------------------------------------------------------------------
+
+
+def test_create_with_compat_exhausts_all_params_then_rejects(settings, mocker):
+    """After stripping all 3 compat params, a 4th error falls through to rejection."""
+    settings.CLASSIFY_MAX_TOKENS = 100
+    settings.LLM_PROVIDER = "openai"
+    provider = ClassificationProvider(settings)
+    provider._reset_stats()
+
+    mock_create = mocker.patch(
+        "classifier.provider.ClassificationProvider._create_completion"
+    )
+    # Each error strips one param: temperature, then response_format, then max_tokens.
+    # The 4th error is unrecognised (the stripped param is no longer in the dict),
+    # so it falls through to "Classification request rejected".
+    err_temp = create_bad_request_error("temperature unsupported for this model")
+    err_fmt = create_bad_request_error("response_format is not supported")
+    err_max = create_bad_request_error("max_tokens is not supported")
+    err_final = create_bad_request_error("something else entirely")
+
+    mock_create.side_effect = [err_temp, err_fmt, err_max, err_final]
+
+    params = provider._build_params("test-model", [{"role": "user", "content": "hi"}])
+    result = provider._create_with_compat(params, "test-model")
+
+    assert result is None
+    assert provider._stats["api_errors"] == 1
+    assert provider._stats["temperature_retries"] == 1
+    assert provider._stats["response_format_retries"] == 1
+    assert provider._stats["max_tokens_retries"] == 1
+
+
+def test_create_with_compat_bound_prevents_further_retries(settings, mocker):
+    """When _MAX_COMPAT_RETRIES is reached, compat adjustments stop even if recognisable."""
+    settings.CLASSIFY_MAX_TOKENS = 100
+    settings.LLM_PROVIDER = "openai"
+    provider = ClassificationProvider(settings)
+    provider._reset_stats()
+    # Lower the bound to 1 so we can hit it without exhausting all params.
+    provider._MAX_COMPAT_RETRIES = 1
+
+    mock_create = mocker.patch(
+        "classifier.provider.ClassificationProvider._create_completion"
+    )
+    err_temp = create_bad_request_error("temperature unsupported for this model")
+    # Second error is also a compat error (response_format) but bound is already hit.
+    err_fmt = create_bad_request_error("response_format is not supported")
+
+    mock_create.side_effect = [err_temp, err_fmt]
+
+    params = provider._build_params("test-model", [{"role": "user", "content": "hi"}])
+    result = provider._create_with_compat(params, "test-model")
+
+    assert result is None
+    # Only 1 compat retry happened (temperature), then bound prevented the second.
+    assert provider._stats["temperature_retries"] == 1
+    assert provider._stats["response_format_retries"] == 0
+    assert provider._stats["api_errors"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Line 248: _build_params with non-gpt-5 model and CLASSIFY_MAX_TOKENS=0
+# ---------------------------------------------------------------------------
+
+
+def test_build_params_temperature_included_max_tokens_excluded(settings, mocker):
+    """Non-gpt-5 model supports temperature; CLASSIFY_MAX_TOKENS=0 means no max_tokens."""
+    settings.CLASSIFY_MAX_TOKENS = 0
+    settings.LLM_PROVIDER = "ollama"  # no response_format for ollama
+    provider = ClassificationProvider(settings)
+
+    messages = [{"role": "user", "content": "test"}]
+    params = provider._build_params("claude-3", messages)
+
+    # temperature IS present (non-gpt-5 model)
+    assert "temperature" in params
+    # max_tokens is NOT present (CLASSIFY_MAX_TOKENS=0)
+    assert "max_tokens" not in params
+    # response_format is NOT present (ollama provider)
+    assert "response_format" not in params
+
+
+# ---------------------------------------------------------------------------
+# Line 248: _build_user_message when CLASSIFY_TAG_LIMIT == 0
+# ---------------------------------------------------------------------------
+
+
+def test_build_user_message_zero_tag_limit(settings, mocker):
+    """When CLASSIFY_TAG_LIMIT is 0, the user message includes the zero-tag guidance (line 248)."""
+    settings.CLASSIFY_TAG_LIMIT = 0
+    provider = ClassificationProvider(settings)
+
+    message = provider._build_user_message(
+        "some document text", ["ACME"], ["Invoice"], ["Bills"], None
+    )
+
+    assert "return no optional tags" in message
+    assert "no more than" not in message
+
+

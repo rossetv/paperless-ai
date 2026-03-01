@@ -2,13 +2,12 @@
 Document Processing Worker
 ==========================
 
-Orchestrates the end-to-end OCR processing of a single Paperless document:
+Thin orchestrator for the end-to-end OCR processing of a single Paperless
+document.  Heavy-lifting is delegated to focused, reusable modules:
 
-1. Download the original file from Paperless.
-2. Convert it to images (PDF pages or image frames).
-3. Transcribe each page in parallel using a vision-capable LLM.
-4. Assemble the transcriptions into a single text with page headers.
-5. Upload the text and update tags in Paperless.
+- :mod:`ocr.image_converter` — raw bytes → PIL Images.
+- :mod:`ocr.text_assembly` — per-page results → assembled document text.
+- :mod:`common.claims` / :mod:`common.tags` — distributed lock & tag lifecycle.
 
 The :class:`DocumentProcessor` is instantiated per-document by the daemon's
 thread pool.  Each instance gets its own :class:`PaperlessClient` and
@@ -19,24 +18,20 @@ from __future__ import annotations
 
 import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from io import BytesIO
 
 import structlog
-from PIL import Image, ImageSequence, UnidentifiedImageError
-from pdf2image import convert_from_bytes
+from PIL import Image
 
 from common.claims import claim_processing_tag
 from common.config import Settings
 from common.paperless import PaperlessClient
 from common.tags import clean_pipeline_tags, get_latest_tags, release_processing_tag
 from common.utils import contains_redacted_marker
+from .image_converter import bytes_to_images
 from .provider import OcrProvider
+from .text_assembly import OCR_ERROR_MARKER, assemble_full_text
 
 log = structlog.get_logger(__name__)
-
-# Inserted into the document content when OCR fails for a page, so downstream
-# steps (and humans) can see where the pipeline broke.
-OCR_ERROR_MARKER = "[OCR ERROR]"
 
 
 class DocumentProcessor:
@@ -172,30 +167,8 @@ class DocumentProcessor:
     # ------------------------------------------------------------------
 
     def _bytes_to_images(self, content: bytes, content_type: str) -> list[Image.Image]:
-        """
-        Convert downloaded bytes into a list of PIL Images.
-
-        - PDFs are rasterised into one image per page.
-        - Image formats (PNG/JPEG/TIFF/…) are loaded via Pillow.
-        - Multi-frame images (e.g. TIFF) are expanded into one image per frame.
-
-        The returned images are fully loaded into memory so they do not depend
-        on any open file handles.
-        """
-        if "pdf" in content_type.lower():
-            return convert_from_bytes(content, dpi=self.settings.OCR_DPI)
-        try:
-            img = Image.open(BytesIO(content))
-            img.load()
-            if getattr(img, "n_frames", 1) > 1:
-                frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
-                img.close()
-                return frames
-            single = img.copy()
-            img.close()
-            return [single]
-        except UnidentifiedImageError as e:
-            raise RuntimeError(f"Unable to open image: {e}") from e
+        """Delegate to :func:`ocr.image_converter.bytes_to_images`."""
+        return bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
 
     # ------------------------------------------------------------------
     # Parallel OCR
@@ -242,31 +215,12 @@ class DocumentProcessor:
     def _assemble_full_text(
         self, page_count: int, page_results: list[tuple[str, str]]
     ) -> tuple[str, set[str]]:
-        """
-        Combine per-page OCR results into a single document text.
-
-        Multi-page documents get ``--- Page N ---`` headers.  A footer listing
-        all models used is appended at the end.
-        """
-        sections: list[str] = []
-        models_used: set[str] = set()
-        for i, (text, model) in enumerate(page_results, 1):
-            if text.strip():
-                header = ""
-                if page_count > 1:
-                    header = f"--- Page {i}"
-                    if self.settings.OCR_INCLUDE_PAGE_MODELS and model:
-                        header += f" ({model})"
-                    header += " ---\n"
-                sections.append(f"{header}{text}")
-                if model:
-                    models_used.add(model)
-
-        full_text = "\n\n".join(sections)
-        if models_used:
-            footer = f"Transcribed by model: {', '.join(sorted(models_used))}"
-            full_text = f"{full_text}\n\n{footer}" if full_text else footer
-        return full_text, models_used
+        """Delegate to :func:`ocr.text_assembly.assemble_full_text`."""
+        return assemble_full_text(
+            page_count,
+            page_results,
+            include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
+        )
 
     # ------------------------------------------------------------------
     # Paperless update

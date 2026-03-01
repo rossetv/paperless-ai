@@ -50,7 +50,7 @@ def create_test_image(color: str = "black") -> Image.Image:
     return Image.new("RGB", (50, 50), color)
 
 
-@patch("ocr.worker.convert_from_bytes")
+@patch("ocr.image_converter.convert_from_bytes")
 def test_process_document_success(
     mock_convert,
     settings,
@@ -84,7 +84,7 @@ def test_process_document_success(
     assert set(args[2]) == {settings.POST_TAG_ID}
 
 
-@patch("ocr.worker.convert_from_bytes", return_value=[])
+@patch("ocr.image_converter.convert_from_bytes", return_value=[])
 def test_process_document_with_no_images(
     mock_convert,
     settings,
@@ -104,7 +104,7 @@ def test_process_document_with_no_images(
     paperless.update_document.assert_not_called()
 
 
-@patch("ocr.worker.convert_from_bytes")
+@patch("ocr.image_converter.convert_from_bytes")
 def test_process_closes_images_when_pages_fail(mock_convert, settings, mock_doc):
     paperless = MagicMock()
     paperless.get_document.return_value = {"id": 1, "title": "Test Document", "tags": [10]}

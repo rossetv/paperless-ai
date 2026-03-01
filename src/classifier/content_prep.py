@@ -22,6 +22,9 @@ import re
 
 from .constants import MODEL_FOOTER_RE, PAGE_HEADER_RE
 
+# Matches one or more digits — used to extract page numbers from headers.
+_DIGITS_RE: re.Pattern[str] = re.compile(r"\d+")
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -51,7 +54,7 @@ def _extract_page_numbers(matches: list[re.Match]) -> list[int]:
     """
     numbers: list[int] = []
     for match in matches:
-        num_match = re.search(r"\d+", match.group(0))
+        num_match = _DIGITS_RE.search(match.group(0))
         if num_match:
             numbers.append(int(num_match.group()))
         else:

@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from classifier import daemon as classify_main_module
 
 
@@ -100,3 +102,77 @@ def test_classify_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeyp
     assert len(DummyPaperlessClient.instances) == 3  # list + taxonomy + per-doc
     assert DummyPaperlessClient.instances[0].updated_tags[2] == {12, 99}
     assert all(client.closed for client in DummyPaperlessClient.instances)
+
+
+# ---------------------------------------------------------------------------
+# Tests for _iter_docs_to_classify — lines 44-45, 66
+# ---------------------------------------------------------------------------
+
+
+def _make_classify_settings(**overrides):
+    """Build a minimal mock Settings for _iter_docs_to_classify."""
+    s = Mock()
+    s.CLASSIFY_PRE_TAG_ID = overrides.get("CLASSIFY_PRE_TAG_ID", 11)
+    s.CLASSIFY_POST_TAG_ID = overrides.get("CLASSIFY_POST_TAG_ID", 12)
+    s.CLASSIFY_PROCESSING_TAG_ID = overrides.get("CLASSIFY_PROCESSING_TAG_ID", None)
+    return s
+
+
+def test_iter_docs_to_classify_skips_doc_without_integer_id():
+    """Lines 44-45: documents whose 'id' is not an int are warned and skipped."""
+    mock_client = Mock()
+    mock_client.get_documents_by_tag.return_value = [
+        {"tags": [11]},                       # missing id entirely
+        {"id": None, "tags": [11]},            # id is None
+        {"id": "abc", "tags": [11]},           # id is a string
+        {"id": 1, "tags": [11]},               # valid — should be yielded
+    ]
+    settings = _make_classify_settings()
+
+    results = list(classify_main_module._iter_docs_to_classify(mock_client, settings))
+
+    assert len(results) == 1
+    assert results[0]["id"] == 1
+
+
+def test_iter_docs_to_classify_skips_doc_claimed_by_processing_tag():
+    """Line 66: documents already carrying CLASSIFY_PROCESSING_TAG_ID are skipped."""
+    processing_tag = 60
+    mock_client = Mock()
+    mock_client.get_documents_by_tag.return_value = [
+        {"id": 1, "tags": [11, processing_tag]},  # already claimed — skip
+        {"id": 2, "tags": [11]},                   # not claimed — yield
+    ]
+    settings = _make_classify_settings(CLASSIFY_PROCESSING_TAG_ID=processing_tag)
+
+    results = list(classify_main_module._iter_docs_to_classify(mock_client, settings))
+
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Test for main() config error — lines 84-86
+# ---------------------------------------------------------------------------
+
+
+def test_classify_main_exits_on_config_error(mocker, monkeypatch):
+    """Lines 84-86: Settings() raises ValueError, main() logs error and returns."""
+    logger = mocker.Mock()
+    monkeypatch.setattr(
+        classify_main_module.structlog, "get_logger", mocker.Mock(return_value=logger)
+    )
+    monkeypatch.setattr(
+        classify_main_module, "Settings", mocker.Mock(side_effect=ValueError("bad config"))
+    )
+    paperless_spy = mocker.Mock()
+    monkeypatch.setattr(classify_main_module, "PaperlessClient", paperless_spy)
+
+    classify_main_module.main()
+
+    logger.error.assert_called_once()
+    paperless_spy.assert_not_called()
+
+
+# Line 129: ``if __name__ == "__main__": main()`` is a standard entry-point
+# guard.  It is intentionally left untested.

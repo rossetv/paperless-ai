@@ -156,3 +156,45 @@ def test_transcribe_image_resizes_image(ocr_provider, mock_create_completion, mo
     thumbnail_spy.assert_called_once_with(
         (ocr_provider.settings.OCR_MAX_SIDE, ocr_provider.settings.OCR_MAX_SIDE)
     )
+
+
+def test_transcribe_image_with_doc_id_and_page_num(ocr_provider, mock_create_completion, mocker):
+    """Test that doc_id and page_num are passed through to the log context (lines 106, 108)."""
+    image = create_test_image()
+    mock_create_completion.return_value = create_mock_response(mocker, "text")
+
+    text, model = ocr_provider.transcribe_image(image, doc_id=42, page_num=3)
+
+    assert text == "text"
+    assert model == "gpt-primary"
+
+
+def test_get_stats_returns_populated_stats(ocr_provider, mock_create_completion, mocker):
+    """Test that get_stats returns correct stats after transcription attempts (line 90)."""
+    image = create_test_image()
+    mock_create_completion.return_value = create_mock_response(mocker, "ok")
+
+    ocr_provider.transcribe_image(image)
+
+    stats = ocr_provider.get_stats()
+    assert stats["attempts"] == 1
+    assert stats["refusals"] == 0
+    assert stats["api_errors"] == 0
+    assert stats["fallback_successes"] == 0
+
+
+def test_get_stats_tracks_fallback_success(ocr_provider, mock_create_completion, mocker):
+    """Test that fallback_successes counter is incremented (line 90 + 150)."""
+    image = create_test_image()
+    mock_create_completion.side_effect = [
+        create_mock_response(mocker, "I can't assist"),  # primary refuses
+        create_mock_response(mocker, "ok"),               # middle succeeds
+    ]
+
+    text, model = ocr_provider.transcribe_image(image)
+
+    assert model == "gpt-middle"
+    stats = ocr_provider.get_stats()
+    assert stats["attempts"] == 2
+    assert stats["refusals"] == 1
+    assert stats["fallback_successes"] == 1

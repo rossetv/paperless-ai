@@ -1,7 +1,8 @@
 import os
 
 import pytest
-from common.config import Settings, setup_libraries
+from common.config import Settings
+from common.library_setup import setup_libraries
 
 
 def test_settings_default_values(mocker):
@@ -239,6 +240,182 @@ def test_minimum_worker_counts(mocker):
 
     assert settings.PAGE_WORKERS == 1
     assert settings.DOCUMENT_WORKERS == 1
+
+
+def test_ocr_processing_tag_id_negative_becomes_none(mocker):
+    """
+    Test that OCR_PROCESSING_TAG_ID is set to None when given a negative value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_PROCESSING_TAG_ID": "-1",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.OCR_PROCESSING_TAG_ID is None
+
+
+def test_classify_post_tag_id_negative_becomes_none(mocker):
+    """
+    Test that CLASSIFY_POST_TAG_ID is set to None when given a negative value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "CLASSIFY_POST_TAG_ID": "-1",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.CLASSIFY_POST_TAG_ID is None
+
+
+def test_classify_processing_tag_id_negative_becomes_none(mocker):
+    """
+    Test that CLASSIFY_PROCESSING_TAG_ID is set to None when given a negative value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "CLASSIFY_PROCESSING_TAG_ID": "-1",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.CLASSIFY_PROCESSING_TAG_ID is None
+
+
+def test_error_tag_id_negative_becomes_none(mocker):
+    """
+    Test that ERROR_TAG_ID is set to None when given a negative value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "ERROR_TAG_ID": "-1",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.ERROR_TAG_ID is None
+
+
+def test_ai_models_all_commas_raises_value_error(mocker):
+    """
+    Test that AI_MODELS set to only commas raises a ValueError because no
+    valid model names are present after splitting.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "AI_MODELS": ",,,",
+        },
+        clear=True,
+    )
+
+    with pytest.raises(ValueError, match="AI_MODELS must contain at least one model name"):
+        Settings()
+
+
+def test_get_list_env_with_custom_ocr_refusal_markers(mocker):
+    """
+    Test that _get_list_env returns parsed values when the OCR_REFUSAL_MARKERS
+    environment variable is set to a custom comma-separated list.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_REFUSAL_MARKERS": "marker one, marker two, marker three",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.OCR_REFUSAL_MARKERS == ["marker one", "marker two", "marker three"]
+
+
+def test_get_optional_int_env_empty_string_returns_default(mocker):
+    """
+    Test that _get_optional_int_env returns the default when the env var is set
+    to an empty (whitespace-only) string.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_PROCESSING_TAG_ID": "   ",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.OCR_PROCESSING_TAG_ID is None
+
+
+def test_get_bool_env_false_string(mocker):
+    """
+    Test that _get_bool_env correctly returns False when the env var is set to
+    a recognized falsey string like "0".
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_INCLUDE_PAGE_MODELS": "0",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.OCR_INCLUDE_PAGE_MODELS is False
+
+
+def test_get_bool_env_invalid_value_raises_value_error(mocker):
+    """
+    Test that _get_bool_env raises a ValueError when the env var is set to a
+    value that is not a recognized boolean string.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_INCLUDE_PAGE_MODELS": "maybe",
+        },
+        clear=True,
+    )
+
+    with pytest.raises(
+        ValueError, match="OCR_INCLUDE_PAGE_MODELS must be a boolean value"
+    ):
+        Settings()
 
 
 def test_setup_libraries_restores_proxies(mocker):

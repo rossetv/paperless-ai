@@ -305,3 +305,230 @@ def test_no_retry_on_client_error(paperless_client, settings, requests_mock):
         list(paperless_client.get_documents_to_process())
 
     assert requests_mock.call_count == 1
+
+
+def test_create_tag_string_fallback_on_400(paperless_client, settings, requests_mock):
+    """
+    Test that _create_named_item falls back from a string matching_algorithm
+    to int 0 when the first attempt returns a 400 error.
+    Covers lines 104-107 (str branch: candidates = [matching_algorithm, 0])
+    and lines 117-121 (HTTPError catch with fallback).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    mock_post = requests_mock.post(
+        url,
+        [
+            {"status_code": 400, "json": {"matching_algorithm": ["Invalid value."]}},
+            {"status_code": 201, "json": {"id": 15, "name": "FallbackTag"}},
+        ],
+    )
+
+    created = paperless_client.create_tag("FallbackTag", matching_algorithm="none")
+
+    assert created["id"] == 15
+    assert created["name"] == "FallbackTag"
+    assert mock_post.call_count == 2
+    # First attempt uses the string value
+    assert mock_post.request_history[0].json() == {
+        "name": "FallbackTag",
+        "matching_algorithm": "none",
+    }
+    # Second attempt falls back to int 0
+    assert mock_post.request_history[1].json() == {
+        "name": "FallbackTag",
+        "matching_algorithm": 0,
+    }
+
+
+def test_create_tag_int_fallback_on_400(paperless_client, settings, requests_mock):
+    """
+    Test that _create_named_item falls back from an int matching_algorithm
+    to string "none" when the first attempt returns a 400 error.
+    Covers lines 104-105 (int branch: candidates = [matching_algorithm, "none"]).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    mock_post = requests_mock.post(
+        url,
+        [
+            {"status_code": 400, "json": {"matching_algorithm": ["Invalid value."]}},
+            {"status_code": 201, "json": {"id": 16, "name": "IntFallback"}},
+        ],
+    )
+
+    created = paperless_client.create_tag("IntFallback", matching_algorithm=0)
+
+    assert created["id"] == 16
+    assert created["name"] == "IntFallback"
+    assert mock_post.call_count == 2
+    # First attempt uses the int value
+    assert mock_post.request_history[0].json() == {
+        "name": "IntFallback",
+        "matching_algorithm": 0,
+    }
+    # Second attempt falls back to string "none"
+    assert mock_post.request_history[1].json() == {
+        "name": "IntFallback",
+        "matching_algorithm": "none",
+    }
+
+
+def test_create_tag_matching_algorithm_none(paperless_client, settings, requests_mock):
+    """
+    Test that _create_named_item with matching_algorithm=None sends a payload
+    without matching_algorithm and does not retry on 400.
+    Covers line 101 (candidates = [None]).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    mock_post = requests_mock.post(
+        url,
+        json={"id": 20, "name": "NoAlgo"},
+        status_code=201,
+    )
+
+    created = paperless_client.create_tag("NoAlgo", matching_algorithm=None)
+
+    assert created["id"] == 20
+    assert created["name"] == "NoAlgo"
+    assert mock_post.last_request.json() == {"name": "NoAlgo"}
+
+
+def test_create_tag_matching_algorithm_none_raises_on_400(
+    paperless_client, settings, requests_mock
+):
+    """
+    Test that _create_named_item with matching_algorithm=None raises HTTPError
+    on a 400 because there is only one candidate and no fallback.
+    Covers lines 117-121 (raise path when index == len(candidates) - 1).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    requests_mock.post(
+        url,
+        status_code=400,
+        json={"name": ["Tag with this name already exists."]},
+    )
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        paperless_client.create_tag("Duplicate", matching_algorithm=None)
+
+
+def test_create_tag_unexpected_type_matching_algorithm(
+    paperless_client, settings, requests_mock
+):
+    """
+    Test that _create_named_item with an unexpected type for matching_algorithm
+    (e.g., a float) uses candidates = [matching_algorithm] and sends it as-is.
+    Covers lines 106-107 (else branch: candidates = [matching_algorithm]).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    mock_post = requests_mock.post(
+        url,
+        json={"id": 25, "name": "WeirdAlgo"},
+        status_code=201,
+    )
+
+    created = paperless_client.create_tag("WeirdAlgo", matching_algorithm=3.14)
+
+    assert created["id"] == 25
+    assert created["name"] == "WeirdAlgo"
+    assert mock_post.last_request.json() == {
+        "name": "WeirdAlgo",
+        "matching_algorithm": 3.14,
+    }
+
+
+def test_create_tag_unexpected_type_raises_on_400(
+    paperless_client, settings, requests_mock
+):
+    """
+    Test that _create_named_item with an unexpected type raises on 400
+    since there is only one candidate and no fallback.
+    Covers lines 106-107 and 117-119 (else branch + raise on last candidate).
+    """
+    url = f"{settings.PAPERLESS_URL}/api/tags/"
+    requests_mock.post(
+        url,
+        status_code=400,
+        json={"matching_algorithm": ["Invalid value."]},
+    )
+
+    with pytest.raises(requests.exceptions.HTTPError):
+        paperless_client.create_tag("BadAlgo", matching_algorithm=3.14)
+
+
+def test_update_document_metadata_empty_payload(
+    paperless_client, settings, requests_mock
+):
+    """
+    Test that update_document_metadata returns early without making any
+    HTTP request when no metadata fields are provided.
+    Covers lines 216-217 (empty payload early return).
+    """
+    doc_id = 5
+    mock_patch = requests_mock.patch(
+        f"{settings.PAPERLESS_URL}/api/documents/{doc_id}/", status_code=200
+    )
+
+    # Call with all defaults (no metadata to update)
+    paperless_client.update_document_metadata(doc_id)
+
+    assert not mock_patch.called
+
+
+def test_list_correspondents(paperless_client, settings, requests_mock):
+    """
+    Test listing correspondents from Paperless.
+    Covers lines 229-231 (list_correspondents endpoint).
+    """
+    requests_mock.get(
+        f"{settings.PAPERLESS_URL}/api/correspondents/?page_size=100",
+        json={
+            "next": None,
+            "results": [
+                {"id": 1, "name": "Alice"},
+                {"id": 2, "name": "Bob"},
+            ],
+        },
+    )
+
+    correspondents = paperless_client.list_correspondents()
+
+    assert correspondents == [
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"},
+    ]
+
+
+def test_list_document_types(paperless_client, settings, requests_mock):
+    """
+    Test listing document types from Paperless.
+    Covers lines 237-239 (list_document_types endpoint).
+    """
+    requests_mock.get(
+        f"{settings.PAPERLESS_URL}/api/document_types/?page_size=100",
+        json={
+            "next": None,
+            "results": [
+                {"id": 1, "name": "Invoice"},
+                {"id": 2, "name": "Receipt"},
+            ],
+        },
+    )
+
+    doc_types = paperless_client.list_document_types()
+
+    assert doc_types == [
+        {"id": 1, "name": "Invoice"},
+        {"id": 2, "name": "Receipt"},
+    ]
+
+
+def test_close(paperless_client, mocker):
+    """
+    Test that close() calls the underlying session's close method.
+    Covers line 291 (close method).
+    """
+    spy = mocker.spy(paperless_client._session, "close")
+
+    paperless_client.close()
+
+    spy.assert_called_once()

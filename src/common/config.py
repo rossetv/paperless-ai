@@ -1,19 +1,17 @@
 """
-Configuration module for the Paperless-ngx OCR daemon.
+Configuration module for the Paperless-ngx OCR and classification daemons.
 
-This module centralizes the loading and validation of all configuration
-parameters from environment variables. It provides a single `Settings`
-class that acts as a container for all configurable values, ensuring
-that they are defined in one place and can be easily imported and used
-throughout the application.
+This module centralizes the loading and validation of **all** configuration
+parameters from environment variables.  It provides a single :class:`Settings`
+class — a pure data container with no side effects on import — that is
+consumed by every other module in the codebase.
+
+Library-level setup (OpenAI SDK, Pillow, httpx) lives in
+:mod:`common.library_setup` to keep this module free of side effects.
 """
 
 import os
 from typing import Literal
-
-import httpx
-import openai
-from PIL import Image
 
 
 class Settings:
@@ -253,25 +251,3 @@ class Settings:
         if value in ("0", "false", "no", "n", "off"):
             return False
         raise ValueError(f"{var_name} must be a boolean value.")
-
-
-def setup_libraries(settings: Settings) -> None:
-    """
-    Configures third-party libraries based on the application settings.
-    """
-    # Disable Pillow's safety check that prevents huge images
-    Image.MAX_IMAGE_PIXELS = None
-
-    # Configure OpenAI SDK
-    # OpenAI's SDK uses httpx. In container environments it's common to have
-    # proxy env vars set unintentionally; to avoid surprising behaviour we
-    # explicitly disable reading from the environment.
-    http_client = httpx.Client(trust_env=False)
-
-    if settings.LLM_PROVIDER == "ollama":
-        openai.base_url = settings.OLLAMA_BASE_URL
-        openai.api_key = "dummy"
-    else:
-        openai.api_key = settings.OPENAI_API_KEY
-
-    openai.http_client = http_client

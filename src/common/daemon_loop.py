@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Iterable, TypeVar
+from typing import Callable, TypeVar
 
 import structlog
 

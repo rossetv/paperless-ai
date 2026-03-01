@@ -18,7 +18,7 @@ import requests
 import structlog
 
 from .config import Settings
-from .utils import retry
+from .retry import retry
 
 log = structlog.get_logger(__name__)
 
@@ -91,7 +91,8 @@ class PaperlessClient:
         to "none" and try alternate representations if the API rejects the value.
         """
         log.info(
-            f"Creating {item_label}",
+            "Creating item",
+            item_label=item_label,
             name=name,
             matching_algorithm=matching_algorithm,
         )
@@ -117,10 +118,6 @@ class PaperlessClient:
             except requests.exceptions.HTTPError:
                 if response.status_code != 400 or index == len(candidates) - 1:
                     raise
-
-        raise RuntimeError(
-            f"{item_label.capitalize()} creation failed after all matching_algorithm attempts."
-        )
 
     def get_documents_to_process(self) -> Iterable[dict]:
         """

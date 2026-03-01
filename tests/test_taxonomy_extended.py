@@ -233,3 +233,103 @@ def test_taxonomy_cache_infer_matching_algorithm_default():
     cache.refresh()
 
     assert cache._infer_matching_algorithm() == "none"
+
+
+# ---------------------------------------------------------------------------
+# Lines 72-73: _match_item substring matching where key in normalized
+# ---------------------------------------------------------------------------
+
+
+def test_match_item_substring_reverse_direction():
+    """Test `key in normalized` path — existing key is substring of the lookup name.
+
+    The mapping has "revolut intl" and we look up "revolut", so
+    `normalized in key` matches. But here we test the reverse: mapping
+    has "revolut" and we look up "rev" — `key in normalized` does NOT
+    match because "revolut" is not in "rev". Instead we need the lookup
+    to be longer than the key: mapping has "rev" and we look up "revolut".
+    """
+    # mapping key "rev" is a substring of the normalized lookup "revolut"
+    mapping = {"rev": {"id": 10, "name": "Rev"}}
+    result = _match_item("Revolut", mapping, normalize_name, True)
+    assert result is not None
+    assert result["id"] == 10
+
+
+def test_match_item_substring_key_in_normalized():
+    """When the mapping key is a substring of the normalized query (key in normalized)."""
+    # normalized("Global Corp") = "global" (after stripping "corp")
+    # mapping has "glob" which is a substring of "global" → match
+    mapping = {"glob": {"id": 20, "name": "Glob"}}
+    result = _match_item("Global Corp", mapping, normalize_name, True)
+    assert result is not None
+    assert result["id"] == 20
+
+
+# ---------------------------------------------------------------------------
+# Lines 204, 229, 261: Creation failure + refresh also failing → re-raise
+# ---------------------------------------------------------------------------
+
+
+def test_correspondent_creation_failure_refresh_also_fails_reraises():
+    """When create fails AND refresh doesn't find the item, re-raise (line 204)."""
+    client = MagicMock()
+    client.list_correspondents.return_value = []
+    client.list_document_types.return_value = []
+    client.list_tags.return_value = []
+
+    client.create_correspondent.side_effect = Exception("API error")
+    # After failure, refresh still returns empty → item not found → re-raise
+    client.list_correspondents.side_effect = [
+        [],  # initial refresh
+        [],  # post-failure refresh (still empty)
+    ]
+
+    cache = TaxonomyCache(client, taxonomy_limit=100)
+    cache.refresh()
+
+    import pytest
+    with pytest.raises(Exception, match="API error"):
+        cache.get_or_create_correspondent_id("NewCorp")
+
+
+def test_document_type_creation_failure_refresh_also_fails_reraises():
+    """When create fails AND refresh doesn't find the item, re-raise (line 229)."""
+    client = MagicMock()
+    client.list_correspondents.return_value = []
+    client.list_document_types.return_value = []
+    client.list_tags.return_value = []
+
+    client.create_document_type.side_effect = Exception("API error")
+    client.list_document_types.side_effect = [
+        [],  # initial refresh
+        [],  # post-failure refresh (still empty)
+    ]
+
+    cache = TaxonomyCache(client, taxonomy_limit=100)
+    cache.refresh()
+
+    import pytest
+    with pytest.raises(Exception, match="API error"):
+        cache.get_or_create_document_type_id("NewType")
+
+
+def test_tag_creation_failure_refresh_also_fails_reraises():
+    """When create fails AND refresh doesn't find the tag, re-raise (line 261)."""
+    client = MagicMock()
+    client.list_correspondents.return_value = []
+    client.list_document_types.return_value = []
+    client.list_tags.return_value = []
+
+    client.create_tag.side_effect = Exception("API error")
+    client.list_tags.side_effect = [
+        [],  # initial refresh
+        [],  # post-failure refresh (still empty)
+    ]
+
+    cache = TaxonomyCache(client, taxonomy_limit=100)
+    cache.refresh()
+
+    import pytest
+    with pytest.raises(Exception, match="API error"):
+        cache.get_or_create_tag_ids(["NewTag"])

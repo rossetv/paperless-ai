@@ -15,7 +15,8 @@ from typing import Iterable
 
 import structlog
 
-from common.config import Settings, setup_libraries
+from common.config import Settings
+from common.library_setup import setup_libraries
 from common.daemon_loop import run_polling_threadpool
 from common.logging_config import configure_logging
 from common.paperless import PaperlessClient

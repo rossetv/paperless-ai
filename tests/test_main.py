@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from ocr import daemon as main_module
 
 
@@ -148,3 +150,54 @@ def test_main_continues_after_processing_error(monkeypatch):
     assert processed == [2]
     assert len(DummyPaperlessClient.instances) == 3  # list client + 2 per-doc clients
     assert all(client.closed for client in DummyPaperlessClient.instances)
+
+
+# ---------------------------------------------------------------------------
+# Tests for _iter_docs_to_ocr — lines 67-68, 86
+# ---------------------------------------------------------------------------
+
+
+def _make_ocr_settings(**overrides):
+    """Build a minimal mock Settings for _iter_docs_to_ocr."""
+    s = Mock()
+    s.PRE_TAG_ID = overrides.get("PRE_TAG_ID", 10)
+    s.POST_TAG_ID = overrides.get("POST_TAG_ID", 11)
+    s.OCR_PROCESSING_TAG_ID = overrides.get("OCR_PROCESSING_TAG_ID", None)
+    return s
+
+
+def test_iter_docs_to_ocr_skips_doc_without_integer_id():
+    """Lines 67-68: documents whose 'id' is not an int are warned and skipped."""
+    mock_client = Mock()
+    mock_client.get_documents_by_tag.return_value = [
+        {"tags": [10]},                      # missing id entirely
+        {"id": None, "tags": [10]},           # id is None
+        {"id": "abc", "tags": [10]},          # id is a string
+        {"id": 1, "tags": [10]},              # valid — should be yielded
+    ]
+    settings = _make_ocr_settings()
+
+    results = list(main_module._iter_docs_to_ocr(mock_client, settings))
+
+    assert len(results) == 1
+    assert results[0]["id"] == 1
+
+
+def test_iter_docs_to_ocr_skips_doc_claimed_by_processing_tag():
+    """Line 86: documents already carrying OCR_PROCESSING_TAG_ID are skipped."""
+    processing_tag = 50
+    mock_client = Mock()
+    mock_client.get_documents_by_tag.return_value = [
+        {"id": 1, "tags": [10, processing_tag]},  # already claimed — skip
+        {"id": 2, "tags": [10]},                   # not claimed — yield
+    ]
+    settings = _make_ocr_settings(OCR_PROCESSING_TAG_ID=processing_tag)
+
+    results = list(main_module._iter_docs_to_ocr(mock_client, settings))
+
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+
+# Line 136: ``if __name__ == "__main__": main()`` is a standard entry-point
+# guard.  It is intentionally left untested.

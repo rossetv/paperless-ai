@@ -140,3 +140,36 @@ def test_enrich_tags_lowercases():
     result = enrich_tags(["BILLS"], text, "2024-01-01", "", 5)
     assert "bills" in result
     assert "gpt-5" in result
+
+
+# ---------------------------------------------------------------------------
+# _extract_year — lines 228, 232-233: invalid date string returns None
+# ---------------------------------------------------------------------------
+
+
+def test_extract_year_invalid_date_returns_none():
+    """An invalid (non-ISO) date string should return None (line 232-233)."""
+    from classifier.tag_filters import _extract_year
+
+    assert _extract_year("not-a-date") is None
+
+
+def test_extract_year_empty_string_returns_none():
+    """An empty string should return None (line 228)."""
+    from classifier.tag_filters import _extract_year
+
+    assert _extract_year("") is None
+
+
+def test_extract_year_garbage_returns_none():
+    """Garbage input like random text should return None."""
+    from classifier.tag_filters import _extract_year
+
+    assert _extract_year("hello world") is None
+
+
+def test_extract_year_partial_date_returns_none():
+    """A partial date without full ISO format should return None."""
+    from classifier.tag_filters import _extract_year
+
+    assert _extract_year("2024-13-45") is None

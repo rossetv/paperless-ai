@@ -4,7 +4,8 @@ from unittest.mock import call
 import pytest
 from PIL import Image
 
-from common.utils import _sleep_backoff, is_blank, retry
+from common.retry import _sleep_backoff, retry
+from common.utils import is_blank
 
 
 class DummyWorker:
@@ -47,7 +48,7 @@ class ZeroRetryWorker:
 
 
 def test_retry_succeeds_after_retries(mocker):
-    sleep_spy = mocker.patch("common.utils._sleep_backoff")
+    sleep_spy = mocker.patch("common.retry._sleep_backoff")
     worker = DummyWorker(max_retries=3)
 
     assert worker.flaky() == "ok"
@@ -58,7 +59,7 @@ def test_retry_succeeds_after_retries(mocker):
 
 
 def test_retry_raises_after_max_retries(mocker):
-    sleep_spy = mocker.patch("common.utils._sleep_backoff")
+    sleep_spy = mocker.patch("common.retry._sleep_backoff")
     worker = AlwaysFailWorker(max_retries=2)
 
     with pytest.raises(ValueError, match="nope"):
@@ -79,8 +80,8 @@ def test_retry_zero_retries_raises_value_error():
 
 def test_sleep_backoff_uses_exponential_delay(mocker):
     settings = SimpleNamespace(MAX_RETRIES=5, MAX_RETRY_BACKOFF_SECONDS=30)
-    mocker.patch("common.utils.random.uniform", return_value=1.0)
-    sleep_mock = mocker.patch("common.utils.time.sleep")
+    mocker.patch("common.retry.random.uniform", return_value=1.0)
+    sleep_mock = mocker.patch("common.retry.time.sleep")
 
     _sleep_backoff(2, settings)
 
@@ -89,8 +90,8 @@ def test_sleep_backoff_uses_exponential_delay(mocker):
 
 def test_sleep_backoff_caps_delay(mocker):
     settings = SimpleNamespace(MAX_RETRIES=5, MAX_RETRY_BACKOFF_SECONDS=10)
-    mocker.patch("common.utils.random.uniform", return_value=1.0)
-    sleep_mock = mocker.patch("common.utils.time.sleep")
+    mocker.patch("common.retry.random.uniform", return_value=1.0)
+    sleep_mock = mocker.patch("common.retry.time.sleep")
 
     _sleep_backoff(6, settings)
 

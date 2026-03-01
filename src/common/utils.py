@@ -1,127 +1,78 @@
 """
-Shared Utilities
-================
+Text and image content helpers.
 
-Domain-agnostic helpers used throughout both daemons:
+Domain-specific utility functions for detecting blank pages, redaction
+markers, and error/refusal content in OCR output.  These are used by
+both the OCR and classification pipelines.
 
-- :func:`retry` — decorator for transient-error resilience with exponential
-  backoff, jitter, and a configurable cap.
-- :func:`is_blank` — detects near-white images that should be skipped by OCR.
-- :func:`contains_redacted_marker` — detects ``[REDACTED …]`` markers in text.
+- :func:`is_blank` — detects near-white images that should be skipped.
+- :func:`contains_redacted_marker` — detects ``[REDACTED ...]`` markers.
 - :func:`is_error_content` — combines refusal-phrase and redaction detection.
+
+Retry logic has been extracted to :mod:`common.retry`.
 """
 
 from __future__ import annotations
 
-import random
 import re
-import time
-from functools import wraps
-from typing import Callable, Iterable, Protocol, Type, TypeVar
+from typing import Iterable
 
-import structlog
 from PIL import Image
 
-log = structlog.get_logger(__name__)
-T = TypeVar("T")
+# Pre-compiled at module level for efficiency — matches bracketed text
+# containing the word "redacted" in any case, e.g. "[REDACTED]",
+# "[NAME REDACTED]", "[REDACTED ADDRESS]".
 _REDACTED_RE = re.compile(r"\[[^\]]*redacted[^\]]*\]", re.IGNORECASE)
 
 
-class RetrySettings(Protocol):
-    """The settings fields required by the `retry` decorator."""
-
-    MAX_RETRIES: int
-    MAX_RETRY_BACKOFF_SECONDS: int
-
-
-def retry(
-    retryable_exceptions: tuple[Type[Exception], ...],
-) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """
-    A decorator that retries a function call on specific exceptions.
-
-    Args:
-        retryable_exceptions: A tuple of exception types that should trigger a retry.
-
-    Notes:
-        The wrapped method must be on an object with a ``settings`` attribute
-        that provides ``MAX_RETRIES`` and ``MAX_RETRY_BACKOFF_SECONDS``.
-    """
-
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        @wraps(func)
-        def wrapper(self, *args, **kwargs) -> T:
-            settings: RetrySettings = self.settings
-            if settings.MAX_RETRIES < 1:
-                raise ValueError("MAX_RETRIES must be >= 1")
-            for attempt in range(1, settings.MAX_RETRIES + 1):
-                try:
-                    return func(self, *args, **kwargs)
-                except retryable_exceptions as e:
-                    if attempt == settings.MAX_RETRIES:
-                        log.exception(
-                            "Function failed after all retries",
-                            func_name=func.__name__,
-                            attempt=attempt,
-                        )
-                        raise
-                    log.warning(
-                        "Function failed, retrying",
-                        func_name=func.__name__,
-                        error=e,
-                        attempt=attempt,
-                        max_retries=settings.MAX_RETRIES,
-                    )
-                    _sleep_backoff(attempt, settings)
-            # This part should be unreachable if MAX_RETRIES > 0
-            raise RuntimeError("Retry loop exited unexpectedly.")
-
-        return wrapper
-
-    return decorator
-
-
-def _sleep_backoff(attempt: int, settings: RetrySettings) -> None:
-    """Sleep for a short duration with exponential backoff, jitter, and a cap."""
-    delay = (2**attempt) * random.uniform(0.8, 1.2)
-    delay = min(delay, settings.MAX_RETRY_BACKOFF_SECONDS)
-    log.info(
-        "Sleeping before retry",
-        delay=f"{delay:.1f}s",
-        attempt=attempt,
-        max_retries=settings.MAX_RETRIES,
-        max_backoff=settings.MAX_RETRY_BACKOFF_SECONDS,
-    )
-    time.sleep(delay)
-
-
 def is_blank(image: Image.Image, threshold: int = 5) -> bool:
-    """
-    Return ``True`` if the image is essentially blank (all white).
+    """Return ``True`` if the image is essentially blank (all white).
 
     Converts to greyscale and checks that the number of non-white pixels
     is below *threshold*.  Used by the OCR provider to skip blank pages
     without wasting an API call.
+
+    Args:
+        image: A PIL Image to test.
+        threshold: Maximum number of non-white pixels allowed.
+
+    Returns:
+        ``True`` if the image is blank.
     """
     histogram = image.convert("L").histogram()
     return (sum(histogram) - histogram[255]) < threshold
 
 
 def contains_redacted_marker(text: str) -> bool:
-    """
-    Return True if the text includes bracketed redaction markers.
+    """Return ``True`` if *text* includes bracketed redaction markers.
 
-    Examples: "[REDACTED]", "[REDACTED NAME]", "[NAME REDACTED]".
+    Examples of detected patterns::
+
+        "[REDACTED]"
+        "[REDACTED NAME]"
+        "[NAME REDACTED]"
+
+    Args:
+        text: The text to search.
+
+    Returns:
+        ``True`` if at least one redaction marker is found.
     """
     return bool(_REDACTED_RE.search(text))
 
 
 def is_error_content(text: str, error_phrases: Iterable[str]) -> bool:
-    """
-    Return ``True`` if *text* contains any refusal phrase or redaction marker.
+    """Return ``True`` if *text* contains a refusal phrase or redaction marker.
 
     Used by the classification pipeline to detect OCR output that was stored
-    as document content but actually represents a model refusal.
+    as document content but actually represents a model refusal or error.
+
+    Args:
+        text: The document content to check.
+        error_phrases: Lower-cased phrases that indicate an error/refusal.
+
+    Returns:
+        ``True`` if any refusal phrase or redaction marker is found.
     """
     text_lower = text.lower()
     return contains_redacted_marker(text) or any(
