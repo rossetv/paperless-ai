@@ -17,6 +17,7 @@ Typical usage::
 
 from __future__ import annotations
 
+import atexit
 from typing import TYPE_CHECKING
 
 import httpx
@@ -50,6 +51,7 @@ def setup_libraries(settings: Settings) -> None:
     # common to have proxy env-vars set unintentionally; explicitly opting
     # out of environment-based trust avoids surprising behaviour.
     http_client = httpx.Client(trust_env=False)
+    atexit.register(http_client.close)
 
     if settings.LLM_PROVIDER == "ollama":
         openai.base_url = settings.OLLAMA_BASE_URL

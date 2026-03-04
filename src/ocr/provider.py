@@ -15,6 +15,7 @@ The provider is responsible for:
 """
 
 import base64
+import threading
 from abc import ABC, abstractmethod
 from io import BytesIO
 
@@ -78,6 +79,7 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
 
     def __init__(self, settings: Settings):
         super().__init__(settings)
+        self._stats_lock = threading.Lock()
         self._stats = {
             "attempts": 0,
             "refusals": 0,
@@ -85,9 +87,15 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
             "fallback_successes": 0,
         }
 
+    def _inc_stat(self, key: str) -> None:
+        """Thread-safe increment of a stats counter."""
+        with self._stats_lock:
+            self._stats[key] += 1
+
     def get_stats(self) -> dict:
         """Return a snapshot of OCR model stats for this provider instance."""
-        return dict(self._stats)
+        with self._stats_lock:
+            return dict(self._stats)
 
     def transcribe_image(
         self,
@@ -140,18 +148,18 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
                 "timeout": self.settings.REQUEST_TIMEOUT,
             }
             try:
-                self._stats["attempts"] += 1
+                self._inc_stat("attempts")
                 response = self._create_completion(**params)
                 text = (response.choices[0].message.content or "").strip()
 
                 if not is_refusal(text, self.settings.OCR_REFUSAL_MARKERS):
                     if model != primary_model:
                         log.info("Fallback model succeeded", model=model, **log_ctx)
-                        self._stats["fallback_successes"] += 1
+                        self._inc_stat("fallback_successes")
                     return text, model
                 else:
                     log.warning("Model refused to transcribe", model=model, **log_ctx)
-                    self._stats["refusals"] += 1
+                    self._inc_stat("refusals")
             except openai.APIError as e:
                 log.warning(
                     "API call for model failed after all retries",
@@ -159,7 +167,7 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
                     error=e,
                     **log_ctx,
                 )
-                self._stats["api_errors"] += 1
+                self._inc_stat("api_errors")
 
         log.error("All models failed or refused to transcribe the page", **log_ctx)
         return self.settings.REFUSAL_MARK, ""

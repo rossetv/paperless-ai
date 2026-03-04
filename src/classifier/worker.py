@@ -38,6 +38,7 @@ from .metadata import (
     update_custom_fields,
 )
 from .provider import ClassificationProvider
+from .result import ClassificationResult
 from .tag_filters import (
     enrich_tags,
     filter_blacklisted_tags,
@@ -250,7 +251,7 @@ class ClassificationProcessor:
         self,
         document: dict,
         content: str,
-        result,
+        result: ClassificationResult,
         model: str,
     ) -> None:
         """Apply the classifier's output to Paperless metadata and tags."""

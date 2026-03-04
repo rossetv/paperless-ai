@@ -17,9 +17,14 @@ and the tag logic lives in exactly one place.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import structlog
 
 from .paperless import PaperlessClient
+
+if TYPE_CHECKING:
+    from .config import Settings
 
 log = structlog.get_logger(__name__)
 
@@ -170,7 +175,7 @@ def release_processing_tag(
 # Pipeline tag cleanup
 # ---------------------------------------------------------------------------
 
-def clean_pipeline_tags(tags: set[int], settings) -> set[int]:
+def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
     """
     Return a copy of *tags* with all automation-pipeline tag IDs removed.
 

@@ -111,17 +111,24 @@ class PaperlessClient:
         else:
             candidates = [matching_algorithm]
 
+        last_response: httpx.Response | None = None
         for index, candidate in enumerate(candidates):
             payload = {"name": name}
             if candidate is not None:
                 payload["matching_algorithm"] = candidate
-            response = self._post(url, json=payload)
+            last_response = self._post(url, json=payload)
             try:
-                response.raise_for_status()
-                return response.json()
+                last_response.raise_for_status()
+                return last_response.json()
             except httpx.HTTPStatusError:
-                if response.status_code != 400 or index == len(candidates) - 1:
+                if last_response.status_code != 400 or index == len(candidates) - 1:
                     raise
+
+        # Unreachable: the loop always returns or raises on the last iteration.
+        # Explicit raise satisfies type checkers and guards against future edits.
+        raise RuntimeError(  # pragma: no cover
+            f"Failed to create {item_label} '{name}' — no candidates tried"
+        )
 
     def get_documents_to_process(self) -> Iterable[dict]:
         """

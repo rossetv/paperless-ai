@@ -148,6 +148,15 @@ class TaxonomyCache:
         self._correspondent_map: dict[str, dict] = {}
         self._document_type_map: dict[str, dict] = {}
         self._tag_map: dict[str, dict] = {}
+        # Cached sorted name lists — rebuilt during refresh().
+        # Note: get_or_create_*() updates _*_map for lookups but does NOT
+        # invalidate these caches; newly created items only appear after the
+        # next refresh() call (i.e. at the start of the next polling batch).
+        # This is acceptable because the cache is only used for LLM prompt
+        # context, and the actual taxonomy resolution uses _*_map directly.
+        self._cached_correspondent_names: list[str] = []
+        self._cached_document_type_names: list[str] = []
+        self._cached_tag_names: list[str] = []
 
     # ----- refresh -----
 
@@ -160,23 +169,30 @@ class TaxonomyCache:
             self._correspondent_map = _index_items(self._correspondents, normalize_name)
             self._document_type_map = _index_items(self._document_types, normalize_simple)
             self._tag_map = _index_items(self._tags, normalize_simple)
+            self._cached_correspondent_names = _top_names(
+                self._correspondents, self._taxonomy_limit
+            )
+            self._cached_document_type_names = _top_names(
+                self._document_types, self._taxonomy_limit
+            )
+            self._cached_tag_names = _top_names(self._tags, self._taxonomy_limit)
 
     # ----- prompt context -----
 
     def correspondent_names(self) -> list[str]:
         """Return correspondent names for the classification prompt."""
         with self._lock:
-            return _top_names(self._correspondents, self._taxonomy_limit)
+            return list(self._cached_correspondent_names)
 
     def document_type_names(self) -> list[str]:
         """Return document-type names for the classification prompt."""
         with self._lock:
-            return _top_names(self._document_types, self._taxonomy_limit)
+            return list(self._cached_document_type_names)
 
     def tag_names(self) -> list[str]:
         """Return tag names for the classification prompt."""
         with self._lock:
-            return _top_names(self._tags, self._taxonomy_limit)
+            return list(self._cached_tag_names)
 
     # ----- resolve or create -----
 

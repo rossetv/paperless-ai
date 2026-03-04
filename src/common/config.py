@@ -126,30 +126,21 @@ class Settings:
         # --- Paperless-ngx Tag IDs ---
         self.PRE_TAG_ID = int(os.getenv("PRE_TAG_ID", "443"))
         self.POST_TAG_ID = int(os.getenv("POST_TAG_ID", "444"))
-        self.OCR_PROCESSING_TAG_ID = self._get_optional_int_env(
+        self.OCR_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
             "OCR_PROCESSING_TAG_ID"
         )
-        if self.OCR_PROCESSING_TAG_ID is not None and self.OCR_PROCESSING_TAG_ID <= 0:
-            self.OCR_PROCESSING_TAG_ID = None
 
         # --- Classification Tag IDs ---
         self.CLASSIFY_PRE_TAG_ID = self._get_optional_int_env(
             "CLASSIFY_PRE_TAG_ID", self.POST_TAG_ID
         )
-        self.CLASSIFY_POST_TAG_ID = self._get_optional_int_env("CLASSIFY_POST_TAG_ID")
-        if self.CLASSIFY_POST_TAG_ID is not None and self.CLASSIFY_POST_TAG_ID <= 0:
-            self.CLASSIFY_POST_TAG_ID = None
-        self.CLASSIFY_PROCESSING_TAG_ID = self._get_optional_int_env(
+        self.CLASSIFY_POST_TAG_ID = self._get_optional_positive_int_env(
+            "CLASSIFY_POST_TAG_ID"
+        )
+        self.CLASSIFY_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
             "CLASSIFY_PROCESSING_TAG_ID"
         )
-        if (
-            self.CLASSIFY_PROCESSING_TAG_ID is not None
-            and self.CLASSIFY_PROCESSING_TAG_ID <= 0
-        ):
-            self.CLASSIFY_PROCESSING_TAG_ID = None
-        self.ERROR_TAG_ID = self._get_optional_int_env("ERROR_TAG_ID", 552)
-        if self.ERROR_TAG_ID is not None and self.ERROR_TAG_ID <= 0:
-            self.ERROR_TAG_ID = None
+        self.ERROR_TAG_ID = self._get_optional_positive_int_env("ERROR_TAG_ID", 552)
 
         # --- Daemon Configuration ---
         self.POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
@@ -216,6 +207,17 @@ class Settings:
         if not value:
             return default
         return int(value)
+
+    def _get_optional_positive_int_env(
+        self, var_name: str, default: int | None = None
+    ) -> int | None:
+        """
+        Gets an optional positive int env var. Values <= 0 are treated as None.
+        """
+        value = self._get_optional_int_env(var_name, default)
+        if value is not None and value <= 0:
+            return None
+        return value
 
     def _get_model_list(self, var_name: str, default: list[str]) -> list[str]:
         """
