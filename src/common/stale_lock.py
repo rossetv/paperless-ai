@@ -28,12 +28,10 @@ def recover_stale_locks(
 ) -> int:
     """Find documents with a stale processing-lock tag and re-queue them.
 
-    A document is considered stale-locked when it carries
-    *processing_tag_id* but does **not** carry *pre_tag_id* (meaning the
-    daemon that claimed it never finished and never re-queued it).
-
-    For each such document, we remove the processing-lock tag and add
-    the pre-tag so it re-enters the queue.
+    At startup no workers are running, so every document carrying the
+    processing-lock tag is stale by definition.  For each such document
+    we remove the lock tag and ensure the pre-tag is present so it
+    re-enters the queue.
 
     Args:
         client: A :class:`PaperlessClient` instance.
@@ -64,12 +62,7 @@ def recover_stale_locks(
 
         tags = extract_tags(doc, doc_id=doc_id, context="stale-lock-recovery")
 
-        if pre_tag_id in tags:
-            # Document still has the queue tag — it is either actively
-            # being processed or waiting to be claimed.  Leave it alone.
-            continue
-
-        # Stale lock detected: remove lock tag, add queue tag.
+        # Remove lock tag and ensure the queue tag is present.
         updated = set(tags)
         updated.discard(processing_tag_id)
         updated.add(pre_tag_id)

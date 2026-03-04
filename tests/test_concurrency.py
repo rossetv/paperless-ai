@@ -18,7 +18,6 @@ def test_semaphore_limits_concurrency():
     init_llm_semaphore(2)
     inside = {"count": 0, "peak": 0}
     lock = threading.Lock()
-    barrier = threading.Barrier(3, timeout=5)
 
     def worker():
         with llm_semaphore():

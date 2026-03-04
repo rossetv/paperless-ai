@@ -33,11 +33,9 @@ def run_preflight_checks(settings: Settings, client: PaperlessClient) -> None:
 
 
 def _check_paperless_reachable(settings: Settings, client: PaperlessClient) -> None:
-    """Verify that the Paperless-ngx API is reachable."""
-    url = f"{settings.PAPERLESS_URL}/api/"
+    """Verify that the Paperless-ngx API is reachable (single fast request, no retry)."""
     try:
-        response = client._get(url)
-        response.raise_for_status()
+        client.ping(timeout=10)
         log.info("Preflight: Paperless-ngx API is reachable", url=settings.PAPERLESS_URL)
     except Exception as exc:
         raise PreflightError(
@@ -83,8 +81,9 @@ def _check_llm_reachable() -> None:
     try:
         openai.models.list()
         log.info("Preflight: LLM provider is reachable")
-    except Exception:
+    except Exception as exc:
         log.warning(
             "Preflight: LLM provider is not reachable; "
-            "the daemon will retry when processing documents"
+            "the daemon will retry when processing documents",
+            error=str(exc),
         )

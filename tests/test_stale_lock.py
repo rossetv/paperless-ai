@@ -38,8 +38,8 @@ def test_recovers_stale_locked_document():
     assert 42 in tags       # user tag preserved
 
 
-def test_skips_document_that_still_has_pre_tag():
-    """A doc with both lock tag AND pre-tag is left alone (actively processing)."""
+def test_recovers_document_with_both_tags():
+    """A doc with both lock tag AND pre-tag is still recovered (crash before pre-tag removal)."""
     client = MagicMock()
     client.get_documents_by_tag.return_value = [
         {"id": 1, "tags": [99, 10]},  # has both
@@ -47,22 +47,25 @@ def test_skips_document_that_still_has_pre_tag():
 
     result = recover_stale_locks(client, processing_tag_id=99, pre_tag_id=10)
 
-    assert result == 0
-    client.update_document_metadata.assert_not_called()
+    assert result == 1
+    _, kwargs = client.update_document_metadata.call_args
+    tags = set(kwargs["tags"])
+    assert 10 in tags       # pre-tag preserved
+    assert 99 not in tags   # lock tag removed
 
 
 def test_recovers_multiple_documents():
     client = MagicMock()
     client.get_documents_by_tag.return_value = [
         {"id": 1, "tags": [99]},       # stale
-        {"id": 2, "tags": [99, 10]},   # active — skip
+        {"id": 2, "tags": [99, 10]},   # stale (crash before pre-tag removal)
         {"id": 3, "tags": [99, 50]},   # stale
     ]
 
     result = recover_stale_locks(client, processing_tag_id=99, pre_tag_id=10)
 
-    assert result == 2
-    assert client.update_document_metadata.call_count == 2
+    assert result == 3
+    assert client.update_document_metadata.call_count == 3
 
 
 def test_handles_query_failure():

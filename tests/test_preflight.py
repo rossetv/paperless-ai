@@ -28,12 +28,10 @@ def settings(mocker):
 def _make_client(reachable=True, tags=None):
     """Create a mock PaperlessClient."""
     client = MagicMock()
-    response = MagicMock()
     if reachable:
-        response.raise_for_status.return_value = None
+        client.ping.return_value = None
     else:
-        response.raise_for_status.side_effect = RuntimeError("unreachable")
-    client._get.return_value = response
+        client.ping.side_effect = RuntimeError("unreachable")
     if tags is not None:
         client.list_tags.return_value = tags
     else:

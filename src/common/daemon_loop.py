@@ -112,9 +112,6 @@ def run_polling_threadpool(
                         )
 
             sleep(poll_interval_seconds)
-        except KeyboardInterrupt:
-            log.info("Ctrl-C received; exiting", daemon=daemon_name)
-            break
         except Exception:
             log.exception(
                 "Unexpected error in daemon loop; sleeping",

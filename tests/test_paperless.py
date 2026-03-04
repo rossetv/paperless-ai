@@ -29,7 +29,9 @@ def settings(mocker):
 @pytest.fixture
 def paperless_client(settings):
     """Fixture to create a PaperlessClient instance."""
-    return PaperlessClient(settings)
+    client = PaperlessClient(settings)
+    yield client
+    client.close()
 
 
 @respx.mock

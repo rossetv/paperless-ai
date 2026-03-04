@@ -31,7 +31,7 @@ jobs:
           pip install .
 
       - name: Run tests with coverage
-        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov-report=term-missing
+        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov-report=term-missing --cov-fail-under=70
 
   docker:
     name: Docker

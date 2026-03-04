@@ -287,6 +287,12 @@ class PaperlessClient:
             item_label="tag",
         )
 
+    def ping(self, timeout: float = 10) -> None:
+        """Single fast request to verify the API is reachable (no retry)."""
+        url = f"{self.settings.PAPERLESS_URL}/api/"
+        response = self._client.get(url, timeout=timeout)
+        response.raise_for_status()
+
     def close(self) -> None:
         """Close the underlying HTTP client."""
         self._client.close()
