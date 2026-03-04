@@ -1,7 +1,9 @@
 from common.daemon_loop import run_polling_threadpool
+from common.shutdown import request_shutdown, reset_shutdown
 
 
 def test_run_polling_threadpool_processes_batch_and_continues_on_item_error():
+    reset_shutdown()
     calls = {"fetch": 0, "before": 0}
     processed = []
     attempted = []
@@ -25,7 +27,7 @@ def test_run_polling_threadpool_processes_batch_and_continues_on_item_error():
     def sleep(_seconds):
         sleep_calls["count"] += 1
         # After the first loop iteration, stop the daemon.
-        raise KeyboardInterrupt
+        request_shutdown()
 
     run_polling_threadpool(
         daemon_name="test",
@@ -42,3 +44,4 @@ def test_run_polling_threadpool_processes_batch_and_continues_on_item_error():
     assert attempted == [1, 2, 3]
     assert processed == [1, 3]
     assert sleep_calls["count"] == 1
+    reset_shutdown()

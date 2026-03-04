@@ -14,7 +14,7 @@ component that abstracts away the details of the Paperless-ngx REST API.
 
 from typing import Generator, Iterable
 
-import requests
+import httpx
 import structlog
 
 from .config import Settings
@@ -22,46 +22,50 @@ from .retry import retry
 
 log = structlog.get_logger(__name__)
 
+# Exceptions that should trigger a retry: transient network errors and
+# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).
+RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
+
 
 class PaperlessClient:
     """A client for interacting with the Paperless-ngx API."""
 
     def __init__(self, settings: Settings):
-        """Initializes the client with a session and authentication."""
+        """Initializes the client with an httpx Client and authentication."""
         self.settings = settings
-        self._session = requests.Session()
-        self._session.headers.update(
-            {"Authorization": f"Token {self.settings.PAPERLESS_TOKEN}"}
+        self._client = httpx.Client(
+            headers={"Authorization": f"Token {self.settings.PAPERLESS_TOKEN}"},
+            timeout=self.settings.REQUEST_TIMEOUT,
         )
 
-    def _raise_for_status_if_server_error(self, response: requests.Response) -> None:
+    def _raise_for_status_if_server_error(self, response: httpx.Response) -> None:
         """
         Raise for 5xx responses to enable retries; let callers handle 4xx.
         """
         if response.status_code >= 500:
             response.raise_for_status()
 
-    @retry(retryable_exceptions=(requests.exceptions.RequestException,))
-    def _get(self, *args, **kwargs) -> requests.Response:
-        """A retriable version of session.get."""
+    @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
+    def _get(self, *args, **kwargs) -> httpx.Response:
+        """A retriable version of client.get."""
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._session.get(*args, **kwargs)
+        response = self._client.get(*args, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
-    @retry(retryable_exceptions=(requests.exceptions.RequestException,))
-    def _patch(self, *args, **kwargs) -> requests.Response:
-        """A retriable version of session.patch."""
+    @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
+    def _patch(self, *args, **kwargs) -> httpx.Response:
+        """A retriable version of client.patch."""
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._session.patch(*args, **kwargs)
+        response = self._client.patch(*args, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
-    @retry(retryable_exceptions=(requests.exceptions.RequestException,))
-    def _post(self, *args, **kwargs) -> requests.Response:
-        """A retriable version of session.post."""
+    @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
+    def _post(self, *args, **kwargs) -> httpx.Response:
+        """A retriable version of client.post."""
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._session.post(*args, **kwargs)
+        response = self._client.post(*args, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
@@ -115,7 +119,7 @@ class PaperlessClient:
             try:
                 response.raise_for_status()
                 return response.json()
-            except requests.exceptions.HTTPError:
+            except httpx.HTTPStatusError:
                 if response.status_code != 400 or index == len(candidates) - 1:
                     raise
 
@@ -283,6 +287,12 @@ class PaperlessClient:
             item_label="tag",
         )
 
+    def ping(self, timeout: float = 10) -> None:
+        """Single fast request to verify the API is reachable (no retry)."""
+        url = f"{self.settings.PAPERLESS_URL}/api/"
+        response = self._client.get(url, timeout=timeout)
+        response.raise_for_status()
+
     def close(self) -> None:
-        """Close the underlying HTTP session."""
-        self._session.close()
+        """Close the underlying HTTP client."""
+        self._client.close()

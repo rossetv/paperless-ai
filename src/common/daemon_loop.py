@@ -12,7 +12,7 @@ Both daemons share the same control-flow pattern:
 
 - Poll for work on an interval.
 - If work is found, process a batch concurrently.
-- Keep running forever (until SIGINT / Ctrl-C).
+- Keep running forever (until SIGTERM / SIGINT).
 
 This module contains a small, reusable loop implementation so the OCR and
 classification entrypoints stay thin and easy to read.
@@ -25,6 +25,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, TypeVar
 
 import structlog
+
+from .shutdown import is_shutdown_requested
 
 log = structlog.get_logger(__name__)
 
@@ -71,7 +73,7 @@ def run_polling_threadpool(
     max_workers = max(1, int(max_workers))
 
     was_idle = False
-    while True:
+    while not is_shutdown_requested():
         try:
             items = fetch_work()
             if not items:
@@ -110,9 +112,6 @@ def run_polling_threadpool(
                         )
 
             sleep(poll_interval_seconds)
-        except KeyboardInterrupt:
-            log.info("Ctrl-C received; exiting", daemon=daemon_name)
-            break
         except Exception:
             log.exception(
                 "Unexpected error in daemon loop; sleeping",
@@ -120,6 +119,9 @@ def run_polling_threadpool(
                 poll_interval_seconds=poll_interval_seconds,
             )
             sleep(poll_interval_seconds)
+
+    if is_shutdown_requested():
+        log.info("Shutdown requested; exiting gracefully", daemon=daemon_name)
 
 
 def _safe_item_summary(item: object) -> str:

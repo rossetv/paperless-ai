@@ -94,6 +94,8 @@ def test_classify_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeyp
     monkeypatch.setattr(classify_main_module, "ClassificationProcessor", DummyProcessor)
     monkeypatch.setattr(classify_main_module, "configure_logging", lambda settings: None)
     monkeypatch.setattr(classify_main_module, "setup_libraries", lambda settings: None)
+    monkeypatch.setattr(classify_main_module, "run_preflight_checks", lambda s, c: None)
+    monkeypatch.setattr(classify_main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(classify_main_module, "run_polling_threadpool", run_once)
 
     classify_main_module.main()

@@ -7,6 +7,7 @@ classification reuse the same retry behavior and logging patterns.
 
 import openai
 
+from .concurrency import llm_semaphore
 from .retry import retry
 
 RETRYABLE_OPENAI_EXCEPTIONS = (
@@ -28,7 +29,8 @@ class OpenAIChatMixin:
     @retry(retryable_exceptions=RETRYABLE_OPENAI_EXCEPTIONS)
     def _create_completion(self, **kwargs):
         """Call the OpenAI-compatible chat completion API with retries."""
-        return openai.chat.completions.create(**kwargs)
+        with llm_semaphore():
+            return openai.chat.completions.create(**kwargs)
 
 
 def unique_models(models: list[str]) -> list[str]:

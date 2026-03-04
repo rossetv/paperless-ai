@@ -1,10 +1,12 @@
 """Extended tests for common.daemon_loop — idle states and error recovery."""
 
 from common.daemon_loop import _safe_item_summary, run_polling_threadpool
+from common.shutdown import request_shutdown, reset_shutdown
 
 
 def test_idle_logging_only_once():
     """After the first idle log, subsequent empty polls should not re-log."""
+    reset_shutdown()
     fetch_calls = {"count": 0}
 
     def fetch_work():
@@ -16,7 +18,7 @@ def test_idle_logging_only_once():
     def sleep(_seconds):
         sleep_count["n"] += 1
         if sleep_count["n"] >= 3:
-            raise KeyboardInterrupt
+            request_shutdown()
 
     run_polling_threadpool(
         daemon_name="test",
@@ -29,17 +31,19 @@ def test_idle_logging_only_once():
 
     assert fetch_calls["count"] == 3
     assert sleep_count["n"] == 3
+    reset_shutdown()
 
 
 def test_no_before_each_batch_when_not_set():
     """When before_each_batch is None, the loop still processes items."""
+    reset_shutdown()
     processed = []
 
     def fetch_work():
         return [1] if not processed else []
 
     def sleep(_seconds):
-        raise KeyboardInterrupt
+        request_shutdown()
 
     run_polling_threadpool(
         daemon_name="test",
@@ -52,10 +56,12 @@ def test_no_before_each_batch_when_not_set():
     )
 
     assert processed == [1]
+    reset_shutdown()
 
 
 def test_unexpected_error_in_fetch_work_recovered():
     """An error in fetch_work is caught and the loop sleeps then retries."""
+    reset_shutdown()
     calls = {"count": 0}
 
     def fetch_work():
@@ -69,7 +75,7 @@ def test_unexpected_error_in_fetch_work_recovered():
     def sleep(_seconds):
         sleep_count["n"] += 1
         if sleep_count["n"] >= 2:
-            raise KeyboardInterrupt
+            request_shutdown()
 
     run_polling_threadpool(
         daemon_name="test",
@@ -81,10 +87,12 @@ def test_unexpected_error_in_fetch_work_recovered():
     )
 
     assert calls["count"] >= 2
+    reset_shutdown()
 
 
 def test_poll_interval_clamped_to_minimum():
     """Poll interval of 0 is clamped to 1."""
+    reset_shutdown()
     actual_intervals = []
 
     def fetch_work():
@@ -92,7 +100,7 @@ def test_poll_interval_clamped_to_minimum():
 
     def sleep(seconds):
         actual_intervals.append(seconds)
-        raise KeyboardInterrupt
+        request_shutdown()
 
     run_polling_threadpool(
         daemon_name="test",
@@ -104,6 +112,7 @@ def test_poll_interval_clamped_to_minimum():
     )
 
     assert actual_intervals[0] == 1
+    reset_shutdown()
 
 
 # ---------------------------------------------------------------------------
@@ -130,3 +139,33 @@ def test_safe_item_summary_unprintable():
             raise RuntimeError("boom")
 
     assert _safe_item_summary(BadObj()) == "<unprintable>"
+
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown via shutdown flag
+# ---------------------------------------------------------------------------
+
+
+def test_shutdown_flag_stops_loop():
+    """When shutdown is requested, the loop exits without processing more items."""
+    reset_shutdown()
+    processed = []
+
+    def fetch_work():
+        return [1] if not processed else []
+
+    def sleep(_seconds):
+        # Request shutdown during the sleep after the first batch
+        request_shutdown()
+
+    run_polling_threadpool(
+        daemon_name="test",
+        fetch_work=fetch_work,
+        process_item=lambda item: processed.append(item),
+        poll_interval_seconds=1,
+        max_workers=1,
+        sleep=sleep,
+    )
+
+    assert processed == [1]
+    reset_shutdown()

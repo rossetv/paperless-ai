@@ -76,6 +76,8 @@ def test_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeypatch):
     monkeypatch.setattr(main_module, "DocumentProcessor", DummyProcessor)
     monkeypatch.setattr(main_module, "configure_logging", lambda settings: None)
     monkeypatch.setattr(main_module, "setup_libraries", lambda settings: None)
+    monkeypatch.setattr(main_module, "run_preflight_checks", lambda s, c: None)
+    monkeypatch.setattr(main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(main_module, "run_polling_threadpool", run_once)
 
     main_module.main()
@@ -142,6 +144,8 @@ def test_main_continues_after_processing_error(monkeypatch):
     monkeypatch.setattr(main_module, "DocumentProcessor", DummyProcessor)
     monkeypatch.setattr(main_module, "configure_logging", lambda settings: None)
     monkeypatch.setattr(main_module, "setup_libraries", lambda settings: None)
+    monkeypatch.setattr(main_module, "run_preflight_checks", lambda s, c: None)
+    monkeypatch.setattr(main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(main_module, "run_polling_threadpool", run_once_with_exception_handling)
 
     main_module.main()

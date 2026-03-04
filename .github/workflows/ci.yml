@@ -30,8 +30,8 @@ jobs:
           pip install -r requirements-dev.txt
           pip install .
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests with coverage
+        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov-report=term-missing --cov-fail-under=70
 
   docker:
     name: Docker

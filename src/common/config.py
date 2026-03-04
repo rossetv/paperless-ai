@@ -52,6 +52,7 @@ class Settings:
     MAX_RETRIES: int
     MAX_RETRY_BACKOFF_SECONDS: int
     REQUEST_TIMEOUT: int
+    LLM_MAX_CONCURRENT: int
 
     # --- Image Processing Configuration ---
     OCR_DPI: int
@@ -161,6 +162,7 @@ class Settings:
         if self.MAX_RETRY_BACKOFF_SECONDS < 1:
             raise ValueError("MAX_RETRY_BACKOFF_SECONDS must be >= 1")
         self.REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "180"))
+        self.LLM_MAX_CONCURRENT = max(0, int(os.getenv("LLM_MAX_CONCURRENT", "0")))
 
         # --- Image Processing Configuration ---
         self.OCR_DPI = int(os.getenv("OCR_DPI", "300"))
