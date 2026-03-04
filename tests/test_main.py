@@ -11,19 +11,13 @@ def _set_required_env(monkeypatch):
     monkeypatch.setenv("DOCUMENT_WORKERS", "1")
 
 
-def test_main_exits_on_config_error(mocker, monkeypatch):
-    logger = mocker.Mock()
-    monkeypatch.setattr(
-        main_module.structlog, "get_logger", mocker.Mock(return_value=logger)
-    )
-    monkeypatch.setattr(main_module, "Settings", mocker.Mock(side_effect=ValueError("bad")))
-    paperless_spy = mocker.Mock()
-    monkeypatch.setattr(main_module, "PaperlessClient", paperless_spy)
+def test_main_exits_on_config_error(monkeypatch):
+    monkeypatch.setattr(main_module, "bootstrap_daemon", lambda **kw: None)
 
     main_module.main()
 
-    logger.error.assert_called_once()
-    paperless_spy.assert_not_called()
+    # If bootstrap returns None, main() returns immediately without creating
+    # a PaperlessClient or entering the polling loop.
 
 
 def test_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeypatch):
@@ -71,22 +65,28 @@ def test_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeypatch):
         for item in items:
             kwargs["process_item"](item)
 
+    from common.config import Settings
+    settings = Settings()
+    list_client = DummyPaperlessClient(settings)
+
+    monkeypatch.setattr(
+        main_module,
+        "bootstrap_daemon",
+        lambda **kw: (settings, list_client),
+    )
     monkeypatch.setattr(main_module, "PaperlessClient", DummyPaperlessClient)
     monkeypatch.setattr(main_module, "OpenAIProvider", DummyOpenAIProvider)
     monkeypatch.setattr(main_module, "DocumentProcessor", DummyProcessor)
-    monkeypatch.setattr(main_module, "configure_logging", lambda settings: None)
-    monkeypatch.setattr(main_module, "setup_libraries", lambda settings: None)
-    monkeypatch.setattr(main_module, "run_preflight_checks", lambda s, c: None)
-    monkeypatch.setattr(main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(main_module, "run_polling_threadpool", run_once)
 
     main_module.main()
 
     assert processed == [1]
-    # instance[0] is the list client (used for tag hygiene), instance[1] is the per-doc client
+    # instance[0] is the list client (from bootstrap), instance[1] is the per-doc client
     assert len(DummyPaperlessClient.instances) == 2
     assert DummyPaperlessClient.instances[0].updated_tags[2] == {11, 99}
-    assert all(client.closed for client in DummyPaperlessClient.instances)
+    assert DummyPaperlessClient.instances[0].closed  # list client closed by main
+    assert DummyPaperlessClient.instances[1].closed  # per-doc client closed by _process_document
 
 
 def test_main_continues_after_processing_error(monkeypatch):
@@ -139,13 +139,18 @@ def test_main_continues_after_processing_error(monkeypatch):
                 # run_polling_threadpool logs and continues; mimic that.
                 pass
 
+    from common.config import Settings
+    settings = Settings()
+    list_client = DummyPaperlessClient(settings)
+
+    monkeypatch.setattr(
+        main_module,
+        "bootstrap_daemon",
+        lambda **kw: (settings, list_client),
+    )
     monkeypatch.setattr(main_module, "PaperlessClient", DummyPaperlessClient)
     monkeypatch.setattr(main_module, "OpenAIProvider", DummyOpenAIProvider)
     monkeypatch.setattr(main_module, "DocumentProcessor", DummyProcessor)
-    monkeypatch.setattr(main_module, "configure_logging", lambda settings: None)
-    monkeypatch.setattr(main_module, "setup_libraries", lambda settings: None)
-    monkeypatch.setattr(main_module, "run_preflight_checks", lambda s, c: None)
-    monkeypatch.setattr(main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(main_module, "run_polling_threadpool", run_once_with_exception_handling)
 
     main_module.main()

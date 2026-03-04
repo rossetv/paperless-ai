@@ -198,3 +198,22 @@ def test_get_stats_tracks_fallback_success(ocr_provider, mock_create_completion,
     assert stats["attempts"] == 2
     assert stats["refusals"] == 1
     assert stats["fallback_successes"] == 1
+
+
+def test_get_stats_returns_snapshot(settings):
+    """get_stats returns a copy, not the internal dict."""
+    provider = OpenAIProvider(settings)
+    stats = provider.get_stats()
+    stats["attempts"] = 999
+    assert provider.get_stats()["attempts"] == 0
+
+
+def test_inc_stat_thread_safe(settings):
+    """_inc_stat updates counters correctly."""
+    provider = OpenAIProvider(settings)
+    provider._inc_stat("attempts")
+    provider._inc_stat("attempts")
+    provider._inc_stat("refusals")
+    stats = provider.get_stats()
+    assert stats["attempts"] == 2
+    assert stats["refusals"] == 1

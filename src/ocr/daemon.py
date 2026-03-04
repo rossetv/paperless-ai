@@ -25,15 +25,10 @@ from typing import Iterable
 
 import structlog
 
-from common.concurrency import init_llm_semaphore
+from common.bootstrap import bootstrap_daemon
 from common.config import Settings
-from common.library_setup import setup_libraries
 from common.daemon_loop import run_polling_threadpool
-from common.logging_config import configure_logging
 from common.paperless import PaperlessClient
-from common.preflight import PreflightError, run_preflight_checks
-from common.shutdown import register_signal_handlers
-from common.stale_lock import recover_stale_locks
 from common.tags import extract_tags, remove_stale_queue_tag
 from .provider import OpenAIProvider
 from .worker import DocumentProcessor
@@ -96,21 +91,18 @@ def main() -> None:
     """
     Bootstrap and run the OCR daemon.
 
-    Loads settings, configures logging and LLM libraries, then enters the
-    polling loop that dispatches documents to worker threads.
+    Uses the shared bootstrap sequence, then enters the polling loop
+    that dispatches documents to worker threads.
     """
-    log = structlog.get_logger(__name__)
-
-    try:
-        settings = Settings()
-        configure_logging(settings)
-        setup_libraries(settings)
-        register_signal_handlers()
-        init_llm_semaphore(settings.LLM_MAX_CONCURRENT)
-    except ValueError as e:
-        log.error("Configuration error", error=e)
+    result = bootstrap_daemon(
+        processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
+        pre_tag_id_attr="PRE_TAG_ID",
+    )
+    if result is None:
         return
+    settings, list_client = result
 
+    log = structlog.get_logger(__name__)
     log.info(
         "Starting daemon",
         pre_tag_id=settings.PRE_TAG_ID,
@@ -125,19 +117,6 @@ def main() -> None:
         ocr_processing_tag_id=settings.OCR_PROCESSING_TAG_ID,
     )
 
-    list_client = PaperlessClient(settings)
-    try:
-        run_preflight_checks(settings, list_client)
-    except PreflightError as e:
-        log.error("Preflight check failed", error=str(e))
-        list_client.close()
-        return
-
-    recover_stale_locks(
-        list_client,
-        processing_tag_id=settings.OCR_PROCESSING_TAG_ID,
-        pre_tag_id=settings.PRE_TAG_ID,
-    )
     try:
         run_polling_threadpool(
             daemon_name="ocr",

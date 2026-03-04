@@ -418,6 +418,44 @@ def test_get_bool_env_invalid_value_raises_value_error(mocker):
         Settings()
 
 
+def test_ocr_processing_tag_id_zero_becomes_none(mocker):
+    """
+    Test that OCR_PROCESSING_TAG_ID is set to None when given a zero value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "OCR_PROCESSING_TAG_ID": "0",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.OCR_PROCESSING_TAG_ID is None
+
+
+def test_error_tag_id_zero_becomes_none(mocker):
+    """
+    Test that ERROR_TAG_ID is set to None when given a zero value.
+    """
+    mocker.patch.dict(
+        os.environ,
+        {
+            "PAPERLESS_TOKEN": "test_token",
+            "OPENAI_API_KEY": "test_api_key",
+            "ERROR_TAG_ID": "0",
+        },
+        clear=True,
+    )
+
+    settings = Settings()
+
+    assert settings.ERROR_TAG_ID is None
+
+
 def test_setup_libraries_restores_proxies(mocker):
     """
     Test that proxy environment variables are restored after setup.

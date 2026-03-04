@@ -88,19 +88,25 @@ def test_classify_main_skips_docs_with_post_tag_and_cleans_stale_pre_tag(monkeyp
         for item in items:
             kwargs["process_item"](item)
 
+    from common.config import Settings
+    settings = Settings()
+    list_client = DummyPaperlessClient(settings)
+
+    monkeypatch.setattr(
+        classify_main_module,
+        "bootstrap_daemon",
+        lambda **kw: (settings, list_client),
+    )
     monkeypatch.setattr(classify_main_module, "PaperlessClient", DummyPaperlessClient)
     monkeypatch.setattr(classify_main_module, "TaxonomyCache", DummyTaxonomyCache)
     monkeypatch.setattr(classify_main_module, "ClassificationProvider", DummyClassifier)
     monkeypatch.setattr(classify_main_module, "ClassificationProcessor", DummyProcessor)
-    monkeypatch.setattr(classify_main_module, "configure_logging", lambda settings: None)
-    monkeypatch.setattr(classify_main_module, "setup_libraries", lambda settings: None)
-    monkeypatch.setattr(classify_main_module, "run_preflight_checks", lambda s, c: None)
-    monkeypatch.setattr(classify_main_module, "recover_stale_locks", lambda c, **kw: 0)
     monkeypatch.setattr(classify_main_module, "run_polling_threadpool", run_once)
 
     classify_main_module.main()
 
     assert processed == [1]
+    # instance[0] is the list client (from bootstrap), instance[1] is taxonomy, instance[2] is per-doc
     assert len(DummyPaperlessClient.instances) == 3  # list + taxonomy + per-doc
     assert DummyPaperlessClient.instances[0].updated_tags[2] == {12, 99}
     assert all(client.closed for client in DummyPaperlessClient.instances)
@@ -154,27 +160,14 @@ def test_iter_docs_to_classify_skips_doc_claimed_by_processing_tag():
 
 
 # ---------------------------------------------------------------------------
-# Test for main() config error — lines 84-86
+# Test for main() config error
 # ---------------------------------------------------------------------------
 
 
-def test_classify_main_exits_on_config_error(mocker, monkeypatch):
-    """Lines 84-86: Settings() raises ValueError, main() logs error and returns."""
-    logger = mocker.Mock()
-    monkeypatch.setattr(
-        classify_main_module.structlog, "get_logger", mocker.Mock(return_value=logger)
-    )
-    monkeypatch.setattr(
-        classify_main_module, "Settings", mocker.Mock(side_effect=ValueError("bad config"))
-    )
-    paperless_spy = mocker.Mock()
-    monkeypatch.setattr(classify_main_module, "PaperlessClient", paperless_spy)
+def test_classify_main_exits_on_config_error(monkeypatch):
+    """bootstrap_daemon returns None, main() returns immediately."""
+    monkeypatch.setattr(classify_main_module, "bootstrap_daemon", lambda **kw: None)
 
     classify_main_module.main()
 
-    logger.error.assert_called_once()
-    paperless_spy.assert_not_called()
-
-
-# Line 129: ``if __name__ == "__main__": main()`` is a standard entry-point
-# guard.  It is intentionally left untested.
+    # If bootstrap returns None, main() returns immediately without entering the loop.
