@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+from .constants import REFUSAL_PHRASES
 
 # Default URLs used when environment variables are not set.
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
@@ -90,13 +91,7 @@ class Settings:
         self.AI_MODELS = self._get_csv_env(
             "AI_MODELS", default_ai_models, require_non_empty=True
         )
-        default_ocr_refusal_markers = [
-            "i can't assist",
-            "i cannot assist",
-            "i can't help with transcrib",
-            "i cannot help with transcrib",
-            self.REFUSAL_MARK,
-        ]
+        default_ocr_refusal_markers = list(REFUSAL_PHRASES) + [self.REFUSAL_MARK]
         self.OCR_REFUSAL_MARKERS = [
             marker.lower()
             for marker in self._get_csv_env(

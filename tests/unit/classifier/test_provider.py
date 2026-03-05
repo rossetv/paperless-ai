@@ -576,19 +576,27 @@ class TestCreateWithCompatRetryExhaustion:
 class TestStatsTracking:
     """get_stats returns accurate counters."""
 
-    def test_stats_reset_on_each_call(self):
-        # Arrange
+    def test_stats_accumulate_across_calls(self):
         provider = _make_provider(AI_MODELS=["model-a"])
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
-        # Act — two successive classify_text calls
         provider.classify_text("text", [], [], [])
         provider.classify_text("text", [], [], [])
 
-        # Assert — stats reflect only the second call
         stats = provider.get_stats()
-        assert stats["attempts"] == 1
+        assert stats["attempts"] == 2
+
+    def test_reset_stats_clears_counters(self):
+        provider = _make_provider(AI_MODELS=["model-a"])
+        response = _make_response(_valid_json())
+        provider._create_completion = MagicMock(return_value=response)
+
+        provider.classify_text("text", [], [], [])
+        provider.reset_stats()
+
+        stats = provider.get_stats()
+        assert stats["attempts"] == 0
 
     def test_stats_empty_before_any_call(self):
         # Arrange

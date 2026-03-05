@@ -9,14 +9,7 @@ from PIL import Image
 
 from ocr.worker import DocumentProcessor
 from ocr.text_assembly import OCR_ERROR_MARKER
-from tests.helpers.factories import make_document, make_settings_obj
-
-def _make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
-    """Create a small PNG image as raw bytes."""
-    img = Image.new("RGB", (width, height), color=color)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+from tests.helpers.factories import make_document, make_png_bytes, make_settings_obj
 
 
 def _make_settings(**overrides):
@@ -106,7 +99,7 @@ class TestOcrHappyPath:
         6. Verify processing tag released
         """
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443], title="Test PDF")
         client, state = _make_stateful_client(doc)
@@ -202,7 +195,7 @@ class TestOcrErrorPath:
         3. Processing tag is released
         """
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)
@@ -232,7 +225,7 @@ class TestOcrErrorPath:
     def test_refusal_mark_triggers_error(self):
         """When provider returns refusal mark, document gets error tag."""
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)
@@ -317,7 +310,7 @@ class TestOcrLockContention:
     def test_no_processing_tag_configured_always_proceeds(self):
         """When OCR_PROCESSING_TAG_ID is None, claim always succeeds."""
         settings = _make_settings(OCR_PROCESSING_TAG_ID=None)
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)

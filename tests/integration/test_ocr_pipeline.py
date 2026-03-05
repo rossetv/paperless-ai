@@ -10,13 +10,7 @@ from PIL import Image
 from ocr.image_converter import bytes_to_images
 from ocr.text_assembly import assemble_full_text, OCR_ERROR_MARKER
 from classifier.content_prep import truncate_content_by_pages
-
-def _make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
-    """Create a small PNG image as raw bytes."""
-    img = Image.new("RGB", (width, height), color=color)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+from tests.helpers.factories import make_png_bytes
 
 
 def _make_tiff_bytes(num_frames: int = 3, width: int = 10, height: int = 10) -> bytes:
@@ -31,7 +25,7 @@ class TestFullOcrPipeline:
 
     def test_single_page_png_through_pipeline(self):
         """Convert a real PNG, mock-transcribe it, assemble the text."""
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
         images = bytes_to_images(png_bytes, "image/png")
 
         assert len(images) == 1
@@ -152,7 +146,7 @@ class TestErrorPropagation:
 
     def test_truncated_png_raises_error(self):
         """A truncated PNG file cannot be opened."""
-        valid_png = _make_png_bytes()
+        valid_png = make_png_bytes()
         truncated = valid_png[:20]  # cut off most of the file
         with pytest.raises((RuntimeError, Exception)):
             bytes_to_images(truncated, "image/png")

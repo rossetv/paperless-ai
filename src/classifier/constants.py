@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from common.constants import REFUSAL_PHRASES
+
 # Matches OCR output headers like ``--- Page 3 ---`` or
 # ``--- Page 3 (gpt-5-mini) ---``.
 PAGE_HEADER_RE: re.Pattern[str] = re.compile(
@@ -42,12 +44,5 @@ BLACKLISTED_TAGS: frozenset[str] = frozenset({
     "new",
 })
 
-# Phrases in OCR content that indicate a model refusal or policy block.
-# Checked case-insensitively via substring match.
-ERROR_PHRASES: tuple[str, ...] = (
-    "i'm sorry, i can't assist with that.",
-    "i can't assist with that",
-    "chatgpt refused to transcribe",
-    "i can't help with transcrib",
-    "i cannot help with transcrib",
-)
+# Re-export shared refusal phrases for backward compatibility.
+ERROR_PHRASES: tuple[str, ...] = REFUSAL_PHRASES

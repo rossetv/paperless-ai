@@ -41,6 +41,9 @@ class OcrProvider(OpenAIChatMixin):
         self.settings = settings
         self._stats = ThreadSafeStats(self._STAT_KEYS)
 
+    def reset_stats(self) -> None:
+        self._stats.reset(self._STAT_KEYS)
+
     def get_stats(self) -> dict[str, int]:
         return self._stats.snapshot()
 
@@ -61,8 +64,6 @@ class OcrProvider(OpenAIChatMixin):
             log_ctx["doc_id"] = doc_id
         if page_num is not None:
             log_ctx["page_num"] = page_num
-
-        self._stats.reset(self._STAT_KEYS)
 
         if is_blank(image):
             return "", ""

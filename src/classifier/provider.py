@@ -31,6 +31,9 @@ class ClassificationProvider(OpenAIChatMixin):
         self.settings = settings
         self._stats = ThreadSafeStats(self._STAT_KEYS)
 
+    def reset_stats(self) -> None:
+        self._stats.reset(self._STAT_KEYS)
+
     def get_stats(self) -> dict[str, int]:
         return self._stats.snapshot()
 
@@ -127,7 +130,6 @@ class ClassificationProvider(OpenAIChatMixin):
         if not text.strip():
             log.warning("Document content is empty; skipping classification.")
             return None, ""
-        self._stats.reset(self._STAT_KEYS)
 
         user_content = self._build_user_message(
             text, correspondents, document_types, tags, truncation_note

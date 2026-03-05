@@ -77,6 +77,7 @@ class DocumentProcessor:
             if not claimed:
                 return
 
+            self.ocr_provider.reset_stats()
             content, content_type = self.paperless_client.download_content(self.doc_id)
             try:
                 images = bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
