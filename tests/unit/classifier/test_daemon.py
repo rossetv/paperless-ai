@@ -172,7 +172,7 @@ class TestIterDocsSkipsAlreadyClassified:
         # Assert
         assert result == []
 
-    @patch("common.tags.remove_stale_queue_tag")
+    @patch("common.document_iter.remove_stale_queue_tag")
     def test_removes_stale_pre_tag(self, mock_remove):
         # Arrange
         client = make_mock_paperless()

@@ -210,12 +210,16 @@ class DocumentProcessor:
             return results, failed_pages
 
     # ------------------------------------------------------------------
-    # Text assembly
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
     # Paperless update
     # ------------------------------------------------------------------
+
+    def _has_ocr_errors(self, text: str) -> bool:
+        """Return True if the OCR output contains error/refusal/redacted markers."""
+        return (
+            OCR_ERROR_MARKER in text
+            or self.settings.REFUSAL_MARK in text
+            or contains_redacted_marker(text)
+        )
 
     def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:
         """
@@ -224,8 +228,9 @@ class DocumentProcessor:
         Detects error conditions (empty text, refusal markers, OCR errors)
         and routes to :meth:`_finalize_with_error` instead of the happy path.
         """
-        if not full_text.strip():
-            log.warning("OCR produced no text; marking error", doc_id=self.doc_id)
+        if not full_text.strip() or self._has_ocr_errors(full_text):
+            reason = "no text" if not full_text.strip() else "error/refusal/redacted markers"
+            log.warning(f"OCR produced {reason}; marking error", doc_id=self.doc_id)
             self._finalize_with_error(
                 get_latest_tags(
                     self.paperless_client, self.doc_id, fallback_doc=self.doc
@@ -234,24 +239,6 @@ class DocumentProcessor:
             )
             return
 
-        if (
-            OCR_ERROR_MARKER in full_text
-            or self.settings.REFUSAL_MARK in full_text
-            or contains_redacted_marker(full_text)
-        ):
-            log.warning(
-                "OCR produced error/refusal/redacted markers; marking error",
-                doc_id=self.doc_id,
-            )
-            self._finalize_with_error(
-                get_latest_tags(
-                    self.paperless_client, self.doc_id, fallback_doc=self.doc
-                ),
-                content=full_text,
-            )
-            return
-
-        # Happy path: swap the pre-tag for the post-tag
         current_tags = get_latest_tags(
             self.paperless_client, self.doc_id, fallback_doc=self.doc
         )
