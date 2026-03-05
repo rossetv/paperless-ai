@@ -108,6 +108,14 @@ class ClassificationProcessor:
                 self._requeue_for_ocr(current_tags)
                 return
 
+            if needs_error_tag(content):
+                log.warning(
+                    "OCR content contains refusal markers; marking error",
+                    doc_id=self.doc_id,
+                )
+                self._finalize_with_error(current_tags)
+                return
+
             input_text, truncation_notes = self._truncate_content(content)
 
             result, model = self.classifier.classify_text(
@@ -258,14 +266,6 @@ class ClassificationProcessor:
         model: str,
     ) -> None:
         """Apply the classifier's output to Paperless metadata and tags."""
-        if needs_error_tag(content):
-            log.warning(
-                "OCR content contains refusal markers; marking error",
-                doc_id=self.doc_id,
-            )
-            self._finalize_with_error(current_tags)
-            return
-
         parsed_date = parse_document_date(result.document_date)
         date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))
 
@@ -297,7 +297,7 @@ class ClassificationProcessor:
             correspondent_id=correspondent_id,
             document_type_id=document_type_id,
             document_date=parsed_date,
-            tags=list(current_tags),
+            tags=current_tags,
             language=language,
             custom_fields=custom_fields,
         )

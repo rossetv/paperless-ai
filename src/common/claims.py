@@ -49,7 +49,7 @@ def claim_processing_tag(
     updated_tags = set(current_tags)
     updated_tags.add(tag_id)
     try:
-        paperless_client.update_document_metadata(doc_id, tags=list(updated_tags))
+        paperless_client.update_document_metadata(doc_id, tags=updated_tags)
     except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to claim processing tag",

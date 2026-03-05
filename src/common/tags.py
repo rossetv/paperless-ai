@@ -63,7 +63,7 @@ def remove_stale_queue_tag(
     if processing_tag_id:
         updated.discard(processing_tag_id)
     try:
-        client.update_document_metadata(doc_id, tags=list(updated))
+        client.update_document_metadata(doc_id, tags=updated)
     except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to remove stale queue tag",
@@ -103,7 +103,7 @@ def release_processing_tag(
         return
     tags.discard(tag_id)
     try:
-        client.update_document_metadata(doc_id, tags=list(tags))
+        client.update_document_metadata(doc_id, tags=tags)
     except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to release processing tag",
@@ -130,9 +130,9 @@ def finalize_document_with_error(
         updated.add(settings.ERROR_TAG_ID)
 
     if content is not None:
-        client.update_document(doc_id, content, list(updated))
+        client.update_document(doc_id, content, updated)
     else:
-        client.update_document_metadata(doc_id, tags=list(updated))
+        client.update_document_metadata(doc_id, tags=updated)
 
     if settings.ERROR_TAG_ID:
         log.warning(

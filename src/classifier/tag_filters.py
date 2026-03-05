@@ -11,6 +11,7 @@ from .constants import (
     BLACKLISTED_TAGS,
     MODEL_FOOTER_RE,
 )
+from .metadata import parse_iso_date_prefix
 from .normalizers import normalize_name, normalize_simple
 
 log = structlog.get_logger(__name__)
@@ -165,10 +166,5 @@ def enrich_tags(
 
 def _extract_year(value: str) -> str | None:
     """Extract a YYYY year string from an ISO-8601 date (or prefix)."""
-    if not value:
-        return None
-    value = value.strip()
-    try:
-        return dt.date.fromisoformat(value.split("T")[0]).strftime("%Y")
-    except ValueError:
-        return None
+    parsed = parse_iso_date_prefix(value)
+    return parsed.strftime("%Y") if parsed is not None else None

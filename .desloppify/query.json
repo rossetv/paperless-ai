@@ -1,524 +1,11 @@
 {
-  "command": "review",
-  "action": "import",
-  "mode": "holistic",
-  "diff": {
-    "new": 0,
-    "auto_resolved": 0,
-    "reopened": 0,
-    "total_current": 2,
-    "suspect_detectors": [
-      "facade",
-      "global_mutable_config",
-      "orphaned",
-      "security",
-      "smells",
-      "stale_wontfix",
-      "structural",
-      "test_coverage"
-    ],
-    "chronic_reopeners": [
-      {
-        "id": "facade::src/classifier/__init__.py",
-        "detector": "facade",
-        "file": "src/classifier/__init__.py",
-        "tier": 2,
-        "confidence": "high",
-        "summary": "Re-export facade (16 LOC): imports from __future__, provider, result, +2 (0 importers)",
-        "detail": {
-          "loc": 16,
-          "importers": 0,
-          "imports_from": [
-            "__future__",
-            "provider",
-            "result",
-            "taxonomy",
-            "worker"
-          ],
-          "kind": "file"
-        },
-        "status": "open",
-        "note": "Reopened (\u00d73) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-04T23:45:23+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 3,
-        "lang": "python",
-        "zone": "production",
-        "suppressed": true,
-        "suppressed_at": "2026-03-05T03:50:48+00:00",
-        "suppression_pattern": "facade::src/classifier/__init__.py",
-        "wontfix_scan_count": 10,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:29:19+00:00",
-          "scan_count": 10,
-          "tier": 2,
-          "confidence": "high",
-          "detail": {
-            "loc": 33,
-            "importers": 0,
-            "imports_from": [
-              "__future__",
-              "provider",
-              "result",
-              "taxonomy",
-              "worker"
-            ],
-            "kind": "file"
-          }
-        }
-      },
-      {
-        "id": "facade::src/ocr/__init__.py",
-        "detector": "facade",
-        "file": "src/ocr/__init__.py",
-        "tier": 2,
-        "confidence": "high",
-        "summary": "Re-export facade (16 LOC): imports from __future__, image_converter, provider, +2 (0 importers)",
-        "detail": {
-          "loc": 16,
-          "importers": 0,
-          "imports_from": [
-            "__future__",
-            "image_converter",
-            "provider",
-            "text_assembly",
-            "worker"
-          ],
-          "kind": "file"
-        },
-        "status": "open",
-        "note": "Reopened (\u00d73) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-04T23:45:23+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 3,
-        "lang": "python",
-        "zone": "production",
-        "suppressed": true,
-        "suppressed_at": "2026-03-05T03:50:48+00:00",
-        "suppression_pattern": "facade::src/ocr/__init__.py",
-        "wontfix_scan_count": 10,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:29:35+00:00",
-          "scan_count": 10,
-          "tier": 2,
-          "confidence": "high",
-          "detail": {
-            "loc": 28,
-            "importers": 0,
-            "imports_from": [
-              "__future__",
-              "image_converter",
-              "provider",
-              "text_assembly",
-              "worker"
-            ],
-            "kind": "file"
-          }
-        }
-      },
-      {
-        "id": "test_coverage::src/classifier/daemon.py::untested_module",
-        "detector": "test_coverage",
-        "file": "src/classifier/daemon.py",
-        "tier": 3,
-        "confidence": "high",
-        "summary": "Untested module (92 LOC, 0 importers)",
-        "detail": {
-          "kind": "untested_module",
-          "loc": 92,
-          "importer_count": 0,
-          "loc_weight": 9.591663046625438
-        },
-        "status": "open",
-        "note": "Suppressed by ignore pattern \u2014 remains unresolved for score integrity",
-        "first_seen": "2026-03-04T23:45:24+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 3,
-        "lang": "python",
-        "zone": "production",
-        "suppressed": true,
-        "suppressed_at": "2026-03-05T03:50:48+00:00",
-        "suppression_pattern": "test_coverage::src/classifier/daemon.py::untested_module",
-        "wontfix_scan_count": 10,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:30:36+00:00",
-          "scan_count": 10,
-          "tier": 3,
-          "confidence": "high",
-          "detail": {
-            "kind": "untested_module",
-            "loc": 102,
-            "importer_count": 0,
-            "loc_weight": 10.099504938362077
-          }
-        },
-        "resolution_attestation": {
-          "kind": "scan_verified",
-          "text": "Disappeared from detector output",
-          "attested_at": "2026-03-05T03:36:21+00:00",
-          "scan_verified": true
-        }
-      },
-      {
-        "id": "test_coverage::src/ocr/worker.py::transitive_only",
-        "detector": "test_coverage",
-        "file": "src/ocr/worker.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "No direct tests (227 LOC, 2 importers) \u2014 covered only via imports from tested modules",
-        "detail": {
-          "kind": "transitive_only",
-          "loc": 227,
-          "importer_count": 2,
-          "loc_weight": 15.066519173319364
-        },
-        "status": "open",
-        "note": "Reopened (\u00d75) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-04T23:48:03+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 5,
-        "lang": "python",
-        "zone": "production",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null
-      },
-      {
-        "id": "test_coverage::src/ocr/provider.py::transitive_only",
-        "detector": "test_coverage",
-        "file": "src/ocr/provider.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "No direct tests (129 LOC, 3 importers) \u2014 covered only via imports from tested modules",
-        "detail": {
-          "kind": "transitive_only",
-          "loc": 129,
-          "importer_count": 3,
-          "loc_weight": 11.357816691600547
-        },
-        "status": "open",
-        "note": "Suppressed by ignore pattern \u2014 remains unresolved for score integrity",
-        "first_seen": "2026-03-05T00:11:29+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 4,
-        "lang": "python",
-        "zone": "production",
-        "suppressed": true,
-        "suppressed_at": "2026-03-05T03:50:48+00:00",
-        "suppression_pattern": "test_coverage::src/ocr/provider.py",
-        "wontfix_scan_count": 14,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:39:46+00:00",
-          "scan_count": 14,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "kind": "transitive_only",
-            "loc": 203,
-            "importer_count": 3,
-            "loc_weight": 14.247806848775006
-          }
-        },
-        "resolution_attestation": {
-          "kind": "scan_verified",
-          "text": "Disappeared from detector output",
-          "attested_at": "2026-03-05T03:36:21+00:00",
-          "scan_verified": true
-        }
-      },
-      {
-        "id": "stale_wontfix::src/ocr/worker.py::smells::src/ocr/worker.py::swallowed_error",
-        "detector": "stale_wontfix",
-        "file": "src/ocr/worker.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_error` (last reviewed 42 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "smells::src/ocr/worker.py::swallowed_error",
-          "original_detector": "smells",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 42,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d74) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T01:42:33+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 4,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 28,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T02:33:54+00:00",
-          "scan_count": 28,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "smells::src/ocr/worker.py::swallowed_error",
-            "original_detector": "smells",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 25,
-            "drift": {}
-          }
-        }
-      },
-      {
-        "id": "stale_wontfix::src/common/preflight.py::test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
-        "detector": "stale_wontfix",
-        "file": "src/common/preflight.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `test_coverage::src/common/preflight.py::over_mocked::test_preflight.py` (last reviewed 38 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
-          "original_detector": "test_coverage",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 38,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d72) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T02:14:46+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 2,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 38,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T03:27:43+00:00",
-          "scan_count": 38,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
-            "original_detector": "test_coverage",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 30,
-            "drift": {}
-          }
-        }
-      },
-      {
-        "id": "stale_wontfix::src/common/bootstrap.py::test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
-        "detector": "stale_wontfix",
-        "file": "src/common/bootstrap.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py` (last reviewed 38 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
-          "original_detector": "test_coverage",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 38,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d72) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T02:14:46+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 2,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 38,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T03:27:43+00:00",
-          "scan_count": 38,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
-            "original_detector": "test_coverage",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 30,
-            "drift": {}
-          }
-        }
-      },
-      {
-        "id": "stale_wontfix::src/common/config.py::smells::src/common/config.py::hardcoded_url",
-        "detector": "stale_wontfix",
-        "file": "src/common/config.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/common/config.py::hardcoded_url` (last reviewed 39 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "smells::src/common/config.py::hardcoded_url",
-          "original_detector": "smells",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 39,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d72) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T02:14:46+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 2,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 38,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T03:27:33+00:00",
-          "scan_count": 38,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "smells::src/common/config.py::hardcoded_url",
-            "original_detector": "smells",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 31,
-            "drift": {}
-          }
-        }
-      },
-      {
-        "id": "stale_wontfix::src/common/paperless.py::smells::src/common/paperless.py::optional_param_sprawl",
-        "detector": "stale_wontfix",
-        "file": "src/common/paperless.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/common/paperless.py::optional_param_sprawl` (last reviewed 39 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "smells::src/common/paperless.py::optional_param_sprawl",
-          "original_detector": "smells",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 39,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d72) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T02:14:46+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 2,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 38,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T03:27:33+00:00",
-          "scan_count": 38,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "smells::src/common/paperless.py::optional_param_sprawl",
-            "original_detector": "smells",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 31,
-            "drift": {}
-          }
-        }
-      },
-      {
-        "id": "stale_wontfix::src/common/daemon_loop.py::smells::src/common/daemon_loop.py::broad_except",
-        "detector": "stale_wontfix",
-        "file": "src/common/daemon_loop.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/common/daemon_loop.py::broad_except` (last reviewed 39 scans ago)",
-        "detail": {
-          "subtype": "stale_wontfix",
-          "original_finding_id": "smells::src/common/daemon_loop.py::broad_except",
-          "original_detector": "smells",
-          "reasons": [
-            "scan_decay"
-          ],
-          "scans_since_wontfix": 39,
-          "drift": {}
-        },
-        "status": "open",
-        "note": "Reopened (\u00d72) \u2014 reappeared in scan (was auto_resolved)",
-        "first_seen": "2026-03-05T02:14:46+00:00",
-        "last_seen": "2026-03-05T03:50:48+00:00",
-        "resolved_at": null,
-        "reopen_count": 2,
-        "lang": "python",
-        "suppressed": false,
-        "suppressed_at": null,
-        "suppression_pattern": null,
-        "wontfix_scan_count": 38,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T03:27:33+00:00",
-          "scan_count": 38,
-          "tier": 3,
-          "confidence": "medium",
-          "detail": {
-            "subtype": "stale_wontfix",
-            "original_finding_id": "smells::src/common/daemon_loop.py::broad_except",
-            "original_detector": "smells",
-            "reasons": [
-              "scan_decay"
-            ],
-            "scans_since_wontfix": 31,
-            "drift": {}
-          }
-        }
-      }
-    ],
-    "skipped_other_lang": 0,
-    "skipped_out_of_scope": 0,
-    "ignored": 0,
-    "ignore_patterns": 0,
-    "raw_findings": 2,
-    "suppressed_pct": 0.0
-  },
-  "next_command": "desloppify scan",
-  "subjective_at_target": [],
-  "assessment_import": {
-    "mode": "manual_override",
-    "trusted": false,
-    "reason": "manual override attested by operator"
-  },
+  "command": "issues",
+  "action": "list",
+  "items": [],
+  "next_command": "desloppify review --prepare",
   "narrative": {
-    "phase": "maintenance",
-    "headline": "\u26a0 1002 security findings \u2014 review before other cleanup. All T1 items cleared!",
+    "phase": "refinement",
+    "headline": "\u26a0 930 security findings \u2014 review before other cleanup. All T1 items cleared!",
     "dimensions": {
       "lowest_dimensions": [
         {
@@ -528,16 +15,16 @@
           "impact": 0.0
         },
         {
-          "name": "Test strategy",
-          "strict": 92.0,
+          "name": "AI generated debt",
+          "strict": 85.0,
           "issues": 0,
           "impact": 0.0,
           "subjective": true,
           "impact_description": "re-review to improve"
         },
         {
-          "name": "Error consistency",
-          "strict": 96.0,
+          "name": "Mid elegance",
+          "strict": 86.0,
           "issues": 0,
           "impact": 0.0,
           "subjective": true,
@@ -555,27 +42,27 @@
         {
           "name": "File health",
           "lenient": 100.0,
-          "strict": 96.1,
-          "gap": 3.9,
+          "strict": 96.2,
+          "gap": 3.8,
           "wontfix_count": 2
         },
         {
           "name": "Code quality",
-          "lenient": 98.7,
-          "strict": 96.6,
+          "lenient": 99.0,
+          "strict": 96.9,
           "gap": 2.1,
-          "wontfix_count": 9
+          "wontfix_count": 8
         }
       ],
       "stagnant_dimensions": [
         {
           "name": "File health",
-          "strict": 96.1,
+          "strict": 96.2,
           "stuck_scans": 5
         },
         {
           "name": "Code quality",
-          "strict": 96.6,
+          "strict": 96.9,
           "stuck_scans": 5
         },
         {
@@ -586,6 +73,11 @@
         {
           "name": "Security",
           "strict": 99.6,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Dep health",
+          "strict": 90.0,
           "stuck_scans": 5
         }
       ]
@@ -648,42 +140,31 @@
       },
       {
         "type": "manual_fix",
-        "detector": "global_mutable_config",
-        "count": 1,
-        "description": "1 global_mutable_config findings \u2014 refactor module-level mutable state \u2014 use explicit init functions or dependency injection",
-        "command": "desloppify show global_mutable_config --status open",
+        "detector": "stale_wontfix",
+        "count": 11,
+        "description": "11 stale_wontfix findings \u2014 re-evaluate old wontfix decisions \u2014 fix, document, or escalate",
+        "command": "desloppify show stale_wontfix --status open",
         "impact": 0.0,
-        "dimension": "Code quality",
+        "dimension": "Unknown",
         "priority": 6,
         "lane": "refactor_1"
       },
       {
         "type": "manual_fix",
-        "detector": "stale_wontfix",
-        "count": 13,
-        "description": "13 stale_wontfix findings \u2014 re-evaluate old wontfix decisions \u2014 fix, document, or escalate",
-        "command": "desloppify show stale_wontfix --status open",
-        "impact": 0.0,
-        "dimension": "Unknown",
-        "priority": 7,
-        "lane": "refactor_2"
-      },
-      {
-        "type": "manual_fix",
         "detector": "security",
-        "count": 1002,
-        "description": "1002 security findings \u2014 review and fix security findings \u2014 prioritize by severity",
+        "count": 930,
+        "description": "930 security findings \u2014 review and fix security findings \u2014 prioritize by severity",
         "command": "desloppify show security --status open",
         "impact": 0.0,
         "dimension": "Security",
-        "priority": 8,
+        "priority": 7,
         "lane": "refactor_0"
       }
     ],
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 0,
-        "total_count": 1040,
+        "total_count": 965,
         "coverage": 0.0,
         "impact_ratio": 0.0,
         "recommendation": "none"
@@ -703,7 +184,7 @@
           "actions": [
             3,
             5,
-            8
+            7
           ],
           "file_count": 37,
           "total_impact": 0.0,
@@ -714,16 +195,7 @@
           "actions": [
             6
           ],
-          "file_count": 1,
-          "total_impact": 0.0,
-          "automation": "manual",
-          "run_first": false
-        },
-        "refactor_2": {
-          "actions": [
-            7
-          ],
-          "file_count": 11,
+          "file_count": 9,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
@@ -739,10 +211,23 @@
         }
       },
       "can_parallelize": true,
-      "hint": "5 independent workstreams, safe to parallelize. Rescan after each phase to verify."
+      "hint": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify."
     },
     "tools": {
-      "fixers": [],
+      "fixers": [
+        {
+          "name": "dead-useeffect",
+          "detector": "smells",
+          "open_count": 2,
+          "command": "desloppify fix dead-useeffect --dry-run"
+        },
+        {
+          "name": "empty-if-chain",
+          "detector": "smells",
+          "open_count": 2,
+          "command": "desloppify fix empty-if-chain --dry-run"
+        }
+      ],
       "move": {
         "available": true,
         "relevant": true,
@@ -762,7 +247,7 @@
     },
     "debt": {
       "overall_gap": 0.6,
-      "wontfix_count": 15,
+      "wontfix_count": 29,
       "worst_dimension": "Test health",
       "worst_gap": 5.0,
       "trend": "stable"
@@ -772,7 +257,7 @@
       "command": "desloppify show orphaned --status open",
       "description": "1 orphaned findings \u2014 delete dead files or relocate with `desloppify move`"
     },
-    "why_now": "5 independent workstreams, safe to parallelize. Rescan after each phase to verify.",
+    "why_now": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -781,20 +266,20 @@
       {
         "type": "wontfix_gap",
         "severity": "medium",
-        "message": "Strict/lenient gap is 0.6 pts with 15 wontfix findings"
+        "message": "Strict/lenient gap is 0.6 pts with 29 wontfix findings"
       }
     ],
     "strict_target": {
       "target": 95.0,
-      "current": 95.1,
-      "gap": -0.1,
-      "state": "above",
+      "current": 90.5,
+      "gap": 4.5,
+      "state": "below",
       "warning": null
     },
     "reminders": [],
     "reminder_history": {
       "zone_classification": 3,
-      "report_scores": 31,
+      "report_scores": 45,
       "feedback_nudge": 3,
       "stagnant_nudge": 15,
       "review_findings_pending": 3,
@@ -810,7 +295,9 @@
     "holistic_max_age_days": 30,
     "generate_scorecard": true,
     "badge_path": "scorecard.png",
-    "exclude": [],
+    "exclude": [
+      ".github,.claude,.desloppify"
+    ],
     "ignore": [
       "facade::src/classifier/__init__.py",
       "facade::src/ocr/__init__.py",

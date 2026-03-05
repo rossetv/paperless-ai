@@ -199,7 +199,7 @@ class OcrProcessor:
         current_tags.add(self.settings.POST_TAG_ID)
 
         self.paperless_client.update_document(
-            self.doc_id, full_text, list(current_tags)
+            self.doc_id, full_text, current_tags
         )
         log.info(
             "Updated document tags",

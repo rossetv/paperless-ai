@@ -32,11 +32,9 @@ class _OpenAIClientHolder:
         self._client = client
 
     def is_ready(self) -> bool:
-        """Return ``True`` if a client has been stored."""
         return self._client is not None
 
     def get(self) -> openai.OpenAI:
-        """Return the stored client, raising if not yet initialised."""
         if self._client is None:
             raise RuntimeError("OpenAI client not initialised; call setup_libraries() first")
         return self._client
@@ -50,12 +48,10 @@ def init_openai_client(client: openai.OpenAI) -> None:
 
 
 def get_openai_client() -> openai.OpenAI:
-    """Return the initialised OpenAI client, raising if not yet set up."""
     return _openai_holder.get()
 
 
 def is_openai_client_ready() -> bool:
-    """Return ``True`` if the OpenAI client has been initialised."""
     return _openai_holder.is_ready()
 
 

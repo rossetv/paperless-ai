@@ -146,15 +146,16 @@ class PaperlessClient:
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
-    def update_document(self, doc_id: int, content: str, new_tags: list[int]) -> None:
+    def update_document(self, doc_id: int, content: str, new_tags: Iterable[int]) -> None:
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
+        tags_list = list(new_tags)
         log.info(
             "Updating document",
             doc_id=doc_id,
-            new_tags=new_tags,
+            new_tags=tags_list,
             content_len=len(content),
         )
-        payload = {"content": content, "tags": new_tags}
+        payload = {"content": content, "tags": tags_list}
         response = self._patch(url, json=payload)
         response.raise_for_status()
         log.info("Successfully updated document", doc_id=doc_id)
@@ -180,11 +181,13 @@ class PaperlessClient:
         Accepts any keys defined in :class:`DocumentMetadataUpdate`.
         ``None`` values are silently dropped.
         """
-        payload = {
-            self._METADATA_FIELDS[key]: value
-            for key, value in fields.items()
-            if value is not None and key in self._METADATA_FIELDS
-        }
+        payload = {}
+        for key, value in fields.items():
+            if value is None or key not in self._METADATA_FIELDS:
+                continue
+            if key == "tags":
+                value = list(value)
+            payload[self._METADATA_FIELDS[key]] = value
 
         if not payload:
             log.info("No metadata updates to apply", doc_id=doc_id)
