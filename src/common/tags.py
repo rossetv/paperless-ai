@@ -86,7 +86,7 @@ def release_processing_tag(
     purpose: str,
 ) -> None:
     """Remove a processing-lock tag after processing. Best-effort, never propagates errors."""
-    if not tag_id:
+    if tag_id is None:
         return
     try:
         latest = client.get_document(doc_id)

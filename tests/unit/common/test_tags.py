@@ -197,17 +197,6 @@ class TestReleaseProcessingTag:
         client.get_document.assert_not_called()
         client.update_document_metadata.assert_not_called()
 
-    def test_does_nothing_when_tag_id_is_zero(self):
-        # Arrange
-        client = MagicMock()
-
-        # Act
-        release_processing_tag(client, doc_id=1, tag_id=0, purpose="test")
-
-        # Assert
-        client.get_document.assert_not_called()
-        client.update_document_metadata.assert_not_called()
-
     def test_removes_tag_when_present_in_document(self):
         # Arrange
         client = MagicMock()

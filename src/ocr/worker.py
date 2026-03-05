@@ -65,7 +65,7 @@ class OcrProcessor:
             self.doc = document
             current_tags = extract_tags(document, doc_id=self.doc_id, context="ocr-process")
 
-            if self.settings.ERROR_TAG_ID and self.settings.ERROR_TAG_ID in current_tags:
+            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
                 self._finalize_with_error(current_tags)
                 return

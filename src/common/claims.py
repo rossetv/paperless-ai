@@ -22,7 +22,7 @@ def claim_processing_tag(
     Returns ``True`` on success, ``False`` if already claimed or on error.
     Returns ``True`` immediately when *tag_id* is ``None`` (lock not configured).
     """
-    if not tag_id:
+    if tag_id is None:
         return True
 
     try:

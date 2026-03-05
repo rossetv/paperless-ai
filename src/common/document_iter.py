@@ -60,7 +60,7 @@ def iter_documents_by_pipeline_tag(
             continue
 
         # Already claimed by another worker
-        if processing_tag_id and processing_tag_id in tags:
+        if processing_tag_id is not None and processing_tag_id in tags:
             continue
 
         yield doc

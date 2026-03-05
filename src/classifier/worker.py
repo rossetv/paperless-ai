@@ -86,7 +86,7 @@ class ClassificationProcessor:
             content = document.get("content", "") or ""
             current_tags = extract_tags(document, doc_id=self.doc_id, context="classify-process")
 
-            if self.settings.ERROR_TAG_ID and self.settings.ERROR_TAG_ID in current_tags:
+            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning(
                     "Document has error tag; skipping classification",
                     doc_id=self.doc_id,
@@ -276,7 +276,7 @@ class ClassificationProcessor:
 
         # Merge new tag IDs with cleaned existing tags
         current_tags = clean_pipeline_tags(current_tags, self.settings)
-        if self.settings.CLASSIFY_POST_TAG_ID:
+        if self.settings.CLASSIFY_POST_TAG_ID is not None:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
         current_tags.update(tag_ids)
 

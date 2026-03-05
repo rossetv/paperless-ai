@@ -16,14 +16,25 @@ from .taxonomy import TaxonomyCache
 from .worker import ClassificationProcessor
 
 
+def _process_document(
+    doc: dict, settings: Settings, taxonomy_cache: TaxonomyCache
+) -> None:
+    """Process a single Paperless document with its own HTTP session and provider."""
+    paperless = PaperlessClient(settings)
+    classifier = ClassificationProvider(settings)
+    try:
+        processor = ClassificationProcessor(
+            doc, paperless, classifier, taxonomy_cache, settings,
+        )
+        processor.process()
+    finally:
+        paperless.close()
+
+
 def _iter_docs_to_classify(
     list_client: PaperlessClient, settings: Settings
 ) -> Iterable[dict]:
-    """
-    Yield documents that should be classified.
-
-    Delegates to :func:`~common.document_iter.iter_documents_by_pipeline_tag`.
-    """
+    """Yield documents that should be classified."""
     return iter_documents_by_pipeline_tag(
         list_client,
         pre_tag_id=settings.CLASSIFY_PRE_TAG_ID,
@@ -63,22 +74,11 @@ def main() -> None:
     taxonomy_client = PaperlessClient(settings)
     taxonomy_cache = TaxonomyCache(taxonomy_client, settings.CLASSIFY_TAXONOMY_LIMIT)
 
-    def process_document(doc: dict) -> None:
-        paperless = PaperlessClient(settings)
-        classifier = ClassificationProvider(settings)
-        try:
-            processor = ClassificationProcessor(
-                doc, paperless, classifier, taxonomy_cache, settings,
-            )
-            processor.process()
-        finally:
-            paperless.close()
-
     try:
         run_polling_threadpool(
             daemon_name="classifier",
             fetch_work=lambda: list(_iter_docs_to_classify(list_client, settings)),
-            process_item=process_document,
+            process_item=lambda doc: _process_document(doc, settings, taxonomy_cache),
             before_each_batch=lambda _: taxonomy_cache.refresh(),
             poll_interval_seconds=settings.POLL_INTERVAL,
             max_workers=settings.DOCUMENT_WORKERS,

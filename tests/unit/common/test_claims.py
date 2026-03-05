@@ -23,18 +23,6 @@ class TestClaimProcessingTag:
         assert result is True
         client.get_document.assert_not_called()
 
-    def test_returns_true_immediately_when_tag_id_is_zero(self):
-        # Arrange
-        client = MagicMock()
-
-        # Act
-        result = claim_processing_tag(
-            paperless_client=client, doc_id=1, tag_id=0, purpose="test",
-        )
-
-        # Assert
-        assert result is True
-        client.get_document.assert_not_called()
 
     def test_successful_claim_refresh_check_patch_verify(self):
         # Arrange
