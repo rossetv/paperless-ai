@@ -572,7 +572,7 @@
       "total_files": 85,
       "critical_untested": [
         {
-          "file": "src/classifier/provider.py",
+          "file": "src/ocr/provider.py",
           "importers": 3
         }
       ]
@@ -1518,8 +1518,7 @@
         "facade: Re-export facade (16 LOC): imports from __future__, image_converter, provider, +"
       ],
       "src/classifier/daemon.py": [
-        "test_coverage: Untested module (92 LOC, 0 importers)",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/classifier/daemon.py` (last"
+        "test_coverage: Untested module (92 LOC, 0 importers)"
       ],
       "tests/integration/test_ocr_pipeline.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1840,12 +1839,8 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
-      "src/classifier/provider.py": [
-        "test_coverage: No direct tests (218 LOC, 3 importers) \u2014 covered only via imports from tested mo"
-      ],
       "src/ocr/worker.py": [
-        "test_coverage: No direct tests (229 LOC, 2 importers) \u2014 covered only via imports from tested mo",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_erro"
+        "test_coverage: No direct tests (229 LOC, 2 importers) \u2014 covered only via imports from tested mo"
       ],
       "tests/unit/common/test_claims.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1895,22 +1890,8 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
-      "src/common/preflight.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `test_coverage::src/common/preflight.py::o"
-      ],
-      "src/common/bootstrap.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `test_coverage::src/common/bootstrap.py::o",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/bootstrap.py` (last "
-      ],
-      "src/common/daemon_loop.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/common/daemon_loop.py::broad_",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/daemon_loop.py` (las"
-      ],
-      "src/ocr/daemon.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/ocr/daemon.py` (last review"
-      ],
-      "src/common/claims.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/claims.py` (last rev"
+      "src/ocr/provider.py": [
+        "test_coverage: No direct tests (127 LOC, 3 importers) \u2014 covered only via imports from tested mo"
       ],
       "tests/unit/common/test_bootstrap.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1919,12 +1900,6 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
-      ],
-      "src/classifier/worker.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `structural::src/classifier/worker.py` (la"
-      ],
-      "src/common/document_iter.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `structural::src/common/document_iter.py` "
       ],
       "tests/unit/classifier/test_quality_gates.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -2133,7 +2108,7 @@
         "mid_level_elegance"
       ],
       "files_to_read": [
-        "src/classifier/provider.py"
+        "src/ocr/provider.py"
       ],
       "why": "critical untested paths, API inconsistency"
     },
@@ -2230,6 +2205,7 @@
         "src/common/daemon_loop.py",
         "src/classifier/provider.py",
         "src/common/tags.py",
+        "src/ocr/provider.py",
         "src/common/bootstrap.py",
         "src/common/claims.py",
         "tests/unit/common/test_claims.py",
