@@ -1,9 +1,4 @@
-"""
-End-to-end tests for a complete classification document lifecycle.
-
-Mocks only HTTP (via a fake PaperlessClient) and OpenAI API.
-Everything else (content prep, tag filtering, taxonomy, metadata) is real.
-"""
+"""Tests for end-to-end classifier workflow."""
 
 from __future__ import annotations
 
@@ -16,11 +11,6 @@ from tests.helpers.factories import (
     make_document,
     make_settings_obj,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_settings(**overrides):
     """Create a settings mock suitable for classification e2e tests."""
@@ -152,11 +142,6 @@ def _make_mock_classifier(result=None, model="gpt-5-mini"):
         "fallback_successes": 0,
     }
     return mock
-
-
-# ---------------------------------------------------------------------------
-# Happy path: complete classification workflow
-# ---------------------------------------------------------------------------
 
 class TestClassifierHappyPath:
     """Complete classification lifecycle with realistic data."""
@@ -306,11 +291,6 @@ class TestClassifierHappyPath:
         # custom_fields should be None (no person to set)
         assert kwargs.get("custom_fields") is None
 
-
-# ---------------------------------------------------------------------------
-# Empty content path
-# ---------------------------------------------------------------------------
-
 class TestClassifierEmptyContent:
     """Document has empty or blank content."""
 
@@ -363,11 +343,6 @@ class TestClassifierEmptyContent:
         processor.process()
 
         classifier.classify_text.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Refusal content path
-# ---------------------------------------------------------------------------
 
 class TestClassifierRefusalContent:
     """Document content contains refusal markers."""

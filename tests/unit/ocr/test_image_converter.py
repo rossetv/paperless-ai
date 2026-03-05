@@ -1,17 +1,4 @@
-"""
-Comprehensive unit tests for ocr.image_converter.bytes_to_images.
-
-Tests cover:
-- PNG bytes -> list with one PIL Image
-- TIFF with multiple frames -> multiple images
-- PDF bytes -> delegates to pdf2image.convert_from_bytes (mocked)
-- Invalid bytes -> raises RuntimeError
-- Content type matching: application/pdf, image/png, image/tiff
-- Unknown content type -> attempts Image.open
-- Single-frame image returns list of one copy
-- Multi-frame images are expanded and original closed
-- Custom DPI passed to pdf2image
-"""
+"""Tests for ocr.image_converter."""
 
 from __future__ import annotations
 
@@ -22,11 +9,6 @@ import pytest
 from PIL import Image
 
 from ocr.image_converter import bytes_to_images
-
-
-# -----------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
     """Create valid PNG bytes from a small image."""
@@ -50,11 +32,6 @@ def _make_jpeg_bytes() -> bytes:
     buf = BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
-
-
-# -----------------------------------------------------------------------
-# PNG (single-frame image)
-# -----------------------------------------------------------------------
 
 class TestBytesToImagesPng:
     def test_png_returns_list_of_one_image(self):
@@ -88,11 +65,6 @@ class TestBytesToImagesPng:
         # Assert — result should be a usable image with correct dimensions
         assert result[0].size == (10, 10)
         assert result[0].mode in ("RGB", "RGBA", "L")
-
-
-# -----------------------------------------------------------------------
-# TIFF (multi-frame image)
-# -----------------------------------------------------------------------
 
 class TestBytesToImagesTiff:
     def test_tiff_multi_frame_returns_multiple_images(self):
@@ -129,11 +101,6 @@ class TestBytesToImagesTiff:
 
         # Assert
         assert len(result) == 1
-
-
-# -----------------------------------------------------------------------
-# PDF (mocked pdf2image)
-# -----------------------------------------------------------------------
 
 class TestBytesToImagesPdf:
     @patch("ocr.image_converter.convert_from_bytes")
@@ -184,11 +151,6 @@ class TestBytesToImagesPdf:
         # Assert — still detected as PDF because "pdf" is in the string
         mock_convert.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# Invalid bytes
-# -----------------------------------------------------------------------
-
 class TestBytesToImagesInvalid:
     def test_invalid_bytes_raises_runtime_error(self):
         # Arrange
@@ -205,11 +167,6 @@ class TestBytesToImagesInvalid:
         # Act & Assert
         with pytest.raises(RuntimeError):
             bytes_to_images(empty, "image/png")
-
-
-# -----------------------------------------------------------------------
-# Unknown / generic content types
-# -----------------------------------------------------------------------
 
 class TestBytesToImagesUnknownType:
     def test_unknown_type_attempts_image_open(self):
@@ -233,11 +190,6 @@ class TestBytesToImagesUnknownType:
         # Assert
         assert len(result) == 1
         assert isinstance(result[0], Image.Image)
-
-
-# -----------------------------------------------------------------------
-# Content type matching
-# -----------------------------------------------------------------------
 
 class TestContentTypeMatching:
     @patch("ocr.image_converter.convert_from_bytes")

@@ -1,11 +1,4 @@
-"""
-Tests for classifier.provider — ClassificationProvider
-=======================================================
-
-Covers model fallback, parameter compatibility, JSON parsing errors,
-temperature/response_format/max_tokens stripping, stats tracking, and
-edge cases (empty text, whitespace, content=None, truncation notes).
-"""
+"""Tests for classifier.provider."""
 
 from __future__ import annotations
 
@@ -17,11 +10,6 @@ import openai
 from classifier.provider import ClassificationProvider
 from classifier.result import ClassificationResult
 from tests.helpers.factories import make_settings_obj
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_provider(**settings_overrides) -> ClassificationProvider:
     """Create a ClassificationProvider with a mock Settings object."""
@@ -77,11 +65,6 @@ def _api_error(message: str = "Server error") -> openai.APIError:
         body=None,
     )
 
-
-# ===================================================================
-# classify_text — happy path
-# ===================================================================
-
 class TestClassifyTextHappyPath:
     """Successful classification on the first model."""
 
@@ -115,11 +98,6 @@ class TestClassifyTextHappyPath:
         assert stats["attempts"] == 1
         assert stats["api_errors"] == 0
         assert stats["fallback_successes"] == 0
-
-
-# ===================================================================
-# classify_text — fallback on invalid JSON
-# ===================================================================
 
 class TestClassifyTextInvalidJsonFallback:
     """Fallback to the next model when JSON parsing fails."""
@@ -162,11 +140,6 @@ class TestClassifyTextInvalidJsonFallback:
         assert model == "model-b"
         assert provider.get_stats()["invalid_json"] == 1
 
-
-# ===================================================================
-# classify_text — fallback on API error
-# ===================================================================
-
 class TestClassifyTextApiErrorFallback:
     """Fallback when _create_with_compat returns None (API error)."""
 
@@ -187,11 +160,6 @@ class TestClassifyTextApiErrorFallback:
         stats = provider.get_stats()
         assert stats["api_errors"] == 1
         assert stats["fallback_successes"] == 1
-
-
-# ===================================================================
-# classify_text — all models fail
-# ===================================================================
 
 class TestClassifyTextAllModelsFail:
     """When every model fails, returns (None, "")."""
@@ -221,11 +189,6 @@ class TestClassifyTextAllModelsFail:
         assert result is None
         assert model == ""
         assert provider.get_stats()["invalid_json"] == 2
-
-
-# ===================================================================
-# classify_text — empty / whitespace text
-# ===================================================================
 
 class TestClassifyTextEmptyInput:
     """Empty or whitespace-only text should short-circuit."""
@@ -262,11 +225,6 @@ class TestClassifyTextEmptyInput:
 
         # Assert
         provider._create_completion.assert_not_called()
-
-
-# ===================================================================
-# classify_text — truncation note
-# ===================================================================
 
 class TestClassifyTextTruncationNote:
     """Truncation note is appended to the user message."""
@@ -312,11 +270,6 @@ class TestClassifyTextTruncationNote:
         user_msg = captured_kwargs["messages"][1]["content"]
         assert "NOTE:" not in user_msg
 
-
-# ===================================================================
-# Temperature handling
-# ===================================================================
-
 class TestTemperatureHandling:
     """GPT-5 models skip temperature; others include it."""
 
@@ -357,11 +310,6 @@ class TestTemperatureHandling:
         assert "temperature" in captured_kwargs
         assert captured_kwargs["temperature"] == 0.2
 
-
-# ===================================================================
-# max_tokens handling
-# ===================================================================
-
 class TestMaxTokensHandling:
     """CLASSIFY_MAX_TOKENS > 0 adds max_tokens param."""
 
@@ -400,11 +348,6 @@ class TestMaxTokensHandling:
 
         # Assert
         assert "max_tokens" not in captured_kwargs
-
-
-# ===================================================================
-# _create_with_compat — parameter stripping
-# ===================================================================
 
 class TestCreateWithCompatTemperature:
     """Strips temperature on 400 error mentioning 'temperature unsupported'."""
@@ -630,11 +573,6 @@ class TestCreateWithCompatRetryExhaustion:
         stats = provider.get_stats()
         assert stats["api_errors"] == 1
 
-
-# ===================================================================
-# Stats tracking
-# ===================================================================
-
 class TestStatsTracking:
     """get_stats returns accurate counters."""
 
@@ -661,11 +599,6 @@ class TestStatsTracking:
 
         # Assert
         assert all(v == 0 for v in stats.values())
-
-
-# ===================================================================
-# Response format (provider-specific)
-# ===================================================================
 
 class TestResponseFormat:
     """response_format is only included for openai provider."""
@@ -705,11 +638,6 @@ class TestResponseFormat:
 
         # Assert
         assert "response_format" not in captured_kwargs
-
-
-# ===================================================================
-# Duplicate model deduplication
-# ===================================================================
 
 class TestModelDeduplication:
     """Duplicate models in AI_MODELS are tried only once."""

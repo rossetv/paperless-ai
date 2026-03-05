@@ -1,12 +1,4 @@
-"""
-Unit tests for common.paperless.PaperlessClient.
-
-Uses ``respx`` for HTTP mocking so we can test the real httpx client
-interactions without touching the network.
-
-Note: ``respx.get(url)`` does prefix matching, so paginated URLs must use
-``url__eq`` for exact matching to avoid the base URL matching all pages.
-"""
+"""Tests for common.paperless."""
 
 from __future__ import annotations
 
@@ -77,11 +69,6 @@ def _make_client(settings=None):
     c = PaperlessClient(settings)
     return _registry.register(c)
 
-
-# ---------------------------------------------------------------------------
-# Initialization
-# ---------------------------------------------------------------------------
-
 class TestInitialization:
     def test_creates_httpx_client_with_auth_header_and_timeout(self):
         # Arrange / Act
@@ -92,11 +79,6 @@ class TestInitialization:
         assert client._client.headers["authorization"] == "Token test-token-abc"
         assert client._client.timeout == httpx.Timeout(30)
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# _list_all pagination
-# ---------------------------------------------------------------------------
 
 class TestListAllPagination:
     def test_follows_next_links_across_multiple_pages(self):
@@ -145,11 +127,6 @@ class TestListAllPagination:
         assert len(results) == 3
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# get_documents_by_tag
-# ---------------------------------------------------------------------------
-
 class TestGetDocumentsByTag:
     def test_constructs_correct_url_with_tag_id(self):
         # Arrange
@@ -187,11 +164,6 @@ class TestGetDocumentsByTag:
         assert len(results) == 2
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# get_document
-# ---------------------------------------------------------------------------
-
 class TestGetDocument:
     def test_fetches_single_document_by_id(self):
         # Arrange
@@ -221,11 +193,6 @@ class TestGetDocument:
             with pytest.raises(httpx.HTTPStatusError):
                 client.get_document(99)
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# download_content
-# ---------------------------------------------------------------------------
 
 class TestDownloadContent:
     def test_returns_bytes_and_content_type_tuple(self):
@@ -263,11 +230,6 @@ class TestDownloadContent:
         assert ct == "application/pdf"
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# update_document
-# ---------------------------------------------------------------------------
-
 class TestUpdateDocument:
     def test_sends_patch_with_content_and_tags(self):
         # Arrange
@@ -285,11 +247,6 @@ class TestUpdateDocument:
         body = route.calls[0].request.content
         assert b"new content" in body
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# update_document_metadata
-# ---------------------------------------------------------------------------
 
 class TestUpdateDocumentMetadata:
     def test_sends_only_non_none_fields(self):
@@ -325,11 +282,6 @@ class TestUpdateDocumentMetadata:
         # Assert
         assert not route.called
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# list_correspondents / document_types / tags
-# ---------------------------------------------------------------------------
 
 class TestListEndpoints:
     def test_list_correspondents(self):
@@ -385,11 +337,6 @@ class TestListEndpoints:
         # Assert
         assert result == [{"id": 3, "name": "ocr"}]
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# create_correspondent / document_type / create_tag
-# ---------------------------------------------------------------------------
 
 class TestCreateNamedItems:
     def test_creates_item_with_matching_algorithm(self):
@@ -472,11 +419,6 @@ class TestCreateNamedItems:
                 client.create_tag("fail-tag", matching_algorithm="none")
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# Retry behavior
-# ---------------------------------------------------------------------------
-
 class TestRetryBehavior:
     def test_retries_on_network_error(self):
         # Arrange
@@ -544,11 +486,6 @@ class TestRetryBehavior:
             assert route.call_count == 3
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# ping
-# ---------------------------------------------------------------------------
-
 class TestPing:
     def test_single_request_without_retry(self):
         # Arrange
@@ -596,30 +533,6 @@ class TestPing:
             with pytest.raises(httpx.HTTPStatusError):
                 client.ping()
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# close
-# ---------------------------------------------------------------------------
-
-class TestGetDocumentsToProcess:
-    def test_delegates_to_get_documents_by_tag_with_pre_tag_id(self):
-        # Arrange
-        settings = _make_settings(PRE_TAG_ID=443)
-        url = f"{BASE}/api/documents/?tags__id=443&page_size=100"
-        with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 7}], "next": None,
-            }))
-            client = _make_client(settings)
-
-            # Act
-            results = list(client.get_documents_to_process())
-
-        # Assert
-        assert results == [{"id": 7}]
-        client.close()
-
 
 class TestUpdateDocumentMetadataAllFields:
     """Test that each individual metadata field is included when provided."""

@@ -1,9 +1,4 @@
-"""
-Unit tests for common.tags module.
-
-Tests cover: extract_tags, get_latest_tags, remove_stale_queue_tag,
-release_processing_tag, and clean_pipeline_tags.
-"""
+"""Tests for common.tags."""
 
 from __future__ import annotations
 
@@ -17,11 +12,6 @@ from common.tags import (
     remove_stale_queue_tag,
 )
 from tests.helpers.factories import make_settings_obj
-
-
-# ---------------------------------------------------------------------------
-# extract_tags
-# ---------------------------------------------------------------------------
 
 class TestExtractTags:
     """Tests for extract_tags()."""
@@ -86,11 +76,6 @@ class TestExtractTags:
         # Assert
         assert result == {5, 10}
 
-
-# ---------------------------------------------------------------------------
-# get_latest_tags
-# ---------------------------------------------------------------------------
-
 class TestGetLatestTags:
     """Tests for get_latest_tags()."""
 
@@ -139,11 +124,6 @@ class TestGetLatestTags:
 
         # Assert
         assert result == set()
-
-
-# ---------------------------------------------------------------------------
-# remove_stale_queue_tag
-# ---------------------------------------------------------------------------
 
 class TestRemoveStaleQueueTag:
     """Tests for remove_stale_queue_tag()."""
@@ -202,11 +182,6 @@ class TestRemoveStaleQueueTag:
 
         # Assert — original set unchanged
         assert original_tags == tags_copy
-
-
-# ---------------------------------------------------------------------------
-# release_processing_tag
-# ---------------------------------------------------------------------------
 
 class TestReleaseProcessingTag:
     """Tests for release_processing_tag()."""
@@ -282,11 +257,6 @@ class TestReleaseProcessingTag:
 
         # Assert
         client.update_document_metadata.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# clean_pipeline_tags
-# ---------------------------------------------------------------------------
 
 class TestCleanPipelineTags:
     """Tests for clean_pipeline_tags()."""

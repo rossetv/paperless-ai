@@ -62,10 +62,14 @@ class OcrProvider(OpenAIChatMixin):
         if page_num is not None:
             log_ctx["page_num"] = page_num
 
+        self._stats.reset(self._STAT_KEYS)
+
         if is_blank(image):
             return "", ""
 
-        # Resize large images to reduce token cost and latency
+        # Resize large images to reduce token cost and latency.
+        # Copy first so we don't mutate the caller's image in-place.
+        image = image.copy()
         image.thumbnail((self.settings.OCR_MAX_SIDE, self.settings.OCR_MAX_SIDE))
         payload = _image_to_base64_png(image)
 
@@ -121,7 +125,6 @@ class OcrProvider(OpenAIChatMixin):
 
 
 def _image_to_base64_png(image: Image.Image) -> str:
-    """Encode a PIL Image as a base64-encoded PNG string."""
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()

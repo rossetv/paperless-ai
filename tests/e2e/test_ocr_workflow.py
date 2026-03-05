@@ -1,9 +1,4 @@
-"""
-End-to-end tests for a complete OCR document lifecycle.
-
-Mocks only HTTP (via a fake PaperlessClient) and OpenAI API.
-Everything else (image conversion, text assembly, tag logic) is real.
-"""
+"""Tests for end-to-end OCR workflow."""
 
 from __future__ import annotations
 
@@ -15,11 +10,6 @@ from PIL import Image
 from ocr.worker import DocumentProcessor
 from ocr.text_assembly import OCR_ERROR_MARKER
 from tests.helpers.factories import make_document, make_settings_obj
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
     """Create a small PNG image as raw bytes."""
@@ -101,11 +91,6 @@ def _make_mock_ocr_provider(transcribe_return=None, transcribe_side_effect=None)
         "fallback_successes": 0,
     }
     return provider
-
-
-# ---------------------------------------------------------------------------
-# Happy path: complete OCR workflow
-# ---------------------------------------------------------------------------
 
 class TestOcrHappyPath:
     """Complete happy path: download -> convert -> OCR -> update Paperless."""
@@ -206,11 +191,6 @@ class TestOcrHappyPath:
         assert "--- Page 1 ---" in content
         assert "--- Page 2 ---" in content
 
-
-# ---------------------------------------------------------------------------
-# Error path: OCR provider fails for all models
-# ---------------------------------------------------------------------------
-
 class TestOcrErrorPath:
     """OCR provider fails, document gets error tag."""
 
@@ -300,11 +280,6 @@ class TestOcrErrorPath:
         # Error tag should be applied via update_document_metadata
         # The _finalize_with_error path calls update_document_metadata with error tag
         assert 552 in state["tags"]
-
-
-# ---------------------------------------------------------------------------
-# Lock contention: claim fails
-# ---------------------------------------------------------------------------
 
 class TestOcrLockContention:
     """Document already has processing tag -- claim fails, early exit."""

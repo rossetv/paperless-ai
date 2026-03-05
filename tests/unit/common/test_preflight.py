@@ -1,9 +1,4 @@
-"""
-Unit tests for common.preflight module.
-
-Tests cover run_preflight_checks and its sub-checks for Paperless
-reachability, tag ID validation, and LLM reachability.
-"""
+"""Tests for common.preflight."""
 
 from __future__ import annotations
 

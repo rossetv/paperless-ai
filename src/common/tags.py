@@ -148,14 +148,9 @@ def finalize_document_with_error(
         )
 
 
-def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
-    """Return a copy of *tags* with all automation-pipeline tag IDs removed."""
-    cleaned = set(tags)
-    # Always-present pipeline tags
-    cleaned.discard(settings.PRE_TAG_ID)
-    cleaned.discard(settings.POST_TAG_ID)
-    cleaned.discard(settings.CLASSIFY_PRE_TAG_ID)
-    # Optional pipeline tags — only discard when configured
+def pipeline_tag_ids(settings: Settings) -> set[int]:
+    """Collect all configured pipeline tag IDs from *settings*."""
+    ids: set[int] = {settings.PRE_TAG_ID, settings.POST_TAG_ID, settings.CLASSIFY_PRE_TAG_ID}
     for optional_tag in (
         settings.OCR_PROCESSING_TAG_ID,
         settings.CLASSIFY_PROCESSING_TAG_ID,
@@ -163,5 +158,10 @@ def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
         settings.ERROR_TAG_ID,
     ):
         if optional_tag:
-            cleaned.discard(optional_tag)
-    return cleaned
+            ids.add(optional_tag)
+    return ids
+
+
+def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
+    """Return a copy of *tags* with all automation-pipeline tag IDs removed."""
+    return tags - pipeline_tag_ids(settings)

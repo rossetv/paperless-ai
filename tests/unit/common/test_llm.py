@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.llm``.
-
-Covers ``unique_models`` deduplication and ``OpenAIChatMixin._create_completion``
-delegation and concurrency limiter usage.
-"""
+"""Tests for common.llm."""
 
 from __future__ import annotations
 
@@ -11,12 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from common.llm import OpenAIChatMixin, unique_models
-
-
-# ===================================================================
-# unique_models
-# ===================================================================
+from common.llm import OpenAIChatMixin, unique_models, _openai_holder
 
 class TestUniqueModels:
 
@@ -42,11 +32,6 @@ class TestUniqueModels:
         result = unique_models(["c", "b", "a", "c", "a"])
         assert result == ["c", "b", "a"]
 
-
-# ===================================================================
-# OpenAIChatMixin._create_completion
-# ===================================================================
-
 class _TestClient(OpenAIChatMixin):
     """Concrete class to test the mixin."""
 
@@ -63,12 +48,20 @@ class TestCreateCompletion:
         settings.MAX_RETRY_BACKOFF_SECONDS = 30
         return _TestClient(settings)
 
+    @pytest.fixture(autouse=True)
+    def _restore_holder(self):
+        """Save and restore the holder's client after each test."""
+        orig = _openai_holder._client
+        yield
+        _openai_holder._client = orig
+
     @patch("common.llm.llm_limiter")
-    @patch("common.llm._openai_client")
-    def test_delegates_to_openai(self, mock_client, mock_limiter, client):
+    def test_delegates_to_openai(self, mock_limiter, client):
         """_create_completion passes kwargs through to the OpenAI client."""
+        mock_openai = MagicMock()
         expected = MagicMock()
-        mock_client.chat.completions.create.return_value = expected
+        mock_openai.chat.completions.create.return_value = expected
+        _openai_holder.init(mock_openai)
 
         result = client._create_completion(
             model="gpt-5-mini",
@@ -76,25 +69,25 @@ class TestCreateCompletion:
         )
 
         assert result is expected
-        mock_client.chat.completions.create.assert_called_once_with(
+        mock_openai.chat.completions.create.assert_called_once_with(
             model="gpt-5-mini",
             messages=[{"role": "user", "content": "hello"}],
         )
 
     @patch("common.llm.llm_limiter")
-    @patch("common.llm._openai_client")
-    def test_uses_llm_limiter(self, mock_client, mock_limiter, client):
+    def test_uses_llm_limiter(self, mock_limiter, client):
         """_create_completion wraps the call in llm_limiter.acquire()."""
-        mock_client.chat.completions.create.return_value = MagicMock()
+        mock_openai = MagicMock()
+        _openai_holder.init(mock_openai)
         client._create_completion(model="m")
 
         mock_limiter.acquire.assert_called_once()
 
     @patch("common.llm.llm_limiter")
-    @patch("common.llm._openai_client")
-    def test_extra_kwargs_forwarded(self, mock_client, mock_limiter, client):
+    def test_extra_kwargs_forwarded(self, mock_limiter, client):
         """All keyword arguments are forwarded to the OpenAI API."""
-        mock_client.chat.completions.create.return_value = MagicMock()
+        mock_openai = MagicMock()
+        _openai_holder.init(mock_openai)
 
         client._create_completion(
             model="gpt-5-mini",
@@ -103,7 +96,7 @@ class TestCreateCompletion:
             max_tokens=100,
         )
 
-        mock_client.chat.completions.create.assert_called_once_with(
+        mock_openai.chat.completions.create.assert_called_once_with(
             model="gpt-5-mini",
             messages=[],
             temperature=0.5,
@@ -113,6 +106,6 @@ class TestCreateCompletion:
     @patch("common.llm.llm_limiter")
     def test_raises_when_client_not_initialized(self, mock_limiter, client):
         """_create_completion raises RuntimeError when client is None."""
-        with patch("common.llm._openai_client", None):
-            with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
-                client._create_completion(model="m")
+        _openai_holder._client = None
+        with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
+            client._create_completion(model="m")

@@ -1,9 +1,4 @@
-"""
-Unit tests for common.daemon_loop module.
-
-Tests cover: run_polling_threadpool (batch processing, error handling,
-idle logging, shutdown, clamping) and _safe_item_summary.
-"""
+"""Tests for common.daemon_loop."""
 
 from __future__ import annotations
 
@@ -13,11 +8,6 @@ from common.daemon_loop import _safe_item_summary, run_polling_threadpool
 
 
 MODULE = "common.daemon_loop"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_shutdown_after(n_iterations: int):
     """Return an is_shutdown_requested replacement that returns False n times, then True."""
@@ -34,11 +24,6 @@ def _make_sleep_noop():
     """Return a no-op sleep that records calls."""
     mock_sleep = MagicMock()
     return mock_sleep
-
-
-# ---------------------------------------------------------------------------
-# run_polling_threadpool
-# ---------------------------------------------------------------------------
 
 class TestRunPollingThreadpool:
     """Tests for run_polling_threadpool()."""
@@ -296,11 +281,6 @@ class TestRunPollingThreadpool:
             if "Shutdown" in str(c) or "shutdown" in str(c)
         ]
         assert len(shutdown_calls) >= 1
-
-
-# ---------------------------------------------------------------------------
-# _safe_item_summary
-# ---------------------------------------------------------------------------
 
 class TestSafeItemSummary:
     """Tests for _safe_item_summary()."""

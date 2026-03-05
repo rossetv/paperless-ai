@@ -36,7 +36,6 @@ def _check_paperless_reachable(settings: Settings, client: PaperlessClient) -> N
 
 
 def _check_tag_ids_exist(settings: Settings, client: PaperlessClient) -> None:
-    """Verify that all configured tag IDs exist in Paperless."""
     try:
         all_tags = client.list_tags()
     except (OSError, httpx.HTTPError):

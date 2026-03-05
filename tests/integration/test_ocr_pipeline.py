@@ -1,9 +1,4 @@
-"""
-Integration tests for the OCR pipeline: download -> convert -> transcribe -> assemble.
-
-Tests the interaction between multiple real modules working together,
-with mocked external boundaries (HTTP and OpenAI).
-"""
+"""Tests for OCR pipeline integration."""
 
 from __future__ import annotations
 
@@ -15,11 +10,6 @@ from PIL import Image
 from ocr.image_converter import bytes_to_images
 from ocr.text_assembly import assemble_full_text, OCR_ERROR_MARKER
 from classifier.content_prep import truncate_content_by_pages
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
     """Create a small PNG image as raw bytes."""
@@ -35,11 +25,6 @@ def _make_tiff_bytes(num_frames: int = 3, width: int = 10, height: int = 10) -> 
     buf = io.BytesIO()
     frames[0].save(buf, format="TIFF", save_all=True, append_images=frames[1:])
     return buf.getvalue()
-
-
-# ---------------------------------------------------------------------------
-# Full OCR pipeline: real image_converter + real text_assembly + mocked provider
-# ---------------------------------------------------------------------------
 
 class TestFullOcrPipeline:
     """Real image conversion and text assembly with a mocked OCR provider."""
@@ -107,11 +92,6 @@ class TestFullOcrPipeline:
         assert "--- Page 2 (o4-mini) ---" in full_text
         assert models == {"gpt-5-mini", "o4-mini"}
 
-
-# ---------------------------------------------------------------------------
-# Multi-page assembly with mixed results (some blank, some transcribed)
-# ---------------------------------------------------------------------------
-
 class TestMultiPageMixedResults:
     """Test assembly when some pages are blank or produce empty text."""
 
@@ -157,11 +137,6 @@ class TestMultiPageMixedResults:
         assert OCR_ERROR_MARKER in full_text
         assert "Failed to OCR page 2." in full_text
 
-
-# ---------------------------------------------------------------------------
-# Error propagation: corrupt image bytes -> graceful error
-# ---------------------------------------------------------------------------
-
 class TestErrorPropagation:
     """Corrupt or invalid input triggers clear errors."""
 
@@ -181,11 +156,6 @@ class TestErrorPropagation:
         truncated = valid_png[:20]  # cut off most of the file
         with pytest.raises((RuntimeError, Exception)):
             bytes_to_images(truncated, "image/png")
-
-
-# ---------------------------------------------------------------------------
-# Content prep + assembly result parsing working together
-# ---------------------------------------------------------------------------
 
 class TestContentPrepWithAssembly:
     """Test that assembled OCR text can be correctly truncated."""

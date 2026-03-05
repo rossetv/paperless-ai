@@ -1,12 +1,4 @@
-"""
-Tests for classifier.worker — ClassificationProcessor
-=====================================================
-
-Covers the full process() workflow: happy path, claim failure, error tag
-present, empty content, refusal content, empty/generic classification result,
-LLM failure, finally-block lock release, truncation, tag enrichment, custom
-fields, stats logging, and metadata resolution via TaxonomyCache.
-"""
+"""Tests for classifier.worker."""
 
 from __future__ import annotations
 
@@ -21,11 +13,6 @@ from tests.helpers.factories import (
     make_settings_obj,
 )
 from tests.helpers.mocks import make_mock_paperless
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_processor(
     doc=None,
@@ -74,11 +61,6 @@ def _make_processor(
 
 def _make_doc_with_content(content: str, tags=None) -> dict:
     return make_document(content=content, tags=tags or [443])
-
-
-# ===================================================================
-# process() — happy path
-# ===================================================================
 
 class TestProcessHappyPath:
     """Full classification flow with metadata application."""
@@ -141,11 +123,6 @@ class TestProcessHappyPath:
         # Assert
         proc.taxonomy_cache.get_or_create_tag_ids.assert_called_once()
 
-
-# ===================================================================
-# process() — claim failure
-# ===================================================================
-
 class TestProcessClaimFailure:
     """Claim failure causes early exit without classification."""
 
@@ -177,11 +154,6 @@ class TestProcessClaimFailure:
         # Assert — release not called because claimed=False
         mock_release.assert_not_called()
 
-
-# ===================================================================
-# process() — error tag present
-# ===================================================================
-
 class TestProcessErrorTagPresent:
     """Skip classification when the document already has an error tag."""
 
@@ -197,11 +169,6 @@ class TestProcessErrorTagPresent:
 
         # Assert
         proc.classifier.classify_text.assert_not_called()
-
-
-# ===================================================================
-# process() — empty content
-# ===================================================================
 
 class TestProcessEmptyContent:
     """Empty OCR content requeues the document."""
@@ -237,11 +204,6 @@ class TestProcessEmptyContent:
         # Assert
         proc.classifier.classify_text.assert_not_called()
 
-
-# ===================================================================
-# process() — refusal content
-# ===================================================================
-
 class TestProcessRefusalContent:
     """Content containing refusal markers triggers error finalization."""
 
@@ -259,11 +221,6 @@ class TestProcessRefusalContent:
 
         # Assert — update called (to set error tag)
         proc.paperless_client.update_document_metadata.assert_called()
-
-
-# ===================================================================
-# process() — empty classification result
-# ===================================================================
 
 class TestProcessEmptyClassificationResult:
     """Empty classification result triggers error tag."""
@@ -306,11 +263,6 @@ class TestProcessEmptyClassificationResult:
         tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get("tags")
         assert 552 in tags  # ERROR_TAG_ID
 
-
-# ===================================================================
-# process() — generic document type
-# ===================================================================
-
 class TestProcessGenericDocumentType:
     """Generic document type triggers error tag."""
 
@@ -346,11 +298,6 @@ class TestProcessGenericDocumentType:
         # Assert
         proc.taxonomy_cache.get_or_create_document_type_id.assert_not_called()
 
-
-# ===================================================================
-# process() — LLM failure releases lock
-# ===================================================================
-
 class TestProcessLLMFailure:
     """LLM failure (exception during classify) still releases the lock."""
 
@@ -369,11 +316,6 @@ class TestProcessLLMFailure:
 
         # Assert — lock released despite exception
         mock_release.assert_called_once()
-
-
-# ===================================================================
-# process() — finally always releases processing lock
-# ===================================================================
 
 class TestProcessFinallyReleasesLock:
     """The finally block always releases the processing lock when claimed."""
@@ -407,11 +349,6 @@ class TestProcessFinallyReleasesLock:
         # Assert
         mock_release.assert_called_once()
 
-
-# ===================================================================
-# Truncation by pages
-# ===================================================================
-
 class TestTruncationByPages:
     """Page-based truncation is applied when CLASSIFY_MAX_PAGES > 0."""
 
@@ -430,11 +367,6 @@ class TestTruncationByPages:
 
         # Assert
         mock_trunc.assert_called_once()
-
-
-# ===================================================================
-# Truncation by chars
-# ===================================================================
 
 class TestTruncationByChars:
     """Character-based truncation is applied as a hard cap."""
@@ -459,11 +391,6 @@ class TestTruncationByChars:
         text_arg = call_args[0][0]
         assert len(text_arg) < len(long_content)
 
-
-# ===================================================================
-# Tag enrichment
-# ===================================================================
-
 class TestTagEnrichment:
     """Tags are enriched with year, country, model tags."""
 
@@ -482,11 +409,6 @@ class TestTagEnrichment:
 
         # Assert
         mock_enrich.assert_called_once()
-
-
-# ===================================================================
-# Custom field (person) applied
-# ===================================================================
 
 class TestCustomFieldPerson:
     """Person custom field applied when CLASSIFY_PERSON_FIELD_ID is set."""
@@ -554,11 +476,6 @@ class TestCustomFieldPerson:
         update_call = proc.paperless_client.update_document_metadata.call_args
         assert update_call.kwargs.get("custom_fields") is None
 
-
-# ===================================================================
-# Stats logging
-# ===================================================================
-
 class TestStatsLogging:
     """Stats are logged after classification."""
 
@@ -592,11 +509,6 @@ class TestStatsLogging:
         # Assert — get_stats is called but the empty stats won't cause errors
         proc.classifier.get_stats.assert_called()
 
-
-# ===================================================================
-# No correspondent update when empty
-# ===================================================================
-
 class TestNoCorrespondentWhenEmpty:
     """Empty correspondent skips taxonomy resolution."""
 
@@ -615,11 +527,6 @@ class TestNoCorrespondentWhenEmpty:
 
         # Assert
         proc.taxonomy_cache.get_or_create_correspondent_id.assert_not_called()
-
-
-# ===================================================================
-# No document type update when generic
-# ===================================================================
 
 class TestNoDocumentTypeWhenGeneric:
     """Generic document type is rejected before taxonomy resolution."""
@@ -640,11 +547,6 @@ class TestNoDocumentTypeWhenGeneric:
         # Assert — entire classification rejected
         proc.taxonomy_cache.get_or_create_document_type_id.assert_not_called()
 
-
-# ===================================================================
-# Language normalization applied
-# ===================================================================
-
 class TestLanguageNormalization:
     """Language field is normalized before being sent to Paperless."""
 
@@ -664,11 +566,6 @@ class TestLanguageNormalization:
         mock_norm.assert_called_once()
         update_call = proc.paperless_client.update_document_metadata.call_args
         assert update_call.kwargs.get("language") == "en"
-
-
-# ===================================================================
-# CLASSIFY_POST_TAG_ID is added to final tags
-# ===================================================================
 
 class TestClassifyPostTag:
     """When CLASSIFY_POST_TAG_ID is set, it appears in the final tag set."""
@@ -691,11 +588,6 @@ class TestClassifyPostTag:
         update_call = proc.paperless_client.update_document_metadata.call_args
         final_tags = update_call.kwargs.get("tags") or update_call[1].get("tags")
         assert 555 in final_tags
-
-
-# ===================================================================
-# _finalize_with_error — no ERROR_TAG_ID configured
-# ===================================================================
 
 class TestFinalizeWithErrorNoTag:
     """When ERROR_TAG_ID is None, pipeline tags are cleaned but no error tag added."""
@@ -724,11 +616,6 @@ class TestFinalizeWithErrorNoTag:
         final_tags = update_call.kwargs.get("tags") or update_call[1].get("tags")
         assert 552 not in final_tags  # 552 is the default error tag, shouldn't be there
 
-
-# ===================================================================
-# Truncation with note
-# ===================================================================
-
 class TestTruncationWithNote:
     """Page truncation note is included when truncation occurs."""
 
@@ -754,11 +641,6 @@ class TestTruncationWithNote:
         assert classify_call is not None, "classify_text was never called"
         # Source always passes truncation_note as keyword argument
         assert classify_call.kwargs.get("truncation_note") == "NOTE: Pages 1-2 of 10."
-
-
-# ===================================================================
-# Stats logging edge cases
-# ===================================================================
 
 class TestStatsLoggingEdgeCases:
     """Stats logging handles empty stats and zero attempts."""

@@ -1,12 +1,4 @@
-"""
-Tests for classifier.daemon — main() and _iter_docs_to_classify
-================================================================
-
-Covers the daemon entry point (config error path), the document iterator
-(skipping non-integer IDs, post-tagged docs, already-claimed docs), and
-the process_document closure (client lifecycle, taxonomy refresh as
-before_each_batch).
-"""
+"""Tests for classifier.daemon."""
 
 from __future__ import annotations
 
@@ -18,11 +10,6 @@ from classifier.daemon import _iter_docs_to_classify, main
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _settings(**overrides):
     return make_settings_obj(**overrides)
 
@@ -30,11 +17,6 @@ def _settings(**overrides):
 def _doc(id, tags=None):
     """Shorthand for a document dict."""
     return make_document(id=id, tags=tags or [])
-
-
-# ===================================================================
-# main() — config error
-# ===================================================================
 
 class TestMainConfigError:
     """main() with a config error exits gracefully."""
@@ -56,11 +38,6 @@ class TestMainConfigError:
 
         # Assert
         mock_loop.assert_not_called()
-
-
-# ===================================================================
-# _iter_docs_to_classify — yields valid documents
-# ===================================================================
 
 class TestIterDocsToClassifyValid:
     """Yields documents that pass all filter checks."""
@@ -99,11 +76,6 @@ class TestIterDocsToClassifyValid:
 
         # Assert
         assert len(result) == 3
-
-
-# ===================================================================
-# _iter_docs_to_classify — skips doc without integer id
-# ===================================================================
 
 class TestIterDocsSkipsNonIntegerId:
     """Documents without an integer id are skipped."""
@@ -146,11 +118,6 @@ class TestIterDocsSkipsNonIntegerId:
 
         # Assert
         assert result == []
-
-
-# ===================================================================
-# _iter_docs_to_classify — skips doc with CLASSIFY_POST_TAG_ID
-# ===================================================================
 
 class TestIterDocsSkipsAlreadyClassified:
     """Documents with the post tag are skipped and stale pre-tag removed."""
@@ -216,11 +183,6 @@ class TestIterDocsSkipsAlreadyClassified:
         # Assert
         assert result == []
 
-
-# ===================================================================
-# _iter_docs_to_classify — skips already claimed
-# ===================================================================
-
 class TestIterDocsSkipsAlreadyClaimed:
     """Documents already claimed (processing tag present) are skipped."""
 
@@ -258,11 +220,6 @@ class TestIterDocsSkipsAlreadyClaimed:
 
         # Assert
         assert len(result) == 1
-
-
-# ===================================================================
-# _process_document (closure) — lifecycle
-# ===================================================================
 
 class TestProcessDocumentClosure:
     """The process_document closure creates client, provider, processes, closes."""
@@ -322,11 +279,6 @@ class TestProcessDocumentClosure:
             mock_paperless_instance.close.assert_called_once()
             mock_proc_instance.process.assert_called_once()
 
-
-# ===================================================================
-# TaxonomyCache.refresh as before_each_batch
-# ===================================================================
-
 class TestTaxonomyRefreshAsBatchHook:
     """TaxonomyCache.refresh is passed as before_each_batch."""
 
@@ -367,11 +319,6 @@ class TestTaxonomyRefreshAsBatchHook:
         # Call the hook — it should invoke taxonomy_cache.refresh()
         captured_before_batch([_doc(1)])
         taxonomy_instance.refresh.assert_called_once()
-
-
-# ===================================================================
-# main() — cleanup on exit
-# ===================================================================
 
 class TestMainCleanup:
     """Clients are closed on exit."""

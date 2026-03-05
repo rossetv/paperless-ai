@@ -1,8 +1,4 @@
-"""
-Unit tests for common.bootstrap.bootstrap_daemon.
-
-All external dependencies are mocked to test control flow and error handling.
-"""
+"""Tests for common.bootstrap."""
 
 from __future__ import annotations
 

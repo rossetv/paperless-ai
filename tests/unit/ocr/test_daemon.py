@@ -1,16 +1,4 @@
-"""
-Comprehensive unit tests for ocr.daemon module.
-
-Tests cover:
-- main() with config error (bootstrap returns None) -> returns
-- main() happy path: bootstrap succeeds, enters polling loop
-- _iter_docs_to_ocr: yields valid documents
-- _iter_docs_to_ocr: skips doc without integer id
-- _iter_docs_to_ocr: skips doc with POST_TAG_ID (removes stale pre-tag)
-- _iter_docs_to_ocr: skips doc already claimed (processing tag present)
-- _iter_docs_to_ocr: skips doc with POST_TAG_ID but without PRE_TAG_ID
-- _process_document: creates client, provider, processes, closes
-"""
+"""Tests for ocr.daemon."""
 
 from __future__ import annotations
 
@@ -21,11 +9,6 @@ import pytest
 
 from ocr.daemon import main, _iter_docs_to_ocr, _process_document
 
-
-# -----------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------
-
 def _make_settings(**overrides):
     from tests.helpers.factories import make_settings_obj
     return make_settings_obj(**overrides)
@@ -34,11 +17,6 @@ def _make_settings(**overrides):
 def _make_mock_paperless(**overrides):
     from tests.helpers.mocks import make_mock_paperless
     return make_mock_paperless(**overrides)
-
-
-# -----------------------------------------------------------------------
-# main()
-# -----------------------------------------------------------------------
 
 class TestMain:
     @patch("ocr.daemon.bootstrap_daemon", return_value=None)
@@ -101,11 +79,6 @@ class TestMain:
         # Assert
         list_client.close.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# _iter_docs_to_ocr — yields valid documents
-# -----------------------------------------------------------------------
-
 class TestIterDocsToOcrYieldsValid:
     def test_yields_valid_document(self):
         # Arrange
@@ -144,11 +117,6 @@ class TestIterDocsToOcrYieldsValid:
 
         # Assert
         assert len(result) == 2
-
-
-# -----------------------------------------------------------------------
-# _iter_docs_to_ocr — skips doc without integer id
-# -----------------------------------------------------------------------
 
 class TestIterDocsToOcrSkipsNonIntegerId:
     def test_skips_none_id(self):
@@ -189,11 +157,6 @@ class TestIterDocsToOcrSkipsNonIntegerId:
 
         # Assert
         assert result == []
-
-
-# -----------------------------------------------------------------------
-# _iter_docs_to_ocr — skips doc with POST_TAG_ID
-# -----------------------------------------------------------------------
 
 class TestIterDocsToOcrSkipsPostTagged:
     @patch("common.document_iter.remove_stale_queue_tag")
@@ -240,11 +203,6 @@ class TestIterDocsToOcrSkipsPostTagged:
         assert result == []
         mock_remove.assert_not_called()
 
-
-# -----------------------------------------------------------------------
-# _iter_docs_to_ocr — skips doc already claimed
-# -----------------------------------------------------------------------
-
 class TestIterDocsToOcrSkipsClaimed:
     def test_skips_doc_with_processing_tag(self):
         # Arrange
@@ -280,11 +238,6 @@ class TestIterDocsToOcrSkipsClaimed:
         # Assert
         assert len(result) == 1
 
-
-# -----------------------------------------------------------------------
-# _iter_docs_to_ocr — mixed documents
-# -----------------------------------------------------------------------
-
 class TestIterDocsToOcrMixed:
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_mixed_bag_of_documents(self, mock_remove):
@@ -311,11 +264,6 @@ class TestIterDocsToOcrMixed:
         assert len(result) == 2
         assert result[0]["id"] == 1
         assert result[1]["id"] == 4
-
-
-# -----------------------------------------------------------------------
-# _process_document
-# -----------------------------------------------------------------------
 
 class TestProcessDocument:
     @patch("ocr.daemon.OcrProvider")

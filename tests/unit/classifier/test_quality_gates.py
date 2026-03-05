@@ -1,6 +1,4 @@
-"""
-Tests for classifier.quality_gates — is_generic_document_type and needs_error_tag.
-"""
+"""Tests for classifier.quality_gates."""
 
 from __future__ import annotations
 

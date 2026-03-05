@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, TypeVar
 
+import httpx
 import structlog
 
 from .shutdown import is_shutdown_requested
@@ -102,11 +103,13 @@ def run_polling_threadpool(
                 was_idle=was_idle,
             )
             sleep(poll_interval_seconds)
-        except Exception:
-            log.exception(
+        except (OSError, httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
+            log.error(
                 "Unexpected error in daemon loop; sleeping",
                 daemon=daemon_name,
                 poll_interval_seconds=poll_interval_seconds,
+                error=str(exc),
+                error_type=type(exc).__name__,
             )
             sleep(poll_interval_seconds)
 

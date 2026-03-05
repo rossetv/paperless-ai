@@ -57,6 +57,7 @@ class DocumentProcessor:
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
         start_time = dt.datetime.now()
         claimed = False
+        success = False
         try:
             document = self.paperless_client.get_document(self.doc_id)
             self.doc = document
@@ -113,6 +114,7 @@ class DocumentProcessor:
                 include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
             )
             self._update_paperless_document(full_text, models_used)
+            success = True
         finally:
             if claimed:
                 release_processing_tag(
@@ -122,13 +124,13 @@ class DocumentProcessor:
                     purpose="ocr",
                 )
             self._log_ocr_stats()
-
-        elapsed = (dt.datetime.now() - start_time).total_seconds()
-        log.info(
-            "Finished processing document",
-            doc_id=self.doc_id,
-            elapsed_time=f"{elapsed:.2f}s",
-        )
+            elapsed = (dt.datetime.now() - start_time).total_seconds()
+            log.info(
+                "Finished processing document",
+                doc_id=self.doc_id,
+                elapsed_time=f"{elapsed:.2f}s",
+                success=success,
+            )
 
     def _ocr_pages_in_parallel(
         self, images: list[Image.Image]

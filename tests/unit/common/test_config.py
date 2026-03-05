@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.config.Settings``.
-
-Covers every environment variable, default value, validation rule, and
-edge case in the Settings constructor.
-"""
+"""Tests for common.config."""
 
 from __future__ import annotations
 
@@ -12,11 +7,6 @@ import os
 import pytest
 
 from common.config import Settings
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _MINIMAL_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
@@ -33,11 +23,6 @@ def _build(mocker, env: dict[str, str]) -> Settings:
     """Build Settings with *only* the supplied env vars."""
     mocker.patch.dict(os.environ, env, clear=True)
     return Settings()
-
-
-# ===================================================================
-# Default values when only required env vars are set
-# ===================================================================
 
 class TestDefaults:
     """Settings constructed with the minimal env should have correct defaults."""
@@ -171,11 +156,6 @@ class TestDefaults:
         s = _build(mocker, _MINIMAL_ENV)
         assert s.CLASSIFY_HEADERLESS_CHAR_LIMIT == 15000
 
-
-# ===================================================================
-# Loading values from all environment variables
-# ===================================================================
-
 class TestCustomEnvVars:
     """Every env var can be overridden from its default."""
 
@@ -287,11 +267,6 @@ class TestCustomEnvVars:
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_PROCESSING_TAG_ID": "777"})
         assert s.CLASSIFY_PROCESSING_TAG_ID == 777
 
-
-# ===================================================================
-# Missing required env vars
-# ===================================================================
-
 class TestMissingRequired:
 
     def test_missing_paperless_token(self, mocker):
@@ -305,11 +280,6 @@ class TestMissingRequired:
     def test_ollama_does_not_require_openai_api_key(self, mocker):
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.OPENAI_API_KEY is None
-
-
-# ===================================================================
-# Ollama configuration
-# ===================================================================
 
 class TestOllamaConfig:
 
@@ -334,11 +304,6 @@ class TestOllamaConfig:
         s = _build(mocker, _MINIMAL_ENV)
         assert s.OLLAMA_BASE_URL is None
 
-
-# ===================================================================
-# Invalid LLM_PROVIDER
-# ===================================================================
-
 class TestInvalidLLMProvider:
 
     def test_invalid_provider_raises(self, mocker):
@@ -346,22 +311,12 @@ class TestInvalidLLMProvider:
         with pytest.raises(ValueError, match="LLM_PROVIDER must be"):
             _build(mocker, env)
 
-
-# ===================================================================
-# Invalid LOG_FORMAT
-# ===================================================================
-
 class TestInvalidLogFormat:
 
     def test_invalid_log_format_raises(self, mocker):
         env = {**_MINIMAL_ENV, "LOG_FORMAT": "xml"}
         with pytest.raises(ValueError, match="LOG_FORMAT must be"):
             _build(mocker, env)
-
-
-# ===================================================================
-# Invalid MAX_RETRIES
-# ===================================================================
 
 class TestInvalidMaxRetries:
 
@@ -375,11 +330,6 @@ class TestInvalidMaxRetries:
         with pytest.raises(ValueError, match="MAX_RETRIES must be >= 1"):
             _build(mocker, env)
 
-
-# ===================================================================
-# Invalid MAX_RETRY_BACKOFF_SECONDS
-# ===================================================================
-
 class TestInvalidMaxRetryBackoff:
 
     def test_backoff_zero_raises(self, mocker):
@@ -391,11 +341,6 @@ class TestInvalidMaxRetryBackoff:
         env = {**_MINIMAL_ENV, "MAX_RETRY_BACKOFF_SECONDS": "-5"}
         with pytest.raises(ValueError, match="MAX_RETRY_BACKOFF_SECONDS must be >= 1"):
             _build(mocker, env)
-
-
-# ===================================================================
-# Minimum worker counts clamped to 1
-# ===================================================================
 
 class TestWorkerClamping:
 
@@ -415,11 +360,6 @@ class TestWorkerClamping:
         s = _build(mocker, {**_MINIMAL_ENV, "DOCUMENT_WORKERS": "-3"})
         assert s.DOCUMENT_WORKERS == 1
 
-
-# ===================================================================
-# OCR_PROCESSING_TAG_ID: negative -> None, zero -> None, empty -> None
-# ===================================================================
-
 class TestOcrProcessingTagId:
 
     def test_negative_becomes_none(self, mocker):
@@ -438,11 +378,6 @@ class TestOcrProcessingTagId:
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_PROCESSING_TAG_ID": "42"})
         assert s.OCR_PROCESSING_TAG_ID == 42
 
-
-# ===================================================================
-# CLASSIFY_POST_TAG_ID: negative -> None
-# ===================================================================
-
 class TestClassifyPostTagId:
 
     def test_negative_becomes_none(self, mocker):
@@ -453,21 +388,11 @@ class TestClassifyPostTagId:
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_POST_TAG_ID": "0"})
         assert s.CLASSIFY_POST_TAG_ID is None
 
-
-# ===================================================================
-# CLASSIFY_PROCESSING_TAG_ID: negative -> None
-# ===================================================================
-
 class TestClassifyProcessingTagId:
 
     def test_negative_becomes_none(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_PROCESSING_TAG_ID": "-5"})
         assert s.CLASSIFY_PROCESSING_TAG_ID is None
-
-
-# ===================================================================
-# ERROR_TAG_ID: negative -> None, zero -> None
-# ===================================================================
 
 class TestErrorTagId:
 
@@ -482,11 +407,6 @@ class TestErrorTagId:
     def test_positive_kept(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "ERROR_TAG_ID": "99"})
         assert s.ERROR_TAG_ID == 99
-
-
-# ===================================================================
-# AI_MODELS all commas raises ValueError
-# ===================================================================
 
 class TestAiModelsValidation:
 
@@ -508,11 +428,6 @@ class TestAiModelsValidation:
         s = _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": " model-a , model-b "})
         assert s.AI_MODELS == ["model-a", "model-b"]
 
-
-# ===================================================================
-# Custom OCR_REFUSAL_MARKERS parsing
-# ===================================================================
-
 class TestOcrRefusalMarkers:
 
     def test_custom_markers(self, mocker):
@@ -529,11 +444,6 @@ class TestOcrRefusalMarkers:
         env = {**_MINIMAL_ENV, "OCR_REFUSAL_MARKERS": ",,,"}
         s = _build(mocker, env)
         assert s.OCR_REFUSAL_MARKERS == []
-
-
-# ===================================================================
-# Boolean env var parsing
-# ===================================================================
 
 class TestBoolEnvParsing:
 
@@ -552,11 +462,6 @@ class TestBoolEnvParsing:
         with pytest.raises(ValueError, match="must be a boolean value"):
             _build(mocker, env)
 
-
-# ===================================================================
-# PAPERLESS_URL trailing slash stripped
-# ===================================================================
-
 class TestPaperlessUrlTrailingSlash:
 
     def test_trailing_slash_stripped(self, mocker):
@@ -571,11 +476,6 @@ class TestPaperlessUrlTrailingSlash:
         s = _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_URL": "http://example.com"})
         assert s.PAPERLESS_URL == "http://example.com"
 
-
-# ===================================================================
-# CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID
-# ===================================================================
-
 class TestClassifyPreTagIdDefault:
 
     def test_defaults_to_post_tag_id(self, mocker):
@@ -589,11 +489,6 @@ class TestClassifyPreTagIdDefault:
     def test_empty_string_falls_back_to_post_tag_id(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_PRE_TAG_ID": "", "POST_TAG_ID": "888"})
         assert s.CLASSIFY_PRE_TAG_ID == 888
-
-
-# ===================================================================
-# CLASSIFY_MAX_CHARS, CLASSIFY_MAX_TOKENS, CLASSIFY_TAG_LIMIT clamped to 0
-# ===================================================================
 
 class TestClassifyClamping:
 
@@ -621,11 +516,6 @@ class TestClassifyClamping:
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_HEADERLESS_CHAR_LIMIT": "-5"})
         assert s.CLASSIFY_HEADERLESS_CHAR_LIMIT == 0
 
-
-# ===================================================================
-# CLASSIFY_PERSON_FIELD_ID optional int
-# ===================================================================
-
 class TestClassifyPersonFieldId:
 
     def test_not_set_is_none(self, mocker):
@@ -643,11 +533,6 @@ class TestClassifyPersonFieldId:
     def test_valid_int(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_PERSON_FIELD_ID": "7"})
         assert s.CLASSIFY_PERSON_FIELD_ID == 7
-
-
-# ===================================================================
-# LLM_MAX_CONCURRENT negative clamped to 0
-# ===================================================================
 
 class TestLlmMaxConcurrent:
 

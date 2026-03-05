@@ -1,26 +1,8 @@
-"""
-Comprehensive unit tests for ocr.text_assembly module.
-
-Tests cover:
-- OCR_ERROR_MARKER constant value
-- assemble_full_text: single page (no header)
-- assemble_full_text: multi-page (page headers)
-- Blank/empty pages skipped
-- include_page_models adds model to header
-- Models collected in returned set
-- All pages empty returns empty text (no footer)
-- Footer format with sorted model names
-- Edge cases: whitespace-only text, empty model strings
-"""
+"""Tests for ocr.text_assembly."""
 
 from __future__ import annotations
 
 from ocr.text_assembly import OCR_ERROR_MARKER, assemble_full_text
-
-
-# -----------------------------------------------------------------------
-# OCR_ERROR_MARKER constant
-# -----------------------------------------------------------------------
 
 class TestOcrErrorMarker:
     def test_value(self):
@@ -28,11 +10,6 @@ class TestOcrErrorMarker:
 
     def test_is_string(self):
         assert isinstance(OCR_ERROR_MARKER, str)
-
-
-# -----------------------------------------------------------------------
-# assemble_full_text — single page
-# -----------------------------------------------------------------------
 
 class TestAssembleFullTextSinglePage:
     """Single-page documents should not get page headers."""
@@ -77,11 +54,6 @@ class TestAssembleFullTextSinglePage:
 
         # Assert — text and footer separated by double newline
         assert "Page text\n\nTranscribed by model: model-a" == full_text
-
-
-# -----------------------------------------------------------------------
-# assemble_full_text — multi-page
-# -----------------------------------------------------------------------
 
 class TestAssembleFullTextMultiPage:
     """Multi-page documents get "--- Page N ---" headers."""
@@ -154,11 +126,6 @@ class TestAssembleFullTextMultiPage:
         # Assert
         assert models == {"model-x", "model-y"}
 
-
-# -----------------------------------------------------------------------
-# Blank / empty pages
-# -----------------------------------------------------------------------
-
 class TestAssembleFullTextBlankPages:
     """Blank and whitespace-only pages should be skipped."""
 
@@ -230,11 +197,6 @@ class TestAssembleFullTextBlankPages:
         assert "model-skipped" not in models
         assert "model-used" in models
 
-
-# -----------------------------------------------------------------------
-# include_page_models
-# -----------------------------------------------------------------------
-
 class TestAssembleFullTextIncludePageModels:
     """When include_page_models=True, model name appears in page header."""
 
@@ -295,11 +257,6 @@ class TestAssembleFullTextIncludePageModels:
         # Assert
         assert "--- Page" not in full_text
 
-
-# -----------------------------------------------------------------------
-# Footer format
-# -----------------------------------------------------------------------
-
 class TestAssembleFullTextFooter:
     """Footer lists all models sorted alphabetically."""
 
@@ -352,11 +309,6 @@ class TestAssembleFullTextFooter:
         # Assert — blank pages skipped, model not collected
         assert full_text == ""
         assert models == set()
-
-
-# -----------------------------------------------------------------------
-# Edge cases
-# -----------------------------------------------------------------------
 
 class TestAssembleFullTextEdgeCases:
     def test_empty_page_results_list(self):

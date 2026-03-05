@@ -1,9 +1,4 @@
-"""
-Unit tests for common.stale_lock.recover_stale_locks.
-
-Tests cover: skip conditions, single/multi document recovery, error handling,
-non-integer doc IDs, and return count.
-"""
+"""Tests for common.stale_lock."""
 
 from __future__ import annotations
 

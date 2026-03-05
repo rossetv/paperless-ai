@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.library_setup.setup_libraries``.
-
-Covers Pillow MAX_IMAGE_PIXELS, OpenAI client creation for both providers,
-httpx client creation, and atexit registration.
-"""
+"""Tests for common.library_setup."""
 
 from __future__ import annotations
 
@@ -13,11 +8,6 @@ import pytest
 from PIL import Image
 
 from common.library_setup import setup_libraries
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_settings(
     provider: str = "openai",
@@ -33,16 +23,11 @@ def _make_settings(
 
 @pytest.fixture(autouse=True)
 def _reset_openai_client():
-    """Reset the module-level OpenAI client after each test."""
+    """Reset the module-level OpenAI client holder after each test."""
     import common.llm as llm_mod
-    orig = llm_mod._openai_client
+    orig = llm_mod._openai_holder._client
     yield
-    llm_mod._openai_client = orig
-
-
-# ===================================================================
-# Pillow MAX_IMAGE_PIXELS set to None
-# ===================================================================
+    llm_mod._openai_holder._client = orig
 
 class TestPillowConfig:
 
@@ -56,11 +41,6 @@ class TestPillowConfig:
         finally:
             Image.MAX_IMAGE_PIXELS = original
 
-
-# ===================================================================
-# OpenAI provider configuration
-# ===================================================================
-
 class TestOpenAIProvider:
 
     @patch("common.library_setup.openai.OpenAI")
@@ -72,12 +52,7 @@ class TestOpenAIProvider:
         call_kwargs = mock_openai_cls.call_args.kwargs
         assert call_kwargs["api_key"] == "sk-my-key"
         assert call_kwargs["base_url"] is None
-        assert llm_mod._openai_client is mock_openai_cls.return_value
-
-
-# ===================================================================
-# Ollama provider configuration
-# ===================================================================
+        assert llm_mod._openai_holder._client is mock_openai_cls.return_value
 
 class TestOllamaProvider:
 
@@ -92,11 +67,6 @@ class TestOllamaProvider:
         call_kwargs = mock_openai_cls.call_args.kwargs
         assert call_kwargs["base_url"] == "http://ollama:11434/v1/"
         assert call_kwargs["api_key"] == "dummy"
-
-
-# ===================================================================
-# httpx Client and atexit registration
-# ===================================================================
 
 class TestHttpxClientAndCleanup:
 

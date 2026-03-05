@@ -1,12 +1,4 @@
-"""
-Tests for classifier.taxonomy — TaxonomyCache and module-level helpers
-======================================================================
-
-Covers refresh, name lookups, get_or_create methods, creation failure
-with cache refresh retry, internal helpers (_index_items, _match_item,
-_get_usage_count, _top_names, _infer_matching_algorithm), and thread
-safety (RLock).
-"""
+"""Tests for classifier.taxonomy."""
 
 from __future__ import annotations
 
@@ -23,11 +15,6 @@ from classifier.taxonomy import (
 )
 from classifier.normalizers import normalize_name, normalize_simple
 from tests.helpers.mocks import make_mock_paperless
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_cache(
     correspondents=None,
@@ -57,11 +44,6 @@ def _tag(id: int, name: str, count: int = 0, matching_algorithm=None) -> dict:
     if matching_algorithm is not None:
         d["matching_algorithm"] = matching_algorithm
     return d
-
-
-# ===================================================================
-# refresh()
-# ===================================================================
 
 class TestRefresh:
     """refresh() populates internal caches from the client."""
@@ -110,11 +92,6 @@ class TestRefresh:
         cache._client.list_document_types.assert_called_once()
         cache._client.list_tags.assert_called_once()
 
-
-# ===================================================================
-# correspondent_names / document_type_names / tag_names
-# ===================================================================
-
 class TestNameLists:
     """Cached name lists are sorted by usage and limited."""
 
@@ -157,11 +134,6 @@ class TestNameLists:
 
         # Assert
         assert "EXTRA" not in cache.correspondent_names()
-
-
-# ===================================================================
-# get_or_create_correspondent_id
-# ===================================================================
 
 class TestGetOrCreateCorrespondentId:
     """Resolve or create correspondents by name."""
@@ -253,11 +225,6 @@ class TestGetOrCreateCorrespondentId:
         with pytest.raises(RuntimeError, match="gone"):
             cache.get_or_create_correspondent_id("Ghost Corp")
 
-
-# ===================================================================
-# get_or_create_document_type_id
-# ===================================================================
-
 class TestGetOrCreateDocumentTypeId:
     """Resolve or create document types by name."""
 
@@ -320,11 +287,6 @@ class TestGetOrCreateDocumentTypeId:
 
         # Assert
         assert result == 50
-
-
-# ===================================================================
-# get_or_create_tag_ids
-# ===================================================================
 
 class TestGetOrCreateTagIds:
     """Resolve or create multiple tags."""
@@ -400,11 +362,6 @@ class TestGetOrCreateTagIds:
         # Act / Assert
         assert cache.get_or_create_tag_ids([]) == []
 
-
-# ===================================================================
-# _index_items
-# ===================================================================
-
 class TestIndexItems:
     """_index_items builds a normalized-name → item lookup."""
 
@@ -449,11 +406,6 @@ class TestIndexItems:
 
         # Assert
         assert "revolut" in mapping
-
-
-# ===================================================================
-# _match_item
-# ===================================================================
 
 class TestMatchItem:
     """_match_item with exact and substring matching."""
@@ -520,11 +472,6 @@ class TestMatchItem:
         # Assert
         assert result is None
 
-
-# ===================================================================
-# _get_usage_count
-# ===================================================================
-
 class TestGetUsageCount:
     """_get_usage_count handles different Paperless field name variants."""
 
@@ -549,11 +496,6 @@ class TestGetUsageCount:
     def test_priority_document_count_over_documents(self):
         """document_count is checked first."""
         assert _get_usage_count({"document_count": 10, "documents": [1, 2]}) == 10
-
-
-# ===================================================================
-# _top_names
-# ===================================================================
 
 class TestTopNames:
     """_top_names returns sorted, limited, deduplicated names."""
@@ -596,11 +538,6 @@ class TestTopNames:
         ]
         result = _top_names(items, limit=10)
         assert result == ["Alpha", "Zeta"]
-
-
-# ===================================================================
-# _infer_matching_algorithm
-# ===================================================================
 
 class TestInferMatchingAlgorithm:
     """_infer_matching_algorithm detects int vs string convention."""
@@ -648,11 +585,6 @@ class TestInferMatchingAlgorithm:
 
         # Assert
         assert result == "none"
-
-
-# ===================================================================
-# Thread safety
-# ===================================================================
 
 class TestThreadSafety:
     """Concurrent access should not corrupt internal state."""
@@ -704,11 +636,6 @@ class TestThreadSafety:
 
         # Assert
         assert result == 1
-
-
-# ===================================================================
-# Creation failure → refresh → still not found → re-raises
-# ===================================================================
 
 class TestCreationFailureReraise:
     """When creation fails and refresh doesn't find the item, re-raise."""

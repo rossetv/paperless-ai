@@ -1,10 +1,4 @@
-"""
-Reusable Mock Builders
-======================
-
-Factory functions that produce configured MagicMock objects for the main
-external boundaries (PaperlessClient, OCR provider, classification provider).
-"""
+"""Reusable mock builders."""
 
 from __future__ import annotations
 
@@ -12,11 +6,6 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from tests.helpers.factories import make_document, make_settings_obj
-
-
-# ---------------------------------------------------------------------------
-# PaperlessClient mock
-# ---------------------------------------------------------------------------
 
 def make_mock_paperless(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a PaperlessClient.
@@ -49,11 +38,6 @@ def make_mock_paperless(**overrides: Any) -> MagicMock:
 
     return mock
 
-
-# ---------------------------------------------------------------------------
-# OCR Provider mock
-# ---------------------------------------------------------------------------
-
 def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like an OcrProvider.
 
@@ -72,11 +56,6 @@ def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
         setattr(mock, key, value)
 
     return mock
-
-
-# ---------------------------------------------------------------------------
-# Classification Provider mock
-# ---------------------------------------------------------------------------
 
 def make_mock_classify_provider(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a ClassificationProvider."""

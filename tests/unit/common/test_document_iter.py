@@ -1,9 +1,4 @@
-"""
-Tests for common.document_iter — iter_documents_by_pipeline_tag.
-
-Verifies filtering logic: skips non-integer IDs, already-processed docs,
-and claimed docs. Also tests stale queue-tag removal.
-"""
+"""Tests for common.document_iter."""
 
 from __future__ import annotations
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable, Iterable
+from typing import Callable, Iterable, NamedTuple
 
 import structlog
 
@@ -104,6 +104,17 @@ def _top_names(items: list[dict], limit: int) -> list[str]:
     return [entry["name"] for entry in sorted_items[:limit]]
 
 
+class _TaxonomyKind(NamedTuple):
+    """Bundles the per-kind data needed by _get_or_create_item_id."""
+
+    items: list[dict]
+    mapping: dict[str, dict]
+    normalizer: Callable[[str], str]
+    allow_substring: bool
+    creator: Callable[[str], dict]
+    label: str
+
+
 class TaxonomyCache:
     """Thread-safe cache for Paperless taxonomy lookups and creation."""
 
@@ -117,17 +128,9 @@ class TaxonomyCache:
         self._correspondent_map: dict[str, dict] = {}
         self._document_type_map: dict[str, dict] = {}
         self._tag_map: dict[str, dict] = {}
-        # Cached sorted name lists — rebuilt during refresh().
-        # Note: get_or_create_*() updates _*_map for lookups but does NOT
-        # invalidate these caches; newly created items only appear after the
-        # next refresh() call (i.e. at the start of the next polling batch).
-        # This is acceptable because the cache is only used for LLM prompt
-        # context, and the actual taxonomy resolution uses _*_map directly.
         self._cached_correspondent_names: list[str] = []
         self._cached_document_type_names: list[str] = []
         self._cached_tag_names: list[str] = []
-
-    # ----- refresh -----
 
     def refresh(self) -> None:
         """Fetch the latest taxonomy lists from Paperless and rebuild indices."""
@@ -146,8 +149,6 @@ class TaxonomyCache:
             )
             self._cached_tag_names = _top_names(self._tags, self._taxonomy_limit)
 
-    # ----- prompt context -----
-
     def correspondent_names(self) -> list[str]:
         """Return correspondent names for the classification prompt."""
         with self._lock:
@@ -163,74 +164,54 @@ class TaxonomyCache:
         with self._lock:
             return list(self._cached_tag_names)
 
-    # ----- resolve or create -----
+    def _correspondent_kind(self) -> _TaxonomyKind:
+        return _TaxonomyKind(
+            self._correspondents, self._correspondent_map, normalize_name,
+            True, self._client.create_correspondent, "correspondent",
+        )
+
+    def _document_type_kind(self) -> _TaxonomyKind:
+        return _TaxonomyKind(
+            self._document_types, self._document_type_map, normalize_simple,
+            False, self._client.create_document_type, "document type",
+        )
 
     def _get_or_create_item_id(
-        self,
-        name: str,
-        *,
-        mapping_attr: str,
-        items_attr: str,
-        normalizer: Callable[[str], str],
-        allow_substring: bool,
-        creator: Callable[[str], dict],
-        item_label: str,
+        self, name: str, kind_factory: Callable[[], _TaxonomyKind],
     ) -> int | None:
-        """Look up an item by name, creating it if necessary.
-
-        On creation failure, refreshes the cache and retries the lookup
-        before re-raising.  Uses attribute names so that references remain
-        valid after ``refresh()`` reassigns the internal dicts.
-        """
+        """Look up an item by name, creating it if necessary."""
         if not name.strip():
             return None
         with self._lock:
-            mapping: dict[str, dict] = getattr(self, mapping_attr)
-            matched = _match_item(name, mapping, normalizer, allow_substring)
+            kind = kind_factory()
+            matched = _match_item(name, kind.mapping, kind.normalizer, kind.allow_substring)
             if matched:
                 return matched.get("id")
             try:
-                created = creator(name.strip())
+                created = kind.creator(name.strip())
             except Exception:
                 log.warning(
                     "Failed to create item; refreshing cache",
-                    item_label=item_label,
+                    item_label=kind.label,
                     name=name,
                 )
                 self.refresh()
-                mapping = getattr(self, mapping_attr)
-                matched = _match_item(name, mapping, normalizer, allow_substring)
+                kind = kind_factory()
+                matched = _match_item(
+                    name, kind.mapping, kind.normalizer, kind.allow_substring,
+                )
                 if matched:
                     return matched.get("id")
                 raise
-            items: list[dict] = getattr(self, items_attr)
-            items.append(created)
-            mapping[normalizer(created.get("name", name))] = created
+            kind.items.append(created)
+            kind.mapping[kind.normalizer(created.get("name", name))] = created
             return created.get("id")
 
     def get_or_create_correspondent_id(self, name: str) -> int | None:
-        """Resolve an existing correspondent by name or create a new one."""
-        return self._get_or_create_item_id(
-            name,
-            mapping_attr="_correspondent_map",
-            items_attr="_correspondents",
-            normalizer=normalize_name,
-            allow_substring=True,
-            creator=self._client.create_correspondent,
-            item_label="correspondent",
-        )
+        return self._get_or_create_item_id(name, self._correspondent_kind)
 
     def get_or_create_document_type_id(self, name: str) -> int | None:
-        """Resolve an existing document type by name or create a new one."""
-        return self._get_or_create_item_id(
-            name,
-            mapping_attr="_document_type_map",
-            items_attr="_document_types",
-            normalizer=normalize_simple,
-            allow_substring=False,
-            creator=self._client.create_document_type,
-            item_label="document type",
-        )
+        return self._get_or_create_item_id(name, self._document_type_kind)
 
     def get_or_create_tag_ids(self, tags: Iterable[str]) -> list[int]:
         """

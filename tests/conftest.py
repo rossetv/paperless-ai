@@ -1,10 +1,4 @@
-"""
-Pytest root configuration.
-
-- Adds ``src/`` to ``sys.path`` for robust imports.
-- Registers custom markers (unit, integration, e2e).
-- Provides shared fixtures available to all test files.
-"""
+"""Tests for pytest root configuration."""
 
 from __future__ import annotations
 
@@ -12,11 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
-
-# ---------------------------------------------------------------------------
-# Path setup
-# ---------------------------------------------------------------------------
 
 def _ensure_src_on_path() -> None:
     repo_root = Path(__file__).resolve().parents[1]
@@ -28,20 +17,10 @@ def _ensure_src_on_path() -> None:
 
 _ensure_src_on_path()
 
-
-# ---------------------------------------------------------------------------
-# Marker registration
-# ---------------------------------------------------------------------------
-
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "unit: Unit tests (fast, no I/O)")
     config.addinivalue_line("markers", "integration: Integration tests (module boundaries)")
     config.addinivalue_line("markers", "e2e: End-to-end tests (full workflows)")
-
-
-# ---------------------------------------------------------------------------
-# Auto-mark tests by directory
-# ---------------------------------------------------------------------------
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
@@ -52,11 +31,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.integration)
         elif "/e2e/" in path:
             item.add_marker(pytest.mark.e2e)
-
-
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def settings():

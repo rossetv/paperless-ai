@@ -1,9 +1,4 @@
-"""
-Unit tests for common.claims.claim_processing_tag.
-
-Tests cover: immediate returns for None/0 tag_id, all four steps of the
-claim workflow (refresh, check, patch, verify), and logging on success.
-"""
+"""Tests for common.claims."""
 
 from __future__ import annotations
 

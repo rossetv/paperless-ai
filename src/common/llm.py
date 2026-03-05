@@ -17,14 +17,32 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.InternalServerError,
 )
 
-# Module-level OpenAI client, initialised by setup_libraries().
-_openai_client: openai.OpenAI | None = None
+
+class _OpenAIClientHolder:
+    """Thread-safe holder for the shared OpenAI client singleton.
+
+    Avoids a bare module-level mutable by encapsulating the state in an
+    instance attribute with explicit init/get methods.
+    """
+
+    def __init__(self) -> None:
+        self._client: openai.OpenAI | None = None
+
+    def init(self, client: openai.OpenAI) -> None:
+        self._client = client
+
+    def get(self) -> openai.OpenAI:
+        """Return the stored client, raising if not yet initialised."""
+        if self._client is None:
+            raise RuntimeError("OpenAI client not initialised; call setup_libraries() first")
+        return self._client
+
+
+_openai_holder = _OpenAIClientHolder()
 
 
 def init_openai_client(client: openai.OpenAI) -> None:
-    """Store the configured OpenAI client for use by the mixin."""
-    global _openai_client  # noqa: PLW0603
-    _openai_client = client
+    _openai_holder.init(client)
 
 
 class OpenAIChatMixin:
@@ -37,22 +55,14 @@ class OpenAIChatMixin:
 
     @retry(retryable_exceptions=RETRYABLE_OPENAI_EXCEPTIONS)
     def _create_completion(self, **kwargs):
-        """Call the OpenAI-compatible chat completion API with retries."""
-        if _openai_client is None:
-            raise RuntimeError("OpenAI client not initialised; call setup_libraries() first")
+        client = _openai_holder.get()
         with llm_limiter.acquire():
-            return _openai_client.chat.completions.create(**kwargs)
+            return client.chat.completions.create(**kwargs)
 
 
 def unique_models(models: list[str]) -> list[str]:
     """Deduplicate a model list while preserving insertion order."""
-    seen: set[str] = set()
-    unique: list[str] = []
-    for model in models:
-        if model not in seen:
-            seen.add(model)
-            unique.append(model)
-    return unique
+    return list(dict.fromkeys(models))
 
 
 class ThreadSafeStats:

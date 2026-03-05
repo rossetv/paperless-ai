@@ -1,6 +1,4 @@
-"""
-Comprehensive unit tests for classifier.content_prep module.
-"""
+"""Tests for classifier.content_prep."""
 
 from __future__ import annotations
 
@@ -14,11 +12,6 @@ from classifier.content_prep import (
     truncate_content_by_pages,
 )
 from classifier.constants import PAGE_HEADER_RE
-
-
-# ---------------------------------------------------------------------------
-# _split_footer
-# ---------------------------------------------------------------------------
 
 class TestSplitFooter:
     """Tests for _split_footer(content)."""
@@ -58,11 +51,6 @@ class TestSplitFooter:
         assert body == content
         assert footer == ""
 
-
-# ---------------------------------------------------------------------------
-# _extract_page_numbers
-# ---------------------------------------------------------------------------
-
 class TestExtractPageNumbers:
     """Tests for _extract_page_numbers(matches)."""
 
@@ -93,11 +81,6 @@ class TestExtractPageNumbers:
         numbers = _extract_page_numbers(matches)
         assert numbers == [1]
 
-
-# ---------------------------------------------------------------------------
-# _format_page_ranges
-# ---------------------------------------------------------------------------
-
 class TestFormatPageRanges:
     """Tests for _format_page_ranges(page_numbers)."""
 
@@ -124,11 +107,6 @@ class TestFormatPageRanges:
 
     def test_unsorted_input(self):
         assert _format_page_ranges([5, 1, 3, 2]) == "1-3, 5"
-
-
-# ---------------------------------------------------------------------------
-# truncate_content_by_chars
-# ---------------------------------------------------------------------------
 
 class TestTruncateContentByChars:
     """Tests for truncate_content_by_chars(content, max_chars)."""
@@ -169,11 +147,6 @@ class TestTruncateContentByChars:
     def test_exact_limit(self):
         content = "A" * 50
         assert truncate_content_by_chars(content, 50) == content
-
-
-# ---------------------------------------------------------------------------
-# truncate_content_by_pages
-# ---------------------------------------------------------------------------
 
 class TestTruncateContentByPages:
     """Tests for truncate_content_by_pages(content, max_pages, tail_pages, headerless_char_limit)."""

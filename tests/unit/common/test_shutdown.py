@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.shutdown``.
-
-Covers the shutdown flag lifecycle, signal handler registration, and
-simulated signal delivery.
-"""
+"""Tests for common.shutdown."""
 
 from __future__ import annotations
 
@@ -18,11 +13,6 @@ from common.shutdown import (
     reset_shutdown,
 )
 
-
-# ---------------------------------------------------------------------------
-# Ensure a clean slate for every test
-# ---------------------------------------------------------------------------
-
 @pytest.fixture(autouse=True)
 def _clean_shutdown():
     """Reset the shutdown flag and restore original signal handlers."""
@@ -34,20 +24,10 @@ def _clean_shutdown():
     signal.signal(signal.SIGTERM, original_sigterm)
     signal.signal(signal.SIGINT, original_sigint)
 
-
-# ===================================================================
-# Initial state: not shutdown
-# ===================================================================
-
 class TestInitialState:
 
     def test_not_shutdown_initially(self):
         assert is_shutdown_requested() is False
-
-
-# ===================================================================
-# request_shutdown sets the flag
-# ===================================================================
 
 class TestRequestShutdown:
 
@@ -60,11 +40,6 @@ class TestRequestShutdown:
         request_shutdown()
         assert is_shutdown_requested() is True
 
-
-# ===================================================================
-# is_shutdown_requested returns True after request
-# ===================================================================
-
 class TestIsShutdownRequested:
 
     def test_returns_false_before_request(self):
@@ -73,11 +48,6 @@ class TestIsShutdownRequested:
     def test_returns_true_after_request(self):
         request_shutdown()
         assert is_shutdown_requested() is True
-
-
-# ===================================================================
-# reset_shutdown clears the flag
-# ===================================================================
 
 class TestResetShutdown:
 
@@ -91,11 +61,6 @@ class TestResetShutdown:
         """Resetting an already-clear flag is a no-op."""
         reset_shutdown()
         assert is_shutdown_requested() is False
-
-
-# ===================================================================
-# register_signal_handlers installs SIGTERM and SIGINT handlers
-# ===================================================================
 
 class TestRegisterSignalHandlers:
 
@@ -112,11 +77,6 @@ class TestRegisterSignalHandlers:
         assert callable(handler)
         assert handler is not signal.SIG_DFL
         assert handler is not signal.SIG_IGN
-
-
-# ===================================================================
-# Signal handler calls request_shutdown
-# ===================================================================
 
 class TestSignalHandlerBehavior:
 

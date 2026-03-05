@@ -1,6 +1,4 @@
-"""
-Comprehensive unit tests for classifier.constants module.
-"""
+"""Tests for classifier.constants."""
 
 from __future__ import annotations
 
@@ -11,11 +9,6 @@ from classifier.constants import (
     MODEL_FOOTER_RE,
     PAGE_HEADER_RE,
 )
-
-
-# ---------------------------------------------------------------------------
-# PAGE_HEADER_RE
-# ---------------------------------------------------------------------------
 
 class TestPageHeaderRe:
     """Tests for PAGE_HEADER_RE pattern."""
@@ -45,11 +38,6 @@ class TestPageHeaderRe:
     def test_does_not_match_extra_text_on_line(self):
         assert PAGE_HEADER_RE.search("--- Page 1 --- extra") is None
 
-
-# ---------------------------------------------------------------------------
-# MODEL_FOOTER_RE
-# ---------------------------------------------------------------------------
-
 class TestModelFooterRe:
     """Tests for MODEL_FOOTER_RE pattern."""
 
@@ -69,11 +57,6 @@ class TestModelFooterRe:
     def test_no_match_without_prefix(self):
         assert MODEL_FOOTER_RE.search("model: gpt-5-mini") is None
 
-
-# ---------------------------------------------------------------------------
-# GENERIC_DOCUMENT_TYPES
-# ---------------------------------------------------------------------------
-
 class TestGenericDocumentTypes:
     """Tests for GENERIC_DOCUMENT_TYPES constant."""
 
@@ -88,11 +71,6 @@ class TestGenericDocumentTypes:
         for value in GENERIC_DOCUMENT_TYPES:
             assert value == value.lower()
 
-
-# ---------------------------------------------------------------------------
-# BLACKLISTED_TAGS
-# ---------------------------------------------------------------------------
-
 class TestBlacklistedTags:
     """Tests for BLACKLISTED_TAGS constant."""
 
@@ -106,11 +84,6 @@ class TestBlacklistedTags:
     def test_all_entries_are_lowercase(self):
         for value in BLACKLISTED_TAGS:
             assert value == value.lower()
-
-
-# ---------------------------------------------------------------------------
-# ERROR_PHRASES
-# ---------------------------------------------------------------------------
 
 class TestErrorPhrases:
     """Tests for ERROR_PHRASES constant."""

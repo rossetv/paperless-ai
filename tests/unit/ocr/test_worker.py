@@ -1,23 +1,4 @@
-"""
-Comprehensive unit tests for ocr.worker.DocumentProcessor.
-
-Tests cover:
-- process() happy path: full pipeline success
-- process() claim fails -> returns early
-- process() error tag present -> skips with finalize_with_error
-- process() refresh failure -> returns
-- process() download failure -> releases lock
-- process() image conversion failure -> finalizes with error
-- process() always releases processing lock in finally
-- _ocr_pages_in_parallel: handles errors, preserves order
-- _update_paperless_document: marks error on refusal/empty/redacted
-- _update_paperless_document: happy path swaps tags
-- _finalize_with_error: adds error tag, cleans pipeline tags
-- _finalize_with_error: no error tag configured -> just cleans tags
-- _finalize_with_error: with content updates content
-- _log_ocr_stats: zero stats, normal stats, empty stats
-- Images always closed (even on error)
-"""
+"""Tests for ocr.worker."""
 
 from __future__ import annotations
 
@@ -28,25 +9,8 @@ from PIL import Image
 
 from ocr.worker import DocumentProcessor
 from ocr.text_assembly import OCR_ERROR_MARKER
-
-
-# -----------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------
-
-def _make_settings(**overrides):
-    from tests.helpers.factories import make_settings_obj
-    return make_settings_obj(**overrides)
-
-
-def _make_mock_paperless(**overrides):
-    from tests.helpers.mocks import make_mock_paperless
-    return make_mock_paperless(**overrides)
-
-
-def _make_mock_ocr_provider(**overrides):
-    from tests.helpers.mocks import make_mock_ocr_provider
-    return make_mock_ocr_provider(**overrides)
+from tests.helpers.factories import make_document, make_settings_obj
+from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
 
 
 def _make_processor(
@@ -58,25 +22,19 @@ def _make_processor(
 ):
     """Create a DocumentProcessor with mocked dependencies."""
     if doc is None:
-        from tests.helpers.factories import make_document
         doc = make_document()
     if settings is None:
-        settings = _make_settings(**setting_overrides)
+        settings = make_settings_obj(**setting_overrides)
     if paperless is None:
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
     if ocr_provider is None:
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
     return DocumentProcessor(doc, paperless, ocr_provider, settings)
 
 
 def _make_image():
     """Create a simple test image."""
     return Image.new("RGB", (10, 10), color="red")
-
-
-# -----------------------------------------------------------------------
-# process() — happy path
-# -----------------------------------------------------------------------
 
 class TestProcessHappyPath:
     @patch("ocr.worker.release_processing_tag")
@@ -87,11 +45,11 @@ class TestProcessHappyPath:
         self, mock_assemble, mock_b2i, mock_claim, mock_release
     ):
         # Arrange
-        settings = _make_settings(
+        settings = make_settings_obj(
             OCR_PROCESSING_TAG_ID=999,
             ERROR_TAG_ID=552,
         )
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {
             "id": 1, "title": "Test", "tags": [443]
         }
@@ -100,7 +58,7 @@ class TestProcessHappyPath:
         images = [_make_image(), _make_image()]
         mock_b2i.return_value = images
 
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = [
             ("Page 1 text", "model-a"),
             ("Page 2 text", "model-a"),
@@ -133,17 +91,12 @@ class TestProcessHappyPath:
         assert 444 in tags  # POST_TAG_ID added
         assert 443 not in tags  # PRE_TAG_ID removed
 
-
-# -----------------------------------------------------------------------
-# process() — claim fails
-# -----------------------------------------------------------------------
-
 class TestProcessClaimFails:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=False)
     def test_claim_fails_returns_early(self, mock_claim, mock_release):
         # Arrange
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
         proc = _make_processor(paperless=paperless)
 
@@ -155,19 +108,14 @@ class TestProcessClaimFails:
         # Release not called because claimed=False
         mock_release.assert_not_called()
 
-
-# -----------------------------------------------------------------------
-# process() — error tag present
-# -----------------------------------------------------------------------
-
 class TestProcessErrorTagPresent:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag")
     @patch("common.tags.clean_pipeline_tags")
     def test_error_tag_skips_ocr(self, mock_clean, mock_claim, mock_release):
         # Arrange
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         # Return doc with error tag
         paperless.get_document.return_value = {
             "id": 1, "title": "T", "tags": [443, 552]
@@ -185,17 +133,12 @@ class TestProcessErrorTagPresent:
         mock_clean.assert_called_once()
         paperless.update_document_metadata.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# process() — refresh failure
-# -----------------------------------------------------------------------
-
 class TestProcessRefreshFailure:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag")
     def test_refresh_failure_propagates(self, mock_claim, mock_release):
         # Arrange
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         paperless.get_document.side_effect = ConnectionError("Network error")
         proc = _make_processor(paperless=paperless)
 
@@ -208,11 +151,6 @@ class TestProcessRefreshFailure:
         paperless.download_content.assert_not_called()
         mock_release.assert_not_called()
 
-
-# -----------------------------------------------------------------------
-# process() — image conversion failure
-# -----------------------------------------------------------------------
-
 class TestProcessImageConversionFailure:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
@@ -222,11 +160,11 @@ class TestProcessImageConversionFailure:
         self, mock_clean, mock_b2i, mock_claim, mock_release
     ):
         # Arrange
-        settings = _make_settings(
+        settings = make_settings_obj(
             OCR_PROCESSING_TAG_ID=999,
             ERROR_TAG_ID=552,
         )
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
         mock_clean.return_value = {552}
 
@@ -238,11 +176,6 @@ class TestProcessImageConversionFailure:
         # Assert — lock released
         mock_release.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# process() — always releases lock in finally
-# -----------------------------------------------------------------------
-
 class TestProcessAlwaysReleasesLock:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
@@ -251,8 +184,8 @@ class TestProcessAlwaysReleasesLock:
         self, mock_b2i, mock_claim, mock_release
     ):
         # Arrange
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=999)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
         paperless.download_content.side_effect = Exception("Download failed")
 
@@ -272,13 +205,13 @@ class TestProcessAlwaysReleasesLock:
         self, mock_b2i, mock_claim, mock_release
     ):
         # Arrange
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=999)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
         images = [_make_image()]
         mock_b2i.return_value = images
 
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = Exception("OCR boom")
 
         proc = _make_processor(
@@ -292,16 +225,11 @@ class TestProcessAlwaysReleasesLock:
         # Assert
         mock_release.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# _ocr_pages_in_parallel
-# -----------------------------------------------------------------------
-
 class TestOcrPagesInParallel:
     def test_preserves_page_order(self):
         # Arrange — single worker for deterministic side_effect ordering
-        settings = _make_settings(PAGE_WORKERS=1)
-        ocr_provider = _make_mock_ocr_provider()
+        settings = make_settings_obj(PAGE_WORKERS=1)
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = [
             ("Text page 1", "m"),
             ("Text page 2", "m"),
@@ -322,8 +250,8 @@ class TestOcrPagesInParallel:
 
     def test_handles_ocr_exception_per_page(self):
         # Arrange
-        settings = _make_settings(PAGE_WORKERS=1)
-        ocr_provider = _make_mock_ocr_provider()
+        settings = make_settings_obj(PAGE_WORKERS=1)
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = [
             ("Text page 1", "m"),
             Exception("OCR failed on page 2"),
@@ -351,21 +279,16 @@ class TestOcrPagesInParallel:
         assert results == []
         assert failed == []
 
-
-# -----------------------------------------------------------------------
-# _update_paperless_document — happy path
-# -----------------------------------------------------------------------
-
 class TestUpdatePaperlessDocumentHappy:
     @patch("ocr.worker.get_latest_tags")
     def test_happy_path_swaps_tags(self, mock_get_tags):
         # Arrange
-        settings = _make_settings(
+        settings = make_settings_obj(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=999,
         )
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         mock_get_tags.return_value = {443, 999, 100}  # user tag 100
 
         proc = _make_processor(paperless=paperless, settings=settings)
@@ -385,18 +308,13 @@ class TestUpdatePaperlessDocumentHappy:
         assert 444 in tag_set      # post added
         assert 100 in tag_set      # user tag preserved
 
-
-# -----------------------------------------------------------------------
-# _update_paperless_document — error conditions
-# -----------------------------------------------------------------------
-
 class TestUpdatePaperlessDocumentErrors:
     @patch("ocr.worker.get_latest_tags", return_value={443})
     @patch("common.tags.clean_pipeline_tags", return_value=set())
     def test_empty_text_marks_error(self, mock_clean, mock_get_tags):
         # Arrange
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -411,8 +329,8 @@ class TestUpdatePaperlessDocumentErrors:
     @patch("common.tags.clean_pipeline_tags", return_value=set())
     def test_ocr_error_marker_in_text_marks_error(self, mock_clean, mock_get_tags):
         # Arrange
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -429,11 +347,11 @@ class TestUpdatePaperlessDocumentErrors:
     @patch("common.tags.clean_pipeline_tags", return_value=set())
     def test_refusal_mark_in_text_marks_error(self, mock_clean, mock_get_tags):
         # Arrange
-        settings = _make_settings(
+        settings = make_settings_obj(
             ERROR_TAG_ID=552,
             REFUSAL_MARK="CHATGPT REFUSED TO TRANSCRIBE",
         )
-        paperless = _make_mock_paperless()
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -450,8 +368,8 @@ class TestUpdatePaperlessDocumentErrors:
     @patch("common.tags.clean_pipeline_tags", return_value=set())
     def test_redacted_marker_in_text_marks_error(self, mock_clean, mock_get_tags):
         # Arrange
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -462,18 +380,13 @@ class TestUpdatePaperlessDocumentErrors:
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
 
-
-# -----------------------------------------------------------------------
-# _finalize_with_error
-# -----------------------------------------------------------------------
-
 class TestFinalizeWithError:
     @patch("common.tags.clean_pipeline_tags")
     def test_adds_error_tag(self, mock_clean):
         # Arrange
         mock_clean.return_value = {100}  # user tag preserved
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -489,8 +402,8 @@ class TestFinalizeWithError:
     def test_no_error_tag_configured(self, mock_clean):
         # Arrange
         mock_clean.return_value = {100}
-        settings = _make_settings(ERROR_TAG_ID=None)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=None)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -505,8 +418,8 @@ class TestFinalizeWithError:
     def test_with_content_updates_document(self, mock_clean):
         # Arrange
         mock_clean.return_value = {552}
-        settings = _make_settings(ERROR_TAG_ID=552)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -521,8 +434,8 @@ class TestFinalizeWithError:
     def test_without_content_uses_metadata_update(self, mock_clean):
         # Arrange
         mock_clean.return_value = set()
-        settings = _make_settings(ERROR_TAG_ID=None)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(ERROR_TAG_ID=None)
+        paperless = make_mock_paperless()
         proc = _make_processor(paperless=paperless, settings=settings)
 
         # Act
@@ -532,16 +445,11 @@ class TestFinalizeWithError:
         paperless.update_document_metadata.assert_called_once()
         paperless.update_document.assert_not_called()
 
-
-# -----------------------------------------------------------------------
-# _log_ocr_stats
-# -----------------------------------------------------------------------
-
 class TestLogOcrStats:
     @patch("ocr.worker.log")
     def test_normal_stats_logged(self, mock_log):
         # Arrange
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.get_stats.return_value = {
             "attempts": 5,
             "refusals": 1,
@@ -562,7 +470,7 @@ class TestLogOcrStats:
     @patch("ocr.worker.log")
     def test_zero_attempts_not_logged(self, mock_log):
         # Arrange — get_stats returns 0 attempts
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.get_stats.return_value = {
             "attempts": 0,
             "refusals": 0,
@@ -580,17 +488,12 @@ class TestLogOcrStats:
 
     def test_empty_stats_dict(self):
         # Arrange
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.get_stats.return_value = {}
         proc = _make_processor(ocr_provider=ocr_provider)
 
         # Act — should not raise (empty dict is falsy -> returns early)
         proc._log_ocr_stats()
-
-
-# -----------------------------------------------------------------------
-# Images always closed
-# -----------------------------------------------------------------------
 
 class TestImagesAlwaysClosed:
     @patch("ocr.worker.release_processing_tag")
@@ -606,10 +509,10 @@ class TestImagesAlwaysClosed:
         img2 = MagicMock(spec=Image.Image)
         mock_b2i.return_value = [img1, img2]
 
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=None)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=None)
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
 
         proc = _make_processor(
             paperless=paperless, ocr_provider=ocr_provider, settings=settings
@@ -632,11 +535,11 @@ class TestImagesAlwaysClosed:
         img1 = MagicMock(spec=Image.Image)
         mock_b2i.return_value = [img1]
 
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=999)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
 
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = Exception("OCR boom")
 
         proc = _make_processor(
@@ -649,15 +552,9 @@ class TestImagesAlwaysClosed:
         # Assert — image closed despite OCR error
         img1.close.assert_called_once()
 
-
-# -----------------------------------------------------------------------
-# Constructor
-# -----------------------------------------------------------------------
-
 class TestDocumentProcessorInit:
     def test_extracts_doc_id(self):
         # Arrange
-        from tests.helpers.factories import make_document
         doc = make_document(id=42)
 
         # Act
@@ -668,7 +565,6 @@ class TestDocumentProcessorInit:
 
     def test_title_defaults_to_untitled(self):
         # Arrange
-        from tests.helpers.factories import make_document
         doc = make_document(title=None)
 
         # Act
@@ -679,7 +575,6 @@ class TestDocumentProcessorInit:
 
     def test_title_from_doc(self):
         # Arrange
-        from tests.helpers.factories import make_document
         doc = make_document(title="My Document")
 
         # Act
@@ -688,21 +583,16 @@ class TestDocumentProcessorInit:
         # Assert
         assert proc.title == "My Document"
 
-
-# -----------------------------------------------------------------------
-# process() — no pages
-# -----------------------------------------------------------------------
-
 class TestProcessNoPages:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
     @patch("ocr.worker.bytes_to_images", return_value=[])
     def test_no_pages_returns_early(self, mock_b2i, mock_claim, mock_release):
         # Arrange
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=999)
-        paperless = _make_mock_paperless()
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
+        paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
-        ocr_provider = _make_mock_ocr_provider()
+        ocr_provider = make_mock_ocr_provider()
 
         proc = _make_processor(
             paperless=paperless, ocr_provider=ocr_provider, settings=settings

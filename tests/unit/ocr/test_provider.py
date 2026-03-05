@@ -1,19 +1,4 @@
-"""
-Comprehensive unit tests for ocr.provider module.
-
-Tests cover:
-- is_error_content: refusal marker detection, case-insensitive, redacted markers
-- OcrProvider.transcribe_image:
-  - Successful transcription on first model
-  - Fallback on refusal
-  - Fallback on API error
-  - All models fail -> returns REFUSAL_MARK
-  - Blank image -> returns ("", "") without API call
-  - Image resizing when > OCR_MAX_SIDE
-  - Stats tracking (attempts, refusals, api_errors, fallback_successes)
-  - Thread-safe stat updates
-  - doc_id and page_num in logging context
-"""
+"""Tests for ocr.provider."""
 
 from __future__ import annotations
 
@@ -25,11 +10,6 @@ from PIL import Image
 
 from common.utils import is_error_content
 from ocr.provider import OcrProvider
-
-
-# -----------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------
 
 def _make_settings(**overrides):
     """Create a mock Settings for OcrProvider."""
@@ -63,11 +43,6 @@ def _make_test_image(width: int = 100, height: int = 100) -> Image.Image:
 def _make_blank_image() -> Image.Image:
     """Create a blank (all-white) image."""
     return Image.new("RGB", (100, 100), color="white")
-
-
-# -----------------------------------------------------------------------
-# is_error_content
-# -----------------------------------------------------------------------
 
 class TestIsRefusal:
     def test_matching_marker(self):
@@ -138,11 +113,6 @@ class TestIsRefusal:
 
         assert is_error_content("normal document text", markers) is False
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — successful transcription
-# -----------------------------------------------------------------------
-
 class TestOcrProviderSuccess:
     def test_first_model_success(self):
         # Arrange
@@ -174,11 +144,6 @@ class TestOcrProviderSuccess:
 
         # Assert
         assert text == "text with whitespace"
-
-
-# -----------------------------------------------------------------------
-# OcrProvider — fallback on refusal
-# -----------------------------------------------------------------------
 
 class TestOcrProviderRefusalFallback:
     def test_fallback_on_refusal(self):
@@ -226,11 +191,6 @@ class TestOcrProviderRefusalFallback:
         assert stats["refusals"] == 1
         assert stats["attempts"] == 2
         assert stats["fallback_successes"] == 1
-
-
-# -----------------------------------------------------------------------
-# OcrProvider — fallback on API error
-# -----------------------------------------------------------------------
 
 class TestOcrProviderApiErrorFallback:
     def test_fallback_on_api_error(self):
@@ -280,11 +240,6 @@ class TestOcrProviderApiErrorFallback:
         assert stats["api_errors"] == 1
         assert stats["fallback_successes"] == 1
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — all models fail
-# -----------------------------------------------------------------------
-
 class TestOcrProviderAllFail:
     def test_all_models_refuse_returns_refusal_mark(self):
         # Arrange
@@ -332,11 +287,6 @@ class TestOcrProviderAllFail:
         assert text == "REFUSED"
         assert model == ""
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — blank image
-# -----------------------------------------------------------------------
-
 class TestOcrProviderBlankImage:
     @patch("ocr.provider.is_blank", return_value=True)
     def test_blank_image_returns_empty_without_api_call(self, mock_is_blank):
@@ -369,11 +319,6 @@ class TestOcrProviderBlankImage:
         stats = provider.get_stats()
         assert stats["attempts"] == 0
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — image resizing
-# -----------------------------------------------------------------------
-
 class TestOcrProviderImageResize:
     @patch("ocr.provider.is_blank", return_value=False)
     def test_large_image_resized(self, mock_is_blank):
@@ -392,9 +337,8 @@ class TestOcrProviderImageResize:
         # Act
         provider.transcribe_image(image)
 
-        # Assert — image should have been resized (thumbnail modifies in place)
-        assert image.size[0] <= 500
-        assert image.size[1] <= 500
+        # Assert — the caller's image must NOT be mutated (copy is made internally)
+        assert image.size == (1000, 800)
 
     @patch("ocr.provider.is_blank", return_value=False)
     def test_small_image_not_resized(self, mock_is_blank):
@@ -414,11 +358,6 @@ class TestOcrProviderImageResize:
 
         # Assert — image not changed
         assert image.size == (100, 100)
-
-
-# -----------------------------------------------------------------------
-# OcrProvider — stats tracking
-# -----------------------------------------------------------------------
 
 class TestOcrProviderStats:
     def test_initial_stats(self):
@@ -489,11 +428,6 @@ class TestOcrProviderStats:
         assert stats["fallback_successes"] == 0
         assert stats["attempts"] == 1
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — thread-safe stats
-# -----------------------------------------------------------------------
-
 class TestOcrProviderThreadSafety:
     def test_concurrent_stat_increments(self):
         # Arrange
@@ -519,11 +453,6 @@ class TestOcrProviderThreadSafety:
         stats = provider.get_stats()
         assert stats["attempts"] == num_threads * increments_per_thread
 
-
-# -----------------------------------------------------------------------
-# OcrProvider — duplicate model deduplication
-# -----------------------------------------------------------------------
-
 class TestOcrProviderDuplicateModels:
     def test_duplicate_models_tried_once(self):
         # Arrange
@@ -544,11 +473,6 @@ class TestOcrProviderDuplicateModels:
         assert text == "ok from b"
         assert model == "model-b"
         assert provider._create_completion.call_count == 2
-
-
-# -----------------------------------------------------------------------
-# OcrProvider — None content handling
-# -----------------------------------------------------------------------
 
 class TestOcrProviderNoneContent:
     def test_none_response_content_treated_as_empty(self):
