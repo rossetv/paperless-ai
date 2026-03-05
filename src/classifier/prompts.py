@@ -124,7 +124,7 @@ Formatting templates
 Generic examples
 ----------------
 Amazon Invoice #123456
-Payslip for Vilmar Henrique Rosset - 08/2021
+Payslip for Maria Silva Santos - 08/2021
 
 Do not include any additional keys. If a value is unknown, return an empty
 string ("") or empty array ([]).
