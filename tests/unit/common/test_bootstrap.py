@@ -15,20 +15,6 @@ from common.preflight import PreflightError
 MODULE = "common.bootstrap"
 
 
-def _full_bootstrap_patches():
-    """Return a decorator stack for the full happy-path bootstrap."""
-    return [
-        patch(f"{MODULE}.recover_stale_locks"),
-        patch(f"{MODULE}.run_preflight_checks"),
-        patch(f"{MODULE}.PaperlessClient"),
-        patch(f"{MODULE}.llm_limiter"),
-        patch(f"{MODULE}.register_signal_handlers"),
-        patch(f"{MODULE}.setup_libraries"),
-        patch(f"{MODULE}.configure_logging"),
-        patch(f"{MODULE}.Settings"),
-    ]
-
-
 class TestBootstrapDaemon:
     """Tests for bootstrap_daemon()."""
 
