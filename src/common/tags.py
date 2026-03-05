@@ -76,7 +76,7 @@ def get_latest_tags(
     """
     try:
         latest = client.get_document(doc_id)
-    except (OSError, httpx.HTTPError):
+    except (OSError, httpx.HTTPError, ValueError):
         log.exception(
             "Failed to refresh document tags; using cached tags",
             doc_id=doc_id,
