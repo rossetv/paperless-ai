@@ -104,7 +104,7 @@ class TestRecoverStaleLocks:
         # Second document fails
         client.update_document_metadata.side_effect = [
             None,                           # doc 1 OK
-            RuntimeError("update failed"),  # doc 2 fails
+            ConnectionError("update failed"),  # doc 2 fails
             None,                           # doc 3 OK
         ]
 

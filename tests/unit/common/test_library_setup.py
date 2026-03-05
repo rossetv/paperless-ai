@@ -1,16 +1,14 @@
 """
 Comprehensive tests for ``common.library_setup.setup_libraries``.
 
-Covers Pillow MAX_IMAGE_PIXELS, OpenAI provider configuration, Ollama
-provider configuration, httpx client creation, and atexit registration.
+Covers Pillow MAX_IMAGE_PIXELS, OpenAI client creation for both providers,
+httpx client creation, and atexit registration.
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import httpx
-import openai
 import pytest
 from PIL import Image
 
@@ -34,22 +32,12 @@ def _make_settings(
 
 
 @pytest.fixture(autouse=True)
-def _reset_openai():
-    """Save and restore openai module-level attributes; close leaked clients."""
-    orig_key = getattr(openai, "api_key", None)
-    orig_base = getattr(openai, "base_url", None)
-    orig_client = getattr(openai, "http_client", None)
+def _reset_openai_client():
+    """Reset the module-level OpenAI client after each test."""
+    import common.llm as llm_mod
+    orig = llm_mod._openai_client
     yield
-    # Close any httpx.Client created during the test before restoring
-    new_client = getattr(openai, "http_client", None)
-    if new_client is not None and new_client is not orig_client:
-        try:
-            new_client.close()
-        except Exception:
-            pass
-    openai.api_key = orig_key
-    openai.base_url = orig_base
-    openai.http_client = orig_client
+    llm_mod._openai_client = orig
 
 
 # ===================================================================
@@ -75,24 +63,16 @@ class TestPillowConfig:
 
 class TestOpenAIProvider:
 
-    def test_api_key_set(self):
+    @patch("common.library_setup.openai.OpenAI")
+    @patch("common.library_setup.atexit.register")
+    def test_openai_client_configured_correctly(self, mock_register, mock_openai_cls):
+        import common.llm as llm_mod
         settings = _make_settings(provider="openai", api_key="sk-my-key")
         setup_libraries(settings)
-        assert openai.api_key == "sk-my-key"
-
-    def test_base_url_not_set(self):
-        settings = _make_settings(provider="openai")
-        old_base = openai.base_url
-        setup_libraries(settings)
-        # base_url should NOT be changed for openai provider
-        # (the function does not set it for openai)
-        assert openai.base_url == old_base
-
-    def test_http_client_set(self):
-        settings = _make_settings(provider="openai")
-        setup_libraries(settings)
-        assert openai.http_client is not None
-        assert isinstance(openai.http_client, httpx.Client)
+        call_kwargs = mock_openai_cls.call_args.kwargs
+        assert call_kwargs["api_key"] == "sk-my-key"
+        assert call_kwargs["base_url"] is None
+        assert llm_mod._openai_client is mock_openai_cls.return_value
 
 
 # ===================================================================
@@ -101,62 +81,33 @@ class TestOpenAIProvider:
 
 class TestOllamaProvider:
 
-    def test_base_url_set(self):
+    @patch("common.library_setup.openai.OpenAI")
+    @patch("common.library_setup.atexit.register")
+    def test_ollama_client_configured_correctly(self, mock_register, mock_openai_cls):
         settings = _make_settings(
             provider="ollama",
             base_url="http://ollama:11434/v1/",
         )
         setup_libraries(settings)
-        assert openai.base_url == "http://ollama:11434/v1/"
-
-    def test_api_key_set_to_dummy(self):
-        settings = _make_settings(provider="ollama", base_url="http://localhost:11434/v1/")
-        setup_libraries(settings)
-        assert openai.api_key == "dummy"
-
-    def test_http_client_set(self):
-        settings = _make_settings(provider="ollama", base_url="http://localhost:11434/v1/")
-        setup_libraries(settings)
-        assert isinstance(openai.http_client, httpx.Client)
+        call_kwargs = mock_openai_cls.call_args.kwargs
+        assert call_kwargs["base_url"] == "http://ollama:11434/v1/"
+        assert call_kwargs["api_key"] == "dummy"
 
 
 # ===================================================================
-# httpx Client created with trust_env=False
+# httpx Client and atexit registration
 # ===================================================================
 
-class TestHttpxClient:
+class TestHttpxClientAndCleanup:
 
+    @patch("common.library_setup.openai.OpenAI")
     @patch("common.library_setup.httpx.Client")
     @patch("common.library_setup.atexit.register")
-    def test_trust_env_false(self, mock_register, mock_client_cls):
-        mock_instance = MagicMock()
-        mock_client_cls.return_value = mock_instance
+    def test_httpx_client_created_and_registered(self, mock_register, mock_client_cls, mock_openai_cls):
+        mock_http = MagicMock()
+        mock_client_cls.return_value = mock_http
         settings = _make_settings()
         setup_libraries(settings)
         mock_client_cls.assert_called_once_with(trust_env=False)
-
-
-# ===================================================================
-# atexit.register called for cleanup
-# ===================================================================
-
-class TestAtexitRegistration:
-
-    @patch("common.library_setup.atexit.register")
-    @patch("common.library_setup.httpx.Client")
-    def test_atexit_register_called(self, mock_client_cls, mock_register):
-        mock_instance = MagicMock()
-        mock_client_cls.return_value = mock_instance
-        settings = _make_settings()
-        setup_libraries(settings)
-        mock_register.assert_called_once_with(mock_instance.close)
-
-    @patch("common.library_setup.atexit.register")
-    @patch("common.library_setup.httpx.Client")
-    def test_atexit_registers_client_close(self, mock_client_cls, mock_register):
-        """The registered function should be the client's close method."""
-        mock_instance = MagicMock()
-        mock_client_cls.return_value = mock_instance
-        settings = _make_settings(provider="ollama", base_url="http://localhost:11434/v1/")
-        setup_libraries(settings)
-        mock_register.assert_called_once_with(mock_instance.close)
+        assert mock_openai_cls.call_args.kwargs["http_client"] is mock_http
+        mock_register.assert_called_once_with(mock_http.close)

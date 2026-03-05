@@ -193,14 +193,15 @@ class TestProcessErrorTagPresent:
 class TestProcessRefreshFailure:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag")
-    def test_refresh_failure_returns(self, mock_claim, mock_release):
+    def test_refresh_failure_propagates(self, mock_claim, mock_release):
         # Arrange
         paperless = _make_mock_paperless()
-        paperless.get_document.side_effect = Exception("Network error")
+        paperless.get_document.side_effect = ConnectionError("Network error")
         proc = _make_processor(paperless=paperless)
 
-        # Act
-        proc.process()
+        # Act — exception propagates to the caller (daemon thread pool handles it)
+        with pytest.raises(ConnectionError, match="Network error"):
+            proc.process()
 
         # Assert
         mock_claim.assert_not_called()
@@ -647,74 +648,6 @@ class TestImagesAlwaysClosed:
 
         # Assert — image closed despite OCR error
         img1.close.assert_called_once()
-
-
-# -----------------------------------------------------------------------
-# _refresh_document
-# -----------------------------------------------------------------------
-
-class TestRefreshDocument:
-    def test_success_returns_latest(self):
-        # Arrange
-        paperless = _make_mock_paperless()
-        latest_doc = {"id": 1, "title": "Updated", "tags": [443]}
-        paperless.get_document.return_value = latest_doc
-        proc = _make_processor(paperless=paperless)
-
-        # Act
-        result = proc._refresh_document()
-
-        # Assert
-        assert result == latest_doc
-        assert proc.doc == latest_doc
-
-    def test_failure_returns_none(self):
-        # Arrange
-        paperless = _make_mock_paperless()
-        paperless.get_document.side_effect = Exception("Network error")
-        proc = _make_processor(paperless=paperless)
-
-        # Act
-        result = proc._refresh_document()
-
-        # Assert
-        assert result is None
-
-
-# -----------------------------------------------------------------------
-# _claim_processing_tag
-# -----------------------------------------------------------------------
-
-class TestClaimProcessingTag:
-    @patch("ocr.worker.claim_processing_tag", return_value=True)
-    def test_delegates_to_claim_function(self, mock_claim):
-        # Arrange
-        settings = _make_settings(OCR_PROCESSING_TAG_ID=999)
-        paperless = _make_mock_paperless()
-        proc = _make_processor(paperless=paperless, settings=settings)
-
-        # Act
-        result = proc._claim_processing_tag()
-
-        # Assert
-        assert result is True
-        mock_claim.assert_called_once_with(
-            paperless_client=paperless,
-            doc_id=1,
-            tag_id=999,
-            purpose="ocr",
-        )
-
-    @patch("ocr.worker.claim_processing_tag", return_value=False)
-    def test_returns_false_on_failure(self, mock_claim):
-        # Arrange
-        proc = _make_processor()
-
-        # Act
-        result = proc._claim_processing_tag()
-
-        # Assert
-        assert result is False
 
 
 # -----------------------------------------------------------------------

@@ -59,10 +59,12 @@ class ClassificationProvider(OpenAIChatMixin):
             return None
         return {"type": "json_schema", "json_schema": CLASSIFICATION_JSON_SCHEMA}
 
-    # Maximum number of compatibility retries before giving up.  There are
-    # at most three strippable parameters (temperature, response_format,
-    # max_tokens), so 3 is the theoretical maximum.
-    _MAX_COMPAT_RETRIES: int = 3
+    # Strippable parameters: (param_key, error_detector_method, stat_key).
+    _COMPAT_PARAMS: tuple[tuple[str, str, str], ...] = (
+        ("temperature", "_is_temperature_error", "temperature_retries"),
+        ("response_format", "_is_response_format_error", "response_format_retries"),
+        ("max_tokens", "_is_max_tokens_error", "max_tokens_retries"),
+    )
 
     def _create_with_compat(self, params: dict, model: str):
         """Call the chat completion API, retrying after stripping unsupported params.
@@ -70,7 +72,7 @@ class ClassificationProvider(OpenAIChatMixin):
         Ollama and some OpenAI models reject parameters they don't understand
         (``temperature``, ``response_format``, ``max_tokens``).  When we get a
         ``400 Bad Request`` whose message names the offending parameter, we
-        remove it and retry the same model.
+        remove it and retry the same model — up to ``len(_COMPAT_PARAMS)`` times.
         """
         compat_retries = 0
         while True:
@@ -78,39 +80,12 @@ class ClassificationProvider(OpenAIChatMixin):
                 self._stats.inc("attempts")
                 return self._create_completion(**params)
             except openai.BadRequestError as e:
-                # Try compat adjustments only while below the retry bound.
-                if compat_retries < self._MAX_COMPAT_RETRIES:
-                    if self._is_temperature_error(e) and "temperature" in params:
-                        log.warning(
-                            "Model does not support temperature; retrying with defaults",
-                            model=model,
-                        )
-                        self._stats.inc("temperature_retries")
-                        params = dict(params)
-                        params.pop("temperature", None)
+                if compat_retries < len(self._COMPAT_PARAMS):
+                    stripped = self._try_strip_compat_param(e, params, model)
+                    if stripped is not None:
+                        params = stripped
                         compat_retries += 1
                         continue
-                    if self._is_response_format_error(e) and "response_format" in params:
-                        log.warning(
-                            "Model does not support response_format; retrying without it",
-                            model=model,
-                        )
-                        self._stats.inc("response_format_retries")
-                        params = dict(params)
-                        params.pop("response_format", None)
-                        compat_retries += 1
-                        continue
-                    if self._is_max_tokens_error(e) and "max_tokens" in params:
-                        log.warning(
-                            "Model does not support max_tokens; retrying without it",
-                            model=model,
-                        )
-                        self._stats.inc("max_tokens_retries")
-                        params = dict(params)
-                        params.pop("max_tokens", None)
-                        compat_retries += 1
-                        continue
-                # Unrecognized error or compat retries exhausted — give up.
                 log.warning("Classification request rejected", model=model, error=e)
                 self._stats.inc("api_errors")
                 return None
@@ -118,6 +93,23 @@ class ClassificationProvider(OpenAIChatMixin):
                 log.warning("Classification model failed", model=model, error=e)
                 self._stats.inc("api_errors")
                 return None
+
+    def _try_strip_compat_param(
+        self, error: openai.BadRequestError, params: dict, model: str,
+    ) -> dict | None:
+        """Strip the first unsupported parameter from *params*, or return ``None``."""
+        for param_key, detector_name, stat_key in self._COMPAT_PARAMS:
+            if param_key in params and getattr(self, detector_name)(error):
+                log.warning(
+                    "Model does not support parameter; retrying without it",
+                    model=model,
+                    parameter=param_key,
+                )
+                self._stats.inc(stat_key)
+                stripped = dict(params)
+                del stripped[param_key]
+                return stripped
+        return None
 
     def classify_text(
         self,

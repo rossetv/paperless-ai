@@ -38,13 +38,3 @@ class LLMConcurrencyLimiter:
 
 
 llm_limiter = LLMConcurrencyLimiter()
-
-
-def init_llm_semaphore(max_concurrent: int) -> None:
-    llm_limiter.init(max_concurrent)
-
-
-@contextmanager
-def llm_semaphore() -> Generator[None, None, None]:
-    with llm_limiter.acquire():
-        yield

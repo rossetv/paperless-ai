@@ -93,7 +93,12 @@ class ClassificationProcessor:
                 self._finalize_with_error(current_tags)
                 return
 
-            claimed = self._claim_processing_tag()
+            claimed = claim_processing_tag(
+                paperless_client=self.paperless_client,
+                doc_id=self.doc_id,
+                tag_id=self.settings.CLASSIFY_PROCESSING_TAG_ID,
+                purpose="classification",
+            )
             if not claimed:
                 return
 
@@ -126,7 +131,7 @@ class ClassificationProcessor:
                 self._finalize_with_error(current_tags)
                 return
 
-            self._apply_classification(document, content, result, model)
+            self._apply_classification(document, current_tags, content, result, model)
         finally:
             if claimed:
                 release_processing_tag(
@@ -183,15 +188,6 @@ class ClassificationProcessor:
             )
 
         return input_text, truncation_notes
-
-    def _claim_processing_tag(self) -> bool:
-        """Claim the classification processing-lock tag with verification."""
-        return claim_processing_tag(
-            paperless_client=self.paperless_client,
-            doc_id=self.doc_id,
-            tag_id=self.settings.CLASSIFY_PROCESSING_TAG_ID,
-            purpose="classification",
-        )
 
     def _requeue_for_ocr(self, tags: set[int]) -> None:
         """Move the document back to the OCR queue (content was empty)."""
@@ -255,6 +251,7 @@ class ClassificationProcessor:
     def _apply_classification(
         self,
         document: dict,
+        current_tags: set[int],
         content: str,
         result: ClassificationResult,
         model: str,
@@ -265,7 +262,7 @@ class ClassificationProcessor:
                 "OCR content contains refusal markers; marking error",
                 doc_id=self.doc_id,
             )
-            self._finalize_with_error(extract_tags(document, doc_id=self.doc_id, context="classify-apply"))
+            self._finalize_with_error(current_tags)
             return
 
         parsed_date = parse_document_date(result.document_date)
@@ -277,7 +274,7 @@ class ClassificationProcessor:
         )
 
         # Merge new tag IDs with cleaned existing tags
-        current_tags = clean_pipeline_tags(extract_tags(document, doc_id=self.doc_id, context="classify-apply"), self.settings)
+        current_tags = clean_pipeline_tags(current_tags, self.settings)
         if self.settings.CLASSIFY_POST_TAG_ID:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
         current_tags.update(tag_ids)

@@ -14,6 +14,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import unittest.mock
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -48,8 +49,8 @@ class TestMain:
         # Assert
         assert result is None
         mock_bootstrap.assert_called_once_with(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
+            processing_tag_id=unittest.mock.ANY,
+            pre_tag_id=unittest.mock.ANY,
         )
 
     @patch("ocr.daemon.run_polling_threadpool")
@@ -317,7 +318,7 @@ class TestIterDocsToOcrMixed:
 # -----------------------------------------------------------------------
 
 class TestProcessDocument:
-    @patch("ocr.daemon.OpenAIProvider")
+    @patch("ocr.daemon.OcrProvider")
     @patch("ocr.daemon.PaperlessClient")
     @patch("ocr.daemon.DocumentProcessor")
     def test_creates_client_provider_processes_and_closes(
@@ -345,7 +346,7 @@ class TestProcessDocument:
         mock_processor_instance.process.assert_called_once()
         mock_client_instance.close.assert_called_once()
 
-    @patch("ocr.daemon.OpenAIProvider")
+    @patch("ocr.daemon.OcrProvider")
     @patch("ocr.daemon.PaperlessClient")
     @patch("ocr.daemon.DocumentProcessor")
     def test_client_closed_even_on_process_error(
@@ -368,7 +369,7 @@ class TestProcessDocument:
         # Assert — client closed despite error
         mock_client_instance.close.assert_called_once()
 
-    @patch("ocr.daemon.OpenAIProvider")
+    @patch("ocr.daemon.OcrProvider")
     @patch("ocr.daemon.PaperlessClient")
     @patch("ocr.daemon.DocumentProcessor")
     def test_provider_created_with_settings(

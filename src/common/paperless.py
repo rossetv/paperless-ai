@@ -32,23 +32,23 @@ class PaperlessClient:
             response.raise_for_status()
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
-    def _get(self, *args, **kwargs) -> httpx.Response:
+    def _get(self, url: str, **kwargs: Any) -> httpx.Response:
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._client.get(*args, **kwargs)
+        response = self._client.get(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
-    def _patch(self, *args, **kwargs) -> httpx.Response:
+    def _patch(self, url: str, **kwargs: Any) -> httpx.Response:
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._client.patch(*args, **kwargs)
+        response = self._client.patch(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
-    def _post(self, *args, **kwargs) -> httpx.Response:
+    def _post(self, url: str, **kwargs: Any) -> httpx.Response:
         kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
-        response = self._client.post(*args, **kwargs)
+        response = self._client.post(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
@@ -141,6 +141,17 @@ class PaperlessClient:
         response.raise_for_status()
         log.info("Successfully updated document", doc_id=doc_id)
 
+    # Maps keyword argument names to Paperless API field names.
+    _METADATA_FIELDS: tuple[tuple[str, str], ...] = (
+        ("title", "title"),
+        ("correspondent_id", "correspondent"),
+        ("document_type_id", "document_type"),
+        ("document_date", "created"),
+        ("tags", "tags"),
+        ("language", "language"),
+        ("custom_fields", "custom_fields"),
+    )
+
     def update_document_metadata(
         self,
         doc_id: int,
@@ -153,21 +164,12 @@ class PaperlessClient:
         language: str | None = None,
         custom_fields: list[dict] | None = None,
     ) -> None:
-        payload: dict = {}
-        if title is not None:
-            payload["title"] = title
-        if correspondent_id is not None:
-            payload["correspondent"] = correspondent_id
-        if document_type_id is not None:
-            payload["document_type"] = document_type_id
-        if document_date is not None:
-            payload["created"] = document_date
-        if tags is not None:
-            payload["tags"] = tags
-        if language is not None:
-            payload["language"] = language
-        if custom_fields is not None:
-            payload["custom_fields"] = custom_fields
+        local_vars = locals()
+        payload = {
+            api_key: local_vars[param]
+            for param, api_key in self._METADATA_FIELDS
+            if local_vars[param] is not None
+        }
 
         if not payload:
             log.info("No metadata updates to apply", doc_id=doc_id)

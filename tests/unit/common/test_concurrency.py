@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from common.concurrency import llm_limiter, init_llm_semaphore, llm_semaphore
+from common.concurrency import llm_limiter
 
 
 # ---------------------------------------------------------------------------
@@ -34,12 +34,12 @@ def _reset_semaphore():
 class TestInitZero:
 
     def test_zero_sets_semaphore_to_none(self):
-        init_llm_semaphore(0)
+        llm_limiter.init(0)
         assert llm_limiter._semaphore is None
 
     def test_negative_treated_as_zero(self):
         """Negative values should also result in no semaphore (unlimited)."""
-        init_llm_semaphore(-1)
+        llm_limiter.init(-1)
         assert llm_limiter._semaphore is None
 
 
@@ -50,35 +50,35 @@ class TestInitZero:
 class TestInitPositive:
 
     def test_creates_bounded_semaphore(self):
-        init_llm_semaphore(3)
+        llm_limiter.init(3)
         assert llm_limiter._semaphore is not None
         assert isinstance(llm_limiter._semaphore, threading.BoundedSemaphore)
 
     def test_creates_semaphore_with_value_1(self):
-        init_llm_semaphore(1)
+        llm_limiter.init(1)
         assert llm_limiter._semaphore is not None
 
 
 # ===================================================================
-# llm_semaphore() with unlimited -> yields immediately (no-op)
+# llm_limiter.acquire() with unlimited -> yields immediately (no-op)
 # ===================================================================
 
 class TestUnlimitedSemaphore:
 
     def test_yields_immediately(self):
-        init_llm_semaphore(0)
+        llm_limiter.init(0)
         entered = False
-        with llm_semaphore():
+        with llm_limiter.acquire():
             entered = True
         assert entered is True
 
     def test_no_blocking(self):
         """Multiple threads can enter simultaneously without blocking."""
-        init_llm_semaphore(0)
+        llm_limiter.init(0)
         results = []
 
         def worker():
-            with llm_semaphore():
+            with llm_limiter.acquire():
                 results.append(threading.current_thread().name)
 
         threads = [threading.Thread(target=worker) for _ in range(10)]
@@ -91,21 +91,21 @@ class TestUnlimitedSemaphore:
 
 
 # ===================================================================
-# llm_semaphore() with limit -> actually limits concurrent threads
+# llm_limiter.acquire() with limit -> actually limits concurrent threads
 # ===================================================================
 
 class TestLimitedSemaphore:
 
     def test_limits_concurrency(self):
         """With semaphore of 2, at most 2 threads run concurrently."""
-        init_llm_semaphore(2)
+        llm_limiter.init(2)
         max_concurrent = 0
         current_concurrent = 0
         lock = threading.Lock()
 
         def worker():
             nonlocal max_concurrent, current_concurrent
-            with llm_semaphore():
+            with llm_limiter.acquire():
                 with lock:
                     current_concurrent += 1
                     max_concurrent = max(max_concurrent, current_concurrent)
@@ -123,14 +123,14 @@ class TestLimitedSemaphore:
 
     def test_semaphore_released_on_exception(self):
         """Semaphore is released even if the body raises."""
-        init_llm_semaphore(1)
+        llm_limiter.init(1)
 
         with pytest.raises(RuntimeError):
-            with llm_semaphore():
+            with llm_limiter.acquire():
                 raise RuntimeError("boom")
 
         # The semaphore should be released, so another acquire succeeds
-        with llm_semaphore():
+        with llm_limiter.acquire():
             pass  # would deadlock if not released
 
 
@@ -141,16 +141,16 @@ class TestLimitedSemaphore:
 class TestReInit:
 
     def test_reinit_replaces_semaphore(self):
-        init_llm_semaphore(5)
+        llm_limiter.init(5)
         first = llm_limiter._semaphore
-        init_llm_semaphore(2)
+        llm_limiter.init(2)
         second = llm_limiter._semaphore
         assert first is not second
 
     def test_reinit_to_unlimited(self):
-        init_llm_semaphore(5)
+        llm_limiter.init(5)
         assert llm_limiter._semaphore is not None
-        init_llm_semaphore(0)
+        llm_limiter.init(0)
         assert llm_limiter._semaphore is None
 
 

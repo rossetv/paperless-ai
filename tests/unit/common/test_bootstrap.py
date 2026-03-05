@@ -21,26 +21,26 @@ class TestBootstrapDaemon:
     @patch(f"{MODULE}.recover_stale_locks")
     @patch(f"{MODULE}.run_preflight_checks")
     @patch(f"{MODULE}.PaperlessClient")
-    @patch(f"{MODULE}.init_llm_semaphore")
+    @patch(f"{MODULE}.llm_limiter")
     @patch(f"{MODULE}.register_signal_handlers")
     @patch(f"{MODULE}.setup_libraries")
     @patch(f"{MODULE}.configure_logging")
     @patch(f"{MODULE}.Settings")
-    def test_successful_bootstrap_returns_settings_and_client(
+    def test_successful_bootstrap(
         self,
         mock_settings_cls,
         mock_configure_logging,
         mock_setup_libraries,
         mock_register_signals,
-        mock_init_semaphore,
+        mock_llm_limiter,
         mock_paperless_cls,
         mock_preflight,
         mock_recover,
     ):
         # Arrange
         mock_settings = MagicMock()
-        mock_settings.LLM_MAX_CONCURRENT = 4
-        mock_settings.OCR_PROCESSING_TAG_ID = 100
+        mock_settings.LLM_MAX_CONCURRENT = 8
+        mock_settings.OCR_PROCESSING_TAG_ID = 55
         mock_settings.PRE_TAG_ID = 443
         mock_settings_cls.return_value = mock_settings
         mock_client = MagicMock()
@@ -48,15 +48,24 @@ class TestBootstrapDaemon:
 
         # Act
         result = bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
+            processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
+            pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
-        # Assert
+        # Assert — returns settings and client
         assert result is not None
         settings, client = result
         assert settings is mock_settings
         assert client is mock_client
+
+        # Assert — all subsystems initialized
+        mock_register_signals.assert_called_once()
+        mock_llm_limiter.init.assert_called_once_with(8)
+        mock_recover.assert_called_once_with(
+            mock_client,
+            processing_tag_id=55,
+            pre_tag_id=443,
+        )
 
     @patch(f"{MODULE}.Settings")
     def test_value_error_from_settings_returns_none(self, mock_settings_cls):
@@ -65,8 +74,8 @@ class TestBootstrapDaemon:
 
         # Act
         result = bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
+            processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
+            pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
         # Assert
@@ -83,8 +92,8 @@ class TestBootstrapDaemon:
 
         # Act
         result = bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
+            processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
+            pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
         # Assert
@@ -92,7 +101,7 @@ class TestBootstrapDaemon:
 
     @patch(f"{MODULE}.run_preflight_checks")
     @patch(f"{MODULE}.PaperlessClient")
-    @patch(f"{MODULE}.init_llm_semaphore")
+    @patch(f"{MODULE}.llm_limiter")
     @patch(f"{MODULE}.register_signal_handlers")
     @patch(f"{MODULE}.setup_libraries")
     @patch(f"{MODULE}.configure_logging")
@@ -103,7 +112,7 @@ class TestBootstrapDaemon:
         mock_configure_logging,
         mock_setup_libraries,
         mock_register_signals,
-        mock_init_semaphore,
+        mock_llm_limiter,
         mock_paperless_cls,
         mock_preflight,
     ):
@@ -116,116 +125,10 @@ class TestBootstrapDaemon:
 
         # Act
         result = bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
+            processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
+            pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
         # Assert
         assert result is None
         mock_client.close.assert_called_once()
-
-    @patch(f"{MODULE}.recover_stale_locks")
-    @patch(f"{MODULE}.run_preflight_checks")
-    @patch(f"{MODULE}.PaperlessClient")
-    @patch(f"{MODULE}.init_llm_semaphore")
-    @patch(f"{MODULE}.register_signal_handlers")
-    @patch(f"{MODULE}.setup_libraries")
-    @patch(f"{MODULE}.configure_logging")
-    @patch(f"{MODULE}.Settings")
-    def test_stale_lock_recovery_called_with_correct_attr_values(
-        self,
-        mock_settings_cls,
-        mock_configure_logging,
-        mock_setup_libraries,
-        mock_register_signals,
-        mock_init_semaphore,
-        mock_paperless_cls,
-        mock_preflight,
-        mock_recover,
-    ):
-        # Arrange
-        mock_settings = MagicMock(LLM_MAX_CONCURRENT=0)
-        mock_settings.OCR_PROCESSING_TAG_ID = 55
-        mock_settings.PRE_TAG_ID = 443
-        mock_settings_cls.return_value = mock_settings
-        mock_client = MagicMock()
-        mock_paperless_cls.return_value = mock_client
-
-        # Act
-        bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
-        )
-
-        # Assert
-        mock_recover.assert_called_once_with(
-            mock_client,
-            processing_tag_id=55,
-            pre_tag_id=443,
-        )
-
-    @patch(f"{MODULE}.recover_stale_locks")
-    @patch(f"{MODULE}.run_preflight_checks")
-    @patch(f"{MODULE}.PaperlessClient")
-    @patch(f"{MODULE}.init_llm_semaphore")
-    @patch(f"{MODULE}.register_signal_handlers")
-    @patch(f"{MODULE}.setup_libraries")
-    @patch(f"{MODULE}.configure_logging")
-    @patch(f"{MODULE}.Settings")
-    def test_signal_handlers_registered(
-        self,
-        mock_settings_cls,
-        mock_configure_logging,
-        mock_setup_libraries,
-        mock_register_signals,
-        mock_init_semaphore,
-        mock_paperless_cls,
-        mock_preflight,
-        mock_recover,
-    ):
-        # Arrange
-        mock_settings_cls.return_value = MagicMock(LLM_MAX_CONCURRENT=0)
-        mock_paperless_cls.return_value = MagicMock()
-
-        # Act
-        bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
-        )
-
-        # Assert
-        mock_register_signals.assert_called_once()
-
-    @patch(f"{MODULE}.recover_stale_locks")
-    @patch(f"{MODULE}.run_preflight_checks")
-    @patch(f"{MODULE}.PaperlessClient")
-    @patch(f"{MODULE}.init_llm_semaphore")
-    @patch(f"{MODULE}.register_signal_handlers")
-    @patch(f"{MODULE}.setup_libraries")
-    @patch(f"{MODULE}.configure_logging")
-    @patch(f"{MODULE}.Settings")
-    def test_llm_semaphore_initialized(
-        self,
-        mock_settings_cls,
-        mock_configure_logging,
-        mock_setup_libraries,
-        mock_register_signals,
-        mock_init_semaphore,
-        mock_paperless_cls,
-        mock_preflight,
-        mock_recover,
-    ):
-        # Arrange
-        mock_settings = MagicMock()
-        mock_settings.LLM_MAX_CONCURRENT = 8
-        mock_settings_cls.return_value = mock_settings
-        mock_paperless_cls.return_value = MagicMock()
-
-        # Act
-        bootstrap_daemon(
-            processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-            pre_tag_id_attr="PRE_TAG_ID",
-        )
-
-        # Assert
-        mock_init_semaphore.assert_called_once_with(8)

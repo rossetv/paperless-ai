@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 import structlog
 
-from .concurrency import init_llm_semaphore
+from .concurrency import llm_limiter
 from .config import Settings
 from .library_setup import setup_libraries
 from .logging_config import configure_logging
@@ -18,16 +20,21 @@ log = structlog.get_logger(__name__)
 
 def bootstrap_daemon(
     *,
-    processing_tag_id_attr: str,
-    pre_tag_id_attr: str,
+    processing_tag_id: Callable[[Settings], int | None],
+    pre_tag_id: Callable[[Settings], int],
 ) -> tuple[Settings, PaperlessClient] | None:
-    """Run the shared daemon startup. Returns (settings, client) or None on failure."""
+    """Run the shared daemon startup. Returns (settings, client) or None on failure.
+
+    *processing_tag_id* and *pre_tag_id* are callables that extract the
+    relevant tag IDs from the loaded settings, avoiding stringly-typed
+    ``getattr`` lookups.
+    """
     try:
         settings = Settings()
         configure_logging(settings)
         setup_libraries(settings)
         register_signal_handlers()
-        init_llm_semaphore(settings.LLM_MAX_CONCURRENT)
+        llm_limiter.init(settings.LLM_MAX_CONCURRENT)
     except ValueError as e:
         log.error("Configuration error", error=e)
         return None
@@ -42,8 +49,8 @@ def bootstrap_daemon(
 
     recover_stale_locks(
         list_client,
-        processing_tag_id=getattr(settings, processing_tag_id_attr),
-        pre_tag_id=getattr(settings, pre_tag_id_attr),
+        processing_tag_id=processing_tag_id(settings),
+        pre_tag_id=pre_tag_id(settings),
     )
 
     return settings, list_client

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Iterable
+from typing import Callable, Iterable
 
 import structlog
 
@@ -165,56 +165,72 @@ class TaxonomyCache:
 
     # ----- resolve or create -----
 
-    def get_or_create_correspondent_id(self, name: str) -> int | None:
-        """
-        Resolve an existing correspondent by name or create a new one.
+    def _get_or_create_item_id(
+        self,
+        name: str,
+        *,
+        mapping_attr: str,
+        items_attr: str,
+        normalizer: Callable[[str], str],
+        allow_substring: bool,
+        creator: Callable[[str], dict],
+        item_label: str,
+    ) -> int | None:
+        """Look up an item by name, creating it if necessary.
 
-        Uses :func:`normalize_name` (which strips company suffixes) and allows
-        substring matching so *"Revolut Ltd"* finds *"Revolut"*.
+        On creation failure, refreshes the cache and retries the lookup
+        before re-raising.  Uses attribute names so that references remain
+        valid after ``refresh()`` reassigns the internal dicts.
         """
         if not name.strip():
             return None
         with self._lock:
-            matched = _match_item(name, self._correspondent_map, normalize_name, True)
+            mapping: dict[str, dict] = getattr(self, mapping_attr)
+            matched = _match_item(name, mapping, normalizer, allow_substring)
             if matched:
                 return matched.get("id")
             try:
-                created = self._client.create_correspondent(name.strip())
+                created = creator(name.strip())
             except Exception:
-                log.warning("Failed to create correspondent; refreshing cache", name=name)
+                log.warning(
+                    "Failed to create item; refreshing cache",
+                    item_label=item_label,
+                    name=name,
+                )
                 self.refresh()
-                matched = _match_item(name, self._correspondent_map, normalize_name, True)
+                mapping = getattr(self, mapping_attr)
+                matched = _match_item(name, mapping, normalizer, allow_substring)
                 if matched:
                     return matched.get("id")
                 raise
-            self._correspondents.append(created)
-            self._correspondent_map[normalize_name(created.get("name", name))] = created
+            items: list[dict] = getattr(self, items_attr)
+            items.append(created)
+            mapping[normalizer(created.get("name", name))] = created
             return created.get("id")
+
+    def get_or_create_correspondent_id(self, name: str) -> int | None:
+        """Resolve an existing correspondent by name or create a new one."""
+        return self._get_or_create_item_id(
+            name,
+            mapping_attr="_correspondent_map",
+            items_attr="_correspondents",
+            normalizer=normalize_name,
+            allow_substring=True,
+            creator=self._client.create_correspondent,
+            item_label="correspondent",
+        )
 
     def get_or_create_document_type_id(self, name: str) -> int | None:
-        """
-        Resolve an existing document type by name or create a new one.
-
-        Uses exact :func:`normalize_simple` matching (no substring).
-        """
-        if not name.strip():
-            return None
-        with self._lock:
-            matched = _match_item(name, self._document_type_map, normalize_simple, False)
-            if matched:
-                return matched.get("id")
-            try:
-                created = self._client.create_document_type(name.strip())
-            except Exception:
-                log.warning("Failed to create document type; refreshing cache", name=name)
-                self.refresh()
-                matched = _match_item(name, self._document_type_map, normalize_simple, False)
-                if matched:
-                    return matched.get("id")
-                raise
-            self._document_types.append(created)
-            self._document_type_map[normalize_simple(created.get("name", name))] = created
-            return created.get("id")
+        """Resolve an existing document type by name or create a new one."""
+        return self._get_or_create_item_id(
+            name,
+            mapping_attr="_document_type_map",
+            items_attr="_document_types",
+            normalizer=normalize_simple,
+            allow_substring=False,
+            creator=self._client.create_document_type,
+            item_label="document type",
+        )
 
     def get_or_create_tag_ids(self, tags: Iterable[str]) -> list[int]:
         """

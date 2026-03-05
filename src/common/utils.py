@@ -14,8 +14,11 @@ def contains_redacted_marker(text: str) -> bool:
 
 
 def is_error_content(text: str, error_phrases: Iterable[str]) -> bool:
-    """Return ``True`` if *text* contains a refusal phrase or redaction marker."""
+    """Return ``True`` if *text* contains a refusal phrase or redaction marker.
+
+    Comparison is case-insensitive for both *text* and the phrases.
+    """
     text_lower = text.lower()
     return contains_redacted_marker(text) or any(
-        phrase in text_lower for phrase in error_phrases
+        phrase.lower() in text_lower for phrase in error_phrases
     )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from abc import ABC, abstractmethod
 from io import BytesIO
 
 import openai
@@ -12,7 +11,7 @@ from PIL import Image
 
 from common.config import Settings
 from common.llm import OpenAIChatMixin, ThreadSafeStats, unique_models
-from common.utils import contains_redacted_marker
+from common.utils import is_error_content
 from .prompts import TRANSCRIPTION_PROMPT
 
 log = structlog.get_logger(__name__)
@@ -29,51 +28,8 @@ def is_blank(image: Image.Image, threshold: int = 5) -> bool:
     return (sum(histogram) - histogram[255]) < threshold
 
 
-def is_refusal(text: str, markers: list[str]) -> bool:
-    """
-    Check whether the model declined to transcribe (case-insensitive).
-
-    Returns ``True`` when *text* contains any of the configured refusal
-    *markers* or a bracketed ``[REDACTED …]`` marker.
-    """
-    text_lower = text.lower()
-    return any(marker.lower() in text_lower for marker in markers) or contains_redacted_marker(
-        text
-    )
-
-
-class OcrProvider(ABC):
-    """
-    Abstract base class for OCR providers.
-
-    Subclass this to add support for a new vision-capable LLM backend.
-    """
-
-    def __init__(self, settings: Settings):
-        self.settings = settings
-
-    @abstractmethod
-    def transcribe_image(
-        self,
-        image: Image.Image,
-        doc_id: int | None = None,
-        page_num: int | None = None,
-    ) -> tuple[str, str]:
-        """
-        Transcribe an image and return ``(text, model_used)``.
-
-        *doc_id* and *page_num* are optional context fields used for logging.
-        """
-        raise NotImplementedError
-
-    def get_stats(self) -> dict[str, int]:
-        """Return provider stats. Override in subclasses that track stats."""
-        return {}
-
-
-class OpenAIProvider(OpenAIChatMixin, OcrProvider):
-    """
-    OCR provider backed by the OpenAI (or Ollama-compatible) chat API.
+class OcrProvider(OpenAIChatMixin):
+    """OCR provider backed by the OpenAI (or Ollama-compatible) chat API.
 
     Tries each model in ``settings.AI_MODELS`` in order, falling back to the
     next model when the current one refuses or errors.
@@ -82,7 +38,7 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
     _STAT_KEYS = ("attempts", "refusals", "api_errors", "fallback_successes")
 
     def __init__(self, settings: Settings):
-        super().__init__(settings)
+        self.settings = settings
         self._stats = ThreadSafeStats(self._STAT_KEYS)
 
     def get_stats(self) -> dict[str, int]:
@@ -143,7 +99,7 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
                 response = self._create_completion(**params)
                 text = (response.choices[0].message.content or "").strip()
 
-                if not is_refusal(text, self.settings.OCR_REFUSAL_MARKERS):
+                if not is_error_content(text, self.settings.OCR_REFUSAL_MARKERS):
                     if model != primary_model:
                         log.info("Fallback model succeeded", model=model, **log_ctx)
                         self._stats.inc("fallback_successes")

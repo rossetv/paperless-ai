@@ -65,7 +65,7 @@ def remove_stale_queue_tag(
         updated.discard(processing_tag_id)
     try:
         client.update_document_metadata(doc_id, tags=list(updated))
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to remove stale queue tag",
             doc_id=doc_id,
@@ -91,7 +91,7 @@ def release_processing_tag(
         return
     try:
         latest = client.get_document(doc_id)
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to refresh document before releasing processing tag",
             doc_id=doc_id,
@@ -105,7 +105,7 @@ def release_processing_tag(
     tags.discard(tag_id)
     try:
         client.update_document_metadata(doc_id, tags=list(tags))
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to release processing tag",
             doc_id=doc_id,

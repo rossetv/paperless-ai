@@ -1,14 +1,4 @@
-"""
-Classification Prompts
-======================
-
-The system prompt, JSON schema, and default parameters for the classification
-LLM call.
-
-Kept in a separate module so the provider logic (:mod:`classifier.provider`)
-stays focused on request orchestration and error handling, while the prompt
-content can be reviewed and edited independently.
-"""
+"""System prompt, JSON schema, and default parameters for classification."""
 
 from __future__ import annotations
 

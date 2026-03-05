@@ -2,7 +2,7 @@
 Comprehensive tests for ``common.llm``.
 
 Covers ``unique_models`` deduplication and ``OpenAIChatMixin._create_completion``
-delegation and semaphore usage.
+delegation and concurrency limiter usage.
 """
 
 from __future__ import annotations
@@ -63,59 +63,56 @@ class TestCreateCompletion:
         settings.MAX_RETRY_BACKOFF_SECONDS = 30
         return _TestClient(settings)
 
-    @patch("common.llm.llm_semaphore")
-    def test_delegates_to_openai(self, mock_sem, client):
-        """_create_completion passes kwargs through to openai."""
-        mock_sem.return_value.__enter__ = MagicMock(return_value=None)
-        mock_sem.return_value.__exit__ = MagicMock(return_value=False)
+    @patch("common.llm.llm_limiter")
+    @patch("common.llm._openai_client")
+    def test_delegates_to_openai(self, mock_client, mock_limiter, client):
+        """_create_completion passes kwargs through to the OpenAI client."""
         expected = MagicMock()
+        mock_client.chat.completions.create.return_value = expected
 
-        with patch("common.llm.openai") as mock_openai:
-            mock_openai.chat.completions.create.return_value = expected
-
-            result = client._create_completion(
-                model="gpt-5-mini",
-                messages=[{"role": "user", "content": "hello"}],
-            )
-
-        assert result is expected
-        mock_openai.chat.completions.create.assert_called_once_with(
+        result = client._create_completion(
             model="gpt-5-mini",
             messages=[{"role": "user", "content": "hello"}],
         )
 
-    @patch("common.llm.llm_semaphore")
-    def test_uses_llm_semaphore(self, mock_sem, client):
-        """_create_completion wraps the call in llm_semaphore()."""
-        mock_sem.return_value.__enter__ = MagicMock(return_value=None)
-        mock_sem.return_value.__exit__ = MagicMock(return_value=False)
+        assert result is expected
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="gpt-5-mini",
+            messages=[{"role": "user", "content": "hello"}],
+        )
 
-        with patch("common.llm.openai") as mock_openai:
-            mock_openai.chat.completions.create.return_value = MagicMock()
-            client._create_completion(model="m")
+    @patch("common.llm.llm_limiter")
+    @patch("common.llm._openai_client")
+    def test_uses_llm_limiter(self, mock_client, mock_limiter, client):
+        """_create_completion wraps the call in llm_limiter.acquire()."""
+        mock_client.chat.completions.create.return_value = MagicMock()
+        client._create_completion(model="m")
 
-        mock_sem.assert_called_once()
-        mock_sem.return_value.__enter__.assert_called_once()
+        mock_limiter.acquire.assert_called_once()
 
-    @patch("common.llm.llm_semaphore")
-    def test_extra_kwargs_forwarded(self, mock_sem, client):
+    @patch("common.llm.llm_limiter")
+    @patch("common.llm._openai_client")
+    def test_extra_kwargs_forwarded(self, mock_client, mock_limiter, client):
         """All keyword arguments are forwarded to the OpenAI API."""
-        mock_sem.return_value.__enter__ = MagicMock(return_value=None)
-        mock_sem.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client.chat.completions.create.return_value = MagicMock()
 
-        with patch("common.llm.openai") as mock_openai:
-            mock_openai.chat.completions.create.return_value = MagicMock()
+        client._create_completion(
+            model="gpt-5-mini",
+            messages=[],
+            temperature=0.5,
+            max_tokens=100,
+        )
 
-            client._create_completion(
-                model="gpt-5-mini",
-                messages=[],
-                temperature=0.5,
-                max_tokens=100,
-            )
+        mock_client.chat.completions.create.assert_called_once_with(
+            model="gpt-5-mini",
+            messages=[],
+            temperature=0.5,
+            max_tokens=100,
+        )
 
-            mock_openai.chat.completions.create.assert_called_once_with(
-                model="gpt-5-mini",
-                messages=[],
-                temperature=0.5,
-                max_tokens=100,
-            )
+    @patch("common.llm.llm_limiter")
+    def test_raises_when_client_not_initialized(self, mock_limiter, client):
+        """_create_completion raises RuntimeError when client is None."""
+        with patch("common.llm._openai_client", None):
+            with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
+                client._create_completion(model="m")

@@ -97,7 +97,7 @@ class TestClaimProcessingTag:
         # Arrange
         client = MagicMock()
         client.get_document.return_value = {"tags": [10, 20]}
-        client.update_document_metadata.side_effect = RuntimeError("patch fail")
+        client.update_document_metadata.side_effect = ConnectionError("patch fail")
 
         # Act
         result = claim_processing_tag(

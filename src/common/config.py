@@ -93,7 +93,9 @@ class Settings:
             self.OLLAMA_BASE_URL = None
             self.OPENAI_API_KEY = self._get_required_env("OPENAI_API_KEY")
             default_ai_models = ["gpt-5-mini", "gpt-5.2", "o4-mini"]
-        self.AI_MODELS = self._get_model_list("AI_MODELS", default_ai_models)
+        self.AI_MODELS = self._get_csv_env(
+            "AI_MODELS", default_ai_models, require_non_empty=True
+        )
         default_ocr_refusal_markers = [
             "i can't assist",
             "i cannot assist",
@@ -103,7 +105,7 @@ class Settings:
         ]
         self.OCR_REFUSAL_MARKERS = [
             marker.lower()
-            for marker in self._get_list_env(
+            for marker in self._get_csv_env(
                 "OCR_REFUSAL_MARKERS", default_ocr_refusal_markers
             )
         ]
@@ -196,28 +198,25 @@ class Settings:
             return None
         return value
 
-    def _get_model_list(self, var_name: str, default: list[str]) -> list[str]:
-        """
-        Get a list of models from a comma-separated env var, falling back to defaults.
+    def _get_csv_env(
+        self,
+        var_name: str,
+        default: list[str],
+        *,
+        require_non_empty: bool = False,
+    ) -> list[str]:
+        """Parse a comma-separated env var, falling back to *default*.
 
-        The order is preserved and represents the fallback sequence.
-        """
-        value = os.getenv(var_name)
-        if value is None:
-            return [model for model in default if model]
-        parts = [part.strip() for part in value.split(",") if part.strip()]
-        if not parts:
-            raise ValueError(f"{var_name} must contain at least one model name.")
-        return parts
-
-    def _get_list_env(self, var_name: str, default: list[str]) -> list[str]:
-        """
-        Get a list of values from a comma-separated env var, falling back to defaults.
+        When *require_non_empty* is ``True``, raises ``ValueError`` if the env
+        var is set but yields no items (used for model lists).
         """
         value = os.getenv(var_name)
         if value is None:
             return [item for item in default if item]
-        return [part.strip() for part in value.split(",") if part.strip()]
+        parts = [part.strip() for part in value.split(",") if part.strip()]
+        if require_non_empty and not parts:
+            raise ValueError(f"{var_name} must contain at least one model name.")
+        return parts
 
     def _get_bool_env(self, var_name: str, default: bool) -> bool:
         """

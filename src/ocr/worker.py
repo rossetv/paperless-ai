@@ -17,7 +17,7 @@ from common.tags import (
     get_latest_tags,
     release_processing_tag,
 )
-from common.utils import contains_redacted_marker
+from common.utils import is_error_content
 from .image_converter import bytes_to_images
 from .provider import OcrProvider
 from .text_assembly import OCR_ERROR_MARKER, assemble_full_text
@@ -58,17 +58,21 @@ class DocumentProcessor:
         start_time = dt.datetime.now()
         claimed = False
         try:
-            latest = self._refresh_document()
-            if latest is None:
-                return
-            current_tags = extract_tags(latest, doc_id=self.doc_id, context="ocr-process")
+            document = self.paperless_client.get_document(self.doc_id)
+            self.doc = document
+            current_tags = extract_tags(document, doc_id=self.doc_id, context="ocr-process")
 
             if self.settings.ERROR_TAG_ID and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
                 self._finalize_with_error(current_tags)
                 return
 
-            claimed = self._claim_processing_tag()
+            claimed = claim_processing_tag(
+                paperless_client=self.paperless_client,
+                doc_id=self.doc_id,
+                tag_id=self.settings.OCR_PROCESSING_TAG_ID,
+                purpose="ocr",
+            )
             if not claimed:
                 return
 
@@ -93,8 +97,8 @@ class DocumentProcessor:
                 for image in images:
                     try:
                         image.close()
-                    except Exception:
-                        log.warning("Failed to close image", doc_id=self.doc_id)
+                    except OSError:
+                        log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
 
             if failed_pages:
                 log.warning(
@@ -124,25 +128,6 @@ class DocumentProcessor:
             "Finished processing document",
             doc_id=self.doc_id,
             elapsed_time=f"{elapsed:.2f}s",
-        )
-
-    def _refresh_document(self) -> dict | None:
-        """Refresh the document from Paperless and update the local cache."""
-        try:
-            latest = self.paperless_client.get_document(self.doc_id)
-        except Exception:
-            log.exception("Failed to refresh document metadata", doc_id=self.doc_id)
-            return None
-        self.doc = latest
-        return latest
-
-    def _claim_processing_tag(self) -> bool:
-        """Claim the OCR processing-lock tag with refresh-before/verify-after."""
-        return claim_processing_tag(
-            paperless_client=self.paperless_client,
-            doc_id=self.doc_id,
-            tag_id=self.settings.OCR_PROCESSING_TAG_ID,
-            purpose="ocr",
         )
 
     def _ocr_pages_in_parallel(
@@ -181,10 +166,8 @@ class DocumentProcessor:
 
     def _has_ocr_errors(self, text: str) -> bool:
         """Return True if the OCR output contains error/refusal/redacted markers."""
-        return (
-            OCR_ERROR_MARKER in text
-            or self.settings.REFUSAL_MARK in text
-            or contains_redacted_marker(text)
+        return OCR_ERROR_MARKER in text or is_error_content(
+            text, (self.settings.REFUSAL_MARK,)
         )
 
     def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:

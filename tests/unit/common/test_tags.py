@@ -182,7 +182,7 @@ class TestRemoveStaleQueueTag:
     def test_handles_api_error_gracefully(self):
         # Arrange
         client = MagicMock()
-        client.update_document_metadata.side_effect = RuntimeError("API error")
+        client.update_document_metadata.side_effect = ConnectionError("API error")
         tags = {10, 20}
 
         # Act — should not raise
@@ -275,7 +275,7 @@ class TestReleaseProcessingTag:
         # Arrange
         client = MagicMock()
         client.get_document.return_value = {"tags": [50, 60]}
-        client.update_document_metadata.side_effect = RuntimeError("patch fail")
+        client.update_document_metadata.side_effect = ConnectionError("patch fail")
 
         # Act — should not raise
         release_processing_tag(client, doc_id=1, tag_id=50, purpose="test")

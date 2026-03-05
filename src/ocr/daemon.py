@@ -11,7 +11,7 @@ from common.config import Settings
 from common.daemon_loop import run_polling_threadpool
 from common.paperless import PaperlessClient
 from common.document_iter import iter_documents_by_pipeline_tag
-from .provider import OpenAIProvider
+from .provider import OcrProvider
 from .worker import DocumentProcessor
 
 
@@ -23,7 +23,7 @@ def _process_document(doc: dict, settings: Settings) -> None:
     The daemon runs multiple documents concurrently via the thread pool.
     """
     paperless = PaperlessClient(settings)
-    ocr_provider = OpenAIProvider(settings)
+    ocr_provider = OcrProvider(settings)
     try:
         processor = DocumentProcessor(doc, paperless, ocr_provider, settings)
         processor.process()
@@ -55,8 +55,8 @@ def main() -> None:
     that dispatches documents to worker threads.
     """
     result = bootstrap_daemon(
-        processing_tag_id_attr="OCR_PROCESSING_TAG_ID",
-        pre_tag_id_attr="PRE_TAG_ID",
+        processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
+        pre_tag_id=lambda s: s.PRE_TAG_ID,
     )
     if result is None:
         return

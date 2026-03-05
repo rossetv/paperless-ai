@@ -9,6 +9,8 @@ import httpx
 import openai
 from PIL import Image
 
+from .llm import init_openai_client
+
 if TYPE_CHECKING:
     from common.config import Settings
 
@@ -25,9 +27,15 @@ def setup_libraries(settings: Settings) -> None:
     atexit.register(http_client.close)
 
     if settings.LLM_PROVIDER == "ollama":
-        openai.base_url = settings.OLLAMA_BASE_URL
-        openai.api_key = "dummy"
+        api_key = "dummy"
+        base_url = settings.OLLAMA_BASE_URL
     else:
-        openai.api_key = settings.OPENAI_API_KEY
+        api_key = settings.OPENAI_API_KEY
+        base_url = None
 
-    openai.http_client = http_client
+    client = openai.OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=http_client,
+    )
+    init_openai_client(client)

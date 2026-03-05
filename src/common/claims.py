@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import structlog
 
 from .paperless import PaperlessClient
@@ -27,7 +28,7 @@ def claim_processing_tag(
 
     try:
         latest = paperless_client.get_document(doc_id)
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to refresh document before claiming processing tag",
             doc_id=doc_id,
@@ -50,7 +51,7 @@ def claim_processing_tag(
     updated_tags.add(tag_id)
     try:
         paperless_client.update_document_metadata(doc_id, tags=list(updated_tags))
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to claim processing tag",
             doc_id=doc_id,
@@ -61,7 +62,7 @@ def claim_processing_tag(
 
     try:
         verified = paperless_client.get_document(doc_id)
-    except Exception:
+    except (OSError, httpx.HTTPError):
         log.exception(
             "Failed to refresh document after claiming processing tag",
             doc_id=doc_id,
