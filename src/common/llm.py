@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterable
 
 import openai
 
@@ -46,7 +47,7 @@ def unique_models(models: list[str]) -> list[str]:
 class ThreadSafeStats:
     """Thread-safe counter dict used by OCR and classification providers."""
 
-    def __init__(self, keys: list[str]) -> None:
+    def __init__(self, keys: Iterable[str]) -> None:
         self._lock = threading.Lock()
         self._stats = {k: 0 for k in keys}
 
@@ -58,6 +59,6 @@ class ThreadSafeStats:
         with self._lock:
             return dict(self._stats)
 
-    def reset(self, keys: list[str]) -> None:
+    def reset(self, keys: Iterable[str]) -> None:
         with self._lock:
             self._stats = {k: 0 for k in keys}

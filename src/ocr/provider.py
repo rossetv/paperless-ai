@@ -79,7 +79,7 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
     next model when the current one refuses or errors.
     """
 
-    _STAT_KEYS = ["attempts", "refusals", "api_errors", "fallback_successes"]
+    _STAT_KEYS = ("attempts", "refusals", "api_errors", "fallback_successes")
 
     def __init__(self, settings: Settings):
         super().__init__(settings)

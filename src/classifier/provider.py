@@ -22,10 +22,10 @@ log = structlog.get_logger(__name__)
 class ClassificationProvider(OpenAIChatMixin):
     """Classifies document text using OpenAI-compatible chat completions."""
 
-    _STAT_KEYS = [
+    _STAT_KEYS = (
         "attempts", "api_errors", "invalid_json", "fallback_successes",
         "temperature_retries", "response_format_retries", "max_tokens_retries",
-    ]
+    )
 
     def __init__(self, settings: Settings):
         self.settings = settings
