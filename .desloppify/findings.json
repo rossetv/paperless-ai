@@ -1,16 +1,16 @@
 {
   "assessments": {
-    "cross_module_architecture": 94,
+    "cross_module_architecture": 96,
     "convention_outlier": 96,
-    "error_consistency": 94,
-    "abstraction_fitness": 94,
-    "dependency_health": 93,
-    "test_strategy": 88,
-    "ai_generated_debt": 94,
-    "package_organization": 94,
-    "high_level_elegance": 93,
-    "mid_level_elegance": 94,
-    "low_level_elegance": 94,
+    "error_consistency": 96,
+    "abstraction_fitness": 96,
+    "dependency_health": 96,
+    "test_strategy": 92,
+    "ai_generated_debt": 96,
+    "package_organization": 96,
+    "high_level_elegance": 96,
+    "mid_level_elegance": 96,
+    "low_level_elegance": 96,
     "design_coherence": 96
   },
   "findings": [
