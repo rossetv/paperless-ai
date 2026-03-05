@@ -1,14 +1,4 @@
-"""
-String Normalizers
-==================
-
-Small, pure functions for normalizing organisation names and general strings.
-Used by the taxonomy cache (matching existing Paperless items) and tag filters
-(removing tags that duplicate the correspondent or document type).
-
-These live in their own module so both ``taxonomy`` and ``tag_filters`` can
-import them without creating a circular dependency.
-"""
+"""String normalization for taxonomy matching and tag filtering."""
 
 from __future__ import annotations
 

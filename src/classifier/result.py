@@ -1,14 +1,4 @@
-"""
-Classification Result
-=====================
-
-The :class:`ClassificationResult` data class and the
-:func:`parse_classification_response` parser that turns raw LLM JSON output
-into a validated, typed object.
-
-Separating the result structure from the provider logic makes it easy to write
-unit tests for the parser without depending on OpenAI mocks.
-"""
+"""Classification result dataclass and JSON response parser."""
 
 from __future__ import annotations
 
@@ -18,12 +8,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ClassificationResult:
-    """
-    Immutable container for the fields returned by the classification LLM.
-
-    All fields are strings (or a list of strings for ``tags``).  Empty strings
-    indicate that the LLM could not determine a value.
-    """
+    """Immutable container for classification LLM output fields."""
 
     title: str
     correspondent: str
@@ -33,10 +18,6 @@ class ClassificationResult:
     language: str
     person: str
 
-
-# ---------------------------------------------------------------------------
-# JSON extraction
-# ---------------------------------------------------------------------------
 
 def _extract_json(text: str) -> dict:
     """
@@ -55,10 +36,6 @@ def _extract_json(text: str) -> dict:
             raise
         return json.loads(text[start : end + 1])
 
-
-# ---------------------------------------------------------------------------
-# Public parser
-# ---------------------------------------------------------------------------
 
 def parse_classification_response(text: str) -> ClassificationResult:
     """

@@ -1,13 +1,4 @@
-"""
-OCR Prompts
-===========
-
-The system prompt sent to vision-capable LLMs when transcribing document pages.
-
-Kept in a separate module so the provider logic (:mod:`ocr.provider`) stays
-focused on API orchestration and model fallback, while the prompt content can
-be reviewed and edited independently.
-"""
+"""System prompt for vision-capable LLMs when transcribing document pages."""
 
 from __future__ import annotations
 

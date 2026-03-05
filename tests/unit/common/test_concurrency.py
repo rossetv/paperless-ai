@@ -12,20 +12,19 @@ import time
 
 import pytest
 
-import common.concurrency as concurrency_mod
-from common.concurrency import init_llm_semaphore, llm_semaphore
+from common.concurrency import llm_limiter, init_llm_semaphore, llm_semaphore
 
 
 # ---------------------------------------------------------------------------
-# Reset module state between tests
+# Reset limiter state between tests
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def _reset_semaphore():
-    """Reset the module-level semaphore to None before each test."""
-    concurrency_mod._semaphore = None
+    """Reset the limiter's semaphore to None before each test."""
+    llm_limiter._semaphore = None
     yield
-    concurrency_mod._semaphore = None
+    llm_limiter._semaphore = None
 
 
 # ===================================================================
@@ -36,12 +35,12 @@ class TestInitZero:
 
     def test_zero_sets_semaphore_to_none(self):
         init_llm_semaphore(0)
-        assert concurrency_mod._semaphore is None
+        assert llm_limiter._semaphore is None
 
     def test_negative_treated_as_zero(self):
         """Negative values should also result in no semaphore (unlimited)."""
         init_llm_semaphore(-1)
-        assert concurrency_mod._semaphore is None
+        assert llm_limiter._semaphore is None
 
 
 # ===================================================================
@@ -52,12 +51,12 @@ class TestInitPositive:
 
     def test_creates_bounded_semaphore(self):
         init_llm_semaphore(3)
-        assert concurrency_mod._semaphore is not None
-        assert isinstance(concurrency_mod._semaphore, threading.BoundedSemaphore)
+        assert llm_limiter._semaphore is not None
+        assert isinstance(llm_limiter._semaphore, threading.BoundedSemaphore)
 
     def test_creates_semaphore_with_value_1(self):
         init_llm_semaphore(1)
-        assert concurrency_mod._semaphore is not None
+        assert llm_limiter._semaphore is not None
 
 
 # ===================================================================
@@ -143,13 +142,33 @@ class TestReInit:
 
     def test_reinit_replaces_semaphore(self):
         init_llm_semaphore(5)
-        first = concurrency_mod._semaphore
+        first = llm_limiter._semaphore
         init_llm_semaphore(2)
-        second = concurrency_mod._semaphore
+        second = llm_limiter._semaphore
         assert first is not second
 
     def test_reinit_to_unlimited(self):
         init_llm_semaphore(5)
-        assert concurrency_mod._semaphore is not None
+        assert llm_limiter._semaphore is not None
         init_llm_semaphore(0)
-        assert concurrency_mod._semaphore is None
+        assert llm_limiter._semaphore is None
+
+
+# ===================================================================
+# LLMConcurrencyLimiter class direct usage
+# ===================================================================
+
+class TestLLMConcurrencyLimiterDirect:
+
+    def test_acquire_method(self):
+        """Test the class acquire() method directly."""
+        llm_limiter.init(1)
+        with llm_limiter.acquire():
+            pass  # should not deadlock
+
+    def test_init_method(self):
+        """Test the class init() method directly."""
+        llm_limiter.init(3)
+        assert llm_limiter._semaphore is not None
+        llm_limiter.init(0)
+        assert llm_limiter._semaphore is None

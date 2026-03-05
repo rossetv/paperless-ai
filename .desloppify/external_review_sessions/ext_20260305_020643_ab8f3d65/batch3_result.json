@@ -1,0 +1,118 @@
+{
+  "assessments": {
+    "high_level_elegance": 82,
+    "mid_level_elegance": 78,
+    "low_level_elegance": 75,
+    "design_coherence": 77
+  },
+  "findings": [
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "well_aligned_3pkg_decomposition",
+      "summary": "The three-package decomposition (common, ocr, classifier) maps cleanly to domain capabilities with clear ownership boundaries",
+      "related_files": ["src/common/", "src/ocr/", "src/classifier/"],
+      "evidence": ["common/ contains shared infrastructure (config, paperless client, retry, tags, daemon loop), ocr/ contains vision-LLM transcription, classifier/ contains document classification - each package has a coherent purpose"],
+      "suggestion": "No change needed - this is a positive observation",
+      "confidence": "high"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "settings_god_object",
+      "summary": "Settings class mixes OCR-specific, classifier-specific, and shared config into a single 80+ field monolith",
+      "related_files": ["src/common/config.py"],
+      "evidence": ["Settings has CLASSIFY_* fields (8 fields), OCR_* fields (4 fields), and shared fields all in one class; both daemons load all config regardless of which one is running; the class spans 250 lines with 7 private loader methods"],
+      "suggestion": "Consider splitting into BaseSettings + OcrSettings + ClassifierSettings, or at minimum group with nested dataclasses to reflect the domain ownership boundaries",
+      "confidence": "high"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "bootstrap_getattr_stringly_typed",
+      "summary": "bootstrap_daemon uses stringly-typed getattr to access settings attributes, obscuring the contract",
+      "related_files": ["src/common/bootstrap.py"],
+      "evidence": ["recover_stale_locks call uses getattr(settings, processing_tag_id_attr) and getattr(settings, pre_tag_id_attr) where the callers pass string attribute names like 'OCR_PROCESSING_TAG_ID' - this loses type safety and makes the dependency invisible"],
+      "suggestion": "Accept the tag IDs directly as int parameters instead of attribute name strings, letting each daemon pass its specific values",
+      "confidence": "high"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "paperless_client_per_document",
+      "summary": "Each document creates a new PaperlessClient (HTTP session) instead of reusing the listing client",
+      "related_files": ["src/ocr/daemon.py", "src/classifier/daemon.py"],
+      "evidence": ["ocr/daemon.py line 25: PaperlessClient(settings) created per-document in _process_document; classifier/daemon.py line 67: same pattern; the list_client is already available and thread-safe via httpx.Client"],
+      "suggestion": "httpx.Client is thread-safe; consider reusing the existing client or using a connection pool instead of constructing a new HTTP session per document",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "duplicate_stats_tracking_pattern",
+      "summary": "OpenAIProvider and ClassificationProvider duplicate the stats tracking pattern (lock, dict, _inc_stat, get_stats) with no shared abstraction",
+      "related_files": ["src/ocr/provider.py", "src/classifier/provider.py"],
+      "evidence": ["ocr/provider.py lines 83-101: _stats_lock, _stats dict, _inc_stat, get_stats; classifier/provider.py lines 28-56: identical pattern with _stats_lock, _stats dict, _inc_stat, get_stats; both use threading.Lock with the same increment/snapshot logic"],
+      "suggestion": "Extract a small StatsCounter helper into common/ or add the stats tracking to OpenAIChatMixin since both providers inherit from it",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "retry_decorator_implicit_self_contract",
+      "summary": "The retry decorator silently requires self.settings to satisfy RetrySettings protocol, creating an invisible coupling",
+      "related_files": ["src/common/retry.py", "src/common/llm.py", "src/common/paperless.py"],
+      "evidence": ["retry.py line 33: 'settings: RetrySettings = self.settings' assumes the decorated method's owner has a settings attribute; this contract is documented in a docstring but not enforced or visible at the call site; PaperlessClient and OpenAIChatMixin both silently depend on this"],
+      "suggestion": "Consider making the retry settings explicit via a parameter or a base class/protocol that declares the settings attribute",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "ocr_provider_abc_single_impl",
+      "summary": "OcrProvider ABC has only one concrete implementation (OpenAIProvider) and no extension pressure",
+      "related_files": ["src/ocr/provider.py"],
+      "evidence": ["OcrProvider ABC defined at line 46 with abstractmethod transcribe_image; only OpenAIProvider implements it; no plugin system or factory; the docstring says 'Subclass this to add support for a new vision-capable LLM backend' but no second backend exists"],
+      "suggestion": "The ABC adds minimal overhead here, but if no second provider is planned it could be simplified to just OpenAIProvider",
+      "confidence": "low"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "create_named_item_control_flow",
+      "summary": "PaperlessClient._create_named_item has convoluted matching_algorithm candidate logic for a simple compatibility concern",
+      "related_files": ["src/common/paperless.py"],
+      "evidence": ["Lines 63-100: builds a candidates list with None/str/int permutations, then loops through them catching 400 errors; the branching on isinstance(matching_algorithm, str) vs int with different fallback orders is hard to follow; the method also has an implicit non-return path (if last_response is not checked after the loop)"],
+      "suggestion": "Simplify by always trying both representations in a fixed order, or handle the compatibility at a higher level (TaxonomyCache._infer_matching_algorithm already does this)",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "compat_retry_ladder",
+      "summary": "ClassificationProvider._create_with_compat has a repetitive if/elif/elif ladder for stripping parameters on 400 errors",
+      "related_files": ["src/classifier/provider.py"],
+      "evidence": ["Lines 104-149: three nearly identical blocks each check a predicate, log a warning, increment a stat, pop a param, increment compat_retries, and continue; the only differences are the param name, the predicate method, and the stat key"],
+      "suggestion": "Extract a list of (predicate, param_name, stat_key) tuples and iterate over them, reducing ~30 lines to ~10",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "worker_process_method_length",
+      "summary": "Both worker process() methods combine refresh, validation, lock acquisition, processing, and cleanup in a single long method with deep nesting",
+      "related_files": ["src/ocr/worker.py", "src/classifier/worker.py"],
+      "evidence": ["ocr/worker.py process() spans lines 53-131 with nested try/finally blocks and multiple early returns; classifier/worker.py process() spans lines 70-142 with similar structure; both have the pattern: try → refresh → check error → claim → [domain work] → finally release"],
+      "suggestion": "The shared try/claim/finally pattern could be extracted into a context manager or template method in common/, letting workers focus on just the domain-specific steps",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "tag_manipulation_spread",
+      "summary": "Tag set manipulation (add/discard/clean pipeline tags) is spread across multiple callsites with no centralized state machine",
+      "related_files": ["src/common/tags.py", "src/ocr/worker.py", "src/classifier/worker.py"],
+      "evidence": ["ocr/worker.py lines 231-234: manual discard PRE, discard PROCESSING, add POST; classifier/worker.py lines 296-299: similar manual tag arithmetic; common/tags.py clean_pipeline_tags removes a hardcoded list of tag IDs; finalize_document_with_error does its own version; the tag lifecycle transitions are implicit and easy to get wrong"],
+      "suggestion": "Introduce a TagTransition helper or state machine that encodes the valid transitions (queued -> processing -> done, queued -> error) and applies them atomically",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "error_phrase_duplication",
+      "summary": "OCR refusal markers are defined in both Settings (OCR_REFUSAL_MARKERS) and classifier/constants.py (ERROR_PHRASES) with overlapping content",
+      "related_files": ["src/common/config.py", "src/classifier/constants.py", "src/ocr/provider.py"],
+      "evidence": ["config.py lines 113-119: default_ocr_refusal_markers includes 'i can't assist', 'chatgpt refused to transcribe'; constants.py lines 55-61: ERROR_PHRASES includes the same phrases; these are checked independently by ocr/provider.py is_refusal() and classifier/quality_gates.py needs_error_tag()"],
+      "suggestion": "Define the canonical refusal phrases once in common/ and let both pipelines reference the same source; the configurable OCR_REFUSAL_MARKERS can extend (not duplicate) the base set",
+      "confidence": "high"
+    }
+  ]
+}

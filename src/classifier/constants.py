@@ -1,19 +1,8 @@
-"""
-Classifier Domain Constants
-============================
-
-Regex patterns, frozen sets, and phrase lists used throughout the
-classification pipeline.  Keeping them in one place makes them easy to
-audit and extend without touching business logic.
-"""
+"""Regex patterns, frozen sets, and phrase lists for the classification pipeline."""
 
 from __future__ import annotations
 
 import re
-
-# ---------------------------------------------------------------------------
-# OCR page-header and model-footer patterns
-# ---------------------------------------------------------------------------
 
 # Matches OCR output headers like ``--- Page 3 ---`` or
 # ``--- Page 3 (gpt-5-mini) ---``.
@@ -27,10 +16,6 @@ MODEL_FOOTER_RE: re.Pattern[str] = re.compile(
     r"transcribed by model:\s*(.+)", re.IGNORECASE
 )
 
-
-# ---------------------------------------------------------------------------
-# Classification quality gates
-# ---------------------------------------------------------------------------
 
 # Document types that are too vague to be useful.  When the LLM returns one
 # of these we treat the classification as failed.

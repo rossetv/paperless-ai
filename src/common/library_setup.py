@@ -1,19 +1,4 @@
-"""
-Third-party library configuration.
-
-This module isolates all side-effectful library setup (OpenAI SDK, Pillow,
-httpx) behind a single ``setup_libraries`` entry point.  It is intentionally
-kept free of business-logic imports so that it can be reused by any daemon,
-CLI tool, or test harness that needs the same library configuration.
-
-Typical usage::
-
-    from common.config import Settings
-    from common.library_setup import setup_libraries
-
-    settings = Settings()
-    setup_libraries(settings)
-"""
+"""One-shot third-party library configuration (OpenAI SDK, Pillow, httpx)."""
 
 from __future__ import annotations
 
@@ -29,21 +14,7 @@ if TYPE_CHECKING:
 
 
 def setup_libraries(settings: Settings) -> None:
-    """Configure third-party libraries based on application settings.
-
-    Performs the following:
-
-    1. **Pillow** — disables the ``MAX_IMAGE_PIXELS`` safety limit so that
-       high-DPI scans are not rejected.
-    2. **httpx / OpenAI** — creates a trust-env-disabled ``httpx.Client``
-       to avoid proxy variables leaking into SDK calls, then configures the
-       ``openai`` module-level client (base URL, API key, HTTP client).
-
-    Args:
-        settings: A fully-initialised :class:`~common.config.Settings` instance.
-            Only ``LLM_PROVIDER``, ``OLLAMA_BASE_URL``, and ``OPENAI_API_KEY``
-            are read.
-    """
+    """Configure Pillow, httpx, and OpenAI SDK from application settings."""
     # Allow arbitrarily large images (high-DPI document scans).
     Image.MAX_IMAGE_PIXELS = None
 

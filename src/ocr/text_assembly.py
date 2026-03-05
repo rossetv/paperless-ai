@@ -1,21 +1,4 @@
-"""
-OCR text assembly.
-
-Combines per-page OCR results into a single document text with optional
-page headers and a model-attribution footer.  This is a stateless,
-pure-function module — no I/O, no settings dependency — making it
-trivially testable and reusable.
-
-Typical usage::
-
-    from ocr.text_assembly import assemble_full_text
-
-    full_text, models = assemble_full_text(
-        page_count=5,
-        page_results=[(page_text, model_name), ...],
-        include_page_models=False,
-    )
-"""
+"""Combines per-page OCR results into a single document text."""
 
 from __future__ import annotations
 

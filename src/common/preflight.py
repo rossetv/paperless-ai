@@ -1,14 +1,4 @@
-"""
-Startup Preflight Checks
-=========================
-
-Validates that external dependencies (Paperless-ngx, LLM provider) are
-reachable and that configured tag IDs actually exist before the daemon
-enters its polling loop.
-
-Fatal errors (Paperless unreachable) prevent startup.  Non-fatal warnings
-(missing tags, LLM unreachable) are logged but do not block startup.
-"""
+"""Startup preflight checks for Paperless-ngx and LLM provider reachability."""
 
 from __future__ import annotations
 

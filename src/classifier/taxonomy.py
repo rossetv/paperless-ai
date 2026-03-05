@@ -1,18 +1,4 @@
-"""
-Taxonomy Cache
-==============
-
-Thread-safe, in-memory cache for the Paperless-ngx taxonomy — correspondents,
-document types, and tags.
-
-The classification daemon refreshes this cache once per polling batch so the
-LLM prompt always includes up-to-date vocabulary.  When the classifier
-suggests a new item that does not exist yet, the cache creates it in Paperless
-via the API and updates its internal indices, avoiding a full refresh.
-
-The cache is intentionally **read-biased**: lookups are O(1) dict reads, while
-writes (creation) happen at most a few times per batch.
-"""
+"""Thread-safe cache for Paperless-ngx correspondents, document types, and tags."""
 
 from __future__ import annotations
 
@@ -27,10 +13,6 @@ from .tag_filters import dedupe_tags
 
 log = structlog.get_logger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Indexing and matching helpers
-# ---------------------------------------------------------------------------
 
 def _index_items(items: list[dict], normalizer) -> dict[str, dict]:
     """
@@ -122,21 +104,8 @@ def _top_names(items: list[dict], limit: int) -> list[str]:
     return [entry["name"] for entry in sorted_items[:limit]]
 
 
-# ---------------------------------------------------------------------------
-# TaxonomyCache
-# ---------------------------------------------------------------------------
-
 class TaxonomyCache:
-    """
-    Thread-safe cache for Paperless correspondents, document types, and tags.
-
-    **Usage**::
-
-        cache = TaxonomyCache(paperless_client, taxonomy_limit=100)
-        cache.refresh()                # initial load
-        cache.correspondent_names()    # for prompt context
-        cache.get_or_create_tag_ids(["Bills", "2025"])  # resolve / create
-    """
+    """Thread-safe cache for Paperless taxonomy lookups and creation."""
 
     def __init__(self, paperless_client: PaperlessClient, taxonomy_limit: int):
         self._client = paperless_client

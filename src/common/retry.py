@@ -1,31 +1,4 @@
-"""
-Generic retry decorator with exponential backoff and jitter.
-
-This module provides a reusable :func:`retry` decorator that can be applied
-to any instance method whose owning object exposes a ``settings`` attribute
-conforming to the :class:`RetrySettings` protocol.  It is intentionally free
-of business-logic imports so that it can be used by any module that needs
-transient-error resilience (HTTP clients, LLM providers, etc.).
-
-Backoff strategy
-----------------
-``delay = min(2^attempt * jitter, MAX_RETRY_BACKOFF_SECONDS)``
-
-where *jitter* is drawn uniformly from ``[0.8, 1.2]`` to decorrelate
-concurrent retriers.
-
-Typical usage::
-
-    from common.retry import retry
-
-    class MyClient:
-        def __init__(self, settings):
-            self.settings = settings
-
-        @retry(retryable_exceptions=(ConnectionError, TimeoutError))
-        def fetch(self, url: str) -> bytes:
-            ...
-"""
+"""Retry decorator with exponential backoff and jitter."""
 
 from __future__ import annotations
 
@@ -41,12 +14,6 @@ T = TypeVar("T")
 
 
 class RetrySettings(Protocol):
-    """Minimal interface required by the :func:`retry` decorator.
-
-    Any object that exposes ``MAX_RETRIES`` and ``MAX_RETRY_BACKOFF_SECONDS``
-    as integer attributes satisfies this protocol — no subclassing needed.
-    """
-
     MAX_RETRIES: int
     MAX_RETRY_BACKOFF_SECONDS: int
 
@@ -54,20 +21,10 @@ class RetrySettings(Protocol):
 def retry(
     retryable_exceptions: tuple[Type[Exception], ...],
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """Decorator: retry an instance method on transient exceptions.
+    """Retry an instance method on transient exceptions.
 
-    The decorated method must belong to an object with a ``settings``
-    attribute that satisfies :class:`RetrySettings`.
-
-    Args:
-        retryable_exceptions: Exception types that should trigger a retry.
-
-    Returns:
-        A decorator that wraps the target method with retry logic.
-
-    Raises:
-        ValueError: If ``settings.MAX_RETRIES < 1``.
-        The original exception: After all retry attempts are exhausted.
+    The decorated method's owner must have a ``settings`` attribute
+    satisfying :class:`RetrySettings`.
     """
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
@@ -95,7 +52,6 @@ def retry(
                         max_retries=settings.MAX_RETRIES,
                     )
                     _sleep_backoff(attempt, settings)
-            raise RuntimeError("unreachable: retry loop exited without return or raise")
 
         return wrapper
 
@@ -103,12 +59,6 @@ def retry(
 
 
 def _sleep_backoff(attempt: int, settings: RetrySettings) -> None:
-    """Sleep with exponential backoff, jitter, and a configurable cap.
-
-    Args:
-        attempt: The 1-based attempt number (used as the exponent).
-        settings: Provides ``MAX_RETRY_BACKOFF_SECONDS`` as the delay ceiling.
-    """
     delay = (2**attempt) * random.uniform(0.8, 1.2)
     delay = min(delay, settings.MAX_RETRY_BACKOFF_SECONDS)
     log.info(

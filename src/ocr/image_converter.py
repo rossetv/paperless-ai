@@ -1,24 +1,4 @@
-"""
-Image conversion for document OCR.
-
-Converts raw document bytes (PDF, PNG, JPEG, TIFF, etc.) into a list of
-PIL ``Image`` objects — one per page or frame.  This is a stateless,
-pure-function module with no dependency on application settings or the
-Paperless client, making it reusable in any image-processing pipeline.
-
-Supported formats:
-
-- **PDF** — rasterised via ``pdf2image`` (poppler) at a configurable DPI.
-- **Single-frame images** (PNG, JPEG, BMP, …) — loaded via Pillow.
-- **Multi-frame images** (TIFF, animated GIF, …) — expanded into one
-  ``Image`` per frame.
-
-Typical usage::
-
-    from ocr.image_converter import bytes_to_images
-
-    images = bytes_to_images(raw_pdf_bytes, "application/pdf", dpi=300)
-"""
+"""Converts document bytes (PDF, PNG, TIFF, etc.) into PIL Images for OCR."""
 
 from __future__ import annotations
 

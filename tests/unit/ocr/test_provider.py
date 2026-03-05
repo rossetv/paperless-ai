@@ -502,7 +502,7 @@ class TestOpenAIProviderThreadSafety:
 
         def increment_stats():
             for _ in range(increments_per_thread):
-                provider._inc_stat("attempts")
+                provider._stats.inc("attempts")
 
         # Act
         threads = [

@@ -1,20 +1,4 @@
-"""
-Content Preparation
-===================
-
-Functions for truncating OCR text before it is sent to the classification LLM.
-
-Long documents drive up token cost and can exceed context windows.  This module
-provides two complementary strategies:
-
-1. **Page-based truncation** — keep the first *N* and last *M* pages (using the
-   ``--- Page X ---`` headers the OCR daemon inserts).
-2. **Character-based truncation** — a simple character cap, used as a fallback
-   when page headers are not present and as a hard upper bound.
-
-Both strategies preserve the ``Transcribed by model: …`` footer so that
-downstream tag extraction still works.
-"""
+"""Truncation strategies for OCR text before classification."""
 
 from __future__ import annotations
 
@@ -25,10 +9,6 @@ from .constants import PAGE_HEADER_RE
 # Matches one or more digits — used to extract page numbers from headers.
 _DIGITS_RE: re.Pattern[str] = re.compile(r"\d+")
 
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _split_footer(content: str) -> tuple[str, str]:
     """
@@ -111,10 +91,6 @@ def max_char_truncation_note(limit: int) -> str:
         f"{limit} characters due to the max character limit."
     )
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def truncate_content_by_chars(content: str, max_chars: int) -> str:
     """

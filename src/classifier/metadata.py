@@ -1,18 +1,4 @@
-"""
-Metadata Helpers
-================
-
-Pure functions for validating and transforming Paperless-ngx document metadata
-fields returned by the classification LLM.
-
-Each function handles one concern:
-
-- :func:`parse_document_date` — validate and normalize a date string.
-- :func:`resolve_date_for_tags` — pick the best date for year-tag derivation.
-- :func:`normalize_language` — coerce to an ISO-639-1 code.
-- :func:`update_custom_fields` — upsert a single custom-field value.
-- :func:`is_empty_classification` — check if a result contains nothing useful.
-"""
+"""Metadata validation and transformation for classification output."""
 
 from __future__ import annotations
 

@@ -1,0 +1,216 @@
+{
+  "assessments": {
+    "cross_module_architecture": 78,
+    "error_consistency": 65,
+    "design_coherence": 75,
+    "dependency_health": 82,
+    "ai_generated_debt": 38,
+    "abstraction_fitness": 72,
+    "high_level_elegance": 82,
+    "mid_level_elegance": 78,
+    "convention_outlier": 82,
+    "test_strategy": 72,
+    "package_organization": 85,
+    "low_level_elegance": 80
+  },
+  "findings": [
+    {
+      "dimension": "error_consistency",
+      "identifier": "duplicate_refusal_phrase_lists",
+      "summary": "Refusal/error phrases are defined in three separate, partially overlapping locations with no single source of truth",
+      "related_files": ["src/common/config.py", "src/classifier/constants.py", "src/classifier/prompts.py"],
+      "evidence": ["config.py lines 113-119: default_ocr_refusal_markers defines 5 phrases used by OCR provider at runtime", "classifier/constants.py lines 62-68: ERROR_PHRASES tuple defines 5 phrases (partially overlapping) used by classifier quality_gates", "classifier/prompts.py lines 33-35: hardcodes 3 error-detection phrases in the LLM system prompt text", "OCR provider uses settings.OCR_REFUSAL_MARKERS while classifier uses constants.ERROR_PHRASES - these lists partially overlap but diverge"],
+      "suggestion": "Consolidate refusal phrases into a single source (e.g. a shared constant in common/) and derive the config defaults and classifier constants from it.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "mixed_exception_catching_breadth",
+      "summary": "Inconsistent exception catching: some call sites catch specific exceptions while parallel call sites use bare 'except Exception'",
+      "related_files": ["src/common/tags.py", "src/common/claims.py", "src/common/stale_lock.py", "src/ocr/worker.py"],
+      "evidence": ["tags.py get_latest_tags line 79 catches (OSError, httpx.HTTPError, ValueError) for get_document()", "claims.py claim_processing_tag lines 52, 77, 87 catch bare Exception for the same get_document() and update_document_metadata() calls", "stale_lock.py lines 51, 78 catch bare Exception for get_documents_by_tag() and update_document_metadata()", "ocr/worker.py _refresh_document line 155 catches bare Exception for get_document()"],
+      "suggestion": "Standardize on a consistent exception set for PaperlessClient calls across all call sites.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "silent_error_swallowing_in_tag_ops",
+      "summary": "Tag lifecycle operations silently swallow exceptions without propagation or recovery, making failures invisible to callers",
+      "related_files": ["src/common/tags.py", "src/common/stale_lock.py"],
+      "evidence": ["tags.py remove_stale_queue_tag lines 114-121: catches bare Exception, logs, but does not propagate or return failure status", "tags.py release_processing_tag lines 152-172: catches bare Exception in two places, logs, returns None regardless", "stale_lock.py recover_stale_locks lines 78-83: catches bare Exception per doc, logs, continues silently"],
+      "suggestion": "For release_processing_tag and remove_stale_queue_tag, return a boolean indicating success/failure so callers can take corrective action.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "finalize_document_with_error_log_param",
+      "summary": "finalize_document_with_error accepts a logger instance as a parameter, breaking the convention that modules use their own module-level logger",
+      "related_files": ["src/common/tags.py", "src/ocr/worker.py", "src/classifier/worker.py"],
+      "evidence": ["tags.py finalize_document_with_error line 184: takes 'log: structlog.stdlib.BoundLogger' as a parameter", "ocr/worker.py line 275: passes its module-level log to finalize_document_with_error", "classifier/worker.py line 239: passes its module-level log to finalize_document_with_error", "Every other function in the codebase uses module-level 'log = structlog.get_logger(__name__)' without parameter passing"],
+      "suggestion": "Remove the log parameter from finalize_document_with_error and use a module-level logger instead.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "openai_module_level_mutation",
+      "summary": "library_setup.py mutates the openai module's global state (base_url, api_key, http_client), creating implicit coupling",
+      "related_files": ["src/common/library_setup.py", "src/common/llm.py", "src/ocr/provider.py", "src/classifier/provider.py"],
+      "evidence": ["library_setup.py lines 57-62: sets openai.base_url, openai.api_key, openai.http_client as module-level globals", "llm.py line 35: OpenAIChatMixin._create_completion calls openai.chat.completions.create() relying on this implicit global state"],
+      "suggestion": "Create an explicit openai.Client instance in library_setup and pass it through Settings or a dedicated holder.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "stats_tracking_pattern_divergence",
+      "summary": "OCR and classifier providers track stats with the same pattern but different keys, reset behavior, and no shared abstraction",
+      "related_files": ["src/ocr/provider.py", "src/classifier/provider.py"],
+      "evidence": ["ocr/provider.py lines 99-115: initializes _stats in __init__ with 4 keys, never resets", "classifier/provider.py lines 52-68: initializes _stats via _reset_stats() with 7 keys, resets on each classify_text call", "Both use identical _inc_stat() and get_stats() method patterns with threading.Lock"],
+      "suggestion": "Extract a shared ProviderStats helper class with configurable keys and optional reset.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "bootstrap_getattr_stringly_typed",
+      "summary": "bootstrap_daemon uses string attribute names to look up tag IDs from Settings, bypassing type checking",
+      "related_files": ["src/common/bootstrap.py", "src/ocr/daemon.py", "src/classifier/daemon.py"],
+      "evidence": ["bootstrap.py line 73: getattr(settings, processing_tag_id_attr)", "ocr/daemon.py lines 77-78: passes string literals 'OCR_PROCESSING_TAG_ID' and 'PRE_TAG_ID'", "classifier/daemon.py lines 54-55: passes string literals 'CLASSIFY_PROCESSING_TAG_ID' and 'CLASSIFY_PRE_TAG_ID'"],
+      "suggestion": "Accept the tag IDs directly as int|None parameters instead of string attribute names.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "new_paperless_client_per_document",
+      "summary": "Both daemons create a new PaperlessClient per document, discarding connection reuse benefits",
+      "related_files": ["src/ocr/daemon.py", "src/classifier/daemon.py"],
+      "evidence": ["ocr/daemon.py line 44: 'paperless = PaperlessClient(settings)' inside _process_document", "classifier/daemon.py line 77: 'paperless = PaperlessClient(settings)' inside process_document closure"],
+      "suggestion": "Use a shared PaperlessClient per worker thread rather than creating and destroying a client per document.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "httpx_version_mismatch",
+      "summary": "pyproject.toml pins httpx~=0.27 but installed version is 0.28",
+      "related_files": ["pyproject.toml"],
+      "evidence": ["pyproject.toml line: 'httpx~=0.27'", "pip list shows 'httpx 0.28.1' installed", "The ~= compatible release operator means >=0.27, <0.28, so 0.28.1 violates the constraint"],
+      "suggestion": "Update the httpx pin to ~=0.28 to match the actually running version.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "worker_error_handling_asymmetry",
+      "summary": "OCR worker catches RuntimeError specifically from bytes_to_images but lets all other exceptions propagate unhandled",
+      "related_files": ["src/ocr/worker.py", "src/classifier/worker.py"],
+      "evidence": ["ocr/worker.py line 96: catches RuntimeError specifically from bytes_to_images", "classifier/worker.py: no top-level try/except in process()", "daemon_loop.py line 55: catches as 'Work item failed' but document left in claimed state"],
+      "suggestion": "Add a top-level try/except in both workers' process() methods that catches unexpected exceptions and calls _finalize_with_error.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "verbose_docstrings_restating_code",
+      "summary": "Module-level and method docstrings frequently restate what the code already makes obvious",
+      "related_files": ["src/common/paperless.py", "src/common/retry.py", "src/common/concurrency.py", "src/common/shutdown.py", "src/common/tags.py", "src/common/claims.py", "src/common/stale_lock.py", "src/common/daemon_loop.py", "src/common/bootstrap.py"],
+      "evidence": ["paperless.py line 5-12: docstring restates class name and methods", "concurrency.py line 52: docstring 'Context manager that acquires the LLM concurrency semaphore' restates method name", "claims.py lines 34-45: docstring repeats the 4-step workflow visible in the function body"],
+      "suggestion": "Trim docstrings to only document non-obvious behavior, edge cases, or domain reasoning.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "rst_style_module_headers",
+      "summary": "RST-style section headers with === underlines in module docstrings are uniformly applied, a hallmark of LLM-generated documentation",
+      "related_files": ["src/common/concurrency.py", "src/common/shutdown.py", "src/common/stale_lock.py", "src/common/claims.py", "src/common/daemon_loop.py", "src/common/preflight.py", "src/common/bootstrap.py", "src/classifier/taxonomy.py", "src/classifier/content_prep.py", "src/classifier/provider.py", "src/classifier/result.py", "src/classifier/tag_filters.py"],
+      "evidence": ["Every module docstring follows the exact same pattern: title on line 2, followed by '=====' underline", "This uniformity across 20+ modules is unnatural for human-written code"],
+      "suggestion": "Simplify module docstrings to a single descriptive sentence or short paragraph. Remove RST-style headers.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "defensive_unreachable_guards",
+      "summary": "Unreachable code paths with defensive RuntimeError raises that add no value",
+      "related_files": ["src/common/retry.py", "src/common/paperless.py"],
+      "evidence": ["retry.py line 98: 'raise RuntimeError(\"unreachable...\")' -- truly unreachable", "paperless.py lines 129-133: 'raise RuntimeError(... \"no candidates tried\")' with pragma: no cover"],
+      "suggestion": "Remove unreachable RuntimeError guards.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "over_commented_step_labels",
+      "summary": "Step-by-step numbered comments that restate code intent already clear from method names",
+      "related_files": ["src/common/claims.py"],
+      "evidence": ["claims.py lines 49-98: '# Step 1: Refresh', '# Step 2: Check', '# Step 3: Patch', '# Step 4: Verify'"],
+      "suggestion": "Remove numbered step comments. The code is self-documenting.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "common_init_catalog",
+      "summary": "common/__init__.py is a long hand-written catalog of every module in prose",
+      "related_files": ["src/common/__init__.py"],
+      "evidence": ["__init__.py lines 1-21: 21-line docstring that enumerates every module"],
+      "suggestion": "Replace with a one-line package purpose statement.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "typical_usage_docstring_examples",
+      "summary": "Multiple modules include 'Typical usage::' code examples that restate obvious import paths",
+      "related_files": ["src/common/retry.py", "src/common/concurrency.py", "src/ocr/text_assembly.py", "src/ocr/image_converter.py", "src/common/library_setup.py"],
+      "evidence": ["retry.py lines 17-27: 'Typical usage::' example", "concurrency.py lines 9-16: 'Typical usage::' example", "These are LLM-hallmark patterns for internal modules with one or two call sites"],
+      "suggestion": "Remove 'Typical usage' blocks from internal modules.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "concurrency_double_wrapper",
+      "summary": "Module-level wrapper functions init_llm_semaphore() and llm_semaphore() merely forward to the llm_limiter singleton",
+      "related_files": ["src/common/concurrency.py"],
+      "evidence": ["init_llm_semaphore() is a one-line wrapper: llm_limiter.init(max_concurrent)", "llm_semaphore() is a one-line wrapper: with llm_limiter.acquire(): yield"],
+      "suggestion": "Remove the free-function wrappers and have callers use llm_limiter directly.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "docstring_in_daemon_iter_references_wrong_module",
+      "summary": "Classifier daemon docstring references wrong module path for iter helper",
+      "related_files": ["src/classifier/daemon.py"],
+      "evidence": ["_iter_docs_to_classify docstring says 'Delegates to the shared :func:`~common.tags.iter_documents_by_pipeline_tag`' but the actual import is from common.document_iter"],
+      "suggestion": "Fix the docstring to reference common.document_iter.iter_documents_by_pipeline_tag",
+      "confidence": "high"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "mixed_stats_initialization_patterns",
+      "summary": "ClassificationProvider uses _reset_stats() method while OpenAIProvider initializes stats dict in __init__",
+      "related_files": ["src/classifier/provider.py", "src/ocr/provider.py"],
+      "evidence": ["ClassificationProvider._reset_stats() reinitializes self._stats dict on each classify_text call; OpenAIProvider initializes stats once in __init__ and accumulates across calls"],
+      "suggestion": "Align stats lifecycle: either both reset per-call or both accumulate.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "daemon_process_function_asymmetry",
+      "summary": "OCR daemon uses module-level _process_document function; classifier daemon uses inline closure in main()",
+      "related_files": ["src/ocr/daemon.py", "src/classifier/daemon.py"],
+      "evidence": ["ocr/daemon.py: 'def _process_document(doc: dict, settings: Settings) -> None:' at module level; classifier/daemon.py: 'def process_document(doc: dict) -> None:' as closure inside main()"],
+      "suggestion": "Use the same pattern in both daemons.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "no_tests_for_prompts_modules",
+      "summary": "Both src/ocr/prompts.py and src/classifier/prompts.py lack test files",
+      "related_files": ["src/ocr/prompts.py", "src/classifier/prompts.py"],
+      "evidence": ["No test_prompts.py exists in tests/unit/ocr/ or tests/unit/classifier/"],
+      "suggestion": "Add schema validation test for CLASSIFICATION_JSON_SCHEMA ensuring required fields match ClassificationResult fields.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "f_string_in_log_warning_message",
+      "summary": "OCR worker uses f-string in log message argument instead of structured logging field",
+      "related_files": ["src/ocr/worker.py"],
+      "evidence": ["Line 233: 'log.warning(f\"OCR produced {reason}; marking error\", doc_id=self.doc_id)' — uses f-string interpolation in event message"],
+      "suggestion": "Change to log.warning('OCR produced error content; marking error', doc_id=self.doc_id, reason=reason)",
+      "confidence": "high"
+    }
+  ]
+}

@@ -1,14 +1,4 @@
-"""
-Stale Processing-Lock Recovery
-==============================
-
-When a daemon crashes mid-processing, documents may be left with a
-processing-lock tag but no active worker.  No daemon will pick them up
-again because the lock tag causes them to be skipped.
-
-This module provides a startup sweep that finds and releases stale locks,
-re-queuing the affected documents so they are processed on the next poll.
-"""
+"""Startup sweep to recover documents stuck with stale processing-lock tags."""
 
 from __future__ import annotations
 
@@ -26,22 +16,7 @@ def recover_stale_locks(
     processing_tag_id: int | None,
     pre_tag_id: int,
 ) -> int:
-    """Find documents with a stale processing-lock tag and re-queue them.
-
-    At startup no workers are running, so every document carrying the
-    processing-lock tag is stale by definition.  For each such document
-    we remove the lock tag and ensure the pre-tag is present so it
-    re-enters the queue.
-
-    Args:
-        client: A :class:`PaperlessClient` instance.
-        processing_tag_id: The processing-lock tag ID.  If ``None`` or
-            ``0``, recovery is skipped (locks are not configured).
-        pre_tag_id: The queue tag to re-add for re-processing.
-
-    Returns:
-        The number of documents recovered.
-    """
+    """Find documents with a stale processing-lock tag and re-queue them."""
     if not processing_tag_id:
         return 0
 

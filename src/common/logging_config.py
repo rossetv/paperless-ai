@@ -1,18 +1,4 @@
-"""
-Logging Configuration
-=====================
-
-Configures :mod:`structlog` and the standard-library :mod:`logging` root logger
-for structured, context-rich output.
-
-Two rendering modes are supported (chosen by ``settings.LOG_FORMAT``):
-
-- **console** — coloured, human-readable key=value pairs (good for local dev).
-- **json** — one JSON object per line (good for log aggregation in production).
-
-Noisy third-party loggers (``httpx``, ``openai``) are suppressed to ``WARNING``
-so they don't drown out application logs.
-"""
+"""Structlog and stdlib logging configuration (console or JSON output)."""
 
 from __future__ import annotations
 

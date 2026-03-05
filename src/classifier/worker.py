@@ -1,21 +1,4 @@
-"""
-Document Classification Worker
-==============================
-
-Orchestrates the end-to-end classification of a single Paperless document.
-
-This module is intentionally thin — it delegates to focused modules for each
-concern:
-
-- :mod:`classifier.provider` — LLM interaction.
-- :mod:`classifier.taxonomy` — resolving / creating Paperless taxonomy items.
-- :mod:`classifier.tag_filters` — cleaning and enriching tags.
-- :mod:`classifier.content_prep` — truncating OCR text for the LLM.
-- :mod:`classifier.metadata` — date, language, and custom-field helpers.
-
-The :class:`ClassificationProcessor` ties them together into the workflow:
-fetch document → validate → truncate → classify → apply metadata.
-"""
+"""Per-document classification orchestrator."""
 
 from __future__ import annotations
 
@@ -44,12 +27,11 @@ from .metadata import (
 )
 from .provider import ClassificationProvider
 from .result import ClassificationResult
+from .quality_gates import is_generic_document_type, needs_error_tag
 from .tag_filters import (
     enrich_tags,
     filter_blacklisted_tags,
     filter_redundant_tags,
-    is_generic_document_type,
-    needs_error_tag,
 )
 from .taxonomy import TaxonomyCache
 
@@ -80,10 +62,6 @@ class ClassificationProcessor:
         self.settings = settings
         self.doc_id: int = doc["id"]
         self.title: str = doc.get("title") or "<untitled>"
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
 
     def process(self) -> None:
         """
@@ -159,10 +137,6 @@ class ClassificationProcessor:
                 )
             self._log_classification_stats()
 
-    # ------------------------------------------------------------------
-    # Content truncation
-    # ------------------------------------------------------------------
-
     def _truncate_content(self, content: str) -> tuple[str, list[str]]:
         """
         Apply page-based and character-based truncation in sequence.
@@ -210,10 +184,6 @@ class ClassificationProcessor:
 
         return input_text, truncation_notes
 
-    # ------------------------------------------------------------------
-    # Tag management
-    # ------------------------------------------------------------------
-
     def _claim_processing_tag(self) -> bool:
         """Claim the classification processing-lock tag with verification."""
         return claim_processing_tag(
@@ -241,12 +211,46 @@ class ClassificationProcessor:
             self.doc_id,
             tags,
             self.settings,
-            log,
         )
 
-    # ------------------------------------------------------------------
-    # Classification application
-    # ------------------------------------------------------------------
+    def _build_tag_names(
+        self,
+        result: ClassificationResult,
+        content: str,
+        date_for_tags: str,
+    ) -> list[str]:
+        """Build the filtered and enriched tag name list from classification output."""
+        base_tags = filter_blacklisted_tags(result.tags)
+        base_tags = filter_redundant_tags(
+            base_tags,
+            result.correspondent,
+            result.document_type,
+            result.person,
+        )
+        return enrich_tags(
+            base_tags,
+            content,
+            date_for_tags,
+            self.settings.CLASSIFY_DEFAULT_COUNTRY_TAG,
+            self.settings.CLASSIFY_TAG_LIMIT,
+        )
+
+    def _resolve_taxonomy_ids(
+        self, result: ClassificationResult, tag_names: list[str]
+    ) -> tuple[list[int], int | None, int | None]:
+        """Resolve tag names and classification fields to Paperless IDs."""
+        tag_ids = self.taxonomy_cache.get_or_create_tag_ids(tag_names)
+        correspondent_id = (
+            self.taxonomy_cache.get_or_create_correspondent_id(result.correspondent)
+            if result.correspondent
+            else None
+        )
+        document_type_id = (
+            self.taxonomy_cache.get_or_create_document_type_id(result.document_type)
+            if result.document_type
+            else None
+        )
+        return tag_ids, correspondent_id, document_type_id
 
     def _apply_classification(
         self,
@@ -256,7 +260,6 @@ class ClassificationProcessor:
         model: str,
     ) -> None:
         """Apply the classifier's output to Paperless metadata and tags."""
-        # Guard: if the OCR content itself contains refusal markers, error out
         if needs_error_tag(content):
             log.warning(
                 "OCR content contains refusal markers; marking error",
@@ -268,33 +271,9 @@ class ClassificationProcessor:
         parsed_date = parse_document_date(result.document_date)
         date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))
 
-        # Build and filter the tag list
-        base_tags = filter_blacklisted_tags(result.tags)
-        base_tags = filter_redundant_tags(
-            base_tags,
-            result.correspondent,
-            result.document_type,
-            result.person,
-        )
-        tags = enrich_tags(
-            base_tags,
-            content,
-            date_for_tags,
-            self.settings.CLASSIFY_DEFAULT_COUNTRY_TAG,
-            self.settings.CLASSIFY_TAG_LIMIT,
-        )
-
-        # Resolve taxonomy items (creates missing ones in Paperless)
-        tag_ids = self.taxonomy_cache.get_or_create_tag_ids(tags)
-        correspondent_id = (
-            self.taxonomy_cache.get_or_create_correspondent_id(result.correspondent)
-            if result.correspondent
-            else None
-        )
-        document_type_id = (
-            self.taxonomy_cache.get_or_create_document_type_id(result.document_type)
-            if result.document_type
-            else None
+        tag_names = self._build_tag_names(result, content, date_for_tags)
+        tag_ids, correspondent_id, document_type_id = self._resolve_taxonomy_ids(
+            result, tag_names
         )
 
         # Merge new tag IDs with cleaned existing tags
@@ -303,7 +282,6 @@ class ClassificationProcessor:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
         current_tags.update(tag_ids)
 
-        # Build custom fields payload (e.g. person name)
         custom_fields = None
         if self.settings.CLASSIFY_PERSON_FIELD_ID and result.person:
             custom_fields = update_custom_fields(
@@ -333,12 +311,7 @@ class ClassificationProcessor:
             tags_added=len(tag_ids),
         )
 
-    # ------------------------------------------------------------------
-    # Observability
-    # ------------------------------------------------------------------
-
     def _log_classification_stats(self) -> None:
-        """Log classification model stats."""
         stats = self.classifier.get_stats()
         if not stats or not stats.get("attempts"):
             return

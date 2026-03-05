@@ -1,21 +1,4 @@
-"""
-Daemon Bootstrap
-================
-
-Shared startup sequence for both the OCR and classification daemons.
-
-Both daemons follow the same bootstrap pattern:
-
-1. Load configuration from environment variables.
-2. Configure structured logging.
-3. Set up third-party libraries (OpenAI, Pillow).
-4. Register signal handlers for graceful shutdown.
-5. Initialise the LLM concurrency limiter.
-6. Run preflight checks (Paperless reachable, tags exist, LLM reachable).
-7. Recover stale processing-lock tags from a previous crash.
-
-This module extracts that shared logic so the daemon entry points stay thin.
-"""
+"""Shared daemon startup sequence: config, logging, preflight, and stale-lock recovery."""
 
 from __future__ import annotations
 
@@ -38,18 +21,7 @@ def bootstrap_daemon(
     processing_tag_id_attr: str,
     pre_tag_id_attr: str,
 ) -> tuple[Settings, PaperlessClient] | None:
-    """Run the shared daemon startup sequence.
-
-    Args:
-        processing_tag_id_attr: Name of the Settings attribute holding the
-            processing-lock tag ID (e.g. ``"OCR_PROCESSING_TAG_ID"``).
-        pre_tag_id_attr: Name of the Settings attribute holding the
-            queue tag ID (e.g. ``"PRE_TAG_ID"``).
-
-    Returns:
-        A ``(settings, list_client)`` tuple on success, or ``None`` if startup
-        fails (configuration error or fatal preflight failure).
-    """
+    """Run the shared daemon startup. Returns (settings, client) or None on failure."""
     try:
         settings = Settings()
         configure_logging(settings)

@@ -1,15 +1,4 @@
-"""
-Processing Tag Claims
-=====================
-
-Shared helper for claiming a processing-lock tag with a refresh-before and
-verify-after workflow to reduce race conditions in concurrent environments.
-
-When multiple daemon instances (or threads) process the same Paperless queue,
-they may both pick up the same document.  The processing tag acts as a
-best-effort lock: the first worker to successfully add the tag and verify that
-it persists "owns" the document.
-"""
+"""Processing-lock tag claiming with refresh-before / verify-after semantics."""
 
 from __future__ import annotations
 
@@ -28,25 +17,14 @@ def claim_processing_tag(
     tag_id: int | None,
     purpose: str,
 ) -> bool:
-    """
-    Claim a document by adding a processing-lock tag and verifying it persists.
+    """Add a processing-lock tag and verify it persists (best-effort lock).
 
-    The workflow is:
-
-    1. **Refresh** — fetch the document to get the latest tags.
-    2. **Check** — if the tag is already present, another worker claimed it.
-    3. **Patch** — add the tag.
-    4. **Verify** — re-fetch and confirm the tag is still there (Paperless may
-       have reverted it if two workers patched simultaneously).
-
-    Returns ``True`` when the claim succeeds, ``False`` otherwise.  When
-    *tag_id* is ``None`` or ``0`` (lock not configured), returns ``True``
-    immediately.
+    Returns ``True`` on success, ``False`` if already claimed or on error.
+    Returns ``True`` immediately when *tag_id* is ``None`` (lock not configured).
     """
     if not tag_id:
         return True
 
-    # Step 1: Refresh
     try:
         latest = paperless_client.get_document(doc_id)
     except Exception:
@@ -58,7 +36,6 @@ def claim_processing_tag(
         )
         return False
 
-    # Step 2: Check
     current_tags = extract_tags(latest, doc_id=doc_id, context=f"{purpose}-claim")
     if tag_id in current_tags:
         log.info(
@@ -69,7 +46,6 @@ def claim_processing_tag(
         )
         return False
 
-    # Step 3: Patch
     updated_tags = set(current_tags)
     updated_tags.add(tag_id)
     try:
@@ -83,7 +59,6 @@ def claim_processing_tag(
         )
         return False
 
-    # Step 4: Verify
     try:
         verified = paperless_client.get_document(doc_id)
     except Exception:

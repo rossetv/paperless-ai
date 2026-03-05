@@ -1,14 +1,4 @@
-"""
-Configuration module for the Paperless-ngx OCR and classification daemons.
-
-This module centralizes the loading and validation of **all** configuration
-parameters from environment variables.  It provides a single :class:`Settings`
-class — a pure data container with no side effects on import — that is
-consumed by every other module in the codebase.
-
-Library-level setup (OpenAI SDK, Pillow, httpx) lives in
-:mod:`common.library_setup` to keep this module free of side effects.
-"""
+"""Environment-variable configuration for the OCR and classification daemons."""
 
 from __future__ import annotations
 
@@ -17,12 +7,6 @@ from typing import Literal
 
 
 class Settings:
-    """
-    A container for all configuration settings, loaded from environment variables.
-
-    This class centralizes configuration, providing default values for optional
-    settings and raising errors for missing required settings.
-    """
 
     # --- Paperless-ngx API Configuration ---
     PAPERLESS_URL: str
@@ -81,33 +65,35 @@ class Settings:
     CLASSIFY_HEADERLESS_CHAR_LIMIT: int
 
     def __init__(self):
-        """
-        Loads settings from environment variables and performs validation.
-        """
-        # --- Paperless-ngx API Configuration ---
+        """Loads settings from environment variables and performs validation."""
+        self._load_api_settings()
+        self._load_llm_settings()
+        self._load_tag_settings()
+        self._load_daemon_settings()
+        self._load_image_settings()
+        self._load_logging_settings()
+        self._load_classification_settings()
+
+    def _load_api_settings(self) -> None:
         self.PAPERLESS_URL = os.getenv("PAPERLESS_URL", "http://paperless:8000").rstrip(
             "/"
         )
         self.PAPERLESS_TOKEN = self._get_required_env("PAPERLESS_TOKEN")
 
-        # --- LLM Provider Configuration ---
+    def _load_llm_settings(self) -> None:
         self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
         if self.LLM_PROVIDER not in ("openai", "ollama"):
             raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
 
-        # --- Model Selection ---
         if self.LLM_PROVIDER == "ollama":
             self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1/")
-            self.OPENAI_API_KEY = None  # Not used for Ollama
+            self.OPENAI_API_KEY = None
             default_ai_models = ["gemma3:27b", "gemma3:12b"]
-        else:  # openai
+        else:
             self.OLLAMA_BASE_URL = None
             self.OPENAI_API_KEY = self._get_required_env("OPENAI_API_KEY")
             default_ai_models = ["gpt-5-mini", "gpt-5.2", "o4-mini"]
-        self.AI_MODELS = self._get_model_list(
-            "AI_MODELS",
-            default_ai_models,
-        )
+        self.AI_MODELS = self._get_model_list("AI_MODELS", default_ai_models)
         default_ocr_refusal_markers = [
             "i can't assist",
             "i cannot assist",
@@ -125,14 +111,12 @@ class Settings:
             "OCR_INCLUDE_PAGE_MODELS", False
         )
 
-        # --- Paperless-ngx Tag IDs ---
+    def _load_tag_settings(self) -> None:
         self.PRE_TAG_ID = int(os.getenv("PRE_TAG_ID", "443"))
         self.POST_TAG_ID = int(os.getenv("POST_TAG_ID", "444"))
         self.OCR_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
             "OCR_PROCESSING_TAG_ID"
         )
-
-        # --- Classification Tag IDs ---
         self.CLASSIFY_PRE_TAG_ID = self._get_optional_int_env(
             "CLASSIFY_PRE_TAG_ID", self.POST_TAG_ID
         )
@@ -144,7 +128,7 @@ class Settings:
         )
         self.ERROR_TAG_ID = self._get_optional_positive_int_env("ERROR_TAG_ID", 552)
 
-        # --- Daemon Configuration ---
+    def _load_daemon_settings(self) -> None:
         self.POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
         self.MAX_RETRIES = int(os.getenv("MAX_RETRIES", "20"))
         if self.MAX_RETRIES < 1:
@@ -157,20 +141,20 @@ class Settings:
         self.REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "180"))
         self.LLM_MAX_CONCURRENT = max(0, int(os.getenv("LLM_MAX_CONCURRENT", "0")))
 
-        # --- Image Processing Configuration ---
+    def _load_image_settings(self) -> None:
         self.OCR_DPI = int(os.getenv("OCR_DPI", "300"))
         self.OCR_MAX_SIDE = int(os.getenv("OCR_MAX_SIDE", "1600"))
         self.PAGE_WORKERS = max(1, int(os.getenv("PAGE_WORKERS", "8")))
         self.DOCUMENT_WORKERS = max(1, int(os.getenv("DOCUMENT_WORKERS", "4")))
 
-        # --- Logging ---
+    def _load_logging_settings(self) -> None:
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
         log_format = os.getenv("LOG_FORMAT", "console")
         if log_format not in ("json", "console"):
             raise ValueError("LOG_FORMAT must be 'json' or 'console'")
         self.LOG_FORMAT = log_format
 
-        # --- Classification Configuration ---
+    def _load_classification_settings(self) -> None:
         self.CLASSIFY_PERSON_FIELD_ID = self._get_optional_int_env(
             "CLASSIFY_PERSON_FIELD_ID"
         )

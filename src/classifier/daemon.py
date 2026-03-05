@@ -1,13 +1,4 @@
-"""
-Paperless-ngx Classification Daemon
-===================================
-
-Entry point for the classification daemon.
-
-Polls Paperless-ngx for documents that have been OCR'd (tagged with
-``CLASSIFY_PRE_TAG_ID``) and classifies them using an LLM, applying metadata
-updates (title, correspondent, document type, tags, date, language, person).
-"""
+"""Classification daemon entry point."""
 
 from __future__ import annotations
 
@@ -19,7 +10,7 @@ from common.bootstrap import bootstrap_daemon
 from common.config import Settings
 from common.daemon_loop import run_polling_threadpool
 from common.paperless import PaperlessClient
-from common.tags import iter_documents_by_pipeline_tag
+from common.document_iter import iter_documents_by_pipeline_tag
 from .provider import ClassificationProvider
 from .taxonomy import TaxonomyCache
 from .worker import ClassificationProcessor
@@ -31,8 +22,7 @@ def _iter_docs_to_classify(
     """
     Yield documents that should be classified.
 
-    Delegates to the shared :func:`~common.tags.iter_documents_by_pipeline_tag`
-    helper with classification-specific tag IDs.
+    Delegates to :func:`~common.document_iter.iter_documents_by_pipeline_tag`.
     """
     return iter_documents_by_pipeline_tag(
         list_client,

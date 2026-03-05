@@ -412,7 +412,7 @@ class TestCreateWithCompatTemperature:
     def test_strips_temperature_and_retries(self):
         # Arrange
         provider = _make_provider()
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         response = _make_response(_valid_json())
         error = _bad_request_error("temperature is unsupported for this model")
         provider._create_completion = MagicMock(side_effect=[error, response])
@@ -441,7 +441,7 @@ class TestCreateWithCompatTemperature:
             return response
 
         provider._create_completion = track_calls
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": [], "temperature": 0.2}
 
         # Act
@@ -461,7 +461,7 @@ class TestCreateWithCompatResponseFormat:
         response = _make_response()
         error = _bad_request_error("response_format is not supported")
         provider._create_completion = MagicMock(side_effect=[error, response])
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": [], "response_format": {"type": "json_schema"}}
 
         # Act
@@ -477,7 +477,7 @@ class TestCreateWithCompatResponseFormat:
         response = _make_response()
         error = _bad_request_error("json_schema is not supported by this model")
         provider._create_completion = MagicMock(side_effect=[error, response])
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": [], "response_format": {"type": "json_schema"}}
 
         # Act
@@ -496,7 +496,7 @@ class TestCreateWithCompatMaxTokens:
         response = _make_response()
         error = _bad_request_error("max_tokens is not supported")
         provider._create_completion = MagicMock(side_effect=[error, response])
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": [], "max_tokens": 500}
 
         # Act
@@ -512,7 +512,7 @@ class TestCreateWithCompatMaxTokens:
         response = _make_response()
         error = _bad_request_error("max tokens parameter not allowed")
         provider._create_completion = MagicMock(side_effect=[error, response])
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": [], "max_tokens": 500}
 
         # Act
@@ -530,7 +530,7 @@ class TestCreateWithCompatNon400:
         # Arrange
         provider = _make_provider()
         provider._create_completion = MagicMock(side_effect=_api_error())
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {"model": "m", "messages": []}
 
         # Act
@@ -549,7 +549,7 @@ class TestCreateWithCompatRetryExhaustion:
         provider = _make_provider()
         error = _bad_request_error("temperature is unsupported for this model")
         provider._create_completion = MagicMock(side_effect=error)
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {
             "model": "m",
             "messages": [],
@@ -581,7 +581,7 @@ class TestCreateWithCompatRetryExhaustion:
         provider._create_completion = MagicMock(
             side_effect=[temp_error, fmt_error, tokens_error, response]
         )
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {
             "model": "m",
             "messages": [],
@@ -613,7 +613,7 @@ class TestCreateWithCompatRetryExhaustion:
         provider._create_completion = MagicMock(
             side_effect=[temp_error, fmt_error, tokens_error, fourth_error]
         )
-        provider._reset_stats()
+        provider._stats.reset(provider._STAT_KEYS)
         params = {
             "model": "m",
             "messages": [],
@@ -660,7 +660,7 @@ class TestStatsTracking:
         stats = provider.get_stats()
 
         # Assert
-        assert stats == {}
+        assert all(v == 0 for v in stats.values())
 
 
 # ===================================================================

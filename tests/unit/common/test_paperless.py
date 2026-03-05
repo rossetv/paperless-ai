@@ -35,7 +35,34 @@ def _make_settings(**overrides):
     return make_settings_obj(**defaults)
 
 
-_active_clients: list[PaperlessClient] = []
+class _ClientRegistry:
+    """Tracks PaperlessClient instances for automatic cleanup."""
+
+    def __init__(self) -> None:
+        self.clients: list[PaperlessClient] = []
+
+    def register(self, client: PaperlessClient) -> PaperlessClient:
+        self.clients.append(client)
+        return client
+
+    def close_all(self) -> None:
+        for c in self.clients:
+            try:
+                c.close()
+            except Exception:
+                pass
+        self.clients.clear()
+
+
+_registry = _ClientRegistry()
+
+
+@pytest.fixture(autouse=True)
+def _auto_close_clients():
+    """Guarantee every PaperlessClient created during a test is closed."""
+    _registry.close_all()
+    yield
+    _registry.close_all()
 
 
 def _make_client(settings=None):
@@ -48,21 +75,7 @@ def _make_client(settings=None):
     if settings is None:
         settings = _make_settings()
     c = PaperlessClient(settings)
-    _active_clients.append(c)
-    return c
-
-
-@pytest.fixture(autouse=True)
-def _auto_close_clients():
-    """Guarantee every PaperlessClient created during a test is closed."""
-    _active_clients.clear()
-    yield
-    for c in _active_clients:
-        try:
-            c.close()
-        except Exception:
-            pass
-    _active_clients.clear()
+    return _registry.register(c)
 
 
 # ---------------------------------------------------------------------------

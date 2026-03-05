@@ -1,0 +1,146 @@
+{
+  "assessments": {
+    "cross_module_architecture": 82,
+    "convention_outlier": 85,
+    "abstraction_fitness": 72,
+    "dependency_health": 88
+  },
+  "findings": [
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "god_settings_object",
+      "summary": "Settings class is a hub object coupling all modules to all configuration concerns",
+      "related_files": ["common/config.py", "common/tags.py", "classifier/worker.py", "ocr/worker.py"],
+      "evidence": [
+        "Settings contains 35+ attributes spanning OCR, classification, daemon, image, logging, and tag concerns",
+        "common/tags.py:clean_pipeline_tags accepts full Settings but only reads 6 tag IDs from it",
+        "common/tags.py:finalize_document_with_error accepts full Settings for the same narrow tag-ID subset",
+        "Both ocr/worker.py and classifier/worker.py pass the full Settings object through multiple layers where only a few attributes are needed"
+      ],
+      "suggestion": "Consider narrowing function signatures to accept only the specific tag IDs or config subsets they need, or split Settings into domain-specific config groups (OcrConfig, ClassifyConfig, DaemonConfig)",
+      "confidence": "high"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "bootstrap_getattr_indirection",
+      "summary": "bootstrap_daemon uses string-based getattr to access Settings attributes, blurring the contract",
+      "related_files": ["common/bootstrap.py"],
+      "evidence": [
+        "bootstrap_daemon takes processing_tag_id_attr='OCR_PROCESSING_TAG_ID' and pre_tag_id_attr='PRE_TAG_ID' as strings, then calls getattr(settings, processing_tag_id_attr)",
+        "This hides the dependency between bootstrap and specific Settings fields from static analysis and IDE navigation"
+      ],
+      "suggestion": "Accept the actual int values directly (processing_tag_id: int | None, pre_tag_id: int) instead of attribute name strings",
+      "confidence": "high"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "duplicate_error_phrase_lists",
+      "summary": "Refusal/error phrases are defined independently in both classifier/constants.py and common/config.py",
+      "related_files": ["classifier/constants.py", "common/config.py", "classifier/quality_gates.py", "ocr/provider.py"],
+      "evidence": [
+        "classifier/constants.py defines ERROR_PHRASES tuple with 5 hardcoded phrases including 'chatgpt refused to transcribe'",
+        "common/config.py defines OCR_REFUSAL_MARKERS with a similar but not identical set of phrases as configurable defaults",
+        "classifier/quality_gates.py:needs_error_tag uses the hardcoded ERROR_PHRASES via is_error_content",
+        "ocr/provider.py:is_refusal uses the configurable settings.OCR_REFUSAL_MARKERS — the two sets can drift"
+      ],
+      "suggestion": "Consolidate refusal/error phrase definitions into a single shared source (either all configurable via Settings or all in a shared constants module)",
+      "confidence": "high"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "inconsistent_init_exports",
+      "summary": "ocr/__init__.py and classifier/__init__.py define __all__ exports while common/__init__.py is a bare docstring",
+      "related_files": ["ocr/__init__.py", "classifier/__init__.py", "common/__init__.py"],
+      "evidence": [
+        "ocr/__init__.py imports 5 symbols and defines __all__ with 6 entries",
+        "classifier/__init__.py imports 4 symbols and defines __all__ with 5 entries",
+        "common/__init__.py contains only a docstring with no imports or __all__",
+        "All consumers of common import directly from submodules (common.config, common.paperless, etc.) rather than through common/__init__.py"
+      ],
+      "suggestion": "This is a minor inconsistency. Either add re-exports to common/__init__.py or document the convention that common is always imported by submodule",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "mixed_module_level_vs_class_stats",
+      "summary": "Stats tracking pattern differs between OcrProvider (class-level init) and ClassificationProvider (method-level reset)",
+      "related_files": ["ocr/provider.py", "classifier/provider.py"],
+      "evidence": [
+        "OpenAIProvider.__init__ initializes _stats dict with 4 keys in __init__ and never resets it",
+        "ClassificationProvider.__init__ initializes _stats as empty dict {}, then _reset_stats() rebuilds it with 7 keys at the start of each classify_text call",
+        "Both classes have identical _inc_stat and get_stats methods but different lifecycle semantics"
+      ],
+      "suggestion": "Align the stats pattern: either both initialize in __init__ or both reset per-call, and consider extracting a shared StatsTracker helper",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "ocr_provider_abc_single_impl",
+      "summary": "OcrProvider ABC has only one concrete implementation (OpenAIProvider) with no evident extension pressure",
+      "related_files": ["ocr/provider.py"],
+      "evidence": [
+        "OcrProvider defines abstractmethod transcribe_image and a get_stats method that returns {}",
+        "OpenAIProvider is the only subclass in the entire codebase",
+        "ocr/daemon.py hardcodes OpenAIProvider() — there is no provider selection or plugin mechanism",
+        "The docstring says 'Subclass this to add support for a new vision-capable LLM backend' but no other backend exists"
+      ],
+      "suggestion": "Consider removing the ABC and using OpenAIProvider directly until a second provider is actually needed. The ABC adds indirection without current benefit",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "mixin_for_single_method",
+      "summary": "OpenAIChatMixin provides only _create_completion but requires implicit self.settings contract",
+      "related_files": ["common/llm.py", "ocr/provider.py", "classifier/provider.py"],
+      "evidence": [
+        "OpenAIChatMixin contains a single method _create_completion that wraps openai.chat.completions.create with retry and semaphore",
+        "The mixin relies on self.settings existing on the host class (duck-typed via the retry decorator's RetrySettings protocol)",
+        "Both consumers (OpenAIProvider, ClassificationProvider) inherit it, but the implicit contract is not enforced at the type level",
+        "unique_models is a standalone function in the same module, showing the module already mixes free functions with the mixin"
+      ],
+      "suggestion": "Replace the mixin with a plain function create_completion(settings, **kwargs) or a standalone LLMClient class that receives settings explicitly",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "concurrency_wrapper_chain",
+      "summary": "Three layers of indirection for the LLM concurrency semaphore: init_llm_semaphore -> llm_limiter.init, llm_semaphore -> llm_limiter.acquire",
+      "related_files": ["common/concurrency.py"],
+      "evidence": [
+        "init_llm_semaphore(max_concurrent) is a one-line wrapper that calls llm_limiter.init(max_concurrent)",
+        "llm_semaphore() context manager is a one-line wrapper that yields from llm_limiter.acquire()",
+        "Both wrapper functions exist solely to hide the module-level llm_limiter singleton, adding indirection without policy or translation"
+      ],
+      "suggestion": "Export llm_limiter directly and let callers use llm_limiter.init() and llm_limiter.acquire(). The wrapper functions add no value over the singleton's own methods",
+      "confidence": "high"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "duplicate_redaction_detection",
+      "summary": "Redaction/refusal detection logic is implemented in both common/utils.py and ocr/provider.py",
+      "related_files": ["common/utils.py", "ocr/provider.py"],
+      "evidence": [
+        "common/utils.py:contains_redacted_marker checks for [REDACTED ...] patterns using _REDACTED_RE regex",
+        "common/utils.py:is_error_content combines refusal phrase check with redaction check",
+        "ocr/provider.py:is_refusal independently combines refusal marker check with contains_redacted_marker call",
+        "is_refusal and is_error_content do essentially the same thing (check phrases + check redaction markers) but with different interfaces and different phrase sources"
+      ],
+      "suggestion": "Consolidate into a single function in common/utils.py that both OCR and classifier use, parameterized by the phrase list",
+      "confidence": "high"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "openai_global_state_mutation",
+      "summary": "Library setup mutates openai module globals (api_key, base_url, http_client) creating implicit shared state",
+      "related_files": ["common/library_setup.py", "common/preflight.py", "common/llm.py"],
+      "evidence": [
+        "library_setup.py sets openai.base_url, openai.api_key, and openai.http_client as module-level globals",
+        "common/llm.py calls openai.chat.completions.create() relying on these globals being set",
+        "common/preflight.py calls openai.models.list() relying on the same globals",
+        "This creates an implicit initialization order dependency that is invisible in import analysis"
+      ],
+      "suggestion": "Consider creating an explicit openai.Client() instance in library_setup and passing it through, rather than mutating module-level globals. This makes the dependency explicit and testable",
+      "confidence": "medium"
+    }
+  ]
+}

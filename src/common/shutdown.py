@@ -1,18 +1,4 @@
-"""
-Graceful Shutdown Coordinator
-=============================
-
-Provides a thread-safe shutdown flag that signal handlers (SIGTERM, SIGINT)
-can set, and that the daemon polling loop checks between iterations.
-
-Typical usage::
-
-    from common.shutdown import register_signal_handlers, is_shutdown_requested
-
-    register_signal_handlers()   # once at startup
-    while not is_shutdown_requested():
-        ...
-"""
+"""Thread-safe graceful shutdown flag for SIGTERM/SIGINT handling."""
 
 from __future__ import annotations
 
@@ -39,11 +25,7 @@ def reset_shutdown() -> None:
 
 
 def register_signal_handlers() -> None:
-    """Install SIGTERM and SIGINT handlers that trigger a graceful shutdown.
-
-    Must be called from the **main thread** (Python requires signal handlers
-    to be registered there).
-    """
+    """Install SIGTERM/SIGINT handlers. Must be called from the main thread."""
 
     def _handler(signum: int, _frame) -> None:
         name = signal.Signals(signum).name

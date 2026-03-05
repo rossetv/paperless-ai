@@ -1,18 +1,4 @@
-"""
-Document Processing Worker
-==========================
-
-Thin orchestrator for the end-to-end OCR processing of a single Paperless
-document.  Heavy-lifting is delegated to focused, reusable modules:
-
-- :mod:`ocr.image_converter` — raw bytes → PIL Images.
-- :mod:`ocr.text_assembly` — per-page results → assembled document text.
-- :mod:`common.claims` / :mod:`common.tags` — distributed lock & tag lifecycle.
-
-The :class:`DocumentProcessor` is instantiated per-document by the daemon's
-thread pool.  Each instance gets its own :class:`PaperlessClient` and
-:class:`OcrProvider`.
-"""
+"""Per-document OCR processing orchestrator."""
 
 from __future__ import annotations
 
@@ -59,10 +45,6 @@ class DocumentProcessor:
         self.settings = settings
         self.doc_id: int = doc["id"]
         self.title: str = doc.get("title") or "<untitled>"
-
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
 
     def process(self) -> None:
         """
@@ -144,10 +126,6 @@ class DocumentProcessor:
             elapsed_time=f"{elapsed:.2f}s",
         )
 
-    # ------------------------------------------------------------------
-    # Document refresh
-    # ------------------------------------------------------------------
-
     def _refresh_document(self) -> dict | None:
         """Refresh the document from Paperless and update the local cache."""
         try:
@@ -158,10 +136,6 @@ class DocumentProcessor:
         self.doc = latest
         return latest
 
-    # ------------------------------------------------------------------
-    # Processing-lock tag
-    # ------------------------------------------------------------------
-
     def _claim_processing_tag(self) -> bool:
         """Claim the OCR processing-lock tag with refresh-before/verify-after."""
         return claim_processing_tag(
@@ -170,10 +144,6 @@ class DocumentProcessor:
             tag_id=self.settings.OCR_PROCESSING_TAG_ID,
             purpose="ocr",
         )
-
-    # ------------------------------------------------------------------
-    # Parallel OCR
-    # ------------------------------------------------------------------
 
     def _ocr_pages_in_parallel(
         self, images: list[Image.Image]
@@ -209,13 +179,13 @@ class DocumentProcessor:
                     )
             return results, failed_pages
 
-    # ------------------------------------------------------------------
-    # Text assembly
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # Paperless update
-    # ------------------------------------------------------------------
+    def _has_ocr_errors(self, text: str) -> bool:
+        """Return True if the OCR output contains error/refusal/redacted markers."""
+        return (
+            OCR_ERROR_MARKER in text
+            or self.settings.REFUSAL_MARK in text
+            or contains_redacted_marker(text)
+        )
 
     def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:
         """
@@ -224,8 +194,9 @@ class DocumentProcessor:
         Detects error conditions (empty text, refusal markers, OCR errors)
         and routes to :meth:`_finalize_with_error` instead of the happy path.
         """
-        if not full_text.strip():
-            log.warning("OCR produced no text; marking error", doc_id=self.doc_id)
+        if not full_text.strip() or self._has_ocr_errors(full_text):
+            reason = "no text" if not full_text.strip() else "error/refusal/redacted markers"
+            log.warning("OCR produced error content; marking error", doc_id=self.doc_id, reason=reason)
             self._finalize_with_error(
                 get_latest_tags(
                     self.paperless_client, self.doc_id, fallback_doc=self.doc
@@ -234,24 +205,6 @@ class DocumentProcessor:
             )
             return
 
-        if (
-            OCR_ERROR_MARKER in full_text
-            or self.settings.REFUSAL_MARK in full_text
-            or contains_redacted_marker(full_text)
-        ):
-            log.warning(
-                "OCR produced error/refusal/redacted markers; marking error",
-                doc_id=self.doc_id,
-            )
-            self._finalize_with_error(
-                get_latest_tags(
-                    self.paperless_client, self.doc_id, fallback_doc=self.doc
-                ),
-                content=full_text,
-            )
-            return
-
-        # Happy path: swap the pre-tag for the post-tag
         current_tags = get_latest_tags(
             self.paperless_client, self.doc_id, fallback_doc=self.doc
         )
@@ -270,10 +223,6 @@ class DocumentProcessor:
             added_tag=self.settings.POST_TAG_ID,
         )
 
-    # ------------------------------------------------------------------
-    # Error handling
-    # ------------------------------------------------------------------
-
     def _finalize_with_error(self, tags: set[int], *, content: str | None = None) -> None:
         """
         Mark the document as errored and remove all pipeline tags.
@@ -285,16 +234,10 @@ class DocumentProcessor:
             self.doc_id,
             tags,
             self.settings,
-            log,
             content=content,
         )
 
-    # ------------------------------------------------------------------
-    # Observability
-    # ------------------------------------------------------------------
-
     def _log_ocr_stats(self) -> None:
-        """Log OCR model stats."""
         stats = self.ocr_provider.get_stats()
         if not stats or not stats.get("attempts"):
             return

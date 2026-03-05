@@ -1,18 +1,4 @@
-"""
-Tag Filtering and Enrichment
-=============================
-
-Pure functions for cleaning, deduplicating, filtering, and enriching the list
-of tags that the classification LLM suggests.
-
-The pipeline applies these in order:
-
-1. :func:`filter_blacklisted_tags` — remove tags that collide with system labels.
-2. :func:`filter_redundant_tags` — remove tags that duplicate the correspondent,
-   document type, or person.
-3. :func:`enrich_tags` — merge model-suggested tags with required tags
-   (year, country, OCR model markers) and enforce the tag limit.
-"""
+"""Tag filtering, deduplication, and enrichment for classification output."""
 
 from __future__ import annotations
 
@@ -21,21 +7,14 @@ from typing import Iterable
 
 import structlog
 
-from common.utils import is_error_content
 from .constants import (
     BLACKLISTED_TAGS,
-    ERROR_PHRASES,
-    GENERIC_DOCUMENT_TYPES,
     MODEL_FOOTER_RE,
 )
 from .normalizers import normalize_name, normalize_simple
 
 log = structlog.get_logger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Deduplication
-# ---------------------------------------------------------------------------
 
 def dedupe_tags(tags: Iterable[str]) -> list[str]:
     """
@@ -59,10 +38,6 @@ def dedupe_tags(tags: Iterable[str]) -> list[str]:
         output.append(tag)
     return output
 
-
-# ---------------------------------------------------------------------------
-# Filters
-# ---------------------------------------------------------------------------
 
 def filter_redundant_tags(
     tags: Iterable[str],
@@ -109,36 +84,6 @@ def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
     ]
 
 
-# ---------------------------------------------------------------------------
-# Quality gates
-# ---------------------------------------------------------------------------
-
-def is_generic_document_type(value: str) -> bool:
-    """
-    Return ``True`` if *value* is a vague placeholder like *"Document"*.
-
-    Used to reject low-quality classification results that would clutter the
-    Paperless taxonomy.
-    """
-    if not value:
-        return True
-    return normalize_simple(value) in GENERIC_DOCUMENT_TYPES
-
-
-def needs_error_tag(text: str) -> bool:
-    """
-    Return ``True`` if *text* contains OCR refusal phrases or redaction markers.
-
-    This catches cases where the OCR daemon stored error content as the
-    document body and the classifier receives it as input.
-    """
-    return is_error_content(text, ERROR_PHRASES)
-
-
-# ---------------------------------------------------------------------------
-# Model-tag extraction
-# ---------------------------------------------------------------------------
-
 def extract_model_tags(text: str) -> list[str]:
     """
     Extract model name tags from ``Transcribed by model: …`` footers.
@@ -162,10 +107,6 @@ def extract_model_tags(text: str) -> list[str]:
                 tags.append(tag)
     return dedupe_tags(tags)
 
-
-# ---------------------------------------------------------------------------
-# Enrichment
-# ---------------------------------------------------------------------------
 
 def enrich_tags(
     tags: list[str],

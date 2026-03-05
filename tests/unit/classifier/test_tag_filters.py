@@ -6,14 +6,13 @@ from __future__ import annotations
 
 import datetime as dt
 
+from classifier.quality_gates import is_generic_document_type, needs_error_tag
 from classifier.tag_filters import (
     dedupe_tags,
     enrich_tags,
     extract_model_tags,
     filter_blacklisted_tags,
     filter_redundant_tags,
-    is_generic_document_type,
-    needs_error_tag,
 )
 
 

@@ -1,23 +1,8 @@
-"""
-OCR Provider
-============
-
-Abstract base class for OCR providers and the concrete
-:class:`OpenAIProvider` implementation.
-
-The provider is responsible for:
-
-1. Preparing a single page image (resize, encode to base64 PNG).
-2. Sending it to a vision-capable LLM with the transcription prompt.
-3. Trying each model in the configured fallback chain until one succeeds.
-4. Detecting refusals and redaction markers.
-5. Tracking per-document statistics (attempts, refusals, fallback successes).
-"""
+"""OCR provider with model fallback, image preparation, and refusal detection."""
 
 from __future__ import annotations
 
 import base64
-import threading
 from abc import ABC, abstractmethod
 from io import BytesIO
 
@@ -26,7 +11,7 @@ import structlog
 from PIL import Image
 
 from common.config import Settings
-from common.llm import OpenAIChatMixin, unique_models
+from common.llm import OpenAIChatMixin, ThreadSafeStats, unique_models
 from common.utils import contains_redacted_marker
 from .prompts import TRANSCRIPTION_PROMPT
 
@@ -94,25 +79,14 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
     next model when the current one refuses or errors.
     """
 
+    _STAT_KEYS = ("attempts", "refusals", "api_errors", "fallback_successes")
+
     def __init__(self, settings: Settings):
         super().__init__(settings)
-        self._stats_lock = threading.Lock()
-        self._stats = {
-            "attempts": 0,
-            "refusals": 0,
-            "api_errors": 0,
-            "fallback_successes": 0,
-        }
-
-    def _inc_stat(self, key: str) -> None:
-        """Thread-safe increment of a stats counter."""
-        with self._stats_lock:
-            self._stats[key] += 1
+        self._stats = ThreadSafeStats(self._STAT_KEYS)
 
     def get_stats(self) -> dict[str, int]:
-        """Return a snapshot of OCR model stats for this provider instance."""
-        with self._stats_lock:
-            return dict(self._stats)
+        return self._stats.snapshot()
 
     def transcribe_image(
         self,
@@ -165,18 +139,18 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
                 "timeout": self.settings.REQUEST_TIMEOUT,
             }
             try:
-                self._inc_stat("attempts")
+                self._stats.inc("attempts")
                 response = self._create_completion(**params)
                 text = (response.choices[0].message.content or "").strip()
 
                 if not is_refusal(text, self.settings.OCR_REFUSAL_MARKERS):
                     if model != primary_model:
                         log.info("Fallback model succeeded", model=model, **log_ctx)
-                        self._inc_stat("fallback_successes")
+                        self._stats.inc("fallback_successes")
                     return text, model
                 else:
                     log.warning("Model refused to transcribe", model=model, **log_ctx)
-                    self._inc_stat("refusals")
+                    self._stats.inc("refusals")
             except openai.APIError as e:
                 log.warning(
                     "API call for model failed after all retries",
@@ -184,15 +158,11 @@ class OpenAIProvider(OpenAIChatMixin, OcrProvider):
                     error=e,
                     **log_ctx,
                 )
-                self._inc_stat("api_errors")
+                self._stats.inc("api_errors")
 
         log.error("All models failed or refused to transcribe the page", **log_ctx)
         return self.settings.REFUSAL_MARK, ""
 
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
 
 def _image_to_base64_png(image: Image.Image) -> str:
     """Encode a PIL Image as a base64-encoded PNG string."""
