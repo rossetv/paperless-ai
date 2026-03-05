@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from common.constants import REFUSAL_PHRASES
 from classifier.constants import (
     BLACKLISTED_TAGS,
-    ERROR_PHRASES,
     GENERIC_DOCUMENT_TYPES,
     MODEL_FOOTER_RE,
     PAGE_HEADER_RE,
@@ -86,18 +86,18 @@ class TestBlacklistedTags:
             assert value == value.lower()
 
 class TestErrorPhrases:
-    """Tests for ERROR_PHRASES constant."""
+    """Tests for REFUSAL_PHRASES constant."""
 
     def test_is_tuple(self):
-        assert isinstance(ERROR_PHRASES, tuple)
+        assert isinstance(REFUSAL_PHRASES, tuple)
 
     def test_all_entries_are_strings(self):
-        for phrase in ERROR_PHRASES:
+        for phrase in REFUSAL_PHRASES:
             assert isinstance(phrase, str)
 
     def test_not_empty(self):
-        assert len(ERROR_PHRASES) > 0
+        assert len(REFUSAL_PHRASES) > 0
 
     def test_all_entries_are_lowercase(self):
-        for phrase in ERROR_PHRASES:
+        for phrase in REFUSAL_PHRASES:
             assert phrase == phrase.lower(), f"Phrase {phrase!r} is not lowercase"

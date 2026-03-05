@@ -52,6 +52,7 @@ def retry(
                         max_retries=settings.MAX_RETRIES,
                     )
                     _sleep_backoff(attempt, settings)
+            raise AssertionError("unreachable")  # pragma: no cover
 
         return wrapper
 

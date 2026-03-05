@@ -204,7 +204,7 @@ class TestGetOrCreateCorrespondentId:
         cache.refresh()
 
         # First call to create fails; after refresh, the item appears
-        cache._client.create_correspondent.side_effect = RuntimeError("conflict")
+        cache._client.create_correspondent.side_effect = OSError("conflict")
         cache._client.list_correspondents.return_value = [_corr(88, "Conflict Corp")]
 
         # Act
@@ -218,11 +218,11 @@ class TestGetOrCreateCorrespondentId:
         # Arrange
         cache = _make_cache(correspondents=[])
         cache.refresh()
-        cache._client.create_correspondent.side_effect = RuntimeError("gone")
+        cache._client.create_correspondent.side_effect = OSError("gone")
         cache._client.list_correspondents.return_value = []
 
         # Act / Assert
-        with pytest.raises(RuntimeError, match="gone"):
+        with pytest.raises(OSError, match="gone"):
             cache.get_or_create_correspondent_id("Ghost Corp")
 
 class TestGetOrCreateDocumentTypeId:
@@ -279,7 +279,7 @@ class TestGetOrCreateDocumentTypeId:
         # Arrange
         cache = _make_cache(document_types=[])
         cache.refresh()
-        cache._client.create_document_type.side_effect = RuntimeError("dup")
+        cache._client.create_document_type.side_effect = OSError("dup")
         cache._client.list_document_types.return_value = [_dtype(50, "Payslip")]
 
         # Act
@@ -333,7 +333,7 @@ class TestGetOrCreateTagIds:
         # Arrange
         cache = _make_cache(tags=[])
         cache.refresh()
-        cache._client.create_tag.side_effect = RuntimeError("conflict")
+        cache._client.create_tag.side_effect = OSError("conflict")
         cache._client.list_tags.return_value = [_tag(77, "magic")]
 
         # Act
@@ -628,7 +628,7 @@ class TestThreadSafety:
 
         # Act — get_or_create_correspondent_id calls refresh() on failure,
         # which also acquires the lock. With RLock this should not deadlock.
-        cache._client.create_correspondent.side_effect = RuntimeError("dup")
+        cache._client.create_correspondent.side_effect = OSError("dup")
         cache._client.list_correspondents.return_value = [_corr(1, "Acme")]
 
         # This would deadlock with a plain Lock instead of RLock
@@ -644,20 +644,20 @@ class TestCreationFailureReraise:
         # Arrange
         cache = _make_cache()
         cache.refresh()
-        cache._client.create_document_type.side_effect = RuntimeError("create failed")
+        cache._client.create_document_type.side_effect = OSError("create failed")
         cache._client.list_document_types.return_value = []  # still not found after refresh
 
         # Act / Assert
-        with pytest.raises(RuntimeError, match="create failed"):
+        with pytest.raises(OSError, match="create failed"):
             cache.get_or_create_document_type_id("NewType")
 
     def test_tag_creation_fails_and_not_found_reraises(self):
         # Arrange
         cache = _make_cache()
         cache.refresh()
-        cache._client.create_tag.side_effect = RuntimeError("create failed")
+        cache._client.create_tag.side_effect = OSError("create failed")
         cache._client.list_tags.return_value = []  # still not found after refresh
 
         # Act / Assert
-        with pytest.raises(RuntimeError, match="create failed"):
+        with pytest.raises(OSError, match="create failed"):
             cache.get_or_create_tag_ids(["BrandNewTag"])

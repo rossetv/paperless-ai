@@ -12,6 +12,7 @@ from common.claims import claim_processing_tag
 from common.config import Settings
 from common.paperless import PaperlessClient
 from common.tags import (
+    clean_pipeline_tags,
     extract_tags,
     finalize_document_with_error,
     get_latest_tags,
@@ -55,6 +56,7 @@ class DocumentProcessor:
         release lock.
         """
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
+        self.ocr_provider.reset_stats()
         start_time = dt.datetime.now()
         claimed = False
         success = False
@@ -77,7 +79,6 @@ class DocumentProcessor:
             if not claimed:
                 return
 
-            self.ocr_provider.reset_stats()
             content, content_type = self.paperless_client.download_content(self.doc_id)
             try:
                 images = bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
@@ -170,7 +171,7 @@ class DocumentProcessor:
     def _has_ocr_errors(self, text: str) -> bool:
         """Return True if the OCR output contains error/refusal/redacted markers."""
         return OCR_ERROR_MARKER in text or is_error_content(
-            text, (self.settings.REFUSAL_MARK,)
+            text, self.settings.OCR_REFUSAL_MARKERS
         )
 
     def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:
@@ -194,9 +195,7 @@ class DocumentProcessor:
         current_tags = get_latest_tags(
             self.paperless_client, self.doc_id, fallback_doc=self.doc
         )
-        current_tags.discard(self.settings.PRE_TAG_ID)
-        if self.settings.OCR_PROCESSING_TAG_ID:
-            current_tags.discard(self.settings.OCR_PROCESSING_TAG_ID)
+        current_tags = clean_pipeline_tags(current_tags, self.settings)
         current_tags.add(self.settings.POST_TAG_ID)
 
         self.paperless_client.update_document(

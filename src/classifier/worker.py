@@ -79,9 +79,9 @@ class ClassificationProcessor:
         9. Release the processing-lock tag.
         """
         log.info("Classifying document", doc_id=self.doc_id, title=self.title)
+        self.classifier.reset_stats()
         claimed = False
         try:
-            self.classifier.reset_stats()
             document = self.paperless_client.get_document(self.doc_id)
             content = document.get("content", "") or ""
             current_tags = extract_tags(document, doc_id=self.doc_id, context="classify-process")

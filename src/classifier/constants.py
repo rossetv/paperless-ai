@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 
-from common.constants import REFUSAL_PHRASES
-
 # Matches OCR output headers like ``--- Page 3 ---`` or
 # ``--- Page 3 (gpt-5-mini) ---``.
 PAGE_HEADER_RE: re.Pattern[str] = re.compile(
@@ -43,6 +41,3 @@ BLACKLISTED_TAGS: frozenset[str] = frozenset({
     "indexed",
     "new",
 })
-
-# Re-export shared refusal phrases for backward compatibility.
-ERROR_PHRASES: tuple[str, ...] = REFUSAL_PHRASES

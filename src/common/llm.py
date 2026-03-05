@@ -45,6 +45,11 @@ def init_openai_client(client: openai.OpenAI) -> None:
     _openai_holder.init(client)
 
 
+def get_openai_client() -> openai.OpenAI:
+    """Return the initialised OpenAI client, raising if not yet set up."""
+    return _openai_holder.get()
+
+
 class OpenAIChatMixin:
     """
     Mixin providing a retried OpenAI-compatible chat completion call.

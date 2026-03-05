@@ -7,7 +7,7 @@ from openai import APIError as OpenAIAPIError
 import structlog
 
 from .config import Settings
-from .llm import _openai_holder
+from .llm import get_openai_client
 from .paperless import PaperlessClient
 
 log = structlog.get_logger(__name__)
@@ -70,7 +70,7 @@ def _check_tag_ids_exist(settings: Settings, client: PaperlessClient) -> None:
 def _check_llm_reachable() -> None:
     """Best-effort check that the LLM provider is reachable."""
     try:
-        client = _openai_holder.get()
+        client = get_openai_client()
         client.models.list()
         log.info("Preflight: LLM provider is reachable")
     except RuntimeError:

@@ -13,11 +13,9 @@ from tests.helpers.factories import make_settings_obj
 MODULE = "common.preflight"
 
 
-def _patch_openai_holder(mock_client):
-    """Patch _openai_holder to return *mock_client* from .get()."""
-    holder = MagicMock()
-    holder.get.return_value = mock_client
-    return patch(f"{MODULE}._openai_holder", holder)
+def _patch_openai_client(mock_client):
+    """Patch get_openai_client to return *mock_client*."""
+    return patch(f"{MODULE}.get_openai_client", return_value=mock_client)
 
 
 class TestRunPreflightChecks:
@@ -38,7 +36,7 @@ class TestRunPreflightChecks:
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
-        with _patch_openai_holder(mock_openai_client):
+        with _patch_openai_client(mock_openai_client):
             run_preflight_checks(settings, client)
 
     def test_paperless_unreachable_raises_preflight_error(self):
@@ -57,7 +55,7 @@ class TestRunPreflightChecks:
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
-        with _patch_openai_holder(mock_openai_client):
+        with _patch_openai_client(mock_openai_client):
             run_preflight_checks(settings, client)
 
         client.list_tags.assert_called_once()
@@ -79,7 +77,7 @@ class TestRunPreflightChecks:
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
         with patch(f"{MODULE}.log") as mock_log, \
-             _patch_openai_holder(mock_openai_client):
+             _patch_openai_client(mock_openai_client):
             run_preflight_checks(settings, client)
 
         warning_calls = [
@@ -104,7 +102,7 @@ class TestRunPreflightChecks:
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
         with patch(f"{MODULE}.log") as mock_log, \
-             _patch_openai_holder(mock_openai_client):
+             _patch_openai_client(mock_openai_client):
             run_preflight_checks(settings, client)
 
         warning_calls = [
@@ -126,7 +124,7 @@ class TestRunPreflightChecks:
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.side_effect = OSError("LLM down")
-        with _patch_openai_holder(mock_openai_client):
+        with _patch_openai_client(mock_openai_client):
             run_preflight_checks(settings, client)
 
     def test_llm_client_not_initialised_logs_warning(self):
@@ -140,7 +138,5 @@ class TestRunPreflightChecks:
         client.ping.return_value = None
         client.list_tags.return_value = [{"id": 1}, {"id": 2}, {"id": 3}]
 
-        holder = MagicMock()
-        holder.get.side_effect = RuntimeError("not initialised")
-        with patch(f"{MODULE}._openai_holder", holder):
+        with patch(f"{MODULE}.get_openai_client", side_effect=RuntimeError("not initialised")):
             run_preflight_checks(settings, client)
