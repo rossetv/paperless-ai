@@ -242,7 +242,7 @@
         },
         {
           "file": "src/common/paperless.py",
-          "importers": 7,
+          "importers": 6,
           "excerpt": "\"\"\"Paperless-ngx REST API client with automatic retries.\"\"\"\n\nfrom __future__ import annotations\n\nfrom typing import Any, Generator, Iterable, TypedDict\n\nimport httpx\nimport structlog\n\nfrom .config import Settings\nfrom .retry import retry\n\nlog = structlog.get_logger(__name__)\n\n# Exceptions that should trigger a retry: transient network errors and\n# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).\nRETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)\n\n# Exceptions that callers should catch when wrapping PaperlessClient calls\n# in non-fatal error handling.  Covers network errors, HTTP errors, and\n# unexpected response shapes.\nPAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)\n\n\nclass DocumentMetadataUpdate(TypedDict, total=False):\n    \"\"\"Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.\"\"\"\n\n    title: str\n    correspondent_id: int\n    document_type_id: int\n\n... (222 more lines)"
         },
         {
@@ -258,7 +258,7 @@
       ],
       "top_imported": {
         "tests/helpers/factories.py": 14,
-        "src/common/paperless.py": 7,
+        "src/common/paperless.py": 6,
         "tests/helpers/mocks.py": 6,
         "src/common/config.py": 5,
         "src/classifier/result.py": 4,
@@ -572,7 +572,7 @@
       "total_files": 85,
       "critical_untested": [
         {
-          "file": "src/classifier/provider.py",
+          "file": "src/ocr/provider.py",
           "importers": 3
         }
       ]
@@ -597,7 +597,7 @@
             "taxonomy.py",
             "worker.py"
           ],
-          "total_loc": 1734,
+          "total_loc": 1735,
           "avg_fan_in": 1.9,
           "avg_fan_out": 1.9,
           "zones": {
@@ -626,9 +626,9 @@
             "tags.py",
             "utils.py"
           ],
-          "total_loc": 1539,
-          "avg_fan_in": 1.6,
-          "avg_fan_out": 1.6,
+          "total_loc": 1535,
+          "avg_fan_in": 1.5,
+          "avg_fan_out": 1.5,
           "zones": {
             "production": 17,
             "config": 1
@@ -813,7 +813,7 @@
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13285
+      "total_loc": 13282
     },
     "migration_signals": {
       "pattern_pairs": [
@@ -881,7 +881,7 @@
     "import_graph_summary": {
       "top_imported": {
         "tests/helpers/factories.py": 14,
-        "src/common/paperless.py": 7,
+        "src/common/paperless.py": 6,
         "tests/helpers/mocks.py": 6,
         "src/common/config.py": 5,
         "src/classifier/result.py": 4,
@@ -1469,14 +1469,6 @@
       "src/ocr/__init__.py": [
         "facade: Re-export facade (16 LOC): imports from __future__, image_converter, provider, +"
       ],
-      "src/classifier/daemon.py": [
-        "test_coverage: Untested module (92 LOC, 0 importers)",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/classifier/daemon.py` (last"
-      ],
-      "src/classifier/worker.py": [
-        "test_coverage: Untested module (316 LOC, 2 importers)",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `structural::src/classifier/worker.py` (la"
-      ],
       "tests/integration/test_ocr_pipeline.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1853,28 +1845,14 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
-      "src/ocr/worker.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_erro"
+      "src/ocr/provider.py": [
+        "test_coverage: No direct tests (127 LOC, 3 importers) \u2014 covered only via imports from tested mo"
       ],
-      "src/common/preflight.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `test_coverage::src/common/preflight.py::o"
-      ],
-      "src/common/bootstrap.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `test_coverage::src/common/bootstrap.py::o",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/bootstrap.py` (last "
-      ],
-      "src/common/daemon_loop.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/common/daemon_loop.py::broad_",
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/daemon_loop.py` (las"
-      ],
-      "src/classifier/provider.py": [
-        "test_coverage: Untested module (218 LOC, 3 importers)"
+      "src/classifier/worker.py": [
+        "test_coverage: No direct tests (316 LOC, 2 importers) \u2014 covered only via imports from tested mo"
       ],
       "src/ocr/daemon.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/ocr/daemon.py` (last review"
-      ],
-      "src/common/claims.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/claims.py` (last rev"
+        "test_coverage: Untested module (76 LOC, 0 importers)"
       ],
       "tests/unit/common/test_bootstrap.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1883,9 +1861,6 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
-      ],
-      "src/common/document_iter.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `structural::src/common/document_iter.py` "
       ],
       "tests/unit/classifier/test_quality_gates.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1970,14 +1945,11 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
-      ],
-      "src/common/paperless.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/common/paperless.py::mutable_"
       ]
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13285,
+      "total_loc": 13282,
       "avg_file_loc": 156
     },
     "sibling_conventions": {
@@ -2005,7 +1977,7 @@
     },
     "ai_debt_signals": {
       "file_signals": {},
-      "codebase_avg_comment_ratio": 0.027
+      "codebase_avg_comment_ratio": 0.026
     },
     "error_strategies": {
       "src/classifier/daemon.py": "try_catch",
@@ -2132,7 +2104,7 @@
         "mid_level_elegance"
       ],
       "files_to_read": [
-        "src/classifier/provider.py"
+        "src/ocr/provider.py"
       ],
       "why": "critical untested paths, API inconsistency"
     },
@@ -2229,6 +2201,7 @@
         "src/common/daemon_loop.py",
         "src/classifier/provider.py",
         "src/common/tags.py",
+        "src/ocr/provider.py",
         "src/common/bootstrap.py",
         "src/common/claims.py",
         "tests/unit/common/test_claims.py",
@@ -2304,7 +2277,281 @@
     "requested": [],
     "default": []
   },
+  "narrative": {
+    "phase": "stagnation",
+    "headline": "\u26a0 930 security findings \u2014 review before other cleanup. All T1 items cleared!",
+    "dimensions": {
+      "lowest_dimensions": [
+        {
+          "name": "AI generated debt",
+          "strict": 82.0,
+          "issues": 0,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Low elegance",
+          "strict": 82.0,
+          "issues": 0,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Test health",
+          "strict": 83.7,
+          "issues": 3,
+          "impact": 0.0
+        }
+      ],
+      "biggest_gap_dimensions": [
+        {
+          "name": "Test health",
+          "lenient": 88.7,
+          "strict": 83.7,
+          "gap": 5.0,
+          "wontfix_count": 2
+        },
+        {
+          "name": "File health",
+          "lenient": 100.0,
+          "strict": 96.2,
+          "gap": 3.8,
+          "wontfix_count": 2
+        },
+        {
+          "name": "Code quality",
+          "lenient": 99.0,
+          "strict": 96.9,
+          "gap": 2.1,
+          "wontfix_count": 8
+        }
+      ],
+      "stagnant_dimensions": [
+        {
+          "name": "File health",
+          "strict": 96.2,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Code quality",
+          "strict": 96.9,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Duplication",
+          "strict": 100.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Security",
+          "strict": 99.6,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Abstraction fit",
+          "strict": 90.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "High elegance",
+          "strict": 90.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Cross-module arch",
+          "strict": 93.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Dep health",
+          "strict": 90.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Design coherence",
+          "strict": 88.0,
+          "stuck_scans": 5
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "reorganize",
+        "detector": "orphaned",
+        "count": 1,
+        "description": "1 orphaned findings \u2014 delete dead files or relocate with `desloppify move`",
+        "command": "desloppify show orphaned --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 1,
+        "lane": "restructure"
+      },
+      {
+        "type": "reorganize",
+        "detector": "facade",
+        "count": 2,
+        "description": "2 facade findings \u2014 flatten re-export facades or consolidate barrel files",
+        "command": "desloppify show facade --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 2,
+        "lane": "restructure"
+      },
+      {
+        "type": "refactor",
+        "detector": "structural",
+        "count": 14,
+        "description": "14 structural findings \u2014 decompose large files \u2014 extract logic into focused modules",
+        "command": "desloppify show structural --status open",
+        "impact": 0.0,
+        "dimension": "File health",
+        "priority": 3,
+        "lane": "refactor"
+      },
+      {
+        "type": "refactor",
+        "detector": "test_coverage",
+        "count": 3,
+        "description": "3 test_coverage findings \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "command": "desloppify show test_coverage --status open",
+        "impact": 0.0,
+        "dimension": "Test health",
+        "priority": 4,
+        "lane": "test_coverage"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "smells",
+        "count": 2,
+        "description": "2 smells findings \u2014 inspect with `desloppify next` and fix manually",
+        "command": "desloppify show smells --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 5,
+        "lane": "refactor"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "security",
+        "count": 930,
+        "description": "930 security findings \u2014 review and fix security findings \u2014 prioritize by severity",
+        "command": "desloppify show security --status open",
+        "impact": 0.0,
+        "dimension": "Security",
+        "priority": 6,
+        "lane": "refactor"
+      }
+    ],
+    "strategy": {
+      "fixer_leverage": {
+        "auto_fixable_count": 0,
+        "total_count": 952,
+        "coverage": 0.0,
+        "impact_ratio": 0.0,
+        "recommendation": "none"
+      },
+      "lanes": {
+        "restructure": {
+          "actions": [
+            1,
+            2
+          ],
+          "file_count": 3,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor": {
+          "actions": [
+            3,
+            5,
+            6
+          ],
+          "file_count": 37,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "test_coverage": {
+          "actions": [
+            4
+          ],
+          "file_count": 3,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        }
+      },
+      "can_parallelize": false,
+      "hint": "Try a different dimension to break the plateau."
+    },
+    "tools": {
+      "fixers": [],
+      "move": {
+        "available": true,
+        "relevant": true,
+        "reason": "1 orphaned files",
+        "usage": "desloppify move <source> <dest> [--dry-run]"
+      },
+      "plan": {
+        "command": "desloppify plan",
+        "description": "Generate prioritized markdown cleanup plan"
+      },
+      "badge": {
+        "generated": true,
+        "in_readme": false,
+        "path": "scorecard.png",
+        "recommendation": "Add to README: <img src=\"scorecard.png\" width=\"100%\">"
+      }
+    },
+    "debt": {
+      "overall_gap": 0.6,
+      "wontfix_count": 23,
+      "worst_dimension": "Test health",
+      "worst_gap": 5.0,
+      "trend": "stable"
+    },
+    "milestone": "All T1 items cleared!",
+    "primary_action": {
+      "command": "desloppify show orphaned --status open",
+      "description": "1 orphaned findings \u2014 delete dead files or relocate with `desloppify move`"
+    },
+    "why_now": "Try a different dimension to break the plateau.",
+    "verification_step": {
+      "command": "desloppify scan",
+      "reason": "revalidate after changes"
+    },
+    "risk_flags": [
+      {
+        "type": "wontfix_gap",
+        "severity": "medium",
+        "message": "Strict/lenient gap is 0.6 pts with 23 wontfix findings"
+      }
+    ],
+    "strict_target": {
+      "target": 95.0,
+      "current": 90.1,
+      "gap": 4.9,
+      "state": "below",
+      "warning": null
+    },
+    "reminders": [],
+    "reminder_history": {
+      "zone_classification": 3,
+      "report_scores": 48,
+      "feedback_nudge": 3,
+      "stagnant_nudge": 15,
+      "review_findings_pending": 3,
+      "review_not_run": 3,
+      "wontfix_growing": 3,
+      "badge_recommendation": 3
+    }
+  },
+  "next_command": "desloppify review --external-submit --session-id <id> --import <file>",
   "config": {
+    "target_strict_score": 95,
     "review_max_age_days": 30,
     "review_batch_max_files": 80,
     "holistic_max_age_days": 30,

@@ -572,7 +572,7 @@
       "total_files": 85,
       "critical_untested": [
         {
-          "file": "src/classifier/provider.py",
+          "file": "src/ocr/provider.py",
           "importers": 3
         }
       ]
@@ -1853,6 +1853,9 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
+      "src/ocr/provider.py": [
+        "test_coverage: No direct tests (127 LOC, 3 importers) \u2014 covered only via imports from tested mo"
+      ],
       "src/ocr/worker.py": [
         "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_erro"
       ],
@@ -1866,9 +1869,6 @@
       "src/common/daemon_loop.py": [
         "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/common/daemon_loop.py::broad_",
         "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/common/daemon_loop.py` (las"
-      ],
-      "src/classifier/provider.py": [
-        "test_coverage: Untested module (218 LOC, 3 importers)"
       ],
       "src/ocr/daemon.py": [
         "stale_wontfix: Stale wontfix (scan_decay): re-triage `orphaned::src/ocr/daemon.py` (last review"
@@ -1971,8 +1971,27 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
-      "src/common/paperless.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/common/paperless.py::mutable_"
+      ".": [
+        "review: The common package contains 17 Python files in a flat directory, approaching the",
+        "review: library_setup.py uses an absolute import inside TYPE_CHECKING while all sibling ",
+        "review: The common package holds 14 modules spanning concerns from HTTP clients to concu",
+        "review: PaperlessClient.update_document_metadata accepts tags as any iterable and intern",
+        "review: ClassificationProcessor.process() is a 70-line method with 9 sequential workflow",
+        "review: is_empty_classification checks tags with an isinstance(tag, str) guard, which is",
+        "review: run_polling_threadpool catches a wide tuple of exception types (OSError, httpx.H",
+        "review: In truncate_content_by_pages, the first segment always starts at index 0 regardl",
+        "review: The ocr package __init__.py exports OCR_ERROR_MARKER, which is an internal senti",
+        "review: The retry decorator relies on an implicit contract that the decorated method's '",
+        "review: OcrProcessor.process() tracks elapsed time and logs a success/failure status in ",
+        "review: Callers of update_document_metadata pass tags as either set[int] or list[int] in",
+        "review: OCR tag settings use unprefixed names (PRE_TAG_ID, POST_TAG_ID, OCR_PROCESSING_T",
+        "review: OcrProcessor._update_paperless_document uses get_latest_tags for the error path ",
+        "review: Both OcrProcessor._finalize_with_error and ClassificationProcessor._finalize_wit",
+        "review: daemon_loop.py enumerates exception types manually instead of using the shared P",
+        "review: taxonomy.py catches (httpx.HTTPStatusError, httpx.RequestError, OSError) instead",
+        "review: About 50 residual Arrange/Act/Assert section-marker comments remain across 11 te",
+        "review: Two unreachable-code guards raise 'AssertionError' \u2014 a misspelling that Python s",
+        "review: dependency_health has minor room for improvement at current scale"
       ]
     },
     "codebase_stats": {
@@ -2132,7 +2151,7 @@
         "mid_level_elegance"
       ],
       "files_to_read": [
-        "src/classifier/provider.py"
+        "src/ocr/provider.py"
       ],
       "why": "critical untested paths, API inconsistency"
     },
@@ -2229,6 +2248,7 @@
         "src/common/daemon_loop.py",
         "src/classifier/provider.py",
         "src/common/tags.py",
+        "src/ocr/provider.py",
         "src/common/bootstrap.py",
         "src/common/claims.py",
         "tests/unit/common/test_claims.py",
@@ -2304,7 +2324,303 @@
     "requested": [],
     "default": []
   },
+  "narrative": {
+    "phase": "regression",
+    "headline": "\u26a0 930 security findings \u2014 review before other cleanup. All T1 items cleared! (20 review findings \u2014 run `desloppify issues`)",
+    "dimensions": {
+      "lowest_dimensions": [
+        {
+          "name": "Abstraction fit",
+          "strict": 0.0,
+          "issues": 1,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Cross-module arch",
+          "strict": 0.0,
+          "issues": 1,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        },
+        {
+          "name": "Error consistency",
+          "strict": 82.0,
+          "issues": 2,
+          "impact": 0.0,
+          "subjective": true,
+          "impact_description": "re-review to improve"
+        }
+      ],
+      "biggest_gap_dimensions": [
+        {
+          "name": "Test health",
+          "lenient": 88.4,
+          "strict": 83.4,
+          "gap": 5.0,
+          "wontfix_count": 2
+        },
+        {
+          "name": "File health",
+          "lenient": 100.0,
+          "strict": 96.2,
+          "gap": 3.8,
+          "wontfix_count": 2
+        },
+        {
+          "name": "Code quality",
+          "lenient": 99.0,
+          "strict": 96.9,
+          "gap": 2.1,
+          "wontfix_count": 8
+        }
+      ],
+      "stagnant_dimensions": [
+        {
+          "name": "File health",
+          "strict": 96.2,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Code quality",
+          "strict": 96.9,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Duplication",
+          "strict": 100.0,
+          "stuck_scans": 5
+        },
+        {
+          "name": "Security",
+          "strict": 99.6,
+          "stuck_scans": 5
+        },
+        {
+          "name": "High elegance",
+          "strict": 90.0,
+          "stuck_scans": 5
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "issue_queue",
+        "detector": "review",
+        "count": 20,
+        "description": "20 review findings need investigation \u2014 run `desloppify issues` to see the work queue",
+        "command": "desloppify issues",
+        "impact": 0.0,
+        "dimension": "Unknown",
+        "priority": 1,
+        "lane": "refactor_0"
+      },
+      {
+        "type": "reorganize",
+        "detector": "orphaned",
+        "count": 1,
+        "description": "1 orphaned findings \u2014 delete dead files or relocate with `desloppify move`",
+        "command": "desloppify show orphaned --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 2,
+        "lane": "restructure"
+      },
+      {
+        "type": "reorganize",
+        "detector": "facade",
+        "count": 2,
+        "description": "2 facade findings \u2014 flatten re-export facades or consolidate barrel files",
+        "command": "desloppify show facade --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 3,
+        "lane": "restructure"
+      },
+      {
+        "type": "refactor",
+        "detector": "structural",
+        "count": 14,
+        "description": "14 structural findings \u2014 decompose large files \u2014 extract logic into focused modules",
+        "command": "desloppify show structural --status open",
+        "impact": 0.0,
+        "dimension": "File health",
+        "priority": 4,
+        "lane": "refactor_1"
+      },
+      {
+        "type": "refactor",
+        "detector": "test_coverage",
+        "count": 3,
+        "description": "3 test_coverage findings \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "command": "desloppify show test_coverage --status open",
+        "impact": 0.0,
+        "dimension": "Test health",
+        "priority": 5,
+        "lane": "test_coverage"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "smells",
+        "count": 2,
+        "description": "2 smells findings \u2014 inspect with `desloppify next` and fix manually",
+        "command": "desloppify show smells --status open",
+        "impact": 0.0,
+        "dimension": "Code quality",
+        "priority": 6,
+        "lane": "refactor_1"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "stale_wontfix",
+        "count": 11,
+        "description": "11 stale_wontfix findings \u2014 re-evaluate old wontfix decisions \u2014 fix, document, or escalate",
+        "command": "desloppify show stale_wontfix --status open",
+        "impact": 0.0,
+        "dimension": "Unknown",
+        "priority": 7,
+        "lane": "refactor_2"
+      },
+      {
+        "type": "manual_fix",
+        "detector": "security",
+        "count": 930,
+        "description": "930 security findings \u2014 review and fix security findings \u2014 prioritize by severity",
+        "command": "desloppify show security --status open",
+        "impact": 0.0,
+        "dimension": "Security",
+        "priority": 8,
+        "lane": "refactor_1"
+      }
+    ],
+    "strategy": {
+      "fixer_leverage": {
+        "auto_fixable_count": 0,
+        "total_count": 1023,
+        "coverage": 0.0,
+        "impact_ratio": 0.0,
+        "recommendation": "none"
+      },
+      "lanes": {
+        "restructure": {
+          "actions": [
+            2,
+            3
+          ],
+          "file_count": 3,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor_0": {
+          "actions": [
+            1
+          ],
+          "file_count": 1,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor_1": {
+          "actions": [
+            4,
+            6,
+            8
+          ],
+          "file_count": 37,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor_2": {
+          "actions": [
+            7
+          ],
+          "file_count": 9,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "test_coverage": {
+          "actions": [
+            5
+          ],
+          "file_count": 3,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        }
+      },
+      "can_parallelize": true,
+      "hint": "5 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 20 finding(s) \u2014 `desloppify issues`."
+    },
+    "tools": {
+      "fixers": [],
+      "move": {
+        "available": true,
+        "relevant": true,
+        "reason": "1 orphaned files",
+        "usage": "desloppify move <source> <dest> [--dry-run]"
+      },
+      "plan": {
+        "command": "desloppify plan",
+        "description": "Generate prioritized markdown cleanup plan"
+      },
+      "badge": {
+        "generated": true,
+        "in_readme": false,
+        "path": "scorecard.png",
+        "recommendation": "Add to README: <img src=\"scorecard.png\" width=\"100%\">"
+      }
+    },
+    "debt": {
+      "overall_gap": 0.6,
+      "wontfix_count": 12,
+      "worst_dimension": "Test health",
+      "worst_gap": 5.0,
+      "trend": "stable"
+    },
+    "milestone": "All T1 items cleared!",
+    "primary_action": {
+      "command": "desloppify issues",
+      "description": "20 review findings need investigation \u2014 run `desloppify issues` to see the work queue"
+    },
+    "why_now": "5 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 20 finding(s) \u2014 `desloppify issues`.",
+    "verification_step": {
+      "command": "desloppify scan",
+      "reason": "revalidate after changes"
+    },
+    "risk_flags": [
+      {
+        "type": "wontfix_gap",
+        "severity": "medium",
+        "message": "Strict/lenient gap is 0.6 pts with 12 wontfix findings"
+      }
+    ],
+    "strict_target": {
+      "target": 95.0,
+      "current": 85.5,
+      "gap": 9.5,
+      "state": "below",
+      "warning": null
+    },
+    "reminders": [],
+    "reminder_history": {
+      "zone_classification": 3,
+      "report_scores": 49,
+      "feedback_nudge": 3,
+      "stagnant_nudge": 15,
+      "review_findings_pending": 3,
+      "review_not_run": 3,
+      "wontfix_growing": 3,
+      "badge_recommendation": 3
+    }
+  },
+  "next_command": "desloppify review --external-submit --session-id <id> --import <file>",
   "config": {
+    "target_strict_score": 95,
     "review_max_age_days": 30,
     "review_batch_max_files": 80,
     "holistic_max_age_days": 30,
