@@ -60,7 +60,7 @@ def remove_stale_queue_tag(
     """Remove queue/processing tags that should no longer be on a document."""
     updated = set(tags)
     updated.discard(pre_tag_id)
-    if processing_tag_id:
+    if processing_tag_id is not None:
         updated.discard(processing_tag_id)
     try:
         client.update_document_metadata(doc_id, tags=updated)
@@ -126,7 +126,7 @@ def finalize_document_with_error(
     update the document content.
     """
     updated = clean_pipeline_tags(tags, settings)
-    if settings.ERROR_TAG_ID:
+    if settings.ERROR_TAG_ID is not None:
         updated.add(settings.ERROR_TAG_ID)
 
     try:
@@ -142,7 +142,7 @@ def finalize_document_with_error(
         )
         return
 
-    if settings.ERROR_TAG_ID:
+    if settings.ERROR_TAG_ID is not None:
         log.warning(
             "Marked document with error tag",
             doc_id=doc_id,
@@ -164,7 +164,7 @@ def pipeline_tag_ids(settings: Settings) -> set[int]:
         settings.CLASSIFY_POST_TAG_ID,
         settings.ERROR_TAG_ID,
     ):
-        if optional_tag:
+        if optional_tag is not None:
             ids.add(optional_tag)
     return ids
 

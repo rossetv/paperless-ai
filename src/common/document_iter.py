@@ -48,7 +48,7 @@ def iter_documents_by_pipeline_tag(
         tags = extract_tags(doc, doc_id=doc_id, context=context)
 
         # Already processed — remove the stale queue tag
-        if post_tag_id and post_tag_id in tags:
+        if post_tag_id is not None and post_tag_id in tags:
             if pre_tag_id in tags:
                 remove_stale_queue_tag(
                     client,

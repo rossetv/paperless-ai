@@ -243,7 +243,7 @@
         {
           "file": "src/common/paperless.py",
           "importers": 7,
-          "excerpt": "\"\"\"Paperless-ngx REST API client with automatic retries.\"\"\"\n\nfrom __future__ import annotations\n\nimport types\nfrom typing import Any, Generator, Iterable, TypedDict\n\nimport httpx\nimport structlog\n\nfrom .config import Settings\nfrom .retry import retry\n\nlog = structlog.get_logger(__name__)\n\n# Exceptions that should trigger a retry: transient network errors and\n# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).\nRETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)\n\n# Exceptions that callers should catch when wrapping PaperlessClient calls\n# in non-fatal error handling.  Covers network errors, HTTP errors, and\n# unexpected response shapes.\nPAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)\n\n\nclass DocumentMetadataUpdate(TypedDict, total=False):\n    \"\"\"Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.\"\"\"\n\n    title: str\n    correspondent_id: int\n\n... (231 more lines)"
+          "excerpt": "\"\"\"Paperless-ngx REST API client with automatic retries.\"\"\"\n\nfrom __future__ import annotations\n\nimport types\nfrom typing import Any, Generator, Iterable, TypedDict\n\nimport httpx\nimport structlog\n\nfrom .config import Settings\nfrom .retry import retry\n\nlog = structlog.get_logger(__name__)\n\n# Exceptions that should trigger a retry: transient network errors and\n# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).\nRETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)\n\n# Exceptions that callers should catch when wrapping PaperlessClient calls\n# in non-fatal error handling.  Covers network errors, HTTP errors, and\n# unexpected response shapes.\nPAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)\n\n\nclass DocumentMetadataUpdate(TypedDict, total=False):\n    \"\"\"Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.\"\"\"\n\n    title: str\n    correspondent_id: int\n\n... (228 more lines)"
         },
         {
           "file": "tests/helpers/mocks.py",
@@ -509,11 +509,6 @@
           "chain_count": 32
         },
         {
-          "file": "src/common/paperless.py",
-          "max_chain_depth": 2,
-          "chain_count": 23
-        },
-        {
           "file": "tests/e2e/test_classifier_workflow.py",
           "max_chain_depth": 2,
           "chain_count": 21
@@ -522,6 +517,11 @@
           "file": "tests/unit/common/test_tags.py",
           "max_chain_depth": 2,
           "chain_count": 21
+        },
+        {
+          "file": "src/common/paperless.py",
+          "max_chain_depth": 2,
+          "chain_count": 20
         },
         {
           "file": "src/ocr/worker.py",
@@ -572,7 +572,7 @@
       "total_files": 85,
       "critical_untested": [
         {
-          "file": "src/ocr/provider.py",
+          "file": "src/classifier/provider.py",
           "importers": 3
         }
       ]
@@ -626,7 +626,7 @@
             "tags.py",
             "utils.py"
           ],
-          "total_loc": 1556,
+          "total_loc": 1553,
           "avg_fan_in": 1.6,
           "avg_fan_out": 1.6,
           "zones": {
@@ -702,8 +702,8 @@
             "tests/unit/classifier/": 6,
             "tests/unit/ocr/": 5,
             "tests/unit/common/": 3,
-            "tests/e2e/": 2,
             "tests/": 2,
+            "tests/e2e/": 2,
             "tests/integration/": 1
           }
         },
@@ -813,7 +813,7 @@
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13253
+      "total_loc": 13250
     },
     "migration_signals": {
       "pattern_pairs": [
@@ -1469,6 +1469,12 @@
       "src/ocr/__init__.py": [
         "facade: Re-export facade (16 LOC): imports from __future__, image_converter, provider, +"
       ],
+      "src/classifier/daemon.py": [
+        "test_coverage: Untested module (92 LOC, 0 importers)"
+      ],
+      "src/classifier/worker.py": [
+        "test_coverage: Untested module (316 LOC, 2 importers)"
+      ],
       "tests/integration/test_ocr_pipeline.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1845,17 +1851,8 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
-      "src/ocr/provider.py": [
-        "test_coverage: No direct tests (127 LOC, 3 importers) \u2014 covered only via imports from tested mo"
-      ],
-      "src/classifier/worker.py": [
-        "test_coverage: No direct tests (316 LOC, 2 importers) \u2014 covered only via imports from tested mo"
-      ],
-      "src/ocr/daemon.py": [
-        "test_coverage: Untested module (76 LOC, 0 importers)"
-      ],
-      "src/ocr/worker.py": [
-        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_erro"
+      "src/classifier/provider.py": [
+        "test_coverage: Untested module (218 LOC, 3 importers)"
       ],
       "tests/unit/common/test_bootstrap.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1952,7 +1949,7 @@
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13253,
+      "total_loc": 13250,
       "avg_file_loc": 155
     },
     "sibling_conventions": {
@@ -2087,9 +2084,9 @@
         "tests/unit/ocr/test_daemon.py",
         "src/classifier/worker.py",
         "tests/e2e/test_ocr_workflow.py",
-        "src/common/paperless.py",
         "tests/e2e/test_classifier_workflow.py",
         "tests/unit/common/test_tags.py",
+        "src/common/paperless.py",
         "src/ocr/worker.py",
         "tests/helpers/mocks.py",
         "tests/unit/classifier/test_provider.py",
@@ -2107,7 +2104,7 @@
         "mid_level_elegance"
       ],
       "files_to_read": [
-        "src/ocr/provider.py"
+        "src/classifier/provider.py"
       ],
       "why": "critical untested paths, API inconsistency"
     },
@@ -2204,7 +2201,6 @@
         "src/common/daemon_loop.py",
         "src/classifier/provider.py",
         "src/common/tags.py",
-        "src/ocr/provider.py",
         "src/common/bootstrap.py",
         "src/common/claims.py",
         "tests/unit/common/test_claims.py",

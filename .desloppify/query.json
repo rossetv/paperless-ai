@@ -1,21 +1,22 @@
 {
   "command": "scan",
-  "overall_score": 92.2,
-  "objective_score": 95.9,
-  "strict_score": 91.2,
-  "verified_strict_score": 93.4,
-  "prev_overall_score": 92.3,
-  "prev_objective_score": 96.2,
-  "prev_strict_score": 91.4,
-  "prev_verified_strict_score": 93.7,
+  "overall_score": 93.1,
+  "objective_score": 96.5,
+  "strict_score": 92.1,
+  "verified_strict_score": 94.0,
+  "prev_overall_score": 93.0,
+  "prev_objective_score": 96.5,
+  "prev_strict_score": 92.1,
+  "prev_verified_strict_score": 94.0,
   "profile": "full",
   "noise_budget": 10,
   "noise_global_budget": 0,
   "hidden_by_detector": {
     "security": 920,
-    "structural": 4
+    "structural": 4,
+    "stale_wontfix": 1
   },
-  "hidden_total": 924,
+  "hidden_total": 925,
   "diff": {
     "new": 0,
     "auto_resolved": 15,
@@ -45,13 +46,13 @@
         "status": "open",
         "note": "Reopened (\u00d73) \u2014 reappeared in scan (was auto_resolved)",
         "first_seen": "2026-03-04T23:45:23+00:00",
-        "last_seen": "2026-03-06T06:18:29+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
         "resolved_at": null,
         "reopen_count": 3,
         "lang": "python",
         "zone": "production",
         "suppressed": true,
-        "suppressed_at": "2026-03-06T06:18:29+00:00",
+        "suppressed_at": "2026-03-06T06:28:43+00:00",
         "suppression_pattern": "facade::src/classifier/__init__.py",
         "wontfix_scan_count": 10,
         "wontfix_snapshot": {
@@ -95,13 +96,13 @@
         "status": "open",
         "note": "Reopened (\u00d73) \u2014 reappeared in scan (was auto_resolved)",
         "first_seen": "2026-03-04T23:45:23+00:00",
-        "last_seen": "2026-03-06T06:18:29+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
         "resolved_at": null,
         "reopen_count": 3,
         "lang": "python",
         "zone": "production",
         "suppressed": true,
-        "suppressed_at": "2026-03-06T06:18:29+00:00",
+        "suppressed_at": "2026-03-06T06:28:43+00:00",
         "suppression_pattern": "facade::src/ocr/__init__.py",
         "wontfix_scan_count": 10,
         "wontfix_snapshot": {
@@ -124,90 +125,108 @@
         }
       },
       {
-        "id": "test_coverage::src/classifier/daemon.py::untested_module",
+        "id": "test_coverage::src/ocr/worker.py::untested_module",
         "detector": "test_coverage",
-        "file": "src/classifier/daemon.py",
+        "file": "src/ocr/worker.py",
         "tier": 3,
         "confidence": "high",
-        "summary": "Untested module (92 LOC, 0 importers)",
+        "summary": "Untested module (229 LOC, 2 importers)",
         "detail": {
           "kind": "untested_module",
-          "loc": 92,
-          "importer_count": 0,
-          "loc_weight": 9.591663046625438
+          "loc": 229,
+          "importer_count": 2,
+          "loc_weight": 15.132745950421556
         },
         "status": "open",
         "note": "Suppressed by ignore pattern \u2014 remains unresolved for score integrity",
-        "first_seen": "2026-03-04T23:45:24+00:00",
-        "last_seen": "2026-03-06T06:18:29+00:00",
+        "first_seen": "2026-03-04T23:53:51+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
         "resolved_at": null,
         "reopen_count": 3,
         "lang": "python",
         "zone": "production",
         "suppressed": true,
-        "suppressed_at": "2026-03-06T06:18:29+00:00",
-        "suppression_pattern": "test_coverage::src/classifier/daemon.py::untested_module",
-        "wontfix_scan_count": 10,
-        "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:30:36+00:00",
-          "scan_count": 10,
-          "tier": 3,
-          "confidence": "high",
-          "detail": {
-            "kind": "untested_module",
-            "loc": 102,
-            "importer_count": 0,
-            "loc_weight": 10.099504938362077
-          }
-        },
+        "suppressed_at": "2026-03-06T06:28:43+00:00",
+        "suppression_pattern": "test_coverage::src/ocr/worker.py::untested_module",
         "resolution_attestation": {
           "kind": "scan_verified",
           "text": "Disappeared from detector output",
-          "attested_at": "2026-03-06T06:10:04+00:00",
+          "attested_at": "2026-03-06T06:18:29+00:00",
           "scan_verified": true
         }
       },
       {
-        "id": "test_coverage::src/classifier/worker.py::untested_module",
+        "id": "test_coverage::src/ocr/provider.py::untested_module",
         "detector": "test_coverage",
-        "file": "src/classifier/worker.py",
+        "file": "src/ocr/provider.py",
         "tier": 3,
         "confidence": "high",
-        "summary": "Untested module (316 LOC, 2 importers)",
+        "summary": "Untested module (127 LOC, 3 importers)",
         "detail": {
           "kind": "untested_module",
-          "loc": 316,
-          "importer_count": 2,
-          "loc_weight": 17.776388834631177
+          "loc": 127,
+          "importer_count": 3,
+          "loc_weight": 11.269427669584644
         },
         "status": "open",
         "note": "Suppressed by ignore pattern \u2014 remains unresolved for score integrity",
-        "first_seen": "2026-03-04T23:45:24+00:00",
-        "last_seen": "2026-03-06T06:18:29+00:00",
+        "first_seen": "2026-03-04T23:53:51+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
         "resolved_at": null,
-        "reopen_count": 3,
+        "reopen_count": 2,
         "lang": "python",
         "zone": "production",
         "suppressed": true,
-        "suppressed_at": "2026-03-06T06:18:29+00:00",
-        "suppression_pattern": "test_coverage::src/classifier/worker.py::untested_module",
-        "wontfix_scan_count": 10,
+        "suppressed_at": "2026-03-06T06:28:43+00:00",
+        "suppression_pattern": "test_coverage::src/ocr/provider.py",
+        "resolution_attestation": {
+          "kind": "scan_verified",
+          "text": "Disappeared from detector output",
+          "attested_at": "2026-03-05T18:34:21+00:00",
+          "scan_verified": true
+        }
+      },
+      {
+        "id": "test_coverage::src/ocr/daemon.py::untested_module",
+        "detector": "test_coverage",
+        "file": "src/ocr/daemon.py",
+        "tier": 3,
+        "confidence": "high",
+        "summary": "Untested module (76 LOC, 0 importers)",
+        "detail": {
+          "kind": "untested_module",
+          "loc": 76,
+          "importer_count": 0,
+          "loc_weight": 8.717797887081348
+        },
+        "status": "open",
+        "note": "Suppressed by ignore pattern \u2014 remains unresolved for score integrity",
+        "first_seen": "2026-03-05T00:31:41+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 4,
+        "lang": "python",
+        "zone": "production",
+        "suppressed": true,
+        "suppressed_at": "2026-03-06T06:28:43+00:00",
+        "suppression_pattern": "test_coverage::src/ocr/daemon.py::untested_module",
+        "wontfix_scan_count": 14,
         "wontfix_snapshot": {
-          "captured_at": "2026-03-05T00:30:37+00:00",
-          "scan_count": 10,
+          "captured_at": "2026-03-05T00:39:45+00:00",
+          "scan_count": 14,
           "tier": 3,
           "confidence": "high",
           "detail": {
             "kind": "untested_module",
-            "loc": 345,
-            "importer_count": 2,
-            "loc_weight": 18.57417562100671
+            "loc": 112,
+            "importer_count": 0,
+            "loc_weight": 10.583005244258363
           }
         },
         "resolution_attestation": {
           "kind": "scan_verified",
           "text": "Disappeared from detector output",
-          "attested_at": "2026-03-06T05:55:46+00:00",
+          "attested_at": "2026-03-06T06:18:29+00:00",
           "scan_verified": true
         }
       },
@@ -217,7 +236,7 @@
         "file": "src/ocr/worker.py",
         "tier": 3,
         "confidence": "medium",
-        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_error` (last reviewed 82 scans ago)",
+        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_error` (last reviewed 85 scans ago)",
         "detail": {
           "subtype": "stale_wontfix",
           "original_finding_id": "smells::src/ocr/worker.py::swallowed_error",
@@ -225,23 +244,23 @@
           "reasons": [
             "scan_decay"
           ],
-          "scans_since_wontfix": 82,
+          "scans_since_wontfix": 85,
           "drift": {}
         },
         "status": "open",
-        "note": "Reopened (\u00d79) \u2014 reappeared in scan (was auto_resolved)",
+        "note": "Reopened (\u00d710) \u2014 reappeared in scan (was auto_resolved)",
         "first_seen": "2026-03-05T01:42:33+00:00",
-        "last_seen": "2026-03-06T06:18:29+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
         "resolved_at": null,
-        "reopen_count": 9,
+        "reopen_count": 10,
         "lang": "python",
         "suppressed": false,
         "suppressed_at": null,
         "suppression_pattern": null,
-        "wontfix_scan_count": 79,
+        "wontfix_scan_count": 85,
         "wontfix_snapshot": {
-          "captured_at": "2026-03-06T05:56:36+00:00",
-          "scan_count": 79,
+          "captured_at": "2026-03-06T06:19:28+00:00",
+          "scan_count": 85,
           "tier": 3,
           "confidence": "medium",
           "detail": {
@@ -251,7 +270,457 @@
             "reasons": [
               "scan_decay"
             ],
+            "scans_since_wontfix": 82,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/preflight.py::test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/preflight.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `test_coverage::src/common/preflight.py::over_mocked::test_preflight.py` (last reviewed 81 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
+          "original_detector": "test_coverage",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 81,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d78) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:14:46+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 8,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:12+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "test_coverage::src/common/preflight.py::over_mocked::test_preflight.py",
+            "original_detector": "test_coverage",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 75,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/bootstrap.py::test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/bootstrap.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py` (last reviewed 81 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
+          "original_detector": "test_coverage",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 81,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d78) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:14:46+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 8,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:05+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "test_coverage::src/common/bootstrap.py::over_mocked::test_bootstrap.py",
+            "original_detector": "test_coverage",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 75,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/daemon_loop.py::smells::src/common/daemon_loop.py::broad_except",
+        "detector": "stale_wontfix",
+        "file": "src/common/daemon_loop.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `smells::src/common/daemon_loop.py::broad_except` (last reviewed 82 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "smells::src/common/daemon_loop.py::broad_except",
+          "original_detector": "smells",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 82,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d79) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:14:46+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 9,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:07+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "smells::src/common/daemon_loop.py::broad_except",
+            "original_detector": "smells",
+            "reasons": [
+              "scan_decay"
+            ],
             "scans_since_wontfix": 76,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/daemon_loop.py::orphaned::src/common/daemon_loop.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/daemon_loop.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `orphaned::src/common/daemon_loop.py` (last reviewed 77 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "orphaned::src/common/daemon_loop.py",
+          "original_detector": "orphaned",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 77,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d77) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:42:39+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 7,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:06+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "orphaned::src/common/daemon_loop.py",
+            "original_detector": "orphaned",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 71,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/ocr/daemon.py::orphaned::src/ocr/daemon.py",
+        "detector": "stale_wontfix",
+        "file": "src/ocr/daemon.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `orphaned::src/ocr/daemon.py` (last reviewed 77 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "orphaned::src/ocr/daemon.py",
+          "original_detector": "orphaned",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 77,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d77) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:42:39+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 7,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:13+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "orphaned::src/ocr/daemon.py",
+            "original_detector": "orphaned",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 71,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/classifier/daemon.py::orphaned::src/classifier/daemon.py",
+        "detector": "stale_wontfix",
+        "file": "src/classifier/daemon.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `orphaned::src/classifier/daemon.py` (last reviewed 77 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "orphaned::src/classifier/daemon.py",
+          "original_detector": "orphaned",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 77,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d77) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:42:39+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 7,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:08+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "orphaned::src/classifier/daemon.py",
+            "original_detector": "orphaned",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 71,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/claims.py::orphaned::src/common/claims.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/claims.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `orphaned::src/common/claims.py` (last reviewed 77 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "orphaned::src/common/claims.py",
+          "original_detector": "orphaned",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 77,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d77) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:42:39+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 7,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:10+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "orphaned::src/common/claims.py",
+            "original_detector": "orphaned",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 71,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/bootstrap.py::orphaned::src/common/bootstrap.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/bootstrap.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `orphaned::src/common/bootstrap.py` (last reviewed 77 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "orphaned::src/common/bootstrap.py",
+          "original_detector": "orphaned",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 77,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d77) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T02:42:39+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 7,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:04+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "orphaned::src/common/bootstrap.py",
+            "original_detector": "orphaned",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 71,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/classifier/worker.py::structural::src/classifier/worker.py",
+        "detector": "stale_wontfix",
+        "file": "src/classifier/worker.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `structural::src/classifier/worker.py` (last reviewed 65 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "structural::src/classifier/worker.py",
+          "original_detector": "structural",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 65,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d76) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T03:50:48+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 6,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:09+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "structural::src/classifier/worker.py",
+            "original_detector": "structural",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 59,
+            "drift": {}
+          }
+        }
+      },
+      {
+        "id": "stale_wontfix::src/common/document_iter.py::structural::src/common/document_iter.py",
+        "detector": "stale_wontfix",
+        "file": "src/common/document_iter.py",
+        "tier": 3,
+        "confidence": "medium",
+        "summary": "Stale wontfix (scan_decay): re-triage `structural::src/common/document_iter.py` (last reviewed 65 scans ago)",
+        "detail": {
+          "subtype": "stale_wontfix",
+          "original_finding_id": "structural::src/common/document_iter.py",
+          "original_detector": "structural",
+          "reasons": [
+            "scan_decay"
+          ],
+          "scans_since_wontfix": 65,
+          "drift": {}
+        },
+        "status": "open",
+        "note": "Reopened (\u00d76) \u2014 reappeared in scan (was auto_resolved)",
+        "first_seen": "2026-03-05T03:50:48+00:00",
+        "last_seen": "2026-03-06T06:28:43+00:00",
+        "resolved_at": null,
+        "reopen_count": 6,
+        "lang": "python",
+        "suppressed": false,
+        "suppressed_at": null,
+        "suppression_pattern": null,
+        "wontfix_scan_count": 82,
+        "wontfix_snapshot": {
+          "captured_at": "2026-03-06T06:11:11+00:00",
+          "scan_count": 82,
+          "tier": 3,
+          "confidence": "medium",
+          "detail": {
+            "subtype": "stale_wontfix",
+            "original_finding_id": "structural::src/common/document_iter.py",
+            "original_detector": "structural",
+            "reasons": [
+              "scan_decay"
+            ],
+            "scans_since_wontfix": 59,
             "drift": {}
           }
         }
@@ -265,11 +734,11 @@
     "suppressed_pct": 97.6
   },
   "stats": {
-    "total": 3669,
-    "open": 953,
+    "total": 3681,
+    "open": 963,
     "fixed": 0,
-    "auto_resolved": 2694,
-    "wontfix": 21,
+    "auto_resolved": 2706,
+    "wontfix": 11,
     "false_positive": 1,
     "by_tier": {
       "1": {
@@ -287,10 +756,10 @@
         "false_positive": 0
       },
       "3": {
-        "open": 951,
+        "open": 961,
         "fixed": 0,
-        "auto_resolved": 2603,
-        "wontfix": 20,
+        "auto_resolved": 2615,
+        "wontfix": 10,
         "false_positive": 1
       },
       "4": {
@@ -303,12 +772,12 @@
     }
   },
   "open_scope": {
-    "in_scope": 953,
+    "in_scope": 963,
     "out_of_scope": 0,
-    "global": 953
+    "global": 963
   },
   "warnings": [
-    "\u27f3 5 chronic reopeners (reopened 2+ times). These keep bouncing \u2014 fix properly or wontfix. Run: `desloppify show --chronic` to see them."
+    "\u27f3 16 chronic reopeners (reopened 2+ times). These keep bouncing \u2014 fix properly or wontfix. Run: `desloppify show --chronic` to see them."
   ],
   "dimension_scores": {
     "File health": {
@@ -405,18 +874,18 @@
       "strict": 100.0
     },
     "Test health": {
-      "score": 87.4,
-      "strict_score": 82.4,
-      "verified_strict_score": 82.4,
+      "score": 89.5,
+      "strict_score": 84.5,
+      "verified_strict_score": 84.5,
       "checks": 334,
       "issues": 3,
       "tier": 4,
       "detectors": {
         "test_coverage": {
           "potential": 302,
-          "pass_rate": 0.8604871690679139,
+          "pass_rate": 0.8837087036189154,
           "issues": 3,
-          "weighted_failures": 42.132874941490016
+          "weighted_failures": 35.11997150708755
         },
         "subjective_review": {
           "potential": 32,
@@ -425,7 +894,7 @@
           "weighted_failures": 0.0
         }
       },
-      "strict": 82.4
+      "strict": 84.5
     },
     "Security": {
       "score": 99.6,
@@ -451,160 +920,50 @@
       "strict": 99.6
     },
     "Error consistency": {
-      "score": 86.0,
-      "strict_score": 86.0,
-      "verified_strict_score": 86.0,
+      "score": 88.0,
+      "strict_score": 88.0,
+      "verified_strict_score": 88.0,
       "checks": 10,
       "issues": 0,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
-          "pass_rate": 0.86,
+          "pass_rate": 0.88,
           "issues": 0,
-          "weighted_failures": 1.4,
-          "assessment_score": 86.0,
+          "weighted_failures": 1.2,
+          "assessment_score": 88.0,
           "placeholder": false,
           "dimension_key": "error_consistency",
           "configured_weight": 3.0,
           "components": []
         }
       },
-      "strict": 86.0
+      "strict": 88.0
     },
     "Abstraction fit": {
-      "score": 90.0,
-      "strict_score": 90.0,
-      "verified_strict_score": 90.0,
+      "score": 91.0,
+      "strict_score": 91.0,
+      "verified_strict_score": 91.0,
       "checks": 10,
       "issues": 0,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
-          "pass_rate": 0.9,
+          "pass_rate": 0.91,
           "issues": 0,
-          "weighted_failures": 1.0,
-          "assessment_score": 90.0,
+          "weighted_failures": 0.9,
+          "assessment_score": 91.0,
           "placeholder": false,
           "dimension_key": "abstraction_fitness",
           "configured_weight": 8.0,
           "components": []
         }
       },
-      "strict": 90.0
+      "strict": 91.0
     },
     "AI generated debt": {
-      "score": 91.0,
-      "strict_score": 91.0,
-      "verified_strict_score": 91.0,
-      "checks": 10,
-      "issues": 0,
-      "tier": 4,
-      "detectors": {
-        "subjective_assessment": {
-          "potential": 10,
-          "pass_rate": 0.91,
-          "issues": 0,
-          "weighted_failures": 0.9,
-          "assessment_score": 91.0,
-          "placeholder": false,
-          "dimension_key": "ai_generated_debt",
-          "configured_weight": 1.0,
-          "components": []
-        }
-      },
-      "strict": 91.0
-    },
-    "High elegance": {
-      "score": 91.0,
-      "strict_score": 91.0,
-      "verified_strict_score": 91.0,
-      "checks": 10,
-      "issues": 0,
-      "tier": 4,
-      "detectors": {
-        "subjective_assessment": {
-          "potential": 10,
-          "pass_rate": 0.91,
-          "issues": 0,
-          "weighted_failures": 0.9,
-          "assessment_score": 91.0,
-          "placeholder": false,
-          "dimension_key": "high_level_elegance",
-          "configured_weight": 22.0,
-          "components": []
-        }
-      },
-      "strict": 91.0
-    },
-    "Mid elegance": {
-      "score": 89.0,
-      "strict_score": 89.0,
-      "verified_strict_score": 89.0,
-      "checks": 10,
-      "issues": 0,
-      "tier": 4,
-      "detectors": {
-        "subjective_assessment": {
-          "potential": 10,
-          "pass_rate": 0.89,
-          "issues": 0,
-          "weighted_failures": 1.1,
-          "assessment_score": 89.0,
-          "placeholder": false,
-          "dimension_key": "mid_level_elegance",
-          "configured_weight": 22.0,
-          "components": []
-        }
-      },
-      "strict": 89.0
-    },
-    "Low elegance": {
-      "score": 89.0,
-      "strict_score": 89.0,
-      "verified_strict_score": 89.0,
-      "checks": 10,
-      "issues": 0,
-      "tier": 4,
-      "detectors": {
-        "subjective_assessment": {
-          "potential": 10,
-          "pass_rate": 0.89,
-          "issues": 0,
-          "weighted_failures": 1.1,
-          "assessment_score": 89.0,
-          "placeholder": false,
-          "dimension_key": "low_level_elegance",
-          "configured_weight": 12.0,
-          "components": []
-        }
-      },
-      "strict": 89.0
-    },
-    "Cross-module arch": {
-      "score": 90.0,
-      "strict_score": 90.0,
-      "verified_strict_score": 90.0,
-      "checks": 10,
-      "issues": 0,
-      "tier": 4,
-      "detectors": {
-        "subjective_assessment": {
-          "potential": 10,
-          "pass_rate": 0.9,
-          "issues": 0,
-          "weighted_failures": 1.0,
-          "assessment_score": 90.0,
-          "placeholder": false,
-          "dimension_key": "cross_module_architecture",
-          "configured_weight": 1.0,
-          "components": []
-        }
-      },
-      "strict": 90.0
-    },
-    "Convention drift": {
       "score": 92.0,
       "strict_score": 92.0,
       "verified_strict_score": 92.0,
@@ -619,14 +978,102 @@
           "weighted_failures": 0.8,
           "assessment_score": 92.0,
           "placeholder": false,
-          "dimension_key": "convention_outlier",
+          "dimension_key": "ai_generated_debt",
           "configured_weight": 1.0,
           "components": []
         }
       },
       "strict": 92.0
     },
-    "Dep health": {
+    "High elegance": {
+      "score": 92.0,
+      "strict_score": 92.0,
+      "verified_strict_score": 92.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.92,
+          "issues": 0,
+          "weighted_failures": 0.8,
+          "assessment_score": 92.0,
+          "placeholder": false,
+          "dimension_key": "high_level_elegance",
+          "configured_weight": 22.0,
+          "components": []
+        }
+      },
+      "strict": 92.0
+    },
+    "Mid elegance": {
+      "score": 90.0,
+      "strict_score": 90.0,
+      "verified_strict_score": 90.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.9,
+          "issues": 0,
+          "weighted_failures": 1.0,
+          "assessment_score": 90.0,
+          "placeholder": false,
+          "dimension_key": "mid_level_elegance",
+          "configured_weight": 22.0,
+          "components": []
+        }
+      },
+      "strict": 90.0
+    },
+    "Low elegance": {
+      "score": 90.0,
+      "strict_score": 90.0,
+      "verified_strict_score": 90.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.9,
+          "issues": 0,
+          "weighted_failures": 1.0,
+          "assessment_score": 90.0,
+          "placeholder": false,
+          "dimension_key": "low_level_elegance",
+          "configured_weight": 12.0,
+          "components": []
+        }
+      },
+      "strict": 90.0
+    },
+    "Cross-module arch": {
+      "score": 91.0,
+      "strict_score": 91.0,
+      "verified_strict_score": 91.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.91,
+          "issues": 0,
+          "weighted_failures": 0.9,
+          "assessment_score": 91.0,
+          "placeholder": false,
+          "dimension_key": "cross_module_architecture",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 91.0
+    },
+    "Convention drift": {
       "score": 93.0,
       "strict_score": 93.0,
       "verified_strict_score": 93.0,
@@ -640,87 +1087,109 @@
           "issues": 0,
           "weighted_failures": 0.7,
           "assessment_score": 93.0,
+          "placeholder": false,
+          "dimension_key": "convention_outlier",
+          "configured_weight": 1.0,
+          "components": []
+        }
+      },
+      "strict": 93.0
+    },
+    "Dep health": {
+      "score": 94.0,
+      "strict_score": 94.0,
+      "verified_strict_score": 94.0,
+      "checks": 10,
+      "issues": 0,
+      "tier": 4,
+      "detectors": {
+        "subjective_assessment": {
+          "potential": 10,
+          "pass_rate": 0.94,
+          "issues": 0,
+          "weighted_failures": 0.6,
+          "assessment_score": 94.0,
           "placeholder": false,
           "dimension_key": "dependency_health",
           "configured_weight": 1.0,
           "components": []
         }
       },
-      "strict": 93.0
+      "strict": 94.0
     },
     "Test strategy": {
-      "score": 88.0,
-      "strict_score": 88.0,
-      "verified_strict_score": 88.0,
+      "score": 89.0,
+      "strict_score": 89.0,
+      "verified_strict_score": 89.0,
       "checks": 10,
       "issues": 0,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
-          "pass_rate": 0.88,
+          "pass_rate": 0.89,
           "issues": 0,
-          "weighted_failures": 1.2,
-          "assessment_score": 88.0,
+          "weighted_failures": 1.1,
+          "assessment_score": 89.0,
           "placeholder": false,
           "dimension_key": "test_strategy",
           "configured_weight": 1.0,
           "components": []
         }
       },
-      "strict": 88.0
+      "strict": 89.0
     },
     "Structure nav": {
-      "score": 93.0,
-      "strict_score": 93.0,
-      "verified_strict_score": 93.0,
+      "score": 94.0,
+      "strict_score": 94.0,
+      "verified_strict_score": 94.0,
       "checks": 10,
       "issues": 0,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
-          "pass_rate": 0.93,
+          "pass_rate": 0.94,
           "issues": 0,
-          "weighted_failures": 0.7,
-          "assessment_score": 93.0,
+          "weighted_failures": 0.6,
+          "assessment_score": 94.0,
           "placeholder": false,
           "dimension_key": "package_organization",
           "configured_weight": 5.0,
           "components": []
         }
       },
-      "strict": 93.0
+      "strict": 94.0
     },
     "Design coherence": {
-      "score": 88.0,
-      "strict_score": 88.0,
-      "verified_strict_score": 88.0,
+      "score": 89.0,
+      "strict_score": 89.0,
+      "verified_strict_score": 89.0,
       "checks": 10,
       "issues": 0,
       "tier": 4,
       "detectors": {
         "subjective_assessment": {
           "potential": 10,
-          "pass_rate": 0.88,
+          "pass_rate": 0.89,
           "issues": 0,
-          "weighted_failures": 1.2,
-          "assessment_score": 88.0,
+          "weighted_failures": 1.1,
+          "assessment_score": 89.0,
           "placeholder": false,
           "dimension_key": "design_coherence",
           "configured_weight": 10.0,
           "components": []
         }
       },
-      "strict": 88.0
+      "strict": 89.0
     }
   },
   "score_breakdown": {
-    "overall_score": 92.2,
+    "overall_score": 93.1,
     "mechanical_fraction": 0.4,
     "subjective_fraction": 0.6,
-    "mechanical_avg": 95.9265185185185,
-    "subjective_avg": 89.71264367816092,
+    "mechanical_avg": 96.54874074074074,
+    "subjective_avg": 90.74712643678161,
     "entries": [
       {
         "name": "File health",
@@ -764,15 +1233,15 @@
       {
         "name": "Test health",
         "pool": "mechanical",
-        "score": 87.4,
+        "score": 89.5,
         "checks": 334.0,
         "sample_factor": 1.0,
         "configured_weight": 1.0,
         "effective_weight": 1.0,
         "pool_share": 0.2962962962962963,
         "overall_per_point": 0.11851851851851852,
-        "overall_contribution": 10.358518518518519,
-        "overall_drag": 1.4933333333333327
+        "overall_contribution": 10.607407407407408,
+        "overall_drag": 1.2444444444444445
       },
       {
         "name": "Security",
@@ -790,96 +1259,31 @@
       {
         "name": "Error consistency",
         "pool": "subjective",
-        "score": 86.0,
+        "score": 88.0,
         "checks": 0.0,
         "sample_factor": 1.0,
         "configured_weight": 3.0,
         "effective_weight": 3.0,
         "pool_share": 0.034482758620689655,
         "overall_per_point": 0.020689655172413793,
-        "overall_contribution": 1.7793103448275862,
-        "overall_drag": 0.2896551724137931
+        "overall_contribution": 1.8206896551724139,
+        "overall_drag": 0.2482758620689655
       },
       {
         "name": "Abstraction fit",
         "pool": "subjective",
-        "score": 90.0,
+        "score": 91.0,
         "checks": 0.0,
         "sample_factor": 1.0,
         "configured_weight": 8.0,
         "effective_weight": 8.0,
         "pool_share": 0.09195402298850575,
         "overall_per_point": 0.05517241379310345,
-        "overall_contribution": 4.9655172413793105,
-        "overall_drag": 0.5517241379310345
+        "overall_contribution": 5.020689655172414,
+        "overall_drag": 0.496551724137931
       },
       {
         "name": "AI generated debt",
-        "pool": "subjective",
-        "score": 91.0,
-        "checks": 0.0,
-        "sample_factor": 1.0,
-        "configured_weight": 1.0,
-        "effective_weight": 1.0,
-        "pool_share": 0.011494252873563218,
-        "overall_per_point": 0.006896551724137931,
-        "overall_contribution": 0.6275862068965518,
-        "overall_drag": 0.06206896551724138
-      },
-      {
-        "name": "High elegance",
-        "pool": "subjective",
-        "score": 91.0,
-        "checks": 0.0,
-        "sample_factor": 1.0,
-        "configured_weight": 22.0,
-        "effective_weight": 22.0,
-        "pool_share": 0.25287356321839083,
-        "overall_per_point": 0.15172413793103448,
-        "overall_contribution": 13.806896551724138,
-        "overall_drag": 1.3655172413793104
-      },
-      {
-        "name": "Mid elegance",
-        "pool": "subjective",
-        "score": 89.0,
-        "checks": 0.0,
-        "sample_factor": 1.0,
-        "configured_weight": 22.0,
-        "effective_weight": 22.0,
-        "pool_share": 0.25287356321839083,
-        "overall_per_point": 0.15172413793103448,
-        "overall_contribution": 13.503448275862068,
-        "overall_drag": 1.6689655172413793
-      },
-      {
-        "name": "Low elegance",
-        "pool": "subjective",
-        "score": 89.0,
-        "checks": 0.0,
-        "sample_factor": 1.0,
-        "configured_weight": 12.0,
-        "effective_weight": 12.0,
-        "pool_share": 0.13793103448275862,
-        "overall_per_point": 0.08275862068965517,
-        "overall_contribution": 7.36551724137931,
-        "overall_drag": 0.9103448275862069
-      },
-      {
-        "name": "Cross-module arch",
-        "pool": "subjective",
-        "score": 90.0,
-        "checks": 0.0,
-        "sample_factor": 1.0,
-        "configured_weight": 1.0,
-        "effective_weight": 1.0,
-        "pool_share": 0.011494252873563218,
-        "overall_per_point": 0.006896551724137931,
-        "overall_contribution": 0.6206896551724138,
-        "overall_drag": 0.06896551724137931
-      },
-      {
-        "name": "Convention drift",
         "pool": "subjective",
         "score": 92.0,
         "checks": 0.0,
@@ -892,7 +1296,59 @@
         "overall_drag": 0.05517241379310345
       },
       {
-        "name": "Dep health",
+        "name": "High elegance",
+        "pool": "subjective",
+        "score": 92.0,
+        "checks": 0.0,
+        "sample_factor": 1.0,
+        "configured_weight": 22.0,
+        "effective_weight": 22.0,
+        "pool_share": 0.25287356321839083,
+        "overall_per_point": 0.15172413793103448,
+        "overall_contribution": 13.958620689655172,
+        "overall_drag": 1.2137931034482758
+      },
+      {
+        "name": "Mid elegance",
+        "pool": "subjective",
+        "score": 90.0,
+        "checks": 0.0,
+        "sample_factor": 1.0,
+        "configured_weight": 22.0,
+        "effective_weight": 22.0,
+        "pool_share": 0.25287356321839083,
+        "overall_per_point": 0.15172413793103448,
+        "overall_contribution": 13.655172413793103,
+        "overall_drag": 1.5172413793103448
+      },
+      {
+        "name": "Low elegance",
+        "pool": "subjective",
+        "score": 90.0,
+        "checks": 0.0,
+        "sample_factor": 1.0,
+        "configured_weight": 12.0,
+        "effective_weight": 12.0,
+        "pool_share": 0.13793103448275862,
+        "overall_per_point": 0.08275862068965517,
+        "overall_contribution": 7.448275862068965,
+        "overall_drag": 0.8275862068965517
+      },
+      {
+        "name": "Cross-module arch",
+        "pool": "subjective",
+        "score": 91.0,
+        "checks": 0.0,
+        "sample_factor": 1.0,
+        "configured_weight": 1.0,
+        "effective_weight": 1.0,
+        "pool_share": 0.011494252873563218,
+        "overall_per_point": 0.006896551724137931,
+        "overall_contribution": 0.6275862068965518,
+        "overall_drag": 0.06206896551724138
+      },
+      {
+        "name": "Convention drift",
         "pool": "subjective",
         "score": 93.0,
         "checks": 0.0,
@@ -905,43 +1361,56 @@
         "overall_drag": 0.04827586206896552
       },
       {
-        "name": "Test strategy",
+        "name": "Dep health",
         "pool": "subjective",
-        "score": 88.0,
+        "score": 94.0,
         "checks": 0.0,
         "sample_factor": 1.0,
         "configured_weight": 1.0,
         "effective_weight": 1.0,
         "pool_share": 0.011494252873563218,
         "overall_per_point": 0.006896551724137931,
-        "overall_contribution": 0.6068965517241379,
-        "overall_drag": 0.08275862068965517
+        "overall_contribution": 0.6482758620689655,
+        "overall_drag": 0.041379310344827586
+      },
+      {
+        "name": "Test strategy",
+        "pool": "subjective",
+        "score": 89.0,
+        "checks": 0.0,
+        "sample_factor": 1.0,
+        "configured_weight": 1.0,
+        "effective_weight": 1.0,
+        "pool_share": 0.011494252873563218,
+        "overall_per_point": 0.006896551724137931,
+        "overall_contribution": 0.6137931034482759,
+        "overall_drag": 0.07586206896551724
       },
       {
         "name": "Structure nav",
         "pool": "subjective",
-        "score": 93.0,
+        "score": 94.0,
         "checks": 0.0,
         "sample_factor": 1.0,
         "configured_weight": 5.0,
         "effective_weight": 5.0,
         "pool_share": 0.05747126436781609,
         "overall_per_point": 0.034482758620689655,
-        "overall_contribution": 3.206896551724138,
-        "overall_drag": 0.24137931034482757
+        "overall_contribution": 3.2413793103448274,
+        "overall_drag": 0.20689655172413793
       },
       {
         "name": "Design coherence",
         "pool": "subjective",
-        "score": 88.0,
+        "score": 89.0,
         "checks": 0.0,
         "sample_factor": 1.0,
         "configured_weight": 10.0,
         "effective_weight": 10.0,
         "pool_share": 0.11494252873563218,
         "overall_per_point": 0.06896551724137931,
-        "overall_contribution": 6.068965517241379,
-        "overall_drag": 0.8275862068965517
+        "overall_contribution": 6.137931034482759,
+        "overall_drag": 0.7586206896551724
       }
     ]
   },
@@ -1000,7 +1469,7 @@
         }
       },
       "warnings": [],
-      "updated_at": "2026-03-06T06:18:29+00:00"
+      "updated_at": "2026-03-06T06:28:43+00:00"
     }
   },
   "zone_distribution": {
@@ -1015,13 +1484,13 @@
       "lowest_dimensions": [
         {
           "name": "Test health",
-          "strict": 82.4,
+          "strict": 84.5,
           "issues": 3,
           "impact": 0.0
         },
         {
           "name": "Error consistency",
-          "strict": 86.0,
+          "strict": 88.0,
           "issues": 0,
           "impact": 0.0,
           "subjective": true,
@@ -1029,7 +1498,7 @@
         },
         {
           "name": "Test strategy",
-          "strict": 88.0,
+          "strict": 89.0,
           "issues": 0,
           "impact": 0.0,
           "subjective": true,
@@ -1039,8 +1508,8 @@
       "biggest_gap_dimensions": [
         {
           "name": "Test health",
-          "lenient": 87.4,
-          "strict": 82.4,
+          "lenient": 89.5,
+          "strict": 84.5,
           "gap": 5.0,
           "wontfix_count": 2
         },
@@ -1141,8 +1610,8 @@
       {
         "type": "manual_fix",
         "detector": "stale_wontfix",
-        "count": 1,
-        "description": "1 stale_wontfix findings \u2014 re-evaluate old wontfix decisions \u2014 fix, document, or escalate",
+        "count": 11,
+        "description": "11 stale_wontfix findings \u2014 re-evaluate old wontfix decisions \u2014 fix, document, or escalate",
         "command": "desloppify show stale_wontfix --status open",
         "impact": 0.0,
         "dimension": "Unknown",
@@ -1164,7 +1633,7 @@
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 0,
-        "total_count": 953,
+        "total_count": 963,
         "coverage": 0.0,
         "impact_ratio": 0.0,
         "recommendation": "none"
@@ -1195,7 +1664,7 @@
           "actions": [
             6
           ],
-          "file_count": 1,
+          "file_count": 9,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
@@ -1210,8 +1679,8 @@
           "run_first": false
         }
       },
-      "can_parallelize": false,
-      "hint": "Try a different dimension to break the plateau."
+      "can_parallelize": true,
+      "hint": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify."
     },
     "tools": {
       "fixers": [],
@@ -1234,7 +1703,7 @@
     },
     "debt": {
       "overall_gap": 0.6,
-      "wontfix_count": 21,
+      "wontfix_count": 11,
       "worst_dimension": "Test health",
       "worst_gap": 5.0,
       "trend": "stable"
@@ -1244,7 +1713,7 @@
       "command": "desloppify show orphaned --status open",
       "description": "1 orphaned findings \u2014 delete dead files or relocate with `desloppify move`"
     },
-    "why_now": "Try a different dimension to break the plateau.",
+    "why_now": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -1253,13 +1722,13 @@
       {
         "type": "wontfix_gap",
         "severity": "medium",
-        "message": "Strict/lenient gap is 0.6 pts with 21 wontfix findings"
+        "message": "Strict/lenient gap is 0.6 pts with 11 wontfix findings"
       }
     ],
     "strict_target": {
       "target": 95.0,
-      "current": 91.2,
-      "gap": 3.8,
+      "current": 92.1,
+      "gap": 2.9,
       "state": "below",
       "warning": null
     },
@@ -1275,7 +1744,7 @@
     ],
     "reminder_history": {
       "zone_classification": 3,
-      "report_scores": 56,
+      "report_scores": 58,
       "feedback_nudge": 3,
       "stagnant_nudge": 15,
       "review_findings_pending": 3,
