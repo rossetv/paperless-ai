@@ -41,13 +41,3 @@ BLACKLISTED_TAGS: frozenset[str] = frozenset({
     "indexed",
     "new",
 })
-
-# Phrases in OCR content that indicate a model refusal or policy block.
-# Checked case-insensitively via substring match.
-ERROR_PHRASES: tuple[str, ...] = (
-    "i'm sorry, i can't assist with that.",
-    "i can't assist with that",
-    "chatgpt refused to transcribe",
-    "i can't help with transcrib",
-    "i cannot help with transcrib",
-)

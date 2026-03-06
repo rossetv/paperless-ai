@@ -1,6 +1,4 @@
-"""
-Comprehensive unit tests for classifier.result module.
-"""
+"""Tests for classifier.result."""
 
 from __future__ import annotations
 
@@ -9,11 +7,6 @@ import json
 import pytest
 
 from classifier.result import _extract_json, parse_classification_response
-
-
-# ---------------------------------------------------------------------------
-# _extract_json
-# ---------------------------------------------------------------------------
 
 class TestExtractJson:
     """Tests for _extract_json(text)."""
@@ -53,11 +46,6 @@ class TestExtractJson:
         text = '{"outer": {"inner": 1}}'
         result = _extract_json(text)
         assert result == {"outer": {"inner": 1}}
-
-
-# ---------------------------------------------------------------------------
-# parse_classification_response
-# ---------------------------------------------------------------------------
 
 class TestParseClassificationResponse:
     """Tests for parse_classification_response(text)."""

@@ -1,24 +1,15 @@
-"""
-Test Object Factories
-=====================
-
-Functions that produce valid test objects with sensible defaults and optional
-overrides.  Every test entity that takes more than one line to construct gets
-a factory here.
-"""
+"""Test object factories."""
 
 from __future__ import annotations
 
+import io
 import os
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from PIL import Image
+
 from classifier.result import ClassificationResult
-
-
-# ---------------------------------------------------------------------------
-# Settings factory
-# ---------------------------------------------------------------------------
 
 _MINIMAL_ENV: dict[str, str] = {
     "PAPERLESS_TOKEN": "test-token",
@@ -87,11 +78,6 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         setattr(mock, key, value)
     return mock
 
-
-# ---------------------------------------------------------------------------
-# Document factory
-# ---------------------------------------------------------------------------
-
 def make_document(**overrides: Any) -> dict:
     """Create a Paperless document dict with sensible defaults."""
     doc = {
@@ -107,10 +93,13 @@ def make_document(**overrides: Any) -> dict:
     doc.update(overrides)
     return doc
 
+def make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
+    """Create a small PNG image as raw bytes."""
+    img = Image.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
-# ---------------------------------------------------------------------------
-# ClassificationResult factory
-# ---------------------------------------------------------------------------
 
 def make_classification_result(**overrides: Any) -> ClassificationResult:
     """Create a ClassificationResult with sensible defaults."""

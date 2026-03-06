@@ -1,9 +1,4 @@
-"""
-End-to-end tests for a complete OCR document lifecycle.
-
-Mocks only HTTP (via a fake PaperlessClient) and OpenAI API.
-Everything else (image conversion, text assembly, tag logic) is real.
-"""
+"""Tests for end-to-end OCR workflow."""
 
 from __future__ import annotations
 
@@ -12,21 +7,9 @@ from unittest.mock import MagicMock
 
 from PIL import Image
 
-from ocr.worker import DocumentProcessor
+from ocr.worker import OcrProcessor
 from ocr.text_assembly import OCR_ERROR_MARKER
-from tests.helpers.factories import make_document, make_settings_obj
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_png_bytes(width: int = 20, height: int = 20, color: str = "red") -> bytes:
-    """Create a small PNG image as raw bytes."""
-    img = Image.new("RGB", (width, height), color=color)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+from tests.helpers.factories import make_document, make_png_bytes, make_settings_obj
 
 
 def _make_settings(**overrides):
@@ -102,18 +85,13 @@ def _make_mock_ocr_provider(transcribe_return=None, transcribe_side_effect=None)
     }
     return provider
 
-
-# ---------------------------------------------------------------------------
-# Happy path: complete OCR workflow
-# ---------------------------------------------------------------------------
-
 class TestOcrHappyPath:
     """Complete happy path: download -> convert -> OCR -> update Paperless."""
 
     def test_complete_ocr_workflow(self):
         """
         Full OCR lifecycle:
-        1. Create a DocumentProcessor with mocks
+        1. Create a OcrProcessor with mocks
         2. download_content returns real PNG image bytes
         3. get_document returns document with pre-tag
         4. Run process()
@@ -121,7 +99,7 @@ class TestOcrHappyPath:
         6. Verify processing tag released
         """
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443], title="Test PDF")
         client, state = _make_stateful_client(doc)
@@ -131,7 +109,7 @@ class TestOcrHappyPath:
             transcribe_return=("Invoice from Acme Corp. Total: $500.", "gpt-5-mini")
         )
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -190,7 +168,7 @@ class TestOcrHappyPath:
             transcribe_side_effect=transcribe_side_effect
         )
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -206,11 +184,6 @@ class TestOcrHappyPath:
         assert "--- Page 1 ---" in content
         assert "--- Page 2 ---" in content
 
-
-# ---------------------------------------------------------------------------
-# Error path: OCR provider fails for all models
-# ---------------------------------------------------------------------------
-
 class TestOcrErrorPath:
     """OCR provider fails, document gets error tag."""
 
@@ -222,7 +195,7 @@ class TestOcrErrorPath:
         3. Processing tag is released
         """
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)
@@ -233,7 +206,7 @@ class TestOcrErrorPath:
             transcribe_side_effect=Exception("Model unavailable")
         )
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -252,7 +225,7 @@ class TestOcrErrorPath:
     def test_refusal_mark_triggers_error(self):
         """When provider returns refusal mark, document gets error tag."""
         settings = _make_settings()
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)
@@ -262,7 +235,7 @@ class TestOcrErrorPath:
             transcribe_return=("CHATGPT REFUSED TO TRANSCRIBE", "")
         )
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -286,7 +259,7 @@ class TestOcrErrorPath:
 
         provider = _make_mock_ocr_provider()
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -300,11 +273,6 @@ class TestOcrErrorPath:
         # Error tag should be applied via update_document_metadata
         # The _finalize_with_error path calls update_document_metadata with error tag
         assert 552 in state["tags"]
-
-
-# ---------------------------------------------------------------------------
-# Lock contention: claim fails
-# ---------------------------------------------------------------------------
 
 class TestOcrLockContention:
     """Document already has processing tag -- claim fails, early exit."""
@@ -324,7 +292,7 @@ class TestOcrLockContention:
 
         provider = _make_mock_ocr_provider()
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -342,7 +310,7 @@ class TestOcrLockContention:
     def test_no_processing_tag_configured_always_proceeds(self):
         """When OCR_PROCESSING_TAG_ID is None, claim always succeeds."""
         settings = _make_settings(OCR_PROCESSING_TAG_ID=None)
-        png_bytes = _make_png_bytes()
+        png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
         client, state = _make_stateful_client(doc)
@@ -352,7 +320,7 @@ class TestOcrLockContention:
             transcribe_return=("Transcribed text.", "gpt-5-mini")
         )
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,
@@ -374,7 +342,7 @@ class TestOcrLockContention:
 
         provider = _make_mock_ocr_provider()
 
-        processor = DocumentProcessor(
+        processor = OcrProcessor(
             doc=doc,
             paperless_client=client,
             ocr_provider=provider,

@@ -8,7 +8,7 @@ import openai
 import structlog
 
 from common.config import Settings
-from common.llm import OpenAIChatMixin, ThreadSafeStats, unique_models
+from common.llm import OpenAIChatMixin, unique_models
 from .prompts import (
     CLASSIFICATION_JSON_SCHEMA,
     CLASSIFICATION_PROMPT,
@@ -29,32 +29,28 @@ class ClassificationProvider(OpenAIChatMixin):
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._stats = ThreadSafeStats(self._STAT_KEYS)
-
-    def get_stats(self) -> dict[str, int]:
-        return self._stats.snapshot()
+        self._init_stats()
 
     def _supports_temperature(self, model: str) -> bool:
-        """Return True if the model is known to support a temperature parameter."""
+        # OpenAI's GPT-5 series does not accept a temperature parameter and
+        # returns 400 if one is supplied.  This prefix check avoids a wasted
+        # round-trip for known-unsupported models; unknown models will still be
+        # handled gracefully by _create_with_compat's parameter-stripping logic.
         return not model.startswith("gpt-5")
 
     def _is_temperature_error(self, error: openai.BadRequestError) -> bool:
-        """Detect ``400 Bad Request`` caused by an unsupported ``temperature``."""
         message = str(error).lower()
         return "temperature" in message and "unsupported" in message
 
     def _is_response_format_error(self, error: openai.BadRequestError) -> bool:
-        """Detect ``400 Bad Request`` caused by an unsupported ``response_format``."""
         message = str(error).lower()
         return "response_format" in message or "json_schema" in message
 
     def _is_max_tokens_error(self, error: openai.BadRequestError) -> bool:
-        """Detect ``400 Bad Request`` caused by an unsupported ``max_tokens``."""
         message = str(error).lower()
         return "max_tokens" in message or "max tokens" in message
 
     def _response_format(self) -> dict | None:
-        """Return a ``response_format`` payload when the provider supports it."""
         if self.settings.LLM_PROVIDER != "openai":
             return None
         return {"type": "json_schema", "json_schema": CLASSIFICATION_JSON_SCHEMA}
@@ -128,7 +124,6 @@ class ClassificationProvider(OpenAIChatMixin):
         if not text.strip():
             log.warning("Document content is empty; skipping classification.")
             return None, ""
-        self._stats.reset(self._STAT_KEYS)
 
         user_content = self._build_user_message(
             text, correspondents, document_types, tags, truncation_note
@@ -173,7 +168,6 @@ class ClassificationProvider(OpenAIChatMixin):
         tags: list[str],
         truncation_note: str | None,
     ) -> str:
-        """Assemble the user-role message with context and document text."""
         parts: list[str] = []
 
         if truncation_note:
@@ -207,7 +201,6 @@ class ClassificationProvider(OpenAIChatMixin):
         return "\n\n".join(parts)
 
     def _build_params(self, model: str, messages: list[dict]) -> dict:
-        """Build the keyword arguments for the chat completion call."""
         params: dict = {
             "model": model,
             "messages": messages,

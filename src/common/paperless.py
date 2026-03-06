@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Generator, Iterable
+import types
+from typing import Any, Generator, Iterable, TypedDict
 
 import httpx
 import structlog
@@ -15,6 +16,23 @@ log = structlog.get_logger(__name__)
 # Exceptions that should trigger a retry: transient network errors and
 # 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).
 RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
+
+# Exceptions that callers should catch when wrapping PaperlessClient calls
+# in non-fatal error handling.  Covers network errors, HTTP errors, and
+# unexpected response shapes.
+PAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)
+
+
+class DocumentMetadataUpdate(TypedDict, total=False):
+    """Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`."""
+
+    title: str
+    correspondent_id: int
+    document_type_id: int
+    document_date: str
+    tags: list[int]
+    language: str
+    custom_fields: list[dict]
 
 
 class PaperlessClient:
@@ -29,26 +47,28 @@ class PaperlessClient:
         )
 
     def _raise_for_status_if_server_error(self, response: httpx.Response) -> None:
+        """Raise on 5xx so the ``@retry`` decorator can retry the request.
+
+        Only server errors are retried; 4xx errors are left for the caller's
+        ``raise_for_status()`` to handle without retry.
+        """
         if response.status_code >= 500:
             response.raise_for_status()
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.get(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _patch(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.patch(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _post(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.post(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
@@ -100,8 +120,11 @@ class PaperlessClient:
                 if last_response.status_code != 400 or index == len(candidates) - 1:
                     raise
 
-    def get_documents_to_process(self) -> Iterable[dict]:
-        yield from self.get_documents_by_tag(self.settings.PRE_TAG_ID)
+        # All candidates were exhausted via non-raising 400 paths; this should
+        # be unreachable because the last candidate always re-raises above.
+        raise AssertionError(  # pragma: no cover
+            f"_create_named_item fell through unexpectedly for {item_label!r} {name!r}"
+        )
 
     def get_documents_by_tag(self, tag_id: int) -> Iterable[dict]:
         url = (
@@ -109,12 +132,10 @@ class PaperlessClient:
             f"?tags__id={tag_id}"
             "&page_size=100"
         )
-        log.debug("Fetching documents with tag", tag_id=tag_id, url=url)
         yield from self._list_all(url)
 
     def get_document(self, doc_id: int) -> dict[str, Any]:
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
-        log.debug("Fetching document", doc_id=doc_id, url=url)
         response = self._get(url)
         response.raise_for_status()
         return response.json()
@@ -122,55 +143,57 @@ class PaperlessClient:
     def download_content(self, doc_id: int) -> tuple[bytes, str]:
         """Download raw file bytes and content type for a document."""
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/download/"
-        log.info("Downloading document", doc_id=doc_id, url=url)
         response = self._get(url)
         response.raise_for_status()
 
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
-    def update_document(self, doc_id: int, content: str, new_tags: list[int]) -> None:
+    def update_document(self, doc_id: int, content: str, new_tags: Iterable[int]) -> None:
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
+        tags_list = list(new_tags)
         log.info(
             "Updating document",
             doc_id=doc_id,
-            new_tags=new_tags,
+            new_tags=tags_list,
             content_len=len(content),
         )
-        payload = {"content": content, "tags": new_tags}
+        payload = {"content": content, "tags": tags_list}
         response = self._patch(url, json=payload)
         response.raise_for_status()
         log.info("Successfully updated document", doc_id=doc_id)
 
-    # Maps keyword argument names to Paperless API field names.
-    _METADATA_FIELDS: tuple[tuple[str, str], ...] = (
-        ("title", "title"),
-        ("correspondent_id", "correspondent"),
-        ("document_type_id", "document_type"),
-        ("document_date", "created"),
-        ("tags", "tags"),
-        ("language", "language"),
-        ("custom_fields", "custom_fields"),
-    )
+    # Maps DocumentMetadataUpdate keys to Paperless API field names.
+    _METADATA_FIELDS = types.MappingProxyType({
+        "title": "title",
+        "correspondent_id": "correspondent",
+        "document_type_id": "document_type",
+        "document_date": "created",
+        "tags": "tags",
+        "language": "language",
+        "custom_fields": "custom_fields",
+    })
 
     def update_document_metadata(
         self,
         doc_id: int,
-        *,
-        title: str | None = None,
-        correspondent_id: int | None = None,
-        document_type_id: int | None = None,
-        document_date: str | None = None,
-        tags: list[int] | None = None,
-        language: str | None = None,
-        custom_fields: list[dict] | None = None,
+        **fields: Any,
     ) -> None:
-        local_vars = locals()
-        payload = {
-            api_key: local_vars[param]
-            for param, api_key in self._METADATA_FIELDS
-            if local_vars[param] is not None
-        }
+        """Update document metadata fields on Paperless.
+
+        Accepts any keys defined in :class:`DocumentMetadataUpdate`.
+        ``None`` values are silently dropped.
+        """
+        payload = {}
+        for key, value in fields.items():
+            if value is None:
+                continue
+            if key not in self._METADATA_FIELDS:
+                log.warning("Ignoring unknown metadata key", key=key, doc_id=doc_id)
+                continue
+            if key == "tags":
+                value = list(value)
+            payload[self._METADATA_FIELDS[key]] = value
 
         if not payload:
             log.info("No metadata updates to apply", doc_id=doc_id)
@@ -184,17 +207,14 @@ class PaperlessClient:
 
     def list_correspondents(self) -> list[dict]:
         url = f"{self.settings.PAPERLESS_URL}/api/correspondents/?page_size=100"
-        log.debug("Listing correspondents", url=url)
         return list(self._list_all(url))
 
     def list_document_types(self) -> list[dict]:
         url = f"{self.settings.PAPERLESS_URL}/api/document_types/?page_size=100"
-        log.debug("Listing document types", url=url)
         return list(self._list_all(url))
 
     def list_tags(self) -> list[dict]:
         url = f"{self.settings.PAPERLESS_URL}/api/tags/?page_size=100"
-        log.debug("Listing tags", url=url)
         return list(self._list_all(url))
 
     def create_correspondent(
@@ -235,5 +255,4 @@ class PaperlessClient:
         response.raise_for_status()
 
     def close(self) -> None:
-        """Close the underlying HTTP client."""
         self._client.close()

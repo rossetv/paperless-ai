@@ -5,55 +5,51 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+from .constants import REFUSAL_PHRASES
+
+# Default URLs used when environment variables are not set.
+_DEFAULT_PAPERLESS_URL = "http://paperless:8000"
+_DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1/"
+
 
 class Settings:
 
-    # --- Paperless-ngx API Configuration ---
     PAPERLESS_URL: str
     PAPERLESS_TOKEN: str
 
-    # --- LLM Provider Configuration ---
     LLM_PROVIDER: Literal["openai", "ollama"]
     OLLAMA_BASE_URL: str | None
     OPENAI_API_KEY: str | None
 
-    # --- Model Selection ---
     AI_MODELS: list[str]
     OCR_REFUSAL_MARKERS: list[str]
     OCR_INCLUDE_PAGE_MODELS: bool
 
-    # --- Paperless-ngx Tag IDs ---
     PRE_TAG_ID: int
     POST_TAG_ID: int
     OCR_PROCESSING_TAG_ID: int | None
 
-    # --- Classification Tag IDs ---
     CLASSIFY_PRE_TAG_ID: int
     CLASSIFY_POST_TAG_ID: int | None
     CLASSIFY_PROCESSING_TAG_ID: int | None
     ERROR_TAG_ID: int | None
 
-    # --- Daemon Configuration ---
     POLL_INTERVAL: int
     MAX_RETRIES: int
     MAX_RETRY_BACKOFF_SECONDS: int
     REQUEST_TIMEOUT: int
     LLM_MAX_CONCURRENT: int
 
-    # --- Image Processing Configuration ---
     OCR_DPI: int
     OCR_MAX_SIDE: int
     PAGE_WORKERS: int
     DOCUMENT_WORKERS: int
 
-    # --- Logging ---
     LOG_LEVEL: str
     LOG_FORMAT: Literal["json", "console"]
 
-    # --- Constants ---
     REFUSAL_MARK: str = "CHATGPT REFUSED TO TRANSCRIBE"
 
-    # --- Classification Configuration ---
     CLASSIFY_PERSON_FIELD_ID: int | None
     CLASSIFY_DEFAULT_COUNTRY_TAG: str
     CLASSIFY_MAX_CHARS: int
@@ -65,7 +61,6 @@ class Settings:
     CLASSIFY_HEADERLESS_CHAR_LIMIT: int
 
     def __init__(self):
-        """Loads settings from environment variables and performs validation."""
         self._load_api_settings()
         self._load_llm_settings()
         self._load_tag_settings()
@@ -75,7 +70,7 @@ class Settings:
         self._load_classification_settings()
 
     def _load_api_settings(self) -> None:
-        self.PAPERLESS_URL = os.getenv("PAPERLESS_URL", "http://paperless:8000").rstrip(
+        self.PAPERLESS_URL = os.getenv("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip(
             "/"
         )
         self.PAPERLESS_TOKEN = self._get_required_env("PAPERLESS_TOKEN")
@@ -86,7 +81,7 @@ class Settings:
             raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
 
         if self.LLM_PROVIDER == "ollama":
-            self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1/")
+            self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL)
             self.OPENAI_API_KEY = None
             default_ai_models = ["gemma3:27b", "gemma3:12b"]
         else:
@@ -96,13 +91,7 @@ class Settings:
         self.AI_MODELS = self._get_csv_env(
             "AI_MODELS", default_ai_models, require_non_empty=True
         )
-        default_ocr_refusal_markers = [
-            "i can't assist",
-            "i cannot assist",
-            "i can't help with transcrib",
-            "i cannot help with transcrib",
-            self.REFUSAL_MARK,
-        ]
+        default_ocr_refusal_markers = list(REFUSAL_PHRASES) + [self.REFUSAL_MARK]
         self.OCR_REFUSAL_MARKERS = [
             marker.lower()
             for marker in self._get_csv_env(
@@ -219,9 +208,6 @@ class Settings:
         return parts
 
     def _get_bool_env(self, var_name: str, default: bool) -> bool:
-        """
-        Get a boolean env var with common truthy/falsey values.
-        """
         value = os.getenv(var_name)
         if value is None:
             return default

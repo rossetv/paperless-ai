@@ -22,7 +22,7 @@ paperless-classifier-daemon = "classifier.daemon:main"
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
     "unit: Unit tests (fast, no I/O)",

@@ -1,0 +1,188 @@
+{
+  "assessments": {
+    "cross_module_architecture": 92,
+    "convention_outlier": 94,
+    "error_consistency": 90,
+    "abstraction_fitness": 92,
+    "dependency_health": 94,
+    "test_strategy": 91,
+    "ai_generated_debt": 93,
+    "package_organization": 94,
+    "high_level_elegance": 93,
+    "mid_level_elegance": 91,
+    "low_level_elegance": 91,
+    "design_coherence": 91
+  },
+  "findings": [
+    {
+      "dimension": "error_consistency",
+      "identifier": "apply_classification_unguarded",
+      "summary": "_apply_classification calls update_document_metadata without PAPERLESS_CALL_EXCEPTIONS guard, unlike peer methods; this is arguably intentional (happy-path failures should propagate to daemon loop).",
+      "related_files": [
+        "src/classifier/worker.py"
+      ],
+      "evidence": [
+        "_apply_classification line 294: unguarded update_document_metadata, while _requeue_for_ocr and _finalize_with_error both have guards"
+      ],
+      "suggestion": "Document that happy-path API failures are intentionally propagated to the daemon loop's error handler.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "nested_thread_pools_undocumented",
+      "summary": "OcrProcessor creates a nested ThreadPoolExecutor for page-level parallelism inside the daemon loop's document-level thread pool, risking DOCUMENT_WORKERS * PAGE_WORKERS thread count.",
+      "related_files": [
+        "src/ocr/worker.py",
+        "src/common/daemon_loop.py"
+      ],
+      "evidence": [
+        "Nested: daemon_loop ThreadPoolExecutor(max_workers=DOCUMENT_WORKERS) \u2192 ocr/worker ThreadPoolExecutor(max_workers=PAGE_WORKERS)"
+      ],
+      "suggestion": "Document the thread multiplication in configuration documentation or add a comment noting the total thread budget.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "no_concurrent_page_order_test",
+      "summary": "TestOcrPagesInParallel uses PAGE_WORKERS=1, making ordering trivially correct without testing actual concurrency.",
+      "related_files": [
+        "tests/unit/ocr/test_worker.py"
+      ],
+      "evidence": [
+        "make_settings_obj(PAGE_WORKERS=1) in page ordering test"
+      ],
+      "suggestion": "Add a test with PAGE_WORKERS > 1 to verify page order preservation under concurrent execution.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "settings_domain_mixing",
+      "summary": "Settings class contains both OCR-specific and classifier-specific fields in one flat class.",
+      "related_files": [
+        "src/common/config.py"
+      ],
+      "evidence": [
+        "OCR_DPI alongside CLASSIFY_PERSON_FIELD_ID in the same class"
+      ],
+      "suggestion": "Acceptable for a small 3-package codebase; consider grouping if Settings grows significantly.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "processor_naming_style",
+      "summary": "OcrProcessor vs ClassificationProcessor uses different noun forms (abbreviation vs full) for the same role.",
+      "related_files": [
+        "src/ocr/worker.py",
+        "src/classifier/worker.py"
+      ],
+      "evidence": [
+        "class OcrProcessor vs class ClassificationProcessor"
+      ],
+      "suggestion": "Both names are clear; the asymmetry is minor and both follow Python naming conventions.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "openai_holder_indirection",
+      "summary": "Module-level wrapper functions around _OpenAIClientHolder add a thin indirection layer.",
+      "related_files": [
+        "src/common/llm.py"
+      ],
+      "evidence": [
+        "init_openai_client, get_openai_client, is_openai_client_ready are one-line pass-throughs"
+      ],
+      "suggestion": "The indirection provides a stable public API; acceptable for this use case.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "httpx_openai_dual_http",
+      "summary": "httpx and openai both use httpx internally, but serve different API surfaces.",
+      "related_files": [
+        "pyproject.toml"
+      ],
+      "evidence": [
+        "httpx~=0.28 and openai~=1.35 in dependencies"
+      ],
+      "suggestion": "Monitor version compatibility during dependency updates.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "defensive_unreachable_guards",
+      "summary": "Two pragma: no cover AssertionError guards exist on provably unreachable paths.",
+      "related_files": [
+        "src/common/paperless.py",
+        "src/common/retry.py"
+      ],
+      "evidence": [
+        "raise AssertionError after for-loops that always return/raise on last iteration"
+      ],
+      "suggestion": "Guards are defensive; the pragma documents they are unreachable. Low impact.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "package_organization",
+      "identifier": "refusal_phrases_shared_placement",
+      "summary": "REFUSAL_PHRASES in common.constants is used by both OCR and classifier packages.",
+      "related_files": [
+        "src/common/constants.py"
+      ],
+      "evidence": [
+        "Imported by both classifier.quality_gates and common.config"
+      ],
+      "suggestion": "Shared placement is appropriate given dual usage.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "worker_pattern_duplication",
+      "summary": "Both workers share claim/release/stats pattern without a base class.",
+      "related_files": [
+        "src/ocr/worker.py",
+        "src/classifier/worker.py"
+      ],
+      "evidence": [
+        "Both: process() with claim/finally/release/log-stats"
+      ],
+      "suggestion": "Acceptable for two classes; base class would add abstraction overhead without reducing complexity.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "taxonomy_lock_scope",
+      "summary": "TaxonomyCache refresh() under RLock performs HTTP calls while holding the lock.",
+      "related_files": [
+        "src/classifier/taxonomy.py"
+      ],
+      "evidence": [
+        "with self._lock: ... self.refresh() makes API calls"
+      ],
+      "suggestion": "Intentional for cache consistency; the RLock prevents deadlocks and refresh is infrequent.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "content_prep_preamble",
+      "summary": "truncate_content_by_pages includes preamble before first page header without counting it.",
+      "related_files": [
+        "src/classifier/content_prep.py"
+      ],
+      "evidence": [
+        "start = 0 if idx == 0 else match.start()"
+      ],
+      "suggestion": "Intentional behavior; OCR content may have metadata before page markers.",
+      "confidence": "medium"
+    }
+  ],
+  "provenance": {
+    "kind": "blind_review_batch_import",
+    "blind": true,
+    "runner": "claude",
+    "run_stamp": "ext_20260306_062913_1b82874a",
+    "created_at": "2026-03-06T06:30:13+00:00",
+    "packet_path": "/home/user/paperless-ocr-daemon/.desloppify/review_packet_blind.json",
+    "packet_sha256": "4514b2aa249a2303969c18f22d8918c5632dfc56db509ae2efbe8a82da9493fb",
+    "external_session_id": "ext_20260306_062913_1b82874a"
+  }
+}

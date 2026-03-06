@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.logging_config.configure_logging``.
-
-Covers console and JSON formatting, log level propagation, and
-third-party logger suppression.
-"""
+"""Tests for common.logging_config."""
 
 from __future__ import annotations
 
@@ -14,11 +9,6 @@ import structlog
 import pytest
 
 from common.logging_config import configure_logging
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _make_settings(log_format: str = "console", log_level: str = "INFO") -> MagicMock:
     s = MagicMock()
@@ -39,11 +29,6 @@ def _clean_root_logger():
     root.level = original_level
     structlog.configure(**original_structlog_config)
 
-
-# ===================================================================
-# Console format: ConsoleRenderer used
-# ===================================================================
-
 class TestConsoleFormat:
 
     def test_uses_console_renderer(self):
@@ -58,11 +43,6 @@ class TestConsoleFormat:
         # The processor chain should end with ConsoleRenderer
         assert isinstance(formatter.processors[-1], structlog.dev.ConsoleRenderer)
 
-
-# ===================================================================
-# JSON format: JSONRenderer used
-# ===================================================================
-
 class TestJsonFormat:
 
     def test_uses_json_renderer(self):
@@ -74,11 +54,6 @@ class TestJsonFormat:
         formatter = handler.formatter
         assert isinstance(formatter, structlog.stdlib.ProcessorFormatter)
         assert isinstance(formatter.processors[-1], structlog.processors.JSONRenderer)
-
-
-# ===================================================================
-# Log level is set from settings
-# ===================================================================
 
 class TestLogLevel:
 
@@ -96,11 +71,6 @@ class TestLogLevel:
         settings = _make_settings(log_level="INFO")
         configure_logging(settings)
         assert logging.getLogger().level == logging.INFO
-
-
-# ===================================================================
-# Third-party loggers set to WARNING
-# ===================================================================
 
 class TestThirdPartyLoggers:
 

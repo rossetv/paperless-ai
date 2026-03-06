@@ -1,9 +1,4 @@
-"""
-Integration tests for the classification pipeline.
-
-Tests the interaction between content prep, result parsing, tag filtering,
-taxonomy resolution, and metadata helpers working together.
-"""
+"""Tests for classifier pipeline integration."""
 
 from __future__ import annotations
 
@@ -25,11 +20,6 @@ from classifier.tag_filters import (
     filter_redundant_tags,
 )
 from classifier.taxonomy import TaxonomyCache
-
-
-# ---------------------------------------------------------------------------
-# Content prep -> provider -> result parsing -> tag filters -> metadata
-# ---------------------------------------------------------------------------
 
 class TestClassificationPipelineIntegration:
     """Full classification data pipeline with real functions."""
@@ -164,11 +154,6 @@ class TestClassificationPipelineIntegration:
         assert result.correspondent == "Revolut"
         assert len(result.tags) == 2
 
-
-# ---------------------------------------------------------------------------
-# TaxonomyCache integration: refresh from mock client, then resolve names
-# ---------------------------------------------------------------------------
-
 class TestTaxonomyCacheIntegration:
     """Test TaxonomyCache with a mock PaperlessClient."""
 
@@ -292,11 +277,6 @@ class TestTaxonomyCacheIntegration:
         assert cache.get_or_create_correspondent_id("   ") is None
         assert cache.get_or_create_document_type_id("") is None
 
-
-# ---------------------------------------------------------------------------
-# Metadata pipeline: parse_document_date + normalize_language +
-#                     update_custom_fields
-# ---------------------------------------------------------------------------
 
 class TestMetadataPipelineIntegration:
     """Real metadata functions working together on realistic data."""

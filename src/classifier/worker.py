@@ -6,7 +6,7 @@ import structlog
 
 from common.claims import claim_processing_tag
 from common.config import Settings
-from common.paperless import PaperlessClient
+from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from common.tags import (
     clean_pipeline_tags,
     extract_tags,
@@ -79,13 +79,14 @@ class ClassificationProcessor:
         9. Release the processing-lock tag.
         """
         log.info("Classifying document", doc_id=self.doc_id, title=self.title)
+        self.classifier.reset_stats()
         claimed = False
         try:
             document = self.paperless_client.get_document(self.doc_id)
             content = document.get("content", "") or ""
             current_tags = extract_tags(document, doc_id=self.doc_id, context="classify-process")
 
-            if self.settings.ERROR_TAG_ID and self.settings.ERROR_TAG_ID in current_tags:
+            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning(
                     "Document has error tag; skipping classification",
                     doc_id=self.doc_id,
@@ -105,6 +106,14 @@ class ClassificationProcessor:
             if not content.strip():
                 log.warning("Document has no OCR content; requeueing", doc_id=self.doc_id)
                 self._requeue_for_ocr(current_tags)
+                return
+
+            if needs_error_tag(content):
+                log.warning(
+                    "OCR content contains refusal markers; marking error",
+                    doc_id=self.doc_id,
+                )
+                self._finalize_with_error(current_tags)
                 return
 
             input_text, truncation_notes = self._truncate_content(content)
@@ -193,7 +202,11 @@ class ClassificationProcessor:
         """Move the document back to the OCR queue (content was empty)."""
         updated = clean_pipeline_tags(tags, self.settings)
         updated.add(self.settings.PRE_TAG_ID)
-        self.paperless_client.update_document_metadata(self.doc_id, tags=list(updated))
+        try:
+            self.paperless_client.update_document_metadata(self.doc_id, tags=updated)
+        except PAPERLESS_CALL_EXCEPTIONS:
+            log.exception("Failed to requeue document for OCR", doc_id=self.doc_id)
+            return
         log.info("Requeued document for OCR", doc_id=self.doc_id)
 
     def _finalize_with_error(self, tags: set[int]) -> None:
@@ -257,14 +270,6 @@ class ClassificationProcessor:
         model: str,
     ) -> None:
         """Apply the classifier's output to Paperless metadata and tags."""
-        if needs_error_tag(content):
-            log.warning(
-                "OCR content contains refusal markers; marking error",
-                doc_id=self.doc_id,
-            )
-            self._finalize_with_error(current_tags)
-            return
-
         parsed_date = parse_document_date(result.document_date)
         date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))
 
@@ -275,7 +280,7 @@ class ClassificationProcessor:
 
         # Merge new tag IDs with cleaned existing tags
         current_tags = clean_pipeline_tags(current_tags, self.settings)
-        if self.settings.CLASSIFY_POST_TAG_ID:
+        if self.settings.CLASSIFY_POST_TAG_ID is not None:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
         current_tags.update(tag_ids)
 
@@ -296,7 +301,7 @@ class ClassificationProcessor:
             correspondent_id=correspondent_id,
             document_type_id=document_type_id,
             document_date=parsed_date,
-            tags=list(current_tags),
+            tags=current_tags,
             language=language,
             custom_fields=custom_fields,
         )

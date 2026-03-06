@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 
 def setup_libraries(settings: Settings) -> None:
-    """Configure Pillow, httpx, and OpenAI SDK from application settings."""
     # Allow arbitrarily large images (high-DPI document scans).
     Image.MAX_IMAGE_PIXELS = None
 

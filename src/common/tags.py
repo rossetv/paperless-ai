@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import httpx
 import structlog
 
-from .paperless import PaperlessClient
+from .paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 
 if TYPE_CHECKING:
     from .config import Settings
@@ -38,7 +37,7 @@ def get_latest_tags(
     """Fetch current tags from the API, falling back to a cached copy on error."""
     try:
         latest = client.get_document(doc_id)
-    except (OSError, httpx.HTTPError, ValueError):
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to refresh document tags; using cached tags",
             doc_id=doc_id,
@@ -61,11 +60,11 @@ def remove_stale_queue_tag(
     """Remove queue/processing tags that should no longer be on a document."""
     updated = set(tags)
     updated.discard(pre_tag_id)
-    if processing_tag_id:
+    if processing_tag_id is not None:
         updated.discard(processing_tag_id)
     try:
-        client.update_document_metadata(doc_id, tags=list(updated))
-    except (OSError, httpx.HTTPError):
+        client.update_document_metadata(doc_id, tags=updated)
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to remove stale queue tag",
             doc_id=doc_id,
@@ -87,11 +86,11 @@ def release_processing_tag(
     purpose: str,
 ) -> None:
     """Remove a processing-lock tag after processing. Best-effort, never propagates errors."""
-    if not tag_id:
+    if tag_id is None:
         return
     try:
         latest = client.get_document(doc_id)
-    except (OSError, httpx.HTTPError):
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to refresh document before releasing processing tag",
             doc_id=doc_id,
@@ -104,8 +103,8 @@ def release_processing_tag(
         return
     tags.discard(tag_id)
     try:
-        client.update_document_metadata(doc_id, tags=list(tags))
-    except (OSError, httpx.HTTPError):
+        client.update_document_metadata(doc_id, tags=tags)
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to release processing tag",
             doc_id=doc_id,
@@ -127,15 +126,23 @@ def finalize_document_with_error(
     update the document content.
     """
     updated = clean_pipeline_tags(tags, settings)
-    if settings.ERROR_TAG_ID:
+    if settings.ERROR_TAG_ID is not None:
         updated.add(settings.ERROR_TAG_ID)
 
-    if content is not None:
-        client.update_document(doc_id, content, list(updated))
-    else:
-        client.update_document_metadata(doc_id, tags=list(updated))
+    try:
+        if content is not None:
+            client.update_document(doc_id, content, updated)
+        else:
+            client.update_document_metadata(doc_id, tags=updated)
+    except PAPERLESS_CALL_EXCEPTIONS:
+        log.exception(
+            "Failed to finalize document with error tag",
+            doc_id=doc_id,
+            error_tag_id=settings.ERROR_TAG_ID,
+        )
+        return
 
-    if settings.ERROR_TAG_ID:
+    if settings.ERROR_TAG_ID is not None:
         log.warning(
             "Marked document with error tag",
             doc_id=doc_id,
@@ -148,20 +155,20 @@ def finalize_document_with_error(
         )
 
 
-def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
-    """Return a copy of *tags* with all automation-pipeline tag IDs removed."""
-    cleaned = set(tags)
-    # Always-present pipeline tags
-    cleaned.discard(settings.PRE_TAG_ID)
-    cleaned.discard(settings.POST_TAG_ID)
-    cleaned.discard(settings.CLASSIFY_PRE_TAG_ID)
-    # Optional pipeline tags — only discard when configured
+def pipeline_tag_ids(settings: Settings) -> set[int]:
+    """Collect all configured pipeline tag IDs from *settings*."""
+    ids: set[int] = {settings.PRE_TAG_ID, settings.POST_TAG_ID, settings.CLASSIFY_PRE_TAG_ID}
     for optional_tag in (
         settings.OCR_PROCESSING_TAG_ID,
         settings.CLASSIFY_PROCESSING_TAG_ID,
         settings.CLASSIFY_POST_TAG_ID,
         settings.ERROR_TAG_ID,
     ):
-        if optional_tag:
-            cleaned.discard(optional_tag)
-    return cleaned
+        if optional_tag is not None:
+            ids.add(optional_tag)
+    return ids
+
+
+def clean_pipeline_tags(tags: set[int], settings: Settings) -> set[int]:
+    """Return a copy of *tags* with all automation-pipeline tag IDs removed."""
+    return tags - pipeline_tag_ids(settings)

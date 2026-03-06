@@ -12,32 +12,21 @@ from common.daemon_loop import run_polling_threadpool
 from common.paperless import PaperlessClient
 from common.document_iter import iter_documents_by_pipeline_tag
 from .provider import OcrProvider
-from .worker import DocumentProcessor
+from .worker import OcrProcessor
 
 
 def _process_document(doc: dict, settings: Settings) -> None:
-    """
-    Process a single Paperless document.
-
-    Each document gets its own HTTP session and OCR provider instance.
-    The daemon runs multiple documents concurrently via the thread pool.
-    """
+    """Process a single Paperless document with its own HTTP session and provider."""
     paperless = PaperlessClient(settings)
     ocr_provider = OcrProvider(settings)
     try:
-        processor = DocumentProcessor(doc, paperless, ocr_provider, settings)
+        processor = OcrProcessor(doc, paperless, ocr_provider, settings)
         processor.process()
     finally:
         paperless.close()
 
 
 def _iter_docs_to_ocr(list_client: PaperlessClient, settings: Settings) -> Iterable[dict]:
-    """
-    Yield documents that should be OCR'd.
-
-    Delegates to the shared :func:`~common.tags.iter_documents_by_pipeline_tag`
-    helper with OCR-specific tag IDs.
-    """
     return iter_documents_by_pipeline_tag(
         list_client,
         pre_tag_id=settings.PRE_TAG_ID,
@@ -48,12 +37,6 @@ def _iter_docs_to_ocr(list_client: PaperlessClient, settings: Settings) -> Itera
 
 
 def main() -> None:
-    """
-    Bootstrap and run the OCR daemon.
-
-    Uses the shared bootstrap sequence, then enters the polling loop
-    that dispatches documents to worker threads.
-    """
     result = bootstrap_daemon(
         processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
         pre_tag_id=lambda s: s.PRE_TAG_ID,

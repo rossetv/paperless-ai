@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import httpx
 import structlog
 
-from .paperless import PaperlessClient
+from .paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from .tags import extract_tags
 
 log = structlog.get_logger(__name__)
@@ -24,7 +23,7 @@ def recover_stale_locks(
     recovered = 0
     try:
         docs = list(client.get_documents_by_tag(processing_tag_id))
-    except (OSError, httpx.HTTPError):
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to query documents with processing-lock tag",
             processing_tag_id=processing_tag_id,
@@ -51,7 +50,7 @@ def recover_stale_locks(
                 processing_tag_id=processing_tag_id,
                 pre_tag_id=pre_tag_id,
             )
-        except (OSError, httpx.HTTPError):
+        except PAPERLESS_CALL_EXCEPTIONS:
             log.exception(
                 "Failed to recover stale processing lock",
                 doc_id=doc_id,

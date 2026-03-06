@@ -10,7 +10,7 @@ import structlog
 from PIL import Image
 
 from common.config import Settings
-from common.llm import OpenAIChatMixin, ThreadSafeStats, unique_models
+from common.llm import OpenAIChatMixin, unique_models
 from common.utils import is_error_content
 from .prompts import TRANSCRIPTION_PROMPT
 
@@ -39,10 +39,7 @@ class OcrProvider(OpenAIChatMixin):
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._stats = ThreadSafeStats(self._STAT_KEYS)
-
-    def get_stats(self) -> dict[str, int]:
-        return self._stats.snapshot()
+        self._init_stats()
 
     def transcribe_image(
         self,
@@ -65,7 +62,9 @@ class OcrProvider(OpenAIChatMixin):
         if is_blank(image):
             return "", ""
 
-        # Resize large images to reduce token cost and latency
+        # Resize large images to reduce token cost and latency.
+        # Copy first so we don't mutate the caller's image in-place.
+        image = image.copy()
         image.thumbnail((self.settings.OCR_MAX_SIDE, self.settings.OCR_MAX_SIDE))
         payload = _image_to_base64_png(image)
 
@@ -121,7 +120,6 @@ class OcrProvider(OpenAIChatMixin):
 
 
 def _image_to_base64_png(image: Image.Image) -> str:
-    """Encode a PIL Image as a base64-encoded PNG string."""
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()

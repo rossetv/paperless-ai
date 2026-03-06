@@ -1,6 +1,4 @@
-"""
-Comprehensive unit tests for classifier.metadata module.
-"""
+"""Tests for classifier.metadata."""
 
 from __future__ import annotations
 
@@ -30,11 +28,6 @@ def _make_result(**overrides) -> ClassificationResult:
     }
     defaults.update(overrides)
     return ClassificationResult(**defaults)
-
-
-# ---------------------------------------------------------------------------
-# parse_document_date
-# ---------------------------------------------------------------------------
 
 class TestParseDocumentDate:
     """Tests for parse_document_date(value)."""
@@ -67,11 +60,6 @@ class TestParseDocumentDate:
             assert result is None
             mock_log.warning.assert_called_once()
 
-
-# ---------------------------------------------------------------------------
-# resolve_date_for_tags
-# ---------------------------------------------------------------------------
-
 class TestResolveDateForTags:
     """Tests for resolve_date_for_tags(result_date, existing_date)."""
 
@@ -102,11 +90,6 @@ class TestResolveDateForTags:
     def test_result_date_with_time_component(self):
         result = resolve_date_for_tags("2024-03-01T12:00:00", None)
         assert result == "2024-03-01"
-
-
-# ---------------------------------------------------------------------------
-# normalize_language
-# ---------------------------------------------------------------------------
 
 class TestNormalizeLanguage:
     """Tests for normalize_language(language)."""
@@ -142,11 +125,6 @@ class TestNormalizeLanguage:
     def test_three_letter_non_locale_returns_und(self):
         assert normalize_language("eng") == "und"
 
-
-# ---------------------------------------------------------------------------
-# update_custom_fields
-# ---------------------------------------------------------------------------
-
 class TestUpdateCustomFields:
     """Tests for update_custom_fields(existing, field_id, value)."""
 
@@ -173,11 +151,6 @@ class TestUpdateCustomFields:
     def test_empty_existing_list(self):
         result = update_custom_fields([], 5, "val")
         assert result == [{"field": 5, "value": "val"}]
-
-
-# ---------------------------------------------------------------------------
-# is_empty_classification
-# ---------------------------------------------------------------------------
 
 class TestIsEmptyClassification:
     """Tests for is_empty_classification(result)."""

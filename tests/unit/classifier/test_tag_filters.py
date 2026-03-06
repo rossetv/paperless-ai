@@ -1,6 +1,4 @@
-"""
-Comprehensive unit tests for classifier.tag_filters module.
-"""
+"""Tests for classifier.tag_filters."""
 
 from __future__ import annotations
 
@@ -14,11 +12,6 @@ from classifier.tag_filters import (
     filter_blacklisted_tags,
     filter_redundant_tags,
 )
-
-
-# ---------------------------------------------------------------------------
-# dedupe_tags
-# ---------------------------------------------------------------------------
 
 class TestDedupeTags:
     """Tests for dedupe_tags(tags)."""
@@ -46,11 +39,6 @@ class TestDedupeTags:
         result = dedupe_tags(["  bills  ", "finance"])
         assert result == ["bills", "finance"]
 
-
-# ---------------------------------------------------------------------------
-# filter_blacklisted_tags
-# ---------------------------------------------------------------------------
-
 class TestFilterBlacklistedTags:
     """Tests for filter_blacklisted_tags(tags)."""
 
@@ -68,11 +56,6 @@ class TestFilterBlacklistedTags:
 
     def test_empty_input(self):
         assert filter_blacklisted_tags([]) == []
-
-
-# ---------------------------------------------------------------------------
-# filter_redundant_tags
-# ---------------------------------------------------------------------------
 
 class TestFilterRedundantTags:
     """Tests for filter_redundant_tags(tags, correspondent, document_type, person)."""
@@ -120,11 +103,6 @@ class TestFilterRedundantTags:
         )
         assert result == ["Bills", "Tax"]
 
-
-# ---------------------------------------------------------------------------
-# is_generic_document_type
-# ---------------------------------------------------------------------------
-
 class TestIsGenericDocumentType:
     """Tests for is_generic_document_type(value)."""
 
@@ -150,11 +128,6 @@ class TestIsGenericDocumentType:
     def test_specific_type_not_generic(self):
         assert is_generic_document_type("Bank Statement") is False
 
-
-# ---------------------------------------------------------------------------
-# needs_error_tag
-# ---------------------------------------------------------------------------
-
 class TestNeedsErrorTag:
     """Tests for needs_error_tag(text)."""
 
@@ -172,11 +145,6 @@ class TestNeedsErrorTag:
 
     def test_chatgpt_refused(self):
         assert needs_error_tag("ChatGPT refused to transcribe this document.") is True
-
-
-# ---------------------------------------------------------------------------
-# extract_model_tags
-# ---------------------------------------------------------------------------
 
 class TestExtractModelTags:
     """Tests for extract_model_tags(text)."""
@@ -210,11 +178,6 @@ class TestExtractModelTags:
         )
         result = extract_model_tags(text)
         assert result == ["gpt-5-mini", "o4-mini"]
-
-
-# ---------------------------------------------------------------------------
-# enrich_tags
-# ---------------------------------------------------------------------------
 
 class TestEnrichTags:
     """Tests for enrich_tags(tags, text, document_date, default_country_tag, tag_limit)."""

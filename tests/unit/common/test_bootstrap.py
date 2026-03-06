@@ -1,8 +1,4 @@
-"""
-Unit tests for common.bootstrap.bootstrap_daemon.
-
-All external dependencies are mocked to test control flow and error handling.
-"""
+"""Tests for common.bootstrap."""
 
 from __future__ import annotations
 
@@ -11,9 +7,7 @@ from unittest.mock import MagicMock, patch
 from common.bootstrap import bootstrap_daemon
 from common.preflight import PreflightError
 
-
 MODULE = "common.bootstrap"
-
 
 class TestBootstrapDaemon:
     """Tests for bootstrap_daemon()."""
@@ -37,7 +31,6 @@ class TestBootstrapDaemon:
         mock_preflight,
         mock_recover,
     ):
-        # Arrange
         mock_settings = MagicMock()
         mock_settings.LLM_MAX_CONCURRENT = 8
         mock_settings.OCR_PROCESSING_TAG_ID = 55
@@ -46,19 +39,16 @@ class TestBootstrapDaemon:
         mock_client = MagicMock()
         mock_paperless_cls.return_value = mock_client
 
-        # Act
         result = bootstrap_daemon(
             processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
             pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
-        # Assert — returns settings and client
         assert result is not None
         settings, client = result
         assert settings is mock_settings
         assert client is mock_client
 
-        # Assert — all subsystems initialized
         mock_register_signals.assert_called_once()
         mock_llm_limiter.init.assert_called_once_with(8)
         mock_recover.assert_called_once_with(
@@ -69,16 +59,13 @@ class TestBootstrapDaemon:
 
     @patch(f"{MODULE}.Settings")
     def test_value_error_from_settings_returns_none(self, mock_settings_cls):
-        # Arrange
         mock_settings_cls.side_effect = ValueError("bad config")
 
-        # Act
         result = bootstrap_daemon(
             processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
             pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
-        # Assert
         assert result is None
 
     @patch(f"{MODULE}.configure_logging")
@@ -86,17 +73,14 @@ class TestBootstrapDaemon:
     def test_value_error_from_configure_logging_returns_none(
         self, mock_settings_cls, mock_configure_logging,
     ):
-        # Arrange
         mock_settings_cls.return_value = MagicMock(LLM_MAX_CONCURRENT=0)
         mock_configure_logging.side_effect = ValueError("bad log config")
 
-        # Act
         result = bootstrap_daemon(
             processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
             pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
-        # Assert
         assert result is None
 
     @patch(f"{MODULE}.run_preflight_checks")
@@ -116,19 +100,16 @@ class TestBootstrapDaemon:
         mock_paperless_cls,
         mock_preflight,
     ):
-        # Arrange
         mock_settings = MagicMock(LLM_MAX_CONCURRENT=0)
         mock_settings_cls.return_value = mock_settings
         mock_client = MagicMock()
         mock_paperless_cls.return_value = mock_client
         mock_preflight.side_effect = PreflightError("paperless unreachable")
 
-        # Act
         result = bootstrap_daemon(
             processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
             pre_tag_id=lambda s: s.PRE_TAG_ID,
         )
 
-        # Assert
         assert result is None
         mock_client.close.assert_called_once()

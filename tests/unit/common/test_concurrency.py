@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.concurrency``.
-
-Covers initialization with zero/N, unlimited vs limited semaphore behavior,
-threading concurrency limiting, and re-initialization.
-"""
+"""Tests for common.concurrency."""
 
 from __future__ import annotations
 
@@ -14,22 +9,12 @@ import pytest
 
 from common.concurrency import llm_limiter
 
-
-# ---------------------------------------------------------------------------
-# Reset limiter state between tests
-# ---------------------------------------------------------------------------
-
 @pytest.fixture(autouse=True)
 def _reset_semaphore():
     """Reset the limiter's semaphore to None before each test."""
     llm_limiter._semaphore = None
     yield
     llm_limiter._semaphore = None
-
-
-# ===================================================================
-# init with 0 -> semaphore is None (unlimited)
-# ===================================================================
 
 class TestInitZero:
 
@@ -42,11 +27,6 @@ class TestInitZero:
         llm_limiter.init(-1)
         assert llm_limiter._semaphore is None
 
-
-# ===================================================================
-# init with N -> BoundedSemaphore(N) created
-# ===================================================================
-
 class TestInitPositive:
 
     def test_creates_bounded_semaphore(self):
@@ -57,11 +37,6 @@ class TestInitPositive:
     def test_creates_semaphore_with_value_1(self):
         llm_limiter.init(1)
         assert llm_limiter._semaphore is not None
-
-
-# ===================================================================
-# llm_limiter.acquire() with unlimited -> yields immediately (no-op)
-# ===================================================================
 
 class TestUnlimitedSemaphore:
 
@@ -88,11 +63,6 @@ class TestUnlimitedSemaphore:
             t.join(timeout=5)
 
         assert len(results) == 10
-
-
-# ===================================================================
-# llm_limiter.acquire() with limit -> actually limits concurrent threads
-# ===================================================================
 
 class TestLimitedSemaphore:
 
@@ -133,11 +103,6 @@ class TestLimitedSemaphore:
         with llm_limiter.acquire():
             pass  # would deadlock if not released
 
-
-# ===================================================================
-# Re-init replaces previous semaphore
-# ===================================================================
-
 class TestReInit:
 
     def test_reinit_replaces_semaphore(self):
@@ -152,11 +117,6 @@ class TestReInit:
         assert llm_limiter._semaphore is not None
         llm_limiter.init(0)
         assert llm_limiter._semaphore is None
-
-
-# ===================================================================
-# LLMConcurrencyLimiter class direct usage
-# ===================================================================
 
 class TestLLMConcurrencyLimiterDirect:
 

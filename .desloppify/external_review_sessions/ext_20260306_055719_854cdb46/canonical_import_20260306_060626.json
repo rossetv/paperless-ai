@@ -1,0 +1,120 @@
+{
+  "assessments": {
+    "cross_module_architecture": 89,
+    "convention_outlier": 91,
+    "error_consistency": 84,
+    "abstraction_fitness": 89,
+    "dependency_health": 92,
+    "test_strategy": 86,
+    "ai_generated_debt": 90,
+    "package_organization": 91,
+    "high_level_elegance": 90,
+    "mid_level_elegance": 88,
+    "low_level_elegance": 87,
+    "design_coherence": 87
+  },
+  "dimension_notes": {
+    "cross_module_architecture": "The monolithic Settings class couples both domain packages to a single shared configuration object. OCR-specific fields (OCR_DPI, OCR_MAX_SIDE) and classifier-specific fields (CLASSIFY_PERSON_FIELD_ID) live in the same class. Consider composing per-package config sections.",
+    "convention_outlier": "Naming conventions are consistent across all three packages. Minor: the tags parameter is passed as set[int] throughout but one call site in _requeue_for_ocr wraps in list() unnecessarily.",
+    "dependency_health": "httpx and openai SDK both use httpx internally, creating two HTTP client stacks. This is acceptable since they serve different APIs (Paperless REST vs OpenAI LLM). No duplicate-purpose libraries found.",
+    "ai_generated_debt": "Test class docstrings that restated the class name have been removed. Remaining docstrings add non-obvious context. No restating comments found in production code.",
+    "package_organization": "Three-package layout (classifier, ocr, common) maps cleanly to domain boundaries. Shared utilities in common are genuinely shared. No misplaced files found.",
+    "high_level_elegance": "Top-level packages align with domain capabilities. Each daemon has a clear entry point (daemon.py), worker (worker.py), and provider (provider.py). Ownership boundaries are unambiguous.",
+    "mid_level_elegance": "Module handoffs use explicit types (ClassificationResult dataclass, set[int] for tags). The tags set/list boundary crossing between internal code and Paperless API could be more consistently handled."
+  },
+  "findings": [
+    {
+      "dimension": "error_consistency",
+      "identifier": "finalize_error_no_exception_guard",
+      "summary": "finalize_document_with_error does not catch PAPERLESS_CALL_EXCEPTIONS around update calls, so network failure during error finalization propagates up unlike peer helpers in the same module.",
+      "related_files": [
+        "src/common/tags.py"
+      ],
+      "evidence": [
+        "tags.py: client.update_document() and client.update_document_metadata() called without try/except, unlike release_processing_tag and remove_stale_queue_tag in the same file"
+      ],
+      "suggestion": "Wrap the update calls in finalize_document_with_error with try/except PAPERLESS_CALL_EXCEPTIONS consistent with peer functions.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "silent_drop_unknown_metadata_keys",
+      "summary": "PaperlessClient.update_document_metadata silently ignores unrecognized field names, so typos cause silent data loss.",
+      "related_files": [
+        "src/common/paperless.py"
+      ],
+      "evidence": [
+        "paperless.py line 187: 'if value is None or key not in self._METADATA_FIELDS: continue' silently drops unknown keys"
+      ],
+      "suggestion": "Log a warning when an unrecognized key is passed to update_document_metadata.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "classifier_stale_tags_on_error",
+      "summary": "ClassificationProcessor uses the initial tags snapshot for error finalization while OcrProcessor refreshes tags before finalization, creating inconsistent staleness behavior.",
+      "related_files": [
+        "src/classifier/worker.py",
+        "src/ocr/worker.py"
+      ],
+      "evidence": [
+        "ocr/worker.py calls get_latest_tags() before finalize_document_with_error",
+        "classifier/worker.py passes current_tags from process start to _finalize_with_error"
+      ],
+      "suggestion": "Have the classifier refresh tags before error finalization to match the OCR worker pattern.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "two_tier_raise_for_status",
+      "summary": "PaperlessClient methods call both _raise_for_status_if_server_error inside _get/_patch and response.raise_for_status() in callers, creating an undocumented two-tier error checking pattern.",
+      "related_files": [
+        "src/common/paperless.py"
+      ],
+      "evidence": [
+        "_get calls _raise_for_status_if_server_error for 5xx retry",
+        "get_document, download_content call response.raise_for_status() again after _get returns"
+      ],
+      "suggestion": "Document the two-tier pattern or have _get/_patch/_post call raise_for_status() unconditionally after retries.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "magic_number_tag_ids",
+      "summary": "Tag IDs like 443, 552, 555 are hardcoded magic numbers in test files rather than referencing factory defaults.",
+      "related_files": [
+        "tests/unit/classifier/test_worker.py",
+        "tests/unit/ocr/test_worker.py"
+      ],
+      "evidence": [
+        "assert 552 in tags  # ERROR_TAG_ID",
+        "assert 443 in tags  # PRE_TAG_ID"
+      ],
+      "suggestion": "Extract tag ID constants from factory defaults and reference them in test assertions.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "taxonomy_kind_factory_indirection",
+      "summary": "TaxonomyCache._get_or_create_item_id accepts a kind_factory callable for two trivial cases, adding unnecessary indirection.",
+      "related_files": [
+        "src/classifier/taxonomy.py"
+      ],
+      "evidence": [
+        "def _get_or_create_item_id(self, name, kind_factory: Callable[[], _TaxonomyKind])"
+      ],
+      "suggestion": "Pass the _TaxonomyKind directly instead of wrapping it in a zero-argument factory callable.",
+      "confidence": "medium"
+    }
+  ],
+  "provenance": {
+    "kind": "blind_review_batch_import",
+    "blind": true,
+    "runner": "claude",
+    "run_stamp": "ext_20260306_055719_854cdb46",
+    "created_at": "2026-03-06T06:06:26+00:00",
+    "packet_path": "/home/user/paperless-ocr-daemon/.desloppify/review_packet_blind.json",
+    "packet_sha256": "605039e4b9144d1ae7db519c7e0a2db8f921bb3b7ae7215988786cdbafd190fc",
+    "external_session_id": "ext_20260306_055719_854cdb46"
+  }
+}

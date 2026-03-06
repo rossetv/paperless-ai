@@ -12,6 +12,7 @@ from common.claims import claim_processing_tag
 from common.config import Settings
 from common.paperless import PaperlessClient
 from common.tags import (
+    clean_pipeline_tags,
     extract_tags,
     finalize_document_with_error,
     get_latest_tags,
@@ -25,7 +26,7 @@ from .text_assembly import OCR_ERROR_MARKER, assemble_full_text
 log = structlog.get_logger(__name__)
 
 
-class DocumentProcessor:
+class OcrProcessor:
     """
     Orchestrates the OCR processing of a single Paperless document.
 
@@ -55,14 +56,16 @@ class DocumentProcessor:
         release lock.
         """
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
+        self.ocr_provider.reset_stats()
         start_time = dt.datetime.now()
         claimed = False
+        success = False
         try:
             document = self.paperless_client.get_document(self.doc_id)
             self.doc = document
             current_tags = extract_tags(document, doc_id=self.doc_id, context="ocr-process")
 
-            if self.settings.ERROR_TAG_ID and self.settings.ERROR_TAG_ID in current_tags:
+            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
                 self._finalize_with_error(current_tags)
                 return
@@ -113,6 +116,7 @@ class DocumentProcessor:
                 include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
             )
             self._update_paperless_document(full_text, models_used)
+            success = True
         finally:
             if claimed:
                 release_processing_tag(
@@ -122,13 +126,13 @@ class DocumentProcessor:
                     purpose="ocr",
                 )
             self._log_ocr_stats()
-
-        elapsed = (dt.datetime.now() - start_time).total_seconds()
-        log.info(
-            "Finished processing document",
-            doc_id=self.doc_id,
-            elapsed_time=f"{elapsed:.2f}s",
-        )
+            elapsed = (dt.datetime.now() - start_time).total_seconds()
+            log.info(
+                "Finished processing document",
+                doc_id=self.doc_id,
+                elapsed_time=f"{elapsed:.2f}s",
+                success=success,
+            )
 
     def _ocr_pages_in_parallel(
         self, images: list[Image.Image]
@@ -167,7 +171,7 @@ class DocumentProcessor:
     def _has_ocr_errors(self, text: str) -> bool:
         """Return True if the OCR output contains error/refusal/redacted markers."""
         return OCR_ERROR_MARKER in text or is_error_content(
-            text, (self.settings.REFUSAL_MARK,)
+            text, self.settings.OCR_REFUSAL_MARKERS
         )
 
     def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:
@@ -191,13 +195,11 @@ class DocumentProcessor:
         current_tags = get_latest_tags(
             self.paperless_client, self.doc_id, fallback_doc=self.doc
         )
-        current_tags.discard(self.settings.PRE_TAG_ID)
-        if self.settings.OCR_PROCESSING_TAG_ID:
-            current_tags.discard(self.settings.OCR_PROCESSING_TAG_ID)
+        current_tags = clean_pipeline_tags(current_tags, self.settings)
         current_tags.add(self.settings.POST_TAG_ID)
 
         self.paperless_client.update_document(
-            self.doc_id, full_text, list(current_tags)
+            self.doc_id, full_text, current_tags
         )
         log.info(
             "Updated document tags",

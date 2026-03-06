@@ -15,6 +15,19 @@ log = structlog.get_logger(__name__)
 _LOCALE_SEP_RE: re.Pattern[str] = re.compile(r"[-_]")
 
 
+def parse_iso_date_prefix(value: str) -> dt.date | None:
+    """Parse an ISO-8601 date string, stripping any ``T`` time suffix.
+
+    Returns ``None`` when *value* is empty or unparseable.
+    """
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value.strip().split("T")[0])
+    except ValueError:
+        return None
+
+
 def parse_document_date(value: str) -> str | None:
     """
     Validate and normalize a date string to ``YYYY-MM-DD``.
@@ -22,14 +35,12 @@ def parse_document_date(value: str) -> str | None:
     Accepts ISO-8601 date strings (optionally with a ``T`` time component).
     Returns ``None`` when the value is empty or unparseable.
     """
-    if not value:
+    parsed = parse_iso_date_prefix(value)
+    if parsed is None:
+        if value:
+            log.warning("Invalid document_date from classifier", value=value)
         return None
-    value = value.strip()
-    try:
-        return dt.date.fromisoformat(value.split("T")[0]).isoformat()
-    except ValueError:
-        log.warning("Invalid document_date from classifier", value=value)
-        return None
+    return parsed.isoformat()
 
 
 def resolve_date_for_tags(
@@ -44,13 +55,9 @@ def resolve_date_for_tags(
     today's date.
     """
     for value in (result_date, existing_date):
-        if not value:
-            continue
-        try:
-            return dt.date.fromisoformat(value.split("T")[0]).isoformat()
-        except ValueError:
-            log.debug("Skipping unparseable date candidate", value=value)
-            continue
+        parsed = parse_iso_date_prefix(value)
+        if parsed is not None:
+            return parsed.isoformat()
     return dt.date.today().isoformat()
 
 

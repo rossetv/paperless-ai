@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from common.constants import REFUSAL_PHRASES
 from common.utils import is_error_content
-from .constants import ERROR_PHRASES, GENERIC_DOCUMENT_TYPES
+from .constants import GENERIC_DOCUMENT_TYPES
 from .normalizers import normalize_simple
 
 
@@ -26,4 +27,4 @@ def needs_error_tag(text: str) -> bool:
     This catches cases where the OCR daemon stored error content as the
     document body and the classifier receives it as input.
     """
-    return is_error_content(text, ERROR_PHRASES)
+    return is_error_content(text, REFUSAL_PHRASES)

@@ -1,12 +1,4 @@
-"""
-Tests for classifier.taxonomy — TaxonomyCache and module-level helpers
-======================================================================
-
-Covers refresh, name lookups, get_or_create methods, creation failure
-with cache refresh retry, internal helpers (_index_items, _match_item,
-_get_usage_count, _top_names, _infer_matching_algorithm), and thread
-safety (RLock).
-"""
+"""Tests for classifier.taxonomy."""
 
 from __future__ import annotations
 
@@ -24,11 +16,6 @@ from classifier.taxonomy import (
 from classifier.normalizers import normalize_name, normalize_simple
 from tests.helpers.mocks import make_mock_paperless
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _make_cache(
     correspondents=None,
     document_types=None,
@@ -43,14 +30,11 @@ def _make_cache(
     cache = TaxonomyCache(client, taxonomy_limit)
     return cache
 
-
 def _corr(id: int, name: str, count: int = 0) -> dict:
     return {"id": id, "name": name, "document_count": count}
 
-
 def _dtype(id: int, name: str, count: int = 0) -> dict:
     return {"id": id, "name": name, "document_count": count}
-
 
 def _tag(id: int, name: str, count: int = 0, matching_algorithm=None) -> dict:
     d = {"id": id, "name": name, "document_count": count}
@@ -58,68 +42,45 @@ def _tag(id: int, name: str, count: int = 0, matching_algorithm=None) -> dict:
         d["matching_algorithm"] = matching_algorithm
     return d
 
-
-# ===================================================================
-# refresh()
-# ===================================================================
-
 class TestRefresh:
     """refresh() populates internal caches from the client."""
 
     def test_refresh_populates_correspondent_names(self):
-        # Arrange
         cache = _make_cache(correspondents=[_corr(1, "Acme", 10), _corr(2, "Beta", 5)])
 
-        # Act
         cache.refresh()
 
-        # Assert
         names = cache.correspondent_names()
         assert "Acme" in names
         assert "Beta" in names
 
     def test_refresh_populates_document_type_names(self):
-        # Arrange
         cache = _make_cache(document_types=[_dtype(1, "Invoice", 3)])
 
-        # Act
         cache.refresh()
 
-        # Assert
         assert "Invoice" in cache.document_type_names()
 
     def test_refresh_populates_tag_names(self):
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025", 7)])
 
-        # Act
         cache.refresh()
 
-        # Assert
         assert "2025" in cache.tag_names()
 
     def test_refresh_calls_client_list_methods(self):
-        # Arrange
         cache = _make_cache()
 
-        # Act
         cache.refresh()
 
-        # Assert
         cache._client.list_correspondents.assert_called_once()
         cache._client.list_document_types.assert_called_once()
         cache._client.list_tags.assert_called_once()
-
-
-# ===================================================================
-# correspondent_names / document_type_names / tag_names
-# ===================================================================
 
 class TestNameLists:
     """Cached name lists are sorted by usage and limited."""
 
     def test_correspondent_names_sorted_by_usage_descending(self):
-        # Arrange
         cache = _make_cache(correspondents=[
             _corr(1, "Alpha", 1),
             _corr(2, "Beta", 10),
@@ -127,403 +88,284 @@ class TestNameLists:
         ])
         cache.refresh()
 
-        # Act
         names = cache.correspondent_names()
 
-        # Assert
         assert names == ["Beta", "Gamma", "Alpha"]
 
     def test_names_limited_by_taxonomy_limit(self):
-        # Arrange
         corrs = [_corr(i, f"Corr{i}", i) for i in range(50)]
         cache = _make_cache(correspondents=corrs, taxonomy_limit=10)
         cache.refresh()
 
-        # Act
         names = cache.correspondent_names()
 
-        # Assert
         assert len(names) == 10
 
     def test_names_returns_copy(self):
         """Mutating the returned list does not affect internal state."""
-        # Arrange
         cache = _make_cache(correspondents=[_corr(1, "Acme", 1)])
         cache.refresh()
 
-        # Act
         names = cache.correspondent_names()
         names.append("EXTRA")
 
-        # Assert
         assert "EXTRA" not in cache.correspondent_names()
-
-
-# ===================================================================
-# get_or_create_correspondent_id
-# ===================================================================
 
 class TestGetOrCreateCorrespondentId:
     """Resolve or create correspondents by name."""
 
     def test_exact_match_returns_id(self):
-        # Arrange
         cache = _make_cache(correspondents=[_corr(42, "Acme Corp")])
         cache.refresh()
 
-        # Act
         result = cache.get_or_create_correspondent_id("Acme Corp")
 
-        # Assert
         assert result == 42
 
     def test_substring_match_returns_id(self):
         """'Revolut Ltd' should match existing 'Revolut' via substring."""
-        # Arrange
         cache = _make_cache(correspondents=[_corr(7, "Revolut")])
         cache.refresh()
 
-        # Act
         result = cache.get_or_create_correspondent_id("Revolut Ltd")
 
-        # Assert
         assert result == 7
 
     def test_creates_when_not_found(self):
-        # Arrange
         cache = _make_cache(correspondents=[])
         cache.refresh()
         cache._client.create_correspondent.side_effect = None
         cache._client.create_correspondent.return_value = {"id": 99, "name": "NewCorp"}
 
-        # Act
         result = cache.get_or_create_correspondent_id("NewCorp")
 
-        # Assert
         assert result == 99
         cache._client.create_correspondent.assert_called_once_with("NewCorp")
 
     def test_empty_name_returns_none(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
 
-        # Act
         result = cache.get_or_create_correspondent_id("")
 
-        # Assert
         assert result is None
 
     def test_whitespace_name_returns_none(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
 
-        # Act
         result = cache.get_or_create_correspondent_id("   ")
 
-        # Assert
         assert result is None
 
     def test_creation_failure_refreshes_and_retries_lookup(self):
         """If creation fails, refresh cache and retry the lookup."""
-        # Arrange
         cache = _make_cache(correspondents=[])
         cache.refresh()
 
         # First call to create fails; after refresh, the item appears
-        cache._client.create_correspondent.side_effect = RuntimeError("conflict")
+        cache._client.create_correspondent.side_effect = OSError("conflict")
         cache._client.list_correspondents.return_value = [_corr(88, "Conflict Corp")]
 
-        # Act
         result = cache.get_or_create_correspondent_id("Conflict Corp")
 
-        # Assert
         assert result == 88
 
     def test_creation_failure_raises_if_still_not_found(self):
         """If creation fails and refresh doesn't reveal the item, re-raise."""
-        # Arrange
         cache = _make_cache(correspondents=[])
         cache.refresh()
-        cache._client.create_correspondent.side_effect = RuntimeError("gone")
+        cache._client.create_correspondent.side_effect = OSError("gone")
         cache._client.list_correspondents.return_value = []
 
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="gone"):
+        with pytest.raises(OSError, match="gone"):
             cache.get_or_create_correspondent_id("Ghost Corp")
-
-
-# ===================================================================
-# get_or_create_document_type_id
-# ===================================================================
 
 class TestGetOrCreateDocumentTypeId:
     """Resolve or create document types by name."""
 
     def test_exact_match_returns_id(self):
-        # Arrange
         cache = _make_cache(document_types=[_dtype(10, "Invoice")])
         cache.refresh()
 
-        # Act
         result = cache.get_or_create_document_type_id("Invoice")
 
-        # Assert
         assert result == 10
 
     def test_no_substring_matching(self):
         """Document types use exact normalized match only (no substring)."""
-        # Arrange
         cache = _make_cache(document_types=[_dtype(10, "Invoice")])
         cache.refresh()
         cache._client.create_document_type.side_effect = None
         cache._client.create_document_type.return_value = {"id": 20, "name": "Tax Invoice"}
 
-        # Act
         result = cache.get_or_create_document_type_id("Tax Invoice")
 
-        # Assert
         assert result == 20  # created, not matched
         cache._client.create_document_type.assert_called_once()
 
     def test_creates_when_not_found(self):
-        # Arrange
         cache = _make_cache(document_types=[])
         cache.refresh()
         cache._client.create_document_type.side_effect = None
         cache._client.create_document_type.return_value = {"id": 30, "name": "Receipt"}
 
-        # Act
         result = cache.get_or_create_document_type_id("Receipt")
 
-        # Assert
         assert result == 30
 
     def test_empty_name_returns_none(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
 
-        # Act / Assert
         assert cache.get_or_create_document_type_id("") is None
 
     def test_creation_failure_refreshes_and_retries(self):
-        # Arrange
         cache = _make_cache(document_types=[])
         cache.refresh()
-        cache._client.create_document_type.side_effect = RuntimeError("dup")
+        cache._client.create_document_type.side_effect = OSError("dup")
         cache._client.list_document_types.return_value = [_dtype(50, "Payslip")]
 
-        # Act
         result = cache.get_or_create_document_type_id("Payslip")
 
-        # Assert
         assert result == 50
-
-
-# ===================================================================
-# get_or_create_tag_ids
-# ===================================================================
 
 class TestGetOrCreateTagIds:
     """Resolve or create multiple tags."""
 
     def test_resolves_existing_tags(self):
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025"), _tag(2, "invoice")])
         cache.refresh()
 
-        # Act
         ids = cache.get_or_create_tag_ids(["2025", "invoice"])
 
-        # Assert
         assert set(ids) == {1, 2}
 
     def test_creates_missing_tags(self):
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025")])
         cache.refresh()
         cache._client.create_tag.side_effect = None
         cache._client.create_tag.return_value = {"id": 100, "name": "bills"}
 
-        # Act
         ids = cache.get_or_create_tag_ids(["2025", "bills"])
 
-        # Assert
         assert 1 in ids
         assert 100 in ids
         cache._client.create_tag.assert_called_once()
 
     def test_deduplicates_input_tags(self):
         """Duplicate tags in input are deduplicated."""
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025")])
         cache.refresh()
 
-        # Act
         ids = cache.get_or_create_tag_ids(["2025", "2025", "2025"])
 
-        # Assert
         assert ids == [1]
 
     def test_creation_failure_refreshes_and_retries_lookup(self):
-        # Arrange
         cache = _make_cache(tags=[])
         cache.refresh()
-        cache._client.create_tag.side_effect = RuntimeError("conflict")
+        cache._client.create_tag.side_effect = OSError("conflict")
         cache._client.list_tags.return_value = [_tag(77, "magic")]
 
-        # Act
         ids = cache.get_or_create_tag_ids(["magic"])
 
-        # Assert
         assert ids == [77]
 
     def test_filters_none_ids(self):
         """Tags with id=None in the response are filtered out."""
-        # Arrange
         cache = _make_cache(tags=[{"id": None, "name": "broken"}])
         cache.refresh()
 
-        # Act
         ids = cache.get_or_create_tag_ids(["broken"])
 
-        # Assert
         assert ids == []
 
     def test_empty_tag_list_returns_empty(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
 
-        # Act / Assert
         assert cache.get_or_create_tag_ids([]) == []
-
-
-# ===================================================================
-# _index_items
-# ===================================================================
 
 class TestIndexItems:
     """_index_items builds a normalized-name → item lookup."""
 
     def test_indexes_by_normalizer(self):
-        # Arrange
         items = [{"name": "Acme Corp"}, {"name": "Beta LLC"}]
 
-        # Act
         mapping = _index_items(items, normalize_simple)
 
-        # Assert
         assert "acme corp" in mapping
         assert "beta llc" in mapping
 
     def test_skips_blank_names(self):
-        # Arrange
         items = [{"name": ""}, {"name": "  "}, {"name": "Valid"}]
 
-        # Act
         mapping = _index_items(items, normalize_simple)
 
-        # Assert
         assert len(mapping) == 1
         assert "valid" in mapping
 
     def test_skips_items_without_name(self):
-        # Arrange
         items = [{"id": 1}, {"name": "Has Name"}]
 
-        # Act
         mapping = _index_items(items, normalize_simple)
 
-        # Assert
         assert len(mapping) == 1
 
     def test_with_normalize_name_strips_suffixes(self):
-        # Arrange
         items = [{"name": "Revolut Ltd"}]
 
-        # Act
         mapping = _index_items(items, normalize_name)
 
-        # Assert
         assert "revolut" in mapping
-
-
-# ===================================================================
-# _match_item
-# ===================================================================
 
 class TestMatchItem:
     """_match_item with exact and substring matching."""
 
     def test_exact_match(self):
-        # Arrange
         mapping = {"acme": {"id": 1, "name": "Acme"}}
 
-        # Act
         result = _match_item("Acme", mapping, normalize_simple, allow_substring=False)
 
-        # Assert
         assert result == {"id": 1, "name": "Acme"}
 
     def test_exact_match_not_found(self):
-        # Arrange
         mapping = {"acme": {"id": 1, "name": "Acme"}}
 
-        # Act
         result = _match_item("Beta", mapping, normalize_simple, allow_substring=False)
 
-        # Assert
         assert result is None
 
     def test_substring_match_key_in_normalized(self):
         """Existing key 'revolut' found inside query 'revolut ltd'."""
-        # Arrange
         mapping = {"revolut": {"id": 7, "name": "Revolut"}}
 
-        # Act
         result = _match_item("Revolut Ltd", mapping, normalize_name, allow_substring=True)
 
-        # Assert
         assert result == {"id": 7, "name": "Revolut"}
 
     def test_substring_match_normalized_in_key(self):
         """Query 'acme' found inside existing key 'acme holdings'."""
-        # Arrange
         mapping = {"acme holdings": {"id": 8, "name": "Acme Holdings"}}
 
-        # Act
         result = _match_item("Acme", mapping, normalize_name, allow_substring=True)
 
-        # Assert
         assert result == {"id": 8, "name": "Acme Holdings"}
 
     def test_substring_not_allowed(self):
-        # Arrange
         mapping = {"revolut": {"id": 7, "name": "Revolut"}}
 
-        # Act
         result = _match_item("Revolut Ltd", mapping, normalize_simple, allow_substring=False)
 
-        # Assert
         assert result is None
 
     def test_empty_name_returns_none(self):
-        # Arrange
         mapping = {"acme": {"id": 1, "name": "Acme"}}
 
-        # Act
         result = _match_item("", mapping, normalize_simple, allow_substring=True)
 
-        # Assert
         assert result is None
-
-
-# ===================================================================
-# _get_usage_count
-# ===================================================================
 
 class TestGetUsageCount:
     """_get_usage_count handles different Paperless field name variants."""
@@ -549,11 +391,6 @@ class TestGetUsageCount:
     def test_priority_document_count_over_documents(self):
         """document_count is checked first."""
         assert _get_usage_count({"document_count": 10, "documents": [1, 2]}) == 10
-
-
-# ===================================================================
-# _top_names
-# ===================================================================
 
 class TestTopNames:
     """_top_names returns sorted, limited, deduplicated names."""
@@ -597,69 +434,46 @@ class TestTopNames:
         result = _top_names(items, limit=10)
         assert result == ["Alpha", "Zeta"]
 
-
-# ===================================================================
-# _infer_matching_algorithm
-# ===================================================================
-
 class TestInferMatchingAlgorithm:
     """_infer_matching_algorithm detects int vs string convention."""
 
     def test_infers_int_from_existing_tags(self):
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025", matching_algorithm=0)])
         cache.refresh()
 
-        # Act
         result = cache._infer_matching_algorithm()
 
-        # Assert
         assert result == 0
 
     def test_infers_string_from_existing_tags(self):
-        # Arrange
         cache = _make_cache(tags=[_tag(1, "2025", matching_algorithm="none")])
         cache.refresh()
 
-        # Act
         result = cache._infer_matching_algorithm()
 
-        # Assert
         assert result == "none"
 
     def test_defaults_to_string_none_when_no_tags(self):
-        # Arrange
         cache = _make_cache(tags=[])
         cache.refresh()
 
-        # Act
         result = cache._infer_matching_algorithm()
 
-        # Assert
         assert result == "none"
 
     def test_defaults_when_tags_lack_matching_algorithm(self):
-        # Arrange
         cache = _make_cache(tags=[{"id": 1, "name": "test"}])
         cache.refresh()
 
-        # Act
         result = cache._infer_matching_algorithm()
 
-        # Assert
         assert result == "none"
-
-
-# ===================================================================
-# Thread safety
-# ===================================================================
 
 class TestThreadSafety:
     """Concurrent access should not corrupt internal state."""
 
     def test_concurrent_refresh_and_lookup(self):
         """Multiple threads calling refresh() and name lookups."""
-        # Arrange
         client = make_mock_paperless()
         corrs = [_corr(i, f"Corr{i}", i) for i in range(20)]
         client.list_correspondents.return_value = corrs
@@ -678,59 +492,46 @@ class TestThreadSafety:
             except Exception as exc:
                 errors.append(exc)
 
-        # Act
         threads = [threading.Thread(target=worker) for _ in range(4)]
         for t in threads:
             t.start()
         for t in threads:
             t.join(timeout=10)
 
-        # Assert
         assert errors == [], f"Thread errors: {errors}"
 
     def test_rlock_allows_reentrant_access(self):
         """Verify the cache uses RLock (reentrant) not Lock."""
-        # Arrange
         cache = _make_cache(correspondents=[_corr(1, "Acme")])
         cache.refresh()
 
         # Act — get_or_create_correspondent_id calls refresh() on failure,
         # which also acquires the lock. With RLock this should not deadlock.
-        cache._client.create_correspondent.side_effect = RuntimeError("dup")
+        cache._client.create_correspondent.side_effect = OSError("dup")
         cache._client.list_correspondents.return_value = [_corr(1, "Acme")]
 
         # This would deadlock with a plain Lock instead of RLock
         result = cache.get_or_create_correspondent_id("Acme")
 
-        # Assert
         assert result == 1
-
-
-# ===================================================================
-# Creation failure → refresh → still not found → re-raises
-# ===================================================================
 
 class TestCreationFailureReraise:
     """When creation fails and refresh doesn't find the item, re-raise."""
 
     def test_document_type_creation_fails_and_not_found_reraises(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
-        cache._client.create_document_type.side_effect = RuntimeError("create failed")
+        cache._client.create_document_type.side_effect = OSError("create failed")
         cache._client.list_document_types.return_value = []  # still not found after refresh
 
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="create failed"):
+        with pytest.raises(OSError, match="create failed"):
             cache.get_or_create_document_type_id("NewType")
 
     def test_tag_creation_fails_and_not_found_reraises(self):
-        # Arrange
         cache = _make_cache()
         cache.refresh()
-        cache._client.create_tag.side_effect = RuntimeError("create failed")
+        cache._client.create_tag.side_effect = OSError("create failed")
         cache._client.list_tags.return_value = []  # still not found after refresh
 
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="create failed"):
+        with pytest.raises(OSError, match="create failed"):
             cache.get_or_create_tag_ids(["BrandNewTag"])

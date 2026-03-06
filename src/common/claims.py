@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import httpx
 import structlog
 
-from .paperless import PaperlessClient
+from .paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from .tags import extract_tags
 
 log = structlog.get_logger(__name__)
@@ -23,12 +22,12 @@ def claim_processing_tag(
     Returns ``True`` on success, ``False`` if already claimed or on error.
     Returns ``True`` immediately when *tag_id* is ``None`` (lock not configured).
     """
-    if not tag_id:
+    if tag_id is None:
         return True
 
     try:
         latest = paperless_client.get_document(doc_id)
-    except (OSError, httpx.HTTPError):
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to refresh document before claiming processing tag",
             doc_id=doc_id,
@@ -50,8 +49,8 @@ def claim_processing_tag(
     updated_tags = set(current_tags)
     updated_tags.add(tag_id)
     try:
-        paperless_client.update_document_metadata(doc_id, tags=list(updated_tags))
-    except (OSError, httpx.HTTPError):
+        paperless_client.update_document_metadata(doc_id, tags=updated_tags)
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to claim processing tag",
             doc_id=doc_id,
@@ -62,7 +61,7 @@ def claim_processing_tag(
 
     try:
         verified = paperless_client.get_document(doc_id)
-    except (OSError, httpx.HTTPError):
+    except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
             "Failed to refresh document after claiming processing tag",
             doc_id=doc_id,

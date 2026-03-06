@@ -1,21 +1,14 @@
-"""
-Comprehensive unit tests for classifier.constants module.
-"""
+"""Tests for classifier.constants."""
 
 from __future__ import annotations
 
+from common.constants import REFUSAL_PHRASES
 from classifier.constants import (
     BLACKLISTED_TAGS,
-    ERROR_PHRASES,
     GENERIC_DOCUMENT_TYPES,
     MODEL_FOOTER_RE,
     PAGE_HEADER_RE,
 )
-
-
-# ---------------------------------------------------------------------------
-# PAGE_HEADER_RE
-# ---------------------------------------------------------------------------
 
 class TestPageHeaderRe:
     """Tests for PAGE_HEADER_RE pattern."""
@@ -45,11 +38,6 @@ class TestPageHeaderRe:
     def test_does_not_match_extra_text_on_line(self):
         assert PAGE_HEADER_RE.search("--- Page 1 --- extra") is None
 
-
-# ---------------------------------------------------------------------------
-# MODEL_FOOTER_RE
-# ---------------------------------------------------------------------------
-
 class TestModelFooterRe:
     """Tests for MODEL_FOOTER_RE pattern."""
 
@@ -69,11 +57,6 @@ class TestModelFooterRe:
     def test_no_match_without_prefix(self):
         assert MODEL_FOOTER_RE.search("model: gpt-5-mini") is None
 
-
-# ---------------------------------------------------------------------------
-# GENERIC_DOCUMENT_TYPES
-# ---------------------------------------------------------------------------
-
 class TestGenericDocumentTypes:
     """Tests for GENERIC_DOCUMENT_TYPES constant."""
 
@@ -87,11 +70,6 @@ class TestGenericDocumentTypes:
     def test_all_entries_are_lowercase(self):
         for value in GENERIC_DOCUMENT_TYPES:
             assert value == value.lower()
-
-
-# ---------------------------------------------------------------------------
-# BLACKLISTED_TAGS
-# ---------------------------------------------------------------------------
 
 class TestBlacklistedTags:
     """Tests for BLACKLISTED_TAGS constant."""
@@ -107,24 +85,19 @@ class TestBlacklistedTags:
         for value in BLACKLISTED_TAGS:
             assert value == value.lower()
 
-
-# ---------------------------------------------------------------------------
-# ERROR_PHRASES
-# ---------------------------------------------------------------------------
-
 class TestErrorPhrases:
-    """Tests for ERROR_PHRASES constant."""
+    """Tests for REFUSAL_PHRASES constant."""
 
     def test_is_tuple(self):
-        assert isinstance(ERROR_PHRASES, tuple)
+        assert isinstance(REFUSAL_PHRASES, tuple)
 
     def test_all_entries_are_strings(self):
-        for phrase in ERROR_PHRASES:
+        for phrase in REFUSAL_PHRASES:
             assert isinstance(phrase, str)
 
     def test_not_empty(self):
-        assert len(ERROR_PHRASES) > 0
+        assert len(REFUSAL_PHRASES) > 0
 
     def test_all_entries_are_lowercase(self):
-        for phrase in ERROR_PHRASES:
+        for phrase in REFUSAL_PHRASES:
             assert phrase == phrase.lower(), f"Phrase {phrase!r} is not lowercase"

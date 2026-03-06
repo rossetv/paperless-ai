@@ -1,9 +1,4 @@
-"""
-Comprehensive tests for ``common.retry.retry`` decorator and ``_sleep_backoff``.
-
-Covers success, transient failures, exhaustion, exception filtering,
-exponential backoff with jitter, backoff capping, and ``@wraps`` preservation.
-"""
+"""Tests for common.retry."""
 
 from __future__ import annotations
 
@@ -12,11 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from common.retry import _sleep_backoff, retry
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 class _FakeSettings:
     """Minimal object satisfying the ``RetrySettings`` protocol."""
@@ -44,11 +34,6 @@ class _Client:
         self._call_count += 1
         return "ok"
 
-
-# ===================================================================
-# Successful call on first attempt
-# ===================================================================
-
 class TestSuccessFirstAttempt:
 
     def test_returns_value_immediately(self):
@@ -56,11 +41,6 @@ class TestSuccessFirstAttempt:
         result = client.flaky("hello")
         assert result == "hello"
         assert client._call_count == 1
-
-
-# ===================================================================
-# Retry succeeds after transient failures
-# ===================================================================
 
 class TestRetryAfterTransientFailure:
 
@@ -103,11 +83,6 @@ class TestRetryAfterTransientFailure:
         assert result == "done"
         assert len(attempts) == 3
 
-
-# ===================================================================
-# Raises after MAX_RETRIES exhausted
-# ===================================================================
-
 class TestExhaustedRetries:
 
     @patch("common.retry._sleep_backoff")
@@ -123,11 +98,6 @@ class TestExhaustedRetries:
 
         assert mock_sleep.call_count == 2  # sleeps between attempts 1-2, 2-3
 
-
-# ===================================================================
-# MAX_RETRIES < 1 raises ValueError
-# ===================================================================
-
 class TestInvalidMaxRetries:
 
     def test_zero_retries_raises(self):
@@ -139,11 +109,6 @@ class TestInvalidMaxRetries:
         client = _Client(_FakeSettings(max_retries=-1))
         with pytest.raises(ValueError, match="MAX_RETRIES must be >= 1"):
             client.flaky("x")
-
-
-# ===================================================================
-# Only retries specified exception types
-# ===================================================================
 
 class TestExceptionFiltering:
 
@@ -182,11 +147,6 @@ class TestExceptionFiltering:
         result = decorated(client, "ok")
         assert result == "ok"
         assert len(attempts) == 2
-
-
-# ===================================================================
-# Exponential backoff with jitter
-# ===================================================================
 
 class TestSleepBackoff:
 
@@ -231,11 +191,6 @@ class TestSleepBackoff:
         _sleep_backoff(1, settings)
         mock_uniform.assert_called_once_with(0.8, 1.2)
 
-
-# ===================================================================
-# Backoff caps at MAX_RETRY_BACKOFF_SECONDS
-# ===================================================================
-
 class TestBackoffCap:
 
     @patch("common.retry.time.sleep")
@@ -253,11 +208,6 @@ class TestBackoffCap:
         _sleep_backoff(8, settings)  # 2^8 * 1.2 = 307.2, capped to 5
         delay = mock_sleep.call_args[0][0]
         assert delay == 5.0
-
-
-# ===================================================================
-# Preserves function name via @wraps
-# ===================================================================
 
 class TestWraps:
 

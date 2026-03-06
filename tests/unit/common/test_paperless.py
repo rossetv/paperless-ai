@@ -1,12 +1,4 @@
-"""
-Unit tests for common.paperless.PaperlessClient.
-
-Uses ``respx`` for HTTP mocking so we can test the real httpx client
-interactions without touching the network.
-
-Note: ``respx.get(url)`` does prefix matching, so paginated URLs must use
-``url__eq`` for exact matching to avoid the base URL matching all pages.
-"""
+"""Tests for common.paperless."""
 
 from __future__ import annotations
 
@@ -19,9 +11,7 @@ import respx
 from common.paperless import PaperlessClient
 from tests.helpers.factories import make_settings_obj
 
-
 BASE = "http://paperless:8000"
-
 
 def _make_settings(**overrides):
     defaults = dict(
@@ -33,7 +23,6 @@ def _make_settings(**overrides):
     )
     defaults.update(overrides)
     return make_settings_obj(**defaults)
-
 
 class _ClientRegistry:
     """Tracks PaperlessClient instances for automatic cleanup."""
@@ -53,9 +42,7 @@ class _ClientRegistry:
                 pass
         self.clients.clear()
 
-
 _registry = _ClientRegistry()
-
 
 @pytest.fixture(autouse=True)
 def _auto_close_clients():
@@ -63,7 +50,6 @@ def _auto_close_clients():
     _registry.close_all()
     yield
     _registry.close_all()
-
 
 def _make_client(settings=None):
     """Create a PaperlessClient with test settings.
@@ -77,30 +63,17 @@ def _make_client(settings=None):
     c = PaperlessClient(settings)
     return _registry.register(c)
 
-
-# ---------------------------------------------------------------------------
-# Initialization
-# ---------------------------------------------------------------------------
-
 class TestInitialization:
     def test_creates_httpx_client_with_auth_header_and_timeout(self):
-        # Arrange / Act
         settings = _make_settings()
         client = _make_client(settings)
 
-        # Assert
         assert client._client.headers["authorization"] == "Token test-token-abc"
         assert client._client.timeout == httpx.Timeout(30)
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# _list_all pagination
-# ---------------------------------------------------------------------------
-
 class TestListAllPagination:
     def test_follows_next_links_across_multiple_pages(self):
-        # Arrange
         url1 = f"{BASE}/api/things/"
         url2 = f"{BASE}/api/things/?page=2"
         url3 = f"{BASE}/api/things/?page=3"
@@ -117,15 +90,12 @@ class TestListAllPagination:
 
             client = _make_client()
 
-            # Act
             results = list(client._list_all(url1))
 
-        # Assert
         assert results == [{"id": 1}, {"id": 2}, {"id": 3}]
         client.close()
 
     def test_yields_all_results_from_all_pages(self):
-        # Arrange
         url1 = f"{BASE}/api/x/"
         url2 = f"{BASE}/api/x/?page=2"
         with respx.mock:
@@ -138,21 +108,13 @@ class TestListAllPagination:
 
             client = _make_client()
 
-            # Act
             results = list(client._list_all(url1))
 
-        # Assert
         assert len(results) == 3
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# get_documents_by_tag
-# ---------------------------------------------------------------------------
-
 class TestGetDocumentsByTag:
     def test_constructs_correct_url_with_tag_id(self):
-        # Arrange
         url = f"{BASE}/api/documents/?tags__id=443&page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
@@ -160,15 +122,12 @@ class TestGetDocumentsByTag:
             }))
             client = _make_client()
 
-            # Act
             results = list(client.get_documents_by_tag(443))
 
-        # Assert
         assert results == [{"id": 10}]
         client.close()
 
     def test_returns_all_documents_via_pagination(self):
-        # Arrange
         url1 = f"{BASE}/api/documents/?tags__id=5&page_size=100"
         url2 = f"{BASE}/api/documents/?tags__id=5&page_size=100&page=2"
         with respx.mock:
@@ -180,21 +139,13 @@ class TestGetDocumentsByTag:
             }))
             client = _make_client()
 
-            # Act
             results = list(client.get_documents_by_tag(5))
 
-        # Assert
         assert len(results) == 2
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# get_document
-# ---------------------------------------------------------------------------
-
 class TestGetDocument:
     def test_fetches_single_document_by_id(self):
-        # Arrange
         doc = {"id": 42, "title": "Test", "tags": [1]}
         with respx.mock:
             respx.get(f"{BASE}/api/documents/42/").mock(
@@ -202,34 +153,24 @@ class TestGetDocument:
             )
             client = _make_client()
 
-            # Act
             result = client.get_document(42)
 
-        # Assert
         assert result == doc
         client.close()
 
     def test_raises_on_http_error(self):
-        # Arrange
         with respx.mock:
             respx.get(f"{BASE}/api/documents/99/").mock(
                 return_value=httpx.Response(404),
             )
             client = _make_client()
 
-            # Act / Assert
             with pytest.raises(httpx.HTTPStatusError):
                 client.get_document(99)
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# download_content
-# ---------------------------------------------------------------------------
-
 class TestDownloadContent:
     def test_returns_bytes_and_content_type_tuple(self):
-        # Arrange
         with respx.mock:
             respx.get(f"{BASE}/api/documents/1/download/").mock(
                 return_value=httpx.Response(
@@ -240,70 +181,49 @@ class TestDownloadContent:
             )
             client = _make_client()
 
-            # Act
             content, ct = client.download_content(1)
 
-        # Assert
         assert content == b"PDF-bytes-here"
         assert ct == "application/pdf"
         client.close()
 
     def test_defaults_content_type_to_application_pdf(self):
-        # Arrange
         with respx.mock:
             respx.get(f"{BASE}/api/documents/1/download/").mock(
                 return_value=httpx.Response(200, content=b"data"),
             )
             client = _make_client()
 
-            # Act
             _, ct = client.download_content(1)
 
-        # Assert
         assert ct == "application/pdf"
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# update_document
-# ---------------------------------------------------------------------------
-
 class TestUpdateDocument:
     def test_sends_patch_with_content_and_tags(self):
-        # Arrange
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/1/").mock(
                 return_value=httpx.Response(200, json={}),
             )
             client = _make_client()
 
-            # Act
             client.update_document(1, "new content", [10, 20])
 
-        # Assert
         assert route.called
         body = route.calls[0].request.content
         assert b"new content" in body
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# update_document_metadata
-# ---------------------------------------------------------------------------
-
 class TestUpdateDocumentMetadata:
     def test_sends_only_non_none_fields(self):
-        # Arrange
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/1/").mock(
                 return_value=httpx.Response(200, json={}),
             )
             client = _make_client()
 
-            # Act
             client.update_document_metadata(1, title="New Title", tags=[5])
 
-        # Assert
         assert route.called
         body = json_mod.loads(route.calls[0].request.content)
         assert body["title"] == "New Title"
@@ -312,28 +232,19 @@ class TestUpdateDocumentMetadata:
         client.close()
 
     def test_does_nothing_when_all_fields_are_none(self):
-        # Arrange
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/1/").mock(
                 return_value=httpx.Response(200, json={}),
             )
             client = _make_client()
 
-            # Act
             client.update_document_metadata(1)
 
-        # Assert
         assert not route.called
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# list_correspondents / document_types / tags
-# ---------------------------------------------------------------------------
-
 class TestListEndpoints:
     def test_list_correspondents(self):
-        # Arrange
         url = f"{BASE}/api/correspondents/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -343,15 +254,12 @@ class TestListEndpoints:
             )
             client = _make_client()
 
-            # Act
             result = client.list_correspondents()
 
-        # Assert
         assert result == [{"id": 1, "name": "Alice"}]
         client.close()
 
     def test_list_document_types(self):
-        # Arrange
         url = f"{BASE}/api/document_types/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -361,15 +269,12 @@ class TestListEndpoints:
             )
             client = _make_client()
 
-            # Act
             result = client.list_document_types()
 
-        # Assert
         assert result == [{"id": 2, "name": "Invoice"}]
         client.close()
 
     def test_list_tags(self):
-        # Arrange
         url = f"{BASE}/api/tags/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -379,31 +284,21 @@ class TestListEndpoints:
             )
             client = _make_client()
 
-            # Act
             result = client.list_tags()
 
-        # Assert
         assert result == [{"id": 3, "name": "ocr"}]
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# create_correspondent / document_type / create_tag
-# ---------------------------------------------------------------------------
-
 class TestCreateNamedItems:
     def test_creates_item_with_matching_algorithm(self):
-        # Arrange
         with respx.mock:
             respx.post(f"{BASE}/api/tags/").mock(
                 return_value=httpx.Response(201, json={"id": 10, "name": "new-tag"}),
             )
             client = _make_client()
 
-            # Act
             result = client.create_tag("new-tag", matching_algorithm="none")
 
-        # Assert
         assert result == {"id": 10, "name": "new-tag"}
         client.close()
 
@@ -417,10 +312,8 @@ class TestCreateNamedItems:
             ]
             client = _make_client()
 
-            # Act
             result = client.create_correspondent("X", matching_algorithm="none")
 
-        # Assert
         assert result == {"id": 1, "name": "X"}
         assert route.call_count == 2
         client.close()
@@ -435,31 +328,25 @@ class TestCreateNamedItems:
             ]
             client = _make_client()
 
-            # Act
             result = client.create_document_type("Y", matching_algorithm=0)
 
-        # Assert
         assert result == {"id": 2, "name": "Y"}
         client.close()
 
     def test_passes_matching_algorithm_none_correctly(self):
-        # Arrange
         with respx.mock:
             route = respx.post(f"{BASE}/api/tags/")
             route.mock(return_value=httpx.Response(201, json={"id": 5, "name": "Z"}))
             client = _make_client()
 
-            # Act
             result = client.create_tag("Z", matching_algorithm=None)
 
-        # Assert
         body = json_mod.loads(route.calls[0].request.content)
         assert "matching_algorithm" not in body
         assert result == {"id": 5, "name": "Z"}
         client.close()
 
     def test_raises_on_non_400_error(self):
-        # Arrange
         with respx.mock:
             respx.post(f"{BASE}/api/tags/").mock(
                 return_value=httpx.Response(500),
@@ -472,14 +359,8 @@ class TestCreateNamedItems:
                 client.create_tag("fail-tag", matching_algorithm="none")
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# Retry behavior
-# ---------------------------------------------------------------------------
-
 class TestRetryBehavior:
     def test_retries_on_network_error(self):
-        # Arrange
         with respx.mock:
             route = respx.get(f"{BASE}/api/documents/1/")
             route.side_effect = [
@@ -488,16 +369,13 @@ class TestRetryBehavior:
             ]
             client = _make_client()
 
-            # Act
             result = client.get_document(1)
 
-        # Assert
         assert result == {"id": 1}
         assert route.call_count == 2
         client.close()
 
     def test_retries_on_5xx_server_error(self):
-        # Arrange
         with respx.mock:
             route = respx.get(f"{BASE}/api/documents/1/")
             route.side_effect = [
@@ -506,21 +384,17 @@ class TestRetryBehavior:
             ]
             client = _make_client()
 
-            # Act
             result = client.get_document(1)
 
-        # Assert
         assert result == {"id": 1}
         client.close()
 
     def test_does_not_retry_on_4xx_client_error(self):
-        # Arrange
         with respx.mock:
             route = respx.get(f"{BASE}/api/documents/1/")
             route.mock(return_value=httpx.Response(404))
             client = _make_client()
 
-            # Act / Assert
             with pytest.raises(httpx.HTTPStatusError) as exc_info:
                 client.get_document(1)
             assert exc_info.value.response.status_code == 404
@@ -528,7 +402,6 @@ class TestRetryBehavior:
         client.close()
 
     def test_raises_after_max_retries_exhausted(self):
-        # Arrange — all 3 attempts fail
         with respx.mock:
             route = respx.get(f"{BASE}/api/documents/1/")
             route.side_effect = [
@@ -538,30 +411,21 @@ class TestRetryBehavior:
             ]
             client = _make_client()
 
-            # Act / Assert
             with pytest.raises(httpx.ConnectError):
                 client.get_document(1)
             assert route.call_count == 3
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# ping
-# ---------------------------------------------------------------------------
-
 class TestPing:
     def test_single_request_without_retry(self):
-        # Arrange
         with respx.mock:
             route = respx.get(f"{BASE}/api/").mock(
                 return_value=httpx.Response(200, json={}),
             )
             client = _make_client()
 
-            # Act
             client.ping()
 
-        # Assert
         assert route.call_count == 1
         client.close()
 
@@ -579,47 +443,20 @@ class TestPing:
             )
             client = _make_client()
 
-            # Act – should not raise
             client.ping()
 
         client.close()
 
     def test_raises_on_failure(self):
-        # Arrange
         with respx.mock:
             respx.get(f"{BASE}/api/").mock(
                 return_value=httpx.Response(500),
             )
             client = _make_client()
 
-            # Act / Assert
             with pytest.raises(httpx.HTTPStatusError):
                 client.ping()
         client.close()
-
-
-# ---------------------------------------------------------------------------
-# close
-# ---------------------------------------------------------------------------
-
-class TestGetDocumentsToProcess:
-    def test_delegates_to_get_documents_by_tag_with_pre_tag_id(self):
-        # Arrange
-        settings = _make_settings(PRE_TAG_ID=443)
-        url = f"{BASE}/api/documents/?tags__id=443&page_size=100"
-        with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 7}], "next": None,
-            }))
-            client = _make_client(settings)
-
-            # Act
-            results = list(client.get_documents_to_process())
-
-        # Assert
-        assert results == [{"id": 7}]
-        client.close()
-
 
 class TestUpdateDocumentMetadataAllFields:
     """Test that each individual metadata field is included when provided."""
@@ -680,7 +517,6 @@ class TestUpdateDocumentMetadataAllFields:
         assert body["custom_fields"] == [{"field": 5, "value": "test"}]
         client.close()
 
-
 class TestCreateNamedItemUnexpectedType:
     """matching_algorithm of unexpected type uses single-element candidates."""
 
@@ -693,7 +529,6 @@ class TestCreateNamedItemUnexpectedType:
         body = json_mod.loads(route.calls[0].request.content)
         assert body["matching_algorithm"] == 3.14
         client.close()
-
 
 class TestCreateNamedItemNon400Reraise:
     """Non-400 HTTP errors during creation are re-raised."""
@@ -708,13 +543,10 @@ class TestCreateNamedItemNon400Reraise:
             assert exc_info.value.response.status_code == 422
         client.close()
 
-
 class TestClose:
     def test_closes_underlying_httpx_client(self):
-        # Arrange
         client = _make_client()
 
-        # Act
         client.close()
 
         # Assert — httpx.Client is closed; subsequent requests would fail

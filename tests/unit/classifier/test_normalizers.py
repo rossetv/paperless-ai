@@ -1,15 +1,8 @@
-"""
-Comprehensive unit tests for classifier.normalizers module.
-"""
+"""Tests for classifier.normalizers."""
 
 from __future__ import annotations
 
 from classifier.normalizers import COMPANY_SUFFIXES, normalize_name, normalize_simple
-
-
-# ---------------------------------------------------------------------------
-# normalize_simple
-# ---------------------------------------------------------------------------
 
 class TestNormalizeSimple:
     """Tests for normalize_simple(value)."""
@@ -31,11 +24,6 @@ class TestNormalizeSimple:
 
     def test_single_word(self):
         assert normalize_simple("HELLO") == "hello"
-
-
-# ---------------------------------------------------------------------------
-# normalize_name
-# ---------------------------------------------------------------------------
 
 class TestNormalizeName:
     """Tests for normalize_name(value)."""
@@ -82,11 +70,6 @@ class TestNormalizeName:
     def test_all_suffixes_result_in_empty(self):
         # If the entire name is company suffixes
         assert normalize_name("Ltd Inc") == ""
-
-
-# ---------------------------------------------------------------------------
-# COMPANY_SUFFIXES
-# ---------------------------------------------------------------------------
 
 class TestCompanySuffixes:
     """Tests for the COMPANY_SUFFIXES constant."""
