@@ -108,3 +108,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Tooling artifacts
+.desloppify/
+.claude/
+review_batch_*.json
