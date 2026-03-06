@@ -1,4 +1,11 @@
-"""Semaphore-based concurrency limiter for LLM API calls."""
+"""Semaphore-based concurrency limiter for LLM API calls.
+
+The module-global ``llm_limiter`` singleton **must** be initialised by
+calling ``llm_limiter.init(max_concurrent)`` before any ``acquire()``
+call.  This is done inside :func:`common.bootstrap.bootstrap_daemon`
+*after* ``setup_libraries`` and *before* preflight checks.  Calling
+``acquire()`` without prior ``init()`` raises ``RuntimeError``.
+"""
 
 from __future__ import annotations
 

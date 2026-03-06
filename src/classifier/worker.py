@@ -120,9 +120,7 @@ class ClassificationProcessor:
 
             result, model = self.classifier.classify_text(
                 input_text,
-                self.taxonomy_cache.correspondent_names(),
-                self.taxonomy_cache.document_type_names(),
-                self.taxonomy_cache.tag_names(),
+                self.taxonomy_cache.taxonomy_context(),
                 truncation_note="\n".join(truncation_notes) if truncation_notes else None,
             )
 
@@ -215,6 +213,10 @@ class ClassificationProcessor:
         Mark the document with an error tag and clear pipeline tags.
 
         Delegates to :func:`common.tags.finalize_document_with_error`.
+
+        This convenience wrapper exists so callers don't need to pass
+        ``self.paperless_client``, ``self.doc_id``, and ``self.settings``
+        at every call site.
         """
         finalize_document_with_error(
             self.paperless_client,

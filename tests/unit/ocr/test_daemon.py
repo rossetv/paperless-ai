@@ -8,14 +8,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ocr.daemon import main, _iter_docs_to_ocr, _process_document
+from tests.helpers.factories import make_document, make_settings_obj
+from tests.helpers.mocks import make_mock_paperless
 
-def _make_settings(**overrides):
-    from tests.helpers.factories import make_settings_obj
+
+def _settings(**overrides):
     return make_settings_obj(**overrides)
 
-def _make_mock_paperless(**overrides):
-    from tests.helpers.mocks import make_mock_paperless
-    return make_mock_paperless(**overrides)
+def _doc(id, tags=None):
+    """Shorthand for a document dict."""
+    return make_document(id=id, tags=tags or [])
 
 class TestMain:
     @patch("ocr.daemon.bootstrap_daemon", return_value=None)
@@ -28,11 +30,30 @@ class TestMain:
             get_pre_tag_id=unittest.mock.ANY,
         )
 
+    @patch("ocr.daemon.bootstrap_daemon", return_value=None)
+    @patch("ocr.daemon.run_polling_threadpool")
+    def test_does_not_start_loop_on_config_error(self, mock_loop, mock_bootstrap):
+        main()
+
+        mock_loop.assert_not_called()
+
+    @patch("ocr.daemon.bootstrap_daemon")
+    def test_bootstrap_lambdas_extract_correct_settings(self, mock_bootstrap):
+        mock_bootstrap.return_value = None
+
+        main()
+
+        call_kwargs = mock_bootstrap.call_args[1]
+        # Verify the lambdas actually extract the right fields from settings
+        settings = _settings(OCR_PROCESSING_TAG_ID=777, PRE_TAG_ID=888)
+        assert call_kwargs["get_processing_tag_id"](settings) == 777
+        assert call_kwargs["get_pre_tag_id"](settings) == 888
+
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
     def test_happy_path_enters_polling_loop(self, mock_bootstrap, mock_poll):
-        settings = _make_settings()
-        list_client = _make_mock_paperless()
+        settings = _settings()
+        list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
 
         main()
@@ -46,8 +67,8 @@ class TestMain:
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
     def test_list_client_closed_in_finally(self, mock_bootstrap, mock_poll):
-        settings = _make_settings()
-        list_client = _make_mock_paperless()
+        settings = _settings()
+        list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
         mock_poll.side_effect = KeyboardInterrupt()
 
@@ -56,11 +77,62 @@ class TestMain:
 
         list_client.close.assert_called_once()
 
+    @patch("ocr.daemon._iter_docs_to_ocr")
+    @patch("ocr.daemon.run_polling_threadpool")
+    @patch("ocr.daemon.bootstrap_daemon")
+    def test_fetch_work_delegates_to_iter_docs_to_ocr(
+        self, mock_bootstrap, mock_poll, mock_iter
+    ):
+        settings = _settings()
+        list_client = make_mock_paperless()
+        mock_bootstrap.return_value = (settings, list_client)
+        mock_iter.return_value = iter([_doc(1), _doc(2)])
+
+        captured_fetch = None
+
+        def capture_loop(**kwargs):
+            nonlocal captured_fetch
+            captured_fetch = kwargs["fetch_work"]
+
+        mock_poll.side_effect = capture_loop
+
+        main()
+
+        assert captured_fetch is not None
+        result = captured_fetch()
+        mock_iter.assert_called_once_with(list_client, settings)
+        assert len(result) == 2
+
+    @patch("ocr.daemon._process_document")
+    @patch("ocr.daemon.run_polling_threadpool")
+    @patch("ocr.daemon.bootstrap_daemon")
+    def test_process_item_delegates_to_process_document(
+        self, mock_bootstrap, mock_poll, mock_process
+    ):
+        settings = _settings()
+        list_client = make_mock_paperless()
+        mock_bootstrap.return_value = (settings, list_client)
+
+        captured_process = None
+
+        def capture_loop(**kwargs):
+            nonlocal captured_process
+            captured_process = kwargs["process_item"]
+
+        mock_poll.side_effect = capture_loop
+
+        main()
+
+        assert captured_process is not None
+        doc = _doc(1, tags=[443])
+        captured_process(doc)
+        mock_process.assert_called_once_with(doc, settings)
+
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
     def test_list_client_closed_on_normal_exit(self, mock_bootstrap, mock_poll):
-        settings = _make_settings()
-        list_client = _make_mock_paperless()
+        settings = _settings()
+        list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
 
         main()
@@ -69,13 +141,13 @@ class TestMain:
 
 class TestIterDocsToOcrYieldsValid:
     def test_yields_valid_document(self):
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=None,
         )
         doc = {"id": 1, "title": "Test", "tags": [443]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -84,7 +156,7 @@ class TestIterDocsToOcrYieldsValid:
         assert result[0] == doc
 
     def test_yields_multiple_documents(self):
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=None,
@@ -93,7 +165,7 @@ class TestIterDocsToOcrYieldsValid:
             {"id": 1, "title": "Doc 1", "tags": [443]},
             {"id": 2, "title": "Doc 2", "tags": [443]},
         ]
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = docs
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -102,9 +174,9 @@ class TestIterDocsToOcrYieldsValid:
 
 class TestIterDocsToOcrSkipsNonIntegerId:
     def test_skips_none_id(self):
-        settings = _make_settings(PRE_TAG_ID=443, POST_TAG_ID=444)
+        settings = _settings(PRE_TAG_ID=443, POST_TAG_ID=444)
         doc = {"id": None, "title": "Bad", "tags": [443]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -112,9 +184,9 @@ class TestIterDocsToOcrSkipsNonIntegerId:
         assert result == []
 
     def test_skips_string_id(self):
-        settings = _make_settings(PRE_TAG_ID=443, POST_TAG_ID=444)
+        settings = _settings(PRE_TAG_ID=443, POST_TAG_ID=444)
         doc = {"id": "abc", "title": "Bad", "tags": [443]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -122,9 +194,9 @@ class TestIterDocsToOcrSkipsNonIntegerId:
         assert result == []
 
     def test_skips_missing_id(self):
-        settings = _make_settings(PRE_TAG_ID=443, POST_TAG_ID=444)
+        settings = _settings(PRE_TAG_ID=443, POST_TAG_ID=444)
         doc = {"title": "No ID", "tags": [443]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -134,13 +206,13 @@ class TestIterDocsToOcrSkipsNonIntegerId:
 class TestIterDocsToOcrSkipsPostTagged:
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_skips_doc_with_post_tag_and_removes_stale_pre(self, mock_remove):
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=999,
         )
         doc = {"id": 1, "title": "Done", "tags": [443, 444]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -157,13 +229,13 @@ class TestIterDocsToOcrSkipsPostTagged:
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_skips_doc_with_post_tag_without_pre_tag(self, mock_remove):
         # Arrange — has post tag but not pre tag (shouldn't call remove)
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=None,
         )
         doc = {"id": 1, "title": "Done", "tags": [444]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -173,13 +245,13 @@ class TestIterDocsToOcrSkipsPostTagged:
 
 class TestIterDocsToOcrSkipsClaimed:
     def test_skips_doc_with_processing_tag(self):
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=999,
         )
         doc = {"id": 1, "title": "Claimed", "tags": [443, 999]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -188,13 +260,13 @@ class TestIterDocsToOcrSkipsClaimed:
 
     def test_no_processing_tag_configured_does_not_skip(self):
         # Arrange — processing tag not configured, should not skip
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=None,
         )
         doc = {"id": 1, "title": "Ready", "tags": [443]}
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = [doc]
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -204,7 +276,7 @@ class TestIterDocsToOcrSkipsClaimed:
 class TestIterDocsToOcrMixed:
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_mixed_bag_of_documents(self, mock_remove):
-        settings = _make_settings(
+        settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
             OCR_PROCESSING_TAG_ID=999,
@@ -216,7 +288,7 @@ class TestIterDocsToOcrMixed:
             {"id": 3, "title": "Claimed", "tags": [443, 999]},    # skip: claimed
             {"id": 4, "title": "Also Valid", "tags": [443]},      # valid
         ]
-        list_client = _make_mock_paperless()
+        list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = docs
 
         result = list(_iter_docs_to_ocr(list_client, settings))
@@ -232,7 +304,7 @@ class TestProcessDocument:
     def test_creates_client_provider_processes_and_closes(
         self, MockProcessor, MockClient, MockProvider
     ):
-        settings = _make_settings()
+        settings = _settings()
         doc = {"id": 1, "title": "Test", "tags": [443]}
         mock_client_instance = MagicMock()
         MockClient.return_value = mock_client_instance
@@ -257,7 +329,7 @@ class TestProcessDocument:
     def test_client_closed_even_on_process_error(
         self, MockProcessor, MockClient, MockProvider
     ):
-        settings = _make_settings()
+        settings = _settings()
         doc = {"id": 1, "title": "Test", "tags": [443]}
         mock_client_instance = MagicMock()
         MockClient.return_value = mock_client_instance
@@ -277,7 +349,7 @@ class TestProcessDocument:
     def test_provider_created_with_settings(
         self, MockProcessor, MockClient, MockProvider
     ):
-        settings = _make_settings()
+        settings = _settings()
         doc = {"id": 1, "title": "T", "tags": [443]}
         MockClient.return_value = MagicMock()
         MockProvider.return_value = MagicMock()

@@ -9,7 +9,10 @@ import openai
 
 from classifier.provider import ClassificationProvider
 from classifier.result import ClassificationResult
+from classifier.taxonomy import TaxonomyContext
 from tests.helpers.factories import make_settings_obj
+
+_EMPTY_TAXONOMY = TaxonomyContext(correspondents=[], document_types=[], tags=[])
 
 def _make_provider(**settings_overrides) -> ClassificationProvider:
     """Create a ClassificationProvider with a mock Settings object."""
@@ -70,7 +73,8 @@ class TestClassifyTextHappyPath:
         provider._create_completion = MagicMock(return_value=response)
 
         result, model = provider.classify_text(
-            "Some document text", ["Acme"], ["Invoice"], ["bills"]
+            "Some document text",
+            TaxonomyContext(correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]),
         )
 
         assert isinstance(result, ClassificationResult)
@@ -82,7 +86,7 @@ class TestClassifyTextHappyPath:
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         stats = provider.get_stats()
         assert stats["attempts"] == 1
@@ -100,7 +104,7 @@ class TestClassifyTextInvalidJsonFallback:
             side_effect=[bad_response, good_response]
         )
 
-        result, model = provider.classify_text("text", [], [], [])
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert result is not None
         assert model == "model-b"
@@ -118,7 +122,7 @@ class TestClassifyTextInvalidJsonFallback:
             side_effect=[none_response, good_response]
         )
 
-        result, model = provider.classify_text("text", [], [], [])
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert result is not None
         assert model == "model-b"
@@ -134,7 +138,7 @@ class TestClassifyTextApiErrorFallback:
             side_effect=[_api_error(), good_response]
         )
 
-        result, model = provider.classify_text("text", [], [], [])
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert result is not None
         assert model == "model-b"
@@ -149,7 +153,7 @@ class TestClassifyTextAllModelsFail:
         provider = _make_provider(AI_MODELS=["model-a", "model-b"])
         provider._create_completion = MagicMock(side_effect=_api_error())
 
-        result, model = provider.classify_text("text", [], [], [])
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert result is None
         assert model == ""
@@ -159,7 +163,7 @@ class TestClassifyTextAllModelsFail:
         bad_response = _make_response("garbage")
         provider._create_completion = MagicMock(return_value=bad_response)
 
-        result, model = provider.classify_text("text", [], [], [])
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert result is None
         assert model == ""
@@ -171,7 +175,7 @@ class TestClassifyTextEmptyInput:
     def test_empty_string_returns_none(self):
         provider = _make_provider()
 
-        result, model = provider.classify_text("", [], [], [])
+        result, model = provider.classify_text("", _EMPTY_TAXONOMY)
 
         assert result is None
         assert model == ""
@@ -179,7 +183,7 @@ class TestClassifyTextEmptyInput:
     def test_whitespace_only_returns_none(self):
         provider = _make_provider()
 
-        result, model = provider.classify_text("   \n\t  ", [], [], [])
+        result, model = provider.classify_text("   \n\t  ", _EMPTY_TAXONOMY)
 
         assert result is None
         assert model == ""
@@ -188,7 +192,7 @@ class TestClassifyTextEmptyInput:
         provider = _make_provider()
         provider._create_completion = MagicMock()
 
-        provider.classify_text("   ", [], [], [])
+        provider.classify_text("   ", _EMPTY_TAXONOMY)
 
         provider._create_completion.assert_not_called()
 
@@ -207,8 +211,9 @@ class TestClassifyTextTruncationNote:
         provider._create_completion = capture_completion
 
         provider.classify_text(
-            "text", ["Acme"], ["Invoice"], ["tag"],
-            truncation_note="NOTE: Truncated to 3 pages."
+            "text",
+            TaxonomyContext(correspondents=["Acme"], document_types=["Invoice"], tags=["tag"]),
+            truncation_note="NOTE: Truncated to 3 pages.",
         )
 
         user_msg = captured_kwargs["messages"][1]["content"]
@@ -225,7 +230,7 @@ class TestClassifyTextTruncationNote:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [], truncation_note=None)
+        provider.classify_text("text", _EMPTY_TAXONOMY, truncation_note=None)
 
         user_msg = captured_kwargs["messages"][1]["content"]
         assert "NOTE:" not in user_msg
@@ -244,7 +249,7 @@ class TestTemperatureHandling:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "temperature" not in captured_kwargs
 
@@ -259,7 +264,7 @@ class TestTemperatureHandling:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "temperature" in captured_kwargs
         assert captured_kwargs["temperature"] == 0.2
@@ -278,7 +283,7 @@ class TestMaxTokensHandling:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert captured_kwargs["max_tokens"] == 500
 
@@ -293,7 +298,7 @@ class TestMaxTokensHandling:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "max_tokens" not in captured_kwargs
 
@@ -496,8 +501,8 @@ class TestStatsTracking:
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
-        provider.classify_text("text", [], [], [])
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         stats = provider.get_stats()
         assert stats["attempts"] == 2
@@ -507,7 +512,7 @@ class TestStatsTracking:
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
         provider.reset_stats()
 
         stats = provider.get_stats()
@@ -534,7 +539,7 @@ class TestResponseFormat:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "response_format" in captured_kwargs
 
@@ -549,7 +554,7 @@ class TestResponseFormat:
 
         provider._create_completion = capture_completion
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "response_format" not in captured_kwargs
 
@@ -560,6 +565,6 @@ class TestModelDeduplication:
         provider = _make_provider(AI_MODELS=["model-a", "model-a", "model-b"])
         provider._create_completion = MagicMock(side_effect=_api_error())
 
-        provider.classify_text("text", [], [], [])
+        provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert provider.get_stats()["attempts"] == 2

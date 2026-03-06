@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import types
-from typing import Any, Generator, Iterable, TypedDict
+from typing import Any, Generator, Iterable, TypedDict, Unpack
 
 import httpx
 import structlog
@@ -23,6 +23,9 @@ RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
 PAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)
 
 
+# TypedDict is used here because it maps directly to **kwargs with Unpack,
+# giving callers keyword-level type checking while remaining a plain dict
+# at runtime (no instantiation overhead, easy JSON serialisation).
 class DocumentMetadataUpdate(TypedDict, total=False):
     """Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`."""
 
@@ -177,33 +180,19 @@ class PaperlessClient:
     def update_document_metadata(
         self,
         doc_id: int,
-        *,
-        title: str | None = None,
-        correspondent_id: int | None = None,
-        document_type_id: int | None = None,
-        document_date: str | None = None,
-        tags: set[int] | None = None,
-        language: str | None = None,
-        custom_fields: list[dict] | None = None,
+        **kwargs: Unpack[DocumentMetadataUpdate],
     ) -> None:
         """Update document metadata fields on Paperless.
 
-        ``None`` values are silently dropped.
+        Accepts keyword arguments matching :class:`DocumentMetadataUpdate`.
+        Keys not provided (or absent) are silently skipped.
         """
-        _field_map: list[tuple[str, str, object]] = [
-            ("title", "title", title),
-            ("correspondent_id", "correspondent", correspondent_id),
-            ("document_type_id", "document_type", document_type_id),
-            ("document_date", "created", document_date),
-            ("tags", "tags", tags),
-            ("language", "language", language),
-            ("custom_fields", "custom_fields", custom_fields),
-        ]
         payload: dict[str, object] = {}
-        for _key, api_field, value in _field_map:
+        for key, api_field in self._METADATA_FIELDS.items():
+            value = kwargs.get(key)  # type: ignore[literal-required]
             if value is None:
                 continue
-            if _key == "tags":
+            if key == "tags":
                 value = list(value)  # type: ignore[arg-type]
             payload[api_field] = value
 

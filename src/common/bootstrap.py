@@ -1,4 +1,19 @@
-"""Shared daemon startup sequence: config, logging, preflight, and stale-lock recovery."""
+"""Shared daemon startup sequence: config, logging, preflight, and stale-lock recovery.
+
+Boot order (enforced by :func:`bootstrap_daemon`)::
+
+    1. Settings          – parse and validate environment variables
+    2. Logging           – configure structlog / stdlib logging
+    3. Libraries         – initialise the OpenAI client (``_openai_holder``)
+    4. Signal handlers   – register SIGTERM / SIGINT
+    5. Concurrency       – ``llm_limiter.init()``
+    6. Preflight checks  – verify Paperless-ngx connectivity and tags
+    7. Stale-lock recovery
+
+Steps 3 and 5 initialise module-global singletons that raise ``RuntimeError``
+if used before their init functions are called.  The order above guarantees
+that dependents are ready before any consumer code runs.
+"""
 
 from __future__ import annotations
 

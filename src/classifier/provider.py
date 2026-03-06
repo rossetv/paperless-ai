@@ -16,6 +16,7 @@ from .prompts import (
     DEFAULT_CLASSIFY_TEMPERATURE,
 )
 from .result import ClassificationResult, parse_classification_response
+from .taxonomy import TaxonomyContext
 
 log = structlog.get_logger(__name__)
 
@@ -111,9 +112,7 @@ class ClassificationProvider(OpenAIChatMixin):
     def classify_text(
         self,
         text: str,
-        correspondents: list[str],
-        document_types: list[str],
-        tags: list[str],
+        taxonomy: TaxonomyContext,
         truncation_note: str | None = None,
     ) -> tuple[ClassificationResult | None, str]:
         """
@@ -127,7 +126,7 @@ class ClassificationProvider(OpenAIChatMixin):
             return None, ""
 
         user_content = self._build_user_message(
-            text, correspondents, document_types, tags, truncation_note
+            text, taxonomy, truncation_note
         )
         messages = [
             {"role": "system", "content": CLASSIFICATION_PROMPT},
@@ -164,9 +163,7 @@ class ClassificationProvider(OpenAIChatMixin):
     def _build_user_message(
         self,
         text: str,
-        correspondents: list[str],
-        document_types: list[str],
-        tags: list[str],
+        taxonomy: TaxonomyContext,
         truncation_note: str | None,
     ) -> str:
         parts: list[str] = []
@@ -190,11 +187,11 @@ class ClassificationProvider(OpenAIChatMixin):
         # Taxonomy context so the LLM can reuse existing items
         parts.append(
             "Existing correspondents (prefer these when possible):\n"
-            f"{json.dumps(correspondents, ensure_ascii=True)}\n\n"
+            f"{json.dumps(taxonomy.correspondents, ensure_ascii=True)}\n\n"
             "Existing document types (prefer these when possible):\n"
-            f"{json.dumps(document_types, ensure_ascii=True)}\n\n"
+            f"{json.dumps(taxonomy.document_types, ensure_ascii=True)}\n\n"
             "Existing tags (prefer these when possible):\n"
-            f"{json.dumps(tags, ensure_ascii=True)}\n\n"
+            f"{json.dumps(taxonomy.tags, ensure_ascii=True)}\n\n"
             "Document transcription:\n"
             f"{text}"
         )

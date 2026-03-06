@@ -1,4 +1,16 @@
-"""Shared LLM helpers: retried chat completion, model dedup, thread-safe stats."""
+"""Shared LLM helpers: retried chat completion, model dedup, thread-safe stats.
+
+Module-global singletons
+~~~~~~~~~~~~~~~~~~~~~~~~
+``_openai_holder`` stores the shared :class:`openai.OpenAI` client.  It is
+initialised by :func:`common.library_setup.setup_libraries` during
+:func:`common.bootstrap.bootstrap_daemon`.  Calling :func:`get_openai_client`
+before initialisation raises ``RuntimeError``.
+
+Boot order: Settings -> logging -> ``setup_libraries`` (inits ``_openai_holder``)
+-> signal handlers -> ``llm_limiter.init`` (see :mod:`common.concurrency`).
+See :func:`common.bootstrap.bootstrap_daemon` for the canonical sequence.
+"""
 
 from __future__ import annotations
 

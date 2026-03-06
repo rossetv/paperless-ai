@@ -6,6 +6,9 @@ import json
 from dataclasses import dataclass
 
 
+# frozen dataclass: this is a structured value object constructed after parsing
+# LLM JSON output.  frozen=True enforces immutability so results can be safely
+# shared across threads and logged without risk of accidental mutation.
 @dataclass(frozen=True)
 class ClassificationResult:
     """Immutable container for classification LLM output fields."""

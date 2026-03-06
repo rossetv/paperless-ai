@@ -14,8 +14,21 @@ T = TypeVar("T")
 
 
 class RetrySettings(Protocol):
+    """The settings attributes required by the retry decorator."""
+
     MAX_RETRIES: int
     MAX_RETRY_BACKOFF_SECONDS: int
+
+
+class HasRetrySettings(Protocol):
+    """Protocol for classes whose methods can be decorated with ``@retry``.
+
+    Any class using the ``@retry`` decorator must expose a ``settings``
+    attribute that satisfies :class:`RetrySettings`.  This protocol makes
+    that implicit contract explicit for static type checkers.
+    """
+
+    settings: RetrySettings
 
 
 def retry(
@@ -29,7 +42,7 @@ def retry(
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
-        def wrapper(self, *args, **kwargs) -> T:
+        def wrapper(self: HasRetrySettings, *args, **kwargs) -> T:
             settings: RetrySettings = self.settings
             if settings.MAX_RETRIES < 1:
                 raise ValueError("MAX_RETRIES must be >= 1")

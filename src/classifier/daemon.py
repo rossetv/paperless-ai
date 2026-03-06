@@ -20,6 +20,8 @@ def _process_document(
     doc: dict, settings: Settings, taxonomy_cache: TaxonomyCache
 ) -> None:
     """Process a single Paperless document with its own HTTP session and provider."""
+    # Each thread gets its own PaperlessClient (and thus its own HTTP session)
+    # because httpx sessions are not thread-safe.
     paperless = PaperlessClient(settings)
     classifier = ClassificationProvider(settings)
     try:

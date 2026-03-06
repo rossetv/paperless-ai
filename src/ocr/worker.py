@@ -213,6 +213,10 @@ class OcrProcessor:
         Mark the document as errored and remove all pipeline tags.
 
         Delegates to :func:`common.tags.finalize_document_with_error`.
+
+        This convenience wrapper exists so callers don't need to pass
+        ``self.paperless_client``, ``self.doc_id``, and ``self.settings``
+        at every call site.
         """
         finalize_document_with_error(
             self.paperless_client,
