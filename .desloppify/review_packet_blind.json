@@ -243,7 +243,7 @@
         {
           "file": "src/common/paperless.py",
           "importers": 7,
-          "excerpt": "\"\"\"Paperless-ngx REST API client with automatic retries.\"\"\"\n\nfrom __future__ import annotations\n\nimport types\nfrom typing import Any, Generator, Iterable, TypedDict\n\nimport httpx\nimport structlog\n\nfrom .config import Settings\nfrom .retry import retry\n\nlog = structlog.get_logger(__name__)\n\n# Exceptions that should trigger a retry: transient network errors and\n# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).\nRETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)\n\n# Exceptions that callers should catch when wrapping PaperlessClient calls\n# in non-fatal error handling.  Covers network errors, HTTP errors, and\n# unexpected response shapes.\nPAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)\n\n\nclass DocumentMetadataUpdate(TypedDict, total=False):\n    \"\"\"Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.\"\"\"\n\n    title: str\n    correspondent_id: int\n\n... (223 more lines)"
+          "excerpt": "\"\"\"Paperless-ngx REST API client with automatic retries.\"\"\"\n\nfrom __future__ import annotations\n\nimport types\nfrom typing import Any, Generator, Iterable, TypedDict\n\nimport httpx\nimport structlog\n\nfrom .config import Settings\nfrom .retry import retry\n\nlog = structlog.get_logger(__name__)\n\n# Exceptions that should trigger a retry: transient network errors and\n# 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).\nRETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)\n\n# Exceptions that callers should catch when wrapping PaperlessClient calls\n# in non-fatal error handling.  Covers network errors, HTTP errors, and\n# unexpected response shapes.\nPAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)\n\n\nclass DocumentMetadataUpdate(TypedDict, total=False):\n    \"\"\"Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.\"\"\"\n\n    title: str\n    correspondent_id: int\n\n... (231 more lines)"
         },
         {
           "file": "tests/helpers/mocks.py",
@@ -398,7 +398,7 @@
         },
         "common/": {
           "throws": 24,
-          "try_catch": 22,
+          "try_catch": 23,
           "returns_null": 3
         },
         "ocr/": {
@@ -626,7 +626,7 @@
             "tags.py",
             "utils.py"
           ],
-          "total_loc": 1540,
+          "total_loc": 1556,
           "avg_fan_in": 1.6,
           "avg_fan_out": 1.6,
           "zones": {
@@ -740,7 +740,7 @@
             "test_taxonomy.py",
             "test_worker.py"
           ],
-          "total_loc": 3101,
+          "total_loc": 3052,
           "avg_fan_in": 0.0,
           "avg_fan_out": 0.5,
           "zones": {
@@ -813,7 +813,7 @@
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13286
+      "total_loc": 13253
     },
     "migration_signals": {
       "pattern_pairs": [
@@ -829,7 +829,7 @@
     "naming_vocabulary": {
       "prefixes": {
         "get": 12,
-        "is": 9,
+        "is": 8,
         "make": 8,
         "update": 7,
         "parse": 4,
@@ -847,7 +847,7 @@
         "on": 1,
         "should": 1
       },
-      "total_names": 1281
+      "total_names": 1266
     },
     "error_conventions": {
       "try_catch": 22,
@@ -944,7 +944,7 @@
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling "
       ],
       "tests/unit/classifier/test_worker.py": [
-        "structural: Needs decomposition: large (574 LOC) / complexity score 54",
+        "structural: Needs decomposition: large (525 LOC)",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1848,8 +1848,14 @@
       "src/ocr/provider.py": [
         "test_coverage: No direct tests (127 LOC, 3 importers) \u2014 covered only via imports from tested mo"
       ],
+      "src/classifier/worker.py": [
+        "test_coverage: No direct tests (316 LOC, 2 importers) \u2014 covered only via imports from tested mo"
+      ],
       "src/ocr/daemon.py": [
         "test_coverage: Untested module (76 LOC, 0 importers)"
+      ],
+      "src/ocr/worker.py": [
+        "stale_wontfix: Stale wontfix (scan_decay): re-triage `smells::src/ocr/worker.py::swallowed_erro"
       ],
       "tests/unit/common/test_bootstrap.py": [
         "security: [B101] Use of assert detected. The enclosed code will be removed when compiling ",
@@ -1946,8 +1952,8 @@
     },
     "codebase_stats": {
       "total_files": 85,
-      "total_loc": 13286,
-      "avg_file_loc": 156
+      "total_loc": 13253,
+      "avg_file_loc": 155
     },
     "sibling_conventions": {
       "classifier/": {
@@ -1974,7 +1980,7 @@
     },
     "ai_debt_signals": {
       "file_signals": {},
-      "codebase_avg_comment_ratio": 0.027
+      "codebase_avg_comment_ratio": 0.026
     },
     "error_strategies": {
       "src/classifier/daemon.py": "try_catch",

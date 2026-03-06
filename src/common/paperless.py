@@ -47,26 +47,28 @@ class PaperlessClient:
         )
 
     def _raise_for_status_if_server_error(self, response: httpx.Response) -> None:
+        """Raise on 5xx so the ``@retry`` decorator can retry the request.
+
+        Only server errors are retried; 4xx errors are left for the caller's
+        ``raise_for_status()`` to handle without retry.
+        """
         if response.status_code >= 500:
             response.raise_for_status()
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _get(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.get(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _patch(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.patch(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
 
     @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
     def _post(self, url: str, **kwargs: Any) -> httpx.Response:
-        kwargs.setdefault("timeout", self.settings.REQUEST_TIMEOUT)
         response = self._client.post(url, **kwargs)
         self._raise_for_status_if_server_error(response)
         return response
