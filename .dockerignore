@@ -81,6 +81,12 @@ celerybeat-schedule
 .spyderworkspace
 .ropeproject/
 
+# IDE and OS files.
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
 # Project-local tooling artifacts and one-off review files.
 .desloppify/
 .claude/
