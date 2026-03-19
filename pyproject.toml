@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paperless-ocr"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx~=0.28",
+    "openai~=1.35",
+    "Pillow~=10.4",
+    "pdf2image~=1.17",
+    "structlog~=24.2",
+]
+
+[project.scripts]
+paperless-ai = "ocr.daemon:main"
+paperless-classifier-daemon = "classifier.daemon:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (fast, no I/O)",
+    "integration: Integration tests (module boundaries)",
+    "e2e: End-to-end tests (full workflows)",
+]
+addopts = "-q --tb=short"

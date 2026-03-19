@@ -1,0 +1,88 @@
+# Version-control metadata is never needed in the build context.
+.git/
+.github/
+
+# Python bytecode and interpreter caches.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Native extension build outputs and packaging artifacts.
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+
+# Test, coverage, and type-checker outputs.
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# Installer logs, application logs, and local database files.
+pip-log.txt
+pip-delete-this-directory.txt
+*.log
+local_settings.py
+db.sqlite3
+
+# Local virtual environments and environment files.
+.env
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Notebook and documentation build artifacts.
+.ipynb_checkpoints/
+docs/_build/
+site/
+
+# Framework- and tool-specific local artifacts.
+*.mo
+*.pot
+instance/
+.webassets-cache/
+.scrapy/
+target/
+celerybeat-schedule
+.sage.py
+.spyderproject
+.spyderworkspace
+.ropeproject/
+
+# Project-local tooling artifacts and one-off review files.
+.desloppify/
+.claude/
+review_batch_*.json
+scorecard.png
