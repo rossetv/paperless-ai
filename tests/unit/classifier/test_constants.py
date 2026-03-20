@@ -17,7 +17,7 @@ class TestPageHeaderRe:
         assert PAGE_HEADER_RE.search("--- Page 1 ---") is not None
 
     def test_matches_page_with_model_annotation(self):
-        assert PAGE_HEADER_RE.search("--- Page 3 (gpt-5-mini) ---") is not None
+        assert PAGE_HEADER_RE.search("--- Page 3 (gpt-5.4-mini) ---") is not None
 
     def test_matches_multidigit_page_number(self):
         assert PAGE_HEADER_RE.search("--- Page 42 ---") is not None
@@ -42,20 +42,20 @@ class TestModelFooterRe:
     """Tests for MODEL_FOOTER_RE pattern."""
 
     def test_matches_single_model(self):
-        match = MODEL_FOOTER_RE.search("Transcribed by model: gpt-5-mini")
+        match = MODEL_FOOTER_RE.search("Transcribed by model: gpt-5.4-mini")
         assert match is not None
 
     def test_captures_model_list(self):
-        match = MODEL_FOOTER_RE.search("Transcribed by model: gpt-5-mini, o4-mini")
+        match = MODEL_FOOTER_RE.search("Transcribed by model: gpt-5.4-mini, o4-mini")
         assert match is not None
-        assert match.group(1) == "gpt-5-mini, o4-mini"
+        assert match.group(1) == "gpt-5.4-mini, o4-mini"
 
     def test_case_insensitive(self):
-        match = MODEL_FOOTER_RE.search("transcribed by model: gpt-5-mini")
+        match = MODEL_FOOTER_RE.search("transcribed by model: gpt-5.4-mini")
         assert match is not None
 
     def test_no_match_without_prefix(self):
-        assert MODEL_FOOTER_RE.search("model: gpt-5-mini") is None
+        assert MODEL_FOOTER_RE.search("model: gpt-5.4-mini") is None
 
 class TestGenericDocumentTypes:
     """Tests for GENERIC_DOCUMENT_TYPES constant."""

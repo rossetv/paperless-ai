@@ -40,7 +40,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "PAPERLESS_TOKEN": "test-token",
         "OPENAI_API_KEY": "test-api-key",
         "LLM_PROVIDER": "openai",
-        "AI_MODELS": ["gpt-5-mini"],
+        "AI_MODELS": ["gpt-5.4-mini"],
         "OCR_REFUSAL_MARKERS": ["chatgpt refused to transcribe"],
         "OCR_INCLUDE_PAGE_MODELS": False,
         "PRE_TAG_ID": 443,

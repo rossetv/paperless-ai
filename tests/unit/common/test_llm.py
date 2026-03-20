@@ -67,13 +67,13 @@ class TestCreateCompletion:
         _openai_holder.init(mock_openai)
 
         result = client._create_completion(
-            model="gpt-5-mini",
+            model="gpt-5.4-mini",
             messages=[{"role": "user", "content": "hello"}],
         )
 
         assert result is expected
         mock_openai.chat.completions.create.assert_called_once_with(
-            model="gpt-5-mini",
+            model="gpt-5.4-mini",
             messages=[{"role": "user", "content": "hello"}],
         )
 
@@ -93,14 +93,14 @@ class TestCreateCompletion:
         _openai_holder.init(mock_openai)
 
         client._create_completion(
-            model="gpt-5-mini",
+            model="gpt-5.4-mini",
             messages=[],
             temperature=0.5,
             max_tokens=100,
         )
 
         mock_openai.chat.completions.create.assert_called_once_with(
-            model="gpt-5-mini",
+            model="gpt-5.4-mini",
             messages=[],
             temperature=0.5,
             max_tokens=100,

@@ -30,7 +30,7 @@ def _make_processor(
 
     # Default classifier behaviour: successful classification
     result = make_classification_result()
-    classifier.classify_text.return_value = (result, "gpt-5-mini")
+    classifier.classify_text.return_value = (result, "gpt-5.4-mini")
     classifier.get_stats.return_value = {
         "attempts": 1,
         "api_errors": 0,

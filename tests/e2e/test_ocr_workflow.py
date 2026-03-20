@@ -75,7 +75,7 @@ def _make_mock_ocr_provider(transcribe_return=None, transcribe_side_effect=None)
         provider.transcribe_image.return_value = transcribe_return
     else:
         provider.transcribe_image.return_value = (
-            "This is the transcribed text of the document.", "gpt-5-mini"
+            "This is the transcribed text of the document.", "gpt-5.4-mini"
         )
     provider.get_stats.return_value = {
         "attempts": 1,
@@ -106,7 +106,7 @@ class TestOcrHappyPath:
         client.download_content.return_value = (png_bytes, "image/png")
 
         provider = _make_mock_ocr_provider(
-            transcribe_return=("Invoice from Acme Corp. Total: $500.", "gpt-5-mini")
+            transcribe_return=("Invoice from Acme Corp. Total: $500.", "gpt-5.4-mini")
         )
 
         processor = OcrProcessor(
@@ -129,7 +129,7 @@ class TestOcrHappyPath:
 
         assert doc_id == 42
         assert "Invoice from Acme Corp" in content
-        assert "Transcribed by model: gpt-5-mini" in content
+        assert "Transcribed by model: gpt-5.4-mini" in content
         # POST_TAG_ID should be added, PRE_TAG_ID removed
         assert 444 in tags  # POST_TAG_ID
         assert 443 not in tags  # PRE_TAG_ID removed
@@ -162,7 +162,7 @@ class TestOcrHappyPath:
 
         def transcribe_side_effect(image, doc_id=None, page_num=None):
             call_count[0] += 1
-            return (f"Content of page {page_num}.", "gpt-5-mini")
+            return (f"Content of page {page_num}.", "gpt-5.4-mini")
 
         provider = _make_mock_ocr_provider(
             transcribe_side_effect=transcribe_side_effect
@@ -317,7 +317,7 @@ class TestOcrLockContention:
         client.download_content.return_value = (png_bytes, "image/png")
 
         provider = _make_mock_ocr_provider(
-            transcribe_return=("Transcribed text.", "gpt-5-mini")
+            transcribe_return=("Transcribed text.", "gpt-5.4-mini")
         )
 
         processor = OcrProcessor(

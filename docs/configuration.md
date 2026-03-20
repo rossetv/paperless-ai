@@ -20,7 +20,7 @@ All configuration is via environment variables. No config files are needed. Sett
 | `LLM_PROVIDER` | AI provider: `openai` or `ollama` | `openai` | No |
 | `OPENAI_API_KEY` | OpenAI API key | — | Yes if `openai` |
 | `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`) | `http://localhost:11434/v1/` | Yes if `ollama` |
-| `AI_MODELS` | Comma-separated model fallback chain. Tried in order; first success wins. | OpenAI: `gpt-5-mini,gpt-5.4,o4-mini`; Ollama: `gemma3:27b,gemma3:12b` | No |
+| `AI_MODELS` | Comma-separated model fallback chain. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,o4-mini`; Ollama: `gemma3:27b,gemma3:12b` | No |
 
 ---
 

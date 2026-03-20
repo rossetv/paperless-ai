@@ -95,7 +95,7 @@ class TestIsRefusal:
 
 class TestOcrProviderSuccess:
     def test_first_model_success(self):
-        settings = _make_settings(AI_MODELS=["gpt-5-mini"])
+        settings = _make_settings(AI_MODELS=["gpt-5.4-mini"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             return_value=_make_response("Transcribed text")
@@ -105,7 +105,7 @@ class TestOcrProviderSuccess:
         text, model = provider.transcribe_image(image, doc_id=1, page_num=1)
 
         assert text == "Transcribed text"
-        assert model == "gpt-5-mini"
+        assert model == "gpt-5.4-mini"
 
     def test_returns_stripped_text(self):
         settings = _make_settings(AI_MODELS=["model-a"])

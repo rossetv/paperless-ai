@@ -31,15 +31,15 @@ class TestFullOcrPipeline:
         assert len(images) == 1
 
         # Simulate OCR provider returning transcription for each page
-        page_results = [("Hello world from page 1.", "gpt-5-mini")]
+        page_results = [("Hello world from page 1.", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(len(images), page_results)
 
         # Single page: no page headers
         assert "--- Page" not in full_text
         assert "Hello world from page 1." in full_text
-        assert "Transcribed by model: gpt-5-mini" in full_text
-        assert models == {"gpt-5-mini"}
+        assert "Transcribed by model: gpt-5.4-mini" in full_text
+        assert models == {"gpt-5.4-mini"}
 
     def test_multi_page_tiff_through_pipeline(self):
         """Convert a multi-frame TIFF, mock-transcribe pages, assemble text."""
@@ -50,8 +50,8 @@ class TestFullOcrPipeline:
 
         # Simulate transcription for each page with different models
         page_results = [
-            ("Page one content.", "gpt-5-mini"),
-            ("Page two content.", "gpt-5-mini"),
+            ("Page one content.", "gpt-5.4-mini"),
+            ("Page two content.", "gpt-5.4-mini"),
             ("Page three content.", "o4-mini"),
         ]
 
@@ -65,14 +65,14 @@ class TestFullOcrPipeline:
         assert "Page two content." in full_text
         assert "Page three content." in full_text
         # Footer lists both models, sorted
-        assert "Transcribed by model: gpt-5-mini, o4-mini" in full_text
-        assert models == {"gpt-5-mini", "o4-mini"}
+        assert "Transcribed by model: gpt-5.4-mini, o4-mini" in full_text
+        assert models == {"gpt-5.4-mini", "o4-mini"}
 
     def test_multi_page_with_page_model_headers(self):
         """Verify include_page_models adds model names to page headers."""
         # Simulate a 2-page document
         page_results = [
-            ("First page.", "gpt-5-mini"),
+            ("First page.", "gpt-5.4-mini"),
             ("Second page.", "o4-mini"),
         ]
 
@@ -82,9 +82,9 @@ class TestFullOcrPipeline:
             include_page_models=True,
         )
 
-        assert "--- Page 1 (gpt-5-mini) ---" in full_text
+        assert "--- Page 1 (gpt-5.4-mini) ---" in full_text
         assert "--- Page 2 (o4-mini) ---" in full_text
-        assert models == {"gpt-5-mini", "o4-mini"}
+        assert models == {"gpt-5.4-mini", "o4-mini"}
 
 class TestMultiPageMixedResults:
     """Test assembly when some pages are blank or produce empty text."""
@@ -92,9 +92,9 @@ class TestMultiPageMixedResults:
     def test_blank_pages_skipped_in_assembly(self):
         """Blank pages (empty text) are omitted from the assembled output."""
         page_results = [
-            ("First page content.", "gpt-5-mini"),
+            ("First page content.", "gpt-5.4-mini"),
             ("", ""),            # blank page
-            ("Third page content.", "gpt-5-mini"),
+            ("Third page content.", "gpt-5.4-mini"),
             ("   ", ""),         # whitespace-only page
         ]
 
@@ -107,7 +107,7 @@ class TestMultiPageMixedResults:
         assert "--- Page 4 ---" not in full_text
         assert "First page content." in full_text
         assert "Third page content." in full_text
-        assert models == {"gpt-5-mini"}
+        assert models == {"gpt-5.4-mini"}
 
     def test_all_blank_pages_produces_empty_text_with_no_footer(self):
         """When all pages are blank, the assembled text is empty."""
@@ -121,7 +121,7 @@ class TestMultiPageMixedResults:
     def test_error_marker_pages_included(self):
         """Pages with OCR errors appear in the assembled text."""
         page_results = [
-            ("Good content.", "gpt-5-mini"),
+            ("Good content.", "gpt-5.4-mini"),
             (f"{OCR_ERROR_MARKER} Failed to OCR page 2.", ""),
         ]
 
@@ -158,7 +158,7 @@ class TestContentPrepWithAssembly:
         """Build multi-page OCR text, truncate it, verify footer survives."""
         # Build a realistic multi-page document
         page_results = [
-            (f"Content for page {i}. " * 50, "gpt-5-mini")
+            (f"Content for page {i}. " * 50, "gpt-5.4-mini")
             for i in range(1, 11)  # 10 pages
         ]
 
@@ -167,7 +167,7 @@ class TestContentPrepWithAssembly:
         # Verify we have the expected structure
         assert "--- Page 1 ---" in full_text
         assert "--- Page 10 ---" in full_text
-        assert "Transcribed by model: gpt-5-mini" in full_text
+        assert "Transcribed by model: gpt-5.4-mini" in full_text
 
         # Truncate to first 3 pages with 2 tail pages
         truncated, note = truncate_content_by_pages(
@@ -178,7 +178,7 @@ class TestContentPrepWithAssembly:
         )
 
         # Footer must survive truncation
-        assert "Transcribed by model: gpt-5-mini" in truncated
+        assert "Transcribed by model: gpt-5.4-mini" in truncated
         # We should have pages 1-3 (head) and pages 9-10 (tail)
         assert "--- Page 1 ---" in truncated
         assert "--- Page 2 ---" in truncated
@@ -195,8 +195,8 @@ class TestContentPrepWithAssembly:
     def test_short_document_not_truncated(self):
         """A 2-page document within max_pages limit is returned unchanged."""
         page_results = [
-            ("Short page one.", "gpt-5-mini"),
-            ("Short page two.", "gpt-5-mini"),
+            ("Short page one.", "gpt-5.4-mini"),
+            ("Short page two.", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)

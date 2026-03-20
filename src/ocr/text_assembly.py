@@ -24,7 +24,7 @@ def assemble_full_text(
         page_results: Ordered list of ``(text, model_name)`` tuples, one per
             page.  Empty *text* entries are skipped.
         include_page_models: If ``True``, append the model name to each page
-            header (e.g. ``--- Page 1 (gpt-5-mini) ---``).
+            header (e.g. ``--- Page 1 (gpt-5.4-mini) ---``).
 
     Returns:
         A ``(full_text, models_used)`` tuple where *full_text* is the

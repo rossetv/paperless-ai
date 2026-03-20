@@ -120,7 +120,7 @@ The `AI_MODELS` setting defines an ordered list of models. For each page:
 3. Continue down the chain until one succeeds or all fail
 
 Default chains:
-- **OpenAI:** `gpt-5-mini` → `gpt-5.4` → `o4-mini`
+- **OpenAI:** `gpt-5.4-mini` → `gpt-5.4` → `o4-mini`
 - **Ollama:** `gemma3:27b` → `gemma3:12b`
 
 This lets you use cheaper/faster models for most pages and fall back to more capable ones only when needed. Statistics are tracked per-document: `attempts`, `refusals`, `api_errors`, `fallback_successes`.
@@ -144,12 +144,12 @@ After all pages are OCR'd, text is assembled into a single document by `src/ocr/
 --- Page 2 ---
 [transcribed text of page 2]
 
-Transcribed by model: gpt-5-mini, gpt-5.4
+Transcribed by model: gpt-5.4-mini, gpt-5.4
 ```
 
 If `OCR_INCLUDE_PAGE_MODELS=true`, each page header includes the model used:
 ```
---- Page 1 (gpt-5-mini) ---
+--- Page 1 (gpt-5.4-mini) ---
 ```
 
 A **footer** listing all models used during transcription is always appended. The classification daemon later extracts model names from this footer and adds them as tags.

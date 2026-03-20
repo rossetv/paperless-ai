@@ -15,7 +15,7 @@ class TestAssembleFullTextSinglePage:
     """Single-page documents should not get page headers."""
 
     def test_single_page_no_header(self):
-        page_results = [("Hello world", "gpt-5-mini")]
+        page_results = [("Hello world", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(1, page_results)
 
@@ -23,18 +23,18 @@ class TestAssembleFullTextSinglePage:
         assert "Hello world" in full_text
 
     def test_single_page_footer(self):
-        page_results = [("Hello world", "gpt-5-mini")]
+        page_results = [("Hello world", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(1, page_results)
 
-        assert full_text.endswith("Transcribed by model: gpt-5-mini")
+        assert full_text.endswith("Transcribed by model: gpt-5.4-mini")
 
     def test_single_page_models_set(self):
-        page_results = [("Hello world", "gpt-5-mini")]
+        page_results = [("Hello world", "gpt-5.4-mini")]
 
         _, models = assemble_full_text(1, page_results)
 
-        assert models == {"gpt-5-mini"}
+        assert models == {"gpt-5.4-mini"}
 
     def test_single_page_text_and_footer_separated(self):
         page_results = [("Page text", "model-a")]
@@ -163,7 +163,7 @@ class TestAssembleFullTextIncludePageModels:
     def test_model_in_header(self):
         page_results = [
             ("Text A", "gpt-5"),
-            ("Text B", "gpt-5-mini"),
+            ("Text B", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(
@@ -171,18 +171,18 @@ class TestAssembleFullTextIncludePageModels:
         )
 
         assert "--- Page 1 (gpt-5) ---" in full_text
-        assert "--- Page 2 (gpt-5-mini) ---" in full_text
+        assert "--- Page 2 (gpt-5.4-mini) ---" in full_text
 
     def test_model_not_in_header_by_default(self):
         page_results = [
             ("Text A", "gpt-5"),
-            ("Text B", "gpt-5-mini"),
+            ("Text B", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
 
         assert "(gpt-5)" not in full_text
-        assert "(gpt-5-mini)" not in full_text
+        assert "(gpt-5.4-mini)" not in full_text
 
     def test_empty_model_not_in_header(self):
         # Arrange — empty model string should not appear in header

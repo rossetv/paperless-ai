@@ -89,7 +89,7 @@ class Settings:
         else:
             self.OLLAMA_BASE_URL = None
             self.OPENAI_API_KEY = self._get_required_env("OPENAI_API_KEY")
-            default_ai_models = ["gpt-5-mini", "gpt-5.4", "o4-mini"]
+            default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "o4-mini"]
         self.AI_MODELS = self._get_csv_env(
             "AI_MODELS", default_ai_models, require_non_empty=True
         )

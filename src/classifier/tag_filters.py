@@ -91,7 +91,7 @@ def extract_model_tags(text: str) -> list[str]:
 
     The OCR daemon appends a footer like::
 
-        Transcribed by model: gpt-5-mini, o4-mini
+        Transcribed by model: gpt-5.4-mini, o4-mini
 
     This function parses all such footers (there may be more than one in
     multi-run content) and returns a deduplicated list of model names.

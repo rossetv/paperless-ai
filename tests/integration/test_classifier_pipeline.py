@@ -35,7 +35,7 @@ class TestClassificationPipelineIntegration:
             pages.append(f"--- Page {i} ---")
             pages.append(f"This is the content of page {i}. It contains invoice details.")
         body = "\n\n".join(pages)
-        footer = "\n\nTranscribed by model: gpt-5-mini"
+        footer = "\n\nTranscribed by model: gpt-5.4-mini"
         ocr_text = body + footer
 
         # Step 2: Truncate (should keep all 5 pages since max_pages > 5 isn't triggered)
@@ -47,7 +47,7 @@ class TestClassificationPipelineIntegration:
         )
 
         # 5 pages, keeping 3 head + 2 tail = 5 total -> no truncation
-        assert "Transcribed by model: gpt-5-mini" in truncated
+        assert "Transcribed by model: gpt-5.4-mini" in truncated
 
         # Step 3: Parse a mock LLM JSON response
         llm_json = '''{
@@ -96,7 +96,7 @@ class TestClassificationPipelineIntegration:
         )
 
         # Model tag extracted from footer
-        assert "gpt-5-mini" in enriched
+        assert "gpt-5.4-mini" in enriched
         # Year tag from document_date
         assert "2025" in enriched
         # Country tag

@@ -68,7 +68,7 @@ class TestClassifyTextHappyPath:
     """Successful classification on the first model."""
 
     def test_returns_result_and_model_on_first_try(self):
-        provider = _make_provider(AI_MODELS=["gpt-5-mini"])
+        provider = _make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
@@ -79,10 +79,10 @@ class TestClassifyTextHappyPath:
 
         assert isinstance(result, ClassificationResult)
         assert result.title == "Test Invoice"
-        assert model == "gpt-5-mini"
+        assert model == "gpt-5.4-mini"
 
     def test_stats_show_single_attempt(self):
-        provider = _make_provider(AI_MODELS=["gpt-5-mini"])
+        provider = _make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = _make_response(_valid_json())
         provider._create_completion = MagicMock(return_value=response)
 
@@ -200,7 +200,7 @@ class TestClassifyTextTruncationNote:
     """Truncation note is appended to the user message."""
 
     def test_truncation_note_included_in_message(self):
-        provider = _make_provider(AI_MODELS=["gpt-5-mini"])
+        provider = _make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = _make_response(_valid_json())
         captured_kwargs = {}
 
@@ -220,7 +220,7 @@ class TestClassifyTextTruncationNote:
         assert "NOTE: Truncated to 3 pages." in user_msg
 
     def test_no_truncation_note_when_none(self):
-        provider = _make_provider(AI_MODELS=["gpt-5-mini"])
+        provider = _make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = _make_response(_valid_json())
         captured_kwargs = {}
 
@@ -239,7 +239,7 @@ class TestTemperatureHandling:
     """GPT-5 models skip temperature; others include it."""
 
     def test_temperature_omitted_for_gpt5_model(self):
-        provider = _make_provider(AI_MODELS=["gpt-5-mini"])
+        provider = _make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = _make_response(_valid_json())
         captured_kwargs = {}
 

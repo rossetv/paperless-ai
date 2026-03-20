@@ -41,10 +41,10 @@ def make_mock_paperless(**overrides: Any) -> MagicMock:
 def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like an OcrProvider.
 
-    Returns ``("Transcribed text", "gpt-5-mini")`` by default.
+    Returns ``("Transcribed text", "gpt-5.4-mini")`` by default.
     """
     mock = MagicMock()
-    mock.transcribe_image.return_value = ("Transcribed text for page.", "gpt-5-mini")
+    mock.transcribe_image.return_value = ("Transcribed text for page.", "gpt-5.4-mini")
     mock.get_stats.return_value = {
         "attempts": 1,
         "refusals": 0,
@@ -62,7 +62,7 @@ def make_mock_classify_provider(**overrides: Any) -> MagicMock:
     from tests.helpers.factories import make_classification_result
 
     mock = MagicMock()
-    mock.classify_text.return_value = (make_classification_result(), "gpt-5-mini")
+    mock.classify_text.return_value = (make_classification_result(), "gpt-5.4-mini")
     mock.get_stats.return_value = {
         "attempts": 1,
         "api_errors": 0,

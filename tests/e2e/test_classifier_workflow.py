@@ -33,14 +33,14 @@ def _make_settings(**overrides):
         "CLASSIFY_MAX_TOKENS": 0,
         "LLM_PROVIDER": "openai",
         "REQUEST_TIMEOUT": 180,
-        "AI_MODELS": ["gpt-5-mini"],
+        "AI_MODELS": ["gpt-5.4-mini"],
         "REFUSAL_MARK": "CHATGPT REFUSED TO TRANSCRIBE",
     }
     defaults.update(overrides)
     return make_settings_obj(**defaults)
 
 
-def _make_ocr_content(num_pages: int = 3, model: str = "gpt-5-mini") -> str:
+def _make_ocr_content(num_pages: int = 3, model: str = "gpt-5.4-mini") -> str:
     """Build realistic OCR content with page headers and model footer."""
     pages = []
     for i in range(1, num_pages + 1):
@@ -121,7 +121,7 @@ def _make_taxonomy_cache(client):
     return cache
 
 
-def _make_mock_classifier(result=None, model="gpt-5-mini"):
+def _make_mock_classifier(result=None, model="gpt-5.4-mini"):
     """Create a mock ClassificationProvider."""
     mock = MagicMock()
     if result is None:
@@ -359,7 +359,7 @@ class TestClassifierRefusalContent:
         refusal_content = (
             "--- Page 1 ---\n"
             "I'm sorry, I can't assist with that.\n\n"
-            "Transcribed by model: gpt-5-mini"
+            "Transcribed by model: gpt-5.4-mini"
         )
 
         doc = make_document(id=42, tags=[444], content=refusal_content)
@@ -391,7 +391,7 @@ class TestClassifierRefusalContent:
             "--- Page 1 ---\n"
             "Dear [REDACTED NAME],\n"
             "Your account [REDACTED] has been updated.\n\n"
-            "Transcribed by model: gpt-5-mini"
+            "Transcribed by model: gpt-5.4-mini"
         )
 
         doc = make_document(id=42, tags=[444], content=redacted_content)

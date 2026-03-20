@@ -5,13 +5,13 @@ from __future__ import annotations
 import re
 
 # Matches OCR output headers like ``--- Page 3 ---`` or
-# ``--- Page 3 (gpt-5-mini) ---``.
+# ``--- Page 3 (gpt-5.4-mini) ---``.
 PAGE_HEADER_RE: re.Pattern[str] = re.compile(
     r"^--- Page \d+(?: \([^)]+\))? ---$", re.MULTILINE
 )
 
 # Matches the footer line the OCR daemon appends, e.g.
-# ``Transcribed by model: gpt-5-mini, o4-mini``.
+# ``Transcribed by model: gpt-5.4-mini, o4-mini``.
 MODEL_FOOTER_RE: re.Pattern[str] = re.compile(
     r"transcribed by model:\s*(.+)", re.IGNORECASE
 )

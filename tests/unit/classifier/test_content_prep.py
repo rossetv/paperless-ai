@@ -17,10 +17,10 @@ class TestSplitFooter:
     """Tests for _split_footer(content)."""
 
     def test_content_with_footer(self):
-        content = "Body text here\n\nTranscribed by model: gpt-5-mini"
+        content = "Body text here\n\nTranscribed by model: gpt-5.4-mini"
         body, footer = _split_footer(content)
         assert body == "Body text here"
-        assert footer == "\n\nTranscribed by model: gpt-5-mini"
+        assert footer == "\n\nTranscribed by model: gpt-5.4-mini"
 
     def test_content_without_footer(self):
         content = "Just body text, no footer."
@@ -30,14 +30,14 @@ class TestSplitFooter:
 
     def test_multiple_footers_splits_on_last(self):
         content = (
-            "Body\n\nTranscribed by model: gpt-5-mini"
+            "Body\n\nTranscribed by model: gpt-5.4-mini"
             "\nMore text\n\nTranscribed by model: o4-mini"
         )
         body, footer = _split_footer(content)
         # Should split on the LAST occurrence
         assert footer == "\n\nTranscribed by model: o4-mini"
         assert "Body" in body
-        assert "gpt-5-mini" in body
+        assert "gpt-5.4-mini" in body
 
     def test_empty_content(self):
         body, footer = _split_footer("")
@@ -46,7 +46,7 @@ class TestSplitFooter:
 
     def test_footer_must_have_double_newline(self):
         # Single newline before "Transcribed" should not split
-        content = "Body\nTranscribed by model: gpt-5-mini"
+        content = "Body\nTranscribed by model: gpt-5.4-mini"
         body, footer = _split_footer(content)
         assert body == content
         assert footer == ""
@@ -67,7 +67,7 @@ class TestExtractPageNumbers:
         assert numbers == [5, 10]
 
     def test_pages_with_model_annotation(self):
-        text = "--- Page 1 (gpt-5-mini) ---\n--- Page 2 (o4-mini) ---"
+        text = "--- Page 1 (gpt-5.4-mini) ---\n--- Page 2 (o4-mini) ---"
         matches = list(PAGE_HEADER_RE.finditer(text))
         numbers = _extract_page_numbers(matches)
         assert numbers == [1, 2]
@@ -117,7 +117,7 @@ class TestTruncateContentByChars:
 
     def test_over_limit_truncated_footer_preserved(self):
         body = "A" * 100
-        footer = "\n\nTranscribed by model: gpt-5-mini"
+        footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
         result = truncate_content_by_chars(content, 50)
         assert result == "A" * 50 + footer
@@ -133,7 +133,7 @@ class TestTruncateContentByChars:
 
     def test_body_within_limit_but_total_over(self):
         body = "A" * 50
-        footer = "\n\nTranscribed by model: gpt-5-mini"
+        footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
         # max_chars > body length: body is kept as-is, footer appended
         result = truncate_content_by_chars(content, 60)
@@ -158,7 +158,7 @@ class TestTruncateContentByPages:
             parts.append(f"--- Page {i} ---\nContent of page {i}.\n")
         body = "\n".join(parts)
         if footer:
-            body += "\n\nTranscribed by model: gpt-5-mini"
+            body += "\n\nTranscribed by model: gpt-5.4-mini"
         return body
 
     def test_within_page_limit_unchanged(self):
@@ -182,7 +182,7 @@ class TestTruncateContentByPages:
         assert "Transcribed by model" in result
 
     def test_no_page_headers_falls_back_to_char_truncation(self):
-        content = "A" * 500 + "\n\nTranscribed by model: gpt-5-mini"
+        content = "A" * 500 + "\n\nTranscribed by model: gpt-5.4-mini"
         result, note = truncate_content_by_pages(content, max_pages=3, tail_pages=1, headerless_char_limit=100)
         assert note is not None
         assert "characters" in note.lower() or "page headers" in note.lower()
@@ -217,12 +217,12 @@ class TestTruncateContentByPages:
     def test_footer_preserved_when_truncated(self):
         content = self._make_paged_content(10, footer=True)
         result, note = truncate_content_by_pages(content, max_pages=2, tail_pages=1, headerless_char_limit=10000)
-        assert "Transcribed by model: gpt-5-mini" in result
+        assert "Transcribed by model: gpt-5.4-mini" in result
 
     def test_footer_preserved_when_not_truncated(self):
         content = self._make_paged_content(3, footer=True)
         result, note = truncate_content_by_pages(content, max_pages=5, tail_pages=1, headerless_char_limit=10000)
-        assert "Transcribed by model: gpt-5-mini" in result
+        assert "Transcribed by model: gpt-5.4-mini" in result
 
     def test_truncation_note_includes_page_info(self):
         content = self._make_paged_content(10)

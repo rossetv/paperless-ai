@@ -150,14 +150,14 @@ class TestExtractModelTags:
     """Tests for extract_model_tags(text)."""
 
     def test_single_model(self):
-        text = "Content\n\nTranscribed by model: gpt-5-mini"
+        text = "Content\n\nTranscribed by model: gpt-5.4-mini"
         result = extract_model_tags(text)
-        assert result == ["gpt-5-mini"]
+        assert result == ["gpt-5.4-mini"]
 
     def test_multiple_models(self):
-        text = "Content\n\nTranscribed by model: gpt-5-mini, o4-mini"
+        text = "Content\n\nTranscribed by model: gpt-5.4-mini, o4-mini"
         result = extract_model_tags(text)
-        assert result == ["gpt-5-mini", "o4-mini"]
+        assert result == ["gpt-5.4-mini", "o4-mini"]
 
     def test_no_footer(self):
         result = extract_model_tags("Just normal text, no footer.")
@@ -165,19 +165,19 @@ class TestExtractModelTags:
 
     def test_deduplicates(self):
         text = (
-            "Page 1\n\nTranscribed by model: gpt-5-mini\n"
-            "Page 2\n\nTranscribed by model: gpt-5-mini"
+            "Page 1\n\nTranscribed by model: gpt-5.4-mini\n"
+            "Page 2\n\nTranscribed by model: gpt-5.4-mini"
         )
         result = extract_model_tags(text)
-        assert result == ["gpt-5-mini"]
+        assert result == ["gpt-5.4-mini"]
 
     def test_multiple_footers_different_models(self):
         text = (
-            "Page 1\n\nTranscribed by model: gpt-5-mini\n"
+            "Page 1\n\nTranscribed by model: gpt-5.4-mini\n"
             "Page 2\n\nTranscribed by model: o4-mini"
         )
         result = extract_model_tags(text)
-        assert result == ["gpt-5-mini", "o4-mini"]
+        assert result == ["gpt-5.4-mini", "o4-mini"]
 
 class TestEnrichTags:
     """Tests for enrich_tags(tags, text, document_date, default_country_tag, tag_limit)."""
@@ -203,7 +203,7 @@ class TestEnrichTags:
         assert "sweden" in result
 
     def test_adds_model_tags_from_text(self):
-        text = "Content\n\nTranscribed by model: gpt-5-mini"
+        text = "Content\n\nTranscribed by model: gpt-5.4-mini"
         result = enrich_tags(
             tags=["bills"],
             text=text,
@@ -211,7 +211,7 @@ class TestEnrichTags:
             default_country_tag="",
             tag_limit=10,
         )
-        assert "gpt-5-mini" in result
+        assert "gpt-5.4-mini" in result
 
     def test_enforces_tag_limit_on_non_required(self):
         result = enrich_tags(
@@ -227,7 +227,7 @@ class TestEnrichTags:
         assert len(non_required) <= 2
 
     def test_required_tags_not_counted_against_limit(self):
-        text = "Content\n\nTranscribed by model: gpt-5-mini"
+        text = "Content\n\nTranscribed by model: gpt-5.4-mini"
         result = enrich_tags(
             tags=["bills"],
             text=text,
@@ -235,9 +235,9 @@ class TestEnrichTags:
             default_country_tag="sweden",
             tag_limit=1,
         )
-        # Required: gpt-5-mini, 2024, sweden (3 tags)
+        # Required: gpt-5.4-mini, 2024, sweden (3 tags)
         # Non-required: "bills" capped to 1
-        assert "gpt-5-mini" in result
+        assert "gpt-5.4-mini" in result
         assert "2024" in result
         assert "sweden" in result
         assert "bills" in result

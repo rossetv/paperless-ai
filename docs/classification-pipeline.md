@@ -197,7 +197,7 @@ flowchart TD
     A["LLM-suggested tags\n(up to 8)"] --> B["Filter blacklisted tags\n(new, ai, error, indexed)"]
     B --> C["Filter redundant tags\n(duplicates of correspondent,\ntype, or person name)"]
     C --> D["Cap optional tags to\nCLASSIFY_TAG_LIMIT (default: 5)"]
-    D --> E["Extract model tags\nfrom OCR footer\n(e.g. gpt-5-mini, o4-mini)"]
+    D --> E["Extract model tags\nfrom OCR footer\n(e.g. gpt-5.4-mini, o4-mini)"]
     E --> F["Add year tag from\ndocument_date (e.g. 2025)"]
     F --> G["Add default country tag\n(if CLASSIFY_DEFAULT_COUNTRY_TAG set)"]
     G --> H["Resolve all tags against\ntaxonomy cache\n(create if missing)"]

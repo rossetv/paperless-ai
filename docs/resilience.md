@@ -39,7 +39,7 @@ Both the OCR and classification providers try models in the order specified by `
 ...the next model in the chain is tried automatically.
 
 Default chains:
-- **OpenAI:** `gpt-5-mini` → `gpt-5.4` → `o4-mini`
+- **OpenAI:** `gpt-5.4-mini` → `gpt-5.4` → `o4-mini`
 - **Ollama:** `gemma3:27b` → `gemma3:12b`
 
 Statistics tracked per request:
