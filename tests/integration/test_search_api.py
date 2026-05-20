@@ -78,7 +78,11 @@ def _make_settings(
 
 
 def _seed_store(settings: MagicMock) -> None:
-    """Seed the store with one document and taxonomy entries."""
+    """Seed the store with one document, taxonomy entries, and a reconcile timestamp.
+
+    The reconcile timestamp is written via write_meta so that healthz treats
+    this store as fully ready (last_reconcile_at is not None).
+    """
     writer = StoreWriter(settings)
     try:
         writer.refresh_taxonomy(
@@ -105,6 +109,8 @@ def _seed_store(settings: MagicMock) -> None:
             embedding=_AXIS_A,
         )
         writer.upsert_document(meta, [chunk])
+        # Record a completed reconciliation cycle so healthz returns 200.
+        writer.write_meta("last_reconcile_at", "2024-06-01T12:00:00Z")
     finally:
         writer.close()
 
@@ -240,6 +246,7 @@ class TestHealthzIntegration:
     def test_healthz_ok_when_db_exists_and_passes_quick_check(
         self, tmp_path: Path
     ) -> None:
+        """A seeded (reconciled) store must return 200 ok."""
         settings = _make_settings(tmp_path)
         _seed_store(settings)
         store_reader = StoreReader(settings)
@@ -266,6 +273,70 @@ class TestHealthzIntegration:
         response = client.get("/api/healthz")
         assert response.status_code == 503
         assert response.json()["status"] == "index-not-ready"
+
+    def test_healthz_503_when_db_present_but_schema_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """An auto-created empty DB (no schema) must return 503 index-not-ready.
+
+        This is the primary regression test: sqlite3.connect() auto-creates an
+        empty file when the directory is writable, so a DB that was created by
+        the connection itself (rather than by StoreWriter.ensure_schema) must
+        not be reported as healthy.  The real StoreReader is used here so that
+        the OperationalError propagation path is exercised end-to-end.
+        """
+        import sqlite3 as _sqlite3
+
+        settings = _make_settings(tmp_path)
+        # Create an empty SQLite file (no schema) — mimics the auto-create
+        # behaviour of sqlite3.connect() on a fresh /data volume mount.
+        db_path = tmp_path / "index.db"
+        conn = _sqlite3.connect(str(db_path))
+        conn.close()
+        assert db_path.exists()
+
+        store_reader = StoreReader(settings)
+        try:
+            from search.api import create_app
+
+            core = _make_mock_core()
+            app = create_app(settings, core=core, store_reader=store_reader)
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get("/api/healthz")
+            assert response.status_code == 503
+            assert response.json()["status"] == "index-not-ready"
+        finally:
+            store_reader.close()
+
+    def test_healthz_503_when_schema_present_but_never_reconciled(
+        self, tmp_path: Path
+    ) -> None:
+        """A DB with the schema but no reconcile record must return 503 index-not-ready.
+
+        StoreWriter.ensure_schema() creates the tables but does not set
+        last_reconcile_at.  A fresh install that has the indexer running its
+        first reconciliation cycle is in this state.
+        """
+        from store.writer import StoreWriter
+
+        settings = _make_settings(tmp_path)
+        # Write the schema but do NOT call upsert_document (so no reconcile
+        # timestamp is ever stored).
+        writer = StoreWriter(settings)
+        writer.close()  # ensure_schema was called in __init__; no documents written.
+
+        store_reader = StoreReader(settings)
+        try:
+            from search.api import create_app
+
+            core = _make_mock_core()
+            app = create_app(settings, core=core, store_reader=store_reader)
+            client = TestClient(app, raise_server_exceptions=False)
+            response = client.get("/api/healthz")
+            assert response.status_code == 503
+            assert response.json()["status"] == "index-not-ready"
+        finally:
+            store_reader.close()
 
 
 # ---------------------------------------------------------------------------

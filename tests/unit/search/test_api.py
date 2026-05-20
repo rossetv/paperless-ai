@@ -296,8 +296,67 @@ def test_healthz_returns_503_when_db_absent() -> None:
     """GET /api/healthz returns 503 index-not-ready when the DB does not exist."""
     settings = _make_mock_settings(db_path="/nonexistent/index.db")
     store_reader = MagicMock()
-    # DB absent: quick_check raises because connect fails, or we never call it.
-    # The endpoint itself should guard — if the file doesn't exist it 503s.
+    # DB absent: the endpoint guards on file existence before calling the reader.
+    client = _build_test_app(settings, store_reader=store_reader)
+    response = client.get("/api/healthz")
+    assert response.status_code == 503
+    body = response.json()
+    assert body.get("status") == "index-not-ready"
+
+
+def test_healthz_returns_503_when_db_present_but_schema_missing(
+    tmp_path: Path,
+) -> None:
+    """GET /api/healthz returns 503 index-not-ready when the DB exists but has no schema.
+
+    This is the core bug fix: sqlite3.connect() auto-creates an empty DB file
+    when the directory is writable, so a present-but-empty file is NOT a sign
+    the index is ready.  An OperationalError('no such table') from get_stats()
+    must map to index-not-ready, not index-corrupt or 200.
+    """
+    import sqlite3 as _sqlite3
+
+    from store.migrations import StoreError
+
+    db_path = tmp_path / "index.db"
+    db_path.write_bytes(b"")  # Empty file — no schema written yet.
+    settings = _make_mock_settings(db_path=str(db_path))
+    store_reader = MagicMock()
+    # Simulate what StoreReader.get_stats() does on an empty/schema-less DB.
+    store_reader.get_stats.side_effect = StoreError(
+        "get_stats query failed"
+    ).__class__("get_stats query failed")
+    # Attach the underlying OperationalError as __cause__ so the handler can
+    # inspect it, matching the real raise pattern in StoreReader.
+    _cause = _sqlite3.OperationalError("no such table: meta")
+    err = StoreError("get_stats query failed")
+    err.__cause__ = _cause
+    store_reader.get_stats.side_effect = err
+    client = _build_test_app(settings, store_reader=store_reader)
+    response = client.get("/api/healthz")
+    assert response.status_code == 503
+    body = response.json()
+    assert body.get("status") == "index-not-ready"
+
+
+def test_healthz_returns_503_when_schema_present_but_never_reconciled(
+    tmp_path: Path,
+) -> None:
+    """GET /api/healthz returns 503 index-not-ready when the index was never reconciled.
+
+    A DB with the schema created but last_reconcile_at=None means the indexer
+    ran StoreWriter.ensure_schema but has not completed its first cycle.
+    """
+    db_path = tmp_path / "index.db"
+    db_path.write_bytes(b"")
+    settings = _make_mock_settings(db_path=str(db_path))
+    store_reader = MagicMock()
+    store_reader.get_stats.return_value = IndexStats(
+        document_count=0,
+        chunk_count=0,
+        last_reconcile_at=None,  # Never reconciled.
+        embedding_model=None,
+    )
     client = _build_test_app(settings, store_reader=store_reader)
     response = client.get("/api/healthz")
     assert response.status_code == 503
@@ -306,11 +365,21 @@ def test_healthz_returns_503_when_db_absent() -> None:
 
 
 def test_healthz_returns_503_when_index_corrupt(tmp_path: Path) -> None:
-    """GET /api/healthz returns 503 index-corrupt when quick_check fails."""
+    """GET /api/healthz returns 503 index-corrupt when quick_check fails.
+
+    The DB must have a schema and a reconcile timestamp so the corruption
+    check is reached; a file that merely exists is no longer sufficient.
+    """
     db_path = tmp_path / "index.db"
-    db_path.write_bytes(b"")  # File exists but quick_check returns False.
+    db_path.write_bytes(b"")
     settings = _make_mock_settings(db_path=str(db_path))
     store_reader = MagicMock()
+    store_reader.get_stats.return_value = IndexStats(
+        document_count=10,
+        chunk_count=50,
+        last_reconcile_at="2024-06-01T12:00:00Z",
+        embedding_model="text-embedding-3-small",
+    )
     store_reader.quick_check.return_value = False
     client = _build_test_app(settings, store_reader=store_reader)
     response = client.get("/api/healthz")
@@ -320,11 +389,22 @@ def test_healthz_returns_503_when_index_corrupt(tmp_path: Path) -> None:
 
 
 def test_healthz_returns_200_when_healthy(tmp_path: Path) -> None:
-    """GET /api/healthz returns 200 when the DB exists and quick_check passes."""
+    """GET /api/healthz returns 200 when the index is populated, reconciled, and healthy.
+
+    The handler must confirm: schema present (get_stats succeeds), at least one
+    reconciliation completed (last_reconcile_at is set), and integrity check
+    passes (quick_check returns True).
+    """
     db_path = tmp_path / "index.db"
     db_path.write_bytes(b"")
     settings = _make_mock_settings(db_path=str(db_path))
     store_reader = MagicMock()
+    store_reader.get_stats.return_value = IndexStats(
+        document_count=5,
+        chunk_count=20,
+        last_reconcile_at="2024-06-01T12:00:00Z",
+        embedding_model="text-embedding-3-small",
+    )
     store_reader.quick_check.return_value = True
     client = _build_test_app(settings, store_reader=store_reader)
     response = client.get("/api/healthz")
