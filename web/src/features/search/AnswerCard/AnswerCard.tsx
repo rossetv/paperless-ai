@@ -24,7 +24,8 @@ function parseAnswer(answer: string): Segment[] {
     if (match.index > lastIndex) {
       segments.push({ type: 'text', value: answer.slice(lastIndex, match.index) });
     }
-    segments.push({ type: 'citation', index: parseInt(match[1], 10) });
+    // match[1] is the capture group for \d+ — always defined when the regex matches
+    segments.push({ type: 'citation', index: parseInt(match[1] ?? '0', 10) });
     lastIndex = pattern.lastIndex;
   }
 

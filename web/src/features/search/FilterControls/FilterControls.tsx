@@ -85,12 +85,13 @@ export function FilterControls({
   return (
     <FilterPanel title="Filters">
       <Stack direction="vertical" gap={8}>
-        {/* Correspondent filter */}
+        {/* Correspondent filter — avoid passing undefined to value under
+            exactOptionalPropertyTypes: use a conditional spread instead */}
         <Select
           id="filter-correspondent"
           label="Correspondent"
           options={correspondentOptions}
-          value={selectedCorrespondentValue}
+          {...(selectedCorrespondentValue !== undefined ? { value: selectedCorrespondentValue } : {})}
           placeholder="All correspondents"
           onChange={handleCorrespondentChange}
         />
@@ -100,7 +101,7 @@ export function FilterControls({
           id="filter-document-type"
           label="Document type"
           options={documentTypeOptions}
-          value={selectedDocumentTypeValue}
+          {...(selectedDocumentTypeValue !== undefined ? { value: selectedDocumentTypeValue } : {})}
           placeholder="All types"
           onChange={handleDocumentTypeChange}
         />
