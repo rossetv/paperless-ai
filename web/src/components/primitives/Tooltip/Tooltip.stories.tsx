@@ -25,17 +25,18 @@ export const OnButton: Story = {
   },
 };
 
-export const OnIconButton: Story = {
-  render: () => (
-    <Tooltip content="Search documents">
+export const OnIconButton: StoryObj = {
+  args: {
+    content: 'Search documents',
+    children: (
       <button
         type="button"
         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}
       >
         <Icon name="search" size="medium" />
       </button>
-    </Tooltip>
-  ),
+    ),
+  },
 };
 
 export const LongContent: Story = {

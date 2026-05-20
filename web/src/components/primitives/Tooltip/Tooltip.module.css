@@ -28,7 +28,6 @@
   transform: translateX(-50%);
   z-index: 100;
   white-space: nowrap;
-
   background-color: var(--colour-overlay-dark);
   color: var(--colour-text-on-dark);
   border-radius: var(--radius-micro);
