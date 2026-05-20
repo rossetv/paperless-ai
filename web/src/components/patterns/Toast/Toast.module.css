@@ -1,0 +1,85 @@
+/*
+ * Toast pattern — CSS Module.
+ *
+ * DESIGN.md uses a single chromatic accent (--colour-accent, Apple Blue).
+ * There are no semantic success/error colour tokens. The variant system
+ * therefore maps as follows (see Toast.tsx for rationale):
+ *
+ *   .info    → --colour-accent left border
+ *   .success → --colour-accent left border (same blue — only available accent)
+ *   .error   → --colour-text-primary left border (near-black, distinguishes urgency)
+ *
+ * All values come exclusively from design tokens (§12.4).
+ */
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-6);
+  padding: var(--spacing-11) var(--spacing-13);
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-standard);
+  box-shadow: var(--shadow-card);
+
+  /* Left accent border — overridden per variant */
+  border-left: var(--spacing-2) solid transparent;
+
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+
+  /* Sensible max-width so long messages don't stretch to the viewport edge */
+  max-width: 480px;
+  min-width: 240px;
+  box-sizing: border-box;
+}
+
+/* ── Variant left-border colours ─────────────────────────────────────────── */
+
+.info {
+  border-left-color: var(--colour-accent);
+}
+
+.success {
+  border-left-color: var(--colour-accent);
+}
+
+.error {
+  border-left-color: var(--colour-text-primary);
+}
+
+/* ── Icon ────────────────────────────────────────────────────────────────── */
+
+.icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-top: var(--spacing-1);
+}
+
+.info .icon,
+.success .icon {
+  color: var(--colour-accent);
+}
+
+.error .icon {
+  color: var(--colour-text-primary);
+}
+
+/* ── Message ─────────────────────────────────────────────────────────────── */
+
+.message {
+  flex: 1;
+}
+
+/* ── Dismiss button ──────────────────────────────────────────────────────── */
+
+.dismiss-button {
+  flex-shrink: 0;
+  color: var(--colour-text-tertiary);
+  /* Align with the top of the text on multi-line messages */
+  align-self: flex-start;
+}
