@@ -2,12 +2,17 @@
 
 Public surface
 --------------
-``EmbeddingClient``  — the sole embedding entry point for the codebase.
-``EmbeddingError``   — raised on a non-retryable failure.
+``EmbeddingClient``            — the sole embedding entry point for the codebase.
+``EmbeddingError``             — raised on a non-retryable failure.
+``EMBEDDING_FAILURE_EXCEPTIONS`` — the exception tuple a caller catches to
+    degrade gracefully when an embedding cannot be produced.
 
 All embedding calls in the project must go through ``EmbeddingClient``; a
 bare ``openai.embeddings.create`` call outside this module is a guidelines
-violation (CODE_GUIDELINES §8.1, §17.8).
+violation (CODE_GUIDELINES §8.1, §17.8).  Likewise, a caller that needs to
+catch an embedding failure imports ``EMBEDDING_FAILURE_EXCEPTIONS`` rather
+than importing ``openai`` to name its error types — the OpenAI SDK stays an
+implementation detail of this module.
 
 Embeddings always use OpenAI
 ----------------------------
@@ -71,6 +76,19 @@ class EmbeddingError(Exception):
     original exception is always chained via ``raise EmbeddingError(...) from
     original`` so the traceback is preserved.
     """
+
+
+# The exception types ``EmbeddingClient.embed`` can raise that a caller should
+# catch to degrade gracefully rather than propagate a 500.  ``EmbeddingError``
+# is the non-retryable wrapper (bad/expired key, 400); ``openai.APIError`` is
+# the base of the retryable family (connection drop, rate limit, 5xx) that
+# ``embed`` re-raises once its own retries are exhausted.  A caller catches
+# this tuple so it never has to ``import openai`` to name an error type
+# (CODE_GUIDELINES §8.1) — the OpenAI SDK stays internal to this module.
+EMBEDDING_FAILURE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    EmbeddingError,
+    openai.APIError,
+)
 
 
 class EmbeddingClient:

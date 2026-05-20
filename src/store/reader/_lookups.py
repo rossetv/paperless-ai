@@ -18,7 +18,7 @@ import threading
 from collections.abc import Iterable
 
 from store._sql import placeholders
-from store.migrations import StoreError
+from store.migrations import SchemaNotReadyError, StoreError
 from store.models import (
     ChunkHit,
     FacetSet,
@@ -26,6 +26,20 @@ from store.models import (
     IndexStats,
     TaxonomyEntry,
 )
+
+# Substring SQLite uses in the ``OperationalError`` message when a queried
+# table does not exist.  A fresh, schema-less index database (auto-created
+# empty by ``sqlite3.connect``) produces this; the store maps it to the typed
+# ``SchemaNotReadyError`` so callers never string-match ``sqlite3`` internals.
+_NO_SUCH_TABLE_MARKER = "no such table"
+
+
+def _is_missing_table_error(exc: sqlite3.Error) -> bool:
+    """Return whether *exc* is a SQLite "no such table" operational error."""
+    return (
+        isinstance(exc, sqlite3.OperationalError)
+        and _NO_SUCH_TABLE_MARKER in str(exc).lower()
+    )
 
 
 def get_documents(
@@ -239,7 +253,11 @@ def get_stats(
         meta), and embedding_model (from meta).
 
     Raises:
-        StoreError: On SQLite error.
+        SchemaNotReadyError: The database has no schema yet (a present-but-empty
+            file the indexer has not initialised).  Distinguishing this from a
+            generic failure lets the search server's healthz handler report
+            "index not ready" without inspecting ``sqlite3`` internals.
+        StoreError: On any other SQLite error.
     """
     try:
         with query_lock:
@@ -256,6 +274,10 @@ def get_stats(
                 "SELECT value FROM meta WHERE key = 'embedding_model'"
             ).fetchone()
     except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "get_stats query failed: the index schema is not present"
+            ) from exc
         raise StoreError("get_stats query failed") from exc
 
     return IndexStats(
