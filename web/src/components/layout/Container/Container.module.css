@@ -1,0 +1,18 @@
+/*
+ * Container layout component — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this.
+ *
+ * DESIGN.md §5 Grid & Container:
+ *   - Max content width: --width-content-max (980px)
+ *   - Horizontal centering via auto margins
+ *   - Horizontal padding ensures content never touches the viewport edge on mobile
+ */
+
+.container {
+  width: 100%;
+  max-width: var(--width-content-max);
+  margin-inline: auto;
+  padding-inline: var(--spacing-14);
+}
