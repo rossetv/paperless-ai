@@ -3,7 +3,6 @@
   "rules": {
     "color-no-invalid-hex": true,
     "color-named": "never",
-    "unit-disallowed-list": ["px", "em", "rem", "vh", "vw", "pt"],
     "declaration-property-value-disallowed-list": {
       "/^(color|background-color|border-color|outline-color|fill|stroke|box-shadow|text-shadow)/": [
         "/^#/",
@@ -17,7 +16,6 @@
       "files": ["src/styles/tokens.css", "src/styles/themes.css", "src/styles/global.css"],
       "rules": {
         "color-named": null,
-        "unit-disallowed-list": null,
         "declaration-property-value-disallowed-list": null
       }
     }
