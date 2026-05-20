@@ -1,8 +1,5 @@
-import stylesRaw from './NavBar.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './NavBar.module.css';
 
 export interface NavBarProps {
   /**
@@ -47,7 +44,7 @@ export function NavBar({
   'aria-label': ariaLabel = 'Main navigation',
   className,
 }: NavBarProps): React.ReactElement {
-  const navClasses = [styles['navbar'], className].filter(Boolean).join(' ');
+  const navClasses = cn(styles['navbar'], className);
 
   return (
     <nav className={navClasses} aria-label={ariaLabel}>

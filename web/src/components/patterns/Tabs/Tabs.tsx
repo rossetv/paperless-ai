@@ -1,9 +1,6 @@
 import React, { useRef, useState } from 'react';
-import stylesRaw from './Tabs.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Tabs.module.css';
 
 /** A single tab definition — id, label, and the content it reveals. */
 export interface TabItem {
@@ -105,7 +102,7 @@ export function Tabs({
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const panelId = `tabpanel-${activeTab?.id ?? ''}`;
 
-  const rootClasses = [styles['tabs'], className].filter(Boolean).join(' ');
+  const rootClasses = cn(styles['tabs'], className);
 
   return (
     <div className={rootClasses}>
@@ -126,9 +123,7 @@ export function Tabs({
               // Roving tabindex: only the active tab is in the natural tab order.
               // Arrow keys move focus between tabs; Tab moves focus out of the tablist.
               tabIndex={isActive ? 0 : -1}
-              className={[styles['tab'], isActive ? styles['active'] : undefined]
-                .filter(Boolean)
-                .join(' ')}
+              className={cn(styles['tab'], isActive ? styles['active'] : undefined)}
               onClick={() => activateTab(tab.id)}
               onKeyDown={(event) => handleKeyDown(event, index)}
             >

@@ -1,8 +1,5 @@
-import stylesRaw from './Container.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Container.module.css';
 
 export interface ContainerProps {
   /** Container content. */
@@ -22,7 +19,7 @@ export interface ContainerProps {
  * App-agnostic: knows nothing about search or documents.
  */
 export function Container({ children, className }: ContainerProps): React.ReactElement {
-  const classes = [styles['container'], className].filter(Boolean).join(' ');
+  const classes = cn(styles['container'], className);
 
   return <div className={classes}>{children}</div>;
 }

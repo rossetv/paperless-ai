@@ -1,8 +1,5 @@
-import stylesRaw from './Icon.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Icon.module.css';
 
 /**
  * Supported icon names — a closed string-literal union so callers get
@@ -196,13 +193,11 @@ export function Icon({
   label,
   className,
 }: IconProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['icon'],
     styles[size],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   const accessibilityProps = label
     ? { role: 'img' as const, 'aria-label': label }

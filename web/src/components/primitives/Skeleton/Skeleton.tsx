@@ -1,8 +1,5 @@
-import stylesRaw from './Skeleton.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Skeleton.module.css';
 
 /**
  * Shape variant for the skeleton placeholder.
@@ -60,15 +57,13 @@ function barClasses(
   height: SkeletonHeight | undefined,
   className: string | undefined,
 ): string {
-  return [
+  return cn(
     styles['skeleton'],
     styles[variant],
     width !== undefined ? styles[`width-${width}`] : undefined,
     height !== undefined ? styles[`height-${height}`] : undefined,
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 }
 
 /**

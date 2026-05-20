@@ -1,11 +1,8 @@
 import React, { useId, useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
-import stylesRaw from './SearchField.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './SearchField.module.css';
 
 export interface SearchFieldProps {
   /** Id for the underlying input — required for label association. */
@@ -86,7 +83,7 @@ export function SearchField({
     }
   }
 
-  const wrapperClasses = [styles['search-field'], className].filter(Boolean).join(' ');
+  const wrapperClasses = cn(styles['search-field'], className);
 
   return (
     <div className={wrapperClasses}>

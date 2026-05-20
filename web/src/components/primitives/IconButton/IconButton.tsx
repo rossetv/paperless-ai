@@ -1,8 +1,5 @@
-import stylesRaw from './IconButton.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './IconButton.module.css';
 
 export interface IconButtonProps {
   /**
@@ -40,7 +37,7 @@ export function IconButton({
   onClick,
   className,
 }: IconButtonProps): React.ReactElement {
-  const classes = [styles['icon-button'], className].filter(Boolean).join(' ');
+  const classes = cn(styles['icon-button'], className);
 
   return (
     <button

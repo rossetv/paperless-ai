@@ -1,11 +1,8 @@
 import React, { useEffect } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
-import stylesRaw from './Toast.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Toast.module.css';
 
 /**
  * Variant values and their ARIA / token mappings.
@@ -84,13 +81,11 @@ export function Toast({
   // error is assertive (role="alert"); info is polite (role="status").
   const role = variant === 'error' ? 'alert' : 'status';
 
-  const rootClasses = [
+  const rootClasses = cn(
     styles['toast'],
     styles[variant],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return (
     <div role={role} className={rootClasses}>

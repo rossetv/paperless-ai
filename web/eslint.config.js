@@ -63,6 +63,10 @@ export default [
       // checked against the matrix.
       'boundaries/elements': [
         { type: 'styles',               pattern: 'src/styles/**' },
+        // lib/ — framework-agnostic leaf helpers (e.g. the `cn` class-name
+        // join). Imports nothing; importable by every layer, so it sits next
+        // to styles/ at the bottom of the stack (§12.3).
+        { type: 'lib',                  pattern: 'src/lib/**' },
         { type: 'components-primitives', pattern: 'src/components/primitives/**' },
         { type: 'components-layout',     pattern: 'src/components/layout/**' },
         { type: 'components-patterns',   pattern: 'src/components/patterns/**' },
@@ -120,11 +124,15 @@ export default [
             // styles/ — the bottom of the stack; imports nothing.
             { from: 'styles', allow: [] },
 
-            // Component tiers — each may import lower tiers and styles only.
-            { from: 'components-primitives', allow: ['components-primitives', 'styles'] },
+            // lib/ — framework-agnostic leaf helpers; imports nothing, exactly
+            // like styles/. Every layer above may import it.
+            { from: 'lib', allow: [] },
+
+            // Component tiers — each may import lower tiers, styles, and lib.
+            { from: 'components-primitives', allow: ['components-primitives', 'styles', 'lib'] },
             {
               from: 'components-layout',
-              allow: ['components-layout', 'components-primitives', 'styles'],
+              allow: ['components-layout', 'components-primitives', 'styles', 'lib'],
             },
             {
               from: 'components-patterns',
@@ -133,12 +141,14 @@ export default [
                 'components-layout',
                 'components-primitives',
                 'styles',
+                'lib',
               ],
             },
 
-            // api/ and hooks/ — cross-cutting leaves; no application-layer imports.
-            { from: 'api', allow: ['api'] },
-            { from: 'hooks', allow: ['hooks'] },
+            // api/ and hooks/ — cross-cutting leaves; no application-layer
+            // imports, but the framework-agnostic lib/ leaf is allowed.
+            { from: 'api', allow: ['api', 'lib'] },
+            { from: 'hooks', allow: ['hooks', 'lib'] },
 
             // features/ — the only layer that knows the domain; may use any
             // component tier plus the cross-cutting leaves and styles.
@@ -152,6 +162,7 @@ export default [
                 'api',
                 'hooks',
                 'styles',
+                'lib',
               ],
             },
 
@@ -161,14 +172,14 @@ export default [
             // guarantee against per-page design drift (§12.3).
             {
               from: 'pages',
-              allow: ['pages', 'features', 'components-layout', 'api', 'hooks'],
+              allow: ['pages', 'features', 'components-layout', 'api', 'hooks', 'lib'],
             },
 
             // app/ — the composition root: routes + providers. Mounts pages and
             // features, wires the API/hooks, and pulls in global styles.
             {
               from: 'app',
-              allow: ['app', 'pages', 'features', 'api', 'hooks', 'styles'],
+              allow: ['app', 'pages', 'features', 'api', 'hooks', 'styles', 'lib'],
             },
           ],
         },

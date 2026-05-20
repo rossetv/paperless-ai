@@ -1,8 +1,5 @@
-import stylesRaw from './Spinner.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Spinner.module.css';
 
 /** Size scale for the spinner ring. */
 export type SpinnerSize = 'small' | 'medium' | 'large';
@@ -34,13 +31,11 @@ export function Spinner({
   size = 'medium',
   className,
 }: SpinnerProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['spinner'],
     styles[size],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return (
     <span role="status" aria-label={label} className={classes}>

@@ -1,8 +1,5 @@
-import stylesRaw from './Section.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Section.module.css';
 
 export interface SectionProps {
   /**
@@ -28,13 +25,11 @@ export interface SectionProps {
  * App-agnostic: knows nothing about search or documents.
  */
 export function Section({ spacious = false, children, className }: SectionProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['section'],
     spacious ? styles['spacious'] : undefined,
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return <section className={classes}>{children}</section>;
 }

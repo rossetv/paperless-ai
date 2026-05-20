@@ -1,8 +1,5 @@
-import stylesRaw from './Link.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Link.module.css';
 
 /**
  * Visual variant — default is the standard light-bg link style.
@@ -49,13 +46,11 @@ export function Link({
   children,
   className,
 }: LinkProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['link'],
     styles[variant],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return (
     <a

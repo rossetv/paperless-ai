@@ -1,10 +1,7 @@
 import React, { useId, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
-import stylesRaw from './FilterPanel.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './FilterPanel.module.css';
 
 export interface FilterPanelProps {
   /** Title rendered in the panel header, next to the collapse toggle. */
@@ -45,7 +42,7 @@ export function FilterPanel({
     setIsExpanded((prev) => !prev);
   }
 
-  const rootClasses = [styles['filter-panel'], className].filter(Boolean).join(' ');
+  const rootClasses = cn(styles['filter-panel'], className);
 
   return (
     <div className={rootClasses}>
@@ -58,9 +55,7 @@ export function FilterPanel({
       >
         <span className={styles['title']}>{title}</span>
         <span
-          className={[styles['chevron'], isExpanded ? styles['expanded'] : undefined]
-            .filter(Boolean)
-            .join(' ')}
+          className={cn(styles['chevron'], isExpanded ? styles['expanded'] : undefined)}
           aria-hidden="true"
         >
           <Icon name="chevron-down" size="small" />

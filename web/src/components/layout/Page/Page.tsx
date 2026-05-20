@@ -1,8 +1,5 @@
-import stylesRaw from './Page.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Page.module.css';
 
 export interface PageProps {
   /** Page content. */
@@ -21,7 +18,7 @@ export interface PageProps {
  * App-agnostic: knows nothing about search or documents.
  */
 export function Page({ children, className }: PageProps): React.ReactElement {
-  const classes = [styles['page'], className].filter(Boolean).join(' ');
+  const classes = cn(styles['page'], className);
 
   return <div className={classes}>{children}</div>;
 }

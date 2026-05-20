@@ -1,11 +1,8 @@
 import React from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import type { IconName } from '../../primitives/Icon/Icon';
-import stylesRaw from './EmptyState.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './EmptyState.module.css';
 
 export interface EmptyStateProps {
   /**
@@ -50,7 +47,7 @@ export function EmptyState({
   action,
   className,
 }: EmptyStateProps): React.ReactElement {
-  const rootClasses = [styles['empty-state'], className].filter(Boolean).join(' ');
+  const rootClasses = cn(styles['empty-state'], className);
 
   return (
     <div className={rootClasses}>

@@ -1,8 +1,5 @@
-import stylesRaw from './Divider.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Divider.module.css';
 
 /**
  * Divider orientation.
@@ -48,9 +45,7 @@ export function Divider({
   decorative = false,
   className,
 }: DividerProps): React.ReactElement {
-  const classes = [styles['divider'], styles[orientation], className]
-    .filter(Boolean)
-    .join(' ');
+  const classes = cn(styles['divider'], styles[orientation], className);
 
   return (
     <hr

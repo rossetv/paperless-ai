@@ -1,8 +1,5 @@
-import stylesRaw from './Card.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Card.module.css';
 
 /** Which dark surface token to use for dark-section cards (DESIGN.md §2). */
 export type CardSurface = 'default' | 'dark-1' | 'dark-2' | 'dark-3' | 'dark-4' | 'dark-5';
@@ -53,14 +50,12 @@ export function Card({
   children,
   className,
 }: CardProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['card'],
     styles[surface],
     elevated ? styles['elevated'] : undefined,
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return (
     <Element className={classes}>

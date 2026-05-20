@@ -1,9 +1,5 @@
 import React, { useState, useId, useCallback } from 'react';
-import stylesRaw from './Tooltip.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import styles from './Tooltip.module.css';
 
 export interface TooltipProps {
   /**

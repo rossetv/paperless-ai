@@ -1,8 +1,5 @@
-import stylesRaw from './Grid.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Grid.module.css';
 
 /**
  * Number of equal-width columns.
@@ -43,14 +40,12 @@ export interface GridProps {
  * App-agnostic: knows nothing about search or documents.
  */
 export function Grid({ columns, gap, children, className }: GridProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['grid'],
     styles[`columns-${columns}`],
     gap !== undefined ? styles[`gap-${gap}`] : undefined,
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return <div className={classes}>{children}</div>;
 }

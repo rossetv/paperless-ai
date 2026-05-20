@@ -2,11 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
-import stylesRaw from './Modal.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Modal.module.css';
 
 /** Selector string that matches every natively focusable interactive element. */
 const FOCUSABLE_SELECTOR = [
@@ -149,7 +146,7 @@ export function Modal({
 
   if (!isOpen) return null;
 
-  const panelClasses = [styles['panel'], className].filter(Boolean).join(' ');
+  const panelClasses = cn(styles['panel'], className);
 
   return createPortal(
     <div className={styles['overlay']}>

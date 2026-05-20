@@ -1,8 +1,5 @@
-import stylesRaw from './Input.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Input.module.css';
 
 export interface InputProps {
   /** The id — required for label association and accessible forms. */
@@ -61,7 +58,7 @@ export function Input({
   const hasError = error !== undefined && error !== '';
   const errorId = hasError ? `${id}-error` : undefined;
 
-  const wrapperClasses = [styles['wrapper'], className].filter(Boolean).join(' ');
+  const wrapperClasses = cn(styles['wrapper'], className);
 
   return (
     <div className={wrapperClasses}>
@@ -83,9 +80,7 @@ export function Input({
         onChange={onChange}
         onFocus={onFocus}
         onBlur={onBlur}
-        className={[styles['input'], hasError ? styles['input-error'] : undefined]
-          .filter(Boolean)
-          .join(' ')}
+        className={cn(styles['input'], hasError ? styles['input-error'] : undefined)}
       />
       {hasError && (
         <span id={errorId} className={styles['error-message']} role="alert">

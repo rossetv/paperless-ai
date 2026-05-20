@@ -1,8 +1,5 @@
-import stylesRaw from './Chip.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Chip.module.css';
 
 export interface ChipProps {
   /** Whether this chip is in the active/selected state. Defaults to false. */
@@ -52,14 +49,12 @@ export function Chip({
   children,
   className,
 }: ChipProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['chip'],
     selected ? styles['selected'] : undefined,
     onClick !== undefined ? styles['chip-interactive'] : undefined,
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   // Derive a default accessible label from string children.
   // Callers with non-string children MUST supply removeLabel explicitly.

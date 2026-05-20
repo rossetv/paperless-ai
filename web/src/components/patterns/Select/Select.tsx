@@ -1,10 +1,7 @@
 import React, { useId, useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
-import stylesRaw from './Select.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Select.module.css';
 
 /** A single option in the Select. */
 export interface SelectOption<T extends string = string> {
@@ -143,7 +140,7 @@ export function Select<T extends string = string>({
     }
   }
 
-  const wrapperClasses = [styles['select'], className].filter(Boolean).join(' ');
+  const wrapperClasses = cn(styles['select'], className);
 
   return (
     <div className={wrapperClasses}>
@@ -168,9 +165,7 @@ export function Select<T extends string = string>({
             : undefined
         }
         disabled={disabled}
-        className={[styles['trigger'], isOpen ? styles['open'] : undefined]
-          .filter(Boolean)
-          .join(' ')}
+        className={cn(styles['trigger'], isOpen ? styles['open'] : undefined)}
         onClick={() => (isOpen ? close() : open())}
         onKeyDown={handleTriggerKeyDown}
       >
@@ -196,13 +191,11 @@ export function Select<T extends string = string>({
                 id={`${id}-option-${option.value}`}
                 role="option"
                 aria-selected={isSelected}
-                className={[
+                className={cn(
                   styles['option'],
                   isSelected ? styles['selected'] : undefined,
                   isHighlighted ? styles['highlighted'] : undefined,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
+                )}
                 onClick={() => selectOption(option.value)}
                 onMouseEnter={() => setHighlightedIndex(index)}
               >

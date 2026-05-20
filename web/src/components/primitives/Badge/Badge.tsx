@@ -1,8 +1,5 @@
-import stylesRaw from './Badge.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Badge.module.css';
 
 /**
  * Visual variant for the badge.
@@ -39,13 +36,11 @@ export function Badge({
   children,
   className,
 }: BadgeProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['badge'],
     styles[variant],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return (
     <span className={classes}>

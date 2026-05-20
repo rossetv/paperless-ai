@@ -1,8 +1,5 @@
-import stylesRaw from './Stack.module.css';
-
-// CSS Modules return a string-indexed object; bracket notation is required
-// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
-const styles = stylesRaw as Record<string, string>;
+import { cn } from '../../../lib/cn';
+import styles from './Stack.module.css';
 
 /** Flex direction of the stack. */
 export type StackDirection = 'vertical' | 'horizontal';
@@ -57,7 +54,7 @@ export function Stack({
   children,
   className,
 }: StackProps): React.ReactElement {
-  const classes = [
+  const classes = cn(
     styles['stack'],
     styles[direction],
     gap !== undefined ? styles[`gap-${gap}`] : undefined,
@@ -65,9 +62,7 @@ export function Stack({
     justify !== undefined ? styles[`justify-${justify}`] : undefined,
     wrap ? styles['wrap'] : styles['nowrap'],
     className,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  );
 
   return <div className={classes}>{children}</div>;
 }
