@@ -8,8 +8,6 @@ Both must return new QueryPlan instances without mutating the input.
 
 from __future__ import annotations
 
-import pytest
-
 from search.models import FilterCandidates, QueryPlan
 from search.refinement import adjust_plan, broaden_plan
 

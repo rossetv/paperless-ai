@@ -19,7 +19,7 @@ import openai
 import pytest
 
 from common.embeddings import EmbeddingError
-from search.models import FilterCandidates, QueryPlan, RetrievedChunk
+from search.models import FilterCandidates, QueryPlan
 from search.retriever import _RRF_K, Retriever, resolve_filters
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
 from store.reader import SearchFilters

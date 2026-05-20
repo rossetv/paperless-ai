@@ -31,11 +31,51 @@ jobs:
           pip install .
 
       - name: Run tests with coverage
-        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov-report=term-missing --cov-fail-under=70
+        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-report=term-missing --cov-fail-under=70
+
+      - name: Type-check store, indexer, search
+        run: mypy src/store src/indexer src/search
+
+      - name: Lint
+        run: ruff check src tests
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
 
   docker:
     name: Docker
-    needs: tests
+    needs: [tests, frontend]
     runs-on: ubuntu-latest
 
     steps:

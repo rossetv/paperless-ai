@@ -23,7 +23,7 @@ import pytest
 
 from store.migrations import StoreError
 from store.models import ChunkInput, DocumentMeta, TaxonomyEntry
-from store.schema import connect, ensure_schema
+from store.schema import connect
 
 # ---------------------------------------------------------------------------
 # Fixtures
