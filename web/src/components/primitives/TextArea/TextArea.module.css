@@ -1,0 +1,71 @@
+/*
+ * TextArea primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * Mirrors Input styling (DESIGN.md §4 "Filter / Search Button"):
+ * --radius-comfortable (11px), light background, accent focus ring.
+ * Consistent visual language with the Input primitive.
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-caption);
+  line-height: var(--line-height-caption);
+}
+
+.textarea {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  padding: var(--spacing-6) var(--spacing-10);
+
+  width: 100%;
+  box-sizing: border-box;
+
+  /* Allow vertical resize only — horizontal resize breaks layout */
+  resize: vertical;
+
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.textarea:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.textarea:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  resize: none;
+}
+
+/* Error state */
+.textareaError {
+  border-color: var(--colour-accent);
+}
+
+.errorMessage {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-accent);
+}
