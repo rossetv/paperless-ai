@@ -64,6 +64,7 @@ MAX_DOCUMENT_FAILURES = 5
 # Meta keys owned by the reconciler (SPEC §4.1).
 _WATERMARK_META_KEY = "modified_watermark"
 _LAST_SWEEP_META_KEY = "last_full_sweep_at"
+_LAST_RECONCILE_META_KEY = "last_reconcile_at"
 # Maps str(doc_id) -> consecutive_failure_count as a JSON object in store meta.
 # Documents that failed to index are retried out-of-band from this map every
 # cycle, so forward progress of the watermark is decoupled from failure retry.
@@ -233,6 +234,15 @@ class Reconciler:
             log.info("reconcile.watermark_held", reason="empty_page")
 
         report = _tally_outcomes(outcomes, given_up=given_up)
+
+        # Mark the index as "ready" (SPEC §4.1).  Written unconditionally at the
+        # end of every completed cycle — including cycles where Paperless returned
+        # zero documents — because an empty-but-reconciled index is genuinely
+        # ready to serve queries.  Without this the search server's healthz check
+        # (which gates on last_reconcile_at being non-None) would return 503
+        # index-not-ready forever.
+        self._store_writer.write_meta(_LAST_RECONCILE_META_KEY, _utc_now_iso())
+
         log.info(
             "reconcile.incremental_finished",
             indexed=report.indexed,
