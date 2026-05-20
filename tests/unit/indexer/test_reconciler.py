@@ -854,6 +854,125 @@ class TestIncrementalSyncFailedDocumentRetry:
 
 
 # ---------------------------------------------------------------------------
+# incremental_sync — last_reconcile_at is written every completed cycle
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalSyncWritesLastReconcileAt:
+    """``incremental_sync`` must write ``last_reconcile_at`` at the end of every
+    completed cycle so that ``/api/healthz`` can report the index as ready.
+
+    Regression: the reconciler previously wrote ``modified_watermark``,
+    ``last_full_sweep_at``, and ``failed_documents`` but never wrote
+    ``last_reconcile_at``, causing the search server to return 503
+    index-not-ready for the entire lifetime of the server.
+    """
+
+    def test_last_reconcile_at_is_set_after_a_cycle_with_documents(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A normal cycle that indexes documents must set last_reconcile_at."""
+        docs = [_make_doc(doc_id=1)]
+        paperless = _make_paperless(documents=docs)
+        store_writer = _make_store_writer()
+
+        assert "last_reconcile_at" not in store_writer._meta
+
+        monkeypatch.setattr(
+            "indexer.reconciler.DocumentIndexer.index_document",
+            lambda _self, doc, existing: IndexOutcome.INDEXED,
+        )
+
+        reconciler = Reconciler(
+            _make_settings(), paperless, store_writer, _make_embedding_client()
+        )
+        reconciler.incremental_sync()
+
+        assert "last_reconcile_at" in store_writer._meta
+        assert store_writer._meta["last_reconcile_at"] is not None
+
+    def test_last_reconcile_at_is_set_after_an_empty_cycle(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An empty cycle (Paperless returned zero documents) must still set
+        last_reconcile_at — an empty-but-reconciled index is genuinely ready."""
+        paperless = _make_paperless(documents=[])
+        store_writer = _make_store_writer()
+
+        assert "last_reconcile_at" not in store_writer._meta
+
+        monkeypatch.setattr(
+            "indexer.reconciler.DocumentIndexer.index_document",
+            lambda _self, doc, existing: IndexOutcome.INDEXED,
+        )
+
+        reconciler = Reconciler(
+            _make_settings(), paperless, store_writer, _make_embedding_client()
+        )
+        reconciler.incremental_sync()
+
+        assert "last_reconcile_at" in store_writer._meta
+        assert store_writer._meta["last_reconcile_at"] is not None
+
+    def test_last_reconcile_at_is_set_even_when_some_documents_fail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Per-document failures are isolated; the cycle still completes and
+        must write last_reconcile_at (SPEC §5.7)."""
+        docs = [_make_doc(doc_id=1), _make_doc(doc_id=2)]
+        paperless = _make_paperless(documents=docs)
+        store_writer = _make_store_writer()
+
+        assert "last_reconcile_at" not in store_writer._meta
+
+        def _index_document(_self: object, doc: dict, existing: IndexState | None) -> IndexOutcome:
+            if doc["id"] == 1:
+                raise RuntimeError("doc 1 failed")
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.reconciler.DocumentIndexer.index_document",
+            _index_document,
+        )
+
+        reconciler = Reconciler(
+            _make_settings(), paperless, store_writer, _make_embedding_client()
+        )
+        report = reconciler.incremental_sync()
+
+        assert report.failed == 1
+        # The cycle completed despite the per-document failure — last_reconcile_at
+        # must be set so healthz reports the index as ready.
+        assert "last_reconcile_at" in store_writer._meta
+        assert store_writer._meta["last_reconcile_at"] is not None
+
+    def test_last_reconcile_at_was_not_set_before_the_cycle(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Baseline: the key must not already be present before incremental_sync
+        runs — this confirms the test setup is correct and the write is the
+        reconciler's own action."""
+        paperless = _make_paperless(documents=[_make_doc(doc_id=1)])
+        store_writer = _make_store_writer()
+
+        monkeypatch.setattr(
+            "indexer.reconciler.DocumentIndexer.index_document",
+            lambda _self, doc, existing: IndexOutcome.INDEXED,
+        )
+
+        # Before — key absent.
+        assert "last_reconcile_at" not in store_writer._meta
+
+        reconciler = Reconciler(
+            _make_settings(), paperless, store_writer, _make_embedding_client()
+        )
+        reconciler.incremental_sync()
+
+        # After — key present.
+        assert "last_reconcile_at" in store_writer._meta
+
+
+# ---------------------------------------------------------------------------
 # deletion_sweep — the safety rules (SPEC §5.4)
 # ---------------------------------------------------------------------------
 
