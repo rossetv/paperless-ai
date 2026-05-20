@@ -30,10 +30,9 @@ import json
 from datetime import date
 from typing import TYPE_CHECKING
 
-import openai
 import structlog
 
-from common.llm import OpenAIChatMixin, unique_models
+from common.llm import OpenAIChatMixin, extract_json_object
 from search.models import FilterCandidates, QueryPlan
 from search.prompts import build_planner_system_prompt
 
@@ -89,7 +88,12 @@ class QueryPlanner(OpenAIChatMixin):
             {"role": "user", "content": query},
         ]
 
-        raw_content = self._call_llm_with_fallback(query, messages)
+        raw_content = self._complete_with_model_fallback(
+            primary_model=self.settings.SEARCH_PLANNER_MODEL,
+            messages=messages,
+            fallback_models=self.settings.AI_MODELS,
+            log_event_prefix="planner",
+        )
         if raw_content is None:
             return self._fallback_plan(query, reason="all models failed or returned empty content")
 
@@ -98,51 +102,6 @@ class QueryPlanner(OpenAIChatMixin):
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    def _call_llm_with_fallback(
-        self, query: str, messages: list[dict[str, str]]
-    ) -> str | None:
-        """Try SEARCH_PLANNER_MODEL first, then each model in AI_MODELS.
-
-        Returns the raw text content from the first successful call, or
-        None if every model fails.
-
-        Each per-model attempt goes through ``_create_completion`` (the
-        inherited mixin call), so it gets the shared ``@retry`` backoff and
-        the ``llm_limiter`` concurrency limiter for free.  A model that still
-        fails — retry-exhausted retryable error or a non-retryable one such as
-        ``AuthenticationError`` — raises an ``openai.APIError`` subclass, which
-        is caught here as the terminal "skip this model" branch.
-
-        The primary model (SEARCH_PLANNER_MODEL) is tried first.  If it is
-        already in AI_MODELS it is not tried twice — unique_models deduplicates
-        the combined list while preserving insertion order.
-        """
-        primary = self.settings.SEARCH_PLANNER_MODEL
-        fallbacks = unique_models([primary] + list(self.settings.AI_MODELS))
-
-        for model in fallbacks:
-            try:
-                completion = self._create_completion(
-                    model=model,
-                    messages=messages,
-                )
-                content: str = completion.choices[0].message.content or ""
-                return content
-            except openai.APIError as exc:
-                # Catches BOTH retry-exhausted retryable errors and
-                # non-retryable ones (AuthenticationError, PermissionDeniedError,
-                # NotFoundError, BadRequestError, …) — every one is an
-                # openai.APIError subclass.  Skip this model; try the next.
-                log.warning(
-                    "planner.model_failed",
-                    model=model,
-                    error=str(exc),
-                    query_prefix=query[:60],
-                )
-                continue
-
-        return None
 
     def _parse_response(self, query: str, raw: str) -> QueryPlan:
         """Parse *raw* into a QueryPlan, falling back gracefully on any error.
@@ -159,8 +118,8 @@ class QueryPlanner(OpenAIChatMixin):
             return self._fallback_plan(query, reason="LLM returned empty content")
 
         try:
-            data = _extract_json(stripped)
-        except (json.JSONDecodeError, ValueError):
+            data = extract_json_object(stripped)
+        except json.JSONDecodeError:
             return self._fallback_plan(query, reason="LLM response was not valid JSON")
 
         if not isinstance(data, dict):
@@ -212,33 +171,6 @@ class QueryPlanner(OpenAIChatMixin):
 # ---------------------------------------------------------------------------
 # Module-level parsing helpers (no side effects, no class state)
 # ---------------------------------------------------------------------------
-
-
-def _extract_json(text: str) -> object:
-    """Extract and parse JSON from raw model output.
-
-    Tolerates markdown fences (``` or ```json ... ```) and preamble text.
-    Tries a strict parse first, then falls back to extracting the first
-    {…} substring — mirroring the classifier/result.py pattern.
-
-    Args:
-        text: Raw model output string.
-
-    Returns:
-        The parsed Python object.
-
-    Raises:
-        json.JSONDecodeError: When no valid JSON can be found.
-        ValueError: When the extracted substring is empty.
-    """
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(text[start : end + 1])
 
 
 def _build_query_plan(data: dict) -> QueryPlan:  # type: ignore[type-arg]

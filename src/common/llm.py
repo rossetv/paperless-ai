@@ -14,14 +14,18 @@ See :func:`common.bootstrap.bootstrap_daemon` for the canonical sequence.
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Iterable
 
 import openai
+import structlog
 from openai.types.chat import ChatCompletion
 
 from .concurrency import llm_limiter
 from .retry import retry
+
+log = structlog.get_logger(__name__)
 
 RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.APIConnectionError,
@@ -104,10 +108,102 @@ class OpenAIChatMixin:
             # always ChatCompletion at runtime.  A blanket ignore is intentional
             # and narrowly scoped to this one call site.
 
+    def _complete_with_model_fallback(
+        self,
+        *,
+        primary_model: str,
+        messages: list[dict[str, str]],
+        fallback_models: Iterable[str],
+        log_event_prefix: str,
+    ) -> str | None:
+        """Run one chat completion, falling back through a chain of models.
+
+        The model-fallback chain belongs in the shared LLM wrapper
+        (CODE_GUIDELINES.md §8.1): the planner and the synthesiser both need
+        exactly this loop, so it lives here once rather than in each stage.
+
+        The chain is ``primary_model`` followed by every model in
+        *fallback_models*, deduplicated by :func:`unique_models` so the primary
+        is never tried twice when it also appears in the fallback list.  Each
+        attempt goes through :meth:`_create_completion`, so it inherits the
+        shared ``@retry`` exponential backoff and the ``llm_limiter`` global
+        concurrency limiter for free.
+
+        A model that still fails after retries raises an ``openai.APIError``
+        subclass — this covers *both* a retry-exhausted retryable error and a
+        non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
+        ``NotFoundError``, ``BadRequestError``, …).  Every one is caught here as
+        the terminal "skip this model" branch; the next model is tried.
+
+        Args:
+            primary_model: The model to try first.
+            messages: The chat messages to send (the ``messages`` kwarg of the
+                OpenAI chat-completions call).
+            fallback_models: Models to try, in order, after *primary_model*.
+            log_event_prefix: The dotted event-name prefix for the
+                per-model-failure warning, e.g. ``"planner"`` →
+                ``"planner.model_failed"``.
+
+        Returns:
+            The raw text content of the first successful completion, or
+            ``None`` when every model in the chain failed.
+        """
+        models = unique_models([primary_model, *fallback_models])
+        for model in models:
+            try:
+                completion = self._create_completion(model=model, messages=messages)
+            except openai.APIError as exc:
+                # Catches BOTH retry-exhausted retryable errors and
+                # non-retryable ones (AuthenticationError, PermissionDeniedError,
+                # NotFoundError, BadRequestError, …) — every one is an
+                # openai.APIError subclass.  Skip this model; try the next.
+                log.warning(
+                    f"{log_event_prefix}.model_failed",
+                    model=model,
+                    error=str(exc),
+                )
+                continue
+            return completion.choices[0].message.content or ""
+
+        return None
+
 
 def unique_models(models: list[str]) -> list[str]:
     """Deduplicate a model list while preserving insertion order."""
     return list(dict.fromkeys(models))
+
+
+def extract_json_object(text: str) -> object:
+    """Parse JSON from raw model output, tolerating fences and preamble.
+
+    LLMs frequently wrap a JSON response in markdown code fences
+    (```` ``` ```` or ```` ```json ````) or prepend a sentence of preamble.
+    This helper first attempts a strict :func:`json.loads`; on failure it
+    falls back to the substring from the first ``{`` to the last ``}`` and
+    re-parses that.  It is the single shared JSON extractor for every place
+    that parses an LLM response — the planner, the synthesiser, and the
+    classifier all route through it.
+
+    Args:
+        text: Raw model-output string.
+
+    Returns:
+        The parsed Python object.  Callers must check its concrete type (a
+        well-behaved LLM returns an object, but the strict parse also accepts
+        a bare array, string, or number) before using it.
+
+    Raises:
+        json.JSONDecodeError: When no valid JSON can be found — neither a
+            strict parse nor the ``{…}`` substring fallback succeeded.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        return json.loads(text[start : end + 1])
 
 
 class ThreadSafeStats:
