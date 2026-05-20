@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
+import { Chip } from '../../primitives/Chip/Chip';
+import { Stack } from '../../layout/Stack/Stack';
 import { FilterPanel } from './FilterPanel';
 
 const meta = {
@@ -21,7 +23,7 @@ export const ExpandedByDefault: Story = {
   args: {
     title: 'Date range',
     children: (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <Stack direction="vertical" gap={3}>
         <label>
           From
           <input type="date" />
@@ -30,7 +32,7 @@ export const ExpandedByDefault: Story = {
           To
           <input type="date" />
         </label>
-      </div>
+      </Stack>
     ),
   },
 };
@@ -46,29 +48,21 @@ export const CollapsedByDefault: Story = {
 export const WithRichContent: Story = {
   args: {
     title: 'Tags',
+    // Real Chip primitives — the story exercises the pattern with genuine
+    // library components rather than ad-hoc styled tag spans.
     children: (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+      <Stack direction="horizontal" gap={3} wrap>
         {['Invoice', 'Receipt', 'Contract', 'Letter', 'Statement'].map((tag) => (
-          <span
-            key={tag}
-            style={{
-              padding: '2px 8px',
-              borderRadius: '4px',
-              background: '#f5f5f7',
-              fontSize: '14px',
-            }}
-          >
-            {tag}
-          </span>
+          <Chip key={tag}>{tag}</Chip>
         ))}
-      </div>
+      </Stack>
     ),
   },
 };
 
 export const Stacked: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '300px' }}>
+    <Stack direction="vertical" gap={3}>
       <FilterPanel title="Date range">
         <p>Date filter controls</p>
       </FilterPanel>
@@ -78,6 +72,6 @@ export const Stacked: StoryObj = {
       <FilterPanel title="Tags">
         <p>Tag filter controls</p>
       </FilterPanel>
-    </div>
+    </Stack>
   ),
 };

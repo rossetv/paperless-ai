@@ -17,10 +17,10 @@ const BrandMark = () => (
   <span
     style={{
       fontFamily: 'var(--font-display)',
-      fontSize: '17px',
-      fontWeight: 600,
-      color: '#fff',
-      letterSpacing: '-0.374px',
+      fontSize: 'var(--font-size-body)',
+      fontWeight: 'var(--font-weight-body-emphasis)',
+      color: 'var(--colour-text-on-dark)',
+      letterSpacing: 'var(--letter-spacing-body)',
     }}
   >
     Paperless AI
@@ -32,8 +32,8 @@ const NavActions = () => (
     <a
       href="/search"
       style={{
-        color: '#fff',
-        fontSize: '12px',
+        color: 'var(--colour-text-on-dark)',
+        fontSize: 'var(--font-size-nav)',
         textDecoration: 'none',
         fontFamily: 'var(--font-text)',
       }}
@@ -43,8 +43,8 @@ const NavActions = () => (
     <a
       href="/settings"
       style={{
-        color: '#fff',
-        fontSize: '12px',
+        color: 'var(--colour-text-on-dark)',
+        fontSize: 'var(--font-size-nav)',
         textDecoration: 'none',
         fontFamily: 'var(--font-text)',
       }}
@@ -60,9 +60,9 @@ export const Default: Story = {
   },
   decorators: [
     (Story) => (
-      <div style={{ background: '#f5f5f7', minHeight: '200px' }}>
+      <div style={{ background: 'var(--colour-bg)', minHeight: 'var(--width-empty-state)' }}>
         <Story />
-        <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+        <div style={{ padding: 'var(--spacing-14)' }}>
           Page content scrolling behind the glass nav.
         </div>
       </div>
@@ -77,9 +77,9 @@ export const WithActions: Story = {
   },
   decorators: [
     (Story) => (
-      <div style={{ background: '#f5f5f7', minHeight: '200px' }}>
+      <div style={{ background: 'var(--colour-bg)', minHeight: 'var(--width-empty-state)' }}>
         <Story />
-        <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+        <div style={{ padding: 'var(--spacing-14)' }}>
           Page content scrolling behind the glass nav.
         </div>
       </div>
@@ -94,9 +94,9 @@ export const OnDarkBackground: Story = {
   },
   decorators: [
     (Story) => (
-      <div style={{ background: '#000', minHeight: '200px' }}>
+      <div style={{ background: 'var(--colour-bg-alt)', minHeight: 'var(--width-empty-state)' }}>
         <Story />
-        <div style={{ padding: '2rem', fontFamily: 'sans-serif', color: '#fff' }}>
+        <div style={{ padding: 'var(--spacing-14)', color: 'var(--colour-text-on-dark)' }}>
           Dark section content — nav glass is still visible.
         </div>
       </div>

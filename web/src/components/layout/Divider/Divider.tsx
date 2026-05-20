@@ -4,7 +4,17 @@ import stylesRaw from './Divider.module.css';
 // under noPropertyAccessFromIndexSignature (tsconfig strict mode).
 const styles = stylesRaw as Record<string, string>;
 
+/**
+ * Divider orientation.
+ * 'horizontal' (default) — a full-width rule separating stacked content.
+ * 'vertical'             — a full-height rule separating inline content;
+ *                          stretches to its flex container's height.
+ */
+export type DividerOrientation = 'horizontal' | 'vertical';
+
 export interface DividerProps {
+  /** Orientation of the rule. Defaults to 'horizontal'. */
+  orientation?: DividerOrientation;
   /**
    * When true, the divider is purely decorative and carries
    * role="presentation" to hide it from assistive technology.
@@ -16,25 +26,40 @@ export interface DividerProps {
 }
 
 /**
- * Thin horizontal rule.
+ * Thin separator rule.
  *
- * Renders an <hr> element styled as a 1px line using the border token colour
- * (--colour-border). Follows Apple's sparse use of visible separators —
- * use only where structural separation is required, not for decoration.
+ * Renders an <hr> styled as a hairline using the border token colour
+ * (--colour-border). Supports both orientations: a horizontal rule between
+ * stacked blocks, and a vertical rule between inline items (which stretches to
+ * the height of its flex container).
+ *
+ * Follows Apple's sparse use of visible separators — use only where structural
+ * separation is required, not for decoration.
  *
  * Set decorative={true} when the separator is purely visual and should be
- * hidden from screen readers.
+ * hidden from screen readers. The <hr> implicit role is "separator"; for a
+ * vertical divider aria-orientation is set so assistive tech announces it
+ * correctly.
  *
  * App-agnostic: knows nothing about search or documents.
  */
-export function Divider({ decorative = false, className }: DividerProps): React.ReactElement {
-  const classes = [styles['divider'], styles['horizontal'], className].filter(Boolean).join(' ');
+export function Divider({
+  orientation = 'horizontal',
+  decorative = false,
+  className,
+}: DividerProps): React.ReactElement {
+  const classes = [styles['divider'], styles[orientation], className]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <hr
       className={classes}
       role={decorative ? 'presentation' : undefined}
       aria-hidden={decorative ? true : undefined}
+      aria-orientation={
+        !decorative && orientation === 'vertical' ? 'vertical' : undefined
+      }
     />
   );
 }

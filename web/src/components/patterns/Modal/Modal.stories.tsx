@@ -41,7 +41,13 @@ export const WithTrigger: Story = {
         <Modal isOpen={open} title="Details" onClose={() => setOpen(false)}>
           <p>This modal was opened by clicking the button above.</p>
           <p>Press Escape or click outside to dismiss it.</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              marginTop: 'var(--spacing-14)',
+            }}
+          >
             <Button onClick={() => setOpen(false)}>Close</Button>
           </div>
         </Modal>

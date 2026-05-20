@@ -6,24 +6,33 @@
  *
  * DESIGN.md §7 Do's and Don'ts:
  *   - Apple almost never uses visible borders on cards or containers
- *   - Dividers are used sparingly; colour comes from --colour-border (rgba(0,0,0,0.04))
+ *   - Dividers are used sparingly; colour comes from --colour-border
  *
- * The rule is rendered as a thin line using border-top (the narrowest available
- * visual element). The <hr> default border is reset and replaced with border-top
- * using the token border colour. border-width uses --spacing-1 (2px) — the
- * smallest spacing token — which is close to a standard hairline rule. The
- * element height is 0 so the border-top carries all visual weight.
+ * The rule is rendered as a thin line using a border (the narrowest available
+ * visual element). The <hr> default border is reset and replaced with a
+ * token-coloured border. border-width uses --spacing-1 (2 px) — the smallest
+ * spacing token, close to a standard hairline rule.
  */
 
 .divider {
   border: none;
-  border-top: var(--spacing-1) solid var(--colour-border);
   flex-shrink: 0;
 }
 
-/* ── Orientation ── */
+/* ── Horizontal — a full-width rule separating stacked content ── */
 .horizontal {
   display: block;
   width: 100%;
+  border-top: var(--spacing-1) solid var(--colour-border);
   margin-block: var(--spacing-6);
+}
+
+/* ── Vertical — a full-height rule separating inline content. Stretches to
+ *    the height of its flex container; the border carries the visual weight. ── */
+.vertical {
+  display: inline-block;
+  align-self: stretch;
+  width: 0;
+  border-left: var(--spacing-1) solid var(--colour-border);
+  margin-inline: var(--spacing-6);
 }
