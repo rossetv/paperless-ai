@@ -89,7 +89,7 @@ class TestGateEmptyContent:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc(content="")
@@ -103,7 +103,7 @@ class TestGateEmptyContent:
     def test_whitespace_content_returns_skipped(self) -> None:
         settings = _make_settings()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), _make_embedding_client(), taxonomy_lookup=None
+            settings, _make_store_writer(), _make_embedding_client()
         )
 
         doc = _make_doc(content="   \n\t  ")
@@ -113,7 +113,7 @@ class TestGateEmptyContent:
         """Paperless may return null content for un-OCR'd documents."""
         settings = _make_settings()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), _make_embedding_client(), taxonomy_lookup=None
+            settings, _make_store_writer(), _make_embedding_client()
         )
 
         doc = _make_doc(content=None)  # type: ignore[arg-type]
@@ -132,7 +132,7 @@ class TestGateErrorTag:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc(tags=[10, 552, 20])
@@ -148,7 +148,7 @@ class TestGateErrorTag:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc(tags=[552])
@@ -170,7 +170,7 @@ class TestNewDocument:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc()
@@ -182,7 +182,7 @@ class TestNewDocument:
         settings = _make_settings()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client, taxonomy_lookup=None
+            settings, _make_store_writer(), embedding_client
         )
 
         doc = _make_doc()
@@ -194,7 +194,7 @@ class TestNewDocument:
         settings = _make_settings()
         store_writer = _make_store_writer()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client(), taxonomy_lookup=None
+            settings, store_writer, _make_embedding_client()
         )
 
         doc = _make_doc()
@@ -226,7 +226,7 @@ class TestUnchangedHash:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc()
@@ -239,7 +239,7 @@ class TestUnchangedHash:
         settings = _make_settings()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client, taxonomy_lookup=None
+            settings, _make_store_writer(), embedding_client
         )
 
         doc = _make_doc()
@@ -252,7 +252,7 @@ class TestUnchangedHash:
         settings = _make_settings()
         store_writer = _make_store_writer()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client(), taxonomy_lookup=None
+            settings, store_writer, _make_embedding_client()
         )
 
         doc = _make_doc()
@@ -275,7 +275,7 @@ class TestChangedHash:
         store_writer = _make_store_writer()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, store_writer, embedding_client, taxonomy_lookup=None
+            settings, store_writer, embedding_client
         )
 
         doc = _make_doc()
@@ -291,7 +291,7 @@ class TestChangedHash:
         settings = _make_settings()
         embedding_client = _make_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client, taxonomy_lookup=None
+            settings, _make_store_writer(), embedding_client
         )
 
         doc = _make_doc()
@@ -307,7 +307,7 @@ class TestChangedHash:
         settings = _make_settings()
         store_writer = _make_store_writer()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client(), taxonomy_lookup=None
+            settings, store_writer, _make_embedding_client()
         )
 
         doc = _make_doc()
@@ -333,7 +333,7 @@ class TestDateNormalisation:
         settings = _make_settings()
         store_writer = _make_store_writer()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client(), taxonomy_lookup=None
+            settings, store_writer, _make_embedding_client()
         )
         indexer.index_document(doc, existing=None)
         # upsert_document is called as upsert_document(meta, chunks)
@@ -392,7 +392,7 @@ class TestDateNormalisation:
         settings = _make_settings()
         store_writer = _make_store_writer()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client(), taxonomy_lookup=None
+            settings, store_writer, _make_embedding_client()
         )
         doc = _make_doc(
             content="Stable content.",
