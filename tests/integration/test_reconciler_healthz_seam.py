@@ -28,7 +28,6 @@ from fastapi.testclient import TestClient
 
 from indexer.reconciler import Reconciler
 from indexer.worker import IndexOutcome
-from store.models import IndexState
 from store.reader import StoreReader
 from store.writer import StoreWriter
 
