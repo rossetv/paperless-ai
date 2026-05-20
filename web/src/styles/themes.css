@@ -4,19 +4,21 @@
  * This file is the ONLY place that legitimately contains literal colour values
  * (it defines the themes). All other files use var(--…).
  *
- * Light theme values are set directly on :root in tokens.css so no override is
- * needed here for the light theme. The dark theme uses [data-theme="dark"] and
- * is also applied automatically via prefers-color-scheme for users who have not
- * set an explicit theme preference.
+ * Light theme values are set directly on :root in tokens.css, so no override
+ * is needed here for light. The dark palette is defined ONCE, under the
+ * [data-theme="dark"] selector. The theme bootstrap in index.html mirrors the
+ * OS `prefers-color-scheme` onto `data-theme` before first paint, so this one
+ * selector covers both the explicit opt-in and the system-preference case —
+ * there is no `@media` duplicate to keep in sync.
  */
 
 /* ──────────────────────────────────────────────────────
- * Dark theme — explicit opt-in via data-theme attribute
+ * Dark theme — keyed on the data-theme attribute, which is
+ * always set (explicitly, or by the index.html bootstrap).
  * ────────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  /* Page backgrounds */
+  /* Page background */
   --colour-bg:              #000;
-  --colour-bg-alt:          #f5f5f7;
 
   /* Surface */
   --colour-surface:         #272729;
@@ -50,50 +52,4 @@
 
   /* Navigation — unchanged (already dark glass) */
   --colour-nav-bg:          rgb(0 0 0 / 80%);
-}
-
-/* ──────────────────────────────────────────────────────────────────────
- * System preference — applied when no explicit data-theme is set.
- * The [data-theme="dark"] selector above takes precedence when set
- * explicitly; this handles users who haven't interacted with the toggle.
- * ────────────────────────────────────────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    /* Page backgrounds */
-    --colour-bg:              #000;
-    --colour-bg-alt:          #f5f5f7;
-
-    /* Surface */
-    --colour-surface:         #272729;
-
-    /* Text */
-    --colour-text-primary:    #fff;
-    --colour-text-secondary:  rgb(255 255 255 / 80%);
-    --colour-text-tertiary:   rgb(255 255 255 / 48%);
-    --colour-text-on-dark:    #fff;
-
-    /* Interactive / accent */
-    --colour-accent:          #0071e3;
-    --colour-link:            #2997ff;
-    --colour-link-on-dark:    #2997ff;
-
-    /* Focus ring */
-    --colour-focus-ring:      #0071e3;
-
-    /* Borders */
-    --colour-border:          rgb(255 255 255 / 8%);
-    --colour-border-button:   #2997ff;
-
-    /* Button states */
-    --colour-button-active-bg: #1d1d1f;
-    --colour-button-light-bg:  #272729;
-
-    /* Overlays */
-    --colour-overlay:         rgb(0 0 0 / 64%);
-    --colour-overlay-dark:    rgb(0 0 0 / 90%);
-    --colour-hover-dark:      rgb(255 255 255 / 32%);
-
-    /* Navigation */
-    --colour-nav-bg:          rgb(0 0 0 / 80%);
-  }
 }

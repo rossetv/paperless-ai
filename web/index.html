@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paperless AI Search</title>
+    <script>
+      /*
+       * Theme bootstrap — runs before first paint so there is no flash of the
+       * wrong theme. When no explicit `data-theme` is set, mirror the OS
+       * `prefers-color-scheme` onto the attribute. This makes `[data-theme]`
+       * the single switch the stylesheet keys off, so themes.css defines the
+       * dark palette exactly once (no `@media` duplicate).
+       */
+      (function () {
+        var root = document.documentElement;
+        if (!root.getAttribute('data-theme')) {
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

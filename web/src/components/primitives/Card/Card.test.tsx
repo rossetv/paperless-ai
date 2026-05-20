@@ -37,9 +37,9 @@ describe('Card', () => {
     expect((container.firstChild as Element).className).not.toMatch(/elevated/);
   });
 
-  it('applies a dark surface class when surface is dark-1', () => {
-    const { container } = render(<Card surface="dark-1">Content</Card>);
-    expect((container.firstChild as Element).className).toMatch(/dark-1/);
+  it('applies the dark surface class when surface is dark', () => {
+    const { container } = render(<Card surface="dark">Content</Card>);
+    expect((container.firstChild as Element).className).toMatch(/dark/);
   });
 
   it('forwards a custom className', () => {

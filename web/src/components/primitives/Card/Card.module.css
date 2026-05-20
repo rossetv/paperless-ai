@@ -5,7 +5,7 @@
  * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
  *
  * DESIGN.md §4 Cards & Containers:
- *   - Background: --colour-surface (light) or --colour-surface-dark-* (dark variants)
+ *   - Background: --colour-surface (light) or --colour-surface-dark (dark section)
  *   - Border: none — Apple almost never borders cards
  *   - Radius: use --radius-standard as the standard card radius
  *   - Shadow: --shadow-card for elevated product cards; flat (no shadow) otherwise
@@ -26,31 +26,9 @@
   box-shadow: var(--shadow-card);
 }
 
-/* ── Surface variants — dark section backgrounds ── */
-
-/* Light surface (default) is handled by the base .card rule above */
-
-.dark-1 {
-  background-color: var(--colour-surface-dark-1);
-  color: var(--colour-text-on-dark);
-}
-
-.dark-2 {
-  background-color: var(--colour-surface-dark-2);
-  color: var(--colour-text-on-dark);
-}
-
-.dark-3 {
-  background-color: var(--colour-surface-dark-3);
-  color: var(--colour-text-on-dark);
-}
-
-.dark-4 {
-  background-color: var(--colour-surface-dark-4);
-  color: var(--colour-text-on-dark);
-}
-
-.dark-5 {
-  background-color: var(--colour-surface-dark-5);
+/* ── Dark surface — a dark "section" card on a light page ──
+   Light surface (default) is handled by the base .card rule above. */
+.dark {
+  background-color: var(--colour-surface-dark);
   color: var(--colour-text-on-dark);
 }

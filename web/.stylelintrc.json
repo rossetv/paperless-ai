@@ -3,6 +3,7 @@
   "rules": {
     "color-no-invalid-hex": true,
     "color-named": "never",
+    "property-no-unknown": [true, { "ignoreProperties": ["composes"] }],
     "declaration-property-value-disallowed-list": {
       "/^(color|background-color|border-color|outline-color|fill|stroke|box-shadow|text-shadow|background|border|outline|border-top|border-right|border-bottom|border-left)$/": [
         "/#[0-9a-fA-F]/",

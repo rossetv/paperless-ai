@@ -26,18 +26,60 @@
 .columns-5 { grid-template-columns: repeat(5, 1fr); }
 .columns-6 { grid-template-columns: repeat(6, 1fr); }
 
-/* ── Gap — one class per spacing token ── */
-.gap-1  { gap: var(--spacing-1);  }
-.gap-2  { gap: var(--spacing-2);  }
-.gap-3  { gap: var(--spacing-3);  }
-.gap-4  { gap: var(--spacing-4);  }
-.gap-5  { gap: var(--spacing-5);  }
-.gap-6  { gap: var(--spacing-6);  }
-.gap-7  { gap: var(--spacing-7);  }
-.gap-8  { gap: var(--spacing-8);  }
-.gap-9  { gap: var(--spacing-9);  }
-.gap-10 { gap: var(--spacing-10); }
-.gap-11 { gap: var(--spacing-11); }
-.gap-12 { gap: var(--spacing-12); }
-.gap-13 { gap: var(--spacing-13); }
-.gap-14 { gap: var(--spacing-14); }
+/* ── Gap — composed from the shared layout gap module so Stack and Grid
+   draw the spacing-token scale from one source (no duplicate rules). ── */
+.gap-1 {
+  composes: gap-1 from '../gap.module.css';
+}
+
+.gap-2 {
+  composes: gap-2 from '../gap.module.css';
+}
+
+.gap-3 {
+  composes: gap-3 from '../gap.module.css';
+}
+
+.gap-4 {
+  composes: gap-4 from '../gap.module.css';
+}
+
+.gap-5 {
+  composes: gap-5 from '../gap.module.css';
+}
+
+.gap-6 {
+  composes: gap-6 from '../gap.module.css';
+}
+
+.gap-7 {
+  composes: gap-7 from '../gap.module.css';
+}
+
+.gap-8 {
+  composes: gap-8 from '../gap.module.css';
+}
+
+.gap-9 {
+  composes: gap-9 from '../gap.module.css';
+}
+
+.gap-10 {
+  composes: gap-10 from '../gap.module.css';
+}
+
+.gap-11 {
+  composes: gap-11 from '../gap.module.css';
+}
+
+.gap-12 {
+  composes: gap-12 from '../gap.module.css';
+}
+
+.gap-13 {
+  composes: gap-13 from '../gap.module.css';
+}
+
+.gap-14 {
+  composes: gap-14 from '../gap.module.css';
+}

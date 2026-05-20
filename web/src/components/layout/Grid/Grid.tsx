@@ -1,4 +1,5 @@
 import { cn } from '../../../lib/cn';
+import type { SpacingScale } from '../spacing';
 import styles from './Grid.module.css';
 
 /**
@@ -8,10 +9,11 @@ import styles from './Grid.module.css';
 export type GridColumns = 1 | 2 | 3 | 4 | 5 | 6;
 
 /**
- * Gap between grid cells; maps 1:1 to the --spacing-N tokens in tokens.css.
- * 1 = --spacing-1 (2px) … 14 = --spacing-14 (24px).
+ * Gap between grid cells; a step on the shared spacing-token scale.
+ * Re-exported as an alias of `SpacingScale` so the gap scale has one
+ * definition shared with Stack.
  */
-export type GridGap = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
+export type GridGap = SpacingScale;
 
 export interface GridProps {
   /**

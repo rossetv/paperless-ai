@@ -94,7 +94,7 @@ export const OnDarkBackground: Story = {
   },
   decorators: [
     (Story) => (
-      <div style={{ background: 'var(--colour-bg-alt)', minHeight: 'var(--width-empty-state)' }}>
+      <div style={{ background: 'var(--colour-surface-dark)', minHeight: 'var(--width-empty-state)' }}>
         <Story />
         <div style={{ padding: 'var(--spacing-14)', color: 'var(--colour-text-on-dark)' }}>
           Dark section content — nav glass is still visible.

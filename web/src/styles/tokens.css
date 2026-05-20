@@ -15,17 +15,15 @@
    * these fallbacks match the light theme.
    * ───────────────────────────────────────────── */
 
-  /* Page backgrounds */
+  /* Page background */
   --colour-bg:                      #f5f5f7;
-  --colour-bg-alt:                  #000;
 
   /* Surface */
   --colour-surface:                 #fff;
-  --colour-surface-dark-1:          #272729;
-  --colour-surface-dark-2:          #262628;
-  --colour-surface-dark-3:          #28282a;
-  --colour-surface-dark-4:          #2a2a2d;
-  --colour-surface-dark-5:          #242426;
+
+  /* Dark surface — for a dark "section" card on a light page (DESIGN.md §2).
+   * One honest token: the design system has a single dark card colour. */
+  --colour-surface-dark:            #272729;
 
   /* Text */
   --colour-text-primary:            #1d1d1f;

@@ -15,7 +15,7 @@ const meta = {
     },
     surface: {
       control: 'radio',
-      options: ['default', 'dark-1', 'dark-2', 'dark-3', 'dark-4', 'dark-5'],
+      options: ['default', 'dark'],
     },
     elevated: { control: 'boolean' },
   },
@@ -24,7 +24,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-// Plain heading + paragraph — global.css (loaded in preview.ts) supplies the
+// Plain heading + paragraph — global.css (loaded in preview) supplies the
 // type scale, so the story needs no inline typography.
 const SampleContent = () => (
   <>
@@ -50,7 +50,7 @@ export const Elevated: Story = {
 export const DarkSurface: Story = {
   args: {
     children: <SampleContent />,
-    surface: 'dark-1',
+    surface: 'dark',
     elevated: true,
   },
   parameters: {
@@ -78,15 +78,9 @@ export const AllSurfaces: StoryObj = {
     >
       <Card>Default surface (flat)</Card>
       <Card elevated>Default surface (elevated)</Card>
-      <div
-        style={{
-          background: 'var(--colour-bg-alt)',
-          padding: 'var(--spacing-14)',
-          borderRadius: 'var(--radius-standard)',
-        }}
-      >
-        <Card surface="dark-1" elevated>Dark surface 1</Card>
-      </div>
+      <Card surface="dark" elevated>
+        Dark section surface
+      </Card>
     </div>
   ),
 };

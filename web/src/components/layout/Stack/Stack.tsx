@@ -1,14 +1,16 @@
 import { cn } from '../../../lib/cn';
+import type { SpacingScale } from '../spacing';
 import styles from './Stack.module.css';
 
 /** Flex direction of the stack. */
 export type StackDirection = 'vertical' | 'horizontal';
 
 /**
- * Gap between children; maps 1:1 to the --spacing-N tokens in tokens.css.
- * 1 = --spacing-1 (2px) … 14 = --spacing-14 (24px).
+ * Gap between children; a step on the shared spacing-token scale.
+ * Re-exported as an alias of `SpacingScale` so the gap scale has one
+ * definition shared with Grid.
  */
-export type StackGap = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
+export type StackGap = SpacingScale;
 
 /** Cross-axis alignment (align-items). */
 export type StackAlign = 'start' | 'center' | 'end' | 'stretch' | 'baseline';

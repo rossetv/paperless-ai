@@ -68,7 +68,7 @@ export const AllVariants: StoryObj = {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <Link href="#">Default link</Link>
       <Link href="#" variant="inline">Inline link</Link>
-      <div style={{ background: 'var(--colour-bg-alt)', padding: 'var(--spacing-14)' }}>
+      <div style={{ background: 'var(--colour-surface-dark)', padding: 'var(--spacing-14)' }}>
         <Link href="#" variant="on-dark">On-dark link</Link>
       </div>
       <Link href="https://example.com" external>External link (opens new tab)</Link>

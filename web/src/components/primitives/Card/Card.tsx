@@ -1,8 +1,13 @@
 import { cn } from '../../../lib/cn';
 import styles from './Card.module.css';
 
-/** Which dark surface token to use for dark-section cards (DESIGN.md §2). */
-export type CardSurface = 'default' | 'dark-1' | 'dark-2' | 'dark-3' | 'dark-4' | 'dark-5';
+/**
+ * Surface colour of the card.
+ * 'default' — the light surface (--colour-surface).
+ * 'dark'    — the dark "section" surface (--colour-surface-dark), for a dark
+ *             band card on a light page (DESIGN.md §2).
+ */
+export type CardSurface = 'default' | 'dark';
 
 /** Allowed HTML container elements. */
 export type CardElement = 'div' | 'article' | 'section' | 'aside';
@@ -16,8 +21,7 @@ export interface CardProps {
   as?: CardElement;
   /**
    * Surface colour — controls the background token.
-   * 'default' = light surface (--colour-surface).
-   * 'dark-1' … 'dark-5' = dark surface variants (--colour-surface-dark-*).
+   * 'default' = light surface; 'dark' = the dark-section surface.
    */
   surface?: CardSurface;
   /**
