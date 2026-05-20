@@ -9,6 +9,9 @@ Covers the public contract of ``build_mcp_app``:
 - An unauthenticated MCP request is rejected with HTTP 401 before any tool runs.
 - A tool call with a missing required argument is rejected cleanly (MCP error,
   not a server crash).
+- A core exception carrying a filesystem path does not leak the path to the
+  MCP client (I3).
+- An over-length query/question is rejected with a clean tool error (MINOR 2).
 
 The MCP protocol tests use ``create_connected_server_and_client_session`` from
 ``mcp.shared.memory`` for an in-process, transport-layer-free round-trip.
@@ -18,9 +21,7 @@ returned by ``build_mcp_app``.
 
 from __future__ import annotations
 
-import dataclasses
 import json
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,7 +35,6 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
-from store.reader import SearchFilters
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -353,3 +353,128 @@ def test_no_bearer_prefix_is_rejected() -> None:
     )
 
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# I3 regression — core exceptions must not leak internals to the MCP client
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_search_documents_core_exception_does_not_leak_path() -> None:
+    """search_documents must not expose filesystem paths in error text (I3).
+
+    When ``core.retrieve`` raises an exception whose message contains a
+    filesystem path, the tool result must NOT include that path — only a
+    generic sanitised message.  This test fails if the bare ``str(exc)`` is
+    returned to the caller.
+    """
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    secret_path = "/var/data/paperless/index.db"
+
+    core = MagicMock()
+    core.retrieve.side_effect = RuntimeError(
+        f"sqlite3 error opening {secret_path}: no such file"
+    )
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings)
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("search_documents", {"query": "test"})
+
+    assert result.isError is True
+    # The raw filesystem path must never reach the client.
+    error_text = " ".join(
+        block.text for block in result.content if hasattr(block, "text")
+    )
+    assert secret_path not in error_text, (
+        f"Filesystem path leaked to MCP client: {error_text!r}"
+    )
+    # A generic sanitised message must be present instead.
+    assert "search failed" in error_text.lower() or "error" in error_text.lower()
+
+
+@pytest.mark.anyio
+async def test_ask_documents_core_exception_does_not_leak_path() -> None:
+    """ask_documents must not expose filesystem paths in error text (I3).
+
+    Mirrors ``test_search_documents_core_exception_does_not_leak_path`` for
+    the ``ask_documents`` tool.
+    """
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    secret_path = "/var/data/paperless/index.db"
+
+    core = MagicMock()
+    core.answer.side_effect = RuntimeError(
+        f"sqlite3 error opening {secret_path}: no such file"
+    )
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings)
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("ask_documents", {"question": "test"})
+
+    assert result.isError is True
+    error_text = " ".join(
+        block.text for block in result.content if hasattr(block, "text")
+    )
+    assert secret_path not in error_text, (
+        f"Filesystem path leaked to MCP client: {error_text!r}"
+    )
+    assert "search failed" in error_text.lower() or "error" in error_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# MINOR 2 regression — over-length queries are rejected at the MCP boundary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_search_documents_rejects_over_length_query() -> None:
+    """search_documents must reject a query exceeding 4000 characters (MINOR 2)."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings)
+
+    too_long = "x" * 4001
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("search_documents", {"query": too_long})
+
+    assert result.isError is True
+    # core.retrieve must NOT have been called — rejection is at the boundary.
+    core.retrieve.assert_not_called()
+    error_text = " ".join(
+        block.text for block in result.content if hasattr(block, "text")
+    )
+    assert "4000" in error_text or "maximum" in error_text.lower()
+
+
+@pytest.mark.anyio
+async def test_ask_documents_rejects_over_length_question() -> None:
+    """ask_documents must reject a question exceeding 4000 characters (MINOR 2)."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings)
+
+    too_long = "x" * 4001
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("ask_documents", {"question": too_long})
+
+    assert result.isError is True
+    core.answer.assert_not_called()
+    error_text = " ".join(
+        block.text for block in result.content if hasattr(block, "text")
+    )
+    assert "4000" in error_text or "maximum" in error_text.lower()

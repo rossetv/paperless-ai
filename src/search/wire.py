@@ -60,7 +60,10 @@ class FilterRequest(BaseModel):
 class SearchRequest(BaseModel):
     """Body for POST /api/search."""
 
-    query: str
+    # 4000 characters is the documented maximum query length (§10.4).
+    # Long enough for any reasonable natural-language question; short enough to
+    # bound the token cost of an injected mega-prompt.
+    query: str = Field(max_length=4000)
     filters: FilterRequest | None = None
 
 

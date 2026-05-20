@@ -21,12 +21,9 @@ Coverage:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
 from search.auth import SESSION_COOKIE_NAME

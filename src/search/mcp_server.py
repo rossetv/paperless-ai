@@ -48,6 +48,11 @@ log = structlog.get_logger(__name__)
 # streamable_http_app().
 _MCP_PATH = "/mcp"
 
+# Maximum query/question length enforced at the MCP boundary (§10.4).
+# Must match wire.SearchRequest.query max_length so both HTTP and MCP paths
+# apply the same documented limit.
+_MAX_QUERY_LENGTH = 4000
+
 
 # ---------------------------------------------------------------------------
 # ASGI bearer-token middleware
@@ -212,9 +217,23 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
         Returns:
             A JSON string of the serialised :class:`~search.models.SearchResult`.
         """
-        ui_filters = _dict_to_search_filters(filters, SearchFilters)
-        result = core.retrieve(query=query, ui_filters=ui_filters)
-        return _serialise_result(result)
+        # Validate length at the MCP boundary (§10.4).
+        if len(query) > _MAX_QUERY_LENGTH:
+            raise ValueError(
+                f"query exceeds the maximum length of {_MAX_QUERY_LENGTH} characters"
+            )
+
+        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the
+        # MCP protocol boundary.  Raw exception strings from core (which can
+        # carry filesystem paths or internal state) must never reach the MCP
+        # client; the full traceback is logged server-side instead.
+        try:
+            ui_filters = _dict_to_search_filters(filters, SearchFilters)
+            result = core.retrieve(query=query, ui_filters=ui_filters)
+            return _serialise_result(result)
+        except Exception:
+            log.exception("mcp.search_documents_error")
+            raise ValueError("search failed — see server logs")
 
     @mcp.tool(
         name="ask_documents",
@@ -239,9 +258,23 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
         Returns:
             A JSON string of the serialised :class:`~search.models.SearchResult`.
         """
-        ui_filters = _dict_to_search_filters(filters, SearchFilters)
-        result = core.answer(query=question, ui_filters=ui_filters)
-        return _serialise_result(result)
+        # Validate length at the MCP boundary (§10.4).
+        if len(question) > _MAX_QUERY_LENGTH:
+            raise ValueError(
+                f"question exceeds the maximum length of {_MAX_QUERY_LENGTH} characters"
+            )
+
+        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the
+        # MCP protocol boundary.  Raw exception strings from core (which can
+        # carry filesystem paths or internal state) must never reach the MCP
+        # client; the full traceback is logged server-side instead.
+        try:
+            ui_filters = _dict_to_search_filters(filters, SearchFilters)
+            result = core.answer(query=question, ui_filters=ui_filters)
+            return _serialise_result(result)
+        except Exception:
+            log.exception("mcp.ask_documents_error")
+            raise ValueError("search failed — see server logs")
 
     return _McpApp(mcp, settings)
 
