@@ -30,15 +30,12 @@
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-primary);
-
   background-color: var(--colour-button-light-bg);
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-comfortable);
   padding: var(--spacing-6) var(--spacing-10);
-
   width: 100%;
   box-sizing: border-box;
-
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -53,11 +50,11 @@
 }
 
 /* Error state — border colour changes; aria-invalid is set in the component */
-.inputError {
+.input-error {
   border-color: var(--colour-accent);
 }
 
-.errorMessage {
+.error-message {
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro);

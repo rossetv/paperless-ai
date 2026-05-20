@@ -1,4 +1,8 @@
-import styles from './Button.module.css';
+import stylesRaw from './Button.module.css';
+
+// CSS Modules return a string-indexed object; bracket notation is required
+// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
+const styles = stylesRaw as Record<string, string>;
 
 /** Visual variant — primary is accent-filled, secondary is outlined. */
 export type ButtonVariant = 'primary' | 'secondary';
@@ -40,9 +44,9 @@ export function Button({
   className,
 }: ButtonProps): React.ReactElement {
   const classes = [
-    styles.button,
-    variant === 'primary' ? styles.primary : styles.secondary,
-    size === 'small' ? styles.small : styles.defaultSize,
+    styles['button'],
+    variant === 'primary' ? styles['primary'] : styles['secondary'],
+    size === 'small' ? styles['small'] : styles['default-size'],
     className,
   ]
     .filter(Boolean)

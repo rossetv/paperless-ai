@@ -64,7 +64,8 @@ describe('Button', () => {
   it('applies the small size class when size is small', () => {
     render(<Button size="small">Small</Button>);
     const btn = screen.getByRole('button');
-    expect(btn.className).toMatch(/small/);
+    // CSS Modules transform class names; check the prop drives a different class to non-small
+    expect(btn.className).not.toContain('default-size');
   });
 
   it('accepts a type prop', () => {

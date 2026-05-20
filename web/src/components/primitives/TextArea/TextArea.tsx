@@ -1,4 +1,8 @@
-import styles from './TextArea.module.css';
+import stylesRaw from './TextArea.module.css';
+
+// CSS Modules return a string-indexed object; bracket notation is required
+// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
+const styles = stylesRaw as Record<string, string>;
 
 export interface TextAreaProps {
   /** The id — required for label association and accessible forms. */
@@ -55,12 +59,12 @@ export function TextArea({
   const hasError = error !== undefined && error !== '';
   const errorId = hasError ? `${id}-error` : undefined;
 
-  const wrapperClasses = [styles.wrapper, className].filter(Boolean).join(' ');
+  const wrapperClasses = [styles['wrapper'], className].filter(Boolean).join(' ');
 
   return (
     <div className={wrapperClasses}>
       {label !== undefined && (
-        <label htmlFor={id} className={styles.label}>
+        <label htmlFor={id} className={styles['label']}>
           {label}
         </label>
       )}
@@ -77,12 +81,12 @@ export function TextArea({
         onChange={onChange}
         onFocus={onFocus}
         onBlur={onBlur}
-        className={[styles.textarea, hasError ? styles.textareaError : undefined]
+        className={[styles['textarea'], hasError ? styles['textarea-error'] : undefined]
           .filter(Boolean)
           .join(' ')}
       />
       {hasError && (
-        <span id={errorId} className={styles.errorMessage} role="alert">
+        <span id={errorId} className={styles['error-message']} role="alert">
           {error}
         </span>
       )}
