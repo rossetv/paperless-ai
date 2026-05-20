@@ -68,7 +68,10 @@ describe('Tabs', () => {
 
   it('moves focus right with ArrowRight key', async () => {
     render(<Tabs tabs={TABS} />);
-    const [firstTab, secondTab] = screen.getAllByRole('tab');
+    // getAllByRole guarantees elements exist — non-null index access is safe here
+    const tabEls = screen.getAllByRole('tab');
+    const firstTab = tabEls[0] as HTMLElement;
+    const secondTab = tabEls[1] as HTMLElement;
     firstTab.focus();
     await userEvent.keyboard('{ArrowRight}');
     expect(secondTab).toHaveFocus();
@@ -76,7 +79,9 @@ describe('Tabs', () => {
 
   it('moves focus left with ArrowLeft key', async () => {
     render(<Tabs tabs={TABS} />);
-    const [firstTab, secondTab] = screen.getAllByRole('tab');
+    const tabEls = screen.getAllByRole('tab');
+    const firstTab = tabEls[0] as HTMLElement;
+    const secondTab = tabEls[1] as HTMLElement;
     secondTab.focus();
     await userEvent.keyboard('{ArrowLeft}');
     expect(firstTab).toHaveFocus();
@@ -84,32 +89,32 @@ describe('Tabs', () => {
 
   it('wraps focus from last to first tab with ArrowRight', async () => {
     render(<Tabs tabs={TABS} />);
-    const tabs = screen.getAllByRole('tab');
-    tabs[2].focus();
+    const tabEls = screen.getAllByRole('tab');
+    (tabEls[2] as HTMLElement).focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(tabs[0]).toHaveFocus();
+    expect(tabEls[0]).toHaveFocus();
   });
 
   it('wraps focus from first to last tab with ArrowLeft', async () => {
     render(<Tabs tabs={TABS} />);
-    const tabs = screen.getAllByRole('tab');
-    tabs[0].focus();
+    const tabEls = screen.getAllByRole('tab');
+    (tabEls[0] as HTMLElement).focus();
     await userEvent.keyboard('{ArrowLeft}');
-    expect(tabs[2]).toHaveFocus();
+    expect(tabEls[2]).toHaveFocus();
   });
 
   it('activates the focused tab when Enter is pressed', async () => {
     render(<Tabs tabs={TABS} />);
-    const [, secondTab] = screen.getAllByRole('tab');
-    secondTab.focus();
+    const tabEls = screen.getAllByRole('tab');
+    (tabEls[1] as HTMLElement).focus();
     await userEvent.keyboard('{Enter}');
     expect(screen.getByText('Source documents here')).toBeInTheDocument();
   });
 
   it('activates the focused tab when Space is pressed', async () => {
     render(<Tabs tabs={TABS} />);
-    const [, , thirdTab] = screen.getAllByRole('tab');
-    thirdTab.focus();
+    const tabEls = screen.getAllByRole('tab');
+    (tabEls[2] as HTMLElement).focus();
     await userEvent.keyboard(' ');
     expect(screen.getByText('Query plan details here')).toBeInTheDocument();
   });

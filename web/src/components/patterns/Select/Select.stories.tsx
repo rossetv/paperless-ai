@@ -32,7 +32,6 @@ export const Default: Story = {
     options: FRUIT_OPTIONS,
     placeholder: 'Choose a fruit…',
     onChange: (value) => {
-      // eslint-disable-next-line no-console
       console.log('Selected:', value);
     },
   },
@@ -45,7 +44,6 @@ export const WithLabel: Story = {
     options: FRUIT_OPTIONS,
     placeholder: 'Choose a fruit…',
     onChange: (value) => {
-      // eslint-disable-next-line no-console
       console.log('Selected:', value);
     },
   },
@@ -58,7 +56,6 @@ export const WithValue: Story = {
     options: FRUIT_OPTIONS,
     value: 'cherry',
     onChange: (value) => {
-      // eslint-disable-next-line no-console
       console.log('Selected:', value);
     },
   },

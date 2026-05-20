@@ -58,10 +58,6 @@
   cursor: not-allowed;
 }
 
-.trigger.open .trigger-icon {
-  transform: rotate(180deg);
-}
-
 .trigger-label {
   flex: 1;
   overflow: hidden;
@@ -75,6 +71,10 @@
   color: var(--colour-text-tertiary);
   transition: transform 0.15s ease;
   flex-shrink: 0;
+}
+
+.trigger.open .trigger-icon {
+  transform: rotate(180deg);
 }
 
 .listbox {

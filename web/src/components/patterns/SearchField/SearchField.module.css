@@ -54,6 +54,7 @@
   background-color: var(--colour-button-light-bg);
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-comfortable);
+
   /* Pad left for the leading icon, right for the trailing button */
   padding: var(--spacing-6) var(--spacing-14) var(--spacing-6) var(--spacing-13);
   width: 100%;
@@ -62,13 +63,11 @@
 
   /* Remove the browser's default search-cancel button — the submit icon serves
      this interaction; a second cancel affordance clutters the field. */
-  -webkit-appearance: none;
   appearance: none;
 }
 
 /* Remove WebKit search clear button */
 .input::-webkit-search-cancel-button {
-  -webkit-appearance: none;
   appearance: none;
 }
 

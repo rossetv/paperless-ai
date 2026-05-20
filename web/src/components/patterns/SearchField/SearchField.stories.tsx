@@ -23,7 +23,6 @@ export const Default: Story = {
     id: 'search',
     placeholder: 'Search your documents…',
     onSubmit: (query) => {
-      // eslint-disable-next-line no-console
       console.log('Search submitted:', query);
     },
   },
@@ -35,7 +34,6 @@ export const WithLabel: Story = {
     label: 'Search',
     placeholder: 'Search your documents…',
     onSubmit: (query) => {
-      // eslint-disable-next-line no-console
       console.log('Search submitted:', query);
     },
   },
@@ -58,7 +56,6 @@ export const WithValue: Story = {
     value: 'boiler warranty',
     placeholder: 'Search your documents…',
     onSubmit: (query) => {
-      // eslint-disable-next-line no-console
       console.log('Search submitted:', query);
     },
   },

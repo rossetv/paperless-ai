@@ -117,8 +117,11 @@ export function Select<T extends string = string>({
         event.preventDefault();
         if (!isOpen) {
           open();
-        } else if (highlightedIndex >= 0) {
-          selectOption(options[highlightedIndex].value);
+        } else {
+          const highlighted = highlightedIndex >= 0 ? options[highlightedIndex] : undefined;
+          if (highlighted !== undefined) {
+            selectOption(highlighted.value);
+          }
         }
         break;
       case 'ArrowUp':
@@ -154,7 +157,10 @@ export function Select<T extends string = string>({
       case ' ':
         event.preventDefault();
         if (highlightedIndex >= 0) {
-          selectOption(options[highlightedIndex].value);
+          const highlighted = options[highlightedIndex];
+          if (highlighted !== undefined) {
+            selectOption(highlighted.value);
+          }
         }
         break;
       case 'Escape':
