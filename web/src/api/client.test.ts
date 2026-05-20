@@ -1,0 +1,331 @@
+/**
+ * Tests for the typed fetch wrapper (client.ts).
+ *
+ * All tests mock global `fetch`; no real network calls are made.
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  Unauthenticated,
+  ApiError,
+  login,
+  search,
+  getFacets,
+  getStats,
+  getHealthz,
+  postReconcile,
+} from './client';
+import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function mockFetch(status: number, body: unknown): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: () => Promise.resolve(body),
+    }),
+  );
+}
+
+function capturedFetch(): ReturnType<typeof vi.fn> {
+  return vi.mocked(globalThis.fetch);
+}
+
+// ---------------------------------------------------------------------------
+// Setup / teardown
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn());
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// ---------------------------------------------------------------------------
+// credentials: 'include' — every request carries the session cookie
+// ---------------------------------------------------------------------------
+
+describe('every request sends credentials: include', () => {
+  it('login sends credentials include', async () => {
+    mockFetch(200, { status: 'ok' });
+    await login({ api_key: 'test-key' });
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+
+  it('search sends credentials include', async () => {
+    const body: SearchResponse = {
+      answer: 'answer',
+      sources: [],
+      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      stats: { llm_calls: 1, latency_ms: 100, refined: false },
+    };
+    mockFetch(200, body);
+    const req: SearchRequest = { query: 'test' };
+    await search(req);
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+
+  it('getFacets sends credentials include', async () => {
+    const body: FacetsResponse = {
+      correspondents: [],
+      document_types: [],
+      tags: [],
+      earliest: null,
+      latest: null,
+    };
+    mockFetch(200, body);
+    await getFacets();
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+
+  it('getStats sends credentials include', async () => {
+    const body: StatsResponse = {
+      document_count: 0,
+      chunk_count: 0,
+      last_reconcile_at: null,
+      embedding_model: null,
+    };
+    mockFetch(200, body);
+    await getStats();
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+
+  it('getHealthz sends credentials include', async () => {
+    mockFetch(200, { status: 'ok' });
+    await getHealthz();
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+
+  it('postReconcile sends credentials include', async () => {
+    mockFetch(202, null);
+    await postReconcile();
+    const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe('include');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 401 → Unauthenticated (distinct error class)
+// ---------------------------------------------------------------------------
+
+describe('401 response surfaces as Unauthenticated', () => {
+  it('search throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    await expect(search({ query: 'test' })).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('getFacets throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    await expect(getFacets()).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('getStats throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    await expect(getStats()).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('Unauthenticated is not an ApiError', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    await expect(search({ query: 'test' })).rejects.not.toBeInstanceOf(ApiError);
+  });
+
+  it('Unauthenticated carries the 401 status', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    let caught: unknown;
+    try {
+      await search({ query: 'test' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(Unauthenticated);
+    expect((caught as Unauthenticated).status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-401 non-2xx → ApiError
+// ---------------------------------------------------------------------------
+
+describe('non-2xx non-401 responses throw ApiError', () => {
+  it('500 response throws ApiError', async () => {
+    mockFetch(500, { detail: 'Internal Server Error' });
+    await expect(search({ query: 'test' })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('ApiError carries the HTTP status', async () => {
+    mockFetch(503, { status: 'index-not-ready' });
+    let caught: unknown;
+    try {
+      await getHealthz();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(503);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Successful responses parse into the correct typed shapes
+// ---------------------------------------------------------------------------
+
+describe('successful responses parse into typed shapes', () => {
+  it('login resolves with status ok', async () => {
+    mockFetch(200, { status: 'ok' });
+    const result = await login({ api_key: 'correct-key' });
+    expect(result.status).toBe('ok');
+  });
+
+  it('search resolves with SearchResponse shape', async () => {
+    const body: SearchResponse = {
+      answer: 'The boiler warranty expires 2025.',
+      sources: [
+        {
+          document_id: 42,
+          title: 'Boiler Warranty',
+          correspondent: 'Acme Ltd',
+          document_type: 'Warranty',
+          created: '2020-01-15',
+          snippet: '…warranty expires…',
+          paperless_url: 'http://paperless/documents/42/',
+          score: 0.91,
+        },
+      ],
+      plan: {
+        semantic_queries: ['boiler warranty expiry date'],
+        keyword_terms: ['boiler', 'warranty'],
+        sub_questions: [],
+      },
+      stats: { llm_calls: 2, latency_ms: 450, refined: false },
+    };
+    mockFetch(200, body);
+    const result = await search({ query: 'When does the boiler warranty expire?' });
+    expect(result.answer).toBe('The boiler warranty expires 2025.');
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0]?.document_id).toBe(42);
+    expect(result.plan.semantic_queries).toEqual(['boiler warranty expiry date']);
+    expect(result.stats.llm_calls).toBe(2);
+  });
+
+  it('getFacets resolves with FacetsResponse shape', async () => {
+    const body: FacetsResponse = {
+      correspondents: [{ kind: 'correspondent', id: 1, name: 'HMRC' }],
+      document_types: [{ kind: 'document_type', id: 2, name: 'Tax Return' }],
+      tags: [],
+      earliest: '2010-01-01',
+      latest: '2024-12-31',
+    };
+    mockFetch(200, body);
+    const result = await getFacets();
+    expect(result.correspondents[0]?.name).toBe('HMRC');
+    expect(result.document_types[0]?.id).toBe(2);
+    expect(result.earliest).toBe('2010-01-01');
+    expect(result.latest).toBe('2024-12-31');
+  });
+
+  it('getStats resolves with StatsResponse shape', async () => {
+    const body: StatsResponse = {
+      document_count: 1234,
+      chunk_count: 5678,
+      last_reconcile_at: '2026-05-20T10:00:00Z',
+      embedding_model: 'text-embedding-3-small',
+    };
+    mockFetch(200, body);
+    const result = await getStats();
+    expect(result.document_count).toBe(1234);
+    expect(result.embedding_model).toBe('text-embedding-3-small');
+  });
+
+  it('getHealthz resolves with status string', async () => {
+    mockFetch(200, { status: 'ok' });
+    const result = await getHealthz();
+    expect(result.status).toBe('ok');
+  });
+
+  it('postReconcile resolves without throwing on 202', async () => {
+    mockFetch(202, null);
+    await expect(postReconcile()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Correct HTTP methods and URLs
+// ---------------------------------------------------------------------------
+
+describe('correct HTTP methods and endpoint paths', () => {
+  it('login POSTs to /api/auth/login', async () => {
+    mockFetch(200, { status: 'ok' });
+    await login({ api_key: 'k' });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/auth\/login$/);
+    expect(init.method).toBe('POST');
+  });
+
+  it('search POSTs to /api/search', async () => {
+    mockFetch(200, {
+      answer: '',
+      sources: [],
+      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      stats: { llm_calls: 0, latency_ms: 0, refined: false },
+    });
+    await search({ query: 'q' });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/search$/);
+    expect(init.method).toBe('POST');
+  });
+
+  it('getFacets GETs /api/facets', async () => {
+    mockFetch(200, {
+      correspondents: [],
+      document_types: [],
+      tags: [],
+      earliest: null,
+      latest: null,
+    });
+    await getFacets();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/facets$/);
+    expect(init.method).toBe('GET');
+  });
+
+  it('getStats GETs /api/stats', async () => {
+    mockFetch(200, {
+      document_count: 0,
+      chunk_count: 0,
+      last_reconcile_at: null,
+      embedding_model: null,
+    });
+    await getStats();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/stats$/);
+    expect(init.method).toBe('GET');
+  });
+
+  it('getHealthz GETs /api/healthz', async () => {
+    mockFetch(200, { status: 'ok' });
+    await getHealthz();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/healthz$/);
+    expect(init.method).toBe('GET');
+  });
+
+  it('postReconcile POSTs to /api/reconcile', async () => {
+    mockFetch(202, null);
+    await postReconcile();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/reconcile$/);
+    expect(init.method).toBe('POST');
+  });
+});
