@@ -90,16 +90,19 @@ def _start_daemon(settings: Settings, lock_handle: object) -> None:
     # ------------------------------------------------------------------
     # Preflight (SPEC §5.7)
     # ------------------------------------------------------------------
+    # Construct the long-lived clients ONCE here so preflight verifies the
+    # exact instances the daemon goes on to use — a throwaway client proves
+    # nothing about the one doing the real work.
     paperless = PaperlessClient(settings)
+    embedding_client = EmbeddingClient(settings)
     try:
-        _run_preflight(settings, paperless)
+        _run_preflight(settings, paperless, embedding_client)
     except Exception as exc:
         log.critical("indexer.preflight_failed", error=str(exc))
         paperless.close()
         sys.exit(2)
 
     store_writer = StoreWriter(settings)
-    embedding_client = EmbeddingClient(settings)
 
     try:
         rebuild = store_writer.check_embedding_model()
@@ -145,7 +148,11 @@ def _start_daemon(settings: Settings, lock_handle: object) -> None:
     log.info("indexer.stopped")
 
 
-def _run_preflight(settings: Settings, paperless: PaperlessClient) -> None:
+def _run_preflight(
+    settings: Settings,
+    paperless: PaperlessClient,
+    embedding_client: EmbeddingClient,
+) -> None:
     """Verify Paperless reachability and the embedding model responds.
 
     Raises on any fatal condition; the caller maps the exception to a
@@ -153,7 +160,9 @@ def _run_preflight(settings: Settings, paperless: PaperlessClient) -> None:
 
     Args:
         settings: Application settings.
-        paperless: A live PaperlessClient.
+        paperless: The live PaperlessClient the daemon will use.
+        embedding_client: The live EmbeddingClient the daemon will use — the
+            same instance, so preflight verifies what actually does the work.
     """
     log.info("indexer.preflight_started")
 
@@ -161,8 +170,8 @@ def _run_preflight(settings: Settings, paperless: PaperlessClient) -> None:
     paperless.ping()
     log.info("indexer.preflight_paperless_ok")
 
-    # Verify the embedding model responds with a minimal single-token embed.
-    embedding_client = EmbeddingClient(settings)
+    # Verify the embedding model responds with a minimal single-token embed,
+    # exercising the very client the reconciler will go on to use.
     embedding_client.embed([_PREFLIGHT_EMBED_TEXT])
     log.info("indexer.preflight_embedding_ok")
 
@@ -187,6 +196,11 @@ def _run_loop(
     5. ``store_writer.checkpoint()``.
     6. ``_interruptible_wait(reconcile_interval)`` — returns early on shutdown
        or if a new sentinel appears.
+
+    Steps 3–5 run inside a cycle-level ``try/except Exception``: a transient
+    failure anywhere in the cycle is logged with its traceback and the loop
+    falls through to the wait, so the next cycle retries.  A cycle failure
+    never crashes the daemon and never advances the deletion-sweep clock.
 
     The loop is sequential; cycles never overlap.
 
@@ -215,28 +229,41 @@ def _run_loop(
         elapsed = time.monotonic() - last_sweep_at
         run_sweep = manual_trigger or elapsed >= deletion_sweep_interval
 
-        # Run incremental sync every cycle.
-        sync_report = reconciler.incremental_sync()
-        log.info(
-            "indexer.cycle_sync",
-            indexed=sync_report.indexed,
-            metadata_only=sync_report.metadata_only,
-            skipped=sync_report.skipped,
-            failed=sync_report.failed,
-        )
-
-        # Run deletion sweep when due.
-        if run_sweep:
-            sweep_report = reconciler.deletion_sweep()
-            last_sweep_at = time.monotonic()
+        try:
+            # Run incremental sync every cycle.
+            sync_report = reconciler.incremental_sync()
             log.info(
-                "indexer.cycle_sweep",
-                pruned=sweep_report.pruned,
-                candidates=sweep_report.candidates,
-                aborted=sweep_report.aborted,
+                "indexer.cycle_sync",
+                indexed=sync_report.indexed,
+                metadata_only=sync_report.metadata_only,
+                skipped=sync_report.skipped,
+                failed=sync_report.failed,
+                given_up=sync_report.given_up,
             )
 
-        store_writer.checkpoint()
+            # Run deletion sweep when due.
+            if run_sweep:
+                sweep_report = reconciler.deletion_sweep()
+                last_sweep_at = time.monotonic()
+                log.info(
+                    "indexer.cycle_sweep",
+                    pruned=sweep_report.pruned,
+                    candidates=sweep_report.candidates,
+                    aborted=sweep_report.aborted,
+                )
+
+            store_writer.checkpoint()
+        except Exception:
+            # rationale: cycle-level fault isolation (CODE_GUIDELINES §6.4
+            # outer-boundary catch) — a transient failure anywhere in the
+            # cycle (a taxonomy-refresh network error, an incremental-paging
+            # drop, a malformed Paperless document, a StoreError) must not
+            # crash the daemon.  The traceback is logged and the loop falls
+            # through to the wait so the next cycle retries — mirroring
+            # common/daemon_loop.run_polling_threadpool.  last_sweep_at is
+            # assigned only after a successful sweep, so a failed cycle never
+            # advances it: a missed sweep is retried next cycle.
+            log.exception("indexer.cycle_failed")
 
         # Wait for the next cycle, waking early on shutdown or a new sentinel.
         _interruptible_wait(

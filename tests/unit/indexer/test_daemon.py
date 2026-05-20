@@ -15,10 +15,9 @@ Behavioural promises tested:
 
 from __future__ import annotations
 
-import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -42,7 +41,7 @@ def _reset_shutdown():
 def _make_reconciler() -> MagicMock:
     reconciler = MagicMock()
     reconciler.incremental_sync.return_value = MagicMock(
-        indexed=0, metadata_only=0, skipped=0, failed=0
+        indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0
     )
     reconciler.deletion_sweep.return_value = MagicMock(
         pruned=0, aborted=False, candidates=0
@@ -142,6 +141,135 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
     # Exactly one cycle ran before the loop noticed shutdown.
     assert reconciler.incremental_sync.call_count == 1
     assert len(cycles) == 1
+
+
+# ---------------------------------------------------------------------------
+# 2b. A cycle-level failure does not crash the daemon (C1)
+# ---------------------------------------------------------------------------
+
+
+def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
+    tmp_path: Path,
+) -> None:
+    """An incremental_sync that raises on the first cycle must not kill the loop.
+
+    The cycle body is wrapped in an exception boundary (CODE_GUIDELINES §6.4)
+    mirroring common/daemon_loop: a transient cycle-level failure is logged and
+    the loop falls through to the wait, so the next cycle retries.  Before the
+    fix this exception propagated straight out and crashed the daemon.
+    """
+    reconciler = _make_reconciler()
+    store_writer = _make_store_writer()
+    sentinel_path = tmp_path / "reconcile.request"
+
+    # First call raises (transient failure); second call succeeds.
+    reconciler.incremental_sync.side_effect = [
+        ConnectionError("Paperless blipped mid-cycle"),
+        MagicMock(indexed=1, metadata_only=0, skipped=0, failed=0, given_up=0),
+    ]
+
+    wait_count = 0
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        nonlocal wait_count
+        wait_count += 1
+        # Let two cycles run, then stop the loop.
+        if wait_count >= 2:
+            shutdown_mod.request_shutdown()
+        return False
+
+    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+        # Must NOT raise — the failing first cycle is caught and isolated.
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=3600,
+            sentinel_path=sentinel_path,
+        )
+
+    # The loop survived the failure and ran a second cycle.
+    assert reconciler.incremental_sync.call_count == 2
+    # Both cycles reached the wait — the failure fell through, it did not abort.
+    assert wait_count == 2
+
+
+def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
+    tmp_path: Path,
+) -> None:
+    """A failed cycle must not advance last_sweep_at — the sweep retries next cycle.
+
+    The sweep was due on the first cycle.  incremental_sync raises before the
+    sweep runs, so last_sweep_at must stay put and the sweep must run on the
+    next (successful) cycle.
+    """
+    reconciler = _make_reconciler()
+    store_writer = _make_store_writer()
+    sentinel_path = tmp_path / "reconcile.request"
+
+    # Cycle 1: incremental_sync raises before the sweep can run.
+    # Cycle 2: incremental_sync succeeds and the sweep should finally fire.
+    reconciler.incremental_sync.side_effect = [
+        RuntimeError("cycle 1 failed before the sweep"),
+        MagicMock(indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0),
+    ]
+
+    wait_count = 0
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        nonlocal wait_count
+        wait_count += 1
+        if wait_count >= 2:
+            shutdown_mod.request_shutdown()
+        return False
+
+    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+        # last_sweep_at = 0 and a long-elapsed monotonic clock → sweep is due
+        # every cycle; deletion_sweep_interval kept small so both cycles qualify.
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=1,
+            sentinel_path=sentinel_path,
+            _last_sweep_at=0.0,  # type: ignore[call-arg]
+        )
+
+    # Cycle 1 failed before the sweep; cycle 2 succeeded and swept exactly once.
+    assert reconciler.incremental_sync.call_count == 2
+    assert reconciler.deletion_sweep.call_count == 1
+
+
+def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
+    """A deletion_sweep that raises is isolated by the same cycle boundary."""
+    reconciler = _make_reconciler()
+    store_writer = _make_store_writer()
+    sentinel_path = tmp_path / "reconcile.request"
+
+    reconciler.deletion_sweep.side_effect = ConnectionError("sweep enumeration died")
+
+    wait_count = 0
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        nonlocal wait_count
+        wait_count += 1
+        shutdown_mod.request_shutdown()
+        return False
+
+    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+        # Must NOT raise — the sweep failure is caught by the cycle boundary.
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=1,
+            sentinel_path=sentinel_path,
+            _last_sweep_at=0.0,  # type: ignore[call-arg]
+        )
+
+    assert reconciler.deletion_sweep.call_count == 1
+    # The loop still reached the wait despite the sweep blowing up.
+    assert wait_count == 1
 
 
 # ---------------------------------------------------------------------------
