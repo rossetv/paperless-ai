@@ -175,12 +175,12 @@ def chunk_text(
                 # new window.
             else:
                 # The paragraph itself is larger than chunk_size; we must emit
-                # it in character-sized slices to honour the constraint.
+                # it in character-sized slices to honour the constraint.  Every
+                # slice carries the paragraph's own page hint.
                 start = 0
-                first = True
                 while start < len(para_text):
                     slice_text = para_text[start : start + chunk_size]
-                    page_for_slice = para_page if first else para_page
+                    page_for_slice = para_page
                     prev_chunk_page = page_for_slice
                     chunks.append(
                         _emit_chunk(slice_text, page_for_slice, len(chunks))
@@ -192,7 +192,6 @@ def chunk_text(
                         window_page = None
                         break
                     start += chunk_size - overlap
-                    first = False
                 paragraph_idx += 1
 
     # Emit any remaining window.
