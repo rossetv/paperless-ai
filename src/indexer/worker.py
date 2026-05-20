@@ -21,7 +21,7 @@ from __future__ import annotations
 import enum
 import hashlib
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import structlog
 
