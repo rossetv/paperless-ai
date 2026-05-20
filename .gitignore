@@ -122,3 +122,16 @@ scorecard.png
 .idea/
 .vscode/
 *.swp
+
+# Local-only plans and specs — never committed
+docs/superpowers/
+
+# Search index store — runtime data, never committed
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Frontend dependencies and build output
+web/node_modules/
+web/dist/
