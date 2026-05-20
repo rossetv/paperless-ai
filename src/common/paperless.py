@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import types
+from collections.abc import Iterator
 from typing import Any, Generator, Iterable, TypedDict, Unpack
 
 import httpx
@@ -248,6 +249,46 @@ class PaperlessClient:
             matching_algorithm=matching_algorithm,
             item_label="tag",
         )
+
+    def iter_all_documents(self, *, modified_after: str | None = None) -> Iterator[dict]:
+        """Yield every document from Paperless, ordered by ``modified`` ascending.
+
+        Pages ``GET /api/documents/`` with ``ordering=modified`` via the
+        existing :meth:`_list_all` pagination generator.  Retries are handled
+        by the ``@retry``-wrapped :meth:`_get` that ``_list_all`` calls
+        internally — no additional retry logic is needed here.
+
+        Args:
+            modified_after: If supplied, only documents whose ``modified``
+                timestamp is strictly after this value are returned.  The
+                value is passed to Paperless as the ``modified__gt`` filter
+                parameter.
+        """
+        params: dict[str, str | int] = {"ordering": "modified", "page_size": 100}
+        if modified_after is not None:
+            # modified__gt is the Paperless-ngx documents filterset parameter
+            # for strict greater-than on the modified field (server-side filter).
+            params["modified__gt"] = modified_after
+        url = str(
+            httpx.URL(f"{self.settings.PAPERLESS_URL}/api/documents/", params=params)
+        )
+        yield from self._list_all(url)
+
+    def document_exists(self, doc_id: int) -> bool:
+        """Return True if the document exists in Paperless, False on a 404.
+
+        Uses :meth:`_get` which retries 5xx errors.  A genuine 404 is not a
+        server error — :meth:`_raise_for_status_if_server_error` leaves it
+        untouched — so it surfaces here as a normal response and is mapped to
+        ``False`` without retrying.  Any other error (5xx after retries, network
+        failure) propagates to the caller unchanged.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
+        response = self._get(url)
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
 
     def ping(self, timeout: float = 10) -> None:
         """Single fast request to verify the API is reachable (no retry)."""

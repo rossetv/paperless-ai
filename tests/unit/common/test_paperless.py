@@ -551,3 +551,113 @@ class TestClose:
 
         # Assert — httpx.Client is closed; subsequent requests would fail
         assert client._client.is_closed
+
+
+class TestIterAllDocuments:
+    def test_yields_every_document_across_multiple_pages(self):
+        """iter_all_documents pages through all results and yields each document."""
+        url1 = f"{BASE}/api/documents/?ordering=modified&page_size=100"
+        url2 = f"{BASE}/api/documents/?ordering=modified&page_size=100&page=2"
+        with respx.mock:
+            respx.get(url__eq=url1).mock(return_value=httpx.Response(200, json={
+                "results": [{"id": 1, "modified": "2024-01-01T00:00:00Z"},
+                             {"id": 2, "modified": "2024-01-02T00:00:00Z"}],
+                "next": url2,
+            }))
+            respx.get(url__eq=url2).mock(return_value=httpx.Response(200, json={
+                "results": [{"id": 3, "modified": "2024-01-03T00:00:00Z"}],
+                "next": None,
+            }))
+            client = _make_client()
+
+            documents = list(client.iter_all_documents())
+
+        assert [d["id"] for d in documents] == [1, 2, 3]
+        client.close()
+
+    def test_passes_modified_after_as_modified_gt_filter(self):
+        """Passing modified_after adds the modified__gt query parameter."""
+        url = f"{BASE}/api/documents/?ordering=modified&page_size=100&modified__gt=2024-06-01T00%3A00%3A00Z"
+        with respx.mock:
+            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
+                "results": [{"id": 5, "modified": "2024-06-02T00:00:00Z"}],
+                "next": None,
+            }))
+            client = _make_client()
+
+            documents = list(client.iter_all_documents(modified_after="2024-06-01T00:00:00Z"))
+
+        assert documents == [{"id": 5, "modified": "2024-06-02T00:00:00Z"}]
+        client.close()
+
+    def test_yields_nothing_when_results_are_empty(self):
+        """iter_all_documents produces no items when Paperless returns an empty list."""
+        url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
+        with respx.mock:
+            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
+                "results": [],
+                "next": None,
+            }))
+            client = _make_client()
+
+            documents = list(client.iter_all_documents())
+
+        assert documents == []
+        client.close()
+
+    def test_returns_documents_in_modified_order(self):
+        """Results come back in the order Paperless returns them (ordered by modified)."""
+        url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
+        with respx.mock:
+            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
+                "results": [
+                    {"id": 10, "modified": "2024-01-01T00:00:00Z"},
+                    {"id": 20, "modified": "2024-02-01T00:00:00Z"},
+                ],
+                "next": None,
+            }))
+            client = _make_client()
+
+            documents = list(client.iter_all_documents())
+
+        assert documents[0]["id"] == 10
+        assert documents[1]["id"] == 20
+        client.close()
+
+
+class TestDocumentExists:
+    def test_returns_true_when_document_found(self):
+        """document_exists returns True when Paperless returns HTTP 200."""
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(200, json={"id": 42}),
+            )
+            client = _make_client()
+
+            assert client.document_exists(42) is True
+        client.close()
+
+    def test_returns_false_when_document_not_found(self):
+        """document_exists returns False when Paperless returns HTTP 404."""
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/99/").mock(
+                return_value=httpx.Response(404),
+            )
+            client = _make_client()
+
+            assert client.document_exists(99) is False
+        client.close()
+
+    def test_raises_on_server_error(self):
+        """document_exists re-raises on 5xx after retries are exhausted."""
+        with respx.mock:
+            # Always return 500; after MAX_RETRIES attempts it should raise.
+            respx.get(f"{BASE}/api/documents/7/").mock(
+                return_value=httpx.Response(500),
+            )
+            client = _make_client()
+
+            with pytest.raises(httpx.HTTPStatusError) as exc_info:
+                client.document_exists(7)
+            assert exc_info.value.response.status_code == 500
+        client.close()
