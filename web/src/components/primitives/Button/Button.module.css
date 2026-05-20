@@ -72,6 +72,6 @@
 
 /* ── Disabled state ── */
 .button:disabled {
-  opacity: 0.48;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }

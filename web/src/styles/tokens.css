@@ -229,4 +229,11 @@
 
   /* Navigation height */
   --height-nav:         48px;
+
+  /* ─────────────────────────────────────────────
+   * Interaction state opacities
+   * ───────────────────────────────────────────── */
+
+  /* Disabled controls — reduces prominence without hiding entirely */
+  --opacity-disabled: 0.48;
 }

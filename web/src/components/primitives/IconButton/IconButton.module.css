@@ -24,7 +24,7 @@
 
 /* Disabled state declared before :hover/:active to avoid specificity ordering issues */
 .icon-button:disabled {
-  opacity: 0.48;
+  opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
