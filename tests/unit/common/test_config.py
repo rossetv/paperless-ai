@@ -353,3 +353,174 @@ class TestLlmMaxConcurrent:
     def test_negative_clamped_to_zero(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "-3"})
         assert s.LLM_MAX_CONCURRENT == 0
+
+
+# ---------------------------------------------------------------------------
+# Indexer settings (§10 of the semantic-search spec)
+# ---------------------------------------------------------------------------
+
+_INDEX_DEFAULTS = [
+    ("INDEX_DB_PATH", "/data/index.db"),
+    ("EMBEDDING_MODEL", "text-embedding-3-small"),
+    ("EMBEDDING_DIMENSIONS", 1536),
+    ("EMBEDDING_MAX_CONCURRENT", 4),
+    ("RECONCILE_INTERVAL", 300),
+    ("DELETION_SWEEP_INTERVAL", 3600),
+    ("CHUNK_SIZE", 2000),
+    ("CHUNK_OVERLAP", 256),
+]
+
+
+class TestIndexSettingsDefaults:
+    """Indexer settings load correct defaults when env vars are absent."""
+
+    @pytest.mark.parametrize(
+        "attr, expected",
+        _INDEX_DEFAULTS,
+        ids=[a for a, _ in _INDEX_DEFAULTS],
+    )
+    def test_default_value(self, mocker, attr, expected):
+        s = _build(mocker, _MINIMAL_ENV)
+        assert getattr(s, attr) == expected
+
+
+_INDEX_CUSTOM = [
+    ("INDEX_DB_PATH", "/mnt/store/search.db", "INDEX_DB_PATH", "/mnt/store/search.db"),
+    ("EMBEDDING_MODEL", "text-embedding-3-large", "EMBEDDING_MODEL", "text-embedding-3-large"),
+    ("EMBEDDING_DIMENSIONS", "3072", "EMBEDDING_DIMENSIONS", 3072),
+    ("EMBEDDING_MAX_CONCURRENT", "8", "EMBEDDING_MAX_CONCURRENT", 8),
+    ("RECONCILE_INTERVAL", "60", "RECONCILE_INTERVAL", 60),
+    ("DELETION_SWEEP_INTERVAL", "7200", "DELETION_SWEEP_INTERVAL", 7200),
+    ("CHUNK_SIZE", "1500", "CHUNK_SIZE", 1500),
+    ("CHUNK_OVERLAP", "128", "CHUNK_OVERLAP", 128),
+]
+
+
+class TestIndexSettingsCustom:
+    """Indexer settings parse set values correctly."""
+
+    @pytest.mark.parametrize(
+        "env_key, env_val, attr, expected",
+        _INDEX_CUSTOM,
+        ids=[e[0] for e in _INDEX_CUSTOM],
+    )
+    def test_custom_value(self, mocker, env_key, env_val, attr, expected):
+        s = _build(mocker, {**_MINIMAL_ENV, env_key: env_val})
+        assert getattr(s, attr) == expected
+
+
+class TestIndexSettingsInvalidInts:
+    """Non-integer values for integer indexer settings raise ValueError."""
+
+    @pytest.mark.parametrize(
+        "env_key",
+        [
+            "EMBEDDING_DIMENSIONS",
+            "EMBEDDING_MAX_CONCURRENT",
+            "RECONCILE_INTERVAL",
+            "DELETION_SWEEP_INTERVAL",
+            "CHUNK_SIZE",
+            "CHUNK_OVERLAP",
+        ],
+    )
+    def test_non_integer_raises(self, mocker, env_key):
+        with pytest.raises(ValueError):
+            _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
+
+
+# ---------------------------------------------------------------------------
+# Search settings (§10 of the semantic-search spec)
+# ---------------------------------------------------------------------------
+
+_SEARCH_DEFAULTS_OPENAI = [
+    ("SEARCH_TOP_K", 10),
+    ("SEARCH_MAX_REFINEMENTS", 1),
+    ("SEARCH_PLANNER_MODEL", "gpt-5.4-mini"),
+    ("SEARCH_ANSWER_MODEL", "gpt-5.4"),
+    ("SEARCH_SERVER_HOST", "0.0.0.0"),
+    ("SEARCH_SERVER_PORT", 8080),
+    ("SEARCH_API_KEY", ""),
+    ("SEARCH_SESSION_TTL", 604800),
+    ("SEARCH_MAX_CONCURRENT", 4),
+]
+
+
+class TestSearchSettingsDefaultsOpenAI:
+    """Search settings load correct defaults for the openai provider."""
+
+    @pytest.mark.parametrize(
+        "attr, expected",
+        _SEARCH_DEFAULTS_OPENAI,
+        ids=[a for a, _ in _SEARCH_DEFAULTS_OPENAI],
+    )
+    def test_default_value(self, mocker, attr, expected):
+        s = _build(mocker, _MINIMAL_ENV)
+        assert getattr(s, attr) == expected
+
+
+class TestSearchSettingsDefaultsOllama:
+    """Provider-aware model defaults switch when LLM_PROVIDER=ollama."""
+
+    def test_planner_model_defaults_to_gemma3_12b(self, mocker):
+        s = _build(mocker, _MINIMAL_OLLAMA_ENV)
+        assert s.SEARCH_PLANNER_MODEL == "gemma3:12b"
+
+    def test_answer_model_defaults_to_gemma3_27b(self, mocker):
+        s = _build(mocker, _MINIMAL_OLLAMA_ENV)
+        assert s.SEARCH_ANSWER_MODEL == "gemma3:27b"
+
+
+_SEARCH_CUSTOM = [
+    ("SEARCH_TOP_K", "20", "SEARCH_TOP_K", 20),
+    ("SEARCH_MAX_REFINEMENTS", "3", "SEARCH_MAX_REFINEMENTS", 3),
+    ("SEARCH_PLANNER_MODEL", "gpt-4o-mini", "SEARCH_PLANNER_MODEL", "gpt-4o-mini"),
+    ("SEARCH_ANSWER_MODEL", "gpt-4o", "SEARCH_ANSWER_MODEL", "gpt-4o"),
+    ("SEARCH_SERVER_HOST", "127.0.0.1", "SEARCH_SERVER_HOST", "127.0.0.1"),
+    ("SEARCH_SERVER_PORT", "9090", "SEARCH_SERVER_PORT", 9090),
+    ("SEARCH_API_KEY", "supersecret", "SEARCH_API_KEY", "supersecret"),
+    ("SEARCH_SESSION_TTL", "86400", "SEARCH_SESSION_TTL", 86400),
+    ("SEARCH_MAX_CONCURRENT", "8", "SEARCH_MAX_CONCURRENT", 8),
+]
+
+
+class TestSearchSettingsCustom:
+    """Search settings parse set values correctly."""
+
+    @pytest.mark.parametrize(
+        "env_key, env_val, attr, expected",
+        _SEARCH_CUSTOM,
+        ids=[e[0] for e in _SEARCH_CUSTOM],
+    )
+    def test_custom_value(self, mocker, env_key, env_val, attr, expected):
+        s = _build(mocker, {**_MINIMAL_ENV, env_key: env_val})
+        assert getattr(s, attr) == expected
+
+
+class TestSearchSettingsInvalidInts:
+    """Non-integer values for integer search settings raise ValueError."""
+
+    @pytest.mark.parametrize(
+        "env_key",
+        [
+            "SEARCH_TOP_K",
+            "SEARCH_MAX_REFINEMENTS",
+            "SEARCH_SERVER_PORT",
+            "SEARCH_SESSION_TTL",
+            "SEARCH_MAX_CONCURRENT",
+        ],
+    )
+    def test_non_integer_raises(self, mocker, env_key):
+        with pytest.raises(ValueError):
+            _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
+
+
+class TestSearchApiKeyDefault:
+    """SEARCH_API_KEY defaults to empty string; validation deferred to search-server preflight."""
+
+    def test_unset_defaults_to_empty_string(self, mocker):
+        s = _build(mocker, _MINIMAL_ENV)
+        assert s.SEARCH_API_KEY == ""
+
+    def test_set_value_is_stored(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_API_KEY": "my-key"})
+        assert s.SEARCH_API_KEY == "my-key"
