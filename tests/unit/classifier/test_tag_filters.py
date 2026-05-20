@@ -13,6 +13,10 @@ from classifier.tag_filters import (
     filter_redundant_tags,
 )
 
+# A fixed "today" injected into enrich_tags so the year-fallback path is
+# deterministic regardless of the wall clock (CODE_GUIDELINES §11.4).
+_FIXED_TODAY = dt.date(2025, 5, 20)
+
 class TestDedupeTags:
     """Tests for dedupe_tags(tags)."""
 
@@ -276,16 +280,16 @@ class TestEnrichTags:
         assert "finance" not in result
         assert "2024" in result
 
-    def test_year_falls_back_to_current_year(self):
+    def test_year_falls_back_to_injected_today(self):
         result = enrich_tags(
             tags=[],
             text="text",
             document_date="",
             default_country_tag="",
             tag_limit=10,
+            today=lambda: _FIXED_TODAY,
         )
-        current_year = dt.date.today().strftime("%Y")
-        assert current_year in result
+        assert "2025" in result
 
     def test_no_country_tag_when_empty(self):
         result = enrich_tags(
@@ -309,7 +313,7 @@ class TestEnrichTags:
         assert "bills" not in result
         assert "finance" not in result
 
-    def test_invalid_date_falls_back_to_current_year(self):
+    def test_invalid_date_falls_back_to_injected_today(self):
         # _extract_year returns None for invalid dates
         result = enrich_tags(
             tags=[],
@@ -317,6 +321,6 @@ class TestEnrichTags:
             document_date="not-a-date",
             default_country_tag="",
             tag_limit=5,
+            today=lambda: _FIXED_TODAY,
         )
-        current_year = dt.date.today().strftime("%Y")
-        assert current_year in result
+        assert "2025" in result

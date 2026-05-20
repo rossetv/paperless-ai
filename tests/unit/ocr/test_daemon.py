@@ -298,8 +298,10 @@ class TestIterDocsToOcrMixed:
         assert result[1]["id"] == 4
 
 class TestProcessDocument:
+    """_process_document builds an OcrProcessor under run_per_document."""
+
     @patch("ocr.daemon.OcrProvider")
-    @patch("ocr.daemon.PaperlessClient")
+    @patch("common.per_document.PaperlessClient")
     @patch("ocr.daemon.OcrProcessor")
     def test_creates_client_provider_processes_and_closes(
         self, MockProcessor, MockClient, MockProvider
@@ -324,7 +326,7 @@ class TestProcessDocument:
         mock_client_instance.close.assert_called_once()
 
     @patch("ocr.daemon.OcrProvider")
-    @patch("ocr.daemon.PaperlessClient")
+    @patch("common.per_document.PaperlessClient")
     @patch("ocr.daemon.OcrProcessor")
     def test_client_closed_even_on_process_error(
         self, MockProcessor, MockClient, MockProvider
@@ -344,7 +346,7 @@ class TestProcessDocument:
         mock_client_instance.close.assert_called_once()
 
     @patch("ocr.daemon.OcrProvider")
-    @patch("ocr.daemon.PaperlessClient")
+    @patch("common.per_document.PaperlessClient")
     @patch("ocr.daemon.OcrProcessor")
     def test_provider_created_with_settings(
         self, MockProcessor, MockClient, MockProvider

@@ -7,12 +7,16 @@ from unittest.mock import patch
 
 from classifier.metadata import (
     is_empty_classification,
-    normalize_language,
+    normalise_language,
     parse_document_date,
     resolve_date_for_tags,
     update_custom_fields,
 )
 from classifier.result import ClassificationResult
+
+# A fixed "today" injected into the date helpers so the fallback-to-today
+# paths are deterministic regardless of the wall clock (CODE_GUIDELINES §11.4).
+_FIXED_TODAY = dt.date(2025, 5, 20)
 
 
 def _make_result(**overrides) -> ClassificationResult:
@@ -76,54 +80,56 @@ class TestResolveDateForTags:
         assert result == "2023-12-01"
 
     def test_falls_back_to_today_when_both_invalid(self):
-        result = resolve_date_for_tags("invalid", "also-invalid")
-        assert result == dt.date.today().isoformat()
+        result = resolve_date_for_tags(
+            "invalid", "also-invalid", today=lambda: _FIXED_TODAY
+        )
+        assert result == _FIXED_TODAY.isoformat()
 
     def test_falls_back_to_today_when_both_empty(self):
-        result = resolve_date_for_tags("", "")
-        assert result == dt.date.today().isoformat()
+        result = resolve_date_for_tags("", "", today=lambda: _FIXED_TODAY)
+        assert result == _FIXED_TODAY.isoformat()
 
     def test_falls_back_to_today_when_both_none(self):
-        result = resolve_date_for_tags(None, None)
-        assert result == dt.date.today().isoformat()
+        result = resolve_date_for_tags(None, None, today=lambda: _FIXED_TODAY)
+        assert result == _FIXED_TODAY.isoformat()
 
     def test_result_date_with_time_component(self):
         result = resolve_date_for_tags("2024-03-01T12:00:00", None)
         assert result == "2024-03-01"
 
-class TestNormalizeLanguage:
-    """Tests for normalize_language(language)."""
+class TestNormaliseLanguage:
+    """Tests for normalise_language(language)."""
 
     def test_two_letter_code(self):
-        assert normalize_language("en") == "en"
+        assert normalise_language("en") == "en"
 
     def test_locale_with_hyphen(self):
-        assert normalize_language("en-US") == "en"
+        assert normalise_language("en-US") == "en"
 
     def test_locale_with_underscore(self):
-        assert normalize_language("pt_BR") == "pt"
+        assert normalise_language("pt_BR") == "pt"
 
     def test_undetermined(self):
-        assert normalize_language("und") == "und"
+        assert normalise_language("und") == "und"
 
     def test_empty_string_returns_none(self):
-        assert normalize_language("") is None
+        assert normalise_language("") is None
 
     def test_long_non_locale_returns_und(self):
-        assert normalize_language("english") == "und"
+        assert normalise_language("english") == "und"
 
     def test_two_letters_returned_as_is(self):
-        assert normalize_language("de") == "de"
-        assert normalize_language("fr") == "fr"
+        assert normalise_language("de") == "de"
+        assert normalise_language("fr") == "fr"
 
-    def test_uppercase_normalized_to_lower(self):
-        assert normalize_language("EN") == "en"
+    def test_uppercase_normalised_to_lower(self):
+        assert normalise_language("EN") == "en"
 
     def test_whitespace_stripped(self):
-        assert normalize_language("  en  ") == "en"
+        assert normalise_language("  en  ") == "en"
 
     def test_three_letter_non_locale_returns_und(self):
-        assert normalize_language("eng") == "und"
+        assert normalise_language("eng") == "und"
 
 class TestUpdateCustomFields:
     """Tests for update_custom_fields(existing, field_id, value)."""

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from classifier.daemon import _iter_docs_to_classify, main
+from classifier.daemon import _iter_docs_to_classify, _process_document, main
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 
@@ -186,59 +186,46 @@ class TestIterDocsSkipsAlreadyClaimed:
 
         assert len(result) == 1
 
-class TestProcessDocumentClosure:
-    """The process_document closure creates client, provider, processes, closes."""
+class TestProcessDocument:
+    """_process_document builds a ClassificationProcessor under run_per_document."""
 
-    @patch("classifier.daemon.bootstrap_daemon")
-    @patch("classifier.daemon.run_polling_threadpool")
-    @patch("classifier.daemon.PaperlessClient")
     @patch("classifier.daemon.ClassificationProvider")
-    @patch("classifier.daemon.TaxonomyCache")
-    def test_process_document_creates_and_closes_client(
-        self,
-        mock_taxonomy_cls,
-        mock_provider_cls,
-        mock_client_cls,
-        mock_loop,
-        mock_bootstrap,
+    @patch("common.per_document.PaperlessClient")
+    @patch("classifier.daemon.ClassificationProcessor")
+    def test_creates_provider_processor_processes_and_closes(
+        self, mock_proc_cls, mock_client_cls, mock_provider_cls
     ):
         settings = _settings()
-        list_client = make_mock_paperless()
-        mock_bootstrap.return_value = (settings, list_client)
+        doc = _doc(1, tags=[444])
+        taxonomy_cache = MagicMock()
+        client_instance = mock_client_cls.return_value
+        provider_instance = mock_provider_cls.return_value
+        proc_instance = mock_proc_cls.return_value
 
-        # Capture the process_item callable from run_polling_threadpool
-        captured_process = None
+        _process_document(doc, settings, taxonomy_cache)
 
-        def capture_loop(**kwargs):
-            nonlocal captured_process
-            captured_process = kwargs["process_item"]
-            # Don't actually loop
+        mock_client_cls.assert_called_once_with(settings)
+        mock_provider_cls.assert_called_once_with(settings)
+        mock_proc_cls.assert_called_once_with(
+            doc, client_instance, provider_instance, taxonomy_cache, settings
+        )
+        proc_instance.process.assert_called_once()
+        client_instance.close.assert_called_once()
 
-        mock_loop.side_effect = capture_loop
+    @patch("classifier.daemon.ClassificationProvider")
+    @patch("common.per_document.PaperlessClient")
+    @patch("classifier.daemon.ClassificationProcessor")
+    def test_client_closed_even_on_process_error(
+        self, mock_proc_cls, mock_client_cls, mock_provider_cls
+    ):
+        settings = _settings()
+        client_instance = mock_client_cls.return_value
+        mock_proc_cls.return_value.process.side_effect = Exception("boom")
 
-        # Build mock instances
-        mock_paperless_instance = make_mock_paperless()
-        # PaperlessClient is called for taxonomy_client and then per-doc
-        mock_client_cls.side_effect = [MagicMock(), mock_paperless_instance]
+        with pytest.raises(Exception, match="boom"):
+            _process_document(_doc(1, tags=[444]), settings, MagicMock())
 
-        main()
-
-        assert captured_process is not None
-
-        # Now invoke it to test the closure
-        mock_client_cls.reset_mock()
-        mock_client_cls.return_value = mock_paperless_instance
-
-        with patch("classifier.daemon.ClassificationProcessor") as mock_proc_cls:
-            mock_proc_instance = MagicMock()
-            mock_proc_cls.return_value = mock_proc_instance
-
-            doc = _doc(1, tags=[444])
-            captured_process(doc)
-
-            mock_client_cls.assert_called_once()
-            mock_paperless_instance.close.assert_called_once()
-            mock_proc_instance.process.assert_called_once()
+        client_instance.close.assert_called_once()
 
 class TestTaxonomyRefreshAsBatchHook:
     """TaxonomyCache.refresh is passed as before_each_batch."""

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, cast
 import structlog
 
 from common.clock import parse_paperless_timestamp, utc_now_iso
-from common.paperless import PaperlessDocument
+from common.paperless import PaperlessDocument, PaperlessItem
 from indexer.reconciler import _failed_documents
 from indexer.worker import IndexOutcome
 from store.models import TaxonomyEntry
@@ -323,13 +323,15 @@ def _tally_outcomes(
 
 
 def _to_taxonomy_entries(
-    kind: str, items: list[dict]
+    kind: str, items: list[PaperlessItem]
 ) -> list[TaxonomyEntry]:
     """Flatten a Paperless taxonomy list into TaxonomyEntry rows.
 
-    Each item is an ``{"id", "name", ...}`` dict from one of the Paperless
-    correspondent / document-type / tag list endpoints.  An item missing an
-    ``id`` or ``name`` is skipped — the store requires both columns non-null.
+    Each item is a :class:`~common.paperless.PaperlessItem` from one of the
+    Paperless correspondent / document-type / tag list endpoints.  The ``id`` /
+    ``name`` checks are kept as a runtime guard against a malformed upstream
+    row (CODE_GUIDELINES §1.11, fail-closed): the store requires both columns
+    non-null, so a defective item is skipped rather than persisted.
     """
     entries: list[TaxonomyEntry] = []
     for entry in items:

@@ -11,6 +11,7 @@ from tests.helpers.factories import (
     make_document,
     make_settings_obj,
 )
+from tests.helpers.mocks import make_stateful_paperless
 
 def _make_settings(**overrides):
     """Create a settings mock suitable for classification e2e tests."""
@@ -53,65 +54,6 @@ def _make_ocr_content(num_pages: int = 3, model: str = "gpt-5.4-mini") -> str:
     body = "\n\n".join(pages)
     footer = f"\n\nTranscribed by model: {model}"
     return body + footer
-
-
-def _make_stateful_client(initial_doc):
-    """
-    Create a mock PaperlessClient that tracks tag state across calls.
-
-    The claim_processing_tag workflow does:
-      1. get_document (refresh) -> check tag absent
-      2. update_document_metadata (add tag)
-      3. get_document (verify) -> check tag present
-
-    This mock tracks tags so the verify step succeeds.
-    """
-    client = MagicMock()
-    state = {"tags": list(initial_doc.get("tags", [])), "doc": dict(initial_doc)}
-
-    def get_document(doc_id):
-        doc_copy = dict(state["doc"])
-        doc_copy["tags"] = list(state["tags"])
-        return doc_copy
-
-    def update_document_metadata(doc_id, **kwargs):
-        if "tags" in kwargs:
-            state["tags"] = list(kwargs["tags"])
-
-    def update_document(doc_id, content, tags):
-        state["tags"] = list(tags)
-
-    client.get_document.side_effect = get_document
-    client.update_document_metadata.side_effect = update_document_metadata
-    client.update_document.side_effect = update_document
-
-    # Taxonomy API stubs
-    client.list_correspondents.return_value = [
-        {"id": 1, "name": "Acme Corp", "document_count": 10, "matching_algorithm": "none"},
-    ]
-    client.list_document_types.return_value = [
-        {"id": 10, "name": "Invoice", "document_count": 20, "matching_algorithm": "none"},
-        {"id": 11, "name": "Receipt", "document_count": 5, "matching_algorithm": "none"},
-    ]
-    client.list_tags.return_value = [
-        {"id": 100, "name": "2025", "matching_algorithm": "none", "document_count": 30},
-        {"id": 101, "name": "invoice", "matching_algorithm": "none", "document_count": 15},
-        {"id": 102, "name": "payment", "matching_algorithm": "none", "document_count": 8},
-        {"id": 103, "name": "de", "matching_algorithm": "none", "document_count": 25},
-    ]
-
-    _next_id = [200]
-
-    def _create_tag(name, **kw):
-        tag_id = _next_id[0]
-        _next_id[0] += 1
-        return {"id": tag_id, "name": name, "matching_algorithm": "none"}
-
-    client.create_tag.side_effect = _create_tag
-    client.create_correspondent.side_effect = lambda name, **kw: {"id": 300, "name": name}
-    client.create_document_type.side_effect = lambda name, **kw: {"id": 301, "name": name}
-
-    return client, state
 
 
 def _make_taxonomy_cache(client):
@@ -168,7 +110,7 @@ class TestClassifierHappyPath:
             created="2025-01-15",
         )
 
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)
 
@@ -236,7 +178,7 @@ class TestClassifierHappyPath:
         ocr_content = _make_ocr_content()
 
         doc = make_document(id=42, tags=[444], content=ocr_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         result = make_classification_result(
             correspondent="Brand New Company",
@@ -263,7 +205,7 @@ class TestClassifierHappyPath:
         ocr_content = _make_ocr_content()
 
         doc = make_document(id=42, tags=[444], content=ocr_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         result = make_classification_result(person="")
         classifier = _make_mock_classifier(result=result)
@@ -303,7 +245,7 @@ class TestClassifierEmptyContent:
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[444], content="")
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)
@@ -328,7 +270,7 @@ class TestClassifierEmptyContent:
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[444], content="   \n\n   ")
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)
@@ -363,7 +305,7 @@ class TestClassifierRefusalContent:
         )
 
         doc = make_document(id=42, tags=[444], content=refusal_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         # The classifier will be called (content is not empty), and might
         # return a valid result, but _apply_classification checks for
@@ -395,7 +337,7 @@ class TestClassifierRefusalContent:
         )
 
         doc = make_document(id=42, tags=[444], content=redacted_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)
@@ -418,7 +360,7 @@ class TestClassifierRefusalContent:
         ocr_content = _make_ocr_content()
 
         doc = make_document(id=42, tags=[444], content=ocr_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         # Return a result with a generic document type
         result = make_classification_result(document_type="Document")
@@ -443,7 +385,7 @@ class TestClassifierRefusalContent:
         ocr_content = _make_ocr_content()
 
         doc = make_document(id=42, tags=[444], content=ocr_content)
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         classifier = MagicMock()
         classifier.classify_text.return_value = (None, "")
@@ -467,7 +409,7 @@ class TestClassifierRefusalContent:
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[444, 600], content=_make_ocr_content())
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)

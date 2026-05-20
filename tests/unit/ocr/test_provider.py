@@ -102,10 +102,10 @@ class TestOcrProviderSuccess:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image, doc_id=1, page_num=1)
+        page = provider.transcribe_image(image, doc_id=1, page_num=1)
 
-        assert text == "Transcribed text"
-        assert model == "gpt-5.4-mini"
+        assert page.text == "Transcribed text"
+        assert page.model == "gpt-5.4-mini"
 
     def test_returns_stripped_text(self):
         settings = _make_settings(AI_MODELS=["model-a"])
@@ -115,9 +115,9 @@ class TestOcrProviderSuccess:
         )
         image = _make_test_image()
 
-        text, _ = provider.transcribe_image(image)
+        page = provider.transcribe_image(image)
 
-        assert text == "text with whitespace"
+        assert page.text == "text with whitespace"
 
 class TestOcrProviderRefusalFallback:
     def test_fallback_on_refusal(self):
@@ -134,10 +134,10 @@ class TestOcrProviderRefusalFallback:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image, doc_id=42, page_num=1)
+        page = provider.transcribe_image(image, doc_id=42, page_num=1)
 
-        assert text == "Actual transcription"
-        assert model == "model-b"
+        assert page.text == "Actual transcription"
+        assert page.model == "model-b"
 
     def test_refusal_increments_stats(self):
         settings = _make_settings(
@@ -176,10 +176,10 @@ class TestOcrProviderApiErrorFallback:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image, doc_id=5, page_num=2)
+        page = provider.transcribe_image(image, doc_id=5, page_num=2)
 
-        assert text == "Fallback transcription"
-        assert model == "model-b"
+        assert page.text == "Fallback transcription"
+        assert page.model == "model-b"
 
     def test_api_error_increments_stats(self):
         settings = _make_settings(AI_MODELS=["model-a", "model-b"])
@@ -218,10 +218,10 @@ class TestOcrProviderAllFail:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image)
+        page = provider.transcribe_image(image)
 
-        assert text == "CHATGPT REFUSED TO TRANSCRIBE"
-        assert model == ""
+        assert page.text == "CHATGPT REFUSED TO TRANSCRIBE"
+        assert page.model == ""
 
     def test_all_models_api_error_returns_refusal_mark(self):
         settings = _make_settings(
@@ -238,10 +238,10 @@ class TestOcrProviderAllFail:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image)
+        page = provider.transcribe_image(image)
 
-        assert text == "REFUSED"
-        assert model == ""
+        assert page.text == "REFUSED"
+        assert page.model == ""
 
 class TestOcrProviderBlankImage:
     @patch("ocr.provider.is_blank", return_value=True)
@@ -251,10 +251,10 @@ class TestOcrProviderBlankImage:
         provider._create_completion = MagicMock()
         image = _make_blank_image()
 
-        text, model = provider.transcribe_image(image, doc_id=1, page_num=1)
+        page = provider.transcribe_image(image, doc_id=1, page_num=1)
 
-        assert text == ""
-        assert model == ""
+        assert page.text == ""
+        assert page.model == ""
         provider._create_completion.assert_not_called()
 
     @patch("ocr.provider.is_blank", return_value=True)
@@ -395,11 +395,11 @@ class TestOcrProviderDuplicateModels:
         )
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image)
+        page = provider.transcribe_image(image)
 
         # Assert — model-a tried once (deduplicated), then model-b
-        assert text == "ok from b"
-        assert model == "model-b"
+        assert page.text == "ok from b"
+        assert page.model == "model-b"
         assert provider._create_completion.call_count == 2
 
 class TestOcrProviderNoneContent:
@@ -412,8 +412,8 @@ class TestOcrProviderNoneContent:
         provider._create_completion = MagicMock(return_value=response)
         image = _make_test_image()
 
-        text, model = provider.transcribe_image(image)
+        page = provider.transcribe_image(image)
 
         # Assert — empty string is not a refusal, so it returns
-        assert text == ""
-        assert model == "model-a"
+        assert page.text == ""
+        assert page.model == "model-a"

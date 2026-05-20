@@ -11,21 +11,18 @@ from common.config import Settings
 from common.daemon_loop import run_polling_threadpool
 from common.paperless import PaperlessClient
 from common.document_iter import iter_documents_by_pipeline_tag
+from common.per_document import run_per_document
 from .provider import OcrProvider
 from .worker import OcrProcessor
 
 
 def _process_document(doc: dict, settings: Settings) -> None:
     """Process a single Paperless document with its own HTTP session and provider."""
-    # Each thread gets its own PaperlessClient (and thus its own HTTP session)
-    # because httpx sessions are not thread-safe.
-    paperless = PaperlessClient(settings)
-    ocr_provider = OcrProvider(settings)
-    try:
-        processor = OcrProcessor(doc, paperless, ocr_provider, settings)
-        processor.process()
-    finally:
-        paperless.close()
+    run_per_document(
+        doc,
+        settings,
+        lambda d, paperless: OcrProcessor(d, paperless, OcrProvider(settings), settings),
+    )
 
 
 def _iter_docs_to_ocr(list_client: PaperlessClient, settings: Settings) -> Iterable[dict]:

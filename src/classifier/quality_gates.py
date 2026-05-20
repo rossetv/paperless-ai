@@ -5,7 +5,7 @@ from __future__ import annotations
 from common.constants import REFUSAL_PHRASES
 from common.content_checks import is_error_content
 from .constants import GENERIC_DOCUMENT_TYPES
-from .normalizers import normalize_simple
+from .normalisers import normalise_simple
 
 
 def is_generic_document_type(value: str) -> bool:
@@ -17,7 +17,7 @@ def is_generic_document_type(value: str) -> bool:
     """
     if not value:
         return True
-    return normalize_simple(value) in GENERIC_DOCUMENT_TYPES
+    return normalise_simple(value) in GENERIC_DOCUMENT_TYPES
 
 
 def needs_error_tag(text: str) -> bool:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Iterable
+from typing import Callable, Iterable
 
 import structlog
 
@@ -12,7 +12,7 @@ from .constants import (
     MODEL_FOOTER_RE,
 )
 from .metadata import parse_iso_date_prefix
-from .normalizers import normalize_name, normalize_simple
+from .normalisers import normalise_name, normalise_simple
 
 log = structlog.get_logger(__name__)
 
@@ -49,19 +49,19 @@ def filter_redundant_tags(
     """
     Remove tags that duplicate the correspondent, document type, or person.
 
-    Comparison uses :func:`normalize_simple` for document-type/person and
-    :func:`normalize_name` (which strips company suffixes) for the
+    Comparison uses :func:`normalise_simple` for document-type/person and
+    :func:`normalise_name` (which strips company suffixes) for the
     correspondent, so *"Revolut Ltd"* as a tag is caught when the
     correspondent is *"Revolut"*.
     """
-    correspondent_key = normalize_name(correspondent) if correspondent else ""
-    document_type_key = normalize_simple(document_type) if document_type else ""
-    person_key = normalize_simple(person) if person else ""
+    correspondent_key = normalise_name(correspondent) if correspondent else ""
+    document_type_key = normalise_simple(document_type) if document_type else ""
+    person_key = normalise_simple(person) if person else ""
 
     filtered: list[str] = []
     for tag in dedupe_tags(tags):
-        tag_simple = normalize_simple(tag)
-        tag_name = normalize_name(tag)
+        tag_simple = normalise_simple(tag)
+        tag_name = normalise_name(tag)
         if correspondent_key and (tag_simple == correspondent_key or tag_name == correspondent_key):
             continue
         if document_type_key and tag_simple == document_type_key:
@@ -74,14 +74,14 @@ def filter_redundant_tags(
 
 def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
     """
-    Remove tags whose normalized form is in :data:`BLACKLISTED_TAGS`.
+    Remove tags whose normalised form is in :data:`BLACKLISTED_TAGS`.
 
     >>> filter_blacklisted_tags(["New", "AI", "Bills"])
     ['Bills']
     """
     return [
         tag for tag in dedupe_tags(tags)
-        if normalize_simple(tag) not in BLACKLISTED_TAGS
+        if normalise_simple(tag) not in BLACKLISTED_TAGS
     ]
 
 
@@ -115,6 +115,8 @@ def enrich_tags(
     document_date: str,
     default_country_tag: str,
     tag_limit: int,
+    *,
+    today: Callable[[], dt.date] = dt.date.today,
 ) -> list[str]:
     """
     Combine model-suggested tags with required tags and enforce the limit.
@@ -128,27 +130,30 @@ def enrich_tags(
     - Capped to *tag_limit*.
 
     Returns a lowercased, deduplicated list with required tags first.
+
+    Args:
+        today: The current-date source for the year-tag fallback. Defaults to
+            :func:`datetime.date.today`; tests inject a fixed date so the
+            fallback year is deterministic (CODE_GUIDELINES §11.4).
     """
     tag_limit = max(0, tag_limit)
 
     base_tags = dedupe_tags(tags)
     required_tags: list[str] = []
 
-    # Model markers
     required_tags.extend(extract_model_tags(text))
 
-    # Year tag
-    year_tag = _extract_year(document_date) or dt.date.today().strftime("%Y")
+    year_tag = _extract_year(document_date) or today().strftime("%Y")
     required_tags.append(year_tag)
 
-    # Country tag
     if default_country_tag:
         required_tags.append(default_country_tag)
 
     required_tags = dedupe_tags(required_tags)
     required_set = {tag.lower() for tag in required_tags}
 
-    # Split base tags into required (already covered) and optional
+    # An LLM-suggested tag that duplicates a required one is dropped from the
+    # optional set: it is already covered and must not eat into the limit.
     non_required = [tag for tag in base_tags if tag.lower() not in required_set]
     trimmed = non_required[:tag_limit] if tag_limit else []
 

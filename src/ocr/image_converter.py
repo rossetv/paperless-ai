@@ -8,6 +8,16 @@ from PIL import Image, ImageSequence, UnidentifiedImageError
 from pdf2image import convert_from_bytes
 
 
+class ImageConversionError(Exception):
+    """Raised when raw document bytes cannot be decoded into images.
+
+    The OCR daemon's domain error for an undecodable download — Pillow could
+    not identify the bytes, or the file is truncated/corrupt. The worker
+    catches this to mark the document as errored rather than letting a generic
+    exception escape (CODE_GUIDELINES §6.1).
+    """
+
+
 def bytes_to_images(
     content: bytes, content_type: str, *, dpi: int = 300
 ) -> list[Image.Image]:
@@ -29,7 +39,8 @@ def bytes_to_images(
         A list of PIL Images, one per page/frame.
 
     Raises:
-        RuntimeError: If the image bytes cannot be identified by Pillow.
+        ImageConversionError: If the image bytes cannot be identified by Pillow
+            or the file is truncated/corrupt.
     """
     if "pdf" in content_type.lower():
         return convert_from_bytes(content, dpi=dpi)
@@ -37,14 +48,15 @@ def bytes_to_images(
     try:
         img = Image.open(BytesIO(content))
         img.load()
-        # Multi-frame image (TIFF, animated GIF, etc.)
         if getattr(img, "n_frames", 1) > 1:
             frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
             img.close()
             return frames
-        # Single-frame image — copy so the BytesIO can be freed.
+        # Copy the frame so the backing BytesIO can be released immediately.
         single = img.copy()
         img.close()
         return [single]
-    except UnidentifiedImageError as e:
-        raise RuntimeError(f"Unable to open image: {e}") from e
+    except (UnidentifiedImageError, OSError) as e:
+        # OSError covers a truncated or otherwise corrupt image — Pillow
+        # identifies the format but fails partway through Image.load().
+        raise ImageConversionError(f"Unable to open image: {e}") from e

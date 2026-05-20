@@ -12,21 +12,21 @@ from common.claims import claim_processing_tag
 from common.config import Settings
 from common.paperless import PaperlessClient
 from common.tags import (
+    ErrorFinaliserMixin,
     clean_pipeline_tags,
     extract_tags,
-    finalise_document_with_error,
     get_latest_tags,
     release_processing_tag,
 )
 from common.content_checks import is_error_content
-from .image_converter import bytes_to_images
+from .image_converter import ImageConversionError, bytes_to_images
 from .provider import OcrProvider
-from .text_assembly import OCR_ERROR_MARKER, assemble_full_text
+from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 
 log = structlog.get_logger(__name__)
 
 
-class OcrProcessor:
+class OcrProcessor(ErrorFinaliserMixin):
     """
     Orchestrates the OCR processing of a single Paperless document.
 
@@ -67,7 +67,7 @@ class OcrProcessor:
 
             if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
-                self._finalize_with_error(current_tags)
+                self._finalise_with_error(current_tags)
                 return
 
             claimed = claim_processing_tag(
@@ -79,29 +79,14 @@ class OcrProcessor:
             if not claimed:
                 return
 
-            content, content_type = self.paperless_client.download_content(self.doc_id)
-            try:
-                images = bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
-            except RuntimeError:
-                log.exception(
-                    "Unable to convert document to images; marking error",
-                    doc_id=self.doc_id,
-                )
-                self._finalize_with_error(current_tags)
-                return
-
-            if not images:
-                log.warning("Document has no pages to process", doc_id=self.doc_id)
+            images = self._download_and_convert(current_tags)
+            if images is None:
                 return
 
             try:
                 page_results, failed_pages = self._ocr_pages_in_parallel(images)
             finally:
-                for image in images:
-                    try:
-                        image.close()
-                    except OSError:
-                        log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
+                self._close_images(images)
 
             if failed_pages:
                 log.warning(
@@ -134,14 +119,45 @@ class OcrProcessor:
                 success=success,
             )
 
+    def _download_and_convert(self, current_tags: set[int]) -> list[Image.Image] | None:
+        """
+        Download the document and rasterise it into page images.
+
+        Returns the page images, or ``None`` when processing should stop: an
+        undecodable download finalises the document with an error tag, and a
+        document with no pages is logged and skipped.
+        """
+        content, content_type = self.paperless_client.download_content(self.doc_id)
+        try:
+            images = bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
+        except ImageConversionError:
+            log.exception(
+                "Unable to convert document to images; marking error",
+                doc_id=self.doc_id,
+            )
+            self._finalise_with_error(current_tags)
+            return None
+
+        if not images:
+            log.warning("Document has no pages to process", doc_id=self.doc_id)
+            return None
+        return images
+
+    def _close_images(self, images: list[Image.Image]) -> None:
+        """Release every page image; a close failure is logged, never raised."""
+        for image in images:
+            try:
+                image.close()
+            except OSError:
+                log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
+
     def _ocr_pages_in_parallel(
         self, images: list[Image.Image]
-    ) -> tuple[list[tuple[str, str]], list[int]]:
+    ) -> tuple[list[PageResult], list[int]]:
         """
         Run OCR on each page concurrently and preserve the original order.
 
-        Returns ``(page_results, failed_page_numbers)`` where each page result
-        is a ``(text, model_used)`` tuple.
+        Returns ``(page_results, failed_page_numbers)``.
         """
         with ThreadPoolExecutor(max_workers=self.settings.PAGE_WORKERS) as executor:
             future_to_index = {
@@ -153,18 +169,22 @@ class OcrProcessor:
                 ): i
                 for i, img in enumerate(images)
             }
-            results: list[tuple[str, str]] = [("", "")] * len(images)
+            results: list[PageResult] = [PageResult(text="", model="")] * len(images)
             failed_pages: list[int] = []
             for future in as_completed(future_to_index):
                 index = future_to_index[future]
                 try:
                     results[index] = future.result()
                 except Exception:
+                    # rationale: per-page worker-dispatch boundary
+                    # (CODE_GUIDELINES §6.4, site 2) — one page's failure is
+                    # logged with its traceback and isolated as an error-marked
+                    # PageResult so the remaining pages still assemble.
                     log.exception("OCR failed on page", page_num=index + 1)
                     failed_pages.append(index + 1)
-                    results[index] = (
-                        f"{OCR_ERROR_MARKER} Failed to OCR page {index + 1}.",
-                        "",
+                    results[index] = PageResult(
+                        text=f"{OCR_ERROR_MARKER} Failed to OCR page {index + 1}.",
+                        model="",
                     )
             return results, failed_pages
 
@@ -179,12 +199,12 @@ class OcrProcessor:
         Upload OCR text and update tags in Paperless.
 
         Detects error conditions (empty text, refusal markers, OCR errors)
-        and routes to :meth:`_finalize_with_error` instead of the happy path.
+        and routes to :meth:`_finalise_with_error` instead of the happy path.
         """
         if not full_text.strip() or self._has_ocr_errors(full_text):
             reason = "no text" if not full_text.strip() else "error/refusal/redacted markers"
             log.warning("OCR produced error content; marking error", doc_id=self.doc_id, reason=reason)
-            self._finalize_with_error(
+            self._finalise_with_error(
                 get_latest_tags(
                     self.paperless_client, self.doc_id, fallback_doc=self.doc
                 ),
@@ -206,24 +226,6 @@ class OcrProcessor:
             doc_id=self.doc_id,
             removed_tag=self.settings.PRE_TAG_ID,
             added_tag=self.settings.POST_TAG_ID,
-        )
-
-    def _finalize_with_error(self, tags: set[int], *, content: str | None = None) -> None:
-        """
-        Mark the document as errored and remove all pipeline tags.
-
-        Delegates to :func:`common.tags.finalise_document_with_error`.
-
-        This convenience wrapper exists so callers don't need to pass
-        ``self.paperless_client``, ``self.doc_id``, and ``self.settings``
-        at every call site.
-        """
-        finalise_document_with_error(
-            self.paperless_client,
-            self.doc_id,
-            tags,
-            self.settings,
-            content=content,
         )
 
     def _log_ocr_stats(self) -> None:

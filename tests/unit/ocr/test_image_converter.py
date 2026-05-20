@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from ocr.image_converter import bytes_to_images
+from ocr.image_converter import ImageConversionError, bytes_to_images
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
     """Create valid PNG bytes from a small image."""
@@ -123,16 +123,16 @@ class TestBytesToImagesPdf:
         mock_convert.assert_called_once()
 
 class TestBytesToImagesInvalid:
-    def test_invalid_bytes_raises_runtime_error(self):
+    def test_invalid_bytes_raises_conversion_error(self):
         garbage = b"\x00\x01\x02\x03not-an-image"
 
-        with pytest.raises(RuntimeError, match="Unable to open image"):
+        with pytest.raises(ImageConversionError, match="Unable to open image"):
             bytes_to_images(garbage, "image/png")
 
-    def test_empty_bytes_raises_runtime_error(self):
+    def test_empty_bytes_raises_conversion_error(self):
         empty = b""
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ImageConversionError):
             bytes_to_images(empty, "image/png")
 
 class TestBytesToImagesUnknownType:

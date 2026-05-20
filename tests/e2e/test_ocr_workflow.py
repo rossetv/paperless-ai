@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import io
-from unittest.mock import MagicMock
 
 from PIL import Image
 
+from ocr.text_assembly import OCR_ERROR_MARKER, PageResult
 from ocr.worker import OcrProcessor
-from ocr.text_assembly import OCR_ERROR_MARKER
 from tests.helpers.factories import make_document, make_png_bytes, make_settings_obj
+from tests.helpers.mocks import make_mock_ocr_provider, make_stateful_paperless
 
 
 def _make_settings(**overrides):
@@ -32,59 +32,6 @@ def _make_settings(**overrides):
     return make_settings_obj(**defaults)
 
 
-def _make_stateful_client(initial_doc):
-    """
-    Create a mock PaperlessClient that tracks tag state across calls.
-
-    The claim_processing_tag workflow does:
-      1. get_document (refresh) -> check tag absent
-      2. update_document_metadata (add tag)
-      3. get_document (verify) -> check tag present
-
-    This mock tracks tags so the verify step succeeds.
-    """
-    client = MagicMock()
-    # Mutable state: current tags for the document
-    state = {"tags": list(initial_doc.get("tags", []))}
-
-    def get_document(doc_id):
-        doc_copy = dict(initial_doc)
-        doc_copy["tags"] = list(state["tags"])
-        return doc_copy
-
-    def update_document_metadata(doc_id, **kwargs):
-        if "tags" in kwargs:
-            state["tags"] = list(kwargs["tags"])
-
-    def update_document(doc_id, content, tags):
-        state["tags"] = list(tags)
-
-    client.get_document.side_effect = get_document
-    client.update_document_metadata.side_effect = update_document_metadata
-    client.update_document.side_effect = update_document
-    client.download_content.return_value = (b"fake", "application/pdf")
-    return client, state
-
-
-def _make_mock_ocr_provider(transcribe_return=None, transcribe_side_effect=None):
-    """Create a mock OCR provider."""
-    provider = MagicMock()
-    if transcribe_side_effect is not None:
-        provider.transcribe_image.side_effect = transcribe_side_effect
-    elif transcribe_return is not None:
-        provider.transcribe_image.return_value = transcribe_return
-    else:
-        provider.transcribe_image.return_value = (
-            "This is the transcribed text of the document.", "gpt-5.4-mini"
-        )
-    provider.get_stats.return_value = {
-        "attempts": 1,
-        "refusals": 0,
-        "api_errors": 0,
-        "fallback_successes": 0,
-    }
-    return provider
-
 class TestOcrHappyPath:
     """Complete happy path: download -> convert -> OCR -> update Paperless."""
 
@@ -102,11 +49,12 @@ class TestOcrHappyPath:
         png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443], title="Test PDF")
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (png_bytes, "image/png")
 
-        provider = _make_mock_ocr_provider(
-            transcribe_return=("Invoice from Acme Corp. Total: $500.", "gpt-5.4-mini")
+        provider = make_mock_ocr_provider()
+        provider.transcribe_image.return_value = PageResult(
+            "Invoice from Acme Corp. Total: $500.", "gpt-5.4-mini"
         )
 
         processor = OcrProcessor(
@@ -155,18 +103,17 @@ class TestOcrHappyPath:
         tiff_bytes = buf.getvalue()
 
         doc = make_document(id=10, tags=[443])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (tiff_bytes, "image/tiff")
 
         call_count = [0]
 
         def transcribe_side_effect(image, doc_id=None, page_num=None):
             call_count[0] += 1
-            return (f"Content of page {page_num}.", "gpt-5.4-mini")
+            return PageResult(f"Content of page {page_num}.", "gpt-5.4-mini")
 
-        provider = _make_mock_ocr_provider(
-            transcribe_side_effect=transcribe_side_effect
-        )
+        provider = make_mock_ocr_provider()
+        provider.transcribe_image.side_effect = transcribe_side_effect
 
         processor = OcrProcessor(
             doc=doc,
@@ -198,13 +145,12 @@ class TestOcrErrorPath:
         png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (png_bytes, "image/png")
 
         # Provider raises for every call
-        provider = _make_mock_ocr_provider(
-            transcribe_side_effect=Exception("Model unavailable")
-        )
+        provider = make_mock_ocr_provider()
+        provider.transcribe_image.side_effect = Exception("Model unavailable")
 
         processor = OcrProcessor(
             doc=doc,
@@ -228,11 +174,12 @@ class TestOcrErrorPath:
         png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (png_bytes, "image/png")
 
-        provider = _make_mock_ocr_provider(
-            transcribe_return=("CHATGPT REFUSED TO TRANSCRIBE", "")
+        provider = make_mock_ocr_provider()
+        provider.transcribe_image.return_value = PageResult(
+            "CHATGPT REFUSED TO TRANSCRIBE", ""
         )
 
         processor = OcrProcessor(
@@ -253,11 +200,11 @@ class TestOcrErrorPath:
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[443])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         # Return corrupt bytes that will fail image conversion
         client.download_content.return_value = (b"not-an-image", "image/png")
 
-        provider = _make_mock_ocr_provider()
+        provider = make_mock_ocr_provider()
 
         processor = OcrProcessor(
             doc=doc,
@@ -271,7 +218,7 @@ class TestOcrErrorPath:
         provider.transcribe_image.assert_not_called()
 
         # Error tag should be applied via update_document_metadata
-        # The _finalize_with_error path calls update_document_metadata with error tag
+        # The _finalise_with_error path calls update_document_metadata with error tag
         assert 552 in state["tags"]
 
 class TestOcrLockContention:
@@ -288,9 +235,9 @@ class TestOcrLockContention:
 
         # Document already has the processing tag (500)
         doc = make_document(id=42, tags=[443, 500])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
 
-        provider = _make_mock_ocr_provider()
+        provider = make_mock_ocr_provider()
 
         processor = OcrProcessor(
             doc=doc,
@@ -313,11 +260,12 @@ class TestOcrLockContention:
         png_bytes = make_png_bytes()
 
         doc = make_document(id=42, tags=[443])
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (png_bytes, "image/png")
 
-        provider = _make_mock_ocr_provider(
-            transcribe_return=("Transcribed text.", "gpt-5.4-mini")
+        provider = make_mock_ocr_provider()
+        provider.transcribe_image.return_value = PageResult(
+            "Transcribed text.", "gpt-5.4-mini"
         )
 
         processor = OcrProcessor(
@@ -338,9 +286,9 @@ class TestOcrLockContention:
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[443, 552])  # has error tag
-        client, state = _make_stateful_client(doc)
+        client, state = make_stateful_paperless(doc)
 
-        provider = _make_mock_ocr_provider()
+        provider = make_mock_ocr_provider()
 
         processor = OcrProcessor(
             doc=doc,
