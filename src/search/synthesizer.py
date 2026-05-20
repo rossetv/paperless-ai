@@ -18,9 +18,16 @@ Design notes:
 - On any bad LLM response: in ``"final"`` mode, degrades to Answered stating
   the answer could not be produced; in ``"exploratory"`` mode, degrades to
   NeedsMore with a generic adjustment.  Never raises on a bad LLM response.
-- The llm_client is the OpenAI-compatible client injected by the caller; the
-  synthesiser calls llm_client.chat.completions.create(...) directly, iterating
-  through AI_MODELS on OpenAI API errors (mirroring the planner's fallback).
+- All LLM calls go through ``OpenAIChatMixin._create_completion``
+  (CODE_GUIDELINES.md §8.1): the synthesiser subclasses the mixin and inherits
+  the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
+  ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_ANSWER_MODEL
+  then AI_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
+- A failing model — whether a retry-exhausted retryable error or a
+  non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
+  ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
+  and the next model is tried.  When every model fails the synthesiser
+  degrades gracefully.  ``synthesise()`` therefore never raises.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ from typing import TYPE_CHECKING
 import openai
 import structlog
 
-from common.llm import unique_models
+from common.llm import OpenAIChatMixin, unique_models
 from search.models import Answered, AnswerOutcome, NeedsMore, RetrievedChunk
 from search.prompts import build_synthesiser_system_prompt, build_synthesiser_user_message
 
@@ -40,14 +47,6 @@ if TYPE_CHECKING:
     from common.config import Settings
 
 log = structlog.get_logger(__name__)
-
-# OpenAI API errors that warrant trying the next model in the fallback chain.
-_RETRYABLE_ERRORS = (
-    openai.APIConnectionError,
-    openai.APITimeoutError,
-    openai.RateLimitError,
-    openai.InternalServerError,
-)
 
 # Fallback answer text used when the LLM returns unparseable content in final mode.
 _FALLBACK_FINAL_ANSWER = (
@@ -61,23 +60,31 @@ _FALLBACK_EXPLORATORY_ADJUSTMENT = (
 )
 
 
-class Synthesizer:
+class Synthesizer(OpenAIChatMixin):
     """Synthesises a prose answer from retrieved chunks via one LLM call.
 
     The synthesiser is a pure function wrapped in a class for dependency
-    injection.  All state is in the injected ``settings`` and ``llm_client``;
-    Synthesizer instances are safe to share across threads.
+    injection.  All state is in the injected ``settings``; Synthesizer
+    instances are safe to share across threads.
+
+    LLM calls go through the inherited ``OpenAIChatMixin._create_completion``,
+    which owns the shared OpenAI client singleton, retry, and the concurrency
+    limiter (CODE_GUIDELINES.md §8.1).
 
     Args:
         settings: Application settings; supplies SEARCH_ANSWER_MODEL and
-            AI_MODELS for the fallback chain.
-        llm_client: An OpenAI-compatible client (``openai.OpenAI`` or a mock
-            in tests).  Must expose ``chat.completions.create``.
+            AI_MODELS for the fallback chain, plus MAX_RETRIES /
+            MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
     """
 
-    def __init__(self, settings: Settings, llm_client: object) -> None:
-        self._settings = settings
-        self._llm_client = llm_client
+    # The synthesiser keeps no stats; an empty tuple satisfies the mixin contract.
+    _STAT_KEYS: tuple[str, ...] = ()
+
+    def __init__(self, settings: Settings) -> None:
+        # ``self.settings`` is the attribute name the @retry decorator reads
+        # via the HasRetrySettings protocol — it must not be renamed.
+        self.settings = settings
+        self._init_stats()
 
     def synthesise(
         self,
@@ -89,7 +96,7 @@ class Synthesizer:
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
         Makes one LLM call using SEARCH_ANSWER_MODEL, falling back through
-        AI_MODELS on retryable API errors.  On any parse failure or exhausted
+        AI_MODELS on any API error.  On any parse failure or exhausted
         fallback, degrades gracefully based on *mode*.
 
         Args:
@@ -134,34 +141,35 @@ class Synthesizer:
         Returns the raw text content from the first successful call, or
         None if every model fails.
 
+        Each per-model attempt goes through ``_create_completion`` (the
+        inherited mixin call), so it gets the shared ``@retry`` backoff and
+        the ``llm_limiter`` concurrency limiter for free.  A model that still
+        fails — retry-exhausted retryable error or a non-retryable one such as
+        ``AuthenticationError`` — raises an ``openai.APIError`` subclass, which
+        is caught here as the terminal "skip this model" branch.
+
         The primary model (SEARCH_ANSWER_MODEL) is tried first.  If it is
         already in AI_MODELS it is not tried twice — unique_models deduplicates
         the combined list while preserving insertion order.
         """
-        primary = self._settings.SEARCH_ANSWER_MODEL
-        fallbacks = unique_models([primary] + list(self._settings.AI_MODELS))
+        primary = self.settings.SEARCH_ANSWER_MODEL
+        fallbacks = unique_models([primary] + list(self.settings.AI_MODELS))
 
         for model in fallbacks:
             try:
-                completion = self._llm_client.chat.completions.create(  # type: ignore[attr-defined]
+                completion = self._create_completion(
                     model=model,
                     messages=messages,
                 )
                 content: str = completion.choices[0].message.content or ""
                 return content
-            except _RETRYABLE_ERRORS as exc:
+            except openai.APIError as exc:
+                # Catches BOTH retry-exhausted retryable errors and
+                # non-retryable ones (AuthenticationError, PermissionDeniedError,
+                # NotFoundError, BadRequestError, …) — every one is an
+                # openai.APIError subclass.  Skip this model; try the next.
                 log.warning(
                     "synthesiser.model_failed",
-                    model=model,
-                    error=str(exc),
-                    query_prefix=query[:60],
-                )
-                continue
-            except openai.BadRequestError as exc:
-                # A 400 is not recoverable by retrying the same query; skip
-                # this model rather than crashing the synthesiser.
-                log.warning(
-                    "synthesiser.model_rejected_request",
                     model=model,
                     error=str(exc),
                     query_prefix=query[:60],
