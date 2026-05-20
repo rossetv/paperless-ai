@@ -61,11 +61,14 @@ class AuthError(Exception):
 def verify_api_key(provided: str, configured: str) -> bool:
     """Return whether *provided* equals *configured*, compared in constant time.
 
-    Uses :func:`hmac.compare_digest` so the comparison takes the same time
-    regardless of where the two values first differ — an ``==`` comparison
-    leaks the length of the matching prefix through a timing side channel.
+    Uses :func:`hmac.compare_digest` on the UTF-8 encoded bytes so the
+    comparison takes the same time regardless of where the two values first
+    differ — an ``==`` comparison leaks the length of the matching prefix
+    through a timing side channel.  Comparing bytes (rather than str) also
+    avoids a ``TypeError`` when *provided* contains non-ASCII characters, which
+    would otherwise surface as an uncaught 500 at the login endpoint.
     """
-    return hmac.compare_digest(provided, configured)
+    return hmac.compare_digest(provided.encode("utf-8"), configured.encode("utf-8"))
 
 
 def issue_session_token(api_key: str, *, ttl_seconds: int, now: float) -> str:
