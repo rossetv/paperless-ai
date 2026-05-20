@@ -57,7 +57,7 @@ export const LargeRows: Story = {
   },
 };
 
-export const AllStates: Story = {
+export const AllStates: StoryObj = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '360px' }}>
       <TextArea id="normal" label="Normal" placeholder="Enter text…" rows={3} />

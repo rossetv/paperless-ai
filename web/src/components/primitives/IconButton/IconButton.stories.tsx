@@ -57,7 +57,7 @@ export const Disabled: Story = {
   },
 };
 
-export const AllVariants: Story = {
+export const AllVariants: StoryObj = {
   render: () => (
     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
       <IconButton label="Search">

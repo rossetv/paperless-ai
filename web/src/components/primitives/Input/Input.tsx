@@ -1,4 +1,8 @@
-import styles from './Input.module.css';
+import stylesRaw from './Input.module.css';
+
+// CSS Modules return a string-indexed object; bracket notation is required
+// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
+const styles = stylesRaw as Record<string, string>;
 
 export interface InputProps {
   /** The id — required for label association and accessible forms. */
@@ -57,12 +61,12 @@ export function Input({
   const hasError = error !== undefined && error !== '';
   const errorId = hasError ? `${id}-error` : undefined;
 
-  const wrapperClasses = [styles.wrapper, className].filter(Boolean).join(' ');
+  const wrapperClasses = [styles['wrapper'], className].filter(Boolean).join(' ');
 
   return (
     <div className={wrapperClasses}>
       {label !== undefined && (
-        <label htmlFor={id} className={styles.label}>
+        <label htmlFor={id} className={styles['label']}>
           {label}
         </label>
       )}
@@ -79,12 +83,12 @@ export function Input({
         onChange={onChange}
         onFocus={onFocus}
         onBlur={onBlur}
-        className={[styles.input, hasError ? styles.inputError : undefined]
+        className={[styles['input'], hasError ? styles['input-error'] : undefined]
           .filter(Boolean)
           .join(' ')}
       />
       {hasError && (
-        <span id={errorId} className={styles.errorMessage} role="alert">
+        <span id={errorId} className={styles['error-message']} role="alert">
           {error}
         </span>
       )}

@@ -58,7 +58,7 @@ export const WithoutLabel: Story = {
   },
 };
 
-export const AllStates: Story = {
+export const AllStates: StoryObj = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '320px' }}>
       <Input id="normal" label="Normal" placeholder="Enter text…" />
