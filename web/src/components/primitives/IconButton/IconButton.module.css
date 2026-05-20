@@ -1,0 +1,53 @@
+/*
+ * IconButton primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * Styled as a Media Control button (DESIGN.md §4 "Media Control"):
+ * circular shape, translucent background, accent focus ring.
+ * The circle shape is set via --radius-circle (50%).
+ */
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  /* Circular shape per DESIGN.md Media Control style */
+  border-radius: var(--radius-circle);
+  border: none;
+
+  /* Translucent overlay background matching DESIGN.md media control */
+  background-color: var(--colour-overlay);
+  color: var(--colour-text-tertiary);
+
+  /* Touch-target: minimum 44×44px implied by spacing tokens (~44px) */
+  width: calc(var(--spacing-13) + var(--spacing-14));
+  height: calc(var(--spacing-13) + var(--spacing-14));
+
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Focus ring — 2px accent outline per DESIGN.md §6 */
+.iconButton:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  background-color: var(--colour-surface);
+  color: var(--colour-text-primary);
+}
+
+.iconButton:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
+}
+
+/* Active scale — the Apple "press" affordance (DESIGN.md §4 "Media Control") */
+.iconButton:active:not(:disabled) {
+  transform: scale(0.9);
+  background-color: var(--colour-button-active-bg);
+}
+
+.iconButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
