@@ -1,0 +1,77 @@
+/*
+ * Button primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
+ *
+ * Focus ring: 2px solid accent as specified in DESIGN.md §6 and tokens.css.
+ * Apple-style: primary = accent-filled, secondary = outlined with accent border.
+ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-standard);
+  border: var(--spacing-1) solid transparent;
+  font-family: var(--font-text);
+  font-size: var(--font-size-button);
+  font-weight: var(--font-weight-button);
+  line-height: var(--line-height-button);
+  letter-spacing: var(--letter-spacing-button);
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* Focus ring — 2px accent outline, all interactive states */
+.button:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Primary variant ── */
+.primary {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+  border-color: transparent;
+  padding: var(--spacing-6) var(--spacing-11);
+}
+
+.primary:hover:not(:disabled) {
+  background-color: var(--colour-link);
+}
+
+.primary:active:not(:disabled) {
+  background-color: var(--colour-button-active-bg);
+  color: var(--colour-text-primary);
+}
+
+/* ── Secondary variant ── */
+.secondary {
+  background-color: transparent;
+  color: var(--colour-link);
+  border-color: var(--colour-border-button);
+  padding: var(--spacing-6) var(--spacing-11);
+}
+
+.secondary:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* ── Size modifiers ── */
+.defaultSize {
+  padding: var(--spacing-6) var(--spacing-11);
+}
+
+.small {
+  font-size: var(--font-size-caption);
+  padding: var(--spacing-3) var(--spacing-8);
+}
+
+/* ── Disabled state ── */
+.button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
