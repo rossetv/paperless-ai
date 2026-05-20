@@ -1,0 +1,45 @@
+/*
+ * Tooltip primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * Design decisions (DESIGN.md-consistent):
+ * - Background: --colour-overlay-dark (rgba(0,0,0,0.80)) — the same translucent
+ *   dark used by the navigation glass, giving the tooltip Apple's frosted glass
+ *   feel without needing backdrop-filter on a small element.
+ * - Text: --colour-text-on-dark (#fff).
+ * - Radius: --radius-micro (5 px) — small container per DESIGN.md §5.
+ * - Positioned absolutely below the wrapper; wrapper is position:relative.
+ * - Font: micro scale (12 px) — tooltips are supplementary, not primary content.
+ * - No shadow: tooltip sits at the top of the visual stack; elevation is
+ *   expressed through the dark background contrast, not a drop shadow.
+ */
+
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tooltip {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));  /* 4 px gap below the trigger */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  white-space: nowrap;
+
+  background-color: var(--colour-overlay-dark);
+  color: var(--colour-text-on-dark);
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-2) var(--spacing-6);   /* 4 px 8 px */
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);            /* 12 px */
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+
+  /* Pointer-events off so the tooltip itself does not interfere with
+     mouseleave on the trigger when the cursor moves into the tooltip area */
+  pointer-events: none;
+}
