@@ -12,8 +12,9 @@ authoritative (spec §6.1).
 Allowed deps: store.reader (SearchFilters, StoreReader), store.models (ChunkHit,
     FacetSet, TaxonomyEntry), search.models (FilterCandidates, QueryPlan,
     RetrievedChunk), common.config (Settings), common.embeddings (EmbeddingClient,
-    EmbeddingError).
-Forbidden: no sqlite3, no FastAPI, no direct openai calls outside embeddings.
+    EMBEDDING_FAILURE_EXCEPTIONS).
+Forbidden: no sqlite3, no FastAPI, no direct openai calls or imports — the
+    OpenAI SDK is an implementation detail of common.embeddings.
 """
 
 from __future__ import annotations
@@ -21,13 +22,11 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import openai
 import structlog
 
-from common.embeddings import EmbeddingError
+from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS
 from search.models import FilterCandidates, QueryPlan, RetrievedChunk
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
 from store.reader import SearchFilters, StoreReader
@@ -35,15 +34,6 @@ from store.reader import SearchFilters, StoreReader
 if TYPE_CHECKING:
     from common.config import Settings
     from common.embeddings import EmbeddingClient
-
-# Embedding failures that retrieval degrades over rather than propagates.
-# ``EmbeddingError`` is the non-retryable wrapper EmbeddingClient raises (bad
-# key, 400, …); the ``openai.APIError`` family covers a retryable error
-# (connection drop, rate limit, 5xx) that exhausted EmbeddingClient's retries
-# and was re-raised.  Either way the query embedding could not be produced, so
-# the affected query contributes nothing and the pipeline degrades to the
-# "no matching documents" result rather than returning a 500 (finding C3).
-_EMBEDDING_FAILURES = (EmbeddingError, openai.APIError)
 
 log = structlog.get_logger(__name__)
 
@@ -182,17 +172,9 @@ def resolve_filters(
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _FusedEntry:
-    """Accumulator for RRF score and the first-seen ChunkHit for a chunk_id."""
-
-    score: float
-    hit: ChunkHit
-
-
 def _fuse_with_rrf(
     ranked_lists: list[list[ChunkHit]],
-) -> dict[int, _FusedEntry]:
+) -> tuple[dict[int, float], dict[int, ChunkHit]]:
     """Apply Reciprocal Rank Fusion across all ranked lists.
 
     Each chunk's fused score is the sum of ``1 / (_RRF_K + rank)`` over every
@@ -207,23 +189,59 @@ def _fuse_with_rrf(
         ranked_lists: Any number of ranked lists; each is ordered best-first.
 
     Returns:
-        A dict mapping ``chunk_id`` to a ``_FusedEntry`` holding the accumulated
-        fused score and the ChunkHit from the first list in which the chunk appeared.
+        A pair of ``{chunk_id: fused_score}`` and ``{chunk_id: ChunkHit}``,
+        where the ChunkHit is the one from the first list the chunk appeared
+        in.  Two plain dicts replace a mutable accumulator dataclass
+        (CODE_GUIDELINES §1.3).
     """
-    fused: dict[int, _FusedEntry] = {}
+    fused_score: dict[int, float] = {}
+    first_hit: dict[int, ChunkHit] = {}
 
     for ranked_list in ranked_lists:
         for position, hit in enumerate(ranked_list):
             # 1-based rank: position 0 → rank 1.
             rank = position + 1
             contribution = 1.0 / (_RRF_K + rank)
-            if hit.chunk_id in fused:
-                # Accumulate the score; keep the existing ChunkHit.
-                fused[hit.chunk_id].score += contribution
+            if hit.chunk_id in fused_score:
+                # Accumulate the score; keep the first-seen ChunkHit.
+                fused_score[hit.chunk_id] += contribution
             else:
-                fused[hit.chunk_id] = _FusedEntry(score=contribution, hit=hit)
+                fused_score[hit.chunk_id] = contribution
+                first_hit[hit.chunk_id] = hit
 
-    return fused
+    return fused_score, first_hit
+
+
+def _top_document_ids(
+    fused_score: dict[int, float],
+    first_hit: dict[int, ChunkHit],
+    top_k: int,
+) -> set[int]:
+    """Return the ids of the *top_k* documents by their best chunk's score.
+
+    A document may contribute several fused chunks; its rank is decided by the
+    single highest fused score among them.  The ``top_k`` documents by that
+    best score are returned as an id set.
+
+    Args:
+        fused_score: ``{chunk_id: fused_score}`` from :func:`_fuse_with_rrf`.
+        first_hit: ``{chunk_id: ChunkHit}`` from :func:`_fuse_with_rrf`, used
+            to resolve each chunk to its parent document.
+        top_k: How many documents to keep.
+
+    Returns:
+        The set of the ``top_k`` highest-scoring documents' ids.
+    """
+    doc_best_score: dict[int, float] = {}
+    for chunk_id, score in fused_score.items():
+        document_id = first_hit[chunk_id].document_id
+        if score > doc_best_score.get(document_id, -1.0):
+            doc_best_score[document_id] = score
+
+    ranked_doc_ids = sorted(
+        doc_best_score.items(), key=lambda kv: kv[1], reverse=True
+    )
+    return {document_id for document_id, _ in ranked_doc_ids[:top_k]}
 
 
 # ---------------------------------------------------------------------------
@@ -261,13 +279,14 @@ class Retriever:
     def _embed_queries(self, texts: list[str]) -> list[list[float]]:
         """Embed *texts*, degrading to an empty result on any embedding failure.
 
-        ``EmbeddingClient.embed`` raises ``EmbeddingError`` on a non-retryable
-        failure (a bad/expired key, a 400) and re-raises a retryable OpenAI
-        error once its own retries are exhausted (an embedding-endpoint outage,
-        sustained rate limiting).  A search must not 500 because the embedding
-        backend is down: this catches both, logs a warning, and returns ``[]``
-        so the query simply contributes no vector-search results — retrieval
-        then falls through to its existing empty path (finding C3).
+        ``EmbeddingClient.embed`` can fail two ways — a non-retryable error (a
+        bad/expired key, a 400) or a retryable one (an embedding-endpoint
+        outage, sustained rate limiting) that exhausted its own retries.  Both
+        are named by ``EMBEDDING_FAILURE_EXCEPTIONS``.  A search must not 500
+        because the embedding backend is down: this catches that tuple, logs a
+        warning, and returns ``[]`` so the query simply contributes no
+        vector-search results — retrieval then falls through to its existing
+        empty path (finding C3).
 
         Args:
             texts: The semantic queries and sub-questions to embed.
@@ -277,7 +296,7 @@ class Retriever:
         """
         try:
             return self._embedding_client.embed(texts)
-        except _EMBEDDING_FAILURES as exc:
+        except EMBEDDING_FAILURE_EXCEPTIONS as exc:
             log.warning(
                 "retriever.embedding_failed",
                 error=str(exc),
@@ -335,48 +354,33 @@ class Retriever:
         if not ranked_lists:
             return []
 
-        fused = _fuse_with_rrf(ranked_lists)
+        fused_score, first_hit = _fuse_with_rrf(ranked_lists)
 
-        if not fused:
+        if not fused_score:
             return []
 
-        # Group by document: each document's representative score is its best chunk.
-        # A document may contribute multiple chunks; all are kept, but the document
-        # rank is determined by the best (highest fused score) among them.
-        doc_best_score: dict[int, float] = {}
-        for entry in fused.values():
-            current_best = doc_best_score.get(entry.hit.document_id, -1.0)
-            if entry.score > current_best:
-                doc_best_score[entry.hit.document_id] = entry.score
-
-        # Take the top-K documents by their best chunk score.
-        top_doc_ids = set(
-            doc_id
-            for doc_id, _ in sorted(
-                doc_best_score.items(), key=lambda kv: kv[1], reverse=True
-            )[:top_k]
-        )
+        top_doc_ids = _top_document_ids(fused_score, first_hit, top_k)
 
         # Collect all chunks from the top-K documents.
         chunks: list[RetrievedChunk] = [
             RetrievedChunk(
                 chunk_id=chunk_id,
-                document_id=entry.hit.document_id,
-                text=entry.hit.text,
-                page_hint=entry.hit.page_hint,
-                rrf_score=entry.score,
+                document_id=first_hit[chunk_id].document_id,
+                text=first_hit[chunk_id].text,
+                page_hint=first_hit[chunk_id].page_hint,
+                rrf_score=score,
             )
-            for chunk_id, entry in fused.items()
-            if entry.hit.document_id in top_doc_ids
+            for chunk_id, score in fused_score.items()
+            if first_hit[chunk_id].document_id in top_doc_ids
         ]
 
         # Sort highest fused score first.
-        chunks.sort(key=lambda c: c.rrf_score, reverse=True)
+        chunks.sort(key=lambda chunk: chunk.rrf_score, reverse=True)
 
         log.debug(
             "retriever.retrieve.complete",
             ranked_lists_count=len(ranked_lists),
-            fused_chunks=len(fused),
+            fused_chunks=len(fused_score),
             top_k=top_k,
             returned_chunks=len(chunks),
         )

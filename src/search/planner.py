@@ -33,8 +33,9 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
-from search.models import FilterCandidates, QueryPlan
+from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
 from search.prompts import build_planner_system_prompt
+from search.text import QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -152,18 +153,12 @@ class QueryPlanner(OpenAIChatMixin):
         log.warning(
             "planner.degraded_to_fallback",
             reason=reason,
-            query_prefix=query[:60],
+            query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
         )
         return QueryPlan(
             semantic_queries=(query,),
             keyword_terms=(),
-            filter_candidates=FilterCandidates(
-                correspondent=None,
-                document_type=None,
-                tags=(),
-                date_from=None,
-                date_to=None,
-            ),
+            filter_candidates=EMPTY_FILTER_CANDIDATES,
             sub_questions=(),
         )
 
@@ -173,7 +168,7 @@ class QueryPlanner(OpenAIChatMixin):
 # ---------------------------------------------------------------------------
 
 
-def _build_query_plan(data: dict) -> QueryPlan:  # type: ignore[type-arg]
+def _build_query_plan(data: dict[str, object]) -> QueryPlan:
     """Construct a QueryPlan from a validated dict.
 
     Args:
@@ -192,7 +187,10 @@ def _build_query_plan(data: dict) -> QueryPlan:  # type: ignore[type-arg]
     keyword_terms = tuple(t for t in _str_list(data.get("keyword_terms")) if t)
     sub_questions = tuple(t for t in _str_list(data.get("sub_questions")) if t)
 
-    fc_raw = data.get("filter_candidates") or {}
+    raw_filter_candidates = data.get("filter_candidates")
+    fc_raw: dict[str, object] = (
+        raw_filter_candidates if isinstance(raw_filter_candidates, dict) else {}
+    )
     filter_candidates = FilterCandidates(
         correspondent=_str_or_none(fc_raw.get("correspondent")),
         document_type=_str_or_none(fc_raw.get("document_type")),

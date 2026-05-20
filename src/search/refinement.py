@@ -1,18 +1,19 @@
-"""Plan-adjustment helpers for the bounded refinement loop (spec §6.3).
+"""Pure helpers for the bounded refinement loop (spec §6.3).
 
-These two pure functions serve the two branches of the refinement loop in
-core.py:
+These pure functions serve the branches of the refinement loop in core.py:
 
 - ``broaden_plan`` — used when filtered retrieval returns nothing: drop the
   (possibly mis-resolved) filters and retry without them.
 - ``adjust_plan`` — used when the synthesiser returns ``NeedsMore``: fold the
   adjustment hint into the plan as an additional semantic query so the next
   retrieval round explores the suggested direction.
+- ``merge_chunks`` — used after the refined retrieval round: union the two
+  rounds' retrieved chunks so the final synthesise sees both.
 
-Both functions are pure (no I/O, no LLM calls) and return new ``QueryPlan``
-instances via ``dataclasses.replace``.  The frozen-dataclass contract means
-the input is structurally immutable; these functions make the immutability
-explicit by always returning a fresh instance.
+Every function is pure (no I/O, no LLM calls).  The plan helpers return new
+``QueryPlan`` instances via ``dataclasses.replace``; the frozen-dataclass
+contract means the input is structurally immutable, and they make that
+immutability explicit by always returning a fresh instance.
 
 Depends on: search/models.py only.
 """
@@ -21,17 +22,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from search.models import FilterCandidates, QueryPlan
-
-# The empty sentinel used by broaden_plan so callers can rely on a single
-# well-known «no filters» value rather than constructing one ad hoc.
-_EMPTY_FILTER_CANDIDATES = FilterCandidates(
-    correspondent=None,
-    document_type=None,
-    tags=(),
-    date_from=None,
-    date_to=None,
-)
+from search.models import EMPTY_FILTER_CANDIDATES, QueryPlan, RetrievedChunk
 
 
 def broaden_plan(plan: QueryPlan) -> QueryPlan:
@@ -53,7 +44,7 @@ def broaden_plan(plan: QueryPlan) -> QueryPlan:
         A new ``QueryPlan`` with an empty ``FilterCandidates`` and all other
         fields taken from *plan*.
     """
-    return replace(plan, filter_candidates=_EMPTY_FILTER_CANDIDATES)
+    return replace(plan, filter_candidates=EMPTY_FILTER_CANDIDATES)
 
 
 def adjust_plan(plan: QueryPlan, adjustment: str) -> QueryPlan:
@@ -81,3 +72,30 @@ def adjust_plan(plan: QueryPlan, adjustment: str) -> QueryPlan:
         plan,
         semantic_queries=(*plan.semantic_queries, adjustment),
     )
+
+
+def merge_chunks(
+    previous: list[RetrievedChunk],
+    new: list[RetrievedChunk],
+) -> list[RetrievedChunk]:
+    """Merge two retrieved-chunk lists, de-duplicating by chunk id.
+
+    The refinement pass synthesises over the union of both retrieval rounds
+    (spec §6.3).  A chunk surfaced by both rounds is kept once; the first
+    occurrence — the higher-ranked one, since *previous* leads — is retained.
+    The merged list is ordered by fused score, highest first.
+
+    Args:
+        previous: The chunks from the first retrieval round.
+        new: The chunks from the refined retrieval round.
+
+    Returns:
+        The de-duplicated union, ordered by ``rrf_score`` descending.
+    """
+    merged_by_id: dict[int, RetrievedChunk] = {}
+    for chunk in [*previous, *new]:
+        if chunk.chunk_id not in merged_by_id:
+            merged_by_id[chunk.chunk_id] = chunk
+    merged = list(merged_by_id.values())
+    merged.sort(key=lambda chunk: chunk.rrf_score, reverse=True)
+    return merged

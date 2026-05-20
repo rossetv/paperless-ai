@@ -111,16 +111,17 @@ def build_planner_system_prompt(today: str) -> str:
 # Synthesiser prompt
 # ---------------------------------------------------------------------------
 
+# The trigger phrase that switches the synthesiser into final mode.  The system
+# prompt instructs the model to always answer when it sees this phrase, and
+# build_synthesiser_user_message emits it verbatim when final=True.  Both sites
+# interpolate this one constant, so the two can never drift out of step
+# (CODE_GUIDELINES.md §3.5).
+_FINAL_MODE_TRIGGER: str = "FINAL — you must answer"
+
 # The system prompt is control-plane only — it contains no retrieved content.
 # Retrieved chunks are injected into the *user* message, below an explicit
 # delimiter that instructs the model to treat everything below as data.
 # This is the injection-safe pattern required by CODE_GUIDELINES.md §10.2.
-#
-# COUPLING: the "Final-mode rule" section below references the trigger phrase
-# "FINAL — you must answer" as a substring; build_synthesiser_user_message
-# emits that exact phrase into the user message when final=True.  The two are
-# a fragile substring relationship — if you edit the phrase in one place you
-# MUST edit it in the other, or final mode silently stops being honoured.
 _SYNTHESISER_SYSTEM_PROMPT: str = """
 You are an answer-synthesis engine for a personal document archive.
 Your job is to read the user's question and the retrieved document chunks,
@@ -154,14 +155,14 @@ If the retrieved context is too thin or irrelevant to answer reliably
 
 # Final-mode rule
 
-When the question contains the instruction "FINAL — you must answer", always
+When the question contains the instruction "FINAL_MODE_TRIGGER", always
 use "answered".  If the chunks contain nothing relevant, state honestly that
 no relevant information was found in the document archive.
 
 # Language
 
 Use British English throughout.  Be concise; avoid padding.
-""".strip()
+""".strip().replace("FINAL_MODE_TRIGGER", _FINAL_MODE_TRIGGER)
 
 
 # The data delimiter that separates control-plane instructions from the
@@ -208,11 +209,15 @@ def build_synthesiser_user_message(
     Returns:
         The formatted user message string.
     """
-    # COUPLING: the leading "FINAL — you must answer" substring here must stay
-    # byte-for-byte identical to the trigger phrase named in the synthesiser
-    # system prompt's "Final-mode rule" section (see _SYNTHESISER_SYSTEM_PROMPT
-    # above) — the model keys final-mode behaviour off that exact substring.
-    final_directive = "\n\nFINAL — you must answer: provide your best answer based on the chunks below, or state honestly that no relevant information was found." if final else ""
+    # The directive opens with _FINAL_MODE_TRIGGER — the same constant the
+    # system prompt's "Final-mode rule" interpolates — so the model keys
+    # final-mode behaviour off a phrase defined in exactly one place.
+    final_directive = (
+        f"\n\n{_FINAL_MODE_TRIGGER}: provide your best answer based on the "
+        "chunks below, or state honestly that no relevant information was found."
+        if final
+        else ""
+    )
 
     question_section = f"Question: {query}{final_directive}"
 

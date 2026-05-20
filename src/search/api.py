@@ -10,6 +10,10 @@ One uvicorn process serves:
 - ``/mcp``                 — MCP streamable-HTTP ASGI app (spec §7.2)
 - ``/``                    — the built React SPA (``web/dist``)
 
+The six ``/api/*`` route handlers live in :mod:`search.routes`; this module is
+component wiring only — build the core, build the auth dependency, create the
+app, mount the MCP sub-app and the ``/api`` router, mount the SPA.
+
 Security invariants (spec §9.2, ``CODE_GUIDELINES.md`` §10):
 - ``SEARCH_API_KEY`` is mandatory; the server refuses to start without it.
 - Every ``/api/*`` endpoint except ``/api/auth/login`` and ``/api/healthz``
@@ -18,44 +22,35 @@ Security invariants (spec §9.2, ``CODE_GUIDELINES.md`` §10):
   the built frontend directory, never over ``/data`` or any path that contains
   the index file.
 
-Allowed deps: fastapi, uvicorn, starlette, search (wire, auth, core,
+Allowed deps: fastapi, uvicorn, starlette, search (routes, auth, core,
     mcp_server), store (reader), common.config.
 Forbidden: sqlite3, direct LLM/HTTP calls, imports from indexer/.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import sqlite3
+import os
 import sys
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 
 from search.auth import (
     SESSION_COOKIE_NAME,
-    cookie_attributes,
     extract_bearer,
     is_request_authenticated,
-    verify_api_key,
 )
 from search.mcp_server import build_mcp_app
-from search.wire import (
-    LoginRequest,
-    SearchRequest,
-    to_facets_response,
-    to_search_response,
-    to_stats_response,
-)
-from store.migrations import StoreError
+from search.routes import build_api_router
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from common.config import Settings
     from search.core import SearchCore
     from store.reader import StoreReader
@@ -65,10 +60,6 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Module-level constants
 # ---------------------------------------------------------------------------
-
-# The reconciliation sentinel file name (spec §5.8).  Written alongside the
-# index DB; picked up by the indexer's polling loop.
-_RECONCILE_SENTINEL_NAME = "reconcile.request"
 
 # Path to the built frontend.
 #
@@ -82,9 +73,7 @@ _RECONCILE_SENTINEL_NAME = "reconcile.request"
 #
 # The path is resolved at import time; a missing directory silently skips the
 # static mount rather than crashing the server (unit tests, pre-build).
-import os as _os  # noqa: E402
-
-_env_frontend = _os.environ.get("FRONTEND_DIST", "").strip()
+_env_frontend = os.environ.get("FRONTEND_DIST", "").strip()
 if _env_frontend:
     _FRONTEND_DIST = Path(_env_frontend)
 else:
@@ -97,7 +86,7 @@ else:
 # ---------------------------------------------------------------------------
 
 
-def _make_require_auth(settings: Settings):  # type: ignore[return]
+def _make_require_auth(settings: Settings) -> Callable[[Request], None]:
     """Return a FastAPI dependency that enforces authentication.
 
     Extracts the Bearer token from the ``Authorization`` header and the session
@@ -149,261 +138,75 @@ def create_app(
     Args:
         settings: Application settings.
         core: An optional pre-built :class:`~search.core.SearchCore`.  When
-            ``None``, the core is constructed from *settings* using the wiring
-            described in the spec.
-        store_reader: An optional pre-built
-            :class:`~store.reader.StoreReader`.  When ``None``, one is
-            constructed from *settings*.
+            ``None``, the core is constructed from *settings*.
+        store_reader: An optional pre-built :class:`~store.reader.StoreReader`.
+            When ``None``, one is constructed from *settings*.
 
     Returns:
         A configured FastAPI application.
     """
-    # Build the core and store reader if not injected (production path).
-    if store_reader is None or core is None:
-        from common.embeddings import EmbeddingClient
-        from search.core import SearchCore
-        from search.planner import QueryPlanner
-        from search.retriever import Retriever
-        from search.synthesizer import Synthesizer
-        from store.reader import StoreReader as _StoreReader
-
-        if store_reader is None:
-            store_reader = _StoreReader(settings)
-        if core is None:
-            embedding_client = EmbeddingClient(settings)
-            planner = QueryPlanner(settings)
-            retriever = Retriever(settings, store_reader, embedding_client)
-            synthesizer = Synthesizer(settings)
-            core = SearchCore(settings, store_reader, planner, retriever, synthesizer)
-
-    # Per-request concurrency semaphore for /api/search (spec §7.4).
-    # Created lazily on the first request so it is always bound to the
-    # event loop that is actually serving requests, not the one (if any) that
-    # happened to be running at app-factory time.  The double-check inside the
-    # lock is not needed here because we rely on asyncio's single-threaded
-    # contract: only one coroutine accesses _search_semaphore_holder at a time.
-    _search_semaphore_holder: list[asyncio.Semaphore] = []
-
-    def _get_search_semaphore() -> asyncio.Semaphore:
-        if not _search_semaphore_holder:
-            _search_semaphore_holder.append(
-                asyncio.Semaphore(settings.SEARCH_MAX_CONCURRENT)
-            )
-        return _search_semaphore_holder[0]
-
-    # The single auth dependency applied to all protected endpoints.
-    _auth_dep = _make_require_auth(settings)
+    core, store_reader = _resolve_components(settings, core, store_reader)
 
     app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
 
-    # ------------------------------------------------------------------
-    # Mount MCP ASGI app BEFORE any catch-all routes (spec §7.2).
-    # /api/* and /mcp take precedence over the SPA static mount.
-    # ------------------------------------------------------------------
-    mcp_app = build_mcp_app(core, settings)
-    app.mount("/mcp", mcp_app)
+    # Mount the MCP ASGI app and the /api router BEFORE the SPA catch-all so
+    # /mcp and /api/* take precedence over the static mount (spec §7.2).
+    app.mount("/mcp", build_mcp_app(core, settings))
+    app.include_router(
+        build_api_router(
+            settings, core, store_reader, _make_require_auth(settings)
+        )
+    )
 
-    # ------------------------------------------------------------------
-    # POST /api/auth/login — unauthenticated (this is how you log in)
-    # ------------------------------------------------------------------
+    _mount_frontend(app)
+    return app
 
-    @app.post("/api/auth/login")
-    async def login(body: LoginRequest, response: Response) -> dict[str, str]:
-        """Exchange the API key for a signed session cookie (spec §7.3).
 
-        Returns:
-            A JSON body with ``status: "ok"`` on success.
+def _resolve_components(
+    settings: Settings,
+    core: SearchCore | None,
+    store_reader: StoreReader | None,
+) -> tuple[SearchCore, StoreReader]:
+    """Return the core and store reader, building any not supplied by a caller.
 
-        Raises:
-            HTTPException 401: When the supplied key does not match.
-        """
-        if not verify_api_key(body.api_key, settings.SEARCH_API_KEY):
-            # The wrong key is never logged — only that an attempt was made.
-            log.warning("api.login_rejected")
-            raise HTTPException(status_code=401, detail="Invalid API key")
+    Tests inject pre-built stubs; production passes neither and gets the real
+    component graph wired from *settings*.
+    """
+    if core is not None and store_reader is not None:
+        return core, store_reader
 
-        token = _issue_token(settings)
-        _set_session_cookie(response, token, settings)
-        log.info("api.login_ok")
-        return {"status": "ok"}
+    from common.embeddings import EmbeddingClient
+    from search.core import SearchCore
+    from search.planner import QueryPlanner
+    from search.retriever import Retriever
+    from search.synthesizer import Synthesizer
+    from store.reader import StoreReader as _StoreReader
 
-    # ------------------------------------------------------------------
-    # GET /api/healthz — unauthenticated (spec §3.2, §4.7)
-    # ------------------------------------------------------------------
+    if store_reader is None:
+        store_reader = _StoreReader(settings)
+    if core is None:
+        embedding_client = EmbeddingClient(settings)
+        retriever = Retriever(settings, store_reader, embedding_client)
+        core = SearchCore(
+            settings,
+            store_reader,
+            QueryPlanner(settings),
+            retriever,
+            Synthesizer(settings),
+        )
+    return core, store_reader
 
-    @app.get("/api/healthz")
-    async def healthz() -> dict[str, str]:
-        """Liveness check; surfaces index state to the Docker healthcheck.
 
-        Three outcomes (spec §4.7):
+def _mount_frontend(app: FastAPI) -> None:
+    """Mount the built React SPA at ``/`` if its directory exists.
 
-        - **200** ``{"status": "ok"}`` — the index has a schema, has been
-          reconciled at least once, and ``quick_check`` passes.
-        - **503** ``{"status": "index-not-ready"}`` — the DB file is absent,
-          OR exists but has no schema (``meta``/``documents`` tables missing),
-          OR has a schema but has never been reconciled
-          (``last_reconcile_at`` is ``None``).  All of these mean the
-          indexer has not finished building the index yet.
-        - **503** ``{"status": "index-corrupt"}`` — the DB exists with a
-          schema and a reconcile timestamp, but ``quick_check`` reports
-          corruption.
+    The static mount must come AFTER the ``/api/*`` and ``/mcp`` routes so
+    they take precedence.  A missing ``web/dist`` directory (unit tests,
+    pre-build) silently skips the mount rather than crashing the server.
 
-        The handler never raises: any unexpected error becomes a clean 503.
-
-        Note on the empty-file edge case: ``sqlite3.connect`` creates an
-        empty DB when the path does not exist and the directory is writable,
-        so a missing-table ``OperationalError`` from ``get_stats()`` is the
-        canonical signal for "file present but not yet initialised by the
-        indexer".  We treat that as ``index-not-ready``, not corrupt.
-        """
-        db_path = Path(settings.INDEX_DB_PATH)
-        if not db_path.exists():
-            # The indexer has not created the DB yet (spec §3.2).
-            log.info("api.healthz_not_ready", reason="db_absent")
-            return Response(  # type: ignore[return-value]
-                content='{"status":"index-not-ready"}',
-                status_code=503,
-                media_type="application/json",
-            )
-
-        # Try to read index statistics.  An OperationalError here means the
-        # schema has not been created yet (e.g. sqlite3.connect auto-created
-        # an empty file before the indexer ran StoreWriter.ensure_schema).
-        # Any other unexpected error is also treated as not-ready to avoid
-        # leaking internal details.
-        try:
-            stats = store_reader.get_stats()
-        except StoreError as exc:
-            # StoreError wraps sqlite3.Error; unwrap to check the root cause.
-            cause = exc.__cause__
-            if isinstance(cause, sqlite3.OperationalError) and "no such table" in str(
-                cause
-            ).lower():
-                log.info("api.healthz_not_ready", reason="schema_missing")
-            else:
-                log.info("api.healthz_not_ready", reason="stats_error", error=str(exc))
-            return Response(  # type: ignore[return-value]
-                content='{"status":"index-not-ready"}',
-                status_code=503,
-                media_type="application/json",
-            )
-        except Exception as exc:
-            log.warning("api.healthz_not_ready", reason="unexpected_error", error=str(exc))
-            return Response(  # type: ignore[return-value]
-                content='{"status":"index-not-ready"}',
-                status_code=503,
-                media_type="application/json",
-            )
-
-        # Schema exists; check whether the indexer has ever completed a
-        # reconciliation cycle.  A None last_reconcile_at means the schema
-        # was written but the first reconciliation has not finished.
-        if stats.last_reconcile_at is None:
-            log.info("api.healthz_not_ready", reason="never_reconciled")
-            return Response(  # type: ignore[return-value]
-                content='{"status":"index-not-ready"}',
-                status_code=503,
-                media_type="application/json",
-            )
-
-        # Schema is present and at least one reconciliation has completed.
-        # Now verify physical integrity.
-        try:
-            ok = store_reader.quick_check()
-        except StoreError:
-            ok = False
-
-        if not ok:
-            log.warning("api.healthz_corrupt")
-            return Response(  # type: ignore[return-value]
-                content='{"status":"index-corrupt"}',
-                status_code=503,
-                media_type="application/json",
-            )
-
-        return {"status": "ok"}
-
-    # ------------------------------------------------------------------
-    # POST /api/search — authenticated, concurrency-bounded (spec §7.4)
-    # ------------------------------------------------------------------
-
-    @app.post("/api/search", dependencies=[Depends(_auth_dep)])
-    async def search(body: SearchRequest) -> dict:  # type: ignore[return]
-        """Run the full agentic search pipeline and return a SearchResponse.
-
-        Bounded by ``SEARCH_MAX_CONCURRENT`` to limit simultaneous LLM spend.
-        """
-        from store.reader import SearchFilters
-
-        ui_filters: SearchFilters | None = None
-        if body.filters is not None:
-            ui_filters = SearchFilters(
-                date_from=body.filters.date_from,
-                date_to=body.filters.date_to,
-                correspondent_id=body.filters.correspondent_id,
-                document_type_id=body.filters.document_type_id,
-                tag_ids=tuple(body.filters.tag_ids),
-            )
-
-        # rationale: asyncio.Semaphore caps concurrent LLM calls; the actual
-        # SearchCore.answer call is CPU-light wiring with blocking I/O (LLM
-        # HTTP + SQLite); run_in_executor keeps the event loop unblocked.
-        # The semaphore is fetched lazily so it is always bound to the
-        # current event loop (see _get_search_semaphore above).
-        async with _get_search_semaphore():
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: core.answer(query=body.query, ui_filters=ui_filters)
-            )
-
-        return to_search_response(result).model_dump()
-
-    # ------------------------------------------------------------------
-    # GET /api/facets — authenticated
-    # ------------------------------------------------------------------
-
-    @app.get("/api/facets", dependencies=[Depends(_auth_dep)])
-    async def facets() -> dict:  # type: ignore[return]
-        """Return taxonomy facets for the search UI filter panel."""
-        loop = asyncio.get_event_loop()
-        facet_set = await loop.run_in_executor(None, store_reader.list_facets)
-        return to_facets_response(facet_set).model_dump()
-
-    # ------------------------------------------------------------------
-    # GET /api/stats — authenticated
-    # ------------------------------------------------------------------
-
-    @app.get("/api/stats", dependencies=[Depends(_auth_dep)])
-    async def stats() -> dict:  # type: ignore[return]
-        """Return summary statistics for the search index."""
-        loop = asyncio.get_event_loop()
-        index_stats = await loop.run_in_executor(None, store_reader.get_stats)
-        return to_stats_response(index_stats).model_dump()
-
-    # ------------------------------------------------------------------
-    # POST /api/reconcile — authenticated, 202 Accepted (spec §5.8)
-    # ------------------------------------------------------------------
-
-    @app.post("/api/reconcile", dependencies=[Depends(_auth_dep)])
-    async def reconcile() -> Response:
-        """Touch the reconciliation sentinel file and return 202 Accepted.
-
-        The indexer's polling loop detects the sentinel on its next slice and
-        starts an immediate reconciliation cycle (spec §5.8).
-
-        Security: writes ONLY the sentinel — never the index DB.
-        """
-        db_dir = Path(settings.INDEX_DB_PATH).parent
-        sentinel = db_dir / _RECONCILE_SENTINEL_NAME
-        sentinel.touch()
-        log.info("api.reconcile_triggered", sentinel=str(sentinel))
-        return Response(status_code=202)
-
-    # ------------------------------------------------------------------
-    # Mount the built frontend (SPA) — must come AFTER all /api/* routes
-    # so the API routes take precedence.
-    # SECURITY: mounted ONLY at web/dist — never over /data or the index dir.
-    # ------------------------------------------------------------------
+    Security: mounted ONLY at ``web/dist`` — never over ``/data`` or the index
+    directory, so the index DB is never web-reachable.
+    """
     if _FRONTEND_DIST.is_dir():
         app.mount(
             "/",
@@ -417,50 +220,6 @@ def create_app(
             path=str(_FRONTEND_DIST),
             reason="web/dist directory not found; skipping static mount",
         )
-
-    return app
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
-def _issue_token(settings: Settings) -> str:
-    """Issue a signed session token using the current wall clock."""
-    from search.auth import issue_session_token
-
-    return issue_session_token(
-        settings.SEARCH_API_KEY,
-        ttl_seconds=settings.SEARCH_SESSION_TTL,
-        now=time.time(),
-    )
-
-
-def _set_session_cookie(response: Response, token: str, settings: Settings) -> None:
-    """Set the signed session cookie on *response* with all required security flags.
-
-    Delegates all cookie attributes to :func:`~search.auth.cookie_attributes`
-    so that function is the single source of truth for HttpOnly, Secure,
-    SameSite, Path, and Max-Age.  Explicit kwargs (rather than a ``**splat``)
-    keep mypy happy against ``Response.set_cookie``'s typed signature.
-
-    Args:
-        response: The FastAPI response object to set the cookie on.
-        token: The signed session token string.
-        settings: Application settings; passed to ``cookie_attributes`` so it
-            can read ``SEARCH_SESSION_TTL`` for ``max_age``.
-    """
-    attrs = cookie_attributes(settings)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=attrs["max_age"],  # type: ignore[arg-type]
-        path=attrs["path"],  # type: ignore[arg-type]
-        httponly=attrs["httponly"],  # type: ignore[arg-type]
-        secure=attrs["secure"],  # type: ignore[arg-type]
-        samesite=attrs["samesite"],  # type: ignore[arg-type]
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -497,22 +256,7 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # Build the production component graph.
-    from common.embeddings import EmbeddingClient
-    from search.core import SearchCore
-    from search.planner import QueryPlanner
-    from search.retriever import Retriever
-    from search.synthesizer import Synthesizer
-    from store.reader import StoreReader
-
-    store_reader = StoreReader(settings)
-    embedding_client = EmbeddingClient(settings)
-    planner = QueryPlanner(settings)
-    retriever = Retriever(settings, store_reader, embedding_client)
-    synthesizer = Synthesizer(settings)
-    core = SearchCore(settings, store_reader, planner, retriever, synthesizer)
-
-    app = create_app(settings, core=core, store_reader=store_reader)
+    app = create_app(settings)
 
     log.info(
         "search_server.starting",

@@ -39,8 +39,15 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
-from search.models import Answered, AnswerOutcome, NeedsMore, RetrievedChunk
+from search.models import (
+    Answered,
+    AnswerOutcome,
+    NeedsMore,
+    RetrievedChunk,
+    SearchMode,
+)
 from search.prompts import build_synthesiser_system_prompt, build_synthesiser_user_message
+from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -90,7 +97,7 @@ class Synthesizer(OpenAIChatMixin):
         query: str,
         chunks: Sequence[RetrievedChunk],
         *,
-        mode: str,
+        mode: SearchMode,
     ) -> AnswerOutcome:
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
@@ -137,7 +144,9 @@ class Synthesizer(OpenAIChatMixin):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _parse_response(self, query: str, raw: str, *, mode: str) -> AnswerOutcome:
+    def _parse_response(
+        self, query: str, raw: str, *, mode: SearchMode
+    ) -> AnswerOutcome:
         """Parse *raw* into an AnswerOutcome, degrading gracefully on any error.
 
         Args:
@@ -179,8 +188,8 @@ class Synthesizer(OpenAIChatMixin):
                 # In final mode, NeedsMore is not allowed — coerce to Answered.
                 log.warning(
                     "synthesiser.needs_more_in_final_mode",
-                    query_prefix=query[:60],
-                    adjustment=adjustment[:120],
+                    query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+                    adjustment=adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
                 )
                 return Answered(
                     answer=(
@@ -193,7 +202,7 @@ class Synthesizer(OpenAIChatMixin):
 
         return self._degrade(mode, reason=f"LLM response had unknown outcome type: {outcome_type!r}")
 
-    def _degrade(self, mode: str, reason: str) -> AnswerOutcome:
+    def _degrade(self, mode: SearchMode, reason: str) -> AnswerOutcome:
         """Return a safe fallback outcome and log a warning.
 
         In ``"final"`` mode, returns an ``Answered`` stating the answer could

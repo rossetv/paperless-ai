@@ -2,8 +2,8 @@
 
 ``build_mcp_app`` constructs a FastMCP server with the streamable-HTTP transport
 and wraps it in a bearer-token authentication middleware.  The returned ASGI
-application is mounted at ``/mcp`` by the HTTP server (a later task); this
-module has no dependency on ``search/api.py``.
+application is mounted at ``/mcp`` by the HTTP server; this module has no
+dependency on ``search/api.py``.
 
 Two tools are exposed:
 
@@ -13,13 +13,18 @@ Two tools are exposed:
 - ``ask_documents(question, filters?)`` — calls ``core.answer()``.  Returns the
   full result including the synthesised answer (spec §7.2).
 
+Both tools share one body helper (:func:`_run_search_tool`): length-check the
+query at the boundary, convert the optional filters, invoke the core method,
+serialise the result, and turn any failure into a sanitised tool error.
+
 Authentication (spec §7.3):
   Every request must carry ``Authorization: Bearer <SEARCH_API_KEY>``.  The
   middleware calls :func:`search.auth.is_request_authenticated` and returns
   HTTP 401 without reaching the MCP handler if the token is absent or invalid.
   The token is **never logged** (CODE_GUIDELINES §7.4, §10.1).
 
-Allowed deps: search (core, auth, models), store (reader), mcp SDK, starlette.
+Allowed deps: search (core, auth, models, wire), store (SearchFilters),
+    mcp SDK, starlette.
 Forbidden: FastAPI (api.py), sqlite3, direct LLM/HTTP calls.
 """
 
@@ -27,6 +32,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -36,6 +42,9 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from search.auth import SESSION_COOKIE_NAME, extract_bearer, is_request_authenticated
+from search.models import SearchResult
+from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
+from store import SearchFilters
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -47,11 +56,6 @@ log = structlog.get_logger(__name__)
 # manager is mounted here within the Starlette sub-app returned by
 # streamable_http_app().
 _MCP_PATH = "/mcp"
-
-# Maximum query/question length enforced at the MCP boundary (§10.4).
-# Must match wire.SearchRequest.query max_length so both HTTP and MCP paths
-# apply the same documented limit.
-_MAX_QUERY_LENGTH = 4000
 
 
 # ---------------------------------------------------------------------------
@@ -106,11 +110,11 @@ class _BearerAuthMiddleware:
 
 
 # ---------------------------------------------------------------------------
-# SearchResult serialisation
+# Shared tool body
 # ---------------------------------------------------------------------------
 
 
-def _serialise_result(result: Any) -> str:
+def _serialise_result(result: SearchResult) -> str:
     """Serialise a SearchResult to a JSON string for MCP tool output.
 
     Uses :func:`dataclasses.asdict` to convert the frozen-dataclass tree to a
@@ -118,6 +122,75 @@ def _serialise_result(result: Any) -> str:
     which is fine for a wire format consumed by JSON clients.
     """
     return json.dumps(dataclasses.asdict(result))
+
+
+def _to_search_filters(raw: dict[str, Any] | None) -> SearchFilters | None:
+    """Convert an optional raw filters dict to a :class:`SearchFilters`.
+
+    The MCP boundary receives filters as an untyped dict.  This validates it
+    through the :class:`~search.wire.FilterRequest` Pydantic model — the MCP
+    server is an HTTP-shaped boundary, so Pydantic validation here is the
+    documented pattern (CODE_GUIDELINES §5.6, §10.4) — then delegates to the
+    one shared :func:`~search.wire.to_search_filters` converter.  Unknown keys
+    are ignored; ``None`` or an empty dict means no filters.
+
+    Args:
+        raw: The raw filters dict from the tool call, or ``None``.
+
+    Returns:
+        A :class:`SearchFilters` instance, or ``None`` when no filters apply.
+    """
+    if not raw:
+        return None
+    return to_search_filters(FilterRequest.model_validate(raw))
+
+
+def _run_search_tool(
+    *,
+    query: str,
+    filters: dict[str, Any] | None,
+    core_call: Callable[[str, SearchFilters | None], SearchResult],
+    error_event: str,
+) -> str:
+    """Run one search-tool body: validate, convert, invoke core, serialise.
+
+    The shared body of both MCP tools.  It length-checks *query* at the
+    boundary (§10.4), converts the optional *filters*, invokes *core_call*, and
+    serialises the result.  Any failure from the core is logged with its full
+    traceback server-side and surfaced to the MCP client as a sanitised
+    :class:`ValueError` carrying no internal detail.
+
+    Args:
+        query: The user's query or question.
+        filters: The optional raw filters dict from the tool call.
+        core_call: The :class:`~search.core.SearchCore` method to invoke —
+            ``retrieve`` for ``search_documents``, ``answer`` for
+            ``ask_documents``.
+        error_event: The structured-log event name for a failure.
+
+    Returns:
+        The serialised :class:`~search.models.SearchResult` as a JSON string.
+
+    Raises:
+        ValueError: When *query* exceeds :data:`~search.wire.MAX_QUERY_LENGTH`,
+            or — sanitised — when the core call fails.
+    """
+    if len(query) > MAX_QUERY_LENGTH:
+        raise ValueError(
+            f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
+        )
+
+    # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the MCP
+    # protocol boundary.  Raw exception strings from the core (which can carry
+    # filesystem paths or internal state) must never reach the MCP client; the
+    # full traceback is logged server-side instead.
+    try:
+        ui_filters = _to_search_filters(filters)
+        result = core_call(query, ui_filters)
+        return _serialise_result(result)
+    except Exception:
+        log.exception(error_event)
+        raise ValueError("search failed — see server logs")
 
 
 # ---------------------------------------------------------------------------
@@ -147,39 +220,17 @@ class _McpApp:
         await self._asgi_app(scope, receive, send)
 
 
-def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
-    """Build and return the MCP ASGI application (spec §7.2/§7.3).
+def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
+    """Register the two search tools on *mcp*, both backed by *core*.
 
-    Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
-    streamable-HTTP transport and registers the two search tools.  The server
-    is wrapped in :class:`_BearerAuthMiddleware` so every MCP request must
-    carry a valid ``Authorization: Bearer`` token.
-
-    The returned :class:`_McpApp` is a mountable ASGI application; the HTTP
-    server in a later task mounts it at ``/mcp``.  This function does not
-    depend on or import ``search/api.py``.
+    Each tool is a thin closure over :func:`_run_search_tool`:
+    ``search_documents`` calls ``core.retrieve`` (sources only),
+    ``ask_documents`` calls ``core.answer`` (synthesised answer).
 
     Args:
-        core: The :class:`~search.core.SearchCore` orchestrating the search
-            pipeline.  Its ``retrieve`` and ``answer`` methods are called by
-            the two MCP tools.
-        settings: Application settings; ``SEARCH_API_KEY`` is used by the auth
-            middleware.
-
-    Returns:
-        An ASGI application wrapping the FastMCP server with bearer-token auth.
+        mcp: The FastMCP server to register the tools on.
+        core: The search pipeline backing both tools.
     """
-    from store.reader import SearchFilters
-
-    mcp = FastMCP(
-        name="paperless-search",
-        instructions=(
-            "Search and query a personal Paperless-ngx document archive.  "
-            "Use search_documents to retrieve relevant sources for your own "
-            "synthesis, or ask_documents to get a direct synthesised answer."
-        ),
-        stateless_http=True,
-    )
 
     @mcp.tool(
         name="search_documents",
@@ -193,34 +244,15 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
         query: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
-        """Call core.retrieve and return the SearchResult as JSON.
-
-        Args:
-            query: The user's search query.
-            filters: Optional filters as a dict with keys ``date_from``,
-                ``date_to``, ``correspondent_id``, ``document_type_id``,
-                ``tag_ids``.  Missing keys default to ``None`` / empty tuple.
-
-        Returns:
-            A JSON string of the serialised :class:`~search.models.SearchResult`.
-        """
-        # Validate length at the MCP boundary (§10.4).
-        if len(query) > _MAX_QUERY_LENGTH:
-            raise ValueError(
-                f"query exceeds the maximum length of {_MAX_QUERY_LENGTH} characters"
-            )
-
-        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the
-        # MCP protocol boundary.  Raw exception strings from core (which can
-        # carry filesystem paths or internal state) must never reach the MCP
-        # client; the full traceback is logged server-side instead.
-        try:
-            ui_filters = _dict_to_search_filters(filters, SearchFilters)
-            result = core.retrieve(query=query, ui_filters=ui_filters)
-            return _serialise_result(result)
-        except Exception:
-            log.exception("mcp.search_documents_error")
-            raise ValueError("search failed — see server logs")
+        """Call core.retrieve and return the SearchResult as JSON."""
+        return _run_search_tool(
+            query=query,
+            filters=filters,
+            core_call=lambda text, ui_filters: core.retrieve(
+                query=text, ui_filters=ui_filters
+            ),
+            error_event="mcp.search_documents_error",
+        )
 
     @mcp.tool(
         name="ask_documents",
@@ -234,70 +266,43 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
         question: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
-        """Call core.answer and return the SearchResult as JSON.
-
-        Args:
-            question: The user's question.
-            filters: Optional filters as a dict with keys ``date_from``,
-                ``date_to``, ``correspondent_id``, ``document_type_id``,
-                ``tag_ids``.  Missing keys default to ``None`` / empty tuple.
-
-        Returns:
-            A JSON string of the serialised :class:`~search.models.SearchResult`.
-        """
-        # Validate length at the MCP boundary (§10.4).
-        if len(question) > _MAX_QUERY_LENGTH:
-            raise ValueError(
-                f"question exceeds the maximum length of {_MAX_QUERY_LENGTH} characters"
-            )
-
-        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the
-        # MCP protocol boundary.  Raw exception strings from core (which can
-        # carry filesystem paths or internal state) must never reach the MCP
-        # client; the full traceback is logged server-side instead.
-        try:
-            ui_filters = _dict_to_search_filters(filters, SearchFilters)
-            result = core.answer(query=question, ui_filters=ui_filters)
-            return _serialise_result(result)
-        except Exception:
-            log.exception("mcp.ask_documents_error")
-            raise ValueError("search failed — see server logs")
-
-    return _McpApp(mcp, settings)
+        """Call core.answer and return the SearchResult as JSON."""
+        return _run_search_tool(
+            query=question,
+            filters=filters,
+            core_call=lambda text, ui_filters: core.answer(
+                query=text, ui_filters=ui_filters
+            ),
+            error_event="mcp.ask_documents_error",
+        )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
+    """Build and return the MCP ASGI application (spec §7.2/§7.3).
 
-
-def _dict_to_search_filters(
-    raw: dict[str, Any] | None,
-    search_filters_cls: type,
-) -> Any | None:
-    """Convert an optional filters dict to a SearchFilters instance.
-
-    Returns ``None`` when *raw* is ``None`` or empty, so no filters are applied.
-    Unknown keys in *raw* are silently ignored (the MCP boundary is lenient on
-    extra fields; the validation contract is that recognised fields are typed
-    correctly).
+    Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
+    streamable-HTTP transport, registers the two search tools via
+    :func:`_register_search_tools`, and wraps it in
+    :class:`_BearerAuthMiddleware` so every MCP request must carry a valid
+    ``Authorization: Bearer`` token.
 
     Args:
-        raw: The raw filters dict from the tool call, or ``None``.
-        search_filters_cls: The :class:`~store.reader.SearchFilters` class,
-            injected to avoid a top-level circular import.
+        core: The :class:`~search.core.SearchCore` orchestrating the search
+            pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
+        settings: Application settings; ``SEARCH_API_KEY`` is used by the auth
+            middleware.
 
     Returns:
-        A :class:`~store.reader.SearchFilters` instance, or ``None``.
+        An ASGI application wrapping the FastMCP server with bearer-token auth.
     """
-    if not raw:
-        return None
-
-    tag_ids_raw = raw.get("tag_ids") or []
-    return search_filters_cls(
-        date_from=raw.get("date_from"),
-        date_to=raw.get("date_to"),
-        correspondent_id=raw.get("correspondent_id"),
-        document_type_id=raw.get("document_type_id"),
-        tag_ids=tuple(int(t) for t in tag_ids_raw),
+    mcp = FastMCP(
+        name="paperless-search",
+        instructions=(
+            "Search and query a personal Paperless-ngx document archive.  "
+            "Use search_documents to retrieve relevant sources for your own "
+            "synthesis, or ask_documents to get a direct synthesised answer."
+        ),
+        stateless_http=True,
     )
+    _register_search_tools(mcp, core)
+    return _McpApp(mcp, settings)
