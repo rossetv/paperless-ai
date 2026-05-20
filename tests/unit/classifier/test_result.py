@@ -1,4 +1,9 @@
-"""Tests for classifier.result."""
+"""Tests for classifier.result.
+
+The JSON-extraction behaviour parse_classification_response relies on is the
+shared ``common.llm.extract_json_object`` helper; its own tests live in
+tests/unit/common/test_llm.py.
+"""
 
 from __future__ import annotations
 
@@ -6,46 +11,7 @@ import json
 
 import pytest
 
-from classifier.result import _extract_json, parse_classification_response
-
-class TestExtractJson:
-    """Tests for _extract_json(text)."""
-
-    def test_valid_json(self):
-        result = _extract_json('{"title": "Invoice"}')
-        assert result == {"title": "Invoice"}
-
-    def test_json_in_markdown_fences(self):
-        text = '```json\n{"title": "Invoice"}\n```'
-        result = _extract_json(text)
-        assert result == {"title": "Invoice"}
-
-    def test_json_with_preamble_text(self):
-        text = 'Here is the classification:\n{"title": "Invoice", "tags": []}'
-        result = _extract_json(text)
-        assert result == {"title": "Invoice", "tags": []}
-
-    def test_invalid_json_raises(self):
-        with pytest.raises(json.JSONDecodeError):
-            _extract_json("this is not json at all")
-
-    def test_empty_string_raises(self):
-        with pytest.raises(json.JSONDecodeError):
-            _extract_json("")
-
-    def test_json_with_trailing_text(self):
-        text = '{"title": "Test"}\nSome trailing text'
-        result = _extract_json(text)
-        assert result == {"title": "Test"}
-
-    def test_no_closing_brace_raises(self):
-        with pytest.raises(json.JSONDecodeError):
-            _extract_json('{"title": "Test"')
-
-    def test_nested_json(self):
-        text = '{"outer": {"inner": 1}}'
-        result = _extract_json(text)
-        assert result == {"outer": {"inner": 1}}
+from classifier.result import parse_classification_response
 
 class TestParseClassificationResponse:
     """Tests for parse_classification_response(text)."""

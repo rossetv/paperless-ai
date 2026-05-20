@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
+
+from common.llm import extract_json_object
 
 
 # frozen dataclass: this is a structured value object constructed after parsing
@@ -20,24 +21,6 @@ class ClassificationResult:
     document_type: str
     language: str
     person: str
-
-
-def _extract_json(text: str) -> dict:
-    """
-    Parse JSON from raw model output, trimming markdown fences if present.
-
-    Some models wrap their response in ````` ``` ````` code blocks or add
-    preamble text.  This function tries a strict parse first, then falls
-    back to extracting the first ``{…}`` substring.
-    """
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(text[start : end + 1])
 
 
 def parse_classification_response(text: str) -> ClassificationResult:
@@ -57,7 +40,7 @@ def parse_classification_response(text: str) -> ClassificationResult:
     if not raw:
         raise ValueError("Classification response is empty.")
 
-    data = _extract_json(raw)
+    data = extract_json_object(raw)
     if not isinstance(data, dict):
         raise ValueError("Classification response is not a JSON object.")
 
