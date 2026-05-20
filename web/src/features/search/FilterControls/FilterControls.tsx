@@ -2,8 +2,10 @@ import React from 'react';
 import { FilterPanel } from '../../../components/patterns/FilterPanel/FilterPanel';
 import { Select } from '../../../components/patterns/Select/Select';
 import type { SelectOption } from '../../../components/patterns/Select/Select';
-import { Button } from '../../../components/primitives/Button/Button';
+import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
+import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
+import { Input } from '../../../components/primitives/Input/Input';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
@@ -43,7 +45,7 @@ export function FilterControls({
   filters,
   onFiltersChange,
 }: FilterControlsProps): React.ReactElement {
-  const { data: facets, isLoading } = useFacets();
+  const { data: facets, isLoading, isError } = useFacets();
 
   function updateFilters(partial: Partial<FilterRequest>): void {
     onFiltersChange({ ...filters, ...partial });
@@ -63,6 +65,24 @@ export function FilterControls({
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     updateFilters({ tag_ids: next });
+  }
+
+  function handleDateFromChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    updateFilters({ date_from: e.target.value !== '' ? e.target.value : null });
+  }
+
+  function handleDateToChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    updateFilters({ date_to: e.target.value !== '' ? e.target.value : null });
+  }
+
+  if (isError) {
+    return (
+      <EmptyState
+        icon="warning"
+        message="Filters are unavailable"
+        description="Could not load filter options. You can still search without filters."
+      />
+    );
   }
 
   if (isLoading || facets === undefined) {
@@ -106,34 +126,38 @@ export function FilterControls({
           onChange={handleDocumentTypeChange}
         />
 
-        {/* Tag toggle buttons — each tag is a toggle; selected tags use the
-            primary variant to signal active state, unselected use secondary. */}
+        {/* Tag chips — click to toggle; selected chips use the accent state. */}
         {facets.tags.length > 0 && (
           <Stack direction="horizontal" gap={3} wrap>
             {facets.tags.map((tag) => (
-              <Button
+              <Chip
                 key={tag.id}
-                variant={filters.tag_ids.includes(tag.id) ? 'primary' : 'secondary'}
-                size="small"
+                selected={filters.tag_ids.includes(tag.id)}
                 onClick={() => handleTagToggle(tag.id)}
               >
                 {tag.name}
-              </Button>
+              </Chip>
             ))}
           </Stack>
         )}
 
-        {/* Date range — rendered as plain inputs when earliest/latest are known */}
-        {(facets.earliest !== null || facets.latest !== null) && (
-          <Stack direction="horizontal" gap={4}>
-            {facets.earliest !== null && (
-              <span>From: {facets.earliest}</span>
-            )}
-            {facets.latest !== null && (
-              <span>To: {facets.latest}</span>
-            )}
-          </Stack>
-        )}
+        {/* Date range — functional inputs for date_from / date_to filters */}
+        <Stack direction="vertical" gap={4}>
+          <Input
+            id="filter-date-from"
+            label="From"
+            type="date"
+            value={filters.date_from ?? ''}
+            onChange={handleDateFromChange}
+          />
+          <Input
+            id="filter-date-to"
+            label="To"
+            type="date"
+            value={filters.date_to ?? ''}
+            onChange={handleDateToChange}
+          />
+        </Stack>
       </Stack>
     </FilterPanel>
   );

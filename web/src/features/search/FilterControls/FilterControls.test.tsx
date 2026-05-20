@@ -52,8 +52,9 @@ describe('FilterControls', () => {
 
   it('renders tag chips from facets', () => {
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
-    expect(screen.getByText('tax')).toBeInTheDocument();
-    expect(screen.getByText('warranty')).toBeInTheDocument();
+    // Tags render as interactive Chip buttons (onClick mode)
+    expect(screen.getByRole('button', { name: 'tax' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'warranty' })).toBeInTheDocument();
   });
 
   it('calls onFiltersChange with correspondent_id when a correspondent is selected', async () => {
@@ -73,9 +74,21 @@ describe('FilterControls', () => {
     const handler = vi.fn();
     render(<FilterControls filters={emptyFilters} onFiltersChange={handler} />);
 
-    await userEvent.click(screen.getByText('tax'));
+    await userEvent.click(screen.getByRole('button', { name: 'tax' }));
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({ tag_ids: [100] }),
+    );
+  });
+
+  it('calls onFiltersChange with date_from when the From date input changes', async () => {
+    const handler = vi.fn();
+    render(<FilterControls filters={emptyFilters} onFiltersChange={handler} />);
+
+    const fromInput = screen.getByLabelText(/^from$/i);
+    await userEvent.type(fromInput, '2023-01-01');
+    // The last call should include a date_from value
+    expect(handler).toHaveBeenLastCalledWith(
+      expect.objectContaining({ date_from: expect.stringContaining('2023') }),
     );
   });
 
@@ -85,6 +98,15 @@ describe('FilterControls', () => {
     // Skeleton elements are aria-hidden; check the loading indicator is present
     // by confirming the selects are NOT rendered yet
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('shows degraded state instead of skeletons on facets fetch error', () => {
+    mockUseFacets.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
+    // Must NOT render loading skeletons — the error state would previously loop forever
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    // Must render an accessible degraded message
+    expect(screen.getByText(/filters are unavailable/i)).toBeInTheDocument();
   });
 
   it('reflects pre-selected correspondent in the combobox', () => {

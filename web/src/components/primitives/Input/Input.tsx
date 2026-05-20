@@ -10,7 +10,7 @@ export interface InputProps {
   /** Visible label text rendered in a <label> element. Omit to label externally. */
   label?: string;
   /** Input type — defaults to 'text'. */
-  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number';
+  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number' | 'date';
   /** Input name attribute for form submission. */
   name?: string;
   /** Controlled value. */
