@@ -116,13 +116,35 @@ describe('LoginForm', () => {
   });
 
   it('does not store or echo the api key after submit', async () => {
-    const mutate = vi.fn();
+    const mutate = vi.fn().mockImplementation((_vars, opts) => {
+      opts?.onSuccess?.({ status: 'ok' });
+    });
     renderForm(makeMutation({ mutate }));
 
     await userEvent.type(screen.getByLabelText(/api key/i), 'my-secret');
     await userEvent.click(screen.getByRole('button', { name: /log in/i }));
 
-    // The input value should be cleared after submit
+    // The input value is cleared in the onSuccess callback
     expect(screen.getByLabelText(/api key/i)).toHaveValue('');
+  });
+
+  it('retains the typed value and enables the submit button after a failed login', async () => {
+    // Simulate a mutation that fails (stays in error state, never calls onSuccess)
+    const mutate = vi.fn();
+    renderForm(
+      makeMutation({
+        mutate,
+        isError: true,
+        error: new Error('Invalid API key'),
+      }),
+    );
+
+    await userEvent.type(screen.getByLabelText(/api key/i), 'bad-key');
+    await userEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    // The field must still contain the typed key so the user can correct it
+    expect(screen.getByLabelText(/api key/i)).toHaveValue('bad-key');
+    // The submit button must be enabled (not disabled) so the user can retry
+    expect(screen.getByRole('button', { name: /log in/i })).not.toBeDisabled();
   });
 });
