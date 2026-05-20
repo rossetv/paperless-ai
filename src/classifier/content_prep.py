@@ -25,7 +25,7 @@ def _split_footer(content: str) -> tuple[str, str]:
     return content[:index], content[index:]
 
 
-def _extract_page_numbers(matches: list[re.Match]) -> list[int]:
+def _extract_page_numbers(matches: list[re.Match[str]]) -> list[int]:
     """
     Return the page numbers embedded in a list of ``PAGE_HEADER_RE`` matches.
 

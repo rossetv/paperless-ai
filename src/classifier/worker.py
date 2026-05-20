@@ -8,9 +8,9 @@ from common.claims import claim_processing_tag
 from common.config import Settings
 from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from common.tags import (
+    ErrorFinaliserMixin,
     clean_pipeline_tags,
     extract_tags,
-    finalise_document_with_error,
     release_processing_tag,
 )
 from .content_prep import (
@@ -20,7 +20,7 @@ from .content_prep import (
 )
 from .metadata import (
     is_empty_classification,
-    normalize_language,
+    normalise_language,
     parse_document_date,
     resolve_date_for_tags,
     update_custom_fields,
@@ -38,7 +38,7 @@ from .taxonomy import TaxonomyCache
 log = structlog.get_logger(__name__)
 
 
-class ClassificationProcessor:
+class ClassificationProcessor(ErrorFinaliserMixin):
     """
     Orchestrates the classification of a single Paperless document.
 
@@ -91,7 +91,7 @@ class ClassificationProcessor:
                     "Document has error tag; skipping classification",
                     doc_id=self.doc_id,
                 )
-                self._finalize_with_error(current_tags)
+                self._finalise_with_error(current_tags)
                 return
 
             claimed = claim_processing_tag(
@@ -113,7 +113,7 @@ class ClassificationProcessor:
                     "OCR content contains refusal markers; marking error",
                     doc_id=self.doc_id,
                 )
-                self._finalize_with_error(current_tags)
+                self._finalise_with_error(current_tags)
                 return
 
             input_text, truncation_notes = self._truncate_content(content)
@@ -124,21 +124,10 @@ class ClassificationProcessor:
                 truncation_note="\n".join(truncation_notes) if truncation_notes else None,
             )
 
-            if not result or is_empty_classification(result):
-                log.warning("Classification returned empty result", doc_id=self.doc_id)
-                self._finalize_with_error(current_tags)
+            usable = self._usable_result(result, current_tags)
+            if usable is None:
                 return
-
-            if is_generic_document_type(result.document_type):
-                log.warning(
-                    "Classification returned generic document type",
-                    doc_id=self.doc_id,
-                    document_type=result.document_type,
-                )
-                self._finalize_with_error(current_tags)
-                return
-
-            self._apply_classification(document, current_tags, content, result, model)
+            self._apply_classification(document, current_tags, content, usable, model)
         finally:
             if claimed:
                 release_processing_tag(
@@ -149,6 +138,32 @@ class ClassificationProcessor:
                 )
             self._log_classification_stats()
 
+    def _usable_result(
+        self, result: ClassificationResult | None, current_tags: set[int]
+    ) -> ClassificationResult | None:
+        """
+        Return the classifier output when it is fit to apply, else ``None``.
+
+        An empty result or a vague document type is unusable: the document is
+        finalised with an error tag and ``None`` is returned so the caller
+        stops before applying metadata. ``None`` here is a handled outcome —
+        the error has already been recorded — not a swallowed failure.
+        """
+        if not result or is_empty_classification(result):
+            log.warning("Classification returned empty result", doc_id=self.doc_id)
+            self._finalise_with_error(current_tags)
+            return None
+
+        if is_generic_document_type(result.document_type):
+            log.warning(
+                "Classification returned generic document type",
+                doc_id=self.doc_id,
+                document_type=result.document_type,
+            )
+            self._finalise_with_error(current_tags)
+            return None
+        return result
+
     def _truncate_content(self, content: str) -> tuple[str, list[str]]:
         """
         Apply page-based and character-based truncation in sequence.
@@ -158,7 +173,6 @@ class ClassificationProcessor:
         input_text = content
         truncation_notes: list[str] = []
 
-        # Page-based truncation
         if self.settings.CLASSIFY_MAX_PAGES > 0:
             truncated, note = truncate_content_by_pages(
                 content,
@@ -177,7 +191,8 @@ class ClassificationProcessor:
                     tail_pages=self.settings.CLASSIFY_TAIL_PAGES,
                 )
 
-        # Character-based truncation (hard cap, preserves footer)
+        # The character cap is a hard ceiling applied after page truncation;
+        # it preserves the model footer so model tags survive.
         if (
             self.settings.CLASSIFY_MAX_CHARS > 0
             and len(input_text) > self.settings.CLASSIFY_MAX_CHARS
@@ -204,26 +219,9 @@ class ClassificationProcessor:
             self.paperless_client.update_document_metadata(self.doc_id, tags=updated)
         except PAPERLESS_CALL_EXCEPTIONS:
             log.exception("Failed to requeue document for OCR; marking error", doc_id=self.doc_id)
-            self._finalize_with_error(tags)
+            self._finalise_with_error(tags)
             return
         log.info("Requeued document for OCR", doc_id=self.doc_id)
-
-    def _finalize_with_error(self, tags: set[int]) -> None:
-        """
-        Mark the document with an error tag and clear pipeline tags.
-
-        Delegates to :func:`common.tags.finalise_document_with_error`.
-
-        This convenience wrapper exists so callers don't need to pass
-        ``self.paperless_client``, ``self.doc_id``, and ``self.settings``
-        at every call site.
-        """
-        finalise_document_with_error(
-            self.paperless_client,
-            self.doc_id,
-            tags,
-            self.settings,
-        )
 
     def _build_tag_names(
         self,
@@ -281,7 +279,6 @@ class ClassificationProcessor:
             result, tag_names
         )
 
-        # Merge new tag IDs with cleaned existing tags
         current_tags = clean_pipeline_tags(current_tags, self.settings)
         if self.settings.CLASSIFY_POST_TAG_ID is not None:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
@@ -295,7 +292,7 @@ class ClassificationProcessor:
                 result.person,
             )
 
-        language = normalize_language(result.language)
+        language = normalise_language(result.language)
         title = result.title.strip() if result.title else ""
 
         self.paperless_client.update_document_metadata(

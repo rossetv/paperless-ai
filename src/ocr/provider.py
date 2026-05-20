@@ -13,6 +13,7 @@ from common.config import Settings
 from common.llm import OpenAIChatMixin, unique_models
 from common.content_checks import is_error_content
 from .prompts import TRANSCRIPTION_PROMPT
+from .text_assembly import PageResult
 
 log = structlog.get_logger(__name__)
 
@@ -46,12 +47,13 @@ class OcrProvider(OpenAIChatMixin):
         image: Image.Image,
         doc_id: int | None = None,
         page_num: int | None = None,
-    ) -> tuple[str, str]:
+    ) -> PageResult:
         """
         Transcribe a single page image using the configured model chain.
 
-        Returns ``("", "")`` for blank pages.  Returns
-        ``(settings.REFUSAL_MARK, "")`` when every model refuses or errors.
+        Returns a blank :class:`PageResult` for blank pages and for the case
+        where every model refuses or errors — in the latter case the text is
+        ``settings.REFUSAL_MARK``.
         """
         log_ctx: dict[str, int] = {}
         if doc_id is not None:
@@ -60,10 +62,10 @@ class OcrProvider(OpenAIChatMixin):
             log_ctx["page_num"] = page_num
 
         if is_blank(image):
-            return "", ""
+            return PageResult(text="", model="")
 
-        # Resize large images to reduce token cost and latency.
-        # Copy first so we don't mutate the caller's image in-place.
+        # Resize large images to reduce token cost and latency. Copy first so
+        # the caller's image is not mutated in-place.
         image = image.copy()
         image.thumbnail((self.settings.OCR_MAX_SIDE, self.settings.OCR_MAX_SIDE))
         payload = _image_to_base64_png(image)
@@ -98,30 +100,28 @@ class OcrProvider(OpenAIChatMixin):
                 response = self._create_completion(**params)
                 text = (response.choices[0].message.content or "").strip()
 
-                if not is_error_content(text, self.settings.OCR_REFUSAL_MARKERS):
-                    if model != primary_model:
-                        log.info("Fallback model succeeded", model=model, **log_ctx)
-                        self._stats.inc("fallback_successes")
-                    return text, model
-                else:
+                if is_error_content(text, self.settings.OCR_REFUSAL_MARKERS):
                     log.warning("Model refused to transcribe", model=model, **log_ctx)
                     self._stats.inc("refusals")
+                    continue
+                if model != primary_model:
+                    log.info("Fallback model succeeded", model=model, **log_ctx)
+                    self._stats.inc("fallback_successes")
+                return PageResult(text=text, model=model)
             except openai.APIError as e:
                 log.warning(
                     "API call for model failed after all retries",
                     model=model,
-                    error=e,
+                    error=str(e),
                     **log_ctx,
                 )
                 self._stats.inc("api_errors")
 
         log.error("All models failed or refused to transcribe the page", **log_ctx)
-        return self.settings.REFUSAL_MARK, ""
+        return PageResult(text=self.settings.REFUSAL_MARK, model="")
 
 
 def _image_to_base64_png(image: Image.Image) -> str:
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return base64.b64encode(buffer.getvalue()).decode()
-
-

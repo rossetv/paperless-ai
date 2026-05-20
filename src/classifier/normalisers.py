@@ -1,4 +1,4 @@
-"""String normalization for taxonomy matching and tag filtering."""
+"""String normalisation for taxonomy matching and tag filtering."""
 
 from __future__ import annotations
 
@@ -31,24 +31,24 @@ COMPANY_SUFFIXES: frozenset[str] = frozenset({
 })
 
 
-def normalize_simple(value: str) -> str:
+def normalise_simple(value: str) -> str:
     """
     Collapse whitespace and lowercase a string.
 
-    >>> normalize_simple("  Bank  Statement ")
+    >>> normalise_simple("  Bank  Statement ")
     'bank statement'
     """
     return " ".join(value.lower().split())
 
 
-def normalize_name(value: str) -> str:
+def normalise_name(value: str) -> str:
     """
-    Normalize an organisation name for fuzzy matching.
+    Normalise an organisation name for fuzzy matching.
 
     Strips punctuation, lowercases, and removes trailing corporate suffixes
     so that *"Revolut Ltd."* and *"Revolut"* compare as equal.
 
-    >>> normalize_name("Revolut Ltd.")
+    >>> normalise_name("Revolut Ltd.")
     'revolut'
     """
     cleaned = _STRIP_NON_ALNUM_RE.sub("", value.lower())

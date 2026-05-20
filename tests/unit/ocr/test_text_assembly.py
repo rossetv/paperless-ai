@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ocr.text_assembly import OCR_ERROR_MARKER, assemble_full_text
+from ocr.text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 
 class TestOcrErrorMarker:
     def test_value(self):
@@ -15,7 +15,7 @@ class TestAssembleFullTextSinglePage:
     """Single-page documents should not get page headers."""
 
     def test_single_page_no_header(self):
-        page_results = [("Hello world", "gpt-5.4-mini")]
+        page_results = [PageResult("Hello world", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(1, page_results)
 
@@ -23,21 +23,21 @@ class TestAssembleFullTextSinglePage:
         assert "Hello world" in full_text
 
     def test_single_page_footer(self):
-        page_results = [("Hello world", "gpt-5.4-mini")]
+        page_results = [PageResult("Hello world", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(1, page_results)
 
         assert full_text.endswith("Transcribed by model: gpt-5.4-mini")
 
     def test_single_page_models_set(self):
-        page_results = [("Hello world", "gpt-5.4-mini")]
+        page_results = [PageResult("Hello world", "gpt-5.4-mini")]
 
         _, models = assemble_full_text(1, page_results)
 
         assert models == {"gpt-5.4-mini"}
 
     def test_single_page_text_and_footer_separated(self):
-        page_results = [("Page text", "model-a")]
+        page_results = [PageResult("Page text", "model-a")]
 
         full_text, _ = assemble_full_text(1, page_results)
 
@@ -49,8 +49,8 @@ class TestAssembleFullTextMultiPage:
 
     def test_multi_page_headers(self):
         page_results = [
-            ("Page one text", "model-a"),
-            ("Page two text", "model-a"),
+            PageResult("Page one text", "model-a"),
+            PageResult("Page two text", "model-a"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -60,8 +60,8 @@ class TestAssembleFullTextMultiPage:
 
     def test_multi_page_text_after_header(self):
         page_results = [
-            ("First", "m"),
-            ("Second", "m"),
+            PageResult("First", "m"),
+            PageResult("Second", "m"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -71,8 +71,8 @@ class TestAssembleFullTextMultiPage:
 
     def test_multi_page_sections_separated_by_double_newline(self):
         page_results = [
-            ("A", "m"),
-            ("B", "m"),
+            PageResult("A", "m"),
+            PageResult("B", "m"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -81,8 +81,8 @@ class TestAssembleFullTextMultiPage:
 
     def test_multi_page_footer(self):
         page_results = [
-            ("A", "model-x"),
-            ("B", "model-y"),
+            PageResult("A", "model-x"),
+            PageResult("B", "model-y"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -91,9 +91,9 @@ class TestAssembleFullTextMultiPage:
 
     def test_multi_page_models_set(self):
         page_results = [
-            ("A", "model-x"),
-            ("B", "model-y"),
-            ("C", "model-x"),
+            PageResult("A", "model-x"),
+            PageResult("B", "model-y"),
+            PageResult("C", "model-x"),
         ]
 
         _, models = assemble_full_text(3, page_results)
@@ -105,8 +105,8 @@ class TestAssembleFullTextBlankPages:
 
     def test_empty_string_skipped(self):
         page_results = [
-            ("", "model-a"),
-            ("Page two", "model-a"),
+            PageResult("", "model-a"),
+            PageResult("Page two", "model-a"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -117,8 +117,8 @@ class TestAssembleFullTextBlankPages:
 
     def test_whitespace_only_skipped(self):
         page_results = [
-            ("   \n\t  ", "model-a"),
-            ("Real text", "model-a"),
+            PageResult("   \n\t  ", "model-a"),
+            PageResult("Real text", "model-a"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -128,8 +128,8 @@ class TestAssembleFullTextBlankPages:
 
     def test_all_pages_empty_returns_empty_text(self):
         page_results = [
-            ("", "model-a"),
-            ("  ", "model-b"),
+            PageResult("", "model-a"),
+            PageResult("  ", "model-b"),
         ]
 
         full_text, models = assemble_full_text(2, page_results)
@@ -138,7 +138,7 @@ class TestAssembleFullTextBlankPages:
         assert models == set()
 
     def test_all_pages_empty_single_page(self):
-        page_results = [("", "model-a")]
+        page_results = [PageResult("", "model-a")]
 
         full_text, models = assemble_full_text(1, page_results)
 
@@ -148,8 +148,8 @@ class TestAssembleFullTextBlankPages:
     def test_blank_page_model_not_collected(self):
         # Arrange — blank page with model shouldn't add model to set
         page_results = [
-            ("", "model-skipped"),
-            ("Real", "model-used"),
+            PageResult("", "model-skipped"),
+            PageResult("Real", "model-used"),
         ]
 
         _, models = assemble_full_text(2, page_results)
@@ -162,8 +162,8 @@ class TestAssembleFullTextIncludePageModels:
 
     def test_model_in_header(self):
         page_results = [
-            ("Text A", "gpt-5"),
-            ("Text B", "gpt-5.4-mini"),
+            PageResult("Text A", "gpt-5"),
+            PageResult("Text B", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(
@@ -175,8 +175,8 @@ class TestAssembleFullTextIncludePageModels:
 
     def test_model_not_in_header_by_default(self):
         page_results = [
-            ("Text A", "gpt-5"),
-            ("Text B", "gpt-5.4-mini"),
+            PageResult("Text A", "gpt-5"),
+            PageResult("Text B", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -187,7 +187,7 @@ class TestAssembleFullTextIncludePageModels:
     def test_empty_model_not_in_header(self):
         # Arrange — empty model string should not appear in header
         page_results = [
-            ("Text A", ""),
+            PageResult("Text A", ""),
         ]
 
         full_text, _ = assemble_full_text(
@@ -199,7 +199,7 @@ class TestAssembleFullTextIncludePageModels:
 
     def test_include_page_models_single_page_no_header(self):
         # Arrange — single page never gets header even with flag
-        page_results = [("Text", "gpt-5")]
+        page_results = [PageResult("Text", "gpt-5")]
 
         full_text, _ = assemble_full_text(
             1, page_results, include_page_models=True
@@ -212,8 +212,8 @@ class TestAssembleFullTextFooter:
 
     def test_footer_sorted_models(self):
         page_results = [
-            ("A", "zebra-model"),
-            ("B", "alpha-model"),
+            PageResult("A", "zebra-model"),
+            PageResult("B", "alpha-model"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -222,8 +222,8 @@ class TestAssembleFullTextFooter:
 
     def test_footer_single_model(self):
         page_results = [
-            ("A", "only-model"),
-            ("B", "only-model"),
+            PageResult("A", "only-model"),
+            PageResult("B", "only-model"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)
@@ -232,7 +232,7 @@ class TestAssembleFullTextFooter:
 
     def test_no_footer_when_no_models(self):
         page_results = [
-            ("Text", ""),
+            PageResult("Text", ""),
         ]
 
         full_text, models = assemble_full_text(1, page_results)
@@ -242,7 +242,7 @@ class TestAssembleFullTextFooter:
 
     def test_footer_only_when_all_sections_empty_but_models_exist(self):
         # Arrange — all pages are blank, so no sections and no models
-        page_results = [("", "model-a")]
+        page_results = [PageResult("", "model-a")]
 
         full_text, models = assemble_full_text(1, page_results)
 
@@ -252,7 +252,7 @@ class TestAssembleFullTextFooter:
 
 class TestAssembleFullTextEdgeCases:
     def test_empty_page_results_list(self):
-        page_results = []
+        page_results: list[PageResult] = []
 
         full_text, models = assemble_full_text(0, page_results)
 
@@ -261,7 +261,7 @@ class TestAssembleFullTextEdgeCases:
 
     def test_page_count_greater_than_results(self):
         # Arrange — page_count says multi-page but only one result
-        page_results = [("Only page", "m")]
+        page_results = [PageResult("Only page", "m")]
 
         full_text, _ = assemble_full_text(5, page_results)
 
@@ -269,7 +269,7 @@ class TestAssembleFullTextEdgeCases:
         assert "--- Page 1 ---" in full_text
 
     def test_model_with_empty_string_not_in_set(self):
-        page_results = [("Text", "")]
+        page_results = [PageResult("Text", "")]
 
         _, models = assemble_full_text(1, page_results)
 
@@ -277,8 +277,8 @@ class TestAssembleFullTextEdgeCases:
 
     def test_mixed_empty_and_filled_models(self):
         page_results = [
-            ("A", ""),
-            ("B", "real-model"),
+            PageResult("A", ""),
+            PageResult("B", "real-model"),
         ]
 
         full_text, models = assemble_full_text(2, page_results)
@@ -288,9 +288,9 @@ class TestAssembleFullTextEdgeCases:
 
     def test_three_pages_middle_blank(self):
         page_results = [
-            ("First", "m1"),
-            ("", "m2"),
-            ("Third", "m3"),
+            PageResult("First", "m1"),
+            PageResult("", "m2"),
+            PageResult("Third", "m3"),
         ]
 
         full_text, models = assemble_full_text(3, page_results)
@@ -299,3 +299,27 @@ class TestAssembleFullTextEdgeCases:
         assert "--- Page 2 ---" not in full_text
         assert "--- Page 3 ---" in full_text
         assert models == {"m1", "m3"}
+
+
+class TestPageResult:
+    """The PageResult value object is a frozen pair of (text, model)."""
+
+    def test_holds_text_and_model(self):
+        page = PageResult("transcribed text", "gpt-5.4-mini")
+
+        assert page.text == "transcribed text"
+        assert page.model == "gpt-5.4-mini"
+
+    def test_is_frozen(self):
+        page = PageResult("text", "model")
+
+        try:
+            page.text = "changed"  # type: ignore[misc]
+        except AttributeError:
+            pass
+        else:
+            raise AssertionError("PageResult should be frozen")
+
+    def test_equality_by_value(self):
+        assert PageResult("a", "m") == PageResult("a", "m")
+        assert PageResult("a", "m") != PageResult("a", "n")

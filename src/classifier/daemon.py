@@ -11,6 +11,7 @@ from common.config import Settings
 from common.daemon_loop import run_polling_threadpool
 from common.paperless import PaperlessClient
 from common.document_iter import iter_documents_by_pipeline_tag
+from common.per_document import run_per_document
 from .provider import ClassificationProvider
 from .taxonomy import TaxonomyCache
 from .worker import ClassificationProcessor
@@ -20,17 +21,13 @@ def _process_document(
     doc: dict, settings: Settings, taxonomy_cache: TaxonomyCache
 ) -> None:
     """Process a single Paperless document with its own HTTP session and provider."""
-    # Each thread gets its own PaperlessClient (and thus its own HTTP session)
-    # because httpx sessions are not thread-safe.
-    paperless = PaperlessClient(settings)
-    classifier = ClassificationProvider(settings)
-    try:
-        processor = ClassificationProcessor(
-            doc, paperless, classifier, taxonomy_cache, settings,
-        )
-        processor.process()
-    finally:
-        paperless.close()
+    run_per_document(
+        doc,
+        settings,
+        lambda d, paperless: ClassificationProcessor(
+            d, paperless, ClassificationProvider(settings), taxonomy_cache, settings
+        ),
+    )
 
 
 def _iter_docs_to_classify(
@@ -73,6 +70,12 @@ def main() -> None:
         classify_processing_tag_id=settings.CLASSIFY_PROCESSING_TAG_ID,
     )
 
+    # One long-lived taxonomy client is shared across all worker threads via
+    # the TaxonomyCache. A PaperlessClient is not itself thread-safe
+    # (CODE_GUIDELINES §8.3), but the cache is the *only* caller of this client
+    # and every one of its accesses runs under the cache's RLock — so no two
+    # threads ever touch the shared httpx session concurrently. This is the
+    # documented exception to the per-thread-client rule, not a violation.
     taxonomy_client = PaperlessClient(settings)
     taxonomy_cache = TaxonomyCache(taxonomy_client, settings.CLASSIFY_TAXONOMY_LIMIT)
 

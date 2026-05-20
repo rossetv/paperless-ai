@@ -117,7 +117,7 @@ Generic Title Examples:
 
 # Structured output schema for OpenAI's ``response_format`` parameter.
 # Only used when the provider is OpenAI (``LLM_PROVIDER=openai``).
-CLASSIFICATION_JSON_SCHEMA: dict = {
+CLASSIFICATION_JSON_SCHEMA: dict[str, object] = {
     "name": "paperless_document_classification",
     "schema": {
         "type": "object",

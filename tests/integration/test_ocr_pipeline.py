@@ -7,8 +7,8 @@ import io
 import pytest
 from PIL import Image
 
-from ocr.image_converter import bytes_to_images
-from ocr.text_assembly import assemble_full_text, OCR_ERROR_MARKER
+from ocr.image_converter import ImageConversionError, bytes_to_images
+from ocr.text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 from classifier.content_prep import truncate_content_by_pages
 from tests.helpers.factories import make_png_bytes
 
@@ -31,7 +31,7 @@ class TestFullOcrPipeline:
         assert len(images) == 1
 
         # Simulate OCR provider returning transcription for each page
-        page_results = [("Hello world from page 1.", "gpt-5.4-mini")]
+        page_results = [PageResult("Hello world from page 1.", "gpt-5.4-mini")]
 
         full_text, models = assemble_full_text(len(images), page_results)
 
@@ -50,9 +50,9 @@ class TestFullOcrPipeline:
 
         # Simulate transcription for each page with different models
         page_results = [
-            ("Page one content.", "gpt-5.4-mini"),
-            ("Page two content.", "gpt-5.4-mini"),
-            ("Page three content.", "o4-mini"),
+            PageResult("Page one content.", "gpt-5.4-mini"),
+            PageResult("Page two content.", "gpt-5.4-mini"),
+            PageResult("Page three content.", "o4-mini"),
         ]
 
         full_text, models = assemble_full_text(len(images), page_results)
@@ -72,8 +72,8 @@ class TestFullOcrPipeline:
         """Verify include_page_models adds model names to page headers."""
         # Simulate a 2-page document
         page_results = [
-            ("First page.", "gpt-5.4-mini"),
-            ("Second page.", "o4-mini"),
+            PageResult("First page.", "gpt-5.4-mini"),
+            PageResult("Second page.", "o4-mini"),
         ]
 
         full_text, models = assemble_full_text(
@@ -92,10 +92,10 @@ class TestMultiPageMixedResults:
     def test_blank_pages_skipped_in_assembly(self):
         """Blank pages (empty text) are omitted from the assembled output."""
         page_results = [
-            ("First page content.", "gpt-5.4-mini"),
-            ("", ""),            # blank page
-            ("Third page content.", "gpt-5.4-mini"),
-            ("   ", ""),         # whitespace-only page
+            PageResult("First page content.", "gpt-5.4-mini"),
+            PageResult("", ""),            # blank page
+            PageResult("Third page content.", "gpt-5.4-mini"),
+            PageResult("   ", ""),         # whitespace-only page
         ]
 
         full_text, models = assemble_full_text(4, page_results)
@@ -111,7 +111,7 @@ class TestMultiPageMixedResults:
 
     def test_all_blank_pages_produces_empty_text_with_no_footer(self):
         """When all pages are blank, the assembled text is empty."""
-        page_results = [("", ""), ("", ""), ("  ", "")]
+        page_results = [PageResult("", ""), PageResult("", ""), PageResult("  ", "")]
 
         full_text, models = assemble_full_text(3, page_results)
 
@@ -121,8 +121,8 @@ class TestMultiPageMixedResults:
     def test_error_marker_pages_included(self):
         """Pages with OCR errors appear in the assembled text."""
         page_results = [
-            ("Good content.", "gpt-5.4-mini"),
-            (f"{OCR_ERROR_MARKER} Failed to OCR page 2.", ""),
+            PageResult("Good content.", "gpt-5.4-mini"),
+            PageResult(f"{OCR_ERROR_MARKER} Failed to OCR page 2.", ""),
         ]
 
         full_text, models = assemble_full_text(2, page_results)
@@ -134,21 +134,21 @@ class TestMultiPageMixedResults:
 class TestErrorPropagation:
     """Corrupt or invalid input triggers clear errors."""
 
-    def test_corrupt_image_bytes_raises_runtime_error(self):
-        """bytes_to_images raises RuntimeError for unidentifiable content."""
-        with pytest.raises(RuntimeError, match="Unable to open image"):
+    def test_corrupt_image_bytes_raises_conversion_error(self):
+        """bytes_to_images raises ImageConversionError for unidentifiable content."""
+        with pytest.raises(ImageConversionError, match="Unable to open image"):
             bytes_to_images(b"this is not an image", "image/png")
 
-    def test_empty_bytes_raises_runtime_error(self):
+    def test_empty_bytes_raises_conversion_error(self):
         """Empty bytes are not a valid image."""
-        with pytest.raises(RuntimeError, match="Unable to open image"):
+        with pytest.raises(ImageConversionError, match="Unable to open image"):
             bytes_to_images(b"", "image/jpeg")
 
     def test_truncated_png_raises_error(self):
         """A truncated PNG file cannot be opened."""
         valid_png = make_png_bytes()
         truncated = valid_png[:20]  # cut off most of the file
-        with pytest.raises((RuntimeError, Exception)):
+        with pytest.raises(ImageConversionError):
             bytes_to_images(truncated, "image/png")
 
 class TestContentPrepWithAssembly:
@@ -158,7 +158,7 @@ class TestContentPrepWithAssembly:
         """Build multi-page OCR text, truncate it, verify footer survives."""
         # Build a realistic multi-page document
         page_results = [
-            (f"Content for page {i}. " * 50, "gpt-5.4-mini")
+            PageResult(f"Content for page {i}. " * 50, "gpt-5.4-mini")
             for i in range(1, 11)  # 10 pages
         ]
 
@@ -195,8 +195,8 @@ class TestContentPrepWithAssembly:
     def test_short_document_not_truncated(self):
         """A 2-page document within max_pages limit is returned unchanged."""
         page_results = [
-            ("Short page one.", "gpt-5.4-mini"),
-            ("Short page two.", "gpt-5.4-mini"),
+            PageResult("Short page one.", "gpt-5.4-mini"),
+            PageResult("Short page two.", "gpt-5.4-mini"),
         ]
 
         full_text, _ = assemble_full_text(2, page_results)

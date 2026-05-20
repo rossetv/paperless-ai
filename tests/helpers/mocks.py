@@ -118,13 +118,105 @@ def make_mock_paperless(**overrides: Any) -> MagicMock:
 
     return mock
 
+
+def make_stateful_paperless(
+    initial_doc: dict, *, with_taxonomy: bool = False
+) -> tuple[MagicMock, dict[str, Any]]:
+    """Create a mock PaperlessClient that tracks tag state across calls.
+
+    The claim-processing-tag workflow refreshes the document, patches a tag on,
+    then re-reads to verify the tag stuck — so a stateless mock would fail the
+    verify step.  This mock keeps the document's tag list in a mutable ``state``
+    dict that ``update_document`` and ``update_document_metadata`` write and
+    ``get_document`` reads, so the OCR and classifier e2e workflows share one
+    builder instead of each hand-rolling a stateful client (CODE_GUIDELINES
+    §11.5).
+
+    Args:
+        initial_doc: The document the mock starts from; its ``tags`` seed the
+            tracked state.
+        with_taxonomy: When ``True``, also stub the correspondent / document-type
+            / tag list and create endpoints with a fixed taxonomy — the shape
+            the classifier workflow tests resolve ids against.
+
+    Returns:
+        A ``(client, state)`` pair; ``state["tags"]`` is the live tag list.
+    """
+    client = MagicMock()
+    state: dict[str, Any] = {
+        "tags": list(initial_doc.get("tags", [])),
+        "doc": dict(initial_doc),
+    }
+
+    def get_document(doc_id: int) -> dict:
+        doc_copy = dict(state["doc"])
+        doc_copy["tags"] = list(state["tags"])
+        return doc_copy
+
+    def update_document_metadata(doc_id: int, **kwargs: Any) -> None:
+        if "tags" in kwargs:
+            state["tags"] = list(kwargs["tags"])
+
+    def update_document(doc_id: int, content: str, tags: Any) -> None:
+        state["tags"] = list(tags)
+
+    client.get_document.side_effect = get_document
+    client.update_document_metadata.side_effect = update_document_metadata
+    client.update_document.side_effect = update_document
+    client.download_content.return_value = (b"fake", "application/pdf")
+
+    if with_taxonomy:
+        _stub_fixed_taxonomy(client)
+
+    return client, state
+
+
+def _stub_fixed_taxonomy(client: MagicMock) -> None:
+    """Stub a fixed correspondent/document-type/tag taxonomy on *client*.
+
+    The ids are pinned so the classifier workflow tests can assert exact
+    resolution (correspondent ``Acme Corp`` → 1, document type ``Invoice`` →
+    10).  Newly created items get monotonically increasing ids from 200.
+    """
+    client.list_correspondents.return_value = [
+        {"id": 1, "name": "Acme Corp", "document_count": 10, "matching_algorithm": "none"},
+    ]
+    client.list_document_types.return_value = [
+        {"id": 10, "name": "Invoice", "document_count": 20, "matching_algorithm": "none"},
+        {"id": 11, "name": "Receipt", "document_count": 5, "matching_algorithm": "none"},
+    ]
+    client.list_tags.return_value = [
+        {"id": 100, "name": "2025", "matching_algorithm": "none", "document_count": 30},
+        {"id": 101, "name": "invoice", "matching_algorithm": "none", "document_count": 15},
+        {"id": 102, "name": "payment", "matching_algorithm": "none", "document_count": 8},
+        {"id": 103, "name": "de", "matching_algorithm": "none", "document_count": 25},
+    ]
+
+    next_id = [200]
+
+    def create_tag(name: str, **kwargs: Any) -> dict:
+        tag_id = next_id[0]
+        next_id[0] += 1
+        return {"id": tag_id, "name": name, "matching_algorithm": "none"}
+
+    client.create_tag.side_effect = create_tag
+    client.create_correspondent.side_effect = lambda name, **kw: {"id": 300, "name": name}
+    client.create_document_type.side_effect = lambda name, **kw: {"id": 301, "name": name}
+
+
 def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like an OcrProvider.
 
-    Returns ``("Transcribed text", "gpt-5.4-mini")`` by default.
+    ``transcribe_image`` returns a :class:`~ocr.text_assembly.PageResult` by
+    default — the same shape the real provider yields, so the OCR worker and
+    the e2e workflow tests share one provider mock.
     """
+    from ocr.text_assembly import PageResult
+
     mock = MagicMock()
-    mock.transcribe_image.return_value = ("Transcribed text for page.", "gpt-5.4-mini")
+    mock.transcribe_image.return_value = PageResult(
+        "Transcribed text for page.", "gpt-5.4-mini"
+    )
     mock.get_stats.return_value = {
         "attempts": 1,
         "refusals": 0,

@@ -81,11 +81,13 @@ class ClassificationProvider(OpenAIChatMixin):
                 if stripped is not None:
                     params = stripped
                     continue
-                log.warning("Classification request rejected", model=model, error=e)
+                log.warning(
+                    "Classification request rejected", model=model, error=str(e)
+                )
                 self._stats.inc("api_errors")
                 return None
             except openai.APIError as e:
-                log.warning("Classification model failed", model=model, error=e)
+                log.warning("Classification model failed", model=model, error=str(e))
                 self._stats.inc("api_errors")
                 return None
         log.warning("Classification request rejected after compat retries", model=model)

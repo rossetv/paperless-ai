@@ -9,8 +9,9 @@ from common.llm import extract_json_object
 
 # frozen dataclass: this is a structured value object constructed after parsing
 # LLM JSON output.  frozen=True enforces immutability so results can be safely
-# shared across threads and logged without risk of accidental mutation.
-@dataclass(frozen=True)
+# shared across threads and logged without risk of accidental mutation;
+# slots=True shaves memory and prevents attribute typos (CODE_GUIDELINES §5.2).
+@dataclass(frozen=True, slots=True)
 class ClassificationResult:
     """Immutable container for classification LLM output fields."""
 

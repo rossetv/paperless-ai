@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from typing import Callable
 
 import structlog
 
+from common.paperless import PaperlessCustomField
 from .result import ClassificationResult
 
 log = structlog.get_logger(__name__)
@@ -30,7 +32,7 @@ def parse_iso_date_prefix(value: str | None) -> dt.date | None:
 
 def parse_document_date(value: str) -> str | None:
     """
-    Validate and normalize a date string to ``YYYY-MM-DD``.
+    Validate and normalise a date string to ``YYYY-MM-DD``.
 
     Accepts ISO-8601 date strings (optionally with a ``T`` time component).
     Returns ``None`` when the value is empty or unparseable.
@@ -46,6 +48,8 @@ def parse_document_date(value: str) -> str | None:
 def resolve_date_for_tags(
     result_date: str | None,
     existing_date: str | None,
+    *,
+    today: Callable[[], dt.date] = dt.date.today,
 ) -> str:
     """
     Pick the best available date for year-tag derivation.
@@ -53,15 +57,20 @@ def resolve_date_for_tags(
     Prefers the classifier's *result_date*, falls back to the document's
     *existing_date* (the ``created`` field in Paperless), and finally uses
     today's date.
+
+    Args:
+        today: The current-date source for the final fallback. Defaults to
+            :func:`datetime.date.today`; tests inject a fixed date so the
+            fallback is deterministic (CODE_GUIDELINES §11.4).
     """
     for value in (result_date, existing_date):
         parsed = parse_iso_date_prefix(value)
         if parsed is not None:
             return parsed.isoformat()
-    return dt.date.today().isoformat()
+    return today().isoformat()
 
 
-def normalize_language(language: str) -> str | None:
+def normalise_language(language: str) -> str | None:
     """
     Coerce a language string to an ISO-639-1 two-letter code or ``"und"``.
 
@@ -84,10 +93,10 @@ def normalize_language(language: str) -> str | None:
 
 
 def update_custom_fields(
-    existing: list[dict] | None,
+    existing: list[PaperlessCustomField] | None,
     field_id: int,
     value: str,
-) -> list[dict]:
+) -> list[PaperlessCustomField]:
     """
     Upsert a Paperless custom-field value in the existing list.
 
@@ -95,14 +104,14 @@ def update_custom_fields(
     entry is appended.  The original list is not mutated.
     """
     existing = existing or []
-    updated: list[dict] = []
+    updated: list[PaperlessCustomField] = []
     found = False
-    for item in existing:
-        if item.get("field") == field_id:
+    for field in existing:
+        if field.get("field") == field_id:
             updated.append({"field": field_id, "value": value})
             found = True
         else:
-            updated.append(item)
+            updated.append(field)
     if not found:
         updated.append({"field": field_id, "value": value})
     return updated

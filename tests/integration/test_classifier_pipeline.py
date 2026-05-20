@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 from classifier.content_prep import truncate_content_by_pages
 from classifier.metadata import (
     is_empty_classification,
-    normalize_language,
+    normalise_language,
     parse_document_date,
     resolve_date_for_tags,
     update_custom_fields,
@@ -282,7 +282,7 @@ class TestMetadataPipelineIntegration:
     """Real metadata functions working together on realistic data."""
 
     def test_full_metadata_pipeline(self):
-        """Parse date, normalize language, update custom fields together."""
+        """Parse date, normalise language, update custom fields together."""
         # Parse a valid date
         parsed_date = parse_document_date("2025-06-15")
         assert parsed_date == "2025-06-15"
@@ -291,8 +291,8 @@ class TestMetadataPipelineIntegration:
         tag_date = resolve_date_for_tags(parsed_date, "2024-01-01")
         assert tag_date == "2025-06-15"
 
-        # Normalize language
-        lang = normalize_language("en-US")
+        # Normalise language
+        lang = normalise_language("en-US")
         assert lang == "en"
 
         # Update custom fields (upsert a person field)
@@ -319,19 +319,21 @@ class TestMetadataPipelineIntegration:
         parsed_date = parse_document_date("not-a-date")
         assert parsed_date is None
 
-        # Falls back to today when both dates are invalid
-        tag_date = resolve_date_for_tags(None, None)
-        assert tag_date == dt.date.today().isoformat()
+        # Falls back to the injected "today" when both dates are invalid;
+        # a fixed clock keeps the assertion deterministic (CODE_GUIDELINES §11.4).
+        fixed_today = dt.date(2025, 5, 20)
+        tag_date = resolve_date_for_tags(None, None, today=lambda: fixed_today)
+        assert tag_date == fixed_today.isoformat()
 
-    def test_normalize_language_variants(self):
-        """Various language string formats are normalized correctly."""
-        assert normalize_language("en") == "en"
-        assert normalize_language("EN") == "en"
-        assert normalize_language("pt-BR") == "pt"
-        assert normalize_language("de_AT") == "de"
-        assert normalize_language("und") == "und"
-        assert normalize_language("") is None
-        assert normalize_language("invalid-long-string") == "und"
+    def test_normalise_language_variants(self):
+        """Various language string formats are normalised correctly."""
+        assert normalise_language("en") == "en"
+        assert normalise_language("EN") == "en"
+        assert normalise_language("pt-BR") == "pt"
+        assert normalise_language("de_AT") == "de"
+        assert normalise_language("und") == "und"
+        assert normalise_language("") is None
+        assert normalise_language("invalid-long-string") == "und"
 
     def test_custom_fields_append_when_new(self):
         """A new field ID is appended to the custom fields list."""

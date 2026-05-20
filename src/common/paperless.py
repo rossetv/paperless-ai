@@ -4,13 +4,32 @@ from __future__ import annotations
 
 import types
 from collections.abc import Iterator
-from typing import Any, Generator, Iterable, NotRequired, TypedDict, Unpack
+from typing import Any, Generator, Iterable, Unpack, cast
 
 import httpx
 import structlog
 
 from .config import Settings
+from .paperless_types import (
+    DocumentMetadataUpdate,
+    PaperlessCustomField,
+    PaperlessDocument,
+    PaperlessItem,
+)
 from .retry import retry
+
+# Re-exported so callers keep importing the Paperless wire shapes from
+# ``common.paperless``; the definitions live in ``common.paperless_types`` only
+# to keep this module under the file-size ceiling (CODE_GUIDELINES §3.1).
+__all__ = [
+    "DocumentMetadataUpdate",
+    "PAPERLESS_CALL_EXCEPTIONS",
+    "PaperlessClient",
+    "PaperlessCustomField",
+    "PaperlessDocument",
+    "PaperlessItem",
+    "RETRYABLE_HTTP_EXCEPTIONS",
+]
 
 log = structlog.get_logger(__name__)
 
@@ -32,62 +51,6 @@ def _named_item_payload(
     if matching_algorithm is not None:
         payload["matching_algorithm"] = matching_algorithm
     return payload
-
-
-# TypedDict is used here because it maps directly to **kwargs with Unpack,
-# giving callers keyword-level type checking while remaining a plain dict
-# at runtime (no instantiation overhead, easy JSON serialisation).
-class DocumentMetadataUpdate(TypedDict, total=False):
-    """Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.
-
-    Every value type except ``tags`` admits ``None``: the classifier passes
-    ``None`` for a field it could not determine (no correspondent, no title),
-    and :meth:`update_document_metadata` skips any ``None`` value rather than
-    patching it. ``tags`` is always a concrete set — the classifier never has
-    "no opinion" on tags, it computes the full replacement set every time.
-    """
-
-    title: str | None
-    correspondent_id: int | None
-    document_type_id: int | None
-    document_date: str | None
-    tags: set[int]
-    language: str | None
-    custom_fields: list[dict] | None
-
-
-# A read-side view of the Paperless-ngx document JSON shape (CODE_GUIDELINES
-# §5.3): it pins the field names and types the indexer relies on without
-# copying the whole foreign object into a dataclass.  ``id`` is the only field
-# Paperless guarantees on every document; the rest are NotRequired because the
-# indexer reads them defensively (a not-yet-OCR'd document has no ``content``,
-# an un-dated document no ``created``).  A daemon translates this into a domain
-# dataclass — ``store.models.DocumentMeta`` — at its boundary.
-class PaperlessDocument(TypedDict):
-    """The subset of the Paperless-ngx document JSON the indexer consumes.
-
-    Attributes:
-        id: The Paperless document id — always present.
-        title: Human-readable title, or ``None`` if unset.
-        content: The OCR content body; absent or ``None`` until the document
-            has been transcribed.
-        tags: Tag ids applied to the document.
-        correspondent: The correspondent id, or ``None`` if unset.
-        document_type: The document-type id, or ``None`` if unset.
-        created: The document date (``"YYYY-MM-DD"`` or ISO-8601 datetime).
-        modified: The last-modified timestamp; an ISO-8601 datetime.
-        page_count: The number of pages, when Paperless reports it.
-    """
-
-    id: int
-    title: NotRequired[str | None]
-    content: NotRequired[str | None]
-    tags: NotRequired[list[int]]
-    correspondent: NotRequired[int | None]
-    document_type: NotRequired[int | None]
-    created: NotRequired[str | None]
-    modified: NotRequired[str | None]
-    page_count: NotRequired[int | None]
 
 
 class PaperlessClient:
@@ -334,53 +297,66 @@ class PaperlessClient:
         response.raise_for_status()
         log.info("Successfully updated document metadata", doc_id=doc_id)
 
-    def list_correspondents(self) -> list[dict]:
+    def _list_named_items(self, url: str) -> list[PaperlessItem]:
+        """List a taxonomy endpoint, typing each row as a :class:`PaperlessItem`.
+
+        cast: :meth:`_list_all` yields the raw decoded Paperless JSON dict; for
+        the correspondent / document-type / tag endpoints that shape *is* a
+        :class:`PaperlessItem`. The cast pins the type at the single place the
+        taxonomy rows enter the typed world.
+        """
+        return [cast("PaperlessItem", item) for item in self._list_all(url)]
+
+    def list_correspondents(self) -> list[PaperlessItem]:
         url = f"{self.settings.PAPERLESS_URL}/api/correspondents/?page_size=100"
-        return list(self._list_all(url))
+        return self._list_named_items(url)
 
-    def list_document_types(self) -> list[dict]:
+    def list_document_types(self) -> list[PaperlessItem]:
         url = f"{self.settings.PAPERLESS_URL}/api/document_types/?page_size=100"
-        return list(self._list_all(url))
+        return self._list_named_items(url)
 
-    def list_tags(self) -> list[dict]:
+    def list_tags(self) -> list[PaperlessItem]:
         url = f"{self.settings.PAPERLESS_URL}/api/tags/?page_size=100"
-        return list(self._list_all(url))
+        return self._list_named_items(url)
 
     def create_correspondent(
         self, name: str, matching_algorithm: str | int | None = "none"
-    ) -> dict[str, object]:
-        """Create a correspondent; return the decoded Paperless JSON body."""
+    ) -> PaperlessItem:
+        """Create a correspondent; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/correspondents/"
-        return self._create_named_item(
+        # cast: the created-item body Paperless returns is a PaperlessItem.
+        return cast("PaperlessItem", self._create_named_item(
             url=url,
             name=name,
             matching_algorithm=matching_algorithm,
             item_label="correspondent",
-        )
+        ))
 
     def create_document_type(
         self, name: str, matching_algorithm: str | int | None = "none"
-    ) -> dict[str, object]:
-        """Create a document type; return the decoded Paperless JSON body."""
+    ) -> PaperlessItem:
+        """Create a document type; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/document_types/"
-        return self._create_named_item(
+        # cast: the created-item body Paperless returns is a PaperlessItem.
+        return cast("PaperlessItem", self._create_named_item(
             url=url,
             name=name,
             matching_algorithm=matching_algorithm,
             item_label="document type",
-        )
+        ))
 
     def create_tag(
         self, name: str, matching_algorithm: str | int | None = "none"
-    ) -> dict[str, object]:
-        """Create a tag; return the decoded Paperless JSON body."""
+    ) -> PaperlessItem:
+        """Create a tag; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/tags/"
-        return self._create_named_item(
+        # cast: the created-item body Paperless returns is a PaperlessItem.
+        return cast("PaperlessItem", self._create_named_item(
             url=url,
             name=name,
             matching_algorithm=matching_algorithm,
             item_label="tag",
-        )
+        ))
 
     def iter_all_documents(self, *, modified_after: str | None = None) -> Iterator[dict]:
         """Yield every document from Paperless, ordered by ``modified`` ascending.
