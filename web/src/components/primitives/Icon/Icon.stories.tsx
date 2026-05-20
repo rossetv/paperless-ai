@@ -1,0 +1,100 @@
+import type { Meta, StoryObj } from '@storybook/react';
+import { Icon } from './Icon';
+import type { IconName } from './Icon';
+
+const meta = {
+  title: 'Primitives/Icon',
+  component: Icon,
+  parameters: {
+    layout: 'centered',
+  },
+  tags: ['autodocs'],
+  argTypes: {
+    name: {
+      control: 'select',
+      options: [
+        'search',
+        'close',
+        'document',
+        'external-link',
+        'chevron-down',
+        'chevron-right',
+        'filter',
+        'info',
+        'check',
+        'warning',
+        'arrow-left',
+        'tag',
+      ] satisfies IconName[],
+    },
+    size: {
+      control: 'radio',
+      options: ['small', 'medium', 'large'],
+    },
+  },
+} satisfies Meta<typeof Icon>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Search: Story = {
+  args: { name: 'search', size: 'medium' },
+};
+
+export const Document: Story = {
+  args: { name: 'document', size: 'medium' },
+};
+
+export const WithLabel: Story = {
+  args: { name: 'search', label: 'Search documents', size: 'medium' },
+};
+
+export const AllIcons: StoryObj = {
+  render: () => {
+    const names: IconName[] = [
+      'search',
+      'close',
+      'document',
+      'external-link',
+      'chevron-down',
+      'chevron-right',
+      'filter',
+      'info',
+      'check',
+      'warning',
+      'arrow-left',
+      'tag',
+    ];
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '1.5rem',
+          alignItems: 'center',
+          padding: '1rem',
+        }}
+      >
+        {names.map((name) => (
+          <div
+            key={name}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+          >
+            <Icon name={name} size="medium" />
+            <span style={{ fontSize: '11px', fontFamily: 'monospace' }}>{name}</span>
+          </div>
+        ))}
+      </div>
+    );
+  },
+};
+
+export const Sizes: StoryObj = {
+  render: () => (
+    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+      <Icon name="search" size="small" />
+      <Icon name="search" size="medium" />
+      <Icon name="search" size="large" />
+    </div>
+  ),
+};
