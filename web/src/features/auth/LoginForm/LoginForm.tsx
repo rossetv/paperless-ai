@@ -15,15 +15,17 @@ export interface LoginFormProps {
 /**
  * API-key login form implementing the §7.3 login handshake.
  *
- * The user enters their SEARCH_API_KEY once; it is POSTed to /api/auth/login
- * and discarded immediately — the key is NEVER stored in JS-accessible memory
- * beyond the controlled input field, which is cleared on submit.
+ * The user enters their SEARCH_API_KEY once; it is POSTed to /api/auth/login.
+ * The field is cleared only on SUCCESS — not before the mutation resolves.
+ * Clearing before the mutation meant a failed login (wrong key / network error)
+ * would leave the user with an empty field AND a disabled submit button,
+ * forcing them to retype from scratch. On success the parent routes away, so
+ * clearing on success also acts as a defence-in-depth cleanup.
  *
  * On success: the server sets an HttpOnly session cookie and `onSuccess` is
  * called so the parent can route to the search page.
- * On failure: the mutation error is surfaced as an accessible alert; the field
- * is cleared so the user can try again without accidentally re-sending their
- * key via autofill.
+ * On failure: the mutation error is surfaced as an accessible alert; the typed
+ * value remains so the user can correct a typo and resubmit immediately.
  *
  * Loading state: the submit button is disabled and labelled "Logging in…"
  * while the mutation is in flight.
@@ -37,14 +39,14 @@ export function LoginForm({ onSuccess }: LoginFormProps): React.ReactElement {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    const keyToSubmit = apiKey;
-    // Clear the field immediately — the key must not persist in the DOM
-    // beyond the moment of submission (spec §7.3 security invariant).
-    setApiKey('');
     mutation.mutate(
-      { api_key: keyToSubmit },
+      { api_key: apiKey },
       {
         onSuccess: () => {
+          // Clear the field on success — the key is no longer needed and the
+          // parent will route away. This is defence-in-depth; the route change
+          // alone would unmount the component.
+          setApiKey('');
           onSuccess();
         },
       },
