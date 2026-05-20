@@ -12,6 +12,10 @@ dependencies = [
     "Pillow~=10.4",
     "pdf2image~=1.17",
     "structlog~=24.2",
+    "sqlite-vec~=0.1",
+    "fastapi~=0.136",
+    "uvicorn[standard]~=0.47",
+    "mcp~=1.27",
 ]
 
 [project.scripts]
