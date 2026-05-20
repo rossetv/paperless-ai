@@ -770,7 +770,7 @@ unset or empty key is a fatal preflight error — the search and MCP servers ref
 to start, with a `CRITICAL` log line. They never run in an unauthenticated state.
 The index holds the operator's personal documents; a search surface that is open
 "by default" is a data breach one misconfiguration away. When the key is set, every
-`/api/*` request and every MCP call requires a matching bearer token. A new
+`/api/*` request and every MCP call requires authentication — a matching bearer token, or, for the browser, a signed `HttpOnly` session cookie issued by the `POST /api/auth/login` handshake against that key. A new
 endpoint is gated by the same check; opting one out requires a written
 justification. Network restriction — a reverse-proxy IP allowlist, a VPN — is
 defence in depth on top of the key ([§1.11](#111-fail-closed-fail-loud)), never a
@@ -933,12 +933,14 @@ web/src/
 │   ├── layout/         Page, Container, Section, Stack, Grid, Divider, NavBar
 │   └── patterns/       SearchField, Select, FilterPanel, Modal, Toast, Tabs,
 │                       EmptyState
-├── features/           DOMAIN components — know about search/documents
+├── features/           DOMAIN components — know about search/documents/auth
 │   ├── search/         SearchBar, FilterControls, AnswerCard, SourceCard,
 │   │                   SourceList, QueryPlanSummary, CitationLink
-│   └── document/       DocumentMeta, DocumentSnippet
+│   ├── document/       DocumentMeta, DocumentSnippet
+│   └── auth/           LoginForm
 ├── pages/              ROUTES — compose features + layout only
-│   └── SearchPage.tsx
+│   ├── SearchPage.tsx
+│   └── LoginPage.tsx
 ├── api/                client.ts, types.ts, hooks.ts — the typed API layer
 ├── hooks/              generic reusable hooks (useDebounce, useTheme)
 ├── routes.tsx          the route table
@@ -973,7 +975,8 @@ What this rule buys, concretely:
   exist, the something is added to the library — reviewed once, then reusable
   everywhere. A page cannot solve a visual problem locally. That is the structural
   guarantee against the "slightly different button on every page" failure.
-- `features/` is the only layer that knows the words "search" and "document".
+- `features/` is the only layer that knows the domain words — "search",
+  "document", "auth".
 - `components/` is generic and app-agnostic — a `Card` knows nothing about source
   documents.
 - Adding a new page is one route entry plus composition. It cannot introduce
@@ -1009,8 +1012,11 @@ of CSS" needs a library component instead.
 
 `web/src/api/` is the only place the frontend talks to the backend:
 
-- `client.ts` — a typed `fetch` wrapper owning the base URL, the `SEARCH_API_KEY`
-  header, and error normalisation.
+- `client.ts` — a typed `fetch` wrapper owning the base URL, `credentials: 'include'`
+  (a signed `HttpOnly` session cookie carries authentication — the `SEARCH_API_KEY`
+  is never stored in, nor shipped with, the frontend bundle), and error
+  normalisation; a `401` surfaces as a distinct `Unauthenticated` error the app
+  routes to the login screen.
 - `types.ts` — TypeScript types mirroring the FastAPI Pydantic schema
   (`SearchResult`, `SourceDocument`, `QueryPlan`, facets). Frontend and backend
   shapes are kept in deliberate correspondence; a divergence is a bug.
