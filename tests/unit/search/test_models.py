@@ -21,6 +21,7 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
+from tests.helpers.factories import make_query_plan, make_source_document
 
 
 # ---------------------------------------------------------------------------
@@ -235,35 +236,15 @@ class TestSearchStats:
 
 
 class TestSearchResult:
-    def _make_source_document(self, document_id: int = 1) -> SourceDocument:
-        return SourceDocument(
-            document_id=document_id,
-            title=None,
-            correspondent=None,
-            document_type=None,
-            created=None,
-            snippet="snippet",
-            paperless_url=f"https://paperless.local/documents/{document_id}/",
-            score=0.5,
-        )
+    """SearchResult composes a SourceDocument, a QueryPlan, and SearchStats.
 
-    def _make_query_plan(self) -> QueryPlan:
-        return QueryPlan(
-            semantic_queries=(),
-            keyword_terms=(),
-            filter_candidates=FilterCandidates(
-                correspondent=None,
-                document_type=None,
-                tags=(),
-                date_from=None,
-                date_to=None,
-            ),
-            sub_questions=(),
-        )
+    The composed parts are built via the shared factories (CODE_GUIDELINES
+    §11.5) — only SearchResult itself is the shape under test here.
+    """
 
     def test_construction(self) -> None:
-        doc = self._make_source_document()
-        plan = self._make_query_plan()
+        doc = make_source_document()
+        plan = make_query_plan()
         stats = SearchStats(llm_calls=1, latency_ms=200, refined=False)
         search_result = SearchResult(
             answer="The boiler warranty expires in 2030.",
@@ -277,14 +258,11 @@ class TestSearchResult:
         assert search_result.stats is stats
 
     def test_is_frozen(self) -> None:
-        doc = self._make_source_document()
-        plan = self._make_query_plan()
-        stats = SearchStats(llm_calls=1, latency_ms=200, refined=False)
         search_result = SearchResult(
             answer="answer",
-            sources=(doc,),
-            plan=plan,
-            stats=stats,
+            sources=(make_source_document(),),
+            plan=make_query_plan(),
+            stats=SearchStats(llm_calls=1, latency_ms=200, refined=False),
         )
         with pytest.raises(Exception):  # FrozenInstanceError
             search_result.answer = "changed"  # type: ignore[misc]

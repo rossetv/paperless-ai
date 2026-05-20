@@ -2,45 +2,40 @@
 
 Covers the security-critical contracts (spec §7.1, §7.3, §7.4):
 
-- An unauthenticated POST /api/search → 401.
-- POST /api/auth/login with the correct key sets the session cookie.
-- The session cookie then authorises /api/search (200).
-- A valid Bearer token also authorises /api/search (200).
-- GET /api/healthz → 503 index-not-ready when the DB file is absent.
-- GET /api/healthz → 503 index-corrupt when quick_check returns False.
-- GET /api/healthz → 200 when quick_check returns True.
-- POST /api/reconcile writes the sentinel file and returns 202.
-- POST /api/search returns a correctly-mapped SearchResponse.
-- GET /api/facets returns a correctly-mapped FacetsResponse.
-- GET /api/stats returns a correctly-mapped StatsResponse.
-- StaticFiles cannot serve a path outside the frontend directory
-  (path traversal is rejected).
-- The SEARCH_MAX_CONCURRENT semaphore caps in-flight search requests.
-- The index DB path is never served over HTTP (security invariant).
+- An unauthenticated POST /api/search → 401; login sets the session cookie;
+  the cookie and a Bearer token both then authorise /api/search.
+- POST /api/search / GET /api/facets / GET /api/stats return correctly-mapped
+  wire responses; POST /api/reconcile writes the sentinel and returns 202.
+- StaticFiles cannot serve a path outside the frontend directory, and the
+  index DB is never web-reachable.
 - main() exits non-zero when SEARCH_API_KEY is whitespace-only (I1).
 - POST /api/search returns 422 when query exceeds max length (MINOR 2).
+
+The healthz three-state endpoint and the SEARCH_MAX_CONCURRENT semaphore are
+covered in :mod:`test_api_healthz` (split for the 500-line ceiling, §3.1).
+
+``build_test_client`` (see conftest.py) wraps the real ``create_app`` with a
+mock core and store reader.
 """
 
 from __future__ import annotations
 
-import threading
 import time
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 from search.auth import SESSION_COOKIE_NAME, issue_session_token
-from search.models import (
-    FilterCandidates,
-    QueryPlan,
-    SearchResult,
-    SearchStats,
-    SourceDocument,
+from tests.helpers.factories import (
+    make_facet_set,
+    make_index_stats,
+    make_search_result,
+    make_search_settings,
+    make_source_document,
+    make_taxonomy_entry,
 )
-from store.models import FacetSet, IndexStats, TaxonomyEntry
+from tests.unit.search.conftest import build_test_client
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,113 +44,27 @@ from store.models import FacetSet, IndexStats, TaxonomyEntry
 _API_KEY = "test-api-key-for-unit-tests"
 
 
-def _make_mock_settings(
-    *,
-    api_key: str = _API_KEY,
-    session_ttl: int = 3600,
-    max_concurrent: int = 4,
-    db_path: str = "/nonexistent/index.db",
-    tmp_reconcile_dir: str | None = None,
-) -> MagicMock:
-    """Build a minimal MagicMock Settings for API tests."""
-    settings = MagicMock()
-    settings.SEARCH_API_KEY = api_key
-    settings.SEARCH_SESSION_TTL = session_ttl
-    settings.SEARCH_MAX_CONCURRENT = max_concurrent
-    settings.PAPERLESS_URL = "http://paperless:8000"
-    # INDEX_DB_PATH used by healthz and reconcile endpoints.
-    db = tmp_reconcile_dir + "/index.db" if tmp_reconcile_dir else db_path
-    settings.INDEX_DB_PATH = db
-    return settings
-
-
-def _make_empty_query_plan() -> QueryPlan:
-    return QueryPlan(
-        semantic_queries=("test query",),
-        keyword_terms=(),
-        filter_candidates=FilterCandidates(
-            correspondent=None,
-            document_type=None,
-            tags=(),
-            date_from=None,
-            date_to=None,
-        ),
-        sub_questions=(),
+def _settings(*, db_path: str = "/nonexistent/index.db", **overrides: object) -> MagicMock:
+    """Build a Settings-like mock for API tests, with a chosen index DB path."""
+    return make_search_settings(
+        SEARCH_API_KEY=_API_KEY, INDEX_DB_PATH=db_path, **overrides
     )
-
-
-def _make_search_result(answer: str = "The answer.") -> SearchResult:
-    source = SourceDocument(
-        document_id=42,
-        title="Test Doc",
-        correspondent="ACME",
-        document_type="Invoice",
-        created="2024-01-01T00:00:00Z",
-        snippet="Some snippet text.",
-        paperless_url="http://paperless:8000/documents/42/",
-        score=0.9,
-    )
-    return SearchResult(
-        answer=answer,
-        sources=(source,),
-        plan=_make_empty_query_plan(),
-        stats=SearchStats(llm_calls=2, latency_ms=123, refined=False),
-    )
-
-
-def _make_facet_set() -> FacetSet:
-    return FacetSet(
-        correspondents=(TaxonomyEntry(kind="correspondent", id=1, name="ACME"),),
-        document_types=(TaxonomyEntry(kind="document_type", id=2, name="Invoice"),),
-        tags=(TaxonomyEntry(kind="tag", id=3, name="important"),),
-        earliest="2020-01-01T00:00:00Z",
-        latest="2024-12-31T00:00:00Z",
-    )
-
-
-def _make_index_stats() -> IndexStats:
-    return IndexStats(
-        document_count=100,
-        chunk_count=450,
-        last_reconcile_at="2024-06-01T12:00:00Z",
-        embedding_model="text-embedding-3-small",
-    )
-
-
-def _build_test_app(
-    settings: MagicMock,
-    *,
-    core: Any = None,
-    store_reader: Any = None,
-) -> TestClient:
-    """Build a TestClient with mocked dependencies.
-
-    Uses ``https://testserver`` as the base URL so that ``Secure`` session
-    cookies are forwarded on subsequent requests (the real server always runs
-    behind HTTPS; the Secure flag is a required security attribute per
-    spec §7.3).
-    """
-    from search.api import create_app
-
-    if core is None:
-        core = MagicMock()
-        core.answer.return_value = _make_search_result()
-    if store_reader is None:
-        store_reader = MagicMock()
-        store_reader.list_facets.return_value = _make_facet_set()
-        store_reader.get_stats.return_value = _make_index_stats()
-        store_reader.quick_check.return_value = True
-
-    app = create_app(settings, core=core, store_reader=store_reader)
-    return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
 
 
 def _bearer_headers(key: str = _API_KEY) -> dict[str, str]:
+    """Return an Authorization header carrying *key* as a Bearer token."""
     return {"Authorization": f"Bearer {key}"}
 
 
-def _session_cookie(key: str = _API_KEY, ttl: int = 3600) -> str:
-    return issue_session_token(key, ttl_seconds=ttl, now=time.time())
+def _seeded_facets() -> object:
+    """A FacetSet with one entry of each taxonomy kind, for the facets test."""
+    return make_facet_set(
+        correspondents=(make_taxonomy_entry(kind="correspondent", entry_id=1, name="ACME"),),
+        document_types=(make_taxonomy_entry(kind="document_type", entry_id=2, name="Invoice"),),
+        tags=(make_taxonomy_entry(kind="tag", entry_id=3, name="important"),),
+        earliest="2020-01-01T00:00:00Z",
+        latest="2024-12-31T00:00:00Z",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -165,31 +74,24 @@ def _session_cookie(key: str = _API_KEY, ttl: int = 3600) -> str:
 
 def test_unauthenticated_search_returns_401() -> None:
     """An unauthenticated POST /api/search must return 401."""
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
     response = client.post("/api/search", json={"query": "test"})
     assert response.status_code == 401
 
 
 def test_unauthenticated_facets_returns_401() -> None:
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
-    response = client.get("/api/facets")
-    assert response.status_code == 401
+    client = build_test_client(_settings())
+    assert client.get("/api/facets").status_code == 401
 
 
 def test_unauthenticated_stats_returns_401() -> None:
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
-    response = client.get("/api/stats")
-    assert response.status_code == 401
+    client = build_test_client(_settings())
+    assert client.get("/api/stats").status_code == 401
 
 
 def test_unauthenticated_reconcile_returns_401() -> None:
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
-    response = client.post("/api/reconcile")
-    assert response.status_code == 401
+    client = build_test_client(_settings())
+    assert client.post("/api/reconcile").status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -199,24 +101,17 @@ def test_unauthenticated_reconcile_returns_401() -> None:
 
 def test_login_with_correct_key_sets_session_cookie() -> None:
     """POST /api/auth/login with the correct key must set the session cookie."""
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
     response = client.post(
-        "/api/auth/login",
-        json={"api_key": _API_KEY},
-        follow_redirects=False,
+        "/api/auth/login", json={"api_key": _API_KEY}, follow_redirects=False
     )
     assert response.status_code == 200
     assert SESSION_COOKIE_NAME in response.cookies
 
 
 def test_login_with_wrong_key_returns_401() -> None:
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
-    response = client.post(
-        "/api/auth/login",
-        json={"api_key": "wrong-key"},
-    )
+    client = build_test_client(_settings())
+    response = client.post("/api/auth/login", json={"api_key": "wrong-key"})
     assert response.status_code == 401
 
 
@@ -228,28 +123,22 @@ def test_login_with_non_ascii_api_key_returns_401_not_500() -> None:
     UTF-8 bytes comparison.  This test fails if the comparison is reverted to
     str-based ``hmac.compare_digest``.
     """
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
-    response = client.post(
-        "/api/auth/login",
-        json={"api_key": "café"},
-    )
+    client = build_test_client(_settings())
+    response = client.post("/api/auth/login", json={"api_key": "café"})
     assert response.status_code == 401, (
         f"Expected 401 for non-ASCII key, got {response.status_code}"
     )
 
 
 # ---------------------------------------------------------------------------
-# Authentication — session cookie authorises subsequent requests
+# Authentication — session cookie / bearer token authorise requests
 # ---------------------------------------------------------------------------
 
 
 def test_session_cookie_authorises_search() -> None:
     """A session cookie obtained via login must authorise /api/search."""
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
 
-    # First, log in to get the session cookie.
     login = client.post("/api/auth/login", json={"api_key": _API_KEY})
     assert login.status_code == 200
     assert SESSION_COOKIE_NAME in login.cookies
@@ -259,15 +148,9 @@ def test_session_cookie_authorises_search() -> None:
     assert response.status_code == 200
 
 
-# ---------------------------------------------------------------------------
-# Authentication — bearer token authorises requests
-# ---------------------------------------------------------------------------
-
-
 def test_bearer_token_authorises_search() -> None:
     """A valid Bearer token must authorise /api/search."""
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
     response = client.post(
         "/api/search",
         json={"query": "boiler warranty"},
@@ -277,176 +160,35 @@ def test_bearer_token_authorises_search() -> None:
 
 
 def test_wrong_bearer_token_returns_401() -> None:
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
     response = client.post(
-        "/api/search",
-        json={"query": "test"},
-        headers=_bearer_headers("wrong"),
+        "/api/search", json={"query": "test"}, headers=_bearer_headers("wrong")
     )
     assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# Healthz — unauthenticated, state-aware
-# ---------------------------------------------------------------------------
-
-
-def test_healthz_returns_503_when_db_absent() -> None:
-    """GET /api/healthz returns 503 index-not-ready when the DB does not exist."""
-    settings = _make_mock_settings(db_path="/nonexistent/index.db")
-    store_reader = MagicMock()
-    # DB absent: the endpoint guards on file existence before calling the reader.
-    client = _build_test_app(settings, store_reader=store_reader)
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    body = response.json()
-    assert body.get("status") == "index-not-ready"
-
-
-def test_healthz_returns_503_when_db_present_but_schema_missing(
-    tmp_path: Path,
-) -> None:
-    """GET /api/healthz returns 503 index-not-ready when the DB exists but has no schema.
-
-    This is the core bug fix: sqlite3.connect() auto-creates an empty DB file
-    when the directory is writable, so a present-but-empty file is NOT a sign
-    the index is ready.  An OperationalError('no such table') from get_stats()
-    must map to index-not-ready, not index-corrupt or 200.
-    """
-    import sqlite3 as _sqlite3
-
-    from store.migrations import StoreError
-
-    db_path = tmp_path / "index.db"
-    db_path.write_bytes(b"")  # Empty file — no schema written yet.
-    settings = _make_mock_settings(db_path=str(db_path))
-    store_reader = MagicMock()
-    # Simulate what StoreReader.get_stats() does on an empty/schema-less DB.
-    store_reader.get_stats.side_effect = StoreError(
-        "get_stats query failed"
-    ).__class__("get_stats query failed")
-    # Attach the underlying OperationalError as __cause__ so the handler can
-    # inspect it, matching the real raise pattern in StoreReader.
-    _cause = _sqlite3.OperationalError("no such table: meta")
-    err = StoreError("get_stats query failed")
-    err.__cause__ = _cause
-    store_reader.get_stats.side_effect = err
-    client = _build_test_app(settings, store_reader=store_reader)
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    body = response.json()
-    assert body.get("status") == "index-not-ready"
-
-
-def test_healthz_returns_503_when_schema_present_but_never_reconciled(
-    tmp_path: Path,
-) -> None:
-    """GET /api/healthz returns 503 index-not-ready when the index was never reconciled.
-
-    A DB with the schema created but last_reconcile_at=None means the indexer
-    ran StoreWriter.ensure_schema but has not completed its first cycle.
-    """
-    db_path = tmp_path / "index.db"
-    db_path.write_bytes(b"")
-    settings = _make_mock_settings(db_path=str(db_path))
-    store_reader = MagicMock()
-    store_reader.get_stats.return_value = IndexStats(
-        document_count=0,
-        chunk_count=0,
-        last_reconcile_at=None,  # Never reconciled.
-        embedding_model=None,
-    )
-    client = _build_test_app(settings, store_reader=store_reader)
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    body = response.json()
-    assert body.get("status") == "index-not-ready"
-
-
-def test_healthz_returns_503_when_index_corrupt(tmp_path: Path) -> None:
-    """GET /api/healthz returns 503 index-corrupt when quick_check fails.
-
-    The DB must have a schema and a reconcile timestamp so the corruption
-    check is reached; a file that merely exists is no longer sufficient.
-    """
-    db_path = tmp_path / "index.db"
-    db_path.write_bytes(b"")
-    settings = _make_mock_settings(db_path=str(db_path))
-    store_reader = MagicMock()
-    store_reader.get_stats.return_value = IndexStats(
-        document_count=10,
-        chunk_count=50,
-        last_reconcile_at="2024-06-01T12:00:00Z",
-        embedding_model="text-embedding-3-small",
-    )
-    store_reader.quick_check.return_value = False
-    client = _build_test_app(settings, store_reader=store_reader)
-    response = client.get("/api/healthz")
-    assert response.status_code == 503
-    body = response.json()
-    assert body.get("status") == "index-corrupt"
-
-
-def test_healthz_returns_200_when_healthy(tmp_path: Path) -> None:
-    """GET /api/healthz returns 200 when the index is populated, reconciled, and healthy.
-
-    The handler must confirm: schema present (get_stats succeeds), at least one
-    reconciliation completed (last_reconcile_at is set), and integrity check
-    passes (quick_check returns True).
-    """
-    db_path = tmp_path / "index.db"
-    db_path.write_bytes(b"")
-    settings = _make_mock_settings(db_path=str(db_path))
-    store_reader = MagicMock()
-    store_reader.get_stats.return_value = IndexStats(
-        document_count=5,
-        chunk_count=20,
-        last_reconcile_at="2024-06-01T12:00:00Z",
-        embedding_model="text-embedding-3-small",
-    )
-    store_reader.quick_check.return_value = True
-    client = _build_test_app(settings, store_reader=store_reader)
-    response = client.get("/api/healthz")
-    assert response.status_code == 200
-    body = response.json()
-    assert body.get("status") == "ok"
-
-
-def test_healthz_does_not_require_auth() -> None:
-    """GET /api/healthz must be accessible without authentication."""
-    settings = _make_mock_settings(db_path="/nonexistent/index.db")
-    client = _build_test_app(settings)
-    # No auth header — must not get 401.
-    response = client.get("/api/healthz")
-    assert response.status_code != 401
-
-
-# ---------------------------------------------------------------------------
-# Reconcile — writes sentinel file and returns 202
+# Reconcile — writes the sentinel file and returns 202
 # ---------------------------------------------------------------------------
 
 
 def test_reconcile_writes_sentinel_and_returns_202(tmp_path: Path) -> None:
     """POST /api/reconcile must touch the sentinel file and return 202."""
-    settings = _make_mock_settings(tmp_reconcile_dir=str(tmp_path))
-    client = _build_test_app(settings)
+    client = build_test_client(_settings(db_path=str(tmp_path / "index.db")))
 
     response = client.post("/api/reconcile", headers=_bearer_headers())
     assert response.status_code == 202
-
-    sentinel = tmp_path / "reconcile.request"
-    assert sentinel.exists(), "Sentinel file was not created."
+    assert (tmp_path / "reconcile.request").exists(), "Sentinel was not created."
 
 
 def test_reconcile_does_not_write_index_db(tmp_path: Path) -> None:
     """POST /api/reconcile must ONLY write the sentinel; never the index DB."""
-    settings = _make_mock_settings(tmp_reconcile_dir=str(tmp_path))
-    client = _build_test_app(settings)
+    client = build_test_client(_settings(db_path=str(tmp_path / "index.db")))
     client.post("/api/reconcile", headers=_bearer_headers())
 
-    db_path = tmp_path / "index.db"
-    assert not db_path.exists(), "Reconcile must never write the index DB."
+    assert not (tmp_path / "index.db").exists(), (
+        "Reconcile must never write the index DB."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -456,16 +198,23 @@ def test_reconcile_does_not_write_index_db(tmp_path: Path) -> None:
 
 def test_search_returns_correctly_mapped_response() -> None:
     """POST /api/search must return a correctly-mapped SearchResponse."""
-    settings = _make_mock_settings()
-    search_result = _make_search_result(answer="The boiler warranty is 5 years.")
     core = MagicMock()
-    core.answer.return_value = search_result
-    client = _build_test_app(settings, core=core)
+    core.answer.return_value = make_search_result(
+        answer="The boiler warranty is 5 years.",
+        sources=(
+            make_source_document(
+                document_id=42,
+                title="Test Doc",
+                correspondent="ACME",
+                document_type="Invoice",
+                score=0.9,
+            ),
+        ),
+    )
+    client = build_test_client(_settings(), core=core)
 
     response = client.post(
-        "/api/search",
-        json={"query": "boiler warranty"},
-        headers=_bearer_headers(),
+        "/api/search", json={"query": "boiler warranty"}, headers=_bearer_headers()
     )
     assert response.status_code == 200
     body = response.json()
@@ -476,7 +225,6 @@ def test_search_returns_correctly_mapped_response() -> None:
     assert source["title"] == "Test Doc"
     assert source["correspondent"] == "ACME"
     assert source["score"] == pytest.approx(0.9)
-    # Plan and stats are present.
     assert "plan" in body
     assert "stats" in body
     assert body["stats"]["llm_calls"] == 2
@@ -485,10 +233,9 @@ def test_search_returns_correctly_mapped_response() -> None:
 
 def test_search_with_filters_passes_filters_to_core() -> None:
     """Filters in the search request must be forwarded to SearchCore."""
-    settings = _make_mock_settings()
     core = MagicMock()
-    core.answer.return_value = _make_search_result()
-    client = _build_test_app(settings, core=core)
+    core.answer.return_value = make_search_result()
+    client = build_test_client(_settings(), core=core)
 
     client.post(
         "/api/search",
@@ -519,11 +266,10 @@ def test_search_with_filters_passes_filters_to_core() -> None:
 
 def test_facets_returns_correctly_mapped_response() -> None:
     """GET /api/facets must return a correctly-mapped FacetsResponse."""
-    settings = _make_mock_settings()
     store_reader = MagicMock()
-    store_reader.list_facets.return_value = _make_facet_set()
+    store_reader.list_facets.return_value = _seeded_facets()
     store_reader.quick_check.return_value = True
-    client = _build_test_app(settings, store_reader=store_reader)
+    client = build_test_client(_settings(), store_reader=store_reader)
 
     response = client.get("/api/facets", headers=_bearer_headers())
     assert response.status_code == 200
@@ -545,11 +291,15 @@ def test_facets_returns_correctly_mapped_response() -> None:
 
 def test_stats_returns_correctly_mapped_response() -> None:
     """GET /api/stats must return a correctly-mapped StatsResponse."""
-    settings = _make_mock_settings()
     store_reader = MagicMock()
-    store_reader.get_stats.return_value = _make_index_stats()
+    store_reader.get_stats.return_value = make_index_stats(
+        document_count=100,
+        chunk_count=450,
+        last_reconcile_at="2024-06-01T12:00:00Z",
+        embedding_model="text-embedding-3-small",
+    )
     store_reader.quick_check.return_value = True
-    client = _build_test_app(settings, store_reader=store_reader)
+    client = build_test_client(_settings(), store_reader=store_reader)
 
     response = client.get("/api/stats", headers=_bearer_headers())
     assert response.status_code == 200
@@ -569,152 +319,20 @@ def test_index_db_is_not_served_over_http(tmp_path: Path) -> None:
     """The index DB must never be served via the static files mount."""
     db_path = tmp_path / "index.db"
     db_path.write_text("sensitive data")
-    settings = _make_mock_settings(db_path=str(db_path))
-    client = _build_test_app(settings)
+    client = build_test_client(_settings(db_path=str(db_path)))
 
-    # Attempt to access /index.db — should not serve the file.
     response = client.get("/index.db", headers=_bearer_headers())
     assert response.status_code in (404, 307, 302)
     assert "sensitive data" not in response.text
 
 
-def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
+def test_path_traversal_on_static_mount_is_rejected() -> None:
     """Path-traversal attempts on the static mount must not escape the frontend dir."""
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
 
-    # Attempt to traverse; FastAPI/Starlette rejects with 400 or 404.
-    response = client.get(
-        "/../../../../etc/passwd",
-        headers=_bearer_headers(),
-    )
+    # FastAPI/Starlette rejects path traversal with 400 or 404.
+    response = client.get("/../../../../etc/passwd", headers=_bearer_headers())
     assert response.status_code in (400, 404)
-
-
-# ---------------------------------------------------------------------------
-# Concurrency — SEARCH_MAX_CONCURRENT semaphore
-# ---------------------------------------------------------------------------
-
-
-def test_search_max_concurrent_semaphore_is_created_and_limits_search() -> None:
-    """SEARCH_MAX_CONCURRENT creates an asyncio.Semaphore that caps /api/search.
-
-    The semaphore is verified by checking that sequential requests all succeed
-    (200).  Concurrent multi-threaded load testing is out of scope for a unit
-    test — the integration and concurrent behaviour is covered by the
-    SEARCH_MAX_CONCURRENT setting on the real server.
-    """
-    settings = _make_mock_settings(max_concurrent=2)
-    core = MagicMock()
-    core.answer.return_value = _make_search_result()
-    client = _build_test_app(settings, core=core)
-
-    # Sequential requests within the limit must all succeed.
-    for _ in range(3):
-        response = client.post(
-            "/api/search",
-            json={"query": "test"},
-            headers=_bearer_headers(),
-        )
-        assert response.status_code == 200
-
-
-@pytest.mark.anyio
-async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
-    """The asyncio.Semaphore genuinely limits concurrent in-flight requests.
-
-    This test would fail if the semaphore were removed: it fires
-    ``SEARCH_MAX_CONCURRENT + 1`` concurrent coroutines against the ASGI app
-    (via ``httpx.AsyncClient``) and asserts that no more than
-    ``SEARCH_MAX_CONCURRENT`` requests are inside ``core.answer`` simultaneously
-    (verified via a peak counter shared across the executor threads).  After the
-    blocking event is released, all requests complete with 200.
-
-    Using a single ``httpx.AsyncClient`` guarantees that all requests share the
-    same event loop and therefore the same ``asyncio.Semaphore`` instance.
-    """
-    import asyncio
-
-    import httpx
-
-    from search.api import create_app
-
-    max_concurrent = 2
-    settings = _make_mock_settings(max_concurrent=max_concurrent)
-
-    # Shared mutable state across executor threads.
-    inside_counter = 0
-    peak_inside = 0
-    counter_lock = threading.Lock()
-    # All executor threads block on this; released by the test after sampling.
-    block_event = threading.Event()
-    # Counts how many threads are currently blocked, so we know when to sample.
-    blocked_count = 0
-    blocked_enough = threading.Event()
-
-    def blocking_answer(**_kwargs: Any) -> Any:
-        nonlocal inside_counter, peak_inside, blocked_count
-        with counter_lock:
-            inside_counter += 1
-            blocked_count += 1
-            if inside_counter > peak_inside:
-                peak_inside = inside_counter
-            # Signal once enough threads are blocked (the semaphore-limited batch).
-            if blocked_count >= max_concurrent:
-                blocked_enough.set()
-        block_event.wait(timeout=5.0)
-        with counter_lock:
-            inside_counter -= 1
-        return _make_search_result()
-
-    core = MagicMock()
-    core.answer.side_effect = blocking_answer
-
-    app = create_app(settings, core=core, store_reader=MagicMock(
-        list_facets=MagicMock(return_value=None),
-        get_stats=MagicMock(return_value=None),
-        quick_check=MagicMock(return_value=True),
-    ))
-
-    total_requests = max_concurrent + 1
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
-        base_url="https://testserver",
-    ) as aclient:
-        # Fire all requests concurrently in the same event loop.
-        tasks = [
-            asyncio.create_task(
-                aclient.post(
-                    "/api/search",
-                    json={"query": "test"},
-                    headers=_bearer_headers(),
-                )
-            )
-            for _ in range(total_requests)
-        ]
-
-        # Wait until at least max_concurrent executor threads are inside
-        # core.answer, confirming the semaphore is holding one request back.
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: blocked_enough.wait(timeout=5.0))
-
-        # Sample the peak before releasing.
-        with counter_lock:
-            observed_peak = peak_inside
-
-        assert observed_peak <= max_concurrent, (
-            f"Semaphore breached: {observed_peak} concurrent calls inside "
-            f"core.answer, limit is {max_concurrent}"
-        )
-
-        # Release all blocked threads.
-        block_event.set()
-        responses = await asyncio.gather(*tasks)
-
-    # All requests must ultimately succeed.
-    statuses = [r.status_code for r in responses]
-    assert all(s == 200 for s in statuses), f"Some requests failed: {statuses}"
 
 
 # ---------------------------------------------------------------------------
@@ -744,9 +362,9 @@ def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
         patch("common.library_setup.setup_libraries"),
         patch("common.shutdown.register_signal_handlers"),
         patch("search.api.uvicorn.run") as mock_uvicorn,
+        pytest.raises(SystemExit) as exc_info,
     ):
-        with pytest.raises(SystemExit) as exc_info:
-            main()
+        main()
 
     assert exc_info.value.code != 0, "main() must exit non-zero for a whitespace key"
     mock_uvicorn.assert_not_called()
@@ -760,16 +378,31 @@ def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
 def test_search_returns_422_when_query_exceeds_max_length() -> None:
     """POST /api/search returns 422 when query exceeds the 4000-character limit.
 
-    Pydantic enforces max_length=4000 on SearchRequest.query; this test
-    confirms the constraint is present and active.
+    Pydantic enforces ``max_length=MAX_QUERY_LENGTH`` on SearchRequest.query;
+    this test confirms the constraint is present and active.
     """
-    settings = _make_mock_settings()
-    client = _build_test_app(settings)
+    client = build_test_client(_settings())
 
     too_long_query = "x" * 4001
     response = client.post(
-        "/api/search",
-        json={"query": too_long_query},
-        headers=_bearer_headers(),
+        "/api/search", json={"query": too_long_query}, headers=_bearer_headers()
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Session-token helper sanity — used by the cookie auth path
+# ---------------------------------------------------------------------------
+
+
+def test_issued_session_token_authorises_search() -> None:
+    """A directly-issued session token, set as the cookie, authorises /api/search.
+
+    Confirms the cookie path independently of the login handshake.
+    """
+    client = build_test_client(_settings())
+    token = issue_session_token(_API_KEY, ttl_seconds=3600, now=time.time())
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post("/api/search", json={"query": "test"})
+    assert response.status_code == 200

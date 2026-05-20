@@ -28,12 +28,11 @@ import pytest
 from starlette.testclient import TestClient
 
 from search.mcp_server import build_mcp_app
-from search.models import (
-    FilterCandidates,
-    QueryPlan,
-    SearchResult,
-    SearchStats,
-    SourceDocument,
+from search.models import SearchResult
+from tests.helpers.factories import (
+    make_search_result,
+    make_search_settings,
+    make_source_document,
 )
 
 # ---------------------------------------------------------------------------
@@ -50,63 +49,26 @@ _WRONG_KEY = "wrong-key"
 # ---------------------------------------------------------------------------
 
 
-def _make_filter_candidates() -> FilterCandidates:
-    return FilterCandidates(
-        correspondent=None,
-        document_type=None,
-        tags=(),
-        date_from=None,
-        date_to=None,
-    )
-
-
-def _make_query_plan() -> QueryPlan:
-    return QueryPlan(
-        semantic_queries=("test query",),
-        keyword_terms=(),
-        filter_candidates=_make_filter_candidates(),
-        sub_questions=(),
-    )
-
-
-def _make_source() -> SourceDocument:
-    return SourceDocument(
-        document_id=42,
-        title="Invoice 2024",
-        correspondent="Acme Ltd",
-        document_type="Invoice",
-        created="2024-01-15",
-        snippet="Invoice for services rendered",
-        paperless_url="http://paperless:8000/documents/42/",
-        score=0.95,
-    )
-
-
-def _make_retrieve_result() -> SearchResult:
-    """A retrieve() result — no answer, just sources."""
-    return SearchResult(
+def _retrieve_result() -> SearchResult:
+    """A retrieve() result — no answer, just one source."""
+    return make_search_result(
         answer="",
-        sources=(_make_source(),),
-        plan=_make_query_plan(),
-        stats=SearchStats(llm_calls=1, latency_ms=50, refined=False),
+        sources=(make_source_document(document_id=42, title="Invoice 2024"),),
+        stats=None,
     )
 
 
-def _make_answer_result() -> SearchResult:
-    """An answer() result — synthesised answer + sources."""
-    return SearchResult(
+def _answer_result() -> SearchResult:
+    """An answer() result — a synthesised answer plus one source."""
+    return make_search_result(
         answer="The invoice from Acme Ltd covers services rendered in January 2024.",
-        sources=(_make_source(),),
-        plan=_make_query_plan(),
-        stats=SearchStats(llm_calls=2, latency_ms=200, refined=False),
+        sources=(make_source_document(document_id=42, title="Invoice 2024"),),
     )
 
 
 def _make_settings(api_key: str = _API_KEY) -> MagicMock:
-    """Create a minimal Settings-like object for the MCP server."""
-    settings = MagicMock()
-    settings.SEARCH_API_KEY = api_key
-    return settings
+    """Create a Settings-like mock for the MCP server, with a chosen API key."""
+    return make_search_settings(SEARCH_API_KEY=api_key)
 
 
 def _make_core(
@@ -115,8 +77,8 @@ def _make_core(
 ) -> MagicMock:
     """Create a SearchCore stub returning scripted results."""
     core = MagicMock()
-    core.retrieve.return_value = retrieve_result or _make_retrieve_result()
-    core.answer.return_value = answer_result or _make_answer_result()
+    core.retrieve.return_value = retrieve_result or _retrieve_result()
+    core.answer.return_value = answer_result or _answer_result()
     return core
 
 
@@ -130,7 +92,7 @@ async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
     """search_documents invokes core.retrieve and exposes sources without answer."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    retrieve_result = _make_retrieve_result()
+    retrieve_result = _retrieve_result()
     core = _make_core(retrieve_result=retrieve_result)
     settings = _make_settings()
 
@@ -158,7 +120,7 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
     """ask_documents invokes core.answer and returns answer + sources."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    answer_result = _make_answer_result()
+    answer_result = _answer_result()
     core = _make_core(answer_result=answer_result)
     settings = _make_settings()
 
