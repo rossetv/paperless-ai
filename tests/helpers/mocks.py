@@ -5,7 +5,31 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-from tests.helpers.factories import make_document, make_settings_obj
+from tests.helpers.factories import (
+    DEFAULT_EMBEDDING_DIMENSIONS,
+    make_document,
+    make_embedding,
+    make_settings_obj,
+)
+
+
+def make_mock_embedding_client(
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
+) -> MagicMock:
+    """Create a MagicMock that behaves like a ``common.embeddings.EmbeddingClient``.
+
+    ``embed(texts)`` returns one deterministic unit vector per input text,
+    built by :func:`tests.helpers.factories.make_embedding` — so the indexer
+    worker, the reconciler, and the pipeline tests share a single embedding
+    client mock instead of hand-rolling the ``1/sqrt(d)`` literal each.
+
+    Args:
+        dimensions: Width of every returned embedding vector.
+    """
+    client = MagicMock()
+    vector = list(make_embedding(dimensions))
+    client.embed.side_effect = lambda texts: [list(vector) for _ in texts]
+    return client
 
 
 def make_mock_embeddings(
@@ -130,3 +154,42 @@ def make_mock_classify_provider(**overrides: Any) -> MagicMock:
         setattr(mock, key, value)
 
     return mock
+
+
+def make_reconciler_paperless(
+    *,
+    documents: list[dict] | None = None,
+    all_ids: list[int] | None = None,
+    correspondents: list[dict] | None = None,
+) -> MagicMock:
+    """Create a mock PaperlessClient for the reconciler unit and integration tests.
+
+    The incremental sync calls ``iter_all_documents(modified_after=...)`` — the
+    keyword is always passed, even when its value is None on the first run.
+    The deletion sweep calls ``iter_all_documents()`` with no keyword at all.
+    The side effect disambiguates on keyword *presence*: an incremental call
+    yields *documents*, a sweep call yields *all_ids* as bare-id docs.
+    Disambiguating on a ``None`` value instead would misroute a first-run
+    incremental sync into the sweep branch.
+
+    Args:
+        documents: Documents an incremental call returns.
+        all_ids: Document ids a deletion-sweep enumeration returns.
+        correspondents: Correspondent taxonomy entries ``list_correspondents``
+            returns; defaults to an empty list.
+    """
+    paperless = MagicMock()
+    docs = documents if documents is not None else []
+    ids = all_ids if all_ids is not None else []
+
+    def _iter_all_documents(**kwargs: Any) -> list[dict]:
+        if "modified_after" in kwargs:
+            return docs
+        return [{"id": doc_id} for doc_id in ids]
+
+    paperless.iter_all_documents.side_effect = _iter_all_documents
+    paperless.list_correspondents.return_value = correspondents or []
+    paperless.list_document_types.return_value = []
+    paperless.list_tags.return_value = []
+    paperless.document_exists.return_value = False
+    return paperless
