@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import sys
 import time
+import typing
+from collections.abc import Callable
 from pathlib import Path
 
 import structlog
@@ -75,7 +77,7 @@ def main() -> None:
         lock_handle.close()
 
 
-def _start_daemon(settings: Settings, lock_handle: object) -> None:
+def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
     """Run signal registration, preflight, and the reconciliation loop.
 
     Separated from main() so tests can inject a fake lock without needing a
@@ -83,7 +85,9 @@ def _start_daemon(settings: Settings, lock_handle: object) -> None:
 
     Args:
         settings: Loaded application settings.
-        lock_handle: The open flock file handle (kept open to hold the lock).
+        lock_handle: The open flock file handle from
+            :func:`~indexer.lock.acquire_writer_lock`, kept open to hold the
+            lock for the process lifetime.
     """
     register_signal_handlers()
 
@@ -97,8 +101,13 @@ def _start_daemon(settings: Settings, lock_handle: object) -> None:
     embedding_client = EmbeddingClient(settings)
     try:
         _run_preflight(settings, paperless, embedding_client)
-    except Exception as exc:
-        log.critical("indexer.preflight_failed", error=str(exc))
+    except Exception:
+        # rationale: startup-preflight fatal boundary — any failure verifying
+        # Paperless reachability or the embedding model must stop the daemon
+        # before it starts indexing (fail closed, CODE_GUIDELINES §1.11).
+        # exc_info=True keeps the CRITICAL level while attaching the traceback,
+        # which a plain error=str(exc) would discard on this fatal-exit path.
+        log.critical("indexer.preflight_failed", exc_info=True)
         paperless.close()
         sys.exit(2)
 
@@ -111,8 +120,13 @@ def _start_daemon(settings: Settings, lock_handle: object) -> None:
                 "indexer.embedding_model_rebuild_triggered",
                 advice="All chunks wiped; next reconciliation re-embeds everything.",
             )
-    except Exception as exc:
-        log.critical("indexer.store_preflight_failed", error=str(exc))
+    except Exception:
+        # rationale: startup-preflight fatal boundary — a store error opening
+        # or migrating the index, or applying an embedding-model change, must
+        # stop the daemon before the loop runs (CODE_GUIDELINES §1.11).
+        # exc_info=True keeps the CRITICAL level and attaches the traceback the
+        # operator needs; error=str(exc) would discard the stack.
+        log.critical("indexer.store_preflight_failed", exc_info=True)
         paperless.close()
         store_writer.close()
         sys.exit(3)
@@ -183,7 +197,7 @@ def _run_loop(
     reconcile_interval: int,
     deletion_sweep_interval: int,
     sentinel_path: Path,
-    _last_sweep_at: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """Run the reconciliation loop until shutdown is requested.
 
@@ -212,11 +226,14 @@ def _run_loop(
             (DELETION_SWEEP_INTERVAL).
         sentinel_path: Path to the manual-trigger sentinel file
             (``<data-dir>/reconcile.request``).
-        _last_sweep_at: Internal — monotonic timestamp of the last sweep;
-            defaults to 0 so the first cycle always sweeps.  Exposed as a
-            parameter for test injection.
+        clock: Monotonic-seconds source used to schedule the deletion sweep.
+            Defaults to :func:`time.monotonic`; tests inject a deterministic
+            clock to drive the sweep cadence without real elapsed time
+            (CODE_GUIDELINES §11.4).
     """
-    last_sweep_at: float = _last_sweep_at if _last_sweep_at is not None else 0.0
+    # Start the sweep clock at 0 so the first cycle is always far enough past
+    # the (zero) last-sweep time to run a deletion sweep.
+    last_sweep_at: float = 0.0
 
     while not is_shutdown_requested():
         # Consume a manual trigger at cycle entry — it forces a deletion sweep
@@ -226,7 +243,7 @@ def _run_loop(
             log.info("indexer.manual_trigger_consumed")
 
         # Determine whether a deletion sweep is due this cycle.
-        elapsed = time.monotonic() - last_sweep_at
+        elapsed = clock() - last_sweep_at
         run_sweep = manual_trigger or elapsed >= deletion_sweep_interval
 
         try:
@@ -244,7 +261,7 @@ def _run_loop(
             # Run deletion sweep when due.
             if run_sweep:
                 sweep_report = reconciler.deletion_sweep()
-                last_sweep_at = time.monotonic()
+                last_sweep_at = clock()
                 log.info(
                     "indexer.cycle_sweep",
                     pruned=sweep_report.pruned,

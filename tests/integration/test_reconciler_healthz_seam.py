@@ -102,7 +102,7 @@ class TestReconcilerHealthzSeam:
         # real documents in this cycle (Paperless returns empty), so the
         # worker is never called.  The stub is here as a safety net.
         monkeypatch.setattr(
-            "indexer.reconciler.DocumentIndexer.index_document",
+            "indexer.worker.DocumentIndexer.index_document",
             lambda _self, doc, existing: IndexOutcome.INDEXED,
         )
 
@@ -148,7 +148,7 @@ class TestReconcilerHealthzSeam:
         store_writer = StoreWriter(settings)
 
         monkeypatch.setattr(
-            "indexer.reconciler.DocumentIndexer.index_document",
+            "indexer.worker.DocumentIndexer.index_document",
             lambda _self, doc, existing: IndexOutcome.INDEXED,
         )
 

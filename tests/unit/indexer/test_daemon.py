@@ -1,45 +1,40 @@
-"""Tests for indexer.daemon — the reconciliation daemon loop.
+"""Tests for indexer.daemon._run_loop — the reconciliation daemon loop.
 
 Behavioural promises tested:
 
 1. The loop runs one incremental_sync + checkpoint each cycle, then waits.
-2. is_shutdown_requested() becoming True ends the loop promptly (no full-wait
-   needed) and the loop does not run another cycle.
-3. A present reconcile.request sentinel shortens the wait, is deleted, and the
-   next cycle includes a deletion_sweep.
-4. A contended flock causes main() to exit non-zero (sys.exit with non-zero
-   code); a successful lock acquisition lets main proceed.
+2. is_shutdown_requested() becoming True ends the loop promptly and the loop
+   does not run another cycle.
+3. A present reconcile.request sentinel forces the next cycle to include a
+   deletion_sweep.
+4. A cycle-level failure is isolated; the loop survives and the next cycle
+   retries, and a failed cycle never advances the deletion-sweep clock.
 5. The deletion sweep runs only when DELETION_SWEEP_INTERVAL has elapsed since
    the last sweep — or a manual trigger forced a full cycle.
+
+The sweep cadence is driven by an injected ``clock`` (CODE_GUIDELINES §11.4):
+a test passes a deterministic clock so the loop reaches a chosen elapsed time
+without real time passing.  The flock-acquisition and ``_interruptible_wait``
+tests live in test_daemon_main.py — the daemon's tests are split across two
+files for the 500-line ceiling (CODE_GUIDELINES §3.1).
 """
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import common.shutdown as shutdown_mod
-from indexer.daemon import _WAKE_CHECK_INTERVAL, _interruptible_wait, _run_loop
+from indexer.daemon import _run_loop
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Helpers
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _reset_shutdown():
-    """Ensure the process-global shutdown flag is clear before and after each test."""
-    shutdown_mod.reset_shutdown()
-    yield
-    shutdown_mod.reset_shutdown()
 
 
 def _make_reconciler() -> MagicMock:
+    """Return a mock Reconciler whose two operations report empty outcomes."""
     reconciler = MagicMock()
     reconciler.incremental_sync.return_value = MagicMock(
         indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0
@@ -50,12 +45,6 @@ def _make_reconciler() -> MagicMock:
     return reconciler
 
 
-def _make_store_writer() -> MagicMock:
-    writer = MagicMock()
-    writer.checkpoint.return_value = None
-    return writer
-
-
 # ---------------------------------------------------------------------------
 # 1. Loop runs one cycle (incremental_sync + checkpoint), then waits
 # ---------------------------------------------------------------------------
@@ -64,10 +53,7 @@ def _make_store_writer() -> MagicMock:
 def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) -> None:
     """One cycle: incremental_sync called, then checkpoint, then the wait begins."""
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-
-    # After the first cycle completes (past checkpoint), request shutdown so
-    # the loop exits cleanly rather than running forever.
+    store_writer = MagicMock()
     wait_count = 0
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
@@ -77,14 +63,13 @@ def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) ->
         shutdown_mod.request_shutdown()
         return False  # no manual trigger pending
 
-    sentinel_path = tmp_path / "reconcile.request"
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
             reconcile_interval=300,
             deletion_sweep_interval=3600,
-            sentinel_path=sentinel_path,
+            sentinel_path=tmp_path / "reconcile.request",
         )
 
     reconciler.incremental_sync.assert_called_once()
@@ -100,8 +85,7 @@ def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) ->
 def test_shutdown_ends_loop_promptly(tmp_path: Path) -> None:
     """Requesting shutdown before the loop runs causes it to exit immediately."""
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
 
     shutdown_mod.request_shutdown()
 
@@ -110,7 +94,7 @@ def test_shutdown_ends_loop_promptly(tmp_path: Path) -> None:
         store_writer=store_writer,
         reconcile_interval=300,
         deletion_sweep_interval=3600,
-        sentinel_path=sentinel_path,
+        sentinel_path=tmp_path / "reconcile.request",
     )
 
     # The loop must have checked the flag at entry and exited without doing work.
@@ -121,8 +105,7 @@ def test_shutdown_ends_loop_promptly(tmp_path: Path) -> None:
 def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
     """Shutdown requested during the wait does not run another full cycle."""
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
     cycles: list[int] = []
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
@@ -136,7 +119,7 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
             store_writer=store_writer,
             reconcile_interval=300,
             deletion_sweep_interval=3600,
-            sentinel_path=sentinel_path,
+            sentinel_path=tmp_path / "reconcile.request",
         )
 
     # Exactly one cycle ran before the loop noticed shutdown.
@@ -145,7 +128,7 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2b. A cycle-level failure does not crash the daemon (C1)
+# 4. A cycle-level failure does not crash the daemon
 # ---------------------------------------------------------------------------
 
 
@@ -156,12 +139,10 @@ def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
 
     The cycle body is wrapped in an exception boundary (CODE_GUIDELINES §6.4)
     mirroring common/daemon_loop: a transient cycle-level failure is logged and
-    the loop falls through to the wait, so the next cycle retries.  Before the
-    fix this exception propagated straight out and crashed the daemon.
+    the loop falls through to the wait, so the next cycle retries.
     """
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
 
     # First call raises (transient failure); second call succeeds.
     reconciler.incremental_sync.side_effect = [
@@ -186,30 +167,27 @@ def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
             store_writer=store_writer,
             reconcile_interval=300,
             deletion_sweep_interval=3600,
-            sentinel_path=sentinel_path,
+            sentinel_path=tmp_path / "reconcile.request",
         )
 
     # The loop survived the failure and ran a second cycle.
     assert reconciler.incremental_sync.call_count == 2
-    # Both cycles reached the wait — the failure fell through, it did not abort.
     assert wait_count == 2
 
 
 def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
     tmp_path: Path,
 ) -> None:
-    """A failed cycle must not advance last_sweep_at — the sweep retries next cycle.
+    """A failed cycle must not advance the sweep clock — the sweep retries next cycle.
 
-    The sweep was due on the first cycle.  incremental_sync raises before the
-    sweep runs, so last_sweep_at must stay put and the sweep must run on the
-    next (successful) cycle.
+    The sweep is due on the first cycle (last sweep at 0, interval 1).
+    incremental_sync raises before the sweep runs, so the sweep must run on the
+    next (successful) cycle.  The default monotonic clock makes "elapsed" far
+    larger than the interval on both cycles.
     """
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
 
-    # Cycle 1: incremental_sync raises before the sweep can run.
-    # Cycle 2: incremental_sync succeeds and the sweep should finally fire.
     reconciler.incremental_sync.side_effect = [
         RuntimeError("cycle 1 failed before the sweep"),
         MagicMock(indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0),
@@ -225,15 +203,12 @@ def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
         return False
 
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
-        # last_sweep_at = 0 and a long-elapsed monotonic clock → sweep is due
-        # every cycle; deletion_sweep_interval kept small so both cycles qualify.
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
             reconcile_interval=300,
             deletion_sweep_interval=1,
-            sentinel_path=sentinel_path,
-            _last_sweep_at=0.0,  # type: ignore[call-arg]
+            sentinel_path=tmp_path / "reconcile.request",
         )
 
     # Cycle 1 failed before the sweep; cycle 2 succeeded and swept exactly once.
@@ -244,8 +219,7 @@ def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
 def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
     """A deletion_sweep that raises is isolated by the same cycle boundary."""
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
 
     reconciler.deletion_sweep.side_effect = ConnectionError("sweep enumeration died")
 
@@ -264,8 +238,7 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
             store_writer=store_writer,
             reconcile_interval=300,
             deletion_sweep_interval=1,
-            sentinel_path=sentinel_path,
-            _last_sweep_at=0.0,  # type: ignore[call-arg]
+            sentinel_path=tmp_path / "reconcile.request",
         )
 
     assert reconciler.deletion_sweep.call_count == 1
@@ -274,25 +247,19 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Manual-trigger sentinel shortens wait and forces deletion_sweep
+# 3. Manual-trigger sentinel forces a deletion_sweep
 # ---------------------------------------------------------------------------
 
 
 def test_sentinel_present_is_deleted_and_forces_deletion_sweep(tmp_path: Path) -> None:
     """A reconcile.request sentinel is deleted and the next cycle runs deletion_sweep."""
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
+    store_writer = MagicMock()
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()
 
-    call_count = 0
-
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
-        nonlocal call_count
-        call_count += 1
         shutdown_mod.request_shutdown()
-        # First call: no sentinel (it was already consumed before the wait);
-        # return False (no further trigger).
         return False
 
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
@@ -304,120 +271,11 @@ def test_sentinel_present_is_deleted_and_forces_deletion_sweep(tmp_path: Path) -
             sentinel_path=sentinel_path,
         )
 
-    # The sentinel must have been consumed (deleted) before the loop started
-    # waiting.
+    # The sentinel must have been consumed (deleted) before the loop waited.
     assert not sentinel_path.exists()
     # A manual trigger at cycle-start forces a deletion_sweep regardless of
     # whether the interval has elapsed.
     reconciler.deletion_sweep.assert_called_once()
-
-
-def test_sentinel_written_during_wait_shortens_wait(tmp_path: Path) -> None:
-    """_interruptible_wait returns True when it detects the sentinel mid-wait."""
-    sentinel_path = tmp_path / "reconcile.request"
-
-    def _write_sentinel_then_check(seconds: float, sentinel: Path) -> bool:
-        sentinel.touch()
-        # Re-invoke the real logic by letting the actual function run one slice.
-        # We cannot call the real function here without re-entering it, so we
-        # directly test _interruptible_wait below.
-        return True
-
-    # Test _interruptible_wait directly: create the sentinel partway through.
-    sentinel_path.touch()
-    triggered = _interruptible_wait(seconds=60.0, sentinel_path=sentinel_path)
-
-    assert triggered is True
-    assert not sentinel_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# 4. Contended flock causes main() to exit non-zero
-# ---------------------------------------------------------------------------
-
-
-def test_main_exits_nonzero_when_lock_contended(tmp_path: Path, monkeypatch) -> None:
-    """main() calls sys.exit with a non-zero code when the flock is already held."""
-    from indexer.lock import IndexerLockError
-
-    # Patch acquire_writer_lock to simulate a contended lock.
-    monkeypatch.setattr(
-        "indexer.daemon.acquire_writer_lock",
-        lambda path: (_ for _ in ()).throw(IndexerLockError("lock held")),
-    )
-    # Stub out Settings and bootstrap so we don't need real env vars.
-    # daemon.main() calls Settings.from_environment(), so the stand-in must
-    # expose that classmethod.
-    mock_settings = MagicMock()
-    mock_settings.INDEX_DB_PATH = str(tmp_path / "index.db")
-    monkeypatch.setattr(
-        "indexer.daemon.Settings",
-        SimpleNamespace(from_environment=lambda: mock_settings),
-    )
-    monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
-    monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
-
-    with pytest.raises(SystemExit) as exc_info:
-        from indexer import daemon
-        daemon.main()
-
-    assert exc_info.value.code != 0
-
-
-def test_main_proceeds_when_lock_acquired(tmp_path: Path, monkeypatch) -> None:
-    """main() does not exit non-zero when the flock is successfully acquired."""
-    lock_file = tmp_path / "index.db.lock"
-    lock_handle = open(str(lock_file), "wb")
-
-    try:
-        mock_settings = MagicMock()
-        mock_settings.INDEX_DB_PATH = str(tmp_path / "index.db")
-        mock_settings.RECONCILE_INTERVAL = 1
-        mock_settings.DELETION_SWEEP_INTERVAL = 3600
-        mock_settings.DOCUMENT_WORKERS = 1
-
-        monkeypatch.setattr(
-            "indexer.daemon.Settings",
-            SimpleNamespace(from_environment=lambda: mock_settings),
-        )
-        monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
-        monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
-        monkeypatch.setattr(
-            "indexer.daemon.acquire_writer_lock", lambda path: lock_handle
-        )
-        monkeypatch.setattr(
-            "indexer.daemon.register_signal_handlers", lambda: None
-        )
-        # Preflight stubs.
-        monkeypatch.setattr(
-            "indexer.daemon.PaperlessClient",
-            lambda s: MagicMock(ping=lambda: None),
-        )
-        mock_embedding_client = MagicMock()
-        mock_embedding_client.embed.return_value = [[0.0]]
-        monkeypatch.setattr(
-            "indexer.daemon.EmbeddingClient",
-            lambda s: mock_embedding_client,
-        )
-        mock_store_writer = MagicMock()
-        mock_store_writer.check_embedding_model.return_value = False
-        mock_store_writer.checkpoint.return_value = None
-        monkeypatch.setattr(
-            "indexer.daemon.StoreWriter", lambda s: mock_store_writer
-        )
-        mock_reconciler = _make_reconciler()
-        monkeypatch.setattr(
-            "indexer.daemon.Reconciler",
-            lambda **kwargs: mock_reconciler,
-        )
-        # Force the loop to exit immediately on entry.
-        shutdown_mod.request_shutdown()
-
-        from indexer import daemon
-        # Should not raise SystemExit.
-        daemon.main()
-    finally:
-        lock_handle.close()
 
 
 # ---------------------------------------------------------------------------
@@ -426,60 +284,54 @@ def test_main_proceeds_when_lock_acquired(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_deletion_sweep_skipped_when_interval_not_elapsed(tmp_path: Path) -> None:
-    """No deletion_sweep when DELETION_SWEEP_INTERVAL has not elapsed."""
+    """No deletion_sweep when DELETION_SWEEP_INTERVAL has not elapsed.
+
+    The injected clock returns 1.0 throughout, so on the first cycle
+    ``elapsed = clock() - last_sweep_at`` is ``1.0 - 0.0`` — far short of the
+    3600s interval.
+    """
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    store_writer = MagicMock()
 
-    # last_sweep_at set to "just now" — interval not elapsed.
-    last_sweep_at = time.monotonic()
-    call_count = 0
-
-    def fake_wait(*, seconds: float, sentinel_path: Path) -> bool:
-        nonlocal call_count
-        call_count += 1
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
-        # Inject last_sweep_at so the interval check sees "just swept".
-        with patch("indexer.daemon.time") as mock_time:
-            # First call: now (cycle start); second call: now again (elapsed check).
-            mock_time.monotonic.return_value = last_sweep_at + 1.0  # 1s elapsed
-            _run_loop(
-                reconciler=reconciler,
-                store_writer=store_writer,
-                reconcile_interval=300,
-                deletion_sweep_interval=3600,
-                sentinel_path=sentinel_path,
-                _last_sweep_at=last_sweep_at,  # type: ignore[call-arg]
-            )
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=3600,
+            sentinel_path=tmp_path / "reconcile.request",
+            clock=lambda: 1.0,
+        )
 
     reconciler.deletion_sweep.assert_not_called()
 
 
 def test_deletion_sweep_runs_when_interval_elapsed(tmp_path: Path) -> None:
-    """deletion_sweep is called when DELETION_SWEEP_INTERVAL seconds have elapsed."""
-    reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
-    sentinel_path = tmp_path / "reconcile.request"
+    """deletion_sweep is called when DELETION_SWEEP_INTERVAL seconds have elapsed.
 
-    def fake_wait(*, seconds: float, sentinel_path: Path) -> bool:
+    The clock returns 3601.0, so on the first cycle ``elapsed`` is
+    ``3601.0 - 0.0`` — past the 3600s interval.
+    """
+    reconciler = _make_reconciler()
+    store_writer = MagicMock()
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
-        with patch("indexer.daemon.time") as mock_time:
-            # last_sweep_at = 0; now = 3601 → interval elapsed.
-            mock_time.monotonic.return_value = 3601.0
-            _run_loop(
-                reconciler=reconciler,
-                store_writer=store_writer,
-                reconcile_interval=300,
-                deletion_sweep_interval=3600,
-                sentinel_path=sentinel_path,
-                _last_sweep_at=0.0,  # type: ignore[call-arg]
-            )
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=3600,
+            sentinel_path=tmp_path / "reconcile.request",
+            clock=lambda: 3601.0,
+        )
 
     reconciler.deletion_sweep.assert_called_once()
 
@@ -487,69 +339,28 @@ def test_deletion_sweep_runs_when_interval_elapsed(tmp_path: Path) -> None:
 def test_deletion_sweep_runs_on_manual_trigger_regardless_of_interval(
     tmp_path: Path,
 ) -> None:
-    """A manual trigger forces deletion_sweep even if the interval has not elapsed."""
+    """A manual trigger forces deletion_sweep even if the interval has not elapsed.
+
+    The clock returns 1.0 — far short of the interval — so only the sentinel
+    can be responsible for the sweep running.
+    """
     reconciler = _make_reconciler()
-    store_writer = _make_store_writer()
+    store_writer = MagicMock()
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()  # sentinel present at cycle start
 
-    def fake_wait(*, seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
     with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
-        with patch("indexer.daemon.time") as mock_time:
-            # last_sweep_at = 0; now = 1 → interval NOT elapsed.
-            mock_time.monotonic.return_value = 1.0
-            _run_loop(
-                reconciler=reconciler,
-                store_writer=store_writer,
-                reconcile_interval=300,
-                deletion_sweep_interval=3600,
-                sentinel_path=sentinel_path,
-                _last_sweep_at=0.0,  # type: ignore[call-arg]
-            )
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            reconcile_interval=300,
+            deletion_sweep_interval=3600,
+            sentinel_path=sentinel_path,
+            clock=lambda: 1.0,
+        )
 
     reconciler.deletion_sweep.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# _interruptible_wait unit tests
-# ---------------------------------------------------------------------------
-
-
-def test_interruptible_wait_returns_false_on_shutdown(tmp_path: Path) -> None:
-    """_interruptible_wait returns False (no manual trigger) when shutdown fires."""
-    sentinel_path = tmp_path / "reconcile.request"
-
-    shutdown_mod.request_shutdown()
-    triggered = _interruptible_wait(seconds=60.0, sentinel_path=sentinel_path)
-
-    assert triggered is False
-
-
-def test_interruptible_wait_returns_false_when_full_duration_elapses(
-    tmp_path: Path,
-) -> None:
-    """_interruptible_wait returns False after the full wait with no sentinel/shutdown."""
-    sentinel_path = tmp_path / "reconcile.request"
-
-    # Use a very short wait so the test finishes quickly.
-    triggered = _interruptible_wait(
-        seconds=_WAKE_CHECK_INTERVAL * 0.5, sentinel_path=sentinel_path
-    )
-
-    assert triggered is False
-
-
-def test_interruptible_wait_deletes_sentinel_and_returns_true(
-    tmp_path: Path,
-) -> None:
-    """Sentinel present at the start of _interruptible_wait → returns True, deleted."""
-    sentinel_path = tmp_path / "reconcile.request"
-    sentinel_path.touch()
-
-    triggered = _interruptible_wait(seconds=60.0, sentinel_path=sentinel_path)
-
-    assert triggered is True
-    assert not sentinel_path.exists()
