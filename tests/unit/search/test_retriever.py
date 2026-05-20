@@ -15,8 +15,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import openai
 import pytest
 
+from common.embeddings import EmbeddingError
 from search.models import FilterCandidates, QueryPlan, RetrievedChunk
 from search.retriever import _RRF_K, Retriever, resolve_filters
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
@@ -576,3 +578,80 @@ def test_retrieve_embeds_sub_questions_for_vector_search() -> None:
     texts_embedded = embedding_client.embed.call_args[0][0]
     assert "main query" in texts_embedded
     assert "sub question" in texts_embedded
+
+
+# ---------------------------------------------------------------------------
+# retrieve — embedding failures degrade to empty, never propagate (finding C3)
+# ---------------------------------------------------------------------------
+
+
+def _retryable_openai_error() -> openai.APIConnectionError:
+    """A retryable OpenAI error — what embed() re-raises after exhausting retries."""
+    return openai.APIConnectionError(request=MagicMock())
+
+
+class TestRetrieveEmbeddingFailure:
+    """An embedding failure makes the query contribute nothing — retrieve never raises.
+
+    Finding C3: ``EmbeddingClient.embed`` raises ``EmbeddingError`` on a
+    non-retryable failure (bad key, 400) and re-raises a retryable OpenAI
+    error once its own retries are exhausted.  The retriever caught neither,
+    so a bad key or an embedding-endpoint outage turned every search into an
+    unhandled 500.  ``retrieve`` now degrades the affected query to empty.
+    """
+
+    def test_embedding_error_degrades_to_empty(self) -> None:
+        """An EmbeddingError out of embed() yields [] — keyword-only plan, no hit."""
+        settings = _make_settings(top_k=10)
+        store_reader = MagicMock()
+        embedding_client = MagicMock()
+        embedding_client.embed.side_effect = EmbeddingError("bad API key")
+        # No keyword terms, so with vector search dead there is nothing to fuse.
+        store_reader.keyword_search.return_value = []
+
+        retriever = Retriever(settings, store_reader, embedding_client)
+        plan = _make_query_plan(semantic_queries=("a query",))
+
+        # Must NOT raise.
+        chunks = retriever.retrieve(plan, _no_filters())
+
+        assert chunks == []
+        # Vector search is never reached when embedding fails.
+        store_reader.vector_search.assert_not_called()
+
+    def test_retryable_openai_error_degrades_to_empty(self) -> None:
+        """A retry-exhausted retryable OpenAI error out of embed() also degrades."""
+        settings = _make_settings(top_k=10)
+        store_reader = MagicMock()
+        embedding_client = MagicMock()
+        embedding_client.embed.side_effect = _retryable_openai_error()
+        store_reader.keyword_search.return_value = []
+
+        retriever = Retriever(settings, store_reader, embedding_client)
+        plan = _make_query_plan(semantic_queries=("a query",))
+
+        chunks = retriever.retrieve(plan, _no_filters())
+
+        assert chunks == []
+
+    def test_embedding_failure_still_allows_keyword_results(self) -> None:
+        """When vector embedding fails, keyword search still contributes hits."""
+        settings = _make_settings(top_k=10)
+        store_reader = MagicMock()
+        embedding_client = MagicMock()
+        embedding_client.embed.side_effect = EmbeddingError("embedding endpoint down")
+        # Keyword search still works and returns a hit.
+        store_reader.keyword_search.return_value = [
+            _make_chunk_hit(chunk_id=1, document_id=10),
+        ]
+
+        retriever = Retriever(settings, store_reader, embedding_client)
+        plan = _make_query_plan(
+            semantic_queries=("a query",),
+            keyword_terms=("term",),
+        )
+
+        chunks = retriever.retrieve(plan, _no_filters())
+
+        # The keyword hit survives even though vector embedding failed.
+        assert {c.chunk_id for c in chunks} == {1}

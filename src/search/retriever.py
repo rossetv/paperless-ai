@@ -11,7 +11,8 @@ authoritative (spec §6.1).
 
 Allowed deps: store.reader (SearchFilters, StoreReader), store.models (ChunkHit,
     FacetSet, TaxonomyEntry), search.models (FilterCandidates, QueryPlan,
-    RetrievedChunk), common.config (Settings), common.embeddings (EmbeddingClient).
+    RetrievedChunk), common.config (Settings), common.embeddings (EmbeddingClient,
+    EmbeddingError).
 Forbidden: no sqlite3, no FastAPI, no direct openai calls outside embeddings.
 """
 
@@ -23,8 +24,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import openai
 import structlog
 
+from common.embeddings import EmbeddingError
 from search.models import FilterCandidates, QueryPlan, RetrievedChunk
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
 from store.reader import SearchFilters, StoreReader
@@ -32,6 +35,15 @@ from store.reader import SearchFilters, StoreReader
 if TYPE_CHECKING:
     from common.config import Settings
     from common.embeddings import EmbeddingClient
+
+# Embedding failures that retrieval degrades over rather than propagates.
+# ``EmbeddingError`` is the non-retryable wrapper EmbeddingClient raises (bad
+# key, 400, …); the ``openai.APIError`` family covers a retryable error
+# (connection drop, rate limit, 5xx) that exhausted EmbeddingClient's retries
+# and was re-raised.  Either way the query embedding could not be produced, so
+# the affected query contributes nothing and the pipeline degrades to the
+# "no matching documents" result rather than returning a 500 (finding C3).
+_EMBEDDING_FAILURES = (EmbeddingError, openai.APIError)
 
 log = structlog.get_logger(__name__)
 
@@ -246,6 +258,34 @@ class Retriever:
         self._store_reader = store_reader
         self._embedding_client = embedding_client
 
+    def _embed_queries(self, texts: list[str]) -> list[list[float]]:
+        """Embed *texts*, degrading to an empty result on any embedding failure.
+
+        ``EmbeddingClient.embed`` raises ``EmbeddingError`` on a non-retryable
+        failure (a bad/expired key, a 400) and re-raises a retryable OpenAI
+        error once its own retries are exhausted (an embedding-endpoint outage,
+        sustained rate limiting).  A search must not 500 because the embedding
+        backend is down: this catches both, logs a warning, and returns ``[]``
+        so the query simply contributes no vector-search results — retrieval
+        then falls through to its existing empty path (finding C3).
+
+        Args:
+            texts: The semantic queries and sub-questions to embed.
+
+        Returns:
+            One vector per input, or ``[]`` when embedding failed entirely.
+        """
+        try:
+            return self._embedding_client.embed(texts)
+        except _EMBEDDING_FAILURES as exc:
+            log.warning(
+                "retriever.embedding_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                query_count=len(texts),
+            )
+            return []
+
     def retrieve(
         self,
         plan: QueryPlan,
@@ -278,7 +318,7 @@ class Retriever:
         texts_to_embed: list[str] = list(plan.semantic_queries) + list(plan.sub_questions)
 
         if texts_to_embed:
-            embeddings = self._embedding_client.embed(texts_to_embed)
+            embeddings = self._embed_queries(texts_to_embed)
             for embedding in embeddings:
                 hits = self._store_reader.vector_search(embedding, top_k, filters)
                 if hits:
