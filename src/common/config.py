@@ -7,6 +7,9 @@ from typing import Literal
 
 from .constants import REFUSAL_PHRASES
 
+# Default store path used by the indexer and search server.
+_DEFAULT_INDEX_DB_PATH = "/data/index.db"
+
 # Default URLs used when environment variables are not set.
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
 _DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1/"
@@ -60,6 +63,29 @@ class Settings:
     CLASSIFY_TAIL_PAGES: int
     CLASSIFY_HEADERLESS_CHAR_LIMIT: int
 
+    # Indexer / store settings (semantic-search spec §10)
+    INDEX_DB_PATH: str
+    EMBEDDING_MODEL: str
+    EMBEDDING_DIMENSIONS: int
+    EMBEDDING_MAX_CONCURRENT: int
+    RECONCILE_INTERVAL: int
+    DELETION_SWEEP_INTERVAL: int
+    CHUNK_SIZE: int
+    CHUNK_OVERLAP: int
+
+    # Search-server settings (semantic-search spec §10)
+    SEARCH_TOP_K: int
+    SEARCH_MAX_REFINEMENTS: int
+    SEARCH_PLANNER_MODEL: str
+    SEARCH_ANSWER_MODEL: str
+    SEARCH_SERVER_HOST: str
+    SEARCH_SERVER_PORT: int
+    # Default is empty string; emptiness validated at search-server preflight,
+    # not here — the indexer daemon does not require this key.
+    SEARCH_API_KEY: str
+    SEARCH_SESSION_TTL: int
+    SEARCH_MAX_CONCURRENT: int
+
     def __init__(self):
         self._load_api_settings()
         self._load_llm_settings()
@@ -68,6 +94,8 @@ class Settings:
         self._load_image_settings()
         self._load_logging_settings()
         self._load_classification_settings()
+        self._load_index_settings()
+        self._load_search_settings()
 
     def _load_api_settings(self) -> None:
         self.PAPERLESS_URL = os.getenv("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip(
@@ -110,7 +138,10 @@ class Settings:
         self.OCR_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
             "OCR_PROCESSING_TAG_ID"
         )
-        self.CLASSIFY_PRE_TAG_ID = self._get_optional_int_env(
+        # The default is POST_TAG_ID (an int), so the result is never None in
+        # practice; the helper's return type is int | None because it cannot
+        # express "only None when the default is None".
+        self.CLASSIFY_PRE_TAG_ID = self._get_optional_int_env(  # type: ignore[assignment]
             "CLASSIFY_PRE_TAG_ID", self.POST_TAG_ID
         )
         self.CLASSIFY_POST_TAG_ID = self._get_optional_positive_int_env(
@@ -166,6 +197,44 @@ class Settings:
         self.CLASSIFY_HEADERLESS_CHAR_LIMIT = max(
             0, int(os.getenv("CLASSIFY_HEADERLESS_CHAR_LIMIT", "15000"))
         )
+
+    def _load_index_settings(self) -> None:
+        """Load indexer and store settings (semantic-search spec §10)."""
+        self.INDEX_DB_PATH = os.getenv("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH)
+        self.EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        self.EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+        self.EMBEDDING_MAX_CONCURRENT = int(os.getenv("EMBEDDING_MAX_CONCURRENT", "4"))
+        self.RECONCILE_INTERVAL = int(os.getenv("RECONCILE_INTERVAL", "300"))
+        self.DELETION_SWEEP_INTERVAL = int(os.getenv("DELETION_SWEEP_INTERVAL", "3600"))
+        self.CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2000"))
+        self.CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "256"))
+
+    def _load_search_settings(self) -> None:
+        """Load search-server settings (semantic-search spec §10).
+
+        Provider-aware defaults for SEARCH_PLANNER_MODEL and SEARCH_ANSWER_MODEL
+        mirror the _load_llm_settings pattern: cheaper/faster model for planning,
+        stronger model for answer synthesis.
+        """
+        self.SEARCH_TOP_K = int(os.getenv("SEARCH_TOP_K", "10"))
+        self.SEARCH_MAX_REFINEMENTS = int(os.getenv("SEARCH_MAX_REFINEMENTS", "1"))
+
+        if self.LLM_PROVIDER == "ollama":
+            default_planner_model = "gemma3:12b"
+            default_answer_model = "gemma3:27b"
+        else:
+            default_planner_model = "gpt-5.4-mini"
+            default_answer_model = "gpt-5.4"
+
+        self.SEARCH_PLANNER_MODEL = os.getenv("SEARCH_PLANNER_MODEL", default_planner_model)
+        self.SEARCH_ANSWER_MODEL = os.getenv("SEARCH_ANSWER_MODEL", default_answer_model)
+        self.SEARCH_SERVER_HOST = os.getenv("SEARCH_SERVER_HOST", "0.0.0.0")
+        self.SEARCH_SERVER_PORT = int(os.getenv("SEARCH_SERVER_PORT", "8080"))
+        # Empty default is intentional — the search server validates non-empty at
+        # preflight; the indexer does not require this key (spec §10, §10.1).
+        self.SEARCH_API_KEY = os.getenv("SEARCH_API_KEY", "")
+        self.SEARCH_SESSION_TTL = int(os.getenv("SEARCH_SESSION_TTL", "604800"))
+        self.SEARCH_MAX_CONCURRENT = int(os.getenv("SEARCH_MAX_CONCURRENT", "4"))
 
     def _get_required_env(self, var_name: str) -> str:
         value = os.getenv(var_name)
