@@ -1,0 +1,159 @@
+"""Versioned migration runner for the search index store.
+
+Owns the ordered list of migration functions and the logic that applies
+pending migrations to a SQLite connection on startup.  Each migration runs
+inside its own transaction; the schema_version in meta is advanced after
+each one commits.
+
+This module also defines StoreError — the store package's base exception type.
+All other store modules raise StoreError (or a subclass) for domain failures.
+
+Allowed deps: sqlite3, store.schema (for _SCHEMA), structlog.
+Forbidden: imports from any package above store/ in the layer hierarchy.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+import structlog
+
+if TYPE_CHECKING:
+    pass
+
+log = structlog.get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Domain exception
+# ---------------------------------------------------------------------------
+
+
+class StoreError(Exception):
+    """Base exception for all store-layer failures.
+
+    Raised when the store encounters a condition it cannot handle safely —
+    such as an unknown future schema version — that the caller must address.
+    Callers that need to distinguish specific failures subclass this type.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Migration functions (private)
+# ---------------------------------------------------------------------------
+
+
+def _migrate_v1(conn: sqlite3.Connection) -> None:
+    """Apply the v1 schema: all tables, virtual tables, and indexes.
+
+    Executes _SCHEMA from store.schema via executescript.  Every statement
+    uses IF NOT EXISTS so re-running is harmless, though the migration runner
+    only calls this when the stored schema_version is 0.
+
+    The import is deferred to the function body to break the mutual import
+    cycle: schema.py imports run_migrations from this module, and this
+    function needs _SCHEMA from schema.py.  A module-level import would cause
+    a circular ImportError; a local import resolves after both modules are
+    initialised.
+    """
+    # Local import to break the schema ↔ migrations circular dependency.
+    from store.schema import _SCHEMA  # noqa: PLC0415
+
+    conn.executescript(_SCHEMA)
+
+
+# ---------------------------------------------------------------------------
+# Migration registry
+# ---------------------------------------------------------------------------
+
+# Ordered list of (version, migration_function) pairs.  The version is the
+# schema_version value written to meta *after* the migration commits.  Entries
+# must be in strictly ascending version order; the runner relies on this.
+MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
+    (1, _migrate_v1),
+]
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+
+def run_migrations(conn: sqlite3.Connection) -> None:
+    """Apply all pending migrations to *conn* and advance schema_version.
+
+    Reads meta.schema_version (treated as 0 when the meta table or its row
+    does not exist — a fresh database has neither).  Applies every migration
+    whose version is higher than the current version, in ascending order,
+    each inside its own ``with conn:`` transaction.  After each migration the
+    new schema_version is persisted in meta.
+
+    Raises StoreError when the stored schema_version is higher than the
+    highest known migration version.  This indicates a database written by a
+    newer code version; silently proceeding could corrupt or misinterpret the
+    schema.
+
+    Args:
+        conn: An open connection returned by store.schema.connect().
+
+    Raises:
+        StoreError: The database's schema_version exceeds the maximum known
+            migration version.
+    """
+    current_version = _read_schema_version(conn)
+    max_known_version = MIGRATIONS[-1][0]
+
+    if current_version > max_known_version:
+        raise StoreError(
+            f"Database schema_version {current_version} is higher than the "
+            f"maximum known migration version {max_known_version}. "
+            "This database was written by a newer version of the code. "
+            "Upgrade the application before using this database."
+        )
+
+    pending = [(v, fn) for v, fn in MIGRATIONS if v > current_version]
+
+    for version, migration_fn in pending:
+        log.info(
+            "store.migration_applied",
+            version=version,
+            previous_version=current_version,
+        )
+        with conn:
+            migration_fn(conn)
+            # Persist the new version inside the same transaction so a crash
+            # mid-migration leaves schema_version at the pre-migration value.
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+                (str(version),),
+            )
+        current_version = version
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+
+def _read_schema_version(conn: sqlite3.Connection) -> int:
+    """Return the current schema_version from meta, or 0 for a fresh database.
+
+    Returns 0 when either the meta table does not exist (fresh database, no
+    schema applied yet) or when the schema_version row is absent.
+
+    Args:
+        conn: An open SQLite connection.
+
+    Returns:
+        The stored schema_version as an integer, or 0 if absent.
+    """
+    try:
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # meta table does not exist yet — this is a fresh database.
+        return 0
+    return int(row[0]) if row is not None else 0
