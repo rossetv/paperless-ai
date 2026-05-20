@@ -46,16 +46,36 @@ export default [
           project: './tsconfig.json',
         },
       },
-      // Map src/ sub-directories to layer names used in boundary rules.
+      // Map src/ sub-directories to layer names used in the boundary rules.
+      //
+      // Each layer of the §12.3 stack is its OWN element type — the three
+      // component tiers (primitives / layout / patterns) are distinct, not
+      // collapsed into one `components`, because §12.3 forbids a page from
+      // reaching a primitive directly while allowing it to reach layout.
+      // A single `components` type cannot express that.
+      //
+      // Order matters: eslint-plugin-boundaries matches the FIRST pattern, so
+      // the three specific `src/components/<tier>/**` globs are listed before
+      // any broader path could shadow them.
+      //
+      // The composition root — App.tsx, routes.tsx, main.tsx — is classified
+      // as the `app` element type (NOT ignored), so its imports are still
+      // checked against the matrix.
       'boundaries/elements': [
-        { type: 'styles',     pattern: 'src/styles/**' },
-        { type: 'components', pattern: 'src/components/**' },
-        { type: 'api',        pattern: 'src/api/**' },
-        { type: 'hooks',      pattern: 'src/hooks/**' },
-        { type: 'features',   pattern: 'src/features/**' },
-        { type: 'pages',      pattern: 'src/pages/**' },
+        { type: 'styles',               pattern: 'src/styles/**' },
+        { type: 'components-primitives', pattern: 'src/components/primitives/**' },
+        { type: 'components-layout',     pattern: 'src/components/layout/**' },
+        { type: 'components-patterns',   pattern: 'src/components/patterns/**' },
+        { type: 'api',                   pattern: 'src/api/**' },
+        { type: 'hooks',                 pattern: 'src/hooks/**' },
+        { type: 'features',              pattern: 'src/features/**' },
+        { type: 'pages',                 pattern: 'src/pages/**' },
+        {
+          type: 'app',
+          mode: 'full',
+          pattern: ['src/App.tsx', 'src/routes.tsx', 'src/main.tsx'],
+        },
       ],
-      'boundaries/ignore': ['src/main.tsx', 'src/routes.tsx', 'src/App.tsx'],
     },
     rules: {
       // no-undef is redundant under TypeScript — tsc already proves every
@@ -74,8 +94,21 @@ export default [
       'react-hooks/exhaustive-deps': 'warn',
 
       // Layer-boundary rules — CODE_GUIDELINES §12.3.
-      // Dependency flow: pages → features → components → styles
-      // api/ and hooks/ are cross-cutting leaves (importable by features and pages).
+      //
+      // The stack flows strictly downward. Within components/, the three tiers
+      // also form a downward stack: patterns → layout → primitives → styles.
+      //
+      //   app          → pages, features, api, hooks, styles
+      //   pages        → features, components-layout, api, hooks  (NOT primitives, NOT patterns)
+      //   features     → any components-*, api, hooks, styles
+      //   patterns     → patterns, layout, primitives, styles
+      //   layout       → layout, primitives, styles
+      //   primitives   → primitives, styles
+      //   api / hooks  → leaves: nothing from application layers
+      //   styles       → nothing
+      //
+      // A type may always import its own type (a primitive importing another
+      // primitive, etc.) — that is intra-layer composition, not a boundary cross.
       'boundaries/element-types': [
         'error',
         {
@@ -84,17 +117,59 @@ export default [
             'Layer-boundary violation: ${file.type} cannot import from ${dependency.type}. ' +
             'Dependencies must flow downward only (CODE_GUIDELINES §12.3).',
           rules: [
-            // styles/ imports nothing from other layers
-            { from: 'styles',     allow: [] },
-            // components/ may import other components and styles
-            { from: 'components', allow: ['components', 'styles'] },
-            // api/ and hooks/ are leaves — they import nothing from application layers
-            { from: 'api',        allow: [] },
-            { from: 'hooks',      allow: [] },
-            // features/ imports components, api, hooks
-            { from: 'features',   allow: ['components', 'api', 'hooks'] },
-            // pages/ imports features, components/layout, api, hooks
-            { from: 'pages',      allow: ['features', 'components', 'api', 'hooks'] },
+            // styles/ — the bottom of the stack; imports nothing.
+            { from: 'styles', allow: [] },
+
+            // Component tiers — each may import lower tiers and styles only.
+            { from: 'components-primitives', allow: ['components-primitives', 'styles'] },
+            {
+              from: 'components-layout',
+              allow: ['components-layout', 'components-primitives', 'styles'],
+            },
+            {
+              from: 'components-patterns',
+              allow: [
+                'components-patterns',
+                'components-layout',
+                'components-primitives',
+                'styles',
+              ],
+            },
+
+            // api/ and hooks/ — cross-cutting leaves; no application-layer imports.
+            { from: 'api', allow: ['api'] },
+            { from: 'hooks', allow: ['hooks'] },
+
+            // features/ — the only layer that knows the domain; may use any
+            // component tier plus the cross-cutting leaves and styles.
+            {
+              from: 'features',
+              allow: [
+                'features',
+                'components-patterns',
+                'components-layout',
+                'components-primitives',
+                'api',
+                'hooks',
+                'styles',
+              ],
+            },
+
+            // pages/ — compose features + layout only. A page may NOT reach a
+            // primitive or a pattern directly: a missing visual must become a
+            // feature, never be solved on the page. This is the structural
+            // guarantee against per-page design drift (§12.3).
+            {
+              from: 'pages',
+              allow: ['pages', 'features', 'components-layout', 'api', 'hooks'],
+            },
+
+            // app/ — the composition root: routes + providers. Mounts pages and
+            // features, wires the API/hooks, and pulls in global styles.
+            {
+              from: 'app',
+              allow: ['app', 'pages', 'features', 'api', 'hooks', 'styles'],
+            },
           ],
         },
       ],

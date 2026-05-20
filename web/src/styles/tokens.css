@@ -210,6 +210,52 @@
   --backdrop-nav: saturate(180%) blur(20px);
 
   /* ─────────────────────────────────────────────
+   * Motion — transition durations and easings
+   *
+   * Two short durations cover every interaction transition (hover, focus,
+   * press). Components must reference these rather than writing raw `s`/`ms`
+   * literals — Stylelint enforces it.
+   *   --duration-fast     — micro feedback: press scale, colour swap
+   *   --duration-standard — the default transition for hover/focus changes
+   *   --duration-slow     — larger affordances: a panel chevron rotating
+   * Looping animations (spinner, skeleton shimmer) have their own durations
+   * below — they are intentionally longer and not interaction transitions.
+   * ───────────────────────────────────────────── */
+
+  --duration-fast:        0.1s;
+  --duration-standard:    0.15s;
+  --duration-slow:        0.2s;
+
+  /* Looping-animation durations */
+  --duration-spin:        0.75s;   /* spinner ring rotation */
+  --duration-pulse:       1.5s;    /* spinner reduced-motion pulse */
+  --duration-shimmer:     1.6s;    /* skeleton shimmer sweep */
+
+  /* Easing curves */
+  --easing-standard:      ease;            /* default for interaction transitions */
+  --easing-linear:        linear;          /* constant-rate looping animation */
+  --easing-emphasis:      ease-in-out;     /* symmetric pulse / chevron motion */
+
+  /* ─────────────────────────────────────────────
+   * Z-index ladder
+   *
+   * A deliberately ordered stack so overlapping layers never collide.
+   * Each rung is spaced by 100 to leave room for future intermediate
+   * layers. Components must reference these — no ad-hoc integers.
+   *   base    — in-flow content and a modal panel within its overlay
+   *   nav     — the sticky navigation bar
+   *   dropdown— popout listboxes (Select)
+   *   tooltip — supplementary hover labels, above dropdowns
+   *   modal   — the full-viewport modal overlay, above everything
+   * ───────────────────────────────────────────── */
+
+  --z-base:     0;
+  --z-nav:      100;
+  --z-dropdown: 200;
+  --z-tooltip:  300;
+  --z-modal:    400;
+
+  /* ─────────────────────────────────────────────
    * Breakpoints (DESIGN.md §8)
    * CSS custom properties cannot be used inside @media queries, so these are
    * provided as reference values. Actual media queries use raw values.
@@ -229,6 +275,43 @@
 
   /* Navigation height */
   --height-nav:         48px;
+
+  /* ─────────────────────────────────────────────
+   * Component dimensions
+   *
+   * Fixed sizes that overlay/panel components need and that the spacing
+   * scale does not supply directly. Each lives here so a component module
+   * never hardcodes a raw px — Stylelint enforces this.
+   * ───────────────────────────────────────────── */
+
+  /* Minimum touch target — DESIGN.md §"Media controls": 44 × 44 px */
+  --size-touch-target:  44px;
+
+  /* Section vertical padding — the spacious "cinematic" rhythm (DESIGN.md §5) */
+  --spacing-section:    96px;
+
+  /* Modal panel — max width of the centred dialog surface */
+  --width-modal:        560px;
+
+  /* Toast — width bounds keep a notification readable but compact */
+  --width-toast-min:    240px;
+  --width-toast-max:    480px;
+
+  /* EmptyState — caps the description line length for comfortable reading */
+  --width-empty-state:  360px;
+
+  /* Select listbox — max height before the option list scrolls */
+  --height-listbox:     240px;
+
+  /* Icon — extra-large size for empty-state and hero illustration use */
+  --size-icon-xlarge:   32px;
+
+  /* Skeleton — fixed placeholder heights for the closed Skeleton sizing API.
+   * A skeleton's dimensions come from these tokens, never a free CSS string. */
+  --height-skeleton-line:    14px;   /* one line of caption-scale text */
+  --height-skeleton-control: 40px;   /* a form control: Input, Select */
+  --height-skeleton-block:   80px;   /* a small content block */
+  --height-skeleton-media:  160px;   /* an image / thumbnail placeholder */
 
   /* ─────────────────────────────────────────────
    * Interaction state opacities
