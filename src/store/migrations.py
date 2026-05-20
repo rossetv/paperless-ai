@@ -36,6 +36,20 @@ class StoreError(Exception):
     """
 
 
+class SchemaNotReadyError(StoreError):
+    """The index database exists but its schema has not been created yet.
+
+    ``sqlite3.connect`` auto-creates an empty database file the moment a path
+    is opened, so a present-but-empty file does **not** mean the index is
+    ready: the indexer may not yet have run ``ensure_schema``.  A read against
+    such a database fails with ``no such table``.  The store raises this typed
+    subclass for that case so callers — notably the search server's
+    ``/api/healthz`` handler — can distinguish "indexer has not built the
+    index yet" from genuine corruption without inspecting ``sqlite3`` internals
+    (``CODE_GUIDELINES.md`` §8.2/§9.1).
+    """
+
+
 # ---------------------------------------------------------------------------
 # Migration functions (private)
 # ---------------------------------------------------------------------------
