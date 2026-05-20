@@ -1,0 +1,104 @@
+/*
+ * Modal pattern — CSS Module.
+ *
+ * The overlay stacks over all page content via a fixed full-viewport layer.
+ * The backdrop provides the semi-transparent scrim (--colour-overlay-dark).
+ * The panel is a centred white surface with --radius-large and --shadow-card.
+ *
+ * DESIGN.md §6 elevation notes:
+ *   - The backdrop uses --colour-overlay-dark (rgba 0 0 0 / 80%) matching the
+ *     nav glass — the closest Apple overlay token we have.
+ *   - The panel is --colour-surface with --shadow-card for elevated card look.
+ *
+ * All values come exclusively from design tokens (§12.4).
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-14);
+  box-sizing: border-box;
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: var(--colour-overlay-dark);
+}
+
+/* Reset <dialog> UA styles — we control all layout ourselves */
+.panel {
+  position: relative;
+  z-index: 1;
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  border: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - var(--spacing-14) * 2);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+
+.panel:focus-visible {
+  outline: 2px solid var(--colour-focus-ring);
+  outline-offset: 2px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-6);
+  padding: var(--spacing-13) var(--spacing-14);
+  border-bottom: 1px solid var(--colour-border);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  line-height: var(--line-height-subheading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+.close-button {
+  flex-shrink: 0;
+  color: var(--colour-text-secondary);
+}
+
+.body {
+  padding: var(--spacing-13) var(--spacing-14);
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+}
+
+/* ── Responsive — stack padding collapses on narrow viewports ───────────── */
+@media (max-width: 480px) {
+  .overlay {
+    padding: var(--spacing-6);
+    align-items: flex-end;
+  }
+
+  .panel {
+    max-width: 100%;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    max-height: 90vh;
+  }
+}
