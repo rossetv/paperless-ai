@@ -1,0 +1,67 @@
+/*
+ * Input primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * Styled after DESIGN.md §4 "Filter / Search Button":
+ * --radius-comfortable (11px), light background, 2px accent focus ring.
+ * This is the canonical Apple search/filter input style.
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-caption);
+  line-height: var(--line-height-caption);
+}
+
+.input {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  padding: var(--spacing-6) var(--spacing-10);
+
+  width: 100%;
+  box-sizing: border-box;
+
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.input:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+/* Error state — border colour changes; aria-invalid is set in the component */
+.inputError {
+  border-color: var(--colour-accent);
+}
+
+.errorMessage {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-accent);
+}
