@@ -11,6 +11,13 @@ api.py (CODE_GUIDELINES.md §5.6).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+#: The synthesiser's two operating modes (spec §6.3).  ``"exploratory"`` lets
+#: the model return :class:`NeedsMore`; ``"final"`` coerces it to
+#: :class:`Answered`.  A :data:`~typing.Literal` makes a typo at any of the
+#: four call layers a type error rather than a silent runtime fallthrough.
+SearchMode = Literal["exploratory", "final"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +41,20 @@ class FilterCandidates:
     tags: tuple[str, ...]
     date_from: str | None
     date_to: str | None
+
+
+#: The canonical "no filters at all" :class:`FilterCandidates`.  The planner
+#: fallback, ``broaden_plan``, and tests all need an all-``None`` instance;
+#: sharing one well-known value avoids re-constructing it ad hoc at every site
+#: (``CODE_GUIDELINES.md`` §3.5).  Safe to share — ``FilterCandidates`` is
+#: frozen, so the singleton cannot be mutated.
+EMPTY_FILTER_CANDIDATES = FilterCandidates(
+    correspondent=None,
+    document_type=None,
+    tags=(),
+    date_from=None,
+    date_to=None,
+)
 
 
 @dataclass(frozen=True, slots=True)

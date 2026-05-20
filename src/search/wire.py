@@ -8,16 +8,21 @@ internal pipeline works entirely with frozen dataclasses from
 Public surface
 --------------
 Request models:
-    :class:`LoginRequest`, :class:`SearchRequest`
+    :class:`LoginRequest`, :class:`FilterRequest`, :class:`SearchRequest`
 
 Response models:
     :class:`SearchResponse`, :class:`FacetsResponse`, :class:`StatsResponse`
 
-Mapping functions (internal dataclass → wire model):
+Mapping functions (wire model ⇄ internal dataclass):
+    :func:`to_search_filters` (request → store input shape),
     :func:`to_search_response`, :func:`to_facets_response`,
     :func:`to_stats_response`
 
-Allowed deps: pydantic, search.models, store.models.
+Constants:
+    :data:`MAX_QUERY_LENGTH` — the documented maximum query length, applied at
+    every search boundary (HTTP and MCP).
+
+Allowed deps: pydantic, search.models, store (SearchFilters), store.models.
 Forbidden: FastAPI, sqlite3, any I/O.
 """
 
@@ -27,9 +32,18 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from store import SearchFilters
+
 if TYPE_CHECKING:
     from search.models import SearchResult
     from store.models import FacetSet, IndexStats
+
+# The documented maximum length of a search query / question (§10.4).  Long
+# enough for any reasonable natural-language question; short enough to bound
+# the token cost of an injected mega-prompt.  Applied identically at the HTTP
+# boundary (``SearchRequest.query``) and the MCP boundary (``mcp_server``) so
+# both surfaces enforce one limit (CODE_GUIDELINES §3.5).
+MAX_QUERY_LENGTH = 4000
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +61,8 @@ class FilterRequest(BaseModel):
     """Optional filters supplied in a search request (spec §7.1).
 
     Every field defaults to absent; only the fields present in the request body
-    are forwarded to the pipeline.
+    are forwarded to the pipeline.  Extra keys are ignored — both the HTTP and
+    the MCP boundary are lenient on unrecognised fields.
     """
 
     date_from: str | None = None
@@ -60,10 +75,7 @@ class FilterRequest(BaseModel):
 class SearchRequest(BaseModel):
     """Body for POST /api/search."""
 
-    # 4000 characters is the documented maximum query length (§10.4).
-    # Long enough for any reasonable natural-language question; short enough to
-    # bound the token cost of an injected mega-prompt.
-    query: str = Field(max_length=4000)
+    query: str = Field(max_length=MAX_QUERY_LENGTH)
     filters: FilterRequest | None = None
 
 
@@ -143,8 +155,35 @@ class StatsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Mapping functions (dataclass → wire model)
+# Mapping functions (wire model ⇄ dataclass)
 # ---------------------------------------------------------------------------
+
+
+def to_search_filters(filters: FilterRequest | None) -> SearchFilters | None:
+    """Convert a validated :class:`FilterRequest` to the store input shape.
+
+    The single converter from the wire filter shape to
+    :class:`~store.models.SearchFilters`, reused by the HTTP ``/api/search``
+    handler and the MCP server so both surfaces translate filters identically
+    (``CODE_GUIDELINES.md`` §1.3).
+
+    Args:
+        filters: The validated filter model from a search request, or ``None``
+            when the request carried no filters.
+
+    Returns:
+        A :class:`~store.models.SearchFilters` instance, or ``None`` when
+        *filters* is ``None`` — meaning no filters are applied.
+    """
+    if filters is None:
+        return None
+    return SearchFilters(
+        date_from=filters.date_from,
+        date_to=filters.date_to,
+        correspondent_id=filters.correspondent_id,
+        document_type_id=filters.document_type_id,
+        tag_ids=tuple(filters.tag_ids),
+    )
 
 
 def to_search_response(result: SearchResult) -> SearchResponse:

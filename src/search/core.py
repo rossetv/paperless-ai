@@ -26,12 +26,13 @@ The ceiling is enforced two ways, belt and braces:
    synthesise once, and the refinement's final synthesise at most once; there
    is no loop that can issue a fourth call.
 2. *Defensively* — every LLM stage is invoked through :class:`_LlmBudget`,
-   whose ``record`` increments a counter and asserts it never exceeds
+   whose ``record`` increments a counter and raises
+   :class:`~search.errors.LlmBudgetExceededError` if it ever exceeds
    ``_MAX_LLM_CALLS``.  A logic regression that tried a fourth call would fail
    loudly here rather than silently overspending (CODE_GUIDELINES §1.11).
 
-Allowed deps: search (models, planner, retriever, synthesizer, refinement),
-    store (reader, models), common.config.
+Allowed deps: search (models, errors, planner, retriever, synthesizer,
+    refinement), store (reader, models), common.config.
 Forbidden: no FastAPI, no MCP SDK, no sqlite3, no direct LLM/HTTP calls.
 """
 
@@ -42,17 +43,20 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from search.errors import LlmBudgetExceededError
 from search.models import (
     Answered,
     NeedsMore,
     QueryPlan,
     RetrievedChunk,
+    SearchMode,
     SearchResult,
     SearchStats,
     SourceDocument,
 )
-from search.refinement import adjust_plan, broaden_plan
+from search.refinement import adjust_plan, broaden_plan, merge_chunks
 from search.retriever import resolve_filters
+from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
 from store.models import IndexedDocument
 
 if TYPE_CHECKING:
@@ -105,14 +109,15 @@ class _LlmBudget:
         matters most.
 
         Raises:
-            RuntimeError: If recording this call would exceed the hard ceiling
-                of three LLM calls per query.  This is unreachable by
-                ``SearchCore``'s own loop logic; it guards against a future
-                regression silently overspending (CODE_GUIDELINES §1.11).
+            LlmBudgetExceededError: If recording this call would exceed the
+                hard ceiling of three LLM calls per query.  This is
+                unreachable by ``SearchCore``'s own loop logic; it guards
+                against a future regression silently overspending
+                (CODE_GUIDELINES §1.11).
         """
         self.count += 1
         if self.count > _MAX_LLM_CALLS:
-            raise RuntimeError(
+            raise LlmBudgetExceededError(
                 f"LLM-call ceiling breached: {self.count} calls made, "
                 f"the hard limit is {_MAX_LLM_CALLS} (spec §6.3)."
             )
@@ -185,7 +190,10 @@ class SearchCore:
         chunks = self._retrieve_with_broaden(plan, ui_filters)
 
         if not chunks:
-            log.info("search.no_matches", query_prefix=query[:60])
+            log.info(
+                "search.no_matches",
+                query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+            )
             return self._no_match_result(plan, budget, started)
 
         outcome = self._synthesise(query, chunks, mode="exploratory", budget=budget)
@@ -276,7 +284,7 @@ class SearchCore:
         query: str,
         chunks: list[RetrievedChunk],
         *,
-        mode: str,
+        mode: SearchMode,
         budget: _LlmBudget,
     ) -> Answered | NeedsMore:
         """Run one synthesiser LLM call, recording it against the budget."""
@@ -313,12 +321,12 @@ class SearchCore:
         """
         log.info(
             "search.refined",
-            query_prefix=query[:60],
-            adjustment=needs_more.adjustment[:120],
+            query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+            adjustment=needs_more.adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
         )
         adjusted_plan = adjust_plan(plan, needs_more.adjustment)
         new_chunks = self._retrieve_with_broaden(adjusted_plan, ui_filters)
-        merged = _merge_chunks(previous_chunks, new_chunks)
+        merged = merge_chunks(previous_chunks, new_chunks)
         outcome = self._synthesise(query, merged, mode="final", budget=budget)
         return outcome, merged
 
@@ -432,26 +440,6 @@ class SearchCore:
 # ---------------------------------------------------------------------------
 # Module-level helpers (no SearchCore state)
 # ---------------------------------------------------------------------------
-
-
-def _merge_chunks(
-    previous: list[RetrievedChunk],
-    new: list[RetrievedChunk],
-) -> list[RetrievedChunk]:
-    """Merge two retrieved-chunk lists, de-duplicating by chunk id.
-
-    The refinement pass synthesises over the union of both retrieval rounds
-    (spec §6.3).  A chunk surfaced by both rounds is kept once; the first
-    occurrence (the higher-ranked one, since ``previous`` leads) is retained.
-    The merged list is ordered by fused score, highest first.
-    """
-    merged_by_id: dict[int, RetrievedChunk] = {}
-    for chunk in [*previous, *new]:
-        if chunk.chunk_id not in merged_by_id:
-            merged_by_id[chunk.chunk_id] = chunk
-    merged = list(merged_by_id.values())
-    merged.sort(key=lambda chunk: chunk.rrf_score, reverse=True)
-    return merged
 
 
 def _best_chunk_per_document(
