@@ -27,11 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING
 
 import structlog
 import uvicorn
@@ -371,25 +370,26 @@ def _issue_token(settings: Settings) -> str:
 def _set_session_cookie(response: Response, token: str, settings: Settings) -> None:
     """Set the signed session cookie on *response* with all required security flags.
 
-    Explicit kwargs avoid the ``dict[str, object]`` splat that mypy cannot
-    type-check against ``Response.set_cookie``'s typed signature.  The values
-    are pulled from :func:`~search.auth.cookie_attributes` so the security
-    attributes remain the single source of truth in ``auth.py``.
+    Delegates all cookie attributes to :func:`~search.auth.cookie_attributes`
+    so that function is the single source of truth for HttpOnly, Secure,
+    SameSite, Path, and Max-Age.  Explicit kwargs (rather than a ``**splat``)
+    keep mypy happy against ``Response.set_cookie``'s typed signature.
 
     Args:
         response: The FastAPI response object to set the cookie on.
         token: The signed session token string.
-        settings: Application settings; ``SEARCH_SESSION_TTL`` is read for
-            ``max_age``.
+        settings: Application settings; passed to ``cookie_attributes`` so it
+            can read ``SEARCH_SESSION_TTL`` for ``max_age``.
     """
+    attrs = cookie_attributes(settings)
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        max_age=settings.SEARCH_SESSION_TTL,
-        path="/",
-        httponly=True,
-        secure=True,
-        samesite="strict",
+        max_age=attrs["max_age"],  # type: ignore[arg-type]
+        path=attrs["path"],  # type: ignore[arg-type]
+        httponly=attrs["httponly"],  # type: ignore[arg-type]
+        secure=attrs["secure"],  # type: ignore[arg-type]
+        samesite=attrs["samesite"],  # type: ignore[arg-type]
     )
 
 
@@ -417,10 +417,13 @@ def main() -> None:
     register_signal_handlers()
 
     # Fail closed: the API key is mandatory (spec §10.1, §9.2).
-    if not settings.SEARCH_API_KEY:
+    # Strip whitespace before checking — a key of "   " is effectively absent
+    # and must not allow the server to start with a near-empty credential.
+    if not settings.SEARCH_API_KEY.strip():
         logging.critical(
-            "SEARCH_API_KEY is not set — the search server refuses to start "
-            "without an API key.  Set SEARCH_API_KEY in the environment."
+            "SEARCH_API_KEY is not set or is whitespace-only — the search "
+            "server refuses to start without a real API key.  Set "
+            "SEARCH_API_KEY in the environment."
         )
         sys.exit(1)
 

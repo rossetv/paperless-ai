@@ -17,12 +17,13 @@ Covers the security-critical contracts (spec §7.1, §7.3, §7.4):
   (path traversal is rejected).
 - The SEARCH_MAX_CONCURRENT semaphore caps in-flight search requests.
 - The index DB path is never served over HTTP (security invariant).
+- main() exits non-zero when SEARCH_API_KEY is whitespace-only (I1).
+- POST /api/search returns 422 when query exceeds max length (MINOR 2).
 """
 
 from __future__ import annotations
 
-import asyncio
-import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -217,6 +218,25 @@ def test_login_with_wrong_key_returns_401() -> None:
         json={"api_key": "wrong-key"},
     )
     assert response.status_code == 401
+
+
+def test_login_with_non_ascii_api_key_returns_401_not_500() -> None:
+    """POST /api/auth/login with a non-ASCII api_key must return 401, not 500.
+
+    Before the fix, ``hmac.compare_digest`` raised ``TypeError`` on non-ASCII
+    str arguments, which surfaced as an uncaught HTTP 500.  The fix uses
+    UTF-8 bytes comparison.  This test fails if the comparison is reverted to
+    str-based ``hmac.compare_digest``.
+    """
+    settings = _make_mock_settings()
+    client = _build_test_app(settings)
+    response = client.post(
+        "/api/auth/login",
+        json={"api_key": "café"},
+    )
+    assert response.status_code == 401, (
+        f"Expected 401 for non-ASCII key, got {response.status_code}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -517,3 +537,155 @@ def test_search_max_concurrent_semaphore_is_created_and_limits_search() -> None:
             headers=_bearer_headers(),
         )
         assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
+    """The asyncio.Semaphore genuinely limits concurrent in-flight requests.
+
+    This test would fail if the semaphore were removed: it fires
+    ``SEARCH_MAX_CONCURRENT + 1`` concurrent coroutines against the ASGI app
+    (via ``httpx.AsyncClient``) and asserts that no more than
+    ``SEARCH_MAX_CONCURRENT`` requests are inside ``core.answer`` simultaneously
+    (verified via a peak counter shared across the executor threads).  After the
+    blocking event is released, all requests complete with 200.
+
+    Using a single ``httpx.AsyncClient`` guarantees that all requests share the
+    same event loop and therefore the same ``asyncio.Semaphore`` instance.
+    """
+    import asyncio
+
+    import httpx
+
+    from search.api import create_app
+
+    max_concurrent = 2
+    settings = _make_mock_settings(max_concurrent=max_concurrent)
+
+    # Shared mutable state across executor threads.
+    inside_counter = 0
+    peak_inside = 0
+    counter_lock = threading.Lock()
+    # All executor threads block on this; released by the test after sampling.
+    block_event = threading.Event()
+    # Counts how many threads are currently blocked, so we know when to sample.
+    blocked_count = 0
+    blocked_enough = threading.Event()
+
+    def blocking_answer(**_kwargs: Any) -> Any:
+        nonlocal inside_counter, peak_inside, blocked_count
+        with counter_lock:
+            inside_counter += 1
+            blocked_count += 1
+            if inside_counter > peak_inside:
+                peak_inside = inside_counter
+            # Signal once enough threads are blocked (the semaphore-limited batch).
+            if blocked_count >= max_concurrent:
+                blocked_enough.set()
+        block_event.wait(timeout=5.0)
+        with counter_lock:
+            inside_counter -= 1
+        return _make_search_result()
+
+    core = MagicMock()
+    core.answer.side_effect = blocking_answer
+
+    app = create_app(settings, core=core, store_reader=MagicMock(
+        list_facets=MagicMock(return_value=None),
+        get_stats=MagicMock(return_value=None),
+        quick_check=MagicMock(return_value=True),
+    ))
+
+    total_requests = max_concurrent + 1
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="https://testserver",
+    ) as aclient:
+        # Fire all requests concurrently in the same event loop.
+        tasks = [
+            asyncio.create_task(
+                aclient.post(
+                    "/api/search",
+                    json={"query": "test"},
+                    headers=_bearer_headers(),
+                )
+            )
+            for _ in range(total_requests)
+        ]
+
+        # Wait until at least max_concurrent executor threads are inside
+        # core.answer, confirming the semaphore is holding one request back.
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: blocked_enough.wait(timeout=5.0))
+
+        # Sample the peak before releasing.
+        with counter_lock:
+            observed_peak = peak_inside
+
+        assert observed_peak <= max_concurrent, (
+            f"Semaphore breached: {observed_peak} concurrent calls inside "
+            f"core.answer, limit is {max_concurrent}"
+        )
+
+        # Release all blocked threads.
+        block_event.set()
+        responses = await asyncio.gather(*tasks)
+
+    # All requests must ultimately succeed.
+    statuses = [r.status_code for r in responses]
+    assert all(s == 200 for s in statuses), f"Some requests failed: {statuses}"
+
+
+# ---------------------------------------------------------------------------
+# I1 regression — whitespace-only SEARCH_API_KEY must exit non-zero
+# ---------------------------------------------------------------------------
+
+
+def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
+    """main() must exit(1) when SEARCH_API_KEY is whitespace-only.
+
+    A key of ``"   "`` is truthy (so ``if not key:`` passes it through), but
+    it is effectively absent.  The fix checks ``.strip()``; this test fails if
+    that check is reverted to ``if not key:``.
+    """
+    from search.api import main
+
+    whitespace_settings = MagicMock()
+    whitespace_settings.SEARCH_API_KEY = "   "  # whitespace-only key
+
+    with (
+        patch("common.config.Settings", return_value=whitespace_settings),
+        patch("common.logging_config.configure_logging"),
+        patch("common.library_setup.setup_libraries"),
+        patch("common.shutdown.register_signal_handlers"),
+        patch("search.api.uvicorn.run") as mock_uvicorn,
+    ):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+    assert exc_info.value.code != 0, "main() must exit non-zero for a whitespace key"
+    mock_uvicorn.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MINOR 2 regression — over-length query returns 422
+# ---------------------------------------------------------------------------
+
+
+def test_search_returns_422_when_query_exceeds_max_length() -> None:
+    """POST /api/search returns 422 when query exceeds the 4000-character limit.
+
+    Pydantic enforces max_length=4000 on SearchRequest.query; this test
+    confirms the constraint is present and active.
+    """
+    settings = _make_mock_settings()
+    client = _build_test_app(settings)
+
+    too_long_query = "x" * 4001
+    response = client.post(
+        "/api/search",
+        json={"query": too_long_query},
+        headers=_bearer_headers(),
+    )
+    assert response.status_code == 422

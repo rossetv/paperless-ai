@@ -3,6 +3,7 @@
 Covers the fail-closed authentication contract (spec §7.3, §9.2):
 
 - ``verify_api_key`` accepts the configured key and rejects any other.
+- ``verify_api_key`` returns False (not TypeError) on non-ASCII input (I2).
 - A freshly issued session token verifies against its issuing key.
 - A tampered token fails verification.
 - An expired token fails verification (clock advanced past the TTL).
@@ -51,6 +52,28 @@ def test_verify_api_key_rejects_an_empty_provided_key() -> None:
 def test_verify_api_key_rejects_a_key_that_is_a_prefix_of_the_configured_key() -> None:
     # A length-prefix must not pass; compare_digest is length-sensitive.
     assert verify_api_key(_API_KEY[:-1], _API_KEY) is False
+
+
+def test_verify_api_key_returns_false_not_typeerror_for_non_ascii_provided() -> None:
+    """verify_api_key must return False (not raise TypeError) for non-ASCII input.
+
+    ``hmac.compare_digest`` raises ``TypeError`` when given str arguments that
+    contain non-ASCII characters.  The fix encodes both sides as UTF-8 bytes
+    first.  This test fails if the comparison is reverted to comparing str
+    directly.
+    """
+    # Non-ASCII characters that would previously cause hmac.compare_digest to
+    # raise TypeError when comparing str values.
+    non_ascii_key = "café"
+    result = verify_api_key(non_ascii_key, _API_KEY)
+    assert result is False
+
+
+def test_verify_api_key_returns_false_not_typeerror_for_various_non_ascii() -> None:
+    """Regression: multiple non-ASCII inputs all return False without raising."""
+    for bad_key in ("café", "naïve", "日本語", "éàü", "emoji🔑"):
+        # Must not raise; must return False (the key is wrong, not just non-ASCII).
+        assert verify_api_key(bad_key, _API_KEY) is False
 
 
 # ---------------------------------------------------------------------------
