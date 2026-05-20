@@ -178,7 +178,13 @@ export function Modal({
           <h2 id={titleId} className={styles['title']}>
             {title}
           </h2>
-          <IconButton label="Close modal" onClick={onClose} className={styles['close-button']}>
+          <IconButton
+            label="Close modal"
+            onClick={onClose}
+            {...(styles['close-button'] !== undefined
+              ? { className: styles['close-button'] }
+              : {})}
+          >
             <Icon name="close" size="small" />
           </IconButton>
         </div>

@@ -104,7 +104,9 @@ export function Toast({
         <IconButton
           label="Dismiss notification"
           onClick={onDismiss}
-          className={styles['dismiss-button']}
+          {...(styles['dismiss-button'] !== undefined
+            ? { className: styles['dismiss-button'] }
+            : {})}
         >
           <Icon name="close" size="small" />
         </IconButton>

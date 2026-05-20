@@ -20,18 +20,13 @@
   background-color: var(--colour-surface);
   border-radius: var(--radius-standard);
   box-shadow: var(--shadow-card);
-
-  /* Left accent border — overridden per variant */
   border-left: var(--spacing-2) solid transparent;
-
   font-family: var(--font-text);
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-body);
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-primary);
-
-  /* Sensible max-width so long messages don't stretch to the viewport edge */
   max-width: 480px;
   min-width: 240px;
   box-sizing: border-box;
@@ -80,6 +75,5 @@
 .dismiss-button {
   flex-shrink: 0;
   color: var(--colour-text-tertiary);
-  /* Align with the top of the text on multi-line messages */
   align-self: flex-start;
 }

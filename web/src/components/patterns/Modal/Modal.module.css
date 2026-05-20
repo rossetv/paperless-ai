@@ -89,7 +89,7 @@
 }
 
 /* ── Responsive — stack padding collapses on narrow viewports ───────────── */
-@media (max-width: 480px) {
+@media (width <= 480px) {
   .overlay {
     padding: var(--spacing-6);
     align-items: flex-end;

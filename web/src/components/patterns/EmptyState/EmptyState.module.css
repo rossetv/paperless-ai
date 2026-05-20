@@ -24,6 +24,7 @@
   align-items: center;
   justify-content: center;
   color: var(--colour-text-tertiary);
+
   /* Scale up the icon beyond the large token by increasing the wrapper size.
    * The Icon primitive uses currentColor and scales via its module, so
    * wrapping in a larger font-size context enlarges the SVG. */
@@ -48,6 +49,7 @@
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-secondary);
+
   /* Keep description text narrower than the container so it reads well. */
   max-width: 360px;
 }

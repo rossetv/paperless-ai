@@ -51,6 +51,7 @@ export const WithTrigger: Story = {
   args: {
     isOpen: false,
     title: '',
+    children: null,
     onClose: () => {
       /* story — noop */
     },
