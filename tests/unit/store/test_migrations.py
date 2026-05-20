@@ -141,6 +141,57 @@ class TestSchemaVersionPersisted:
 
 
 # ---------------------------------------------------------------------------
+# Migration atomicity
+# ---------------------------------------------------------------------------
+
+
+class TestMigrationAtomicity:
+    """DDL statements and the schema_version write are committed atomically.
+
+    This guards against the regression where conn.executescript() issued an
+    implicit COMMIT before executing, breaking the single-transaction guarantee.
+    With individual conn.execute() calls the DDL and schema_version write stay
+    inside the same ``with conn:`` block.
+    """
+
+    def test_schema_version_written_in_same_transaction_as_ddl(self, conn) -> None:
+        """After run_migrations, both tables and schema_version exist.
+
+        If DDL and schema_version were committed separately (the broken path),
+        a mid-migration crash would leave schema_version at 0 while the tables
+        exist.  We cannot simulate a crash in a unit test, but we can at minimum
+        assert that both the schema and schema_version row are present and
+        consistent after a successful run.
+        """
+        run_migrations(conn)
+        version = _get_schema_version(conn)
+        tables = _table_names(conn)
+        assert version == SCHEMA_VERSION
+        assert "documents" in tables
+        assert "chunks" in tables
+        assert "meta" in tables
+
+    def test_v1_migration_uses_execute_not_executescript(self) -> None:
+        """_migrate_v1 must not call conn.executescript() on the connection.
+
+        executescript() issues an implicit COMMIT before executing, which breaks
+        the atomicity of the surrounding ``with conn:`` transaction.  The fix
+        is to call conn.execute() for each statement; this test verifies that
+        executescript is not called on the connection during migration.
+        """
+        import unittest.mock as _mock
+        from store.migrations import _migrate_v1
+
+        mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+        # execute() must be called at least once (one per DDL statement).
+        _migrate_v1(mock_conn)
+        mock_conn.executescript.assert_not_called()
+        assert mock_conn.execute.call_count >= 1, (
+            "_migrate_v1 must use execute() for each DDL statement"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Future-version guard
 # ---------------------------------------------------------------------------
 

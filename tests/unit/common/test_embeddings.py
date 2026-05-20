@@ -23,12 +23,14 @@ def _make_settings(
     max_retry_backoff: int = 0,
     embedding_model: str = "text-embedding-3-small",
     embedding_max_concurrent: int = 0,
+    embedding_dimensions: int = 1536,
 ) -> MagicMock:
     settings = MagicMock()
     settings.MAX_RETRIES = max_retries
     settings.MAX_RETRY_BACKOFF_SECONDS = max_retry_backoff
     settings.EMBEDDING_MODEL = embedding_model
     settings.EMBEDDING_MAX_CONCURRENT = embedding_max_concurrent
+    settings.EMBEDDING_DIMENSIONS = embedding_dimensions
     return settings
 
 
@@ -328,3 +330,34 @@ class TestModelPassthrough:
         mock_openai.embeddings.create.assert_called_once()
         call_kwargs = mock_openai.embeddings.create.call_args
         assert call_kwargs.kwargs.get("model") == "text-embedding-3-large"
+
+
+# ---------------------------------------------------------------------------
+# Test: configured dimensions are passed to the API
+# ---------------------------------------------------------------------------
+
+
+class TestDimensionsPassthrough:
+
+    def test_configured_dimensions_sent_to_api(self) -> None:
+        """embed passes settings.EMBEDDING_DIMENSIONS to the OpenAI embeddings.create call.
+
+        Without this, a non-default EMBEDDING_DIMENSIONS setting is silently ignored:
+        the API returns vectors of the model's native width while meta records the
+        configured number, creating a silent dimension mismatch.
+        """
+        settings = _make_settings(
+            embedding_model="text-embedding-3-small",
+            embedding_dimensions=512,
+        )
+        mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
+
+        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+            client = EmbeddingClient(settings)
+            client.embed(["test text"])
+
+        mock_openai.embeddings.create.assert_called_once()
+        call_kwargs = mock_openai.embeddings.create.call_args
+        assert call_kwargs.kwargs.get("dimensions") == 512, (
+            "EMBEDDING_DIMENSIONS must be forwarded to the API as the 'dimensions' kwarg"
+        )

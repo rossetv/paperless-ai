@@ -366,6 +366,145 @@ def test_keyword_search_respects_tag_filter(populated_db: tuple[str, dict[str, A
     assert hits == []
 
 
+def test_keyword_search_respects_date_range_filter(db_path: str) -> None:
+    """keyword_search with date_from/date_to returns only in-range matches.
+
+    Seeded documents share a common term ("quarterly") but differ in their
+    created date; the date-range filter must exclude out-of-range documents
+    before FTS scoring, not post-filter the ranked results.
+    """
+    from store.models import ChunkInput, DocumentMeta
+
+    writer = _make_writer(db_path)
+
+    meta_2022 = DocumentMeta(
+        id=10,
+        title="Report 2022",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+        created="2022-03-01T00:00:00+00:00",
+        modified="2022-03-01T00:00:00+00:00",
+        content_hash="c2022",
+        page_count=1,
+    )
+    meta_2024 = DocumentMeta(
+        id=11,
+        title="Report 2024",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+        created="2024-09-15T00:00:00+00:00",
+        modified="2024-09-15T00:00:00+00:00",
+        content_hash="c2024",
+        page_count=1,
+    )
+    common_chunk = ChunkInput(
+        chunk_index=0,
+        text="quarterly earnings report summary",
+        page_hint=1,
+        embedding=_unit_vec(4, 0),
+    )
+    writer.upsert_document(meta_2022, [common_chunk])
+    writer.upsert_document(meta_2024, [common_chunk])
+    writer.close()
+
+    reader = _make_reader(db_path)
+    no_filters = SearchFilters(
+        date_from=None, date_to=None,
+        correspondent_id=None, document_type_id=None,
+        tag_ids=(),
+    )
+    all_hits = reader.keyword_search(["quarterly"], k=10, filters=no_filters)
+    assert len(all_hits) == 2, "both docs match without a date filter"
+
+    # Restrict to 2024 only — doc 2022 must be excluded.
+    only_2024 = SearchFilters(
+        date_from="2024-01-01T00:00:00+00:00",
+        date_to=None,
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+    hits_2024 = reader.keyword_search(["quarterly"], k=10, filters=only_2024)
+    assert len(hits_2024) == 1
+    assert hits_2024[0].document_id == 11, "only the 2024 document should be returned"
+
+    # Restrict to 2022 only — doc 2024 must be excluded.
+    only_2022 = SearchFilters(
+        date_from=None,
+        date_to="2022-12-31T23:59:59+00:00",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+    hits_2022 = reader.keyword_search(["quarterly"], k=10, filters=only_2022)
+    reader.close()
+    assert len(hits_2022) == 1
+    assert hits_2022[0].document_id == 10, "only the 2022 document should be returned"
+
+
+# ---------------------------------------------------------------------------
+# k <= 0 guard
+# ---------------------------------------------------------------------------
+
+
+def test_vector_search_k_zero_returns_empty(populated_db: tuple[str, dict[str, Any]]) -> None:
+    """vector_search with k=0 must return [] without executing a query."""
+    db_path, _ = populated_db
+    reader = _make_reader(db_path)
+    no_filters = SearchFilters(
+        date_from=None, date_to=None,
+        correspondent_id=None, document_type_id=None,
+        tag_ids=(),
+    )
+    hits = reader.vector_search(_unit_vec(4, 0), k=0, filters=no_filters)
+    reader.close()
+    assert hits == []
+
+
+def test_vector_search_k_negative_returns_empty(populated_db: tuple[str, dict[str, Any]]) -> None:
+    """vector_search with k<0 must return [] rather than the whole table (SQLite LIMIT -1 trap)."""
+    db_path, _ = populated_db
+    reader = _make_reader(db_path)
+    no_filters = SearchFilters(
+        date_from=None, date_to=None,
+        correspondent_id=None, document_type_id=None,
+        tag_ids=(),
+    )
+    hits = reader.vector_search(_unit_vec(4, 0), k=-1, filters=no_filters)
+    reader.close()
+    assert hits == []
+
+
+def test_keyword_search_k_zero_returns_empty(populated_db: tuple[str, dict[str, Any]]) -> None:
+    """keyword_search with k=0 must return []."""
+    db_path, _ = populated_db
+    reader = _make_reader(db_path)
+    no_filters = SearchFilters(
+        date_from=None, date_to=None,
+        correspondent_id=None, document_type_id=None,
+        tag_ids=(),
+    )
+    hits = reader.keyword_search(["boiler"], k=0, filters=no_filters)
+    reader.close()
+    assert hits == []
+
+
+def test_keyword_search_k_negative_returns_empty(populated_db: tuple[str, dict[str, Any]]) -> None:
+    """keyword_search with k<0 must return [] rather than the whole table."""
+    db_path, _ = populated_db
+    reader = _make_reader(db_path)
+    no_filters = SearchFilters(
+        date_from=None, date_to=None,
+        correspondent_id=None, document_type_id=None,
+        tag_ids=(),
+    )
+    hits = reader.keyword_search(["boiler"], k=-5, filters=no_filters)
+    reader.close()
+    assert hits == []
+
+
 # ---------------------------------------------------------------------------
 # get_documents
 # ---------------------------------------------------------------------------

@@ -14,8 +14,8 @@ Covers (per task specification):
 
 from __future__ import annotations
 
+import sqlite3
 import threading
-from collections.abc import Sequence
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -486,113 +486,66 @@ class TestUpdateMetadata:
 
 
 class TestTransactionAtomicity:
-    def test_failed_upsert_preserves_prior_version(self, db_path) -> None:
-        """A transaction that raises mid-way must leave the prior version intact.
+    def test_failed_upsert_preserves_prior_version(self, db_path, monkeypatch) -> None:
+        """A mid-transaction failure in the real upsert_document must roll back cleanly.
 
-        We verify atomicity by subclassing StoreWriter to inject a mid-transaction
-        failure and confirming that the prior version (2 chunks) survives intact.
-        SQLite's 'with conn:' block rolls back the entire transaction on any
-        exception, so the prior version must be preserved.
+        We inject a failure into the real production method by monkeypatching
+        sqlite_vec.serialize_float32 to raise on its second call inside the
+        upsert.  This exercises the actual StoreWriter.upsert_document code
+        path, not a copy — confirming that SQLite's ``with conn:`` block rolls
+        back the entire transaction and leaves the prior version (2 chunks)
+        fully intact.
         """
-        from store.writer import StoreWriter
+        import sqlite_vec as _vec
+        import store.writer as writer_mod
 
-        class _FailingWriter(StoreWriter):
-            """Raises on the second INSERT INTO chunks to simulate a mid-upsert crash."""
+        writer = _make_writer(db_path)
 
-            _chunk_insert_count: int = 0
-
-            def upsert_document(
-                self,
-                meta: DocumentMeta,
-                chunks: Sequence[ChunkInput],
-            ) -> None:
-                # Reset before the second upsert attempt.
-                self._chunk_insert_count = 0
-                from store.writer import _utc_now
-                now = _utc_now()
-                import json as _json
-                tag_ids_json = _json.dumps(list(meta.tag_ids))
-                import sqlite3 as _sqlite3
-                try:
-                    with self._write_lock:
-                        with self._conn:
-                            self._delete_chunks_for_document(meta.id)
-                            self._conn.execute(
-                                """
-                                INSERT OR REPLACE INTO documents (
-                                    id, title, correspondent_id, document_type_id,
-                                    tag_ids, created, modified, content_hash,
-                                    page_count, chunk_count, indexed_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    meta.id, meta.title, meta.correspondent_id,
-                                    meta.document_type_id, tag_ids_json,
-                                    meta.created, meta.modified, meta.content_hash,
-                                    meta.page_count, len(chunks), now,
-                                ),
-                            )
-                            for chunk in chunks:
-                                self._chunk_insert_count += 1
-                                if self._chunk_insert_count == 2:
-                                    # Simulate a mid-transaction failure.
-                                    raise _sqlite3.OperationalError(
-                                        "simulated mid-upsert failure"
-                                    )
-                                import sqlite_vec as _vec
-                                cursor = self._conn.execute(
-                                    """
-                                    INSERT INTO chunks
-                                        (document_id, chunk_index, text, page_hint, embedding)
-                                    VALUES (?, ?, ?, ?, ?)
-                                    """,
-                                    (
-                                        meta.id, chunk.chunk_index, chunk.text,
-                                        chunk.page_hint,
-                                        _vec.serialize_float32(list(chunk.embedding)),
-                                    ),
-                                )
-                                chunk_id = cursor.lastrowid
-                                self._conn.execute(
-                                    "INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)",
-                                    (chunk_id, chunk.text),
-                                )
-                except _sqlite3.Error as exc:
-                    from store.migrations import StoreError as _StoreError
-                    raise _StoreError(f"simulated failure for document {meta.id}") from exc
-
-        settings = _make_settings(db_path)
-        writer = _FailingWriter(settings)
-
-        # First upsert: 2 chunks — this is the "prior version".
-        # Bypass the failing subclass for the first write by calling the parent.
-        from store.writer import StoreWriter as _Base
-        _Base.upsert_document(writer, _meta(1), _chunks(2))
+        # Establish the prior version: 2 chunks for document 1.
+        writer.upsert_document(_meta(1), _chunks(2))
 
         conn = connect(db_path, read_only=True)
         prior_chunks = conn.execute(
             "SELECT count(*) FROM chunks WHERE document_id = 1"
         ).fetchone()[0]
+        prior_fts = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
         conn.close()
         assert prior_chunks == 2
+        assert prior_fts == 2
 
-        # Second upsert: will raise mid-transaction on the 2nd chunk insert.
+        # Monkeypatch serialize_float32 in the writer module to raise on the
+        # second call (first chunk succeeds; second raises — mid-transaction).
+        call_count: list[int] = [0]
+        original_serialize = _vec.serialize_float32
+
+        def _failing_serialize(data: list[float]) -> bytes:
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise sqlite3.OperationalError("simulated mid-upsert failure")
+            return original_serialize(data)
+
+        monkeypatch.setattr(writer_mod.sqlite_vec, "serialize_float32", _failing_serialize)
+
+        # Second upsert: 4 chunks, but it should fail mid-transaction and roll back.
         with pytest.raises((StoreError, Exception)):
             writer.upsert_document(_meta(1), _chunks(4))
 
         writer.close()
 
-        # Prior version must be intact — the transaction rolled back.
+        # The prior version must be fully intact — chunks, FTS rows, and document row.
         conn = connect(db_path, read_only=True)
         chunk_count = conn.execute(
             "SELECT count(*) FROM chunks WHERE document_id = 1"
         ).fetchone()[0]
+        fts_count = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
         doc_count = conn.execute(
             "SELECT count(*) FROM documents WHERE id = 1"
         ).fetchone()[0]
         conn.close()
-        assert doc_count == 1
-        assert chunk_count == 2
+
+        assert doc_count == 1, "document row must survive the rolled-back transaction"
+        assert chunk_count == 2, "prior 2 chunks must be restored, not the partial 4"
+        assert fts_count == 2, "prior 2 FTS rows must be restored, not the partial write"
 
 
 # ---------------------------------------------------------------------------
