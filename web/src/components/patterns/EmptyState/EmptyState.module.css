@@ -1,0 +1,57 @@
+/*
+ * EmptyState pattern — CSS Module.
+ *
+ * Centred layout: icon above, message below, optional description, optional
+ * action. All values come exclusively from design tokens (§12.4).
+ *
+ * Typography follows the Apple body/caption scale from DESIGN.md §3:
+ *   - message: subheading scale (21 px, weight 400)
+ *   - description: body scale (17 px, secondary colour)
+ */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--spacing-6);
+  padding: var(--spacing-14);
+}
+
+.icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--colour-text-tertiary);
+  /* Scale up the icon beyond the large token by increasing the wrapper size.
+   * The Icon primitive uses currentColor and scales via its module, so
+   * wrapping in a larger font-size context enlarges the SVG. */
+  font-size: 2rem;
+}
+
+.message {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  line-height: var(--line-height-subheading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+.description {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-secondary);
+  /* Keep description text narrower than the container so it reads well. */
+  max-width: 360px;
+}
+
+.action {
+  margin-top: var(--spacing-6);
+}
