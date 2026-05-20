@@ -35,11 +35,10 @@ class _ClientRegistry:
         return client
 
     def close_all(self) -> None:
-        for c in self.clients:
-            try:
-                c.close()
-            except Exception:
-                pass
+        # PaperlessClient.close() just closes the httpx session; it is safe and
+        # idempotent, so no error guard is needed (CODE_GUIDELINES §17.6).
+        for client in self.clients:
+            client.close()
         self.clients.clear()
 
 _registry = _ClientRegistry()

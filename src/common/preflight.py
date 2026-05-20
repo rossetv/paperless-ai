@@ -12,8 +12,12 @@ from .paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 log = structlog.get_logger(__name__)
 
 
-class PreflightError(RuntimeError):
-    """Raised when a fatal preflight check fails."""
+class PreflightError(Exception):
+    """Raised when a fatal preflight check fails.
+
+    Inherits directly from ``Exception`` — ``RuntimeError`` is not a domain
+    base (CODE_GUIDELINES §6.1, §6.2).
+    """
 
 
 def run_preflight_checks(settings: Settings, client: PaperlessClient) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import time
 from functools import wraps
-from typing import Callable, Protocol, Type, TypeVar
+from typing import Callable, Protocol, TypeVar
 
 import structlog
 
@@ -32,7 +32,7 @@ class HasRetrySettings(Protocol):
 
 
 def retry(
-    retryable_exceptions: tuple[Type[Exception], ...],
+    retryable_exceptions: tuple[type[Exception], ...],
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Retry an instance method on transient exceptions.
 
@@ -42,30 +42,40 @@ def retry(
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
-        def wrapper(self: HasRetrySettings, *args, **kwargs) -> T:
+        def wrapper(self: HasRetrySettings, *args: object, **kwargs: object) -> T:
             settings: RetrySettings = self.settings
             if settings.MAX_RETRIES < 1:
                 raise ValueError("MAX_RETRIES must be >= 1")
-            for attempt in range(1, settings.MAX_RETRIES + 1):
+
+            # Attempts 1 .. MAX_RETRIES-1 retry on a retryable failure; the
+            # final attempt is made outside the loop so its result — a return
+            # value or a propagated exception — is the function's outcome.
+            # There is therefore no unreachable fall-through branch.
+            for attempt in range(1, settings.MAX_RETRIES):
                 try:
                     return func(self, *args, **kwargs)
-                except retryable_exceptions as e:
-                    if attempt == settings.MAX_RETRIES:
-                        log.exception(
-                            "Function failed after all retries",
-                            func_name=func.__name__,
-                            attempt=attempt,
-                        )
-                        raise
+                except retryable_exceptions as exc:
                     log.warning(
                         "Function failed, retrying",
                         func_name=func.__name__,
-                        error=e,
+                        error=str(exc),
                         attempt=attempt,
                         max_retries=settings.MAX_RETRIES,
                     )
                     _sleep_backoff(attempt, settings)
-            raise AssertionError("unreachable")  # pragma: no cover
+
+            # Final attempt: a retryable failure here is logged with its
+            # traceback and re-raised; a non-retryable failure propagates
+            # untouched; success returns.
+            try:
+                return func(self, *args, **kwargs)
+            except retryable_exceptions:
+                log.exception(
+                    "Function failed after all retries",
+                    func_name=func.__name__,
+                    attempt=settings.MAX_RETRIES,
+                )
+                raise
 
         return wrapper
 
