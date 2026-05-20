@@ -83,25 +83,21 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document_id
 """
 
 
-def connect(db_path: str, *, read_only: bool) -> sqlite3.Connection:
+def connect(db_path: str) -> sqlite3.Connection:
     """Open a connection to the search-index SQLite database.
 
     Loads the sqlite-vec extension, sets WAL journal mode, and applies the
     pragmas required by SPEC §4.5 and CODE_GUIDELINES §9.7.
 
-    The *read_only* parameter documents the caller's intent but does NOT
-    change how the file is opened.  Both paths open a normal read-write
-    connection and load sqlite-vec.  A connection-level mode=ro URI is
-    deliberately avoided: a read-only SQLite connection cannot maintain the
-    WAL -shm coordination file while a separate writer process is live.
-    Read-only access is enforced structurally — the StoreReader API has no
-    write methods, and the indexer's flock makes it the sole writer.
-    See SPEC §3.2 for the full rationale.
+    Every connection is opened read-write.  A connection-level ``mode=ro`` URI
+    is deliberately avoided even for the StoreReader: a read-only SQLite
+    connection cannot maintain the WAL ``-shm`` coordination file while a
+    separate writer process is live.  Read-only access for the search server
+    is enforced structurally instead — the StoreReader API exposes no write
+    methods, and the indexer's flock makes it the sole writer (SPEC §3.2).
 
     Args:
         db_path: Filesystem path to the SQLite database file.
-        read_only: Caller intent flag; does not affect the underlying
-            connection mode (see above).
 
     Returns:
         A configured sqlite3.Connection with sqlite-vec loaded and WAL
