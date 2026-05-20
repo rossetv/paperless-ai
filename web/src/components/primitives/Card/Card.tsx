@@ -1,0 +1,70 @@
+import stylesRaw from './Card.module.css';
+
+// CSS Modules return a string-indexed object; bracket notation is required
+// under noPropertyAccessFromIndexSignature (tsconfig strict mode).
+const styles = stylesRaw as Record<string, string>;
+
+/** Which dark surface token to use for dark-section cards (DESIGN.md §2). */
+export type CardSurface = 'default' | 'dark-1' | 'dark-2' | 'dark-3' | 'dark-4' | 'dark-5';
+
+/** Allowed HTML container elements. */
+export type CardElement = 'div' | 'article' | 'section' | 'aside';
+
+export interface CardProps {
+  /**
+   * HTML element to render as the card container.
+   * Use 'article' for self-contained content, 'section' for a thematic group,
+   * 'div' (default) when semantics are provided by the content.
+   */
+  as?: CardElement;
+  /**
+   * Surface colour — controls the background token.
+   * 'default' = light surface (--colour-surface, #ffffff).
+   * 'dark-1' … 'dark-5' = dark surface variants for dark sections.
+   */
+  surface?: CardSurface;
+  /**
+   * When true, applies the single Apple card shadow (--shadow-card).
+   * Leave false for flat cards embedded within an already-elevated surface.
+   */
+  elevated?: boolean;
+  /** Card content. */
+  children: React.ReactNode;
+  /** Additional class names to merge. */
+  className?: string;
+}
+
+/**
+ * Surface container with the DESIGN.md card treatment.
+ *
+ * Applies radius (--radius-standard, 8px), padding from tokens, and
+ * optionally the single diffused card shadow.
+ *
+ * Card knows nothing about the domain — it is a generic layout surface.
+ * Semantic content hierarchy is supplied by the caller via the `as` prop
+ * and by the children.
+ *
+ * Card itself is not interactive; no focus ring is applied here.
+ */
+export function Card({
+  as: Element = 'div',
+  surface = 'default',
+  elevated = false,
+  children,
+  className,
+}: CardProps): React.ReactElement {
+  const classes = [
+    styles['card'],
+    styles[surface],
+    elevated ? styles['elevated'] : undefined,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <Element className={classes}>
+      {children}
+    </Element>
+  );
+}
