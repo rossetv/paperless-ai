@@ -1,0 +1,29 @@
+/*
+ * Divider layout component — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this.
+ *
+ * DESIGN.md §7 Do's and Don'ts:
+ *   - Apple almost never uses visible borders on cards or containers
+ *   - Dividers are used sparingly; colour comes from --colour-border (rgba(0,0,0,0.04))
+ *
+ * The rule is rendered as a thin line using border-top (the narrowest available
+ * visual element). The <hr> default border is reset and replaced with border-top
+ * using the token border colour. border-width uses --spacing-1 (2px) — the
+ * smallest spacing token — which is close to a standard hairline rule. The
+ * element height is 0 so the border-top carries all visual weight.
+ */
+
+.divider {
+  border: none;
+  border-top: var(--spacing-1) solid var(--colour-border);
+  flex-shrink: 0;
+}
+
+/* ── Orientation ── */
+.horizontal {
+  display: block;
+  width: 100%;
+  margin-block: var(--spacing-6);
+}
