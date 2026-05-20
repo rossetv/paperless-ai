@@ -113,7 +113,7 @@ class PaperlessClient:
 
         last_response: httpx.Response | None = None
         for index, candidate in enumerate(candidates):
-            payload = {"name": name}
+            payload: dict[str, str | int] = {"name": name}
             if candidate is not None:
                 payload["matching_algorithm"] = candidate
             last_response = self._post(url, json=payload)
@@ -194,7 +194,7 @@ class PaperlessClient:
             if value is None:
                 continue
             if key == "tags":
-                value = list(value)  # type: ignore[arg-type]
+                value = list(value)  # type: ignore[call-overload]
             payload[api_field] = value
 
         if not payload:
