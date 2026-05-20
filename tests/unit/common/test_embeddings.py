@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Sequence
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import openai
 import pytest

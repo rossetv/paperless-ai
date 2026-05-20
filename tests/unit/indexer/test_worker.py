@@ -12,9 +12,7 @@ Verifies the per-document indexing pipeline:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, call
-
-import pytest
+from unittest.mock import MagicMock
 
 from indexer.worker import DocumentIndexer, IndexOutcome
 from store.models import IndexState

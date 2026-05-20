@@ -81,7 +81,7 @@ _RECONCILE_SENTINEL_NAME = "reconcile.request"
 #
 # The path is resolved at import time; a missing directory silently skips the
 # static mount rather than crashing the server (unit tests, pre-build).
-import os as _os
+import os as _os  # noqa: E402
 
 _env_frontend = _os.environ.get("FRONTEND_DIST", "").strip()
 if _env_frontend:
