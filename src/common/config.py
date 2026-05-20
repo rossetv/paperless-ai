@@ -1,8 +1,20 @@
-"""Environment-variable configuration for the OCR and classification daemons."""
+"""Environment-variable configuration for every daemon and the search server.
+
+The :class:`Settings` dataclass is the single, immutable description of a
+process's configuration. It is **frozen** (CODE_GUIDELINES §5.2): once built it
+cannot be mutated, so no code path can change configuration mid-run.
+
+Construct it with :meth:`Settings.from_environment` — never ``Settings()``
+directly. ``from_environment`` reads, parses, validates, and clamps every
+environment variable, then builds the instance in a single ``cls(...)`` call.
+A missing required variable or an invalid value raises ``ValueError`` with a
+message naming the offending variable (CODE_GUIDELINES §1.11, §6.6).
+"""
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Literal
 
 from .constants import REFUSAL_PHRASES
@@ -14,15 +26,183 @@ _DEFAULT_INDEX_DB_PATH = "/data/index.db"
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
 _DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1/"
 
+# The marker text written into a document's content when every vision model
+# refuses to transcribe it. A fixed constant, not configurable.
+_REFUSAL_MARK = "CHATGPT REFUSED TO TRANSCRIBE"
 
+# Hard ceiling on SEARCH_MAX_REFINEMENTS. The agentic pipeline's three-LLM-call
+# budget (CODE_GUIDELINES §14.3) is a correctness and cost property, not a
+# tuning knob: planner (1) + retrieve + refine. SEARCH_MAX_REFINEMENTS counts
+# refinement steps, so it is capped here rather than left unbounded.
+_SEARCH_MAX_REFINEMENTS_CEILING = 3
+
+
+# ---------------------------------------------------------------------------
+# Environment-variable parsing helpers (pure functions)
+# ---------------------------------------------------------------------------
+
+
+def _get_required_env(var_name: str) -> str:
+    """Return the value of *var_name*, raising ``ValueError`` if it is unset."""
+    value = os.getenv(var_name)
+    if value is None:
+        raise ValueError(f"Required environment variable '{var_name}' is not set.")
+    return value
+
+
+def _get_int_env(var_name: str, default: int) -> int:
+    """Parse *var_name* as an integer, falling back to *default* when unset.
+
+    Raises a ``ValueError`` naming *var_name* when the value is set but is not
+    a valid integer — the opaque stdlib ``invalid literal for int()`` message
+    does not say which variable was at fault (CODE_GUIDELINES §6.6).
+    """
+    raw = os.getenv(var_name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{var_name} must be an integer, got {raw!r}.") from exc
+
+
+def _get_optional_int_env(var_name: str, default: int | None = None) -> int | None:
+    """Parse *var_name* as an integer, returning *default* when unset or blank."""
+    raw = os.getenv(var_name)
+    if raw is None:
+        return default
+    raw = raw.strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{var_name} must be an integer, got {raw!r}.") from exc
+
+
+def _get_optional_positive_int_env(
+    var_name: str, default: int | None = None
+) -> int | None:
+    """Like :func:`_get_optional_int_env`, but maps a non-positive value to None."""
+    value = _get_optional_int_env(var_name, default)
+    if value is not None and value <= 0:
+        return None
+    return value
+
+
+def _get_csv_env(
+    var_name: str,
+    default: list[str],
+    *,
+    require_non_empty: bool = False,
+) -> list[str]:
+    """Parse a comma-separated env var, falling back to *default*.
+
+    When *require_non_empty* is ``True``, raises ``ValueError`` if the env
+    var is set but yields no items (used for model lists).
+    """
+    value = os.getenv(var_name)
+    if value is None:
+        return [item for item in default if item]
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    if require_non_empty and not parts:
+        raise ValueError(f"{var_name} must contain at least one model name.")
+    return parts
+
+
+def _get_bool_env(var_name: str, default: bool) -> bool:
+    """Parse *var_name* as a boolean, falling back to *default* when unset."""
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in ("1", "true", "yes", "y", "on"):
+        return True
+    if value in ("0", "false", "no", "n", "off"):
+        return False
+    raise ValueError(f"{var_name} must be a boolean value.")
+
+
+def _require_at_least_one(var_name: str, value: int, minimum: int = 1) -> int:
+    """Return *value*, raising a contextful ``ValueError`` if it is below *minimum*."""
+    if value < minimum:
+        raise ValueError(f"{var_name} must be >= {minimum}")
+    return value
+
+
+def _resolve_llm_provider() -> Literal["openai", "ollama"]:
+    """Resolve and validate ``LLM_PROVIDER`` (defaults to ``openai``)."""
+    provider = os.getenv("LLM_PROVIDER", "openai")
+    if provider not in ("openai", "ollama"):
+        raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
+    # Validated above; narrow from str to Literal.
+    return provider  # type: ignore[return-value]
+
+
+def _resolve_log_format() -> Literal["json", "console"]:
+    """Resolve and validate ``LOG_FORMAT`` (defaults to ``console``)."""
+    log_format = os.getenv("LOG_FORMAT", "console")
+    if log_format not in ("json", "console"):
+        raise ValueError("LOG_FORMAT must be 'json' or 'console'")
+    # Validated above; narrow from str to Literal.
+    return log_format  # type: ignore[return-value]
+
+
+def _resolve_chunk_overlap(chunk_size: int) -> int:
+    """Resolve and validate ``CHUNK_OVERLAP`` against *chunk_size*.
+
+    The overlap must be non-negative and strictly less than the chunk size,
+    otherwise a chunk could never advance past its own overlap.
+    """
+    chunk_overlap = _get_int_env("CHUNK_OVERLAP", 256)
+    if not 0 <= chunk_overlap < chunk_size:
+        raise ValueError(
+            f"CHUNK_OVERLAP must be >= 0 and < CHUNK_SIZE ({chunk_size}), "
+            f"got {chunk_overlap}."
+        )
+    return chunk_overlap
+
+
+def _resolve_search_max_refinements() -> int:
+    """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` against the §14.3 ceiling."""
+    value = _get_int_env("SEARCH_MAX_REFINEMENTS", 1)
+    if not 0 <= value <= _SEARCH_MAX_REFINEMENTS_CEILING:
+        # The three-LLM-call budget is a hard correctness property, not a knob.
+        raise ValueError(
+            f"SEARCH_MAX_REFINEMENTS must be between 0 and "
+            f"{_SEARCH_MAX_REFINEMENTS_CEILING} (the §14.3 three-LLM-call "
+            f"budget), got {value}."
+        )
+    return value
+
+
+def _resolve_server_port() -> int:
+    """Resolve and validate ``SEARCH_SERVER_PORT`` to the valid TCP port range."""
+    port = _get_int_env("SEARCH_SERVER_PORT", 8080)
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}."
+        )
+    return port
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
+    """Immutable, fully-validated configuration for one process.
+
+    Built once via :meth:`from_environment`; never mutated thereafter. Every
+    field is set in a single constructor call, so the type checker and the
+    reader both see the complete shape in one place.
+    """
 
     PAPERLESS_URL: str
     PAPERLESS_TOKEN: str
 
     LLM_PROVIDER: Literal["openai", "ollama"]
     OLLAMA_BASE_URL: str | None
-    OPENAI_API_KEY: str | None
+    # OPENAI_API_KEY is required regardless of LLM_PROVIDER: the embedding
+    # client always uses OpenAI (CODE_GUIDELINES §10.8, §15.4).
+    OPENAI_API_KEY: str
 
     AI_MODELS: list[str]
     OCR_REFUSAL_MARKERS: list[str]
@@ -51,7 +231,7 @@ class Settings:
     LOG_LEVEL: str
     LOG_FORMAT: Literal["json", "console"]
 
-    REFUSAL_MARK: str = "CHATGPT REFUSED TO TRANSCRIBE"
+    REFUSAL_MARK: str
 
     CLASSIFY_PERSON_FIELD_ID: int | None
     CLASSIFY_DEFAULT_COUNTRY_TAG: str
@@ -86,206 +266,155 @@ class Settings:
     SEARCH_SESSION_TTL: int
     SEARCH_MAX_CONCURRENT: int
 
-    def __init__(self):
-        self._load_api_settings()
-        self._load_llm_settings()
-        self._load_tag_settings()
-        self._load_daemon_settings()
-        self._load_image_settings()
-        self._load_logging_settings()
-        self._load_classification_settings()
-        self._load_index_settings()
-        self._load_search_settings()
+    @classmethod
+    def from_environment(cls) -> Settings:
+        """Build a :class:`Settings` from the process environment.
 
-    def _load_api_settings(self) -> None:
-        self.PAPERLESS_URL = os.getenv("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip(
-            "/"
-        )
-        self.PAPERLESS_TOKEN = self._get_required_env("PAPERLESS_TOKEN")
+        Reads, parses, validates, and clamps every environment variable, then
+        constructs the frozen instance in one ``cls(...)`` call. Each value is
+        produced by a typed parsing helper above, so the constructor arguments
+        type-check field by field.
 
-    def _load_llm_settings(self) -> None:
-        _llm_provider = os.getenv("LLM_PROVIDER", "openai")
-        if _llm_provider not in ("openai", "ollama"):
-            raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
-        # Validated above; narrow from str to Literal.
-        self.LLM_PROVIDER: Literal["openai", "ollama"] = _llm_provider  # type: ignore[assignment]
+        Raises:
+            ValueError: When a required variable is unset, or a value fails
+                validation. The message names the offending variable.
 
-        if self.LLM_PROVIDER == "ollama":
-            self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL)
-            self.OPENAI_API_KEY = None
-            default_ai_models = ["gemma3:27b", "gemma3:12b"]
-        else:
-            self.OLLAMA_BASE_URL = None
-            self.OPENAI_API_KEY = self._get_required_env("OPENAI_API_KEY")
-            default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "o4-mini"]
-        self.AI_MODELS = self._get_csv_env(
-            "AI_MODELS", default_ai_models, require_non_empty=True
-        )
-        default_ocr_refusal_markers = list(REFUSAL_PHRASES) + [self.REFUSAL_MARK]
-        self.OCR_REFUSAL_MARKERS = [
-            marker.lower()
-            for marker in self._get_csv_env(
-                "OCR_REFUSAL_MARKERS", default_ocr_refusal_markers
-            )
-        ]
-        self.OCR_INCLUDE_PAGE_MODELS = self._get_bool_env(
-            "OCR_INCLUDE_PAGE_MODELS", False
-        )
-
-    def _load_tag_settings(self) -> None:
-        self.PRE_TAG_ID = int(os.getenv("PRE_TAG_ID", "443"))
-        self.POST_TAG_ID = int(os.getenv("POST_TAG_ID", "444"))
-        self.OCR_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
-            "OCR_PROCESSING_TAG_ID"
-        )
-        # The default is POST_TAG_ID (an int), so the result is never None in
-        # practice; the helper's return type is int | None because it cannot
-        # express "only None when the default is None".
-        self.CLASSIFY_PRE_TAG_ID = self._get_optional_int_env(  # type: ignore[assignment]
-            "CLASSIFY_PRE_TAG_ID", self.POST_TAG_ID
-        )
-        self.CLASSIFY_POST_TAG_ID = self._get_optional_positive_int_env(
-            "CLASSIFY_POST_TAG_ID"
-        )
-        self.CLASSIFY_PROCESSING_TAG_ID = self._get_optional_positive_int_env(
-            "CLASSIFY_PROCESSING_TAG_ID"
-        )
-        self.ERROR_TAG_ID = self._get_optional_positive_int_env("ERROR_TAG_ID", 552)
-
-    def _load_daemon_settings(self) -> None:
-        self.POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
-        self.MAX_RETRIES = int(os.getenv("MAX_RETRIES", "20"))
-        if self.MAX_RETRIES < 1:
-            raise ValueError("MAX_RETRIES must be >= 1")
-        self.MAX_RETRY_BACKOFF_SECONDS = int(
-            os.getenv("MAX_RETRY_BACKOFF_SECONDS", "30")
-        )
-        if self.MAX_RETRY_BACKOFF_SECONDS < 1:
-            raise ValueError("MAX_RETRY_BACKOFF_SECONDS must be >= 1")
-        self.REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "180"))
-        self.LLM_MAX_CONCURRENT = max(0, int(os.getenv("LLM_MAX_CONCURRENT", "0")))
-
-    def _load_image_settings(self) -> None:
-        self.OCR_DPI = int(os.getenv("OCR_DPI", "300"))
-        self.OCR_MAX_SIDE = int(os.getenv("OCR_MAX_SIDE", "1600"))
-        self.PAGE_WORKERS = max(1, int(os.getenv("PAGE_WORKERS", "8")))
-        self.DOCUMENT_WORKERS = max(1, int(os.getenv("DOCUMENT_WORKERS", "4")))
-
-    def _load_logging_settings(self) -> None:
-        self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-        _log_format = os.getenv("LOG_FORMAT", "console")
-        if _log_format not in ("json", "console"):
-            raise ValueError("LOG_FORMAT must be 'json' or 'console'")
-        # Validated above; narrow from str to Literal.
-        self.LOG_FORMAT: Literal["json", "console"] = _log_format  # type: ignore[assignment]
-
-    def _load_classification_settings(self) -> None:
-        self.CLASSIFY_PERSON_FIELD_ID = self._get_optional_int_env(
-            "CLASSIFY_PERSON_FIELD_ID"
-        )
-        self.CLASSIFY_DEFAULT_COUNTRY_TAG = os.getenv(
-            "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
-        ).strip()
-        self.CLASSIFY_MAX_CHARS = int(os.getenv("CLASSIFY_MAX_CHARS", "0"))
-        self.CLASSIFY_MAX_TOKENS = max(0, int(os.getenv("CLASSIFY_MAX_TOKENS", "0")))
-        self.CLASSIFY_TAG_LIMIT = max(0, int(os.getenv("CLASSIFY_TAG_LIMIT", "5")))
-        self.CLASSIFY_TAXONOMY_LIMIT = max(
-            0, int(os.getenv("CLASSIFY_TAXONOMY_LIMIT", "100"))
-        )
-        self.CLASSIFY_MAX_PAGES = max(0, int(os.getenv("CLASSIFY_MAX_PAGES", "3")))
-        self.CLASSIFY_TAIL_PAGES = max(0, int(os.getenv("CLASSIFY_TAIL_PAGES", "2")))
-        self.CLASSIFY_HEADERLESS_CHAR_LIMIT = max(
-            0, int(os.getenv("CLASSIFY_HEADERLESS_CHAR_LIMIT", "15000"))
-        )
-
-    def _load_index_settings(self) -> None:
-        """Load indexer and store settings (semantic-search spec §10)."""
-        self.INDEX_DB_PATH = os.getenv("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH)
-        self.EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-        self.EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
-        self.EMBEDDING_MAX_CONCURRENT = int(os.getenv("EMBEDDING_MAX_CONCURRENT", "4"))
-        self.RECONCILE_INTERVAL = int(os.getenv("RECONCILE_INTERVAL", "300"))
-        self.DELETION_SWEEP_INTERVAL = int(os.getenv("DELETION_SWEEP_INTERVAL", "3600"))
-        self.CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2000"))
-        self.CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "256"))
-
-    def _load_search_settings(self) -> None:
-        """Load search-server settings (semantic-search spec §10).
-
-        Provider-aware defaults for SEARCH_PLANNER_MODEL and SEARCH_ANSWER_MODEL
-        mirror the _load_llm_settings pattern: cheaper/faster model for planning,
-        stronger model for answer synthesis.
+        rationale: this function exceeds the 60-line body ceiling because it is
+        an irreducibly flat enumeration of every environment variable — one
+        keyword per setting. Splitting it would only scatter that single list
+        across helpers without lowering the real complexity (CODE_GUIDELINES
+        §3.1).
         """
-        self.SEARCH_TOP_K = int(os.getenv("SEARCH_TOP_K", "10"))
-        self.SEARCH_MAX_REFINEMENTS = int(os.getenv("SEARCH_MAX_REFINEMENTS", "1"))
+        # Resolved first: these drive the provider-dependent defaults below.
+        llm_provider = _resolve_llm_provider()
+        post_tag_id = _get_int_env("POST_TAG_ID", 444)
+        chunk_size = _require_at_least_one("CHUNK_SIZE", _get_int_env("CHUNK_SIZE", 2000))
 
-        if self.LLM_PROVIDER == "ollama":
+        if llm_provider == "ollama":
+            ollama_base_url: str | None = os.getenv(
+                "OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL
+            )
+            default_ai_models = ["gemma3:27b", "gemma3:12b"]
             default_planner_model = "gemma3:12b"
             default_answer_model = "gemma3:27b"
         else:
+            ollama_base_url = None
+            default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "o4-mini"]
             default_planner_model = "gpt-5.4-mini"
             default_answer_model = "gpt-5.4"
 
-        self.SEARCH_PLANNER_MODEL = os.getenv("SEARCH_PLANNER_MODEL", default_planner_model)
-        self.SEARCH_ANSWER_MODEL = os.getenv("SEARCH_ANSWER_MODEL", default_answer_model)
-        self.SEARCH_SERVER_HOST = os.getenv("SEARCH_SERVER_HOST", "0.0.0.0")
-        self.SEARCH_SERVER_PORT = int(os.getenv("SEARCH_SERVER_PORT", "8080"))
-        # Empty default is intentional — the search server validates non-empty at
-        # preflight; the indexer does not require this key (spec §10, §10.1).
-        self.SEARCH_API_KEY = os.getenv("SEARCH_API_KEY", "")
-        self.SEARCH_SESSION_TTL = int(os.getenv("SEARCH_SESSION_TTL", "604800"))
-        self.SEARCH_MAX_CONCURRENT = int(os.getenv("SEARCH_MAX_CONCURRENT", "4"))
+        # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int), so it is never
+        # None here; _get_optional_int_env returns int | None only because it
+        # cannot express "None only when the default is None".
+        classify_pre_tag_id = _get_optional_int_env("CLASSIFY_PRE_TAG_ID", post_tag_id)
+        assert classify_pre_tag_id is not None  # default is an int → never None
 
-    def _get_required_env(self, var_name: str) -> str:
-        value = os.getenv(var_name)
-        if value is None:
-            raise ValueError(f"Required environment variable '{var_name}' is not set.")
-        return value
-
-    def _get_optional_int_env(self, var_name: str, default: int | None = None) -> int | None:
-        value = os.getenv(var_name)
-        if value is None:
-            return default
-        value = value.strip()
-        if not value:
-            return default
-        return int(value)
-
-    def _get_optional_positive_int_env(
-        self, var_name: str, default: int | None = None
-    ) -> int | None:
-        value = self._get_optional_int_env(var_name, default)
-        if value is not None and value <= 0:
-            return None
-        return value
-
-    def _get_csv_env(
-        self,
-        var_name: str,
-        default: list[str],
-        *,
-        require_non_empty: bool = False,
-    ) -> list[str]:
-        """Parse a comma-separated env var, falling back to *default*.
-
-        When *require_non_empty* is ``True``, raises ``ValueError`` if the env
-        var is set but yields no items (used for model lists).
-        """
-        value = os.getenv(var_name)
-        if value is None:
-            return [item for item in default if item]
-        parts = [part.strip() for part in value.split(",") if part.strip()]
-        if require_non_empty and not parts:
-            raise ValueError(f"{var_name} must contain at least one model name.")
-        return parts
-
-    def _get_bool_env(self, var_name: str, default: bool) -> bool:
-        value = os.getenv(var_name)
-        if value is None:
-            return default
-        value = value.strip().lower()
-        if value in ("1", "true", "yes", "y", "on"):
-            return True
-        if value in ("0", "false", "no", "n", "off"):
-            return False
-        raise ValueError(f"{var_name} must be a boolean value.")
+        return cls(
+            PAPERLESS_URL=os.getenv(
+                "PAPERLESS_URL", _DEFAULT_PAPERLESS_URL
+            ).rstrip("/"),
+            PAPERLESS_TOKEN=_get_required_env("PAPERLESS_TOKEN"),
+            LLM_PROVIDER=llm_provider,
+            OLLAMA_BASE_URL=ollama_base_url,
+            # Required unconditionally — embeddings always use OpenAI.
+            OPENAI_API_KEY=_get_required_env("OPENAI_API_KEY"),
+            AI_MODELS=_get_csv_env(
+                "AI_MODELS", default_ai_models, require_non_empty=True
+            ),
+            OCR_REFUSAL_MARKERS=[
+                marker.lower()
+                for marker in _get_csv_env(
+                    "OCR_REFUSAL_MARKERS",
+                    [*REFUSAL_PHRASES, _REFUSAL_MARK],
+                )
+            ],
+            OCR_INCLUDE_PAGE_MODELS=_get_bool_env("OCR_INCLUDE_PAGE_MODELS", False),
+            PRE_TAG_ID=_get_int_env("PRE_TAG_ID", 443),
+            POST_TAG_ID=post_tag_id,
+            OCR_PROCESSING_TAG_ID=_get_optional_positive_int_env(
+                "OCR_PROCESSING_TAG_ID"
+            ),
+            CLASSIFY_PRE_TAG_ID=classify_pre_tag_id,
+            CLASSIFY_POST_TAG_ID=_get_optional_positive_int_env(
+                "CLASSIFY_POST_TAG_ID"
+            ),
+            CLASSIFY_PROCESSING_TAG_ID=_get_optional_positive_int_env(
+                "CLASSIFY_PROCESSING_TAG_ID"
+            ),
+            ERROR_TAG_ID=_get_optional_positive_int_env("ERROR_TAG_ID", 552),
+            POLL_INTERVAL=_get_int_env("POLL_INTERVAL", 15),
+            MAX_RETRIES=_require_at_least_one(
+                "MAX_RETRIES", _get_int_env("MAX_RETRIES", 20)
+            ),
+            MAX_RETRY_BACKOFF_SECONDS=_require_at_least_one(
+                "MAX_RETRY_BACKOFF_SECONDS",
+                _get_int_env("MAX_RETRY_BACKOFF_SECONDS", 30),
+            ),
+            REQUEST_TIMEOUT=_get_int_env("REQUEST_TIMEOUT", 180),
+            LLM_MAX_CONCURRENT=max(0, _get_int_env("LLM_MAX_CONCURRENT", 0)),
+            OCR_DPI=_get_int_env("OCR_DPI", 300),
+            OCR_MAX_SIDE=_get_int_env("OCR_MAX_SIDE", 1600),
+            PAGE_WORKERS=max(1, _get_int_env("PAGE_WORKERS", 8)),
+            DOCUMENT_WORKERS=max(1, _get_int_env("DOCUMENT_WORKERS", 4)),
+            LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO").upper(),
+            LOG_FORMAT=_resolve_log_format(),
+            REFUSAL_MARK=_REFUSAL_MARK,
+            CLASSIFY_PERSON_FIELD_ID=_get_optional_int_env("CLASSIFY_PERSON_FIELD_ID"),
+            CLASSIFY_DEFAULT_COUNTRY_TAG=os.getenv(
+                "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
+            ).strip(),
+            CLASSIFY_MAX_CHARS=_get_int_env("CLASSIFY_MAX_CHARS", 0),
+            CLASSIFY_MAX_TOKENS=max(0, _get_int_env("CLASSIFY_MAX_TOKENS", 0)),
+            CLASSIFY_TAG_LIMIT=max(0, _get_int_env("CLASSIFY_TAG_LIMIT", 5)),
+            CLASSIFY_TAXONOMY_LIMIT=max(
+                0, _get_int_env("CLASSIFY_TAXONOMY_LIMIT", 100)
+            ),
+            CLASSIFY_MAX_PAGES=max(0, _get_int_env("CLASSIFY_MAX_PAGES", 3)),
+            CLASSIFY_TAIL_PAGES=max(0, _get_int_env("CLASSIFY_TAIL_PAGES", 2)),
+            CLASSIFY_HEADERLESS_CHAR_LIMIT=max(
+                0, _get_int_env("CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
+            ),
+            INDEX_DB_PATH=os.getenv("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
+            EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+            EMBEDDING_DIMENSIONS=_require_at_least_one(
+                "EMBEDDING_DIMENSIONS", _get_int_env("EMBEDDING_DIMENSIONS", 1536)
+            ),
+            # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
+            EMBEDDING_MAX_CONCURRENT=max(
+                0, _get_int_env("EMBEDDING_MAX_CONCURRENT", 4)
+            ),
+            RECONCILE_INTERVAL=_require_at_least_one(
+                "RECONCILE_INTERVAL", _get_int_env("RECONCILE_INTERVAL", 300)
+            ),
+            DELETION_SWEEP_INTERVAL=_require_at_least_one(
+                "DELETION_SWEEP_INTERVAL",
+                _get_int_env("DELETION_SWEEP_INTERVAL", 3600),
+            ),
+            CHUNK_SIZE=chunk_size,
+            CHUNK_OVERLAP=_resolve_chunk_overlap(chunk_size),
+            SEARCH_TOP_K=_require_at_least_one(
+                "SEARCH_TOP_K", _get_int_env("SEARCH_TOP_K", 10)
+            ),
+            SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(),
+            SEARCH_PLANNER_MODEL=os.getenv(
+                "SEARCH_PLANNER_MODEL", default_planner_model
+            ),
+            SEARCH_ANSWER_MODEL=os.getenv(
+                "SEARCH_ANSWER_MODEL", default_answer_model
+            ),
+            # 0.0.0.0 is deliberate: the server is auth-gated (SEARCH_API_KEY
+            # is mandatory, CODE_GUIDELINES §10.1); binding all interfaces lets
+            # the operator restrict exposure at the reverse proxy / port map.
+            SEARCH_SERVER_HOST=os.getenv("SEARCH_SERVER_HOST", "0.0.0.0"),
+            SEARCH_SERVER_PORT=_resolve_server_port(),
+            # Empty default is intentional — the search server validates
+            # non-empty at preflight; the indexer does not need this key.
+            SEARCH_API_KEY=os.getenv("SEARCH_API_KEY", ""),
+            SEARCH_SESSION_TTL=_require_at_least_one(
+                "SEARCH_SESSION_TTL", _get_int_env("SEARCH_SESSION_TTL", 604800)
+            ),
+            # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
+            SEARCH_MAX_CONCURRENT=max(
+                0, _get_int_env("SEARCH_MAX_CONCURRENT", 4)
+            ),
+        )

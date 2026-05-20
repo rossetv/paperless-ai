@@ -481,7 +481,7 @@ def main() -> None:
     from common.logging_config import configure_logging
     from common.shutdown import register_signal_handlers
 
-    settings = Settings()
+    settings = Settings.from_environment()
     configure_logging(settings)
     setup_libraries(settings)
     register_signal_handlers()

@@ -35,7 +35,8 @@ class TestBootstrapDaemon:
         mock_settings.LLM_MAX_CONCURRENT = 8
         mock_settings.OCR_PROCESSING_TAG_ID = 55
         mock_settings.PRE_TAG_ID = 443
-        mock_settings_cls.return_value = mock_settings
+        # bootstrap_daemon builds Settings via Settings.from_environment().
+        mock_settings_cls.from_environment.return_value = mock_settings
         mock_client = MagicMock()
         mock_paperless_cls.return_value = mock_client
 
@@ -59,7 +60,7 @@ class TestBootstrapDaemon:
 
     @patch(f"{MODULE}.Settings")
     def test_value_error_from_settings_returns_none(self, mock_settings_cls):
-        mock_settings_cls.side_effect = ValueError("bad config")
+        mock_settings_cls.from_environment.side_effect = ValueError("bad config")
 
         result = bootstrap_daemon(
             get_processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
@@ -73,7 +74,9 @@ class TestBootstrapDaemon:
     def test_value_error_from_configure_logging_returns_none(
         self, mock_settings_cls, mock_configure_logging,
     ):
-        mock_settings_cls.return_value = MagicMock(LLM_MAX_CONCURRENT=0)
+        mock_settings_cls.from_environment.return_value = MagicMock(
+            LLM_MAX_CONCURRENT=0
+        )
         mock_configure_logging.side_effect = ValueError("bad log config")
 
         result = bootstrap_daemon(
@@ -101,7 +104,7 @@ class TestBootstrapDaemon:
         mock_preflight,
     ):
         mock_settings = MagicMock(LLM_MAX_CONCURRENT=0)
-        mock_settings_cls.return_value = mock_settings
+        mock_settings_cls.from_environment.return_value = mock_settings
         mock_client = MagicMock()
         mock_paperless_cls.return_value = mock_client
         mock_preflight.side_effect = PreflightError("paperless unreachable")

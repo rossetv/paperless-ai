@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -345,9 +346,14 @@ def test_main_exits_nonzero_when_lock_contended(tmp_path: Path, monkeypatch) -> 
         lambda path: (_ for _ in ()).throw(IndexerLockError("lock held")),
     )
     # Stub out Settings and bootstrap so we don't need real env vars.
+    # daemon.main() calls Settings.from_environment(), so the stand-in must
+    # expose that classmethod.
     mock_settings = MagicMock()
     mock_settings.INDEX_DB_PATH = str(tmp_path / "index.db")
-    monkeypatch.setattr("indexer.daemon.Settings", lambda: mock_settings)
+    monkeypatch.setattr(
+        "indexer.daemon.Settings",
+        SimpleNamespace(from_environment=lambda: mock_settings),
+    )
     monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
     monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
 
@@ -370,7 +376,10 @@ def test_main_proceeds_when_lock_acquired(tmp_path: Path, monkeypatch) -> None:
         mock_settings.DELETION_SWEEP_INTERVAL = 3600
         mock_settings.DOCUMENT_WORKERS = 1
 
-        monkeypatch.setattr("indexer.daemon.Settings", lambda: mock_settings)
+        monkeypatch.setattr(
+            "indexer.daemon.Settings",
+            SimpleNamespace(from_environment=lambda: mock_settings),
+        )
         monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
         monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
         monkeypatch.setattr(

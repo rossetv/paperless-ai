@@ -734,8 +734,12 @@ def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
     whitespace_settings = MagicMock()
     whitespace_settings.SEARCH_API_KEY = "   "  # whitespace-only key
 
+    # main() builds settings via Settings.from_environment().
+    settings_stub = MagicMock()
+    settings_stub.from_environment.return_value = whitespace_settings
+
     with (
-        patch("common.config.Settings", return_value=whitespace_settings),
+        patch("common.config.Settings", settings_stub),
         patch("common.logging_config.configure_logging"),
         patch("common.library_setup.setup_libraries"),
         patch("common.shutdown.register_signal_handlers"),
