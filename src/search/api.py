@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -236,21 +237,79 @@ def create_app(
     async def healthz() -> dict[str, str]:
         """Liveness check; surfaces index state to the Docker healthcheck.
 
-        Returns:
-            200 ``{"status": "ok"}`` when the index is healthy.
-            503 ``{"status": "index-not-ready"}`` when the DB file is absent.
-            503 ``{"status": "index-corrupt"}`` when ``quick_check`` fails.
+        Three outcomes (spec §4.7):
+
+        - **200** ``{"status": "ok"}`` — the index has a schema, has been
+          reconciled at least once, and ``quick_check`` passes.
+        - **503** ``{"status": "index-not-ready"}`` — the DB file is absent,
+          OR exists but has no schema (``meta``/``documents`` tables missing),
+          OR has a schema but has never been reconciled
+          (``last_reconcile_at`` is ``None``).  All of these mean the
+          indexer has not finished building the index yet.
+        - **503** ``{"status": "index-corrupt"}`` — the DB exists with a
+          schema and a reconcile timestamp, but ``quick_check`` reports
+          corruption.
+
+        The handler never raises: any unexpected error becomes a clean 503.
+
+        Note on the empty-file edge case: ``sqlite3.connect`` creates an
+        empty DB when the path does not exist and the directory is writable,
+        so a missing-table ``OperationalError`` from ``get_stats()`` is the
+        canonical signal for "file present but not yet initialised by the
+        indexer".  We treat that as ``index-not-ready``, not corrupt.
         """
         db_path = Path(settings.INDEX_DB_PATH)
         if not db_path.exists():
             # The indexer has not created the DB yet (spec §3.2).
-            log.info("api.healthz_not_ready")
+            log.info("api.healthz_not_ready", reason="db_absent")
             return Response(  # type: ignore[return-value]
                 content='{"status":"index-not-ready"}',
                 status_code=503,
                 media_type="application/json",
             )
 
+        # Try to read index statistics.  An OperationalError here means the
+        # schema has not been created yet (e.g. sqlite3.connect auto-created
+        # an empty file before the indexer ran StoreWriter.ensure_schema).
+        # Any other unexpected error is also treated as not-ready to avoid
+        # leaking internal details.
+        try:
+            stats = store_reader.get_stats()
+        except StoreError as exc:
+            # StoreError wraps sqlite3.Error; unwrap to check the root cause.
+            cause = exc.__cause__
+            if isinstance(cause, sqlite3.OperationalError) and "no such table" in str(
+                cause
+            ).lower():
+                log.info("api.healthz_not_ready", reason="schema_missing")
+            else:
+                log.info("api.healthz_not_ready", reason="stats_error", error=str(exc))
+            return Response(  # type: ignore[return-value]
+                content='{"status":"index-not-ready"}',
+                status_code=503,
+                media_type="application/json",
+            )
+        except Exception as exc:
+            log.warning("api.healthz_not_ready", reason="unexpected_error", error=str(exc))
+            return Response(  # type: ignore[return-value]
+                content='{"status":"index-not-ready"}',
+                status_code=503,
+                media_type="application/json",
+            )
+
+        # Schema exists; check whether the indexer has ever completed a
+        # reconciliation cycle.  A None last_reconcile_at means the schema
+        # was written but the first reconciliation has not finished.
+        if stats.last_reconcile_at is None:
+            log.info("api.healthz_not_ready", reason="never_reconciled")
+            return Response(  # type: ignore[return-value]
+                content='{"status":"index-not-ready"}',
+                status_code=503,
+                media_type="application/json",
+            )
+
+        # Schema is present and at least one reconciliation has completed.
+        # Now verify physical integrity.
         try:
             ok = store_reader.quick_check()
         except StoreError:
