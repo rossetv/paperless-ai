@@ -74,4 +74,49 @@ describe('Chip', () => {
     const { container } = render(<Chip className="my-chip">Label</Chip>);
     expect((container.firstChild as Element).className).toContain('my-chip');
   });
+
+  describe('interactive toggle mode (onClick)', () => {
+    it('renders a <button> as root when onClick is provided', () => {
+      const { container } = render(<Chip onClick={vi.fn()}>Tag</Chip>);
+      expect((container.firstChild as Element).tagName).toBe('BUTTON');
+    });
+
+    it('renders a <span> as root when onClick is NOT provided', () => {
+      const { container } = render(<Chip>Tag</Chip>);
+      expect((container.firstChild as Element).tagName).toBe('SPAN');
+    });
+
+    it('fires onClick when the chip button is clicked', async () => {
+      const handleClick = vi.fn();
+      render(<Chip onClick={handleClick}>Toggle</Chip>);
+      await userEvent.click(screen.getByRole('button', { name: 'Toggle' }));
+      expect(handleClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires onClick when the chip button is activated with Enter', async () => {
+      const handleClick = vi.fn();
+      render(<Chip onClick={handleClick}>Toggle</Chip>);
+      screen.getByRole('button', { name: 'Toggle' }).focus();
+      await userEvent.keyboard('{Enter}');
+      expect(handleClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires onClick when the chip button is activated with Space', async () => {
+      const handleClick = vi.fn();
+      render(<Chip onClick={handleClick}>Toggle</Chip>);
+      screen.getByRole('button', { name: 'Toggle' }).focus();
+      await userEvent.keyboard(' ');
+      expect(handleClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('sets aria-pressed to reflect the selected state', () => {
+      render(<Chip onClick={vi.fn()} selected>Active</Chip>);
+      expect(screen.getByRole('button', { name: 'Active' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('sets aria-pressed=false when not selected', () => {
+      render(<Chip onClick={vi.fn()}>Inactive</Chip>);
+      expect(screen.getByRole('button', { name: 'Inactive' })).toHaveAttribute('aria-pressed', 'false');
+    });
+  });
 });

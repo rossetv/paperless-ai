@@ -11,6 +11,7 @@ const meta = {
   argTypes: {
     selected: { control: 'boolean' },
     onRemove: { action: 'removed' },
+    onClick: { action: 'toggled' },
   },
 } satisfies Meta<typeof Chip>;
 
@@ -45,6 +46,23 @@ export const RemovableSelected: Story = {
   },
 };
 
+/** Interactive toggle mode: chip renders as a <button> with aria-pressed. */
+export const Toggleable: Story = {
+  args: {
+    children: 'Tax',
+    onClick: () => undefined,
+  },
+};
+
+/** Interactive toggle mode in the selected/active state. */
+export const ToggleableSelected: Story = {
+  args: {
+    children: 'Tax',
+    selected: true,
+    onClick: () => undefined,
+  },
+};
+
 export const AllVariants: StoryObj = {
   render: () => (
     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -52,6 +70,8 @@ export const AllVariants: StoryObj = {
       <Chip selected>Selected</Chip>
       <Chip onRemove={() => undefined}>Removable</Chip>
       <Chip selected onRemove={() => undefined}>Selected + Remove</Chip>
+      <Chip onClick={() => undefined}>Toggle</Chip>
+      <Chip onClick={() => undefined} selected>Toggle (active)</Chip>
     </div>
   ),
 };
