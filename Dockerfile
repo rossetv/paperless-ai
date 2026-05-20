@@ -1,6 +1,25 @@
-# Stage 1: Builder and Tester
+# Stage 1: Frontend Builder
+# Runs npm ci + vite build in a Node environment, producing web/dist.
+FROM node:22-slim AS frontend-builder
+
+WORKDIR /web
+
+# Copy dependency manifests first so the npm layer is cached when only
+# source files change.
+COPY web/package.json web/package-lock.json web/.npmrc ./
+
+RUN npm ci
+
+# Copy the rest of the frontend source and build.
+COPY web/ ./
+
+RUN npm run build
+
+# ---------------------------------------------------------------------
+
+# Stage 2: Builder and Tester
 # This stage installs all dependencies (including dev), runs tests, and builds the application.
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 # Install system dependencies required for building Python packages and running tests
 RUN apt-get update && apt-get install -y \
@@ -74,6 +93,14 @@ RUN pip install --no-cache-dir --upgrade pip
 # Install only the production dependencies defined in pyproject.toml
 # The '.' tells pip to install the project in the current directory.
 RUN pip install --no-cache-dir .
+
+# Tell api.py where to find the built frontend.  When installed as a Python
+# package, Path(__file__).parent.parent.parent resolves to the venv site-packages
+# root, not /app.  The env var takes precedence over the relative-path fallback.
+ENV FRONTEND_DIST=/app/web/dist
+
+# Copy the built frontend from the Node stage so the StaticFiles mount is live.
+COPY --from=frontend-builder /web/dist ./web/dist
 
 # Transfer ownership of the application files and venv to the non-root user
 RUN chown -R appuser:appgroup /app /opt/venv
