@@ -1,0 +1,56 @@
+/*
+ * Card primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
+ *
+ * DESIGN.md §4 Cards & Containers:
+ *   - Background: #f5f5f7 (light) or #272729–#2a2a2d (dark variants)
+ *   - Border: none — Apple almost never borders cards
+ *   - Radius: 5px–8px; use --radius-standard (8px) as the standard card radius
+ *   - Shadow: --shadow-card for elevated product cards; flat (no shadow) otherwise
+ *   - Padding: generous — using --spacing-14 (24px) as the default card padding
+ *
+ * Card is not interactive; no focus ring is defined here.
+ */
+
+.card {
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-standard);
+  padding: var(--spacing-14);
+  border: none;
+}
+
+/* ── Elevated — applies the one soft card shadow (DESIGN.md §6) ── */
+.elevated {
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Surface variants — dark section backgrounds ── */
+
+/* Light surface (default) is handled by the base .card rule above */
+
+.dark-1 {
+  background-color: var(--colour-surface-dark-1);
+  color: var(--colour-text-on-dark);
+}
+
+.dark-2 {
+  background-color: var(--colour-surface-dark-2);
+  color: var(--colour-text-on-dark);
+}
+
+.dark-3 {
+  background-color: var(--colour-surface-dark-3);
+  color: var(--colour-text-on-dark);
+}
+
+.dark-4 {
+  background-color: var(--colour-surface-dark-4);
+  color: var(--colour-text-on-dark);
+}
+
+.dark-5 {
+  background-color: var(--colour-surface-dark-5);
+  color: var(--colour-text-on-dark);
+}
