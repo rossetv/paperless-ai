@@ -32,6 +32,7 @@ import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped
 import structlog
 
 from common.config import Settings
+from store._sql import placeholders
 from store.migrations import StoreError
 from store.models import ChunkHit, FacetSet, IndexedDocument, IndexStats, TaxonomyEntry
 from store.schema import connect
@@ -266,10 +267,6 @@ class StoreReader:
         document_ids = list(ids)
         if not document_ids:
             return []
-        # rationale: IN (...) with dynamic ? count — the only sanctioned
-        # dynamic SQL pattern (CODE_GUIDELINES §9.5); only the count of ?
-        # characters is interpolated, never any value.
-        placeholders = ",".join("?" * len(document_ids))
         sql = f"""
             SELECT
                 d.id,
@@ -285,7 +282,7 @@ class StoreReader:
                 ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id
             LEFT JOIN taxonomy dtype
                 ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id
-            WHERE d.id IN ({placeholders})
+            WHERE d.id IN ({placeholders(len(document_ids))})
         """
         try:
             with self._query_lock:
@@ -335,12 +332,10 @@ class StoreReader:
         chunk_ids = list(ids)
         if not chunk_ids:
             return []
-        # rationale: IN (...) with dynamic ? count — sanctioned pattern (§9.5).
-        placeholders = ",".join("?" * len(chunk_ids))
         sql = f"""
             SELECT id, document_id, text, page_hint
             FROM chunks
-            WHERE id IN ({placeholders})
+            WHERE id IN ({placeholders(len(chunk_ids))})
         """
         try:
             with self._query_lock:

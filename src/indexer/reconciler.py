@@ -30,11 +30,12 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
 
+from common.clock import utc_now_iso
 from indexer.worker import DocumentIndexer, IndexOutcome
 from store.models import TaxonomyEntry
 
@@ -241,7 +242,7 @@ class Reconciler:
         # ready to serve queries.  Without this the search server's healthz check
         # (which gates on last_reconcile_at being non-None) would return 503
         # index-not-ready forever.
-        self._store_writer.write_meta(_LAST_RECONCILE_META_KEY, _utc_now_iso())
+        self._store_writer.write_meta(_LAST_RECONCILE_META_KEY, utc_now_iso())
 
         log.info(
             "reconcile.incremental_finished",
@@ -524,7 +525,7 @@ class Reconciler:
             self._store_writer.delete_documents(prune_set)
 
         # Record completion only on a verified-complete sweep.
-        self._store_writer.write_meta(_LAST_SWEEP_META_KEY, _utc_now_iso())
+        self._store_writer.write_meta(_LAST_SWEEP_META_KEY, utc_now_iso())
 
         log.info(
             "reconcile.sweep_finished",
@@ -654,8 +655,3 @@ def _latest_modified(documents: list[dict]) -> datetime | None:
         if latest is None or parsed > latest:
             latest = parsed
     return latest
-
-
-def _utc_now_iso() -> str:
-    """Return the current UTC time as a normalised ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()

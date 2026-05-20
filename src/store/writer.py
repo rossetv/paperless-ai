@@ -19,12 +19,13 @@ import json
 import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
 
 import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped
 import structlog
 
+from common.clock import utc_now_iso
 from common.config import Settings
+from store._sql import placeholders
 from store.migrations import StoreError
 from store.models import ChunkInput, DocumentMeta, IndexState, TaxonomyEntry
 from store.schema import connect, ensure_schema
@@ -161,7 +162,7 @@ class StoreWriter:
             StoreError: On SQLite error; the transaction is rolled back and
                 the prior version remains intact.
         """
-        now = _utc_now()
+        now = utc_now_iso()
         tag_ids_json = json.dumps(list(meta.tag_ids))
         try:
             with self._write_lock:
@@ -230,7 +231,7 @@ class StoreWriter:
         Raises:
             StoreError: On SQLite error.
         """
-        now = _utc_now()
+        now = utc_now_iso()
         tag_ids_json = json.dumps(list(meta.tag_ids))
         try:
             with self._write_lock:
@@ -283,27 +284,24 @@ class StoreWriter:
         try:
             with self._write_lock:
                 with self._conn:
-                    # rationale: IN (...) with a dynamic count of placeholders is
-                    # the only sanctioned dynamic SQL pattern (§9.5); only the
-                    # count of ? characters is interpolated, never any value.
-                    placeholders = ",".join("?" * len(document_ids))
+                    document_marks = placeholders(len(document_ids))
                     chunk_ids = [
                         row[0]
                         for row in self._conn.execute(
-                            f"SELECT id FROM chunks WHERE document_id IN ({placeholders})",
+                            f"SELECT id FROM chunks WHERE document_id IN ({document_marks})",
                             document_ids,
                         ).fetchall()
                     ]
                     if chunk_ids:
                         # Delete FTS rows explicitly — FK cascade does not cover FTS5
                         # virtual tables (SPEC §4.5 / CODE_GUIDELINES §9.8).
-                        fts_placeholders = ",".join("?" * len(chunk_ids))
                         self._conn.execute(
-                            f"DELETE FROM chunks_fts WHERE rowid IN ({fts_placeholders})",
+                            "DELETE FROM chunks_fts WHERE rowid IN "
+                            f"({placeholders(len(chunk_ids))})",
                             chunk_ids,
                         )
                     self._conn.execute(
-                        f"DELETE FROM documents WHERE id IN ({placeholders})",
+                        f"DELETE FROM documents WHERE id IN ({document_marks})",
                         document_ids,
                     )
         except sqlite3.Error as exc:
@@ -436,22 +434,10 @@ class StoreWriter:
         ).fetchall()
         chunk_ids = [row[0] for row in rows]
         if chunk_ids:
-            # rationale: IN (...) with dynamic ? count — sanctioned pattern (§9.5).
-            fts_placeholders = ",".join("?" * len(chunk_ids))
             self._conn.execute(
-                f"DELETE FROM chunks_fts WHERE rowid IN ({fts_placeholders})",
+                f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",
                 chunk_ids,
             )
             self._conn.execute(
                 "DELETE FROM chunks WHERE document_id = ?", (document_id,)
             )
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
-
-
-def _utc_now() -> str:
-    """Return the current UTC time as a normalised ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
