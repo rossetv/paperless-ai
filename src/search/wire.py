@@ -1,0 +1,227 @@
+"""Pydantic request/response models for the search HTTP API (spec §7.1).
+
+This module is the **only** place Pydantic models exist in the search package
+(``CODE_GUIDELINES.md`` §5.6).  Once an HTTP request is validated here, the
+internal pipeline works entirely with frozen dataclasses from
+:mod:`search.models` and :mod:`store.models`.
+
+Public surface
+--------------
+Request models:
+    :class:`LoginRequest`, :class:`SearchRequest`
+
+Response models:
+    :class:`SearchResponse`, :class:`FacetsResponse`, :class:`StatsResponse`
+
+Mapping functions (internal dataclass → wire model):
+    :func:`to_search_response`, :func:`to_facets_response`,
+    :func:`to_stats_response`
+
+Allowed deps: pydantic, search.models, store.models.
+Forbidden: FastAPI, sqlite3, any I/O.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from search.models import SearchResult
+    from store.models import FacetSet, IndexStats
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    """Body for POST /api/auth/login — the API key the user wishes to exchange."""
+
+    api_key: str
+
+
+class FilterRequest(BaseModel):
+    """Optional filters supplied in a search request (spec §7.1).
+
+    Every field defaults to absent; only the fields present in the request body
+    are forwarded to the pipeline.
+    """
+
+    date_from: str | None = None
+    date_to: str | None = None
+    correspondent_id: int | None = None
+    document_type_id: int | None = None
+    tag_ids: list[int] = Field(default_factory=list)
+
+
+class SearchRequest(BaseModel):
+    """Body for POST /api/search."""
+
+    query: str
+    filters: FilterRequest | None = None
+
+
+# ---------------------------------------------------------------------------
+# Response sub-models
+# ---------------------------------------------------------------------------
+
+
+class TaxonomyEntryResponse(BaseModel):
+    """A single taxonomy entry as returned to the browser."""
+
+    kind: str
+    id: int
+    name: str
+
+
+class SourceDocumentResponse(BaseModel):
+    """One ranked source document in the search response."""
+
+    document_id: int
+    title: str | None
+    correspondent: str | None
+    document_type: str | None
+    created: str | None
+    snippet: str
+    paperless_url: str
+    score: float
+
+
+class QueryPlanResponse(BaseModel):
+    """The query plan for UI transparency (spec §7.1)."""
+
+    semantic_queries: list[str]
+    keyword_terms: list[str]
+    sub_questions: list[str]
+
+
+class SearchStatsResponse(BaseModel):
+    """Execution statistics for UI transparency and debugging."""
+
+    llm_calls: int
+    latency_ms: int
+    refined: bool
+
+
+# ---------------------------------------------------------------------------
+# Top-level response models
+# ---------------------------------------------------------------------------
+
+
+class SearchResponse(BaseModel):
+    """Response body for POST /api/search."""
+
+    answer: str
+    sources: list[SourceDocumentResponse]
+    plan: QueryPlanResponse
+    stats: SearchStatsResponse
+
+
+class FacetsResponse(BaseModel):
+    """Response body for GET /api/facets."""
+
+    correspondents: list[TaxonomyEntryResponse]
+    document_types: list[TaxonomyEntryResponse]
+    tags: list[TaxonomyEntryResponse]
+    earliest: str | None
+    latest: str | None
+
+
+class StatsResponse(BaseModel):
+    """Response body for GET /api/stats."""
+
+    document_count: int
+    chunk_count: int
+    last_reconcile_at: str | None
+    embedding_model: str | None
+
+
+# ---------------------------------------------------------------------------
+# Mapping functions (dataclass → wire model)
+# ---------------------------------------------------------------------------
+
+
+def to_search_response(result: SearchResult) -> SearchResponse:
+    """Convert a :class:`~search.models.SearchResult` to the wire model.
+
+    This is the explicit, tested boundary conversion (``CODE_GUIDELINES.md``
+    §5.6).  No Pydantic model leaks into the pipeline; no raw pipeline type
+    leaks into the HTTP response.
+
+    Args:
+        result: The frozen dataclass produced by :meth:`~search.core.SearchCore.answer`.
+
+    Returns:
+        A :class:`SearchResponse` ready to serialise as JSON.
+    """
+    sources = [
+        SourceDocumentResponse(
+            document_id=src.document_id,
+            title=src.title,
+            correspondent=src.correspondent,
+            document_type=src.document_type,
+            created=src.created,
+            snippet=src.snippet,
+            paperless_url=src.paperless_url,
+            score=src.score,
+        )
+        for src in result.sources
+    ]
+    plan = QueryPlanResponse(
+        semantic_queries=list(result.plan.semantic_queries),
+        keyword_terms=list(result.plan.keyword_terms),
+        sub_questions=list(result.plan.sub_questions),
+    )
+    stats = SearchStatsResponse(
+        llm_calls=result.stats.llm_calls,
+        latency_ms=result.stats.latency_ms,
+        refined=result.stats.refined,
+    )
+    return SearchResponse(answer=result.answer, sources=sources, plan=plan, stats=stats)
+
+
+def to_facets_response(facets: FacetSet) -> FacetsResponse:
+    """Convert a :class:`~store.models.FacetSet` to the wire model.
+
+    Args:
+        facets: The frozen dataclass from :meth:`~store.reader.StoreReader.list_facets`.
+
+    Returns:
+        A :class:`FacetsResponse` ready to serialise as JSON.
+    """
+    return FacetsResponse(
+        correspondents=[
+            TaxonomyEntryResponse(kind=e.kind, id=e.id, name=e.name)
+            for e in facets.correspondents
+        ],
+        document_types=[
+            TaxonomyEntryResponse(kind=e.kind, id=e.id, name=e.name)
+            for e in facets.document_types
+        ],
+        tags=[
+            TaxonomyEntryResponse(kind=e.kind, id=e.id, name=e.name)
+            for e in facets.tags
+        ],
+        earliest=facets.earliest,
+        latest=facets.latest,
+    )
+
+
+def to_stats_response(stats: IndexStats) -> StatsResponse:
+    """Convert an :class:`~store.models.IndexStats` to the wire model.
+
+    Args:
+        stats: The frozen dataclass from :meth:`~store.reader.StoreReader.get_stats`.
+
+    Returns:
+        A :class:`StatsResponse` ready to serialise as JSON.
+    """
+    return StatsResponse(
+        document_count=stats.document_count,
+        chunk_count=stats.chunk_count,
+        last_reconcile_at=stats.last_reconcile_at,
+        embedding_model=stats.embedding_model,
+    )
