@@ -110,7 +110,12 @@ def connect(db_path: str, *, read_only: bool) -> sqlite3.Connection:
         A configured sqlite3.Connection with sqlite-vec loaded and WAL
         pragmas applied.
     """
-    conn = sqlite3.connect(db_path)
+    # check_same_thread=False is required: the StoreWriter holds an internal
+    # threading.Lock that serialises writes from multiple worker threads against
+    # one shared connection.  Without this flag, Python's sqlite3 raises a
+    # ProgrammingError when the lock-protected write is executed from any thread
+    # other than the one that opened the connection (SPEC §5.6, §8.4).
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
     # Load sqlite-vec for vec_distance_cosine and float32 blob helpers.

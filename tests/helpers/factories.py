@@ -114,3 +114,63 @@ def make_classification_result(**overrides: Any) -> ClassificationResult:
     }
     defaults.update(overrides)
     return ClassificationResult(**defaults)
+
+
+def make_document_meta(**overrides: Any) -> Any:
+    """Create a DocumentMeta with sensible defaults.
+
+    All irrelevant fields are filled with deterministic values; callers
+    override only the field under test.
+    """
+    from store.models import DocumentMeta
+
+    defaults: dict[str, Any] = {
+        "id": 1,
+        "title": "Test Document",
+        "correspondent_id": None,
+        "document_type_id": None,
+        "tag_ids": (10, 20),
+        "created": "2024-01-15T00:00:00Z",
+        "modified": "2024-06-01T12:00:00Z",
+        "content_hash": "abc123def456",
+        "page_count": 2,
+    }
+    defaults.update(overrides)
+    return DocumentMeta(**defaults)
+
+
+def make_chunk_input(
+    chunk_index: int = 0,
+    *,
+    text: str = "Sample chunk text for testing purposes.",
+    page_hint: int | None = 1,
+    dimensions: int = 4,
+    **overrides: Any,
+) -> Any:
+    """Create a ChunkInput with a deterministic embedding vector.
+
+    The embedding is a unit-length all-equal float32 vector of length
+    *dimensions*.  For test purposes any non-zero vector is valid; equality
+    of values eliminates numerical surprise.
+
+    Args:
+        chunk_index: Zero-based position within the parent document.
+        text: Chunk text content.
+        page_hint: Source page number, or None.
+        dimensions: Length of the synthesised embedding vector.
+        **overrides: Additional ChunkInput field overrides.
+    """
+    from store.models import ChunkInput
+
+    # Deterministic unit-ish vector: each component = 1/sqrt(dimensions).
+    value = 1.0 / (dimensions ** 0.5)
+    embedding: tuple[float, ...] = tuple(value for _ in range(dimensions))
+
+    fields: dict[str, Any] = {
+        "chunk_index": chunk_index,
+        "text": text,
+        "page_hint": page_hint,
+        "embedding": embedding,
+    }
+    fields.update(overrides)
+    return ChunkInput(**fields)
