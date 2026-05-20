@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import openai
@@ -24,6 +25,7 @@ def _make_settings(
     embedding_model: str = "text-embedding-3-small",
     embedding_max_concurrent: int = 0,
     embedding_dimensions: int = 1536,
+    openai_api_key: str = "sk-test",
 ) -> MagicMock:
     settings = MagicMock()
     settings.MAX_RETRIES = max_retries
@@ -31,7 +33,45 @@ def _make_settings(
     settings.EMBEDDING_MODEL = embedding_model
     settings.EMBEDDING_MAX_CONCURRENT = embedding_max_concurrent
     settings.EMBEDDING_DIMENSIONS = embedding_dimensions
+    settings.OPENAI_API_KEY = openai_api_key
     return settings
+
+
+@contextmanager
+def _client_with(mock_openai: MagicMock) -> Iterator[None]:
+    """Patch ``openai.OpenAI`` so EmbeddingClient builds *mock_openai*.
+
+    EmbeddingClient constructs its own OpenAI client pinned to OPENAI_API_KEY
+    (it does not reuse the shared singleton), so tests patch the constructor.
+    """
+    with patch("common.embeddings.openai.OpenAI", return_value=mock_openai):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# Test: client is pinned to OpenAI with the configured API key
+# ---------------------------------------------------------------------------
+
+
+class TestClientIsPinnedToOpenAI:
+
+    def test_constructs_openai_client_with_configured_api_key(self) -> None:
+        """EmbeddingClient builds its own openai.OpenAI with OPENAI_API_KEY.
+
+        Embeddings always go to OpenAI, never to the Ollama-pointed shared
+        singleton — so the client must be constructed explicitly with the
+        configured key and OpenAI's default base_url.
+        """
+        settings = _make_settings(openai_api_key="sk-embeddings-key")
+
+        with patch("common.embeddings.openai.OpenAI") as mock_openai_cls:
+            EmbeddingClient(settings)
+
+        mock_openai_cls.assert_called_once()
+        call = mock_openai_cls.call_args
+        assert call.kwargs.get("api_key") == "sk-embeddings-key"
+        # No base_url override — embeddings use OpenAI's default endpoint.
+        assert "base_url" not in call.kwargs or call.kwargs["base_url"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +86,7 @@ class TestEmptyInput:
         settings = _make_settings()
         mock_openai = MagicMock()
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed([])
 
@@ -66,7 +106,7 @@ class TestReturnOrder:
         settings = _make_settings()
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=4)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(["hello"])
 
@@ -80,7 +120,7 @@ class TestReturnOrder:
         vec_c = [0.5, 0.5]
         mock_openai = make_mock_embeddings(vectors=[vec_a, vec_b, vec_c])[0]
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(["a", "b", "c"])
 
@@ -100,7 +140,7 @@ class TestBatching:
         texts = [f"text {i}" for i in range(96)]
         mock_openai, _ = make_mock_embeddings(n=96, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(texts)
 
@@ -113,7 +153,7 @@ class TestBatching:
         texts = [f"text {i}" for i in range(97)]
         mock_openai, _ = make_mock_embeddings(n=97, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(texts)
 
@@ -126,7 +166,7 @@ class TestBatching:
         texts = [f"text {i}" for i in range(200)]
         mock_openai, _ = make_mock_embeddings(n=200, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(texts)
 
@@ -140,7 +180,7 @@ class TestBatching:
         vectors = [[float(i), 0.0] for i in range(100)]
         mock_openai = make_mock_embeddings(vectors=vectors)[0]
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             texts = [f"text {i}" for i in range(100)]
             result = client.embed(texts)
@@ -171,7 +211,7 @@ class TestRetry:
             success_response,
         ]
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             result = client.embed(["hello"])
 
@@ -179,20 +219,41 @@ class TestRetry:
         assert mock_openai.embeddings.create.call_count == 2
 
     @patch("common.retry._sleep_backoff")
-    def test_non_retryable_error_raises_embedding_error(self, mock_sleep) -> None:
-        """A non-retryable error is wrapped in EmbeddingError and re-raised."""
+    def test_non_retryable_openai_error_raises_embedding_error(self, mock_sleep) -> None:
+        """A non-retryable openai.OpenAIError is wrapped in EmbeddingError."""
         settings = _make_settings(max_retries=3)
         mock_openai = MagicMock()
-        original = ValueError("unexpected failure")
+        original = openai.BadRequestError(
+            message="bad request",
+            response=MagicMock(status_code=400),
+            body=None,
+        )
         mock_openai.embeddings.create.side_effect = original
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             with pytest.raises(EmbeddingError) as exc_info:
                 client.embed(["hello"])
 
         # The original exception must be chained.
         assert exc_info.value.__cause__ is original
+
+    @patch("common.retry._sleep_backoff")
+    def test_programming_error_is_not_swallowed(self, mock_sleep) -> None:
+        """A non-OpenAI bug (TypeError) propagates rather than becoming EmbeddingError.
+
+        _embed_batch catches only openai.OpenAIError; a genuine programming
+        bug must surface unmasked so it is not mislabelled as a non-retryable
+        API failure.
+        """
+        settings = _make_settings(max_retries=3)
+        mock_openai = MagicMock()
+        mock_openai.embeddings.create.side_effect = TypeError("not an API error")
+
+        with _client_with(mock_openai):
+            client = EmbeddingClient(settings)
+            with pytest.raises(TypeError):
+                client.embed(["hello"])
 
     @patch("common.retry._sleep_backoff")
     def test_all_retries_exhausted_raises_retryable_exception(self, mock_sleep) -> None:
@@ -205,7 +266,7 @@ class TestRetry:
             body=None,
         )
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             with pytest.raises(openai.RateLimitError):
                 client.embed(["hello"])
@@ -214,39 +275,39 @@ class TestRetry:
 
 
 # ---------------------------------------------------------------------------
-# Test: semaphore bounds concurrency
+# Test: concurrency guard bounds concurrency
 # ---------------------------------------------------------------------------
 
 
-class TestConcurrencySemaphore:
+class TestConcurrencyGuard:
 
     def test_max_concurrent_zero_means_unbounded(self) -> None:
-        """EMBEDDING_MAX_CONCURRENT=0 creates no semaphore (unbounded)."""
+        """EMBEDDING_MAX_CONCURRENT=0 creates an unbounded guard (no semaphore)."""
         settings = _make_settings(embedding_max_concurrent=0)
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
 
-        assert client._semaphore is None
+        assert client._concurrency._semaphore is None
 
     def test_max_concurrent_positive_creates_semaphore(self) -> None:
-        """EMBEDDING_MAX_CONCURRENT>0 stores a semaphore on the client."""
+        """EMBEDDING_MAX_CONCURRENT>0 gives the guard a bounded semaphore."""
         settings = _make_settings(embedding_max_concurrent=4)
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
 
-        assert client._semaphore is not None
+        assert client._concurrency._semaphore is not None
 
     def test_semaphore_1_serialises_concurrent_calls(self) -> None:
         """With EMBEDDING_MAX_CONCURRENT=1, two threads never overlap inside the API call.
 
-        We replace the client's internal semaphore with a counting fake that
-        records the peak concurrency level and assert it never exceeds 1.  A
-        release_gate event makes the first call block until both threads have
-        started, maximising the overlap window if the semaphore were absent.
+        A counting fake records the peak concurrency level and we assert it
+        never exceeds 1.  A release_gate event makes the first call block until
+        both threads have started, maximising the overlap window if the
+        guard's semaphore were absent.
         """
         settings = _make_settings(embedding_max_concurrent=1)
 
@@ -277,7 +338,7 @@ class TestConcurrencySemaphore:
         mock_openai = MagicMock()
         mock_openai.embeddings.create.side_effect = fake_create
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
 
         errors: list[Exception] = []
@@ -323,7 +384,7 @@ class TestModelPassthrough:
         settings = _make_settings(embedding_model="text-embedding-3-large")
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             client.embed(["test text"])
 
@@ -352,7 +413,7 @@ class TestDimensionsPassthrough:
         )
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
-        with patch("common.embeddings.get_openai_client", return_value=mock_openai):
+        with _client_with(mock_openai):
             client = EmbeddingClient(settings)
             client.embed(["test text"])
 

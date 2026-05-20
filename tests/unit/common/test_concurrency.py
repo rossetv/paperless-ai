@@ -11,12 +11,10 @@ from common.concurrency import llm_limiter
 
 @pytest.fixture(autouse=True)
 def _reset_semaphore():
-    """Reset the limiter's state before each test."""
-    llm_limiter._semaphore = None
-    llm_limiter._initialized = False
+    """Reset the limiter to its pre-init state before and after each test."""
+    llm_limiter._guard = None
     yield
-    llm_limiter._semaphore = None
-    llm_limiter._initialized = False
+    llm_limiter._guard = None
 
 class TestInitZero:
 

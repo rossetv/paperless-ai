@@ -66,11 +66,15 @@ docker run -d --name paperless-ocr \
   rossetv/paperless-ai:latest
 ```
 
-For Ollama, replace the OpenAI key with:
+For Ollama, add these alongside the OpenAI key:
 ```bash
   -e LLM_PROVIDER="ollama" \
   -e OLLAMA_BASE_URL="http://your-ollama:11434/v1/" \
 ```
+
+`OPENAI_API_KEY` is still required even with `LLM_PROVIDER=ollama` — it is
+loaded by every process so the embedding client can use OpenAI (see the note
+under [Semantic Search](#semantic-search--additional-services) below).
 
 ### Classification Daemon
 
@@ -163,7 +167,7 @@ volumes:
   paperless-index:
 ```
 
-> **Note on `OPENAI_API_KEY` with Ollama:** even when `LLM_PROVIDER=ollama`, the embedding client always uses OpenAI (`text-embedding-3-small`). `OPENAI_API_KEY` is required for both the indexer and the search server regardless of the LLM provider setting. Local Ollama embeddings are not yet supported.
+> **Note on `OPENAI_API_KEY` with Ollama:** even when `LLM_PROVIDER=ollama`, the embedding client always uses OpenAI (`text-embedding-3-small`) — local Ollama embeddings are not supported. `OPENAI_API_KEY` is therefore **required by every process** (OCR, classifier, indexer, and search server) regardless of the LLM provider setting: configuration loading fails closed at startup if it is missing. With `LLM_PROVIDER=ollama`, the LLM (vision and chat) calls go to Ollama while embeddings go to OpenAI.
 
 ---
 

@@ -9,13 +9,24 @@ All embedding calls in the project must go through ``EmbeddingClient``; a
 bare ``openai.embeddings.create`` call outside this module is a guidelines
 violation (CODE_GUIDELINES §8.1, §17.8).
 
+Embeddings always use OpenAI
+----------------------------
+Unlike the LLM (chat-completion) calls, which follow the ``LLM_PROVIDER``
+setting, embeddings **always** go to OpenAI's ``text-embedding-3-*`` models —
+local Ollama embeddings are not supported. ``EmbeddingClient`` therefore builds
+its own ``openai.OpenAI`` client pinned to ``OPENAI_API_KEY`` and the default
+OpenAI ``base_url``, rather than reusing the provider-dependent shared singleton
+in :mod:`common.llm`. Reusing that singleton would, under ``LLM_PROVIDER=ollama``,
+silently route embedding requests to the Ollama URL with a dummy key
+(CODE_GUIDELINES §10.8, §15.4). ``OPENAI_API_KEY`` is required by ``Settings``
+regardless of ``LLM_PROVIDER`` precisely so this client can always be built.
+
 Concurrency
 -----------
 ``EMBEDDING_MAX_CONCURRENT`` controls how many in-flight embedding requests are
-allowed simultaneously.  ``0`` means unbounded, mirroring the
-``LLM_MAX_CONCURRENT`` pattern in :mod:`common.concurrency`.  A non-zero value
-creates a :class:`threading.Semaphore` that every ``_embed_batch`` call acquires
-before touching the network.
+allowed simultaneously.  ``0`` means unbounded.  The limit is applied through a
+:class:`~common.concurrency.ConcurrencyGuard` — the same "0 means unbounded,
+otherwise a bounded semaphore" guard the LLM wrapper uses.
 
 Batching
 --------
@@ -26,18 +37,17 @@ always sent in one request and the cap is never approached.
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import openai
 import structlog
 
-from .llm import get_openai_client
+from .concurrency import ConcurrencyGuard
 from .retry import retry
 
 if TYPE_CHECKING:
-    from common.config import Settings
+    from .config import Settings
 
 log = structlog.get_logger(__name__)
 
@@ -64,12 +74,19 @@ class EmbeddingError(Exception):
 
 
 class EmbeddingClient:
-    """Batched, retried embedding client backed by the shared OpenAI singleton.
+    """Batched, retried embedding client pinned to OpenAI.
+
+    The client owns its own ``openai.OpenAI`` instance, constructed with
+    ``settings.OPENAI_API_KEY`` and OpenAI's default ``base_url`` — it does
+    **not** use the shared :mod:`common.llm` singleton, because that singleton
+    points at the Ollama URL when ``LLM_PROVIDER=ollama`` whereas embeddings
+    always go to OpenAI (see the module docstring).
 
     Args:
         settings: The daemon ``Settings`` instance.  Must expose
-            ``EMBEDDING_MODEL``, ``EMBEDDING_MAX_CONCURRENT``,
-            ``MAX_RETRIES``, and ``MAX_RETRY_BACKOFF_SECONDS``.
+            ``OPENAI_API_KEY``, ``EMBEDDING_MODEL``, ``EMBEDDING_DIMENSIONS``,
+            ``EMBEDDING_MAX_CONCURRENT``, ``MAX_RETRIES``, and
+            ``MAX_RETRY_BACKOFF_SECONDS``.
 
     The client stores ``settings`` as ``self.settings`` so that the
     :func:`~common.retry.retry` decorator — which reads ``self.settings`` — is
@@ -80,14 +97,10 @@ class EmbeddingClient:
         # ``self.settings`` must be the attribute name; the @retry decorator
         # reads it via the HasRetrySettings protocol.
         self.settings = settings
-        self._client = get_openai_client()
-        # Treat 0 as unbounded, exactly as llm.py treats LLM_MAX_CONCURRENT.
-        if settings.EMBEDDING_MAX_CONCURRENT > 0:
-            self._semaphore: threading.Semaphore | None = threading.Semaphore(
-                settings.EMBEDDING_MAX_CONCURRENT
-            )
-        else:
-            self._semaphore = None
+        # Pin to OpenAI explicitly: api_key from OPENAI_API_KEY, default
+        # base_url. Embeddings never go to Ollama (CODE_GUIDELINES §10.8).
+        self._client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        self._concurrency = ConcurrencyGuard(settings.EMBEDDING_MAX_CONCURRENT)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed a sequence of texts, returning one vector per input in order.
@@ -125,8 +138,8 @@ class EmbeddingClient:
 
         This method is decorated with :func:`~common.retry.retry` so transient
         errors (connection drops, rate limits, 5xx) are retried with exponential
-        backoff.  The semaphore is acquired around the API call to bound
-        concurrency.
+        backoff.  The :class:`~common.concurrency.ConcurrencyGuard` bounds how
+        many batches are in flight at once.
 
         Args:
             batch: A non-empty list of strings (at most ``_BATCH_SIZE`` items).
@@ -138,17 +151,7 @@ class EmbeddingClient:
             EmbeddingError: On a non-retryable API failure.
         """
         try:
-            if self._semaphore is not None:
-                self._semaphore.acquire()
-                try:
-                    response = self._client.embeddings.create(
-                        model=self.settings.EMBEDDING_MODEL,
-                        input=batch,
-                        dimensions=self.settings.EMBEDDING_DIMENSIONS,
-                    )
-                finally:
-                    self._semaphore.release()
-            else:
+            with self._concurrency.acquire():
                 response = self._client.embeddings.create(
                     model=self.settings.EMBEDDING_MODEL,
                     input=batch,
@@ -157,7 +160,11 @@ class EmbeddingClient:
         except _RETRYABLE_EMBEDDING_EXCEPTIONS:
             # Re-raise so the @retry decorator can act on it.
             raise
-        except Exception as exc:
+        except openai.OpenAIError as exc:
+            # The SDK's base error — covers every non-retryable API failure
+            # (AuthenticationError, BadRequestError, …). A programming bug
+            # (AttributeError, TypeError) is deliberately NOT caught here so it
+            # surfaces unmasked rather than being mislabelled non-retryable.
             raise EmbeddingError(
                 f"Non-retryable embedding failure for batch of {len(batch)} texts"
             ) from exc
