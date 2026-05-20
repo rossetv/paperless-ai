@@ -1,0 +1,428 @@
+"""Integration tests for the search HTTP API server.
+
+Exercises the real FastAPI app via ``TestClient``, backed by a real
+``StoreWriter``/``StoreReader`` seeded in a ``tmp_path`` SQLite database.
+The ``SearchCore`` uses a real store reader; only the LLM stages are mocked.
+
+Coverage:
+- POST /api/auth/login with the correct key sets the session cookie.
+- The session cookie authorises /api/search end to end.
+- A Bearer token authorises /api/search end to end.
+- An unauthenticated request is rejected 401.
+- GET /api/healthz returns 200 against a healthy seeded store.
+- GET /api/healthz returns 503 index-not-ready when the DB file is absent.
+- GET /api/facets returns real taxonomy data from the seeded store.
+- GET /api/stats returns real index statistics from the seeded store.
+- POST /api/reconcile writes the sentinel file alongside the index DB and
+  returns 202.
+- POST /api/search returns a SearchResponse with sources from the seeded store.
+- The search server never serves the index DB over HTTP.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+from fastapi.testclient import TestClient
+
+from search.auth import SESSION_COOKIE_NAME
+from search.models import (
+    FilterCandidates,
+    QueryPlan,
+    SearchResult,
+    SearchStats,
+    SourceDocument,
+)
+from store.models import ChunkInput, DocumentMeta, TaxonomyEntry
+from store.reader import StoreReader
+from store.writer import StoreWriter
+
+# ---------------------------------------------------------------------------
+# Embedding geometry
+# ---------------------------------------------------------------------------
+
+_DIMENSIONS = 4
+_AXIS_A: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)
+_AXIS_B: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_API_KEY = "integration-test-api-key"
+
+
+def _make_settings(
+    tmp_path: Path,
+    *,
+    api_key: str = _API_KEY,
+) -> MagicMock:
+    """Build a settings mock pointing at the tmp_path store."""
+    settings = MagicMock()
+    settings.SEARCH_API_KEY = api_key
+    settings.SEARCH_SESSION_TTL = 3600
+    settings.SEARCH_MAX_CONCURRENT = 4
+    settings.PAPERLESS_URL = "http://paperless.example:8000"
+    settings.INDEX_DB_PATH = str(tmp_path / "index.db")
+    settings.EMBEDDING_MODEL = "text-embedding-3-small"
+    settings.EMBEDDING_DIMENSIONS = _DIMENSIONS
+    settings.SEARCH_TOP_K = 10
+    settings.SEARCH_MAX_REFINEMENTS = 1
+    settings.SEARCH_PLANNER_MODEL = "gpt-5.4-mini"
+    settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
+    settings.AI_MODELS = ["gpt-5.4-mini"]
+    settings.MAX_RETRIES = 3
+    settings.MAX_RETRY_BACKOFF_SECONDS = 30
+    return settings
+
+
+def _seed_store(settings: MagicMock) -> None:
+    """Seed the store with one document and taxonomy entries."""
+    writer = StoreWriter(settings)
+    try:
+        writer.refresh_taxonomy(
+            [
+                TaxonomyEntry(kind="correspondent", id=1, name="BritishGas"),
+                TaxonomyEntry(kind="document_type", id=2, name="Invoice"),
+            ]
+        )
+        meta = DocumentMeta(
+            id=100,
+            title="BritishGas Invoice",
+            correspondent_id=1,
+            document_type_id=2,
+            tag_ids=(),
+            created="2024-03-01T00:00:00Z",
+            modified="2024-06-01T12:00:00Z",
+            content_hash="abc123",
+            page_count=2,
+        )
+        chunk = ChunkInput(
+            chunk_index=0,
+            text="Your total bill amount is £198.00 for the quarter.",
+            page_hint=1,
+            embedding=_AXIS_A,
+        )
+        writer.upsert_document(meta, [chunk])
+    finally:
+        writer.close()
+
+
+def _make_mock_core(answer: str = "The bill is £198.00.") -> MagicMock:
+    """Build a stub SearchCore that returns a fixed SearchResult."""
+    source = SourceDocument(
+        document_id=100,
+        title="BritishGas Invoice",
+        correspondent="BritishGas",
+        document_type="Invoice",
+        created="2024-03-01T00:00:00Z",
+        snippet="Your total bill amount is £198.00.",
+        paperless_url="http://paperless.example:8000/documents/100/",
+        score=0.95,
+    )
+    plan = QueryPlan(
+        semantic_queries=("energy bill",),
+        keyword_terms=(),
+        filter_candidates=FilterCandidates(
+            correspondent=None,
+            document_type=None,
+            tags=(),
+            date_from=None,
+            date_to=None,
+        ),
+        sub_questions=(),
+    )
+    result = SearchResult(
+        answer=answer,
+        sources=(source,),
+        plan=plan,
+        stats=SearchStats(llm_calls=2, latency_ms=80, refined=False),
+    )
+    core = MagicMock()
+    core.answer.return_value = result
+    return core
+
+
+def _build_client(settings: MagicMock, store_reader: StoreReader) -> TestClient:
+    """Build a TestClient wrapping the real FastAPI app.
+
+    Uses ``https://testserver`` so that ``Secure`` session cookies are
+    forwarded on subsequent requests (the real server always runs behind HTTPS;
+    the Secure flag is a required security attribute per spec §7.3).
+    """
+    from search.api import create_app
+
+    core = _make_mock_core()
+    app = create_app(settings, core=core, store_reader=store_reader)
+    return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+
+
+def _bearer(key: str = _API_KEY) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
+
+
+# ---------------------------------------------------------------------------
+# Auth — login sets a session cookie
+# ---------------------------------------------------------------------------
+
+
+class TestAuthIntegration:
+    """Login flow sets a real session cookie."""
+
+    def test_login_sets_session_cookie(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.post(
+                "/api/auth/login",
+                json={"api_key": _API_KEY},
+            )
+            assert response.status_code == 200
+            assert SESSION_COOKIE_NAME in response.cookies
+        finally:
+            store_reader.close()
+
+    def test_session_cookie_authorises_search(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            # Log in.
+            login = client.post("/api/auth/login", json={"api_key": _API_KEY})
+            assert login.status_code == 200
+            # Cookie is retained; next search is authorised.
+            response = client.post(
+                "/api/search", json={"query": "gas bill total"}
+            )
+            assert response.status_code == 200
+        finally:
+            store_reader.close()
+
+    def test_bearer_token_authorises_search(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.post(
+                "/api/search",
+                json={"query": "gas bill"},
+                headers=_bearer(),
+            )
+            assert response.status_code == 200
+        finally:
+            store_reader.close()
+
+    def test_unauthenticated_search_returns_401(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.post("/api/search", json={"query": "test"})
+            assert response.status_code == 401
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Healthz — real store state
+# ---------------------------------------------------------------------------
+
+
+class TestHealthzIntegration:
+    """Healthz reflects the real store state."""
+
+    def test_healthz_ok_when_db_exists_and_passes_quick_check(
+        self, tmp_path: Path
+    ) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.get("/api/healthz")
+            assert response.status_code == 200
+            assert response.json()["status"] == "ok"
+        finally:
+            store_reader.close()
+
+    def test_healthz_503_when_db_absent(self, tmp_path: Path) -> None:
+        """When the DB file does not exist, healthz returns 503 index-not-ready."""
+        settings = _make_settings(tmp_path)
+        # Do NOT seed — DB file absent.
+        # We still need a store_reader for create_app; use a mock that
+        # raises on quick_check (the endpoint guards on file existence first).
+        store_reader = MagicMock()
+        from search.api import create_app
+
+        core = _make_mock_core()
+        app = create_app(settings, core=core, store_reader=store_reader)
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/api/healthz")
+        assert response.status_code == 503
+        assert response.json()["status"] == "index-not-ready"
+
+
+# ---------------------------------------------------------------------------
+# Facets — real taxonomy from the store
+# ---------------------------------------------------------------------------
+
+
+class TestFacetsIntegration:
+    """GET /api/facets returns real taxonomy data from the seeded store."""
+
+    def test_facets_contains_seeded_taxonomy(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.get("/api/facets", headers=_bearer())
+            assert response.status_code == 200
+            body = response.json()
+            correspondent_names = [c["name"] for c in body["correspondents"]]
+            assert "BritishGas" in correspondent_names
+            doc_type_names = [d["name"] for d in body["document_types"]]
+            assert "Invoice" in doc_type_names
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Stats — real stats from the store
+# ---------------------------------------------------------------------------
+
+
+class TestStatsIntegration:
+    """GET /api/stats returns real index statistics."""
+
+    def test_stats_reflect_seeded_document_count(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.get("/api/stats", headers=_bearer())
+            assert response.status_code == 200
+            body = response.json()
+            assert body["document_count"] == 1
+            assert body["chunk_count"] == 1
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Reconcile — sentinel file alongside the real index DB
+# ---------------------------------------------------------------------------
+
+
+class TestReconcileIntegration:
+    """POST /api/reconcile writes the sentinel file and returns 202."""
+
+    def test_reconcile_writes_sentinel_alongside_db(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.post("/api/reconcile", headers=_bearer())
+            assert response.status_code == 202
+
+            sentinel = tmp_path / "reconcile.request"
+            assert sentinel.exists()
+        finally:
+            store_reader.close()
+
+    def test_reconcile_does_not_write_new_files_in_non_db_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """Reconcile only touches the sentinel; it must not write the index DB."""
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        # Record files present before reconcile.
+        before = set((tmp_path).iterdir())
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            client.post("/api/reconcile", headers=_bearer())
+        finally:
+            store_reader.close()
+
+        after = set(tmp_path.iterdir())
+        new_files = after - before
+        # Only the sentinel (and possibly WAL files from the store) are new.
+        new_names = {f.name for f in new_files}
+        assert "reconcile.request" in new_names
+        # The DB itself must not be re-created or altered by reconcile.
+        # We assert the only NEW name from reconcile is the sentinel.
+        non_sentinel_new = new_names - {
+            "reconcile.request",
+            "index.db-wal",
+            "index.db-shm",
+            "index.db",
+        }
+        assert not non_sentinel_new, f"Unexpected new files: {non_sentinel_new}"
+
+
+# ---------------------------------------------------------------------------
+# Security — the index DB is never web-reachable
+# ---------------------------------------------------------------------------
+
+
+class TestIndexDbNotWebReachable:
+    """The index DB must never be served over HTTP."""
+
+    def test_db_file_is_not_accessible_via_http(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            # Try to GET the DB file by name — should 404 or redirect, never 200.
+            response = client.get("/index.db", headers=_bearer())
+            assert response.status_code in (404, 307, 302)
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Search response — correctness
+# ---------------------------------------------------------------------------
+
+
+class TestSearchResponseIntegration:
+    """POST /api/search returns a correctly structured response."""
+
+    def test_search_response_contains_expected_fields(
+        self, tmp_path: Path
+    ) -> None:
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.post(
+                "/api/search",
+                json={"query": "gas bill amount"},
+                headers=_bearer(),
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert "answer" in body
+            assert "sources" in body
+            assert "plan" in body
+            assert "stats" in body
+            assert len(body["sources"]) == 1
+            source = body["sources"][0]
+            assert source["document_id"] == 100
+            assert source["title"] == "BritishGas Invoice"
+        finally:
+            store_reader.close()

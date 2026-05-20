@@ -22,6 +22,7 @@ dependencies = [
 paperless-ai = "ocr.daemon:main"
 paperless-classifier-daemon = "classifier.daemon:main"
 paperless-indexer-daemon = "indexer.daemon:main"
+paperless-search-server = "search.api:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
