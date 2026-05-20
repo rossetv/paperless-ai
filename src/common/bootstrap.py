@@ -40,7 +40,7 @@ def bootstrap_daemon(
 ) -> tuple[Settings, PaperlessClient] | None:
     """Run the shared daemon startup. Returns (settings, client) or None on failure.
 
-    Initialization order: Settings → logging → libraries (OpenAI client,
+    Initialisation order: Settings → logging → libraries (OpenAI client,
     concurrency limiter) → signal handlers → preflight → stale-lock recovery.
 
     *get_processing_tag_id* and *get_pre_tag_id* are callables that extract
@@ -48,20 +48,20 @@ def bootstrap_daemon(
     ``getattr`` lookups.
     """
     try:
-        settings = Settings()
+        settings = Settings.from_environment()
         configure_logging(settings)
         setup_libraries(settings)
         register_signal_handlers()
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
-    except ValueError as e:
-        log.error("Configuration error", error=e)
+    except ValueError as exc:
+        log.error("Configuration error", error=str(exc))
         return None
 
     client = PaperlessClient(settings)
     try:
         run_preflight_checks(settings, client)
-    except PreflightError as e:
-        log.error("Preflight check failed", error=str(e))
+    except PreflightError as exc:
+        log.error("Preflight check failed", error=str(exc))
         client.close()
         return None
 

@@ -388,7 +388,7 @@ class SearchCore:
         """Return the Paperless-ngx web deep-link for *document_id*.
 
         ``PAPERLESS_URL`` is stored already stripped of any trailing slash
-        (see ``Settings._load_api_settings``); the document detail route in
+        (see ``Settings.from_environment``); the document detail route in
         the Paperless-ngx UI is ``/documents/{id}/``.
         """
         return f"{self._settings.PAPERLESS_URL}/documents/{document_id}/"

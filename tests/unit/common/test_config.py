@@ -13,8 +13,11 @@ _MINIMAL_ENV = {
     "OPENAI_API_KEY": "sk-test",
 }
 
+# OPENAI_API_KEY is required even under LLM_PROVIDER=ollama: the embedding
+# client always uses OpenAI (CODE_GUIDELINES §10.8, §15.4).
 _MINIMAL_OLLAMA_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
+    "OPENAI_API_KEY": "sk-test",
     "LLM_PROVIDER": "ollama",
 }
 
@@ -22,7 +25,7 @@ _MINIMAL_OLLAMA_ENV = {
 def _build(mocker, env: dict[str, str]) -> Settings:
     """Build Settings with *only* the supplied env vars."""
     mocker.patch.dict(os.environ, env, clear=True)
-    return Settings()
+    return Settings.from_environment()
 
 
 _SIMPLE_DEFAULTS = [
@@ -137,9 +140,14 @@ class TestMissingRequired:
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(mocker, {"PAPERLESS_TOKEN": "tok"})
 
-    def test_ollama_does_not_require_openai_api_key(self, mocker):
-        s = _build(mocker, _MINIMAL_OLLAMA_ENV)
-        assert s.OPENAI_API_KEY is None
+    def test_openai_api_key_required_even_for_ollama_provider(self, mocker):
+        """OPENAI_API_KEY is required regardless of LLM_PROVIDER.
+
+        Embeddings always use OpenAI, so the indexer and search server need
+        the key even under LLM_PROVIDER=ollama (CODE_GUIDELINES §10.8, §15.4).
+        """
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
 
 
 class TestOllamaConfig:
@@ -156,9 +164,10 @@ class TestOllamaConfig:
         s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": "http://gpu:11434/v1/"})
         assert s.OLLAMA_BASE_URL == "http://gpu:11434/v1/"
 
-    def test_ollama_no_api_key(self, mocker):
+    def test_ollama_still_loads_openai_api_key(self, mocker):
+        """Under ollama, OPENAI_API_KEY is still loaded — embeddings need it."""
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
-        assert s.OPENAI_API_KEY is None
+        assert s.OPENAI_API_KEY == "sk-test"
 
     def test_openai_provider_ollama_base_url_is_none(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -410,7 +419,7 @@ class TestIndexSettingsCustom:
 
 
 class TestIndexSettingsInvalidInts:
-    """Non-integer values for integer indexer settings raise ValueError."""
+    """Non-integer values for integer indexer settings raise a contextful ValueError."""
 
     @pytest.mark.parametrize(
         "env_key",
@@ -424,8 +433,62 @@ class TestIndexSettingsInvalidInts:
         ],
     )
     def test_non_integer_raises(self, mocker, env_key):
-        with pytest.raises(ValueError):
+        # The message must name the offending variable, not the opaque stdlib
+        # 'invalid literal for int()' text (CODE_GUIDELINES §6.6).
+        with pytest.raises(ValueError, match=f"{env_key} must be an integer"):
             _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
+
+
+class TestIndexSettingsBounds:
+    """Out-of-range integer indexer settings raise a contextful ValueError."""
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_embedding_dimensions_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="EMBEDDING_DIMENSIONS must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "EMBEDDING_DIMENSIONS": value})
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_chunk_size_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="CHUNK_SIZE must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "CHUNK_SIZE": value})
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_reconcile_interval_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="RECONCILE_INTERVAL must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "RECONCILE_INTERVAL": value})
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_deletion_sweep_interval_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="DELETION_SWEEP_INTERVAL must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "DELETION_SWEEP_INTERVAL": value})
+
+    def test_chunk_overlap_negative_raises(self, mocker):
+        with pytest.raises(ValueError, match="CHUNK_OVERLAP must be"):
+            _build(mocker, {**_MINIMAL_ENV, "CHUNK_OVERLAP": "-1"})
+
+    def test_chunk_overlap_equal_to_chunk_size_raises(self, mocker):
+        # Overlap must be strictly less than the chunk size.
+        with pytest.raises(ValueError, match="CHUNK_OVERLAP must be"):
+            _build(
+                mocker,
+                {**_MINIMAL_ENV, "CHUNK_SIZE": "1000", "CHUNK_OVERLAP": "1000"},
+            )
+
+    def test_chunk_overlap_greater_than_chunk_size_raises(self, mocker):
+        with pytest.raises(ValueError, match="CHUNK_OVERLAP must be"):
+            _build(
+                mocker,
+                {**_MINIMAL_ENV, "CHUNK_SIZE": "500", "CHUNK_OVERLAP": "600"},
+            )
+
+    def test_chunk_overlap_zero_is_allowed(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "CHUNK_OVERLAP": "0"})
+        assert s.CHUNK_OVERLAP == 0
+
+    @pytest.mark.parametrize("value", ["-1", "-4"])
+    def test_embedding_max_concurrent_clamped_to_zero(self, mocker, value):
+        s = _build(mocker, {**_MINIMAL_ENV, "EMBEDDING_MAX_CONCURRENT": value})
+        assert s.EMBEDDING_MAX_CONCURRENT == 0
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +560,7 @@ class TestSearchSettingsCustom:
 
 
 class TestSearchSettingsInvalidInts:
-    """Non-integer values for integer search settings raise ValueError."""
+    """Non-integer values for integer search settings raise a contextful ValueError."""
 
     @pytest.mark.parametrize(
         "env_key",
@@ -510,8 +573,53 @@ class TestSearchSettingsInvalidInts:
         ],
     )
     def test_non_integer_raises(self, mocker, env_key):
-        with pytest.raises(ValueError):
+        # The message must name the offending variable (CODE_GUIDELINES §6.6).
+        with pytest.raises(ValueError, match=f"{env_key} must be an integer"):
             _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
+
+
+class TestSearchSettingsBounds:
+    """Out-of-range integer search settings raise a contextful ValueError."""
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_search_top_k_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="SEARCH_TOP_K must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_TOP_K": value})
+
+    def test_search_max_refinements_ceiling_value_is_accepted(self, mocker):
+        # 3 is the §14.3 three-LLM-call ceiling — the boundary, still valid.
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "3"})
+        assert s.SEARCH_MAX_REFINEMENTS == 3
+
+    def test_search_max_refinements_zero_is_accepted(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "0"})
+        assert s.SEARCH_MAX_REFINEMENTS == 0
+
+    @pytest.mark.parametrize("value", ["4", "10", "-1"])
+    def test_search_max_refinements_out_of_range_raises(self, mocker, value):
+        # Above the §14.3 ceiling (or negative) — a hard correctness bound.
+        with pytest.raises(ValueError, match="SEARCH_MAX_REFINEMENTS must be"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": value})
+
+    @pytest.mark.parametrize("value", ["0", "65536", "-1", "99999"])
+    def test_search_server_port_out_of_range_raises(self, mocker, value):
+        with pytest.raises(ValueError, match="SEARCH_SERVER_PORT must be"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_SERVER_PORT": value})
+
+    @pytest.mark.parametrize("value", ["1", "65535"])
+    def test_search_server_port_boundary_values_accepted(self, mocker, value):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_SERVER_PORT": value})
+        assert s.SEARCH_SERVER_PORT == int(value)
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_search_session_ttl_must_be_positive(self, mocker, value):
+        with pytest.raises(ValueError, match="SEARCH_SESSION_TTL must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_SESSION_TTL": value})
+
+    @pytest.mark.parametrize("value", ["-1", "-8"])
+    def test_search_max_concurrent_clamped_to_zero(self, mocker, value):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_CONCURRENT": value})
+        assert s.SEARCH_MAX_CONCURRENT == 0
 
 
 class TestSearchApiKeyDefault:

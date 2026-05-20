@@ -21,13 +21,14 @@ def make_settings(**overrides: str) -> Any:
     """Create a ``Settings`` instance with minimal valid environment.
 
     Any key in *overrides* is injected as an environment variable before
-    construction.  The returned object is a real ``Settings`` instance.
+    construction.  The returned object is a real ``Settings`` instance, built
+    via :meth:`Settings.from_environment`.
     """
     from common.config import Settings
 
     env = {**_MINIMAL_ENV, **overrides}
     with patch.dict(os.environ, env, clear=True):
-        return Settings()
+        return Settings.from_environment()
 
 
 def make_settings_obj(**overrides: Any) -> MagicMock:

@@ -52,7 +52,7 @@ def main() -> None:
     or if preflight fails fatally.  Normal daemon operation never returns;
     it runs until SIGTERM / SIGINT.
     """
-    settings = Settings()
+    settings = Settings.from_environment()
     configure_logging(settings)
     setup_libraries(settings)
 
