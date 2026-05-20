@@ -6,8 +6,8 @@
  * The panel is a centred white surface with --radius-large and --shadow-card.
  *
  * DESIGN.md §6 elevation notes:
- *   - The backdrop uses --colour-overlay-dark (rgba 0 0 0 / 80%) matching the
- *     nav glass — the closest Apple overlay token we have.
+ *   - The backdrop uses --colour-overlay-dark matching the nav glass — the
+ *     closest Apple overlay token we have.
  *   - The panel is --colour-surface with --shadow-card for elevated card look.
  *
  * All values come exclusively from design tokens (§12.4).
@@ -16,7 +16,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-modal);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -33,7 +33,7 @@
 /* Reset <dialog> UA styles — we control all layout ourselves */
 .panel {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-base);
   background-color: var(--colour-surface);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-card);
@@ -41,7 +41,7 @@
   padding: 0;
   margin: 0;
   width: 100%;
-  max-width: 560px;
+  max-width: var(--width-modal);
   max-height: calc(100vh - var(--spacing-14) * 2);
   overflow-y: auto;
   display: flex;
@@ -50,8 +50,8 @@
 }
 
 .panel:focus-visible {
-  outline: 2px solid var(--colour-focus-ring);
-  outline-offset: 2px;
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
 }
 
 .header {
@@ -60,7 +60,7 @@
   justify-content: space-between;
   gap: var(--spacing-6);
   padding: var(--spacing-13) var(--spacing-14);
-  border-bottom: 1px solid var(--colour-border);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
 }
 
 .title {

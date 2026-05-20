@@ -20,7 +20,10 @@
   font-weight: var(--font-weight-button);
   line-height: var(--line-height-button);
   letter-spacing: var(--letter-spacing-button);
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color var(--duration-standard) var(--easing-standard),
+    color var(--duration-standard) var(--easing-standard),
+    border-color var(--duration-standard) var(--easing-standard);
   text-decoration: none;
   white-space: nowrap;
 }

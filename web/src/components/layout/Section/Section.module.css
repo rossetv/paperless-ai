@@ -7,7 +7,8 @@
  * DESIGN.md §5 Whitespace Philosophy:
  *   - Each product section occupies a full viewport height (or close to it)
  *   - Generous vertical padding creates the "cinematic breathing room"
- *   - Default padding uses --spacing-13 (20px) vertically; spacious uses --spacing-14 (24px) × 4
+ *   - Default padding uses --spacing-13 vertically; spacious uses the dedicated
+ *     --spacing-section token (96 px) for the cinematic rhythm
  */
 
 .section {
@@ -16,5 +17,5 @@
 
 /* Spacious variant — full cinematic section with generous breathing room (DESIGN.md §5) */
 .spacious {
-  padding-block: calc(var(--spacing-14) * 4);
+  padding-block: var(--spacing-section);
 }

@@ -5,10 +5,10 @@
  * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
  *
  * Chip maps to the "Filter / Search Button" and "link tag" treatments in DESIGN.md §4:
- *   - radius-micro (5px): small container / link tag radius per §5
- *   - colour-button-light-bg (#fafafc): filter button background
- *   - colour-text-secondary: muted label text
- *   - colour-accent: selected/active state fill
+ *   - --radius-micro: small container / link tag radius per §5
+ *   - --colour-button-light-bg: filter button background
+ *   - --colour-text-secondary: muted label text
+ *   - --colour-accent: selected/active state fill
  *
  * The remove button uses the accent focus ring (DESIGN.md §6 accessibility).
  */

@@ -4,13 +4,13 @@
  * All values come exclusively from design tokens (var(--…)).
  *
  * Design decisions (DESIGN.md-consistent):
- * - Background: --colour-overlay-dark (rgba(0,0,0,0.80)) — the same translucent
- *   dark used by the navigation glass, giving the tooltip Apple's frosted glass
- *   feel without needing backdrop-filter on a small element.
- * - Text: --colour-text-on-dark (#fff).
- * - Radius: --radius-micro (5 px) — small container per DESIGN.md §5.
+ * - Background: --colour-overlay-dark — the same translucent dark used by the
+ *   navigation glass, giving the tooltip Apple's frosted glass feel without
+ *   needing backdrop-filter on a small element.
+ * - Text: --colour-text-on-dark.
+ * - Radius: --radius-micro — small container per DESIGN.md §5.
  * - Positioned absolutely below the wrapper; wrapper is position:relative.
- * - Font: micro scale (12 px) — tooltips are supplementary, not primary content.
+ * - Font: --font-size-micro — tooltips are supplementary, not primary content.
  * - No shadow: tooltip sits at the top of the visual stack; elevation is
  *   expressed through the dark background contrast, not a drop shadow.
  */
@@ -26,7 +26,7 @@
   top: calc(100% + var(--spacing-2));  /* 4 px gap below the trigger */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: var(--z-tooltip);
   white-space: nowrap;
   background-color: var(--colour-overlay-dark);
   color: var(--colour-text-on-dark);

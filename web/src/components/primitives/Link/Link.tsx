@@ -6,9 +6,9 @@ const styles = stylesRaw as Record<string, string>;
 
 /**
  * Visual variant — default is the standard light-bg link style.
- * - 'default': #0066cc link colour on light backgrounds.
+ * - 'default': --colour-link on light backgrounds.
  * - 'inline':  underlined inline body link.
- * - 'on-dark': #2997ff link colour for use on dark/black backgrounds.
+ * - 'on-dark': --colour-link-on-dark for use on dark/black backgrounds.
  */
 export type LinkVariant = 'default' | 'inline' | 'on-dark';
 

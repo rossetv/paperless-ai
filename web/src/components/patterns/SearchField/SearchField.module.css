@@ -2,10 +2,10 @@
  * SearchField pattern — CSS Module.
  *
  * Implements the Apple search-input style from DESIGN.md §4:
- * - --radius-comfortable (11 px) rounded field
- * - Light #fafafc background (--colour-button-light-bg)
+ * - --radius-comfortable rounded field
+ * - Light --colour-button-light-bg background
  * - Leading search icon + trailing submit button
- * - 2 px accent focus ring on the input
+ * - --spacing-1 accent focus ring on the input
  *
  * Design interpretation: the submit button uses the icon-button primitive
  * (Media Control style, circular) positioned at the trailing edge of the
@@ -59,7 +59,9 @@
   padding: var(--spacing-6) var(--spacing-14) var(--spacing-6) var(--spacing-13);
   width: 100%;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color var(--duration-standard) var(--easing-standard),
+    box-shadow var(--duration-standard) var(--easing-standard);
 
   /* Remove the browser's default search-cancel button — the submit icon serves
      this interaction; a second cancel affordance clutters the field. */

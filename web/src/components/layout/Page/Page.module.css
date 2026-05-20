@@ -5,7 +5,7 @@
  * Stylelint enforces this.
  *
  * DESIGN.md §1 & §5:
- *   - Page background: --colour-bg (#f5f5f7, the Apple light-section tone)
+ *   - Page background: --colour-bg (the Apple light-section tone)
  *   - Minimum height: the full viewport (100dvh — dynamic viewport height, modern standard)
  */
 
