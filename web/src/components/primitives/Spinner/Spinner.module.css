@@ -1,0 +1,82 @@
+/*
+ * Spinner primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * The ring is a circular element with a transparent gap that rotates.
+ * prefers-reduced-motion: animation is replaced by an opacity pulse that
+ * conveys "in progress" without triggering vestibular issues.
+ *
+ * Colour: accent (--colour-accent = Apple Blue) for the active arc;
+ * border colour for the track — matches the focus ring convention.
+ */
+
+/* ── Visually hidden utility (for accessible label text) ── */
+.sr-only {
+  position: absolute;
+  width: var(--spacing-1);   /* 2 px — near-zero size */
+  height: var(--spacing-1);
+  padding: 0;
+  margin: calc(var(--spacing-1) * -1);
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Wrapper ── */
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── The animated ring ── */
+.ring {
+  display: block;
+  border-radius: var(--radius-circle);
+  border-style: solid;
+  border-color: var(--colour-border) var(--colour-border) var(--colour-border) var(--colour-accent);
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect prefers-reduced-motion — pulse instead of spin */
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: pulse 1.5s ease-in-out infinite;
+    border-color: var(--colour-accent);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+}
+
+/* ── Size modifiers ── */
+
+/* rationale: 16 px = calc(var(--spacing-6) * 2); border-width 2 px = var(--spacing-1) */
+.small .ring {
+  width: calc(var(--spacing-6) * 2);    /* 16 px */
+  height: calc(var(--spacing-6) * 2);
+  border-width: var(--spacing-1);       /* 2 px */
+}
+
+.medium .ring {
+  width: var(--spacing-13);             /* 20 px */
+  height: var(--spacing-13);
+  border-width: var(--spacing-1);       /* 2 px */
+}
+
+/* rationale: 28 px = --spacing-14 (24 px) + --spacing-2 (4 px) */
+.large .ring {
+  width: calc(var(--spacing-14) + var(--spacing-2));  /* 28 px */
+  height: calc(var(--spacing-14) + var(--spacing-2));
+  border-width: calc(var(--spacing-1) + var(--spacing-1));  /* 4 px */
+}
