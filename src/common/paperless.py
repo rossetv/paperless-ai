@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Iterator
-from typing import Any, Generator, Iterable, TypedDict, Unpack
+from typing import Any, Generator, Iterable, NotRequired, TypedDict, Unpack
 
 import httpx
 import structlog
@@ -54,6 +54,40 @@ class DocumentMetadataUpdate(TypedDict, total=False):
     tags: set[int]
     language: str | None
     custom_fields: list[dict] | None
+
+
+# A read-side view of the Paperless-ngx document JSON shape (CODE_GUIDELINES
+# §5.3): it pins the field names and types the indexer relies on without
+# copying the whole foreign object into a dataclass.  ``id`` is the only field
+# Paperless guarantees on every document; the rest are NotRequired because the
+# indexer reads them defensively (a not-yet-OCR'd document has no ``content``,
+# an un-dated document no ``created``).  A daemon translates this into a domain
+# dataclass — ``store.models.DocumentMeta`` — at its boundary.
+class PaperlessDocument(TypedDict):
+    """The subset of the Paperless-ngx document JSON the indexer consumes.
+
+    Attributes:
+        id: The Paperless document id — always present.
+        title: Human-readable title, or ``None`` if unset.
+        content: The OCR content body; absent or ``None`` until the document
+            has been transcribed.
+        tags: Tag ids applied to the document.
+        correspondent: The correspondent id, or ``None`` if unset.
+        document_type: The document-type id, or ``None`` if unset.
+        created: The document date (``"YYYY-MM-DD"`` or ISO-8601 datetime).
+        modified: The last-modified timestamp; an ISO-8601 datetime.
+        page_count: The number of pages, when Paperless reports it.
+    """
+
+    id: int
+    title: NotRequired[str | None]
+    content: NotRequired[str | None]
+    tags: NotRequired[list[int]]
+    correspondent: NotRequired[int | None]
+    document_type: NotRequired[int | None]
+    created: NotRequired[str | None]
+    modified: NotRequired[str | None]
+    page_count: NotRequired[int | None]
 
 
 class PaperlessClient:
