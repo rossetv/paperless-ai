@@ -144,6 +144,7 @@ class EmbeddingClient:
                     response = self._client.embeddings.create(
                         model=self.settings.EMBEDDING_MODEL,
                         input=batch,
+                        dimensions=self.settings.EMBEDDING_DIMENSIONS,
                     )
                 finally:
                     self._semaphore.release()
@@ -151,6 +152,7 @@ class EmbeddingClient:
                 response = self._client.embeddings.create(
                     model=self.settings.EMBEDDING_MODEL,
                     input=batch,
+                    dimensions=self.settings.EMBEDDING_DIMENSIONS,
                 )
         except _RETRYABLE_EMBEDDING_EXCEPTIONS:
             # Re-raise so the @retry decorator can act on it.
