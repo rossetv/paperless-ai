@@ -21,6 +21,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "unit: Unit tests (fast, no I/O)")
     config.addinivalue_line("markers", "integration: Integration tests (module boundaries)")
     config.addinivalue_line("markers", "e2e: End-to-end tests (full workflows)")
+    config.addinivalue_line(
+        "markers",
+        "anyio: Async test run on the anyio event loop (search API and MCP tests)",
+    )
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:

@@ -34,5 +34,6 @@ markers = [
     "unit: Unit tests (fast, no I/O)",
     "integration: Integration tests (module boundaries)",
     "e2e: End-to-end tests (full workflows)",
+    "anyio: Async test run on the anyio event loop (search API and MCP tests)",
 ]
 addopts = "-q --tb=short"

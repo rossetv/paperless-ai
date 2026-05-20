@@ -1,7 +1,12 @@
-"""Test object factories.
+"""Configuration, Paperless, and store-shape test factories.
 
-Every test that needs a domain object — a ``Settings``, a Paperless document,
-a ``DocumentMeta``, a ``ChunkInput`` — builds it through a factory here, so the
+The ``tests.helpers.factories`` package re-exports every factory from its
+``__init__``; this submodule holds the ``Settings``, Paperless-document,
+``ClassificationResult``, and store-boundary (``DocumentMeta``, ``ChunkInput``,
+``SearchFilters``) builders.  Search-pipeline factories live in the sibling
+:mod:`tests.helpers.factories._search`.
+
+Every test that needs a domain object builds it through a factory here, so the
 one field a test actually cares about is the only one it has to spell out
 (CODE_GUIDELINES §11.5).  Irrelevant fields are filled with deterministic
 defaults.  Hand-rolled per-file builders are a smell: they drift, and the same
