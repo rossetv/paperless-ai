@@ -53,10 +53,12 @@ CREATE TABLE IF NOT EXISTS chunks (
     embedding   BLOB NOT NULL
 );
 
+-- Standalone FTS5 (own text copy, no content= pointer) per SPEC §4.1/§4.5.
+-- An external-content table does not auto-sync when chunks rows vanish via FK
+-- cascade, which would silently leave a stale keyword index; the writer keeps
+-- chunks_fts in step explicitly, by rowid, inside the same transaction.
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5 (
-    text,
-    content='chunks',
-    content_rowid='id'
+    text
 );
 
 CREATE TABLE IF NOT EXISTS meta (
