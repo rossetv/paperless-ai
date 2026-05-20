@@ -31,7 +31,9 @@ def _process_batch(
     Exceptions raised while processing one item are logged but do not
     prevent other items from completing.
     """
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    with ThreadPoolExecutor(
+        max_workers=max_workers, thread_name_prefix=f"{daemon_name}-worker"
+    ) as executor:
         future_to_item = {
             executor.submit(process_item, item): item for item in items
         }
@@ -40,6 +42,11 @@ def _process_batch(
             try:
                 future.result()
             except Exception:
+                # rationale: per-document worker-dispatch boundary
+                # (CODE_GUIDELINES §6.4, site 2) — one document's failure is
+                # logged with its traceback and isolated so the rest of the
+                # batch still completes. The traceback is attached via
+                # log.exception.
                 log.exception(
                     "Work item failed",
                     daemon=daemon_name,
@@ -108,12 +115,17 @@ def run_polling_threadpool(
             )
             sleep(poll_interval_seconds)
         except _DAEMON_LOOP_EXCEPTIONS as exc:
-            log.error(
-                "Unexpected error in daemon loop; sleeping",
+            # An expected, recoverable anomaly: a transient Paperless network
+            # or API failure. WARNING (not ERROR) per §7.3; exc_info=True
+            # attaches the traceback — log.error(str(exc)) would discard it
+            # (§7.5). The loop sleeps and the next poll retries.
+            log.warning(
+                "Transient error in daemon loop; sleeping before retry",
                 daemon=daemon_name,
                 poll_interval_seconds=poll_interval_seconds,
                 error=str(exc),
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             sleep(poll_interval_seconds)
 
@@ -133,6 +145,10 @@ def _safe_item_summary(item: object) -> str:
                 return f"doc_id={item.get('id')}"
             return f"dict_keys={sorted(item.keys())}"
         return str(item)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
+        # The only failures str()/sorted()/repr() formatting can realistically
+        # raise: unorderable dict keys (TypeError), a __str__/__repr__ that
+        # raises (TypeError/ValueError/AttributeError). A genuine programming
+        # bug outside that set is not swallowed.
         return "<unprintable>"
 
