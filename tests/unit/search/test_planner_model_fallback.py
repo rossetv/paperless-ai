@@ -1,0 +1,177 @@
+"""Tests for search.planner — model selection and the AI_MODELS fallback chain.
+
+Verifies:
+- The configured SEARCH_PLANNER_MODEL is the model requested.
+- Exactly one LLM call is made per plan() invocation (per model attempt).
+- When the primary model raises an OpenAI error, the next in AI_MODELS is tried.
+- Every OpenAI API error — retryable AND non-retryable (AuthenticationError,
+  etc.) — degrades to the fallback plan; plan() never raises (findings C1/C2).
+
+Response-parsing behaviour is in :mod:`test_planner` (split for the 500-line
+ceiling, §3.1).
+
+LLM mocking: QueryPlanner subclasses OpenAIChatMixin; these tests build a bare
+QueryPlanner and assign ``_create_completion`` a ``side_effect`` mock directly,
+since they script multiple model attempts in one call.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+from search.models import EMPTY_FILTER_CANDIDATES, QueryPlan
+from search.planner import QueryPlanner
+from tests.helpers.factories import make_search_settings
+from tests.helpers.llm import (
+    make_authentication_error,
+    make_api_error,
+    make_chat_completion,
+    make_internal_server_error,
+    planner_response_json,
+)
+from tests.unit.search.conftest import build_planner
+
+
+def _assert_is_fallback_plan(plan: QueryPlan, raw_query: str) -> None:
+    """Assert *plan* is the minimal safe fallback for *raw_query*."""
+    assert plan.semantic_queries == (raw_query,)
+    assert plan.keyword_terms == ()
+    assert plan.sub_questions == ()
+    assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
+
+
+# ---------------------------------------------------------------------------
+# Model selection: SEARCH_PLANNER_MODEL is the model requested
+# ---------------------------------------------------------------------------
+
+
+class TestModelSelection:
+    """The planner uses SEARCH_PLANNER_MODEL as the primary model."""
+
+    def test_configured_model_is_requested(self) -> None:
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("test query")
+
+        call_kwargs = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call_kwargs is not None
+        assert call_kwargs.kwargs["model"] == "gpt-5.4-mini"
+
+    def test_different_configured_model_is_requested(self) -> None:
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gemma3:12b", AI_MODELS=["gemma3:12b"]
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("test query")
+
+        call_kwargs = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call_kwargs.kwargs["model"] == "gemma3:12b"
+
+    def test_exactly_one_llm_call_per_plan(self) -> None:
+        """The planner makes exactly one LLM call per plan() invocation."""
+        planner = build_planner(make_search_settings(), planner_response_json())
+        planner.plan("single call test")
+
+        assert planner._create_completion.call_count == 1  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# AI_MODELS fallback chain: fallback model is tried on error
+# ---------------------------------------------------------------------------
+
+
+class TestModelFallback:
+    """When the primary model raises an OpenAI error, the next in AI_MODELS is tried."""
+
+    def test_fallback_to_second_model_on_api_error(self) -> None:
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+        payload = planner_response_json(semantic_queries=["fallback worked"])
+
+        planner = QueryPlanner(settings)
+        # First model raises a retryable error; second model succeeds.
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                make_internal_server_error(),
+                make_chat_completion(payload),
+            ]
+        )
+
+        plan = planner.plan("test fallback")
+
+        assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
+        assert "fallback worked" in plan.semantic_queries
+
+
+# ---------------------------------------------------------------------------
+# C1/C2 — every OpenAI API error degrades to the fallback; plan() never raises
+# ---------------------------------------------------------------------------
+
+
+class TestApiErrorNeverEscapes:
+    """plan() catches every openai.APIError subclass — retryable or not.
+
+    Finding C1/C2: the old hand-rolled loop caught only the retryable errors
+    plus BadRequestError, so AuthenticationError / PermissionDeniedError /
+    NotFoundError propagated out of plan() and turned every search into an
+    unhandled 500.  The migration to OpenAIChatMixin catches the whole
+    openai.APIError family as the terminal skip-model branch.
+    """
+
+    def test_authentication_error_degrades_to_fallback(self) -> None:
+        """A wrong/expired OPENAI_API_KEY must not raise out of plan()."""
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+        planner = QueryPlanner(settings)
+        # Every model attempt raises AuthenticationError — non-retryable.
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=make_authentication_error()
+        )
+
+        # Must NOT raise.
+        plan = planner.plan("find my boiler warranty")
+
+        _assert_is_fallback_plan(plan, "find my boiler warranty")
+        # Both configured models were attempted before giving up.
+        assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
+
+    def test_generic_api_error_degrades_to_fallback(self) -> None:
+        """A bare openai.APIError (no subclass) also degrades, never escapes."""
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="m", AI_MODELS=["m"]
+        )
+        planner = QueryPlanner(settings)
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=make_api_error()
+        )
+
+        plan = planner.plan("a query")
+
+        _assert_is_fallback_plan(plan, "a query")
+
+    def test_authentication_then_success_falls_through(self) -> None:
+        """A non-retryable error on model 1 still lets model 2 answer."""
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+        payload = planner_response_json(semantic_queries=["second model answered"])
+        planner = QueryPlanner(settings)
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                make_authentication_error(),
+                make_chat_completion(payload),
+            ]
+        )
+
+        plan = planner.plan("a query")
+
+        assert "second model answered" in plan.semantic_queries
+        assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]

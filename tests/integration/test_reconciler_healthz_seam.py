@@ -30,7 +30,7 @@ from indexer.reconciler import Reconciler
 from indexer.worker import IndexOutcome
 from store.reader import StoreReader
 from store.writer import StoreWriter
-
+from tests.helpers.factories import make_search_settings
 
 # ---------------------------------------------------------------------------
 # Test-local helpers
@@ -41,24 +41,18 @@ _API_KEY = "reconciler-healthz-integration-key"
 
 
 def _make_settings(tmp_path: Path) -> MagicMock:
-    """Return a settings mock pointing at the tmp_path store."""
-    settings = MagicMock()
-    settings.INDEX_DB_PATH = str(tmp_path / "index.db")
-    settings.EMBEDDING_MODEL = "text-embedding-3-small"
-    settings.EMBEDDING_DIMENSIONS = _DIMENSIONS
-    settings.DOCUMENT_WORKERS = 1
-    settings.SEARCH_API_KEY = _API_KEY
-    settings.SEARCH_SESSION_TTL = 3600
-    settings.SEARCH_MAX_CONCURRENT = 4
-    settings.PAPERLESS_URL = "http://paperless.test"
-    settings.SEARCH_TOP_K = 10
-    settings.SEARCH_MAX_REFINEMENTS = 1
-    settings.SEARCH_PLANNER_MODEL = "gpt-5.4-mini"
-    settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
-    settings.AI_MODELS = ["gpt-5.4-mini"]
-    settings.MAX_RETRIES = 3
-    settings.MAX_RETRY_BACKOFF_SECONDS = 30
-    return settings
+    """Return a settings mock pointing at the tmp_path store.
+
+    Routed through the shared :func:`~tests.helpers.factories.make_search_settings`
+    factory; only the reconciler-specific ``DOCUMENT_WORKERS`` is added on top.
+    """
+    return make_search_settings(
+        INDEX_DB_PATH=str(tmp_path / "index.db"),
+        EMBEDDING_DIMENSIONS=_DIMENSIONS,
+        SEARCH_API_KEY=_API_KEY,
+        PAPERLESS_URL="http://paperless.test",
+        DOCUMENT_WORKERS=1,
+    )
 
 
 def _make_paperless_empty() -> MagicMock:

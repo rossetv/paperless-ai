@@ -27,16 +27,14 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from search.auth import SESSION_COOKIE_NAME
-from search.models import (
-    FilterCandidates,
-    QueryPlan,
-    SearchResult,
-    SearchStats,
-    SourceDocument,
-)
 from store.models import ChunkInput, DocumentMeta, TaxonomyEntry
 from store.reader import StoreReader
 from store.writer import StoreWriter
+from tests.helpers.factories import (
+    make_search_result,
+    make_search_settings,
+    make_source_document,
+)
 
 # ---------------------------------------------------------------------------
 # Embedding geometry
@@ -44,7 +42,6 @@ from store.writer import StoreWriter
 
 _DIMENSIONS = 4
 _AXIS_A: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)
-_AXIS_B: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,28 +50,13 @@ _AXIS_B: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)
 _API_KEY = "integration-test-api-key"
 
 
-def _make_settings(
-    tmp_path: Path,
-    *,
-    api_key: str = _API_KEY,
-) -> MagicMock:
+def _make_settings(tmp_path: Path, *, api_key: str = _API_KEY) -> MagicMock:
     """Build a settings mock pointing at the tmp_path store."""
-    settings = MagicMock()
-    settings.SEARCH_API_KEY = api_key
-    settings.SEARCH_SESSION_TTL = 3600
-    settings.SEARCH_MAX_CONCURRENT = 4
-    settings.PAPERLESS_URL = "http://paperless.example:8000"
-    settings.INDEX_DB_PATH = str(tmp_path / "index.db")
-    settings.EMBEDDING_MODEL = "text-embedding-3-small"
-    settings.EMBEDDING_DIMENSIONS = _DIMENSIONS
-    settings.SEARCH_TOP_K = 10
-    settings.SEARCH_MAX_REFINEMENTS = 1
-    settings.SEARCH_PLANNER_MODEL = "gpt-5.4-mini"
-    settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
-    settings.AI_MODELS = ["gpt-5.4-mini"]
-    settings.MAX_RETRIES = 3
-    settings.MAX_RETRY_BACKOFF_SECONDS = 30
-    return settings
+    return make_search_settings(
+        SEARCH_API_KEY=api_key,
+        INDEX_DB_PATH=str(tmp_path / "index.db"),
+        EMBEDDING_DIMENSIONS=_DIMENSIONS,
+    )
 
 
 def _seed_store(settings: MagicMock) -> None:
@@ -117,36 +99,21 @@ def _seed_store(settings: MagicMock) -> None:
 
 def _make_mock_core(answer: str = "The bill is £198.00.") -> MagicMock:
     """Build a stub SearchCore that returns a fixed SearchResult."""
-    source = SourceDocument(
-        document_id=100,
-        title="BritishGas Invoice",
-        correspondent="BritishGas",
-        document_type="Invoice",
-        created="2024-03-01T00:00:00Z",
-        snippet="Your total bill amount is £198.00.",
-        paperless_url="http://paperless.example:8000/documents/100/",
-        score=0.95,
-    )
-    plan = QueryPlan(
-        semantic_queries=("energy bill",),
-        keyword_terms=(),
-        filter_candidates=FilterCandidates(
-            correspondent=None,
-            document_type=None,
-            tags=(),
-            date_from=None,
-            date_to=None,
-        ),
-        sub_questions=(),
-    )
-    result = SearchResult(
-        answer=answer,
-        sources=(source,),
-        plan=plan,
-        stats=SearchStats(llm_calls=2, latency_ms=80, refined=False),
-    )
     core = MagicMock()
-    core.answer.return_value = result
+    core.answer.return_value = make_search_result(
+        answer=answer,
+        sources=(
+            make_source_document(
+                document_id=100,
+                title="BritishGas Invoice",
+                correspondent="BritishGas",
+                document_type="Invoice",
+                created="2024-03-01T00:00:00Z",
+                snippet="Your total bill amount is £198.00.",
+                score=0.95,
+            ),
+        ),
+    )
     return core
 
 
