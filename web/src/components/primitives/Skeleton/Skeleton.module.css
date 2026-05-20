@@ -1,0 +1,67 @@
+/*
+ * Skeleton primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ *
+ * The shimmer is a CSS gradient animation that sweeps left-to-right over the
+ * placeholder. prefers-reduced-motion disables the animation and leaves a
+ * static placeholder — the shape is still meaningful without motion.
+ *
+ * Colour: uses --colour-button-active-bg (#ededf2) as the base, which is the
+ * lightest neutral in the token set that reads as "empty content" on both
+ * light and dark surfaces.
+ */
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* ── Base ── */
+.skeleton {
+  display: block;
+  background-color: var(--colour-button-active-bg);
+  background-image: linear-gradient(
+    90deg,
+    var(--colour-button-active-bg) 25%,
+    var(--colour-button-light-bg) 50%,
+    var(--colour-button-active-bg) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background-image: none;
+  }
+}
+
+/* ── Variant modifiers ── */
+
+/* Text: rounded pill, default height matches caption line height */
+.text {
+  border-radius: var(--radius-pill);
+  height: var(--spacing-9);  /* 11 px — approximates a single caption text line */
+  width: 100%;
+}
+
+/* Rectangular: standard card radius, fills container by default */
+.rectangular {
+  border-radius: var(--radius-standard);
+  width: 100%;
+  height: var(--spacing-14);  /* 24 px default — override via height prop */
+}
+
+/* Circular: perfect circle; sizing comes from props or defaults to medium icon */
+.circular {
+  border-radius: var(--radius-circle);
+  width: var(--spacing-13);  /* 20 px default */
+  height: var(--spacing-13);
+}
