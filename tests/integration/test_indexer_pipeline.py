@@ -87,17 +87,21 @@ def _make_paperless(
 ) -> MagicMock:
     """A mock PaperlessClient.
 
-    iter_all_documents returns *documents* when filtered by modified_after, and
-    bare-id docs for *all_ids* when called unfiltered (the deletion sweep).
+    iter_all_documents returns *documents* for an incremental call and bare-id
+    docs for *all_ids* for a deletion-sweep call.  The two are disambiguated on
+    keyword *presence*, not value: the incremental sync always passes the
+    ``modified_after`` keyword (even ``None`` on a first run), while the
+    deletion sweep passes no keyword at all.  Disambiguating on a ``None``
+    value would misroute a first-run incremental sync to the sweep branch.
     """
     paperless = MagicMock()
     docs = documents if documents is not None else []
     ids = all_ids if all_ids is not None else []
 
-    def _iter_all_documents(*, modified_after: str | None = None) -> list[dict]:
-        if modified_after is None and all_ids is not None:
-            return [{"id": doc_id} for doc_id in ids]
-        return docs
+    def _iter_all_documents(**kwargs: object) -> list[dict]:
+        if "modified_after" in kwargs:
+            return docs
+        return [{"id": doc_id} for doc_id in ids]
 
     paperless.iter_all_documents.side_effect = _iter_all_documents
     paperless.list_correspondents.return_value = correspondents or []
@@ -224,6 +228,55 @@ class TestIncrementalSyncEndToEnd:
         finally:
             store_writer.close()
 
+    def test_partial_incremental_enumeration_leaves_watermark_unmoved(
+        self, tmp_path: Any
+    ) -> None:
+        """A mid-pagination failure during incremental sync, end to end.
+
+        The incremental page generator yields one document then raises.  The
+        failure propagates out of incremental_sync (the daemon cycle boundary
+        catches it), and the real store's modified_watermark must be exactly
+        what it was — a partial page is never authoritative.
+        """
+        settings = _make_settings(tmp_path)
+        store_writer = StoreWriter(settings)
+        try:
+            # Seed the store via a clean first cycle so a real watermark exists.
+            seed = _make_doc(doc_id=1, modified="2024-06-01T00:00:00+00:00")
+            Reconciler(
+                settings,
+                _make_paperless(documents=[seed]),
+                store_writer,
+                _make_embedding_client(),
+            ).incremental_sync()
+            watermark_before = store_writer.read_meta("modified_watermark")
+            assert watermark_before is not None
+
+            # The next cycle's incremental enumeration fails mid-pagination.
+            paperless_broken = MagicMock()
+
+            def _iter_all_documents(**kwargs: Any):
+                yield _make_doc(doc_id=2, modified="2024-07-01T00:00:00+00:00")
+                raise ConnectionError("Paperless vanished mid-incremental-page")
+
+            paperless_broken.iter_all_documents.side_effect = _iter_all_documents
+            paperless_broken.list_correspondents.return_value = []
+            paperless_broken.list_document_types.return_value = []
+            paperless_broken.list_tags.return_value = []
+
+            with pytest.raises(ConnectionError):
+                Reconciler(
+                    settings,
+                    paperless_broken,
+                    store_writer,
+                    _make_embedding_client(),
+                ).incremental_sync()
+
+            # The watermark is byte-for-byte unchanged.
+            assert store_writer.read_meta("modified_watermark") == watermark_before
+        finally:
+            store_writer.close()
+
 
 # ---------------------------------------------------------------------------
 # Taxonomy refresh — end to end
@@ -313,6 +366,75 @@ class TestDeletionSweepEndToEnd:
             assert report.pruned == 2
             # Only the truly-absent documents are gone.
             assert store_writer.get_all_document_ids() == {1, 2}
+        finally:
+            store_writer.close()
+
+    def test_empty_complete_enumeration_prunes_every_document(
+        self, tmp_path: Any
+    ) -> None:
+        """The dangerous boundary, end to end: a SUCCESSFUL enumeration that
+        yields zero ids while the store holds documents.
+
+        Every Paperless document was genuinely deleted.  ``iter_all_documents()``
+        completes normally returning ``[]`` — it does not raise — so the
+        enumeration is authoritative, and every store document is 404-confirmed
+        absent and pruned.  The 404-confirm is what separates this from an
+        enumeration that *failed* and returned nothing (which aborts)."""
+        settings = _make_settings(tmp_path)
+        store_writer = StoreWriter(settings)
+        try:
+            docs = [_make_doc(doc_id=i) for i in (1, 2, 3)]
+            Reconciler(
+                settings,
+                _make_paperless(documents=docs),
+                store_writer,
+                _make_embedding_client(),
+            ).incremental_sync()
+            assert store_writer.get_all_document_ids() == {1, 2, 3}
+
+            # Paperless now has nothing — a successful, empty enumeration.
+            paperless_empty = _make_paperless(all_ids=[])
+            report = Reconciler(
+                settings, paperless_empty, store_writer, _make_embedding_client()
+            ).deletion_sweep()
+
+            assert report.aborted is False
+            assert report.candidates == 3
+            assert report.pruned == 3
+            # The store is now empty — every document was correctly pruned.
+            assert store_writer.get_all_document_ids() == set()
+        finally:
+            store_writer.close()
+
+    def test_empty_enumeration_keeps_a_document_the_confirm_says_exists(
+        self, tmp_path: Any
+    ) -> None:
+        """Empty enumeration, but one candidate's 404-confirm reports it PRESENT
+        — that document survives.  The per-id confirm is the real guard."""
+        settings = _make_settings(tmp_path)
+        store_writer = StoreWriter(settings)
+        try:
+            docs = [_make_doc(doc_id=i) for i in (1, 2, 3)]
+            Reconciler(
+                settings,
+                _make_paperless(documents=docs),
+                store_writer,
+                _make_embedding_client(),
+            ).incremental_sync()
+
+            paperless_empty = _make_paperless(all_ids=[])
+            # The enumeration listed nothing, but id 2 actually still exists.
+            paperless_empty.document_exists.side_effect = (
+                lambda doc_id: doc_id == 2
+            )
+            report = Reconciler(
+                settings, paperless_empty, store_writer, _make_embedding_client()
+            ).deletion_sweep()
+
+            assert report.aborted is False
+            assert report.pruned == 2
+            # id 2 confirmed present → survives; 1 and 3 → pruned.
+            assert store_writer.get_all_document_ids() == {2}
         finally:
             store_writer.close()
 
