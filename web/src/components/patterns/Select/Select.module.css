@@ -45,7 +45,9 @@
   box-sizing: border-box;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color var(--duration-standard) var(--easing-standard),
+    box-shadow var(--duration-standard) var(--easing-standard);
 }
 
 .trigger:focus-visible {
@@ -69,7 +71,7 @@
   display: flex;
   align-items: center;
   color: var(--colour-text-tertiary);
-  transition: transform 0.15s ease;
+  transition: transform var(--duration-standard) var(--easing-standard);
   flex-shrink: 0;
 }
 
@@ -82,14 +84,14 @@
   top: calc(100% + var(--spacing-2));
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: var(--z-dropdown);
   list-style: none;
   margin: 0;
   padding: var(--spacing-2) 0;
   background-color: var(--colour-surface);
   border-radius: var(--radius-standard);
   box-shadow: var(--shadow-card);
-  max-height: 240px;
+  max-height: var(--height-listbox);
   overflow-y: auto;
 }
 
@@ -102,7 +104,7 @@
   color: var(--colour-text-primary);
   padding: var(--spacing-7) var(--spacing-10);
   cursor: pointer;
-  transition: background-color 0.1s ease;
+  transition: background-color var(--duration-fast) var(--easing-standard);
 }
 
 .option.highlighted,

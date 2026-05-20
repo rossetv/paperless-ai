@@ -28,8 +28,8 @@
   line-height: var(--line-height-body);
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-primary);
-  max-width: 480px;
-  min-width: 240px;
+  max-width: var(--width-toast-max);
+  min-width: var(--width-toast-min);
   box-sizing: border-box;
 }
 

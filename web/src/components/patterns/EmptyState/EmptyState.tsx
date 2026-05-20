@@ -55,7 +55,7 @@ export function EmptyState({
   return (
     <div className={rootClasses}>
       <span className={styles['icon-wrapper']} aria-hidden="true">
-        <Icon name={icon} size="large" />
+        <Icon name={icon} size="xlarge" />
       </span>
 
       <p className={styles['message']}>{message}</p>

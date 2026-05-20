@@ -23,14 +23,14 @@ export type IconName =
   | 'tag';
 
 /** Size scale — icons inherit currentColor and scale via token-based dimensions. */
-export type IconSize = 'small' | 'medium' | 'large';
+export type IconSize = 'small' | 'medium' | 'large' | 'xlarge';
 
 export interface IconProps {
   /** Which icon to render. */
   name: IconName;
   /**
    * Size of the icon.
-   * small = 16 px, medium = 20 px (default), large = 24 px.
+   * small = 16 px, medium = 20 px (default), large = 24 px, xlarge = 32 px.
    */
   size?: IconSize;
   /**

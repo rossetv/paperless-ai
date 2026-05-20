@@ -5,11 +5,11 @@
  * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
  *
  * Three variants, per DESIGN.md §2:
- *   default  — #0066cc (--colour-link) for light backgrounds
+ *   default  — --colour-link for light backgrounds
  *   inline   — same colour with underline decoration for body copy
- *   on-dark  — #2997ff (--colour-link-on-dark) for black/dark backgrounds
+ *   on-dark  — --colour-link-on-dark for black/dark backgrounds
  *
- * Focus ring: 2px solid accent as specified in DESIGN.md §6 and tokens.css.
+ * Focus ring: --spacing-1 solid accent as specified in DESIGN.md §6 and tokens.css.
  */
 
 .link {
@@ -21,7 +21,9 @@
   letter-spacing: var(--letter-spacing-link);
   text-decoration: none;
   cursor: pointer;
-  transition: text-decoration 0.1s ease, color 0.1s ease;
+  transition:
+    text-decoration var(--duration-fast) var(--easing-standard),
+    color var(--duration-fast) var(--easing-standard);
   border-radius: var(--radius-micro);
 }
 

@@ -23,7 +23,7 @@
 .navbar {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: var(--z-nav);
   height: var(--height-nav);
   background-color: var(--colour-nav-bg);
   backdrop-filter: var(--backdrop-nav); /* Glass navigation effect (DESIGN.md §6 Navigation Glass) */

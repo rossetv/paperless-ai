@@ -5,11 +5,11 @@
  * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
  *
  * DESIGN.md §4 Cards & Containers:
- *   - Background: #f5f5f7 (light) or #272729–#2a2a2d (dark variants)
+ *   - Background: --colour-surface (light) or --colour-surface-dark-* (dark variants)
  *   - Border: none — Apple almost never borders cards
- *   - Radius: 5px–8px; use --radius-standard (8px) as the standard card radius
+ *   - Radius: use --radius-standard as the standard card radius
  *   - Shadow: --shadow-card for elevated product cards; flat (no shadow) otherwise
- *   - Padding: generous — using --spacing-14 (24px) as the default card padding
+ *   - Padding: generous — using --spacing-14 as the default card padding
  *
  * Card is not interactive; no focus ring is defined here.
  */

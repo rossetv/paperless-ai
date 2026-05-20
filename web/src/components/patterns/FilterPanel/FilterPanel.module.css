@@ -48,7 +48,7 @@
   display: flex;
   align-items: center;
   color: var(--colour-text-tertiary);
-  transition: transform 0.2s ease;
+  transition: transform var(--duration-slow) var(--easing-standard);
   flex-shrink: 0;
 }
 

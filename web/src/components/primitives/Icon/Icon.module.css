@@ -4,15 +4,18 @@
  * All values come exclusively from design tokens (var(--…)).
  *
  * Icons use currentColor so no colour tokens are needed here — they inherit
- * from the surrounding text. Sizing uses calc() on spacing tokens to reach
- * standard icon sizes (16 / 20 / 24 px) that are not directly in the scale:
+ * from the surrounding text. Sizing uses spacing tokens (and one dedicated
+ * --size-icon-xlarge token) to reach the standard icon sizes:
  *
- *   small  = calc(var(--spacing-6) * 2)  → 8 px × 2 = 16 px
+ *   small  = calc(var(--spacing-6) * 2)  → 16 px
  *   medium = var(--spacing-13)           → 20 px
  *   large  = var(--spacing-14)           → 24 px
+ *   xlarge = var(--size-icon-xlarge)     → 32 px
  *
  * Design note: Apple system icons are 17 pt at body size; 20 px medium aligns
  * with the 17 px body text while sitting on the 4 px grid (spacing-13 = 20 px).
+ * The xlarge size is for empty-state and hero illustration contexts where the
+ * icon is the focal element, not an inline glyph.
  */
 
 .icon {
@@ -38,4 +41,9 @@
 .large {
   width: var(--spacing-14);  /* 24 px */
   height: var(--spacing-14);
+}
+
+.xlarge {
+  width: var(--size-icon-xlarge);  /* 32 px */
+  height: var(--size-icon-xlarge);
 }

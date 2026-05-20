@@ -7,9 +7,8 @@
  * placeholder. prefers-reduced-motion disables the animation and leaves a
  * static placeholder — the shape is still meaningful without motion.
  *
- * Colour: uses --colour-button-active-bg (#ededf2) as the base, which is the
- * lightest neutral in the token set that reads as "empty content" on both
- * light and dark surfaces.
+ * Colour: uses --colour-button-active-bg as the base — the lightest neutral in
+ * the token set that reads as "empty content" on both light and dark surfaces.
  */
 
 @keyframes shimmer {
@@ -33,7 +32,7 @@
     var(--colour-button-active-bg) 75%
   );
   background-size: 200% 100%;
-  animation: shimmer 1.6s ease-in-out infinite;
+  animation: shimmer var(--duration-shimmer) var(--easing-emphasis) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -65,3 +64,25 @@
   width: var(--spacing-13);  /* 20 px default */
   height: var(--spacing-13);
 }
+
+/* ── Multi-line text container ── */
+
+/* Stacks several text bars with a consistent gap (the 'text' variant, lines>1) */
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  width: 100%;
+}
+
+/* ── Closed width set — named fractions of the container ── */
+.width-full   { width: 100%; }
+.width-wide   { width: 75%;  }
+.width-half   { width: 50%;  }
+.width-narrow { width: 33%;  }
+
+/* ── Closed height set — each backed by a dedicated token ── */
+.height-line    { height: var(--height-skeleton-line);    }
+.height-control { height: var(--height-skeleton-control); }
+.height-block   { height: var(--height-skeleton-block);   }
+.height-media   { height: var(--height-skeleton-media);   }

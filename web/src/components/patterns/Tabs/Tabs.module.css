@@ -34,7 +34,9 @@
   padding: var(--spacing-6) var(--spacing-10);
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition:
+    color var(--duration-standard) var(--easing-standard),
+    background-color var(--duration-standard) var(--easing-standard);
   white-space: nowrap;
 }
 

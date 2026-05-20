@@ -19,8 +19,8 @@ export interface CardProps {
   as?: CardElement;
   /**
    * Surface colour — controls the background token.
-   * 'default' = light surface (--colour-surface, #ffffff).
-   * 'dark-1' … 'dark-5' = dark surface variants for dark sections.
+   * 'default' = light surface (--colour-surface).
+   * 'dark-1' … 'dark-5' = dark surface variants (--colour-surface-dark-*).
    */
   surface?: CardSurface;
   /**

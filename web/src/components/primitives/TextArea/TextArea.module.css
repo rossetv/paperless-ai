@@ -37,7 +37,9 @@
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color var(--duration-standard) var(--easing-standard),
+    box-shadow var(--duration-standard) var(--easing-standard);
 }
 
 .textarea:focus-visible {

@@ -17,9 +17,11 @@
   border: none;
   background-color: var(--colour-overlay);
   color: var(--colour-text-tertiary);
-  width: calc(var(--spacing-13) + var(--spacing-14));
-  height: calc(var(--spacing-13) + var(--spacing-14));
-  transition: background-color 0.15s ease, transform 0.1s ease;
+  width: var(--size-touch-target);
+  height: var(--size-touch-target);
+  transition:
+    background-color var(--duration-standard) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-standard);
 }
 
 /* Disabled state declared before :hover/:active to avoid specificity ordering issues */

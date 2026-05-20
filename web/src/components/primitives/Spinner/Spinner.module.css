@@ -37,7 +37,7 @@
   border-radius: var(--radius-circle);
   border-style: solid;
   border-color: var(--colour-border) var(--colour-border) var(--colour-border) var(--colour-accent);
-  animation: spin 0.75s linear infinite;
+  animation: spin var(--duration-spin) var(--easing-linear) infinite;
 }
 
 @keyframes spin {
@@ -49,7 +49,7 @@
 /* Respect prefers-reduced-motion — pulse instead of spin */
 @media (prefers-reduced-motion: reduce) {
   .ring {
-    animation: pulse 1.5s ease-in-out infinite;
+    animation: pulse var(--duration-pulse) var(--easing-emphasis) infinite;
     border-color: var(--colour-accent);
   }
 
