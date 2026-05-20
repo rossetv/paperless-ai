@@ -5,17 +5,12 @@ import { Toast } from './Toast';
 
 describe('Toast', () => {
   it('renders the message text', () => {
-    render(<Toast message="Document indexed successfully" variant="success" />);
+    render(<Toast message="Document indexed successfully" variant="info" />);
     expect(screen.getByText('Document indexed successfully')).toBeInTheDocument();
   });
 
   it('uses role="status" for info variant', () => {
     render(<Toast message="Indexing in progress" variant="info" />);
-    expect(screen.getByRole('status')).toBeInTheDocument();
-  });
-
-  it('uses role="status" for success variant', () => {
-    render(<Toast message="Saved" variant="success" />);
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
@@ -36,7 +31,7 @@ describe('Toast', () => {
 
   it('calls onDismiss when the dismiss button is clicked', async () => {
     const handleDismiss = vi.fn();
-    render(<Toast message="Notification" variant="success" onDismiss={handleDismiss} />);
+    render(<Toast message="Notification" variant="info" onDismiss={handleDismiss} />);
     await userEvent.click(screen.getByRole('button', { name: /dismiss/i }));
     expect(handleDismiss).toHaveBeenCalledTimes(1);
   });

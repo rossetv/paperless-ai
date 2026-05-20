@@ -22,21 +22,6 @@ describe('Badge', () => {
     expect(screen.getByText('Accent').className).toMatch(/accent/);
   });
 
-  it('applies the success variant class when variant is success', () => {
-    render(<Badge variant="success">Done</Badge>);
-    expect(screen.getByText('Done').className).toMatch(/success/);
-  });
-
-  it('applies the warning variant class when variant is warning', () => {
-    render(<Badge variant="warning">Warn</Badge>);
-    expect(screen.getByText('Warn').className).toMatch(/warning/);
-  });
-
-  it('applies the danger variant class when variant is danger', () => {
-    render(<Badge variant="danger">Error</Badge>);
-    expect(screen.getByText('Error').className).toMatch(/danger/);
-  });
-
   it('forwards a custom className', () => {
     render(<Badge className="custom-cls">Label</Badge>);
     expect(screen.getByText('Label').className).toContain('custom-cls');

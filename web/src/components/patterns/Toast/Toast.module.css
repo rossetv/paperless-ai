@@ -2,12 +2,13 @@
  * Toast pattern — CSS Module.
  *
  * DESIGN.md uses a single chromatic accent (--colour-accent, Apple Blue).
- * There are no semantic success/error colour tokens. The variant system
- * therefore maps as follows (see Toast.tsx for rationale):
+ * There are no semantic status colour tokens. Two visually distinct variants:
  *
- *   .info    → --colour-accent left border
- *   .success → --colour-accent left border (same blue — only available accent)
- *   .error   → --colour-text-primary left border (near-black, distinguishes urgency)
+ *   .info  → --colour-accent left border (blue, informational)
+ *   .error → --colour-text-primary left border (near-black, assertive)
+ *
+ * The previous .success rule was removed — it was visually identical to .info
+ * (both used --colour-accent). See Toast.tsx for rationale.
  *
  * All values come exclusively from design tokens (§12.4).
  */
@@ -38,10 +39,6 @@
   border-left-color: var(--colour-accent);
 }
 
-.success {
-  border-left-color: var(--colour-accent);
-}
-
 .error {
   border-left-color: var(--colour-text-primary);
 }
@@ -55,8 +52,7 @@
   padding-top: var(--spacing-1);
 }
 
-.info .icon,
-.success .icon {
+.info .icon {
   color: var(--colour-accent);
 }
 

@@ -11,7 +11,7 @@ const meta = {
   argTypes: {
     variant: {
       control: 'radio',
-      options: ['neutral', 'accent', 'success', 'warning', 'danger'],
+      options: ['neutral', 'accent'],
     },
   },
 } satisfies Meta<typeof Badge>;
@@ -33,27 +33,6 @@ export const Accent: Story = {
   },
 };
 
-export const Success: Story = {
-  args: {
-    children: 'Indexed',
-    variant: 'success',
-  },
-};
-
-export const Warning: Story = {
-  args: {
-    children: 'Pending',
-    variant: 'warning',
-  },
-};
-
-export const Danger: Story = {
-  args: {
-    children: 'Error',
-    variant: 'danger',
-  },
-};
-
 export const Count: Story = {
   args: {
     children: 42,
@@ -66,9 +45,6 @@ export const AllVariants: StoryObj = {
     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
       <Badge variant="neutral">Neutral</Badge>
       <Badge variant="accent">Accent</Badge>
-      <Badge variant="success">Success</Badge>
-      <Badge variant="warning">Warning</Badge>
-      <Badge variant="danger">Danger</Badge>
       <Badge variant="accent">{99}</Badge>
     </div>
   ),

@@ -6,11 +6,11 @@
  *
  * DESIGN.md documents one chromatic accent (Apple Blue) and a neutral palette.
  * Badge variants map to this system:
- *   neutral — light-surface background with primary text
- *   accent  — Apple Blue background with on-dark text (e.g. primary status)
- *   success — reuses accent (blue is the only chromatic colour in the system)
- *   warning — overlay background with primary text (muted, non-chromatic)
- *   danger  — near-black background with on-dark text (serious attention)
+ *   neutral — light-surface background with secondary text (low emphasis)
+ *   accent  — Apple Blue background with on-dark text (high emphasis)
+ *
+ * The previous success/warning/danger variants were removed because they were
+ * visually indistinct from neutral/accent — a misleading API (NOTE 1 fix).
  *
  * Badge is non-interactive; no focus ring required.
  */
@@ -41,20 +41,3 @@
   color: var(--colour-text-on-dark);
 }
 
-/* ── Success — reuses accent (blue is the sole chromatic token) ── */
-.success {
-  background-color: var(--colour-accent);
-  color: var(--colour-text-on-dark);
-}
-
-/* ── Warning — muted non-chromatic treatment ── */
-.warning {
-  background-color: var(--colour-overlay);
-  color: var(--colour-text-primary);
-}
-
-/* ── Danger — high-contrast near-black ── */
-.danger {
-  background-color: var(--colour-text-primary);
-  color: var(--colour-text-on-dark);
-}

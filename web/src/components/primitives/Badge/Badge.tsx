@@ -5,16 +5,18 @@ import stylesRaw from './Badge.module.css';
 const styles = stylesRaw as Record<string, string>;
 
 /**
- * Semantic colour variant for the badge.
+ * Visual variant for the badge.
  *
- * All variants use only design-system tokens — no custom colours.
- * DESIGN.md only documents two clear accent-vs-neutral roles;
- * success/warning/danger are mapped to the same token vocabulary by convention:
- * success = accent (the only chromatic colour), warning/danger = text-tertiary/text-primary.
- * This interpretation is documented here because DESIGN.md does not address
- * semantic status colours explicitly — Apple's system uses a single blue accent.
+ * DESIGN.md uses a single chromatic accent (Apple Blue) with no semantic
+ * status colours. The two distinct visual treatments are:
+ *   neutral — light-surface background, secondary text (low emphasis)
+ *   accent  — Apple Blue background, on-dark text (high emphasis)
+ *
+ * Previous success/warning/danger variants were visually identical to
+ * existing ones (success = accent, warning/danger used text-primary tones)
+ * — a misleading API. They are removed to keep the API honest.
  */
-export type BadgeVariant = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+export type BadgeVariant = 'neutral' | 'accent';
 
 export interface BadgeProps {
   /** Semantic colour variant. Defaults to 'neutral'. */

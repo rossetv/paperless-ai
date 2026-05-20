@@ -9,7 +9,7 @@ const meta = {
   },
   tags: ['autodocs'],
   argTypes: {
-    variant: { control: { type: 'select' }, options: ['info', 'success', 'error'] },
+    variant: { control: { type: 'select' }, options: ['info', 'error'] },
     message: { control: 'text' },
     dismissAfterMs: { control: 'number' },
   },
@@ -22,13 +22,6 @@ export const Info: Story = {
   args: {
     message: 'Indexing is in progress. New documents will appear shortly.',
     variant: 'info',
-  },
-};
-
-export const Success: Story = {
-  args: {
-    message: 'Document uploaded and indexed successfully.',
-    variant: 'success',
   },
 };
 
@@ -52,7 +45,7 @@ export const WithDismissButton: Story = {
 export const AutoDismiss: Story = {
   args: {
     message: 'This notification auto-dismisses after 5 seconds.',
-    variant: 'success',
+    variant: 'info',
     dismissAfterMs: 5000,
     onDismiss: () => {
       /* story — would unmount the toast in a real application */
