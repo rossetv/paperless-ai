@@ -78,21 +78,25 @@ export function Tabs({
         const nextIndex = (currentIndex + 1) % count;
         focusTab(nextIndex);
         // Automatic activation — focusing a tab activates it
-        activateTab(tabs[nextIndex].id);
+        const nextTab = tabs[nextIndex];
+        if (nextTab !== undefined) activateTab(nextTab.id);
         break;
       }
       case 'ArrowLeft': {
         event.preventDefault();
         const prevIndex = (currentIndex - 1 + count) % count;
         focusTab(prevIndex);
-        activateTab(tabs[prevIndex].id);
+        const prevTab = tabs[prevIndex];
+        if (prevTab !== undefined) activateTab(prevTab.id);
         break;
       }
       case 'Enter':
-      case ' ':
+      case ' ': {
         event.preventDefault();
-        activateTab(tabs[currentIndex].id);
+        const currentTab = tabs[currentIndex];
+        if (currentTab !== undefined) activateTab(currentTab.id);
         break;
+      }
       default:
         break;
     }
