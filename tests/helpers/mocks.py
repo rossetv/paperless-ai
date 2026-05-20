@@ -7,6 +7,62 @@ from unittest.mock import MagicMock
 
 from tests.helpers.factories import make_document, make_settings_obj
 
+
+def make_mock_embeddings(
+    *,
+    n: int | None = None,
+    dimensions: int = 4,
+    vectors: list[list[float]] | None = None,
+) -> tuple[MagicMock, MagicMock]:
+    """Create a mock OpenAI client whose embeddings.create returns predictable vectors.
+
+    Either supply *vectors* (explicit list of vectors, one per input) or *n*
+    (number of inputs; generic zero-vectors of the given *dimensions* are used).
+    The mock is stateful: successive calls consume the next slice of vectors, so
+    batched calls that split a long input across multiple requests work correctly.
+
+    Returns a ``(mock_openai, last_response)`` pair.  ``last_response`` is the
+    ``MagicMock`` returned by the most-recent call, which is useful in tests that
+    want to pass it as a ``side_effect`` value.
+    """
+    if vectors is not None:
+        all_vectors = vectors
+    elif n is not None:
+        all_vectors = [[0.0] * dimensions for _ in range(n)]
+    else:
+        raise ValueError("Provide either vectors= or n= to make_mock_embeddings")
+
+    # Track the position in all_vectors across successive calls so that
+    # cross-batch ordering tests work without per-call bookkeeping in the test.
+    position: list[int] = [0]
+
+    last_response: list[MagicMock] = []
+
+    def _create(*, model: str, input: list[str], **kwargs: Any) -> MagicMock:
+        start = position[0]
+        end = start + len(input)
+        batch_vectors = all_vectors[start:end]
+        position[0] = end
+
+        response = MagicMock()
+        response.data = [
+            MagicMock(embedding=vec, index=i)
+            for i, vec in enumerate(batch_vectors)
+        ]
+        last_response.clear()
+        last_response.append(response)
+        return response
+
+    mock_openai = MagicMock()
+    mock_openai.embeddings.create.side_effect = _create
+
+    # Build a dummy response for callers that need the raw response object.
+    dummy_response = MagicMock()
+    dummy_response.data = [
+        MagicMock(embedding=[0.0] * dimensions, index=0)
+    ]
+    return mock_openai, dummy_response
+
 def make_mock_paperless(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a PaperlessClient.
 
