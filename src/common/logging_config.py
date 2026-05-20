@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 import structlog
+from structlog.types import Processor
 
 from .config import Settings
 
@@ -19,7 +20,7 @@ def configure_logging(settings: Settings) -> None:
     - Routes stdlib ``logging`` records through the structlog formatter.
     - Suppresses noisy third-party loggers.
     """
-    shared_processors = [
+    shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
