@@ -113,7 +113,7 @@ def release_processing_tag(
         )
 
 
-def finalize_document_with_error(
+def finalise_document_with_error(
     client: PaperlessClient,
     doc_id: int,
     tags: set[int],
@@ -136,7 +136,7 @@ def finalize_document_with_error(
             client.update_document_metadata(doc_id, tags=updated)
     except PAPERLESS_CALL_EXCEPTIONS:
         log.exception(
-            "Failed to finalize document with error tag",
+            "Failed to finalise document with error tag",
             doc_id=doc_id,
             error_tag_id=settings.ERROR_TAG_ID,
         )

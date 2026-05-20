@@ -10,7 +10,7 @@ from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from common.tags import (
     clean_pipeline_tags,
     extract_tags,
-    finalize_document_with_error,
+    finalise_document_with_error,
     release_processing_tag,
 )
 from .content_prep import (
@@ -212,13 +212,13 @@ class ClassificationProcessor:
         """
         Mark the document with an error tag and clear pipeline tags.
 
-        Delegates to :func:`common.tags.finalize_document_with_error`.
+        Delegates to :func:`common.tags.finalise_document_with_error`.
 
         This convenience wrapper exists so callers don't need to pass
         ``self.paperless_client``, ``self.doc_id``, and ``self.settings``
         at every call site.
         """
-        finalize_document_with_error(
+        finalise_document_with_error(
             self.paperless_client,
             self.doc_id,
             tags,
