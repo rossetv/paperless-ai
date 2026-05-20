@@ -46,9 +46,10 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
 
     Runs each DDL statement from _SCHEMA individually via conn.execute() so
     that all DDL and the schema_version write in run_migrations() stay inside
-    the single ``with conn:`` transaction.  conn.executescript() issues an
-    implicit COMMIT before executing, which would break atomicity and allow a
-    crash to leave the schema applied but schema_version un-advanced.
+    the single explicit transaction that run_migrations() opens.
+    conn.executescript() issues an implicit COMMIT before executing, which
+    would break atomicity and allow a crash to leave the schema applied but
+    schema_version un-advanced.
 
     Every statement uses IF NOT EXISTS so re-running is harmless, though the
     migration runner only calls this when the stored schema_version is 0.
@@ -138,14 +139,27 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             version=version,
             previous_version=current_version,
         )
-        with conn:
+        # An explicit BEGIN is required for atomicity. Under the sqlite3
+        # module's legacy transaction handling a DDL statement (CREATE TABLE /
+        # INDEX) triggers no implicit BEGIN, and a bare ``with conn:`` opens no
+        # transaction either — so without this each DDL statement would
+        # autocommit and a mid-migration failure would leave the schema
+        # half-applied. BEGIN makes the whole migration — every DDL statement
+        # plus the schema_version write — one transaction committed or rolled
+        # back as a unit.
+        conn.execute("BEGIN")
+        try:
             migration_fn(conn)
             # Persist the new version inside the same transaction so a crash
-            # mid-migration leaves schema_version at the pre-migration value.
+            # mid-migration rolls back to the pre-migration state entirely.
             conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(version),),
             )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         current_version = version
 
 

@@ -146,22 +146,46 @@ class TestSchemaVersionPersisted:
 
 
 class TestMigrationAtomicity:
-    """DDL statements and the schema_version write are committed atomically.
+    """A migration's DDL and its schema_version write commit or roll back as one.
 
-    This guards against the regression where conn.executescript() issued an
-    implicit COMMIT before executing, breaking the single-transaction guarantee.
-    With individual conn.execute() calls the DDL and schema_version write stay
-    inside the same ``with conn:`` block.
+    run_migrations() wraps each migration in an explicit BEGIN…COMMIT
+    transaction (rolling back on any failure). This guards two regressions:
+    conn.executescript() issuing an implicit COMMIT before executing, and a
+    bare ``with conn:`` failing to open a transaction at all so DDL would
+    autocommit individually.
     """
 
-    def test_schema_version_written_in_same_transaction_as_ddl(self, conn) -> None:
-        """After run_migrations, both tables and schema_version exist.
+    def test_failed_migration_rolls_back_completely(self, conn, monkeypatch) -> None:
+        """A migration that fails partway leaves the database wholly unchanged.
 
-        If DDL and schema_version were committed separately (the broken path),
-        a mid-migration crash would leave schema_version at 0 while the tables
-        exist.  We cannot simulate a crash in a unit test, but we can at minimum
-        assert that both the schema and schema_version row are present and
-        consistent after a successful run.
+        Injects a migration that creates a table and then raises, mimicking a
+        crash mid-migration. Afterwards neither the partial table nor an
+        advanced schema_version may survive — proving the whole migration is
+        one atomic transaction.
+        """
+
+        def _failing_migration(c: sqlite3.Connection) -> None:
+            c.execute("CREATE TABLE partial_migration_table (x INTEGER)")
+            raise RuntimeError("simulated crash mid-migration")
+
+        monkeypatch.setattr(
+            "store.migrations.MIGRATIONS", [(1, _failing_migration)]
+        )
+        with pytest.raises(RuntimeError, match="simulated crash"):
+            run_migrations(conn)
+
+        # The partial table must have been rolled back ...
+        assert "partial_migration_table" not in _table_names(conn)
+        # ... and schema_version must not have advanced (meta never created).
+        assert _get_schema_version(conn) is None
+
+    def test_schema_version_written_in_same_transaction_as_ddl(self, conn) -> None:
+        """After run_migrations, both the tables and schema_version exist.
+
+        The happy-path consistency check: the schema and the schema_version
+        row are both present and consistent after a successful run. The
+        crash/rollback path is covered by
+        test_failed_migration_rolls_back_completely.
         """
         run_migrations(conn)
         version = _get_schema_version(conn)
