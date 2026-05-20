@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card } from '../../../components/primitives/Card/Card';
+import { Text } from '../../../components/primitives/Text/Text';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import type { SourceDocument } from '../../../api/types';
 import { CitationLink } from '../CitationLink/CitationLink';
@@ -50,7 +51,7 @@ export function AnswerCard({
   return (
     <Card as="article" elevated>
       <Stack direction="vertical" gap={6}>
-        <p>
+        <Text as="p" variant="body">
           {segments.map((segment, i) => {
             if (segment.type === 'text') {
               return <React.Fragment key={i}>{segment.value}</React.Fragment>;
@@ -69,7 +70,7 @@ export function AnswerCard({
               />
             );
           })}
-        </p>
+        </Text>
       </Stack>
     </Card>
   );
