@@ -1,22 +1,17 @@
-import { Routes, Route } from 'react-router-dom';
-
 /**
- * Application root. Wires top-level routes.
- * Pages and features are added here as the product grows.
- * Placeholder until SearchPage and LoginPage are implemented (T6.2+).
+ * Application root.
+ *
+ * Renders the `AppRoutes` table, which switches between `LoginPage` and
+ * `SearchPage` based on `useAuth().authenticated`. Providers (`QueryClient`,
+ * `AuthProvider`, `BrowserRouter`) are wired in `main.tsx` so this file
+ * stays a thin composition root.
+ *
+ * Intentionally exempt from `eslint-plugin-boundaries` (see
+ * `boundaries/ignore` in eslint.config.js).
  */
+
+import { AppRoutes } from './routes';
+
 export default function App(): React.ReactElement {
-  return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem' }}>
-            <h1>Paperless AI Search</h1>
-            <p>Index initialising — search will be available once the indexer has run.</p>
-          </main>
-        }
-      />
-    </Routes>
-  );
+  return <AppRoutes />;
 }
