@@ -22,7 +22,7 @@ export interface DocumentSnippetProps {
  */
 export function DocumentSnippet({ snippet }: DocumentSnippetProps): React.ReactElement {
   return (
-    <Stack direction="vertical" gap={0}>
+    <Stack direction="vertical">
       {snippet.length > 0 ? (
         <p>{snippet}</p>
       ) : (
