@@ -1,0 +1,90 @@
+/*
+ * SearchField pattern — CSS Module.
+ *
+ * Implements the Apple search-input style from DESIGN.md §4:
+ * - --radius-comfortable (11 px) rounded field
+ * - Light #fafafc background (--colour-button-light-bg)
+ * - Leading search icon + trailing submit button
+ * - 2 px accent focus ring on the input
+ *
+ * Design interpretation: the submit button uses the icon-button primitive
+ * (Media Control style, circular) positioned at the trailing edge of the
+ * field, matching the Apple compact search-bar pattern.
+ * All values come exclusively from design tokens.
+ */
+
+.search-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 100%;
+}
+
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-caption);
+  line-height: var(--line-height-caption);
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.leading-icon {
+  position: absolute;
+  left: var(--spacing-10);
+  display: flex;
+  align-items: center;
+  color: var(--colour-text-tertiary);
+  pointer-events: none;
+}
+
+.input {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  /* Pad left for the leading icon, right for the trailing button */
+  padding: var(--spacing-6) var(--spacing-14) var(--spacing-6) var(--spacing-13);
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  /* Remove the browser's default search-cancel button — the submit icon serves
+     this interaction; a second cancel affordance clutters the field. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Remove WebKit search clear button */
+.input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.input:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.trailing-button {
+  position: absolute;
+  right: var(--spacing-2);
+  display: flex;
+  align-items: center;
+}
