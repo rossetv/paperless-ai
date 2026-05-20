@@ -35,12 +35,12 @@ type Story = StoryObj<typeof meta>;
 const Box = ({ label }: { label: string }) => (
   <div
     style={{
-      background: '#0071e3',
-      color: '#fff',
-      padding: '0.5rem 1rem',
-      borderRadius: '8px',
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
+      background: 'var(--colour-accent)',
+      color: 'var(--colour-text-on-dark)',
+      padding: 'var(--spacing-6) var(--spacing-11)',
+      borderRadius: 'var(--radius-standard)',
+      fontFamily: 'var(--font-text)',
+      fontSize: 'var(--font-size-caption)',
     }}
   >
     {label}
@@ -87,5 +87,5 @@ export const SpaceBetween: Story = {
       </>
     ),
   },
-  decorators: [(Story) => <div style={{ width: '400px' }}><Story /></div>],
+  decorators: [(Story) => <div style={{ width: 'var(--width-empty-state)' }}><Story /></div>],
 };

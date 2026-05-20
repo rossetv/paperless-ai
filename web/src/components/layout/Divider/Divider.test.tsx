@@ -17,6 +17,25 @@ describe('Divider', () => {
     expect((container.firstChild as Element).className).toMatch(/horizontal/);
   });
 
+  it('applies the vertical class when orientation is "vertical"', () => {
+    const { container } = render(<Divider orientation="vertical" />);
+    expect((container.firstChild as Element).className).toMatch(/vertical/);
+    expect((container.firstChild as Element).className).not.toMatch(/horizontal/);
+  });
+
+  it('sets aria-orientation="vertical" for a semantic vertical divider', () => {
+    const { container } = render(<Divider orientation="vertical" />);
+    expect(container.querySelector('hr')).toHaveAttribute(
+      'aria-orientation',
+      'vertical',
+    );
+  });
+
+  it('omits aria-orientation for a horizontal divider (the implicit default)', () => {
+    const { container } = render(<Divider />);
+    expect(container.querySelector('hr')).not.toHaveAttribute('aria-orientation');
+  });
+
   it('forwards a custom className', () => {
     const { container } = render(<Divider className="custom" />);
     expect((container.firstChild as Element).className).toContain('custom');

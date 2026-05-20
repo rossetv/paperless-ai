@@ -24,12 +24,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// Plain heading + paragraph — global.css (loaded in preview.ts) supplies the
+// type scale, so the story needs no inline typography.
 const SampleContent = () => (
   <>
-    <h3 style={{ margin: '0 0 0.5rem', fontFamily: 'sans-serif' }}>Card title</h3>
-    <p style={{ margin: 0, fontFamily: 'sans-serif', fontSize: '14px' }}>
-      A surface container holding arbitrary content.
-    </p>
+    <h3>Card title</h3>
+    <p style={{ margin: 0 }}>A surface container holding arbitrary content.</p>
   </>
 );
 
@@ -68,10 +68,23 @@ export const AsArticle: Story = {
 
 export const AllSurfaces: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '300px' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--spacing-14)',
+        width: 'var(--width-empty-state)',
+      }}
+    >
       <Card>Default surface (flat)</Card>
       <Card elevated>Default surface (elevated)</Card>
-      <div style={{ background: '#000', padding: '1rem', borderRadius: '8px' }}>
+      <div
+        style={{
+          background: 'var(--colour-bg-alt)',
+          padding: 'var(--spacing-14)',
+          borderRadius: 'var(--radius-standard)',
+        }}
+      >
         <Card surface="dark-1" elevated>Dark surface 1</Card>
       </div>
     </div>

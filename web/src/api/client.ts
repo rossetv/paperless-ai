@@ -31,10 +31,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 /** The base URL for all API calls. Same-origin in production; proxied in dev. */
-const BASE_URL: string =
-  typeof import.meta.env['VITE_API_BASE_URL'] === 'string'
-    ? (import.meta.env['VITE_API_BASE_URL'] as string)
-    : '';
+const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '';
 
 // ---------------------------------------------------------------------------
 // Error types

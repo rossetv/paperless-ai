@@ -19,7 +19,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   args: {
     children: (
-      <div style={{ background: '#e0e0e0', padding: '0.5rem', fontFamily: 'sans-serif' }}>
+      <div style={{ background: 'var(--colour-bg)', padding: 'var(--spacing-6)' }}>
         Default section — compact vertical padding.
       </div>
     ),
@@ -30,7 +30,7 @@ export const Spacious: Story = {
   args: {
     spacious: true,
     children: (
-      <div style={{ background: '#e0e0e0', padding: '0.5rem', fontFamily: 'sans-serif' }}>
+      <div style={{ background: 'var(--colour-bg)', padding: 'var(--spacing-6)' }}>
         Spacious section — cinematic breathing room (DESIGN.md §5).
       </div>
     ),

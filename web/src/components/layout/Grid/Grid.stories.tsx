@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
+import { Card } from '../../primitives/Card/Card';
 import { Grid } from './Grid';
 
 const meta = {
@@ -23,21 +24,9 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const Cell = ({ label }: { label: string }) => (
-  <div
-    style={{
-      background: '#f5f5f7',
-      border: '1px solid #d1d1d6',
-      padding: '1rem',
-      borderRadius: '8px',
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      textAlign: 'center',
-    }}
-  >
-    {label}
-  </div>
-);
+// A grid cell is a real Card primitive — the story exercises the layout
+// component with genuine library components, not ad-hoc styled <div>s.
+const Cell = ({ label }: { label: string }) => <Card elevated>{label}</Card>;
 
 export const TwoColumns: Story = {
   args: {
