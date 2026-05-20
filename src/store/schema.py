@@ -2,10 +2,11 @@
 
 This module owns the DDL for every table, virtual table, and index in the
 search index.  It also exposes the connect() factory that correctly
-configures every new connection.
+configures every new connection, and ensure_schema() which delegates to the
+versioned migration runner in store.migrations.
 
-Allowed deps: sqlite3, sqlite-vec.
-Forbidden: imports from any other internal package.
+Allowed deps: sqlite3, sqlite-vec, store.migrations.
+Forbidden: imports from any package above store/ in the layer hierarchy.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from __future__ import annotations
 import sqlite3
 
 import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped with the package
+
+from store.migrations import run_migrations
 
 # The schema version recorded in meta.schema_version.
 # A later task (T1.2) will introduce a migration runner that reads this value
@@ -129,17 +132,21 @@ def connect(db_path: str, *, read_only: bool) -> sqlite3.Connection:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Apply the v1 schema to *conn* if it has not been applied yet.
+    """Ensure the search index schema is up to date by running pending migrations.
 
-    All DDL statements in _SCHEMA use IF NOT EXISTS, so this function is
-    safe to call repeatedly on an existing database — it is a no-op when
-    every object already exists.
+    Delegates to store.migrations.run_migrations(), which reads the stored
+    schema_version from the meta table (treating 0 as a fresh database),
+    applies every migration whose version exceeds the current version in
+    ascending order, and persists the new schema_version after each one.
 
-    Note: a later task (T1.2) will replace this body with a versioned
-    migration runner.  Do not import or reference any migrations module here;
-    it does not exist yet.
+    Safe to call repeatedly — when the stored schema_version already matches
+    the highest known migration, run_migrations() is a no-op.
 
     Args:
         conn: An open connection returned by connect().
+
+    Raises:
+        store.migrations.StoreError: The database's schema_version is higher
+            than the maximum known migration version (a future-version guard).
     """
-    conn.executescript(_SCHEMA)
+    run_migrations(conn)
