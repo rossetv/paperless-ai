@@ -1,0 +1,61 @@
+/*
+ * FilterPanel pattern — CSS Module.
+ *
+ * A collapsible titled container. Styled after the Apple card style from
+ * DESIGN.md §4: --radius-standard (8 px), light surface background,
+ * no visible border (borders are rare in the Apple system).
+ *
+ * The chevron rotates to indicate collapsed vs expanded state.
+ * All values come exclusively from design tokens.
+ */
+
+.filter-panel {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-standard);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-6);
+  width: 100%;
+  padding: var(--spacing-10) var(--spacing-12);
+  background: none;
+  border: none;
+  border-radius: var(--radius-standard);
+  cursor: pointer;
+  text-align: left;
+}
+
+.toggle:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.title {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-body);
+  line-height: var(--line-height-body-emphasis);
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  color: var(--colour-text-tertiary);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.content {
+  padding: 0 var(--spacing-12) var(--spacing-10);
+}
