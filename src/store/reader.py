@@ -38,10 +38,6 @@ from store.schema import connect
 
 log = structlog.get_logger(__name__)
 
-# Cosine-distance score returned for a chunk whose embedding is a zero-length
-# blob or otherwise unreadable; used as a sentinel, never served to callers.
-_FALLBACK_SCORE: float = 1.0
-
 
 @dataclass(frozen=True, slots=True)
 class SearchFilters:
@@ -100,6 +96,12 @@ class StoreReader:
     # ------------------------------------------------------------------
     # Vector search
     # ------------------------------------------------------------------
+    # Dimension consistency: vector_search passes the query blob directly to
+    # vec_distance_cosine without a per-row dimension check.  This is safe
+    # because StoreWriter.check_embedding_model() wipes and rebuilds all
+    # chunks whenever the embedding model or configured dimension changes, so
+    # every stored embedding is guaranteed to share the same width.  A
+    # per-row fallback for mismatched dimensions is therefore unnecessary.
 
     def vector_search(
         self,
@@ -133,6 +135,8 @@ class StoreReader:
         Raises:
             StoreError: On SQLite error.
         """
+        if k <= 0:
+            return []
         query_blob = sqlite_vec.serialize_float32(list(query_embedding))
         where_clause, params = _build_filters(filters)
         sql = f"""
@@ -192,6 +196,8 @@ class StoreReader:
             StoreError: On SQLite error.
         """
         if not terms:
+            return []
+        if k <= 0:
             return []
 
         # Build the FTS MATCH expression: each term is quoted and joined with AND.
