@@ -7,6 +7,8 @@ edge cases (empty input, contiguous chunk_index).
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from indexer.chunker import TextChunk, chunk_text
@@ -26,16 +28,20 @@ class TestTextChunkShape:
         assert chunk.page_hint is None
 
     def test_is_frozen(self) -> None:
+        """Mutating a declared field on the frozen dataclass is rejected."""
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
-        with pytest.raises((AttributeError, TypeError)):
+        with pytest.raises(FrozenInstanceError):
             chunk.text = "modified"  # type: ignore[misc]
 
     def test_slots_prevent_arbitrary_attributes(self) -> None:
-        # Frozen+slots raises AttributeError or TypeError depending on the
-        # Python version and whether the attribute is known; either proves
-        # that arbitrary attributes cannot be added.
+        """slots=True rejects assignment to an undeclared attribute.
+
+        On a frozen slots dataclass the frozen ``__setattr__`` runs first and
+        raises ``TypeError`` for any name — declared or not — so an undeclared
+        attribute is rejected with ``TypeError`` rather than ``AttributeError``.
+        """
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
-        with pytest.raises((AttributeError, TypeError)):
+        with pytest.raises(TypeError):
             chunk.nonexistent = "value"  # type: ignore[attr-defined]
 
 

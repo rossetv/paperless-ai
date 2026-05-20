@@ -12,7 +12,7 @@ passed through method arguments so it is safe to call ``index_document`` from
 multiple threads concurrently.
 
 Allowed deps: indexer.chunker, store.models, store.writer,
-    common.config, common.embeddings.
+    common.clock, common.config, common.embeddings, common.paperless.
 Forbidden: sqlite3, httpx, openai direct calls, imports from search/.
 """
 
@@ -20,17 +20,18 @@ from __future__ import annotations
 
 import enum
 import hashlib
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import structlog
 
+from common.clock import normalise_paperless_timestamp, parse_paperless_timestamp
 from indexer.chunker import chunk_text
 from store.models import ChunkInput, DocumentMeta
 
 if TYPE_CHECKING:
     from common.config import Settings
     from common.embeddings import EmbeddingClient
+    from common.paperless import PaperlessDocument
     from store.models import IndexState
     from store.writer import StoreWriter
 
@@ -79,15 +80,14 @@ class DocumentIndexer:
 
     def index_document(
         self,
-        doc: dict,
+        doc: PaperlessDocument,
         existing: IndexState | None,
     ) -> IndexOutcome:
         """Index one Paperless document according to SPEC §5.3.
 
         Args:
-            doc: A Paperless document dict as returned by the API.  Expected
-                fields: ``id``, ``content``, ``tags``, ``correspondent``,
-                ``document_type``, ``created``, ``modified``, ``title``.
+            doc: A Paperless document as returned by the API — see
+                :class:`~common.paperless.PaperlessDocument` for the shape.
             existing: The document's current state in the store, or ``None``
                 if this is a first-time index.
 
@@ -104,15 +104,18 @@ class DocumentIndexer:
         document_id: int = doc["id"]
 
         # --- Step 1: Gate ---
-        if _should_skip(doc, self._settings.ERROR_TAG_ID):
+        # _indexable_content returns the OCR text when the document is
+        # indexable, or None when it must be skipped (empty content or error
+        # tag); the gate and the content extraction are one operation so the
+        # type checker sees a concrete str on the indexing path.
+        content = _indexable_content(doc, self._settings.ERROR_TAG_ID)
+        if content is None:
             log.warning(
                 "worker.document_skipped",
                 document_id=document_id,
                 reason="empty_content_or_error_tag",
             )
             return IndexOutcome.SKIPPED
-
-        content: str = doc["content"]
 
         # --- Step 2: Hash ---
         content_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -163,66 +166,74 @@ class DocumentIndexer:
 # ---------------------------------------------------------------------------
 
 
-def _should_skip(doc: dict, error_tag_id: int | None) -> bool:
-    """Return True if the document must be skipped per SPEC §5.3 step 1.
+def _indexable_content(
+    doc: PaperlessDocument, error_tag_id: int | None
+) -> str | None:
+    """Return the OCR content to index, or ``None`` if the document is skipped.
 
-    Skipped when:
-    - ``content`` is absent, None, or whitespace-only (not yet OCR'd).
-    - ``error_tag_id`` is set and present in the document's tags.
+    Applies the SPEC §5.3 step-1 gate: a document is skipped when its
+    ``content`` is absent, ``None``, or whitespace-only (not yet OCR'd), or
+    when *error_tag_id* is set and applied to the document.
+
+    Returning the content rather than a bare boolean lets the caller extract
+    the OCR text in the same step it checks the gate, so the indexing path
+    works with a concrete ``str``.
     """
     content = doc.get("content")
     if not content or not content.strip():
-        return True
-    if error_tag_id is not None:
-        tags: list[int] = doc.get("tags") or []
-        if error_tag_id in tags:
-            return True
-    return False
-
-
-def _normalise_date(value: str | None) -> str | None:
-    """Normalise a Paperless date or datetime string to a UTC ISO-8601 string.
-
-    The store uses lexicographic date comparison, so all dates must be
-    normalised to UTC ISO-8601 at the store boundary (SPEC §4.1).
-
-    Handles:
-    - ``None`` → ``None``
-    - ``"YYYY-MM-DD"`` → midnight UTC ISO-8601
-    - Any ISO-8601 datetime (with or without timezone) → UTC ISO-8601
-    """
-    if value is None:
         return None
-    # Try parsing as full datetime first; fall back to date-only.
-    try:
-        dt = datetime.fromisoformat(value)
-    except ValueError:
-        # Malformed value — store as-is and let the store handle it.
-        return value
-    # If no timezone info, assume UTC (Paperless stores UTC).
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    else:
-        dt = dt.astimezone(timezone.utc)
-    return dt.isoformat()
+    if error_tag_id is not None and error_tag_id in (doc.get("tags") or []):
+        return None
+    return content
 
 
-def _build_meta(doc: dict, content_hash: str) -> DocumentMeta:
-    """Build a :class:`~store.models.DocumentMeta` from a Paperless document dict.
+def _normalise_date(value: str | None, *, document_id: int, field: str) -> str | None:
+    """Normalise a Paperless ``created`` / ``modified`` value to UTC ISO-8601.
+
+    Delegates to :func:`common.clock.normalise_paperless_timestamp` — the
+    single Paperless-timestamp normaliser.  When the value is present but
+    unparseable the normaliser returns it verbatim; that anomaly is logged
+    here at WARNING before the verbatim value is stored, matching how the
+    reconciler's watermark advance logs the same upstream quirk (SPEC §4.1).
+    """
+    normalised = normalise_paperless_timestamp(value)
+    if value is not None and parse_paperless_timestamp(value) is None:
+        # Present but not an ISO-8601 timestamp — an upstream anomaly.  It is
+        # stored verbatim rather than dropped, but the operator must see it.
+        log.warning(
+            "worker.unparseable_date",
+            document_id=document_id,
+            field=field,
+            value=value,
+        )
+    return normalised
+
+
+def _build_meta(doc: PaperlessDocument, content_hash: str) -> DocumentMeta:
+    """Build a :class:`~store.models.DocumentMeta` from a Paperless document.
 
     Normalises ``created`` and ``modified`` to UTC ISO-8601 (SPEC §4.1).
     ``correspondent`` and ``document_type`` in the Paperless API are integer
     ids (or None); they map directly to ``correspondent_id`` / ``document_type_id``.
     """
-    tags: list[int] = doc.get("tags") or []
+    document_id = doc["id"]
+    tags = doc.get("tags") or []
+    # An empty string is the store's sentinel for an absent ``modified``: the
+    # documents.modified column is NOT NULL, and Paperless practically always
+    # supplies the field, so a missing value is degenerate rather than expected.
+    modified = _normalise_date(
+        doc.get("modified"), document_id=document_id, field="modified"
+    )
     return DocumentMeta(
-        id=doc["id"],
+        id=document_id,
         title=doc.get("title"),
         correspondent_id=doc.get("correspondent"),
         document_type_id=doc.get("document_type"),
         tag_ids=tuple(tags),
-        created=_normalise_date(doc.get("created")),
-        modified=_normalise_date(doc.get("modified")) or "",  # modified is non-nullable
+        created=_normalise_date(
+            doc.get("created"), document_id=document_id, field="created"
+        ),
+        modified=modified or "",
         content_hash=content_hash,
         page_count=doc.get("page_count"),
     )

@@ -12,67 +12,31 @@ Verifies the per-document indexing pipeline:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import MagicMock
 
 from indexer.worker import DocumentIndexer, IndexOutcome
 from store.models import IndexState
+from tests.helpers.factories import make_paperless_document, make_settings_obj
+from tests.helpers.mocks import make_mock_embedding_client
+
+# Settings, the embedding client, and Paperless documents all come from the
+# shared factories (CODE_GUIDELINES §11.5).  make_settings_obj()'s defaults
+# already match what the worker reads — ERROR_TAG_ID=552, CHUNK_SIZE=2000,
+# CHUNK_OVERLAP=256 — so the no-argument case needs no overrides.
+
+_DEFAULT_DOC_CONTENT = "This is a test document with enough text to be chunked."
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+def _make_doc(**overrides: Any) -> dict:
+    """Build a Paperless document with a worker-friendly default content body.
 
-def _make_settings(
-    *,
-    error_tag_id: int | None = 552,
-    chunk_size: int = 2000,
-    chunk_overlap: int = 256,
-) -> MagicMock:
-    """Return a settings mock with the fields the worker reads."""
-    settings = MagicMock()
-    settings.ERROR_TAG_ID = error_tag_id
-    settings.CHUNK_SIZE = chunk_size
-    settings.CHUNK_OVERLAP = chunk_overlap
-    return settings
-
-
-def _make_store_writer() -> MagicMock:
-    """Return a mock StoreWriter."""
-    return MagicMock()
-
-
-def _make_embedding_client(dimensions: int = 4) -> MagicMock:
-    """Return a mock EmbeddingClient whose embed() returns deterministic vectors."""
-    client = MagicMock()
-    # embed() takes a list of texts and returns one vector per text.
-    client.embed.side_effect = lambda texts: [
-        [1.0 / (dimensions ** 0.5)] * dimensions for _ in texts
-    ]
-    return client
-
-
-def _make_doc(
-    *,
-    doc_id: int = 1,
-    content: str = "This is a test document with enough text to be chunked.",
-    tags: list[int] | None = None,
-    correspondent: int | None = None,
-    document_type: int | None = None,
-    created: str | None = "2024-01-15T10:00:00+00:00",
-    modified: str = "2024-06-01T12:00:00+00:00",
-    title: str = "Test Document",
-) -> dict:
-    """Build a minimal Paperless document dict."""
-    return {
-        "id": doc_id,
-        "title": title,
-        "content": content,
-        "tags": tags if tags is not None else [10, 20],
-        "correspondent": correspondent,
-        "document_type": document_type,
-        "created": created,
-        "modified": modified,
-    }
+    A thin wrapper over :func:`~tests.helpers.factories.make_paperless_document`
+    that defaults ``content`` to text long enough to chunk; the indexer-shaped
+    document is otherwise the shared factory's.
+    """
+    overrides.setdefault("content", _DEFAULT_DOC_CONTENT)
+    return make_paperless_document(**overrides)
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +47,9 @@ class TestGateEmptyContent:
     """Documents with empty or whitespace-only content are skipped."""
 
     def test_empty_content_returns_skipped(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -99,9 +63,9 @@ class TestGateEmptyContent:
         store_writer.update_metadata.assert_not_called()
 
     def test_whitespace_content_returns_skipped(self) -> None:
-        settings = _make_settings()
+        settings = make_settings_obj()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), _make_embedding_client()
+            settings, MagicMock(), make_mock_embedding_client()
         )
 
         doc = _make_doc(content="   \n\t  ")
@@ -109,12 +73,12 @@ class TestGateEmptyContent:
 
     def test_none_content_returns_skipped(self) -> None:
         """Paperless may return null content for un-OCR'd documents."""
-        settings = _make_settings()
+        settings = make_settings_obj()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), _make_embedding_client()
+            settings, MagicMock(), make_mock_embedding_client()
         )
 
-        doc = _make_doc(content=None)  # type: ignore[arg-type]
+        doc = _make_doc(content=None)
         assert indexer.index_document(doc, existing=None) is IndexOutcome.SKIPPED
 
 
@@ -126,9 +90,9 @@ class TestGateErrorTag:
     """Documents carrying the ERROR_TAG_ID are skipped."""
 
     def test_error_tagged_document_returns_skipped(self) -> None:
-        settings = _make_settings(error_tag_id=552)
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -142,9 +106,9 @@ class TestGateErrorTag:
 
     def test_error_tag_id_none_means_gate_disabled(self) -> None:
         """When ERROR_TAG_ID is None the gate cannot trigger; document is indexed."""
-        settings = _make_settings(error_tag_id=None)
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj(ERROR_TAG_ID=None)
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -164,9 +128,9 @@ class TestNewDocument:
     """A document with no existing IndexState follows the full embed + upsert path."""
 
     def test_new_document_returns_indexed(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -177,10 +141,10 @@ class TestNewDocument:
         assert outcome is IndexOutcome.INDEXED
 
     def test_new_document_calls_embed(self) -> None:
-        settings = _make_settings()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client
+            settings, MagicMock(), embedding_client
         )
 
         doc = _make_doc()
@@ -189,10 +153,10 @@ class TestNewDocument:
         embedding_client.embed.assert_called_once()
 
     def test_new_document_calls_upsert_document(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client()
+            settings, store_writer, make_mock_embedding_client()
         )
 
         doc = _make_doc()
@@ -220,9 +184,9 @@ class TestUnchangedHash:
         )
 
     def test_unchanged_hash_returns_metadata_only(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -234,10 +198,10 @@ class TestUnchangedHash:
         assert outcome is IndexOutcome.METADATA_ONLY
 
     def test_unchanged_hash_does_not_call_embed(self) -> None:
-        settings = _make_settings()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client
+            settings, MagicMock(), embedding_client
         )
 
         doc = _make_doc()
@@ -247,10 +211,10 @@ class TestUnchangedHash:
         embedding_client.embed.assert_not_called()
 
     def test_unchanged_hash_calls_update_metadata(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client()
+            settings, store_writer, make_mock_embedding_client()
         )
 
         doc = _make_doc()
@@ -269,9 +233,9 @@ class TestChangedHash:
     """When the content hash changes, the document is re-chunked and re-embedded."""
 
     def test_changed_hash_returns_indexed(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
             settings, store_writer, embedding_client
         )
@@ -286,10 +250,10 @@ class TestChangedHash:
         assert outcome is IndexOutcome.INDEXED
 
     def test_changed_hash_calls_embed(self) -> None:
-        settings = _make_settings()
-        embedding_client = _make_embedding_client()
+        settings = make_settings_obj()
+        embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(
-            settings, _make_store_writer(), embedding_client
+            settings, MagicMock(), embedding_client
         )
 
         doc = _make_doc()
@@ -302,10 +266,10 @@ class TestChangedHash:
         embedding_client.embed.assert_called_once()
 
     def test_changed_hash_calls_upsert_document(self) -> None:
-        settings = _make_settings()
-        store_writer = _make_store_writer()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client()
+            settings, store_writer, make_mock_embedding_client()
         )
 
         doc = _make_doc()
@@ -328,10 +292,10 @@ class TestDateNormalisation:
 
     def _capture_meta(self, doc: dict) -> "MagicMock":
         """Run index_document and return the DocumentMeta passed to upsert_document."""
-        settings = _make_settings()
-        store_writer = _make_store_writer()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client()
+            settings, store_writer, make_mock_embedding_client()
         )
         indexer.index_document(doc, existing=None)
         # upsert_document is called as upsert_document(meta, chunks)
@@ -387,10 +351,10 @@ class TestDateNormalisation:
         """Date normalisation applies on the METADATA_ONLY path too."""
         import hashlib
 
-        settings = _make_settings()
-        store_writer = _make_store_writer()
+        settings = make_settings_obj()
+        store_writer = MagicMock()
         indexer = DocumentIndexer(
-            settings, store_writer, _make_embedding_client()
+            settings, store_writer, make_mock_embedding_client()
         )
         doc = _make_doc(
             content="Stable content.",
@@ -406,3 +370,58 @@ class TestDateNormalisation:
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
         assert dt.utctimetuple() == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
+
+
+# ---------------------------------------------------------------------------
+# Unparseable dates are logged, not silently swallowed
+# ---------------------------------------------------------------------------
+
+class TestUnparseableDateIsLogged:
+    """A Paperless date that does not parse is stored verbatim AND logged.
+
+    An unparseable upstream timestamp is a recoverable anomaly: the worker
+    keeps the value rather than dropping the field, but it must surface a
+    WARNING so the operator can see the bad data (SPEC §4.1, §7.3).
+    """
+
+    def _index_and_capture_logs(self, doc: dict) -> tuple[object, list[dict]]:
+        """Index *doc* and return the captured DocumentMeta and log events."""
+        import structlog.testing
+
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(
+            make_settings_obj(), store_writer, make_mock_embedding_client()
+        )
+        with structlog.testing.capture_logs() as captured:
+            indexer.index_document(doc, existing=None)
+        return store_writer.upsert_document.call_args[0][0], captured
+
+    def test_unparseable_modified_is_kept_verbatim_and_logged(self) -> None:
+        doc = _make_doc(modified="not-a-real-timestamp")
+        meta, captured = self._index_and_capture_logs(doc)
+
+        # The value is stored verbatim — the field is not dropped.
+        assert meta.modified == "not-a-real-timestamp"
+        # A WARNING names the document, the field, and the offending value.
+        warnings = [
+            event
+            for event in captured
+            if event["event"] == "worker.unparseable_date"
+        ]
+        assert len(warnings) == 1
+        assert warnings[0]["log_level"] == "warning"
+        assert warnings[0]["field"] == "modified"
+        assert warnings[0]["value"] == "not-a-real-timestamp"
+
+    def test_parseable_dates_log_no_warning(self) -> None:
+        """A document with valid dates produces no unparseable-date warning."""
+        doc = _make_doc(
+            created="2024-01-15", modified="2024-06-01T12:00:00+00:00"
+        )
+        _, captured = self._index_and_capture_logs(doc)
+
+        assert not [
+            event
+            for event in captured
+            if event["event"] == "worker.unparseable_date"
+        ]
