@@ -8,6 +8,11 @@ export interface ChipProps {
   /** Whether this chip is in the active/selected state. Defaults to false. */
   selected?: boolean;
   /**
+   * When provided, the chip root becomes an interactive <button> that toggles
+   * selection. The chip gains a focus ring and is keyboard-operable (Enter/Space).
+   */
+  onClick?: () => void;
+  /**
    * When provided, a dismiss button is rendered inside the chip.
    * Called when the user clicks or activates (Enter/Space) the remove control.
    */
@@ -27,7 +32,13 @@ export interface ChipProps {
 /**
  * Compact tag/filter chip.
  *
- * Renders as a <span> container — not itself interactive.
+ * When `onClick` is provided, the chip root renders as a <button> so it is
+ * keyboard-operable (Enter/Space) and participates in the tab order. The
+ * accent focus ring applies. This is the interactive toggle mode used by
+ * FilterControls.
+ *
+ * Without `onClick`, renders as a <span> container — not itself interactive.
+ *
  * When `onRemove` is provided, a <button> dismiss control is rendered inside
  * with an accessible aria-label so screen readers announce the action.
  *
@@ -35,6 +46,7 @@ export interface ChipProps {
  */
 export function Chip({
   selected = false,
+  onClick,
   onRemove,
   removeLabel,
   children,
@@ -43,6 +55,7 @@ export function Chip({
   const classes = [
     styles['chip'],
     selected ? styles['selected'] : undefined,
+    onClick !== undefined ? styles['chip-interactive'] : undefined,
     className,
   ]
     .filter(Boolean)
@@ -54,8 +67,8 @@ export function Chip({
     removeLabel ??
     (typeof children === 'string' ? `Remove ${children}` : undefined);
 
-  return (
-    <span className={classes}>
+  const inner = (
+    <>
       <span className={styles['chip-label']}>{children}</span>
       {onRemove !== undefined && (
         <button
@@ -68,6 +81,25 @@ export function Chip({
           <span aria-hidden="true">×</span>
         </button>
       )}
+    </>
+  );
+
+  if (onClick !== undefined) {
+    return (
+      <button
+        type="button"
+        className={classes}
+        onClick={onClick}
+        aria-pressed={selected}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <span className={classes}>
+      {inner}
     </span>
   );
 }

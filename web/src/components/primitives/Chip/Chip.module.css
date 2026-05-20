@@ -38,6 +38,18 @@
   border-color: transparent;
 }
 
+/* ── Interactive (toggle) mode — chip is a <button> ── */
+.chip-interactive {
+  cursor: pointer;
+  background: none;
+  border: var(--spacing-1) solid var(--colour-border);
+}
+
+.chip-interactive:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
 /* ── Label text within the chip ── */
 .chip-label {
   display: inline;
