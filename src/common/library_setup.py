@@ -29,7 +29,16 @@ def setup_libraries(settings: Settings) -> None:
         api_key = "dummy"
         base_url = settings.OLLAMA_BASE_URL
     else:
-        api_key = settings.OPENAI_API_KEY
+        # OPENAI_API_KEY is always non-None when LLM_PROVIDER is "openai":
+        # Settings._load_llm_settings calls _get_required_env("OPENAI_API_KEY")
+        # in this branch, which raises if the value is absent.
+        openai_key: str | None = settings.OPENAI_API_KEY
+        if openai_key is None:
+            raise RuntimeError(
+                "OPENAI_API_KEY is None with LLM_PROVIDER='openai'; "
+                "this should have been caught by Settings._load_llm_settings"
+            )
+        api_key = openai_key
         base_url = None
 
     client = openai.OpenAI(
