@@ -18,9 +18,6 @@ import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped with the p
 from store.migrations import run_migrations
 
 # The schema version recorded in meta.schema_version.
-# A later task (T1.2) will introduce a migration runner that reads this value
-# and applies pending migrations.  For now, ensure_schema() applies _SCHEMA
-# directly — all DDL uses IF NOT EXISTS, so repeated application is safe.
 SCHEMA_VERSION: int = 1
 
 # Verbatim DDL from SPEC §4.1.  All statements use IF NOT EXISTS so that

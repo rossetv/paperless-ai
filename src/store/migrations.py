@@ -16,12 +16,8 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 
 import structlog
-
-if TYPE_CHECKING:
-    pass
 
 log = structlog.get_logger(__name__)
 
@@ -48,9 +44,14 @@ class StoreError(Exception):
 def _migrate_v1(conn: sqlite3.Connection) -> None:
     """Apply the v1 schema: all tables, virtual tables, and indexes.
 
-    Executes _SCHEMA from store.schema via executescript.  Every statement
-    uses IF NOT EXISTS so re-running is harmless, though the migration runner
-    only calls this when the stored schema_version is 0.
+    Runs each DDL statement from _SCHEMA individually via conn.execute() so
+    that all DDL and the schema_version write in run_migrations() stay inside
+    the single ``with conn:`` transaction.  conn.executescript() issues an
+    implicit COMMIT before executing, which would break atomicity and allow a
+    crash to leave the schema applied but schema_version un-advanced.
+
+    Every statement uses IF NOT EXISTS so re-running is harmless, though the
+    migration runner only calls this when the stored schema_version is 0.
 
     The import is deferred to the function body to break the mutual import
     cycle: schema.py imports run_migrations from this module, and this
@@ -61,7 +62,23 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     # Local import to break the schema ↔ migrations circular dependency.
     from store.schema import _SCHEMA  # noqa: PLC0415
 
-    conn.executescript(_SCHEMA)
+    # executescript() is deliberately avoided: it issues an implicit COMMIT
+    # before executing, breaking the atomicity of the surrounding transaction.
+    # Stripping comments first, then splitting on ";", and calling execute()
+    # for each non-empty statement keeps all DDL and the schema_version write
+    # in one atomic transaction.
+    #
+    # Comments must be stripped before splitting: a ";" inside a comment line
+    # (e.g. "-- …; the writer keeps…") would otherwise produce a broken fragment
+    # starting with plain text rather than a SQL keyword.
+    comment_stripped = "\n".join(
+        line for line in _SCHEMA.splitlines()
+        if not line.strip().startswith("--")
+    )
+    for statement in comment_stripped.split(";"):
+        stmt = statement.strip()
+        if stmt:
+            conn.execute(stmt)
 
 
 # ---------------------------------------------------------------------------
