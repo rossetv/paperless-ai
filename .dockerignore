@@ -92,3 +92,7 @@ celerybeat-schedule
 .claude/
 review_batch_*.json
 scorecard.png
+
+# Frontend: built inside the image from the Node stage; never copied from the host.
+web/node_modules/
+web/dist/

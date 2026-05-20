@@ -68,13 +68,26 @@ log = structlog.get_logger(__name__)
 # index DB; picked up by the indexer's polling loop.
 _RECONCILE_SENTINEL_NAME = "reconcile.request"
 
-# Path to the built frontend, relative to this file's package root.
-# At runtime the Dockerfile copies ``web/dist`` into the image alongside the
-# Python source.  The path is resolved at app-build time so a missing ``dist``
-# directory (e.g. before a frontend build or in unit tests) does not crash the
-# server — the mount is silently skipped.
-_REPO_ROOT = Path(__file__).parent.parent.parent
-_FRONTEND_DIST = _REPO_ROOT / "web" / "dist"
+# Path to the built frontend.
+#
+# Resolution order (first non-empty value wins):
+# 1. ``FRONTEND_DIST`` environment variable — set to ``/app/web/dist`` by the
+#    Dockerfile so the installed-package path works correctly inside the
+#    container regardless of where pip placed ``api.py``.
+# 2. The path relative to this file's *repository* root — works for direct
+#    source-tree execution (``python -m search.api``) and for local dev where
+#    the package is installed with ``pip install -e .``.
+#
+# The path is resolved at import time; a missing directory silently skips the
+# static mount rather than crashing the server (unit tests, pre-build).
+import os as _os
+
+_env_frontend = _os.environ.get("FRONTEND_DIST", "").strip()
+if _env_frontend:
+    _FRONTEND_DIST = Path(_env_frontend)
+else:
+    _REPO_ROOT = Path(__file__).parent.parent.parent
+    _FRONTEND_DIST = _REPO_ROOT / "web" / "dist"
 
 
 # ---------------------------------------------------------------------------
