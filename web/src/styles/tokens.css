@@ -1,0 +1,232 @@
+/*
+ * Design tokens — the single source of design values for the paperless-ai frontend.
+ *
+ * All values derive from the Apple-inspired design system documented in DESIGN.md.
+ * Every component reads var(--…) from here. No hardcoded design value lives anywhere
+ * else (Stylelint enforces this).
+ *
+ * Naming convention: British English throughout — --colour-*, not --color-*.
+ */
+
+:root {
+  /* ─────────────────────────────────────────────
+   * Colour roles
+   * Concrete values are supplied by themes.css;
+   * these fallbacks match the light theme.
+   * ───────────────────────────────────────────── */
+
+  /* Page backgrounds */
+  --colour-bg:                      #f5f5f7;
+  --colour-bg-alt:                  #000;
+
+  /* Surface */
+  --colour-surface:                 #fff;
+  --colour-surface-dark-1:          #272729;
+  --colour-surface-dark-2:          #262628;
+  --colour-surface-dark-3:          #28282a;
+  --colour-surface-dark-4:          #2a2a2d;
+  --colour-surface-dark-5:          #242426;
+
+  /* Text */
+  --colour-text-primary:            #1d1d1f;
+  --colour-text-secondary:          rgb(0 0 0 / 80%);
+  --colour-text-tertiary:           rgb(0 0 0 / 48%);
+  --colour-text-on-dark:            #fff;
+
+  /* Interactive / accent */
+  --colour-accent:                  #0071e3;
+  --colour-link:                    #06c;
+  --colour-link-on-dark:            #2997ff;
+
+  /* Focus ring */
+  --colour-focus-ring:              #0071e3;
+
+  /* Borders */
+  --colour-border:                  rgb(0 0 0 / 4%);
+  --colour-border-button:           #06c;
+
+  /* Button states */
+  --colour-button-active-bg:        #ededf2;
+  --colour-button-light-bg:         #fafafc;
+
+  /* Overlays */
+  --colour-overlay:                 rgb(210 210 215 / 64%);
+  --colour-overlay-dark:            rgb(0 0 0 / 80%);
+  --colour-hover-dark:              rgb(255 255 255 / 32%);
+
+  /* Navigation glass */
+  --colour-nav-bg:                  rgb(0 0 0 / 80%);
+
+  /* ─────────────────────────────────────────────
+   * SF Pro type scale
+   * Display = 20 px and above; Text = 19 px and below.
+   * All values from DESIGN.md §3 hierarchy table.
+   * ───────────────────────────────────────────── */
+
+  /* Font families */
+  --font-display:  "SF Pro Display", "SF Pro Icons", "Helvetica Neue", helvetica, arial, sans-serif;
+  --font-text:     "SF Pro Text",    "SF Pro Icons", "Helvetica Neue", helvetica, arial, sans-serif;
+
+  /* Display Hero — 56 px, weight 600, lh 1.07, ls -0.28 px */
+  --font-size-hero:            3.5rem;
+  --font-weight-hero:          600;
+  --line-height-hero:          1.07;
+  --letter-spacing-hero:       -0.28px;
+
+  /* Section Heading — 40 px, weight 600, lh 1.10 */
+  --font-size-heading:         2.5rem;
+  --font-weight-heading:       600;
+  --line-height-heading:       1.10;
+  --letter-spacing-heading:    normal;
+
+  /* Tile Heading — 28 px, weight 400, lh 1.14, ls 0.196 px */
+  --font-size-tile:            1.75rem;
+  --font-weight-tile:          400;
+  --line-height-tile:          1.14;
+  --letter-spacing-tile:       0.196px;
+
+  /* Card Title — 21 px, weight 700, lh 1.19, ls 0.231 px */
+  --font-size-card-title:      1.3125rem;
+  --font-weight-card-title:    700;
+  --line-height-card-title:    1.19;
+  --letter-spacing-card-title: 0.231px;
+
+  /* Sub-heading — 21 px, weight 400, lh 1.19, ls 0.231 px */
+  --font-size-subheading:      1.3125rem;
+  --font-weight-subheading:    400;
+  --line-height-subheading:    1.19;
+  --letter-spacing-subheading: 0.231px;
+
+  /* Nav Heading — 34 px, weight 600, lh 1.47, ls -0.374 px */
+  --font-size-nav-heading:     2.125rem;
+  --font-weight-nav-heading:   600;
+  --line-height-nav-heading:   1.47;
+  --letter-spacing-nav-heading:-0.374px;
+
+  /* Sub-nav — 24 px, weight 300, lh 1.50 */
+  --font-size-subnav:          1.5rem;
+  --font-weight-subnav:        300;
+  --line-height-subnav:        1.50;
+  --letter-spacing-subnav:     normal;
+
+  /* Body — 17 px, weight 400, lh 1.47, ls -0.374 px */
+  --font-size-body:            1.0625rem;
+  --font-weight-body:          400;
+  --line-height-body:          1.47;
+  --letter-spacing-body:       -0.374px;
+
+  /* Body Emphasis — 17 px, weight 600, lh 1.24, ls -0.374 px */
+  --font-size-body-emphasis:   1.0625rem;
+  --font-weight-body-emphasis: 600;
+  --line-height-body-emphasis: 1.24;
+
+  /* Button Large — 18 px, weight 300, lh 1.00 */
+  --font-size-button-large:    1.125rem;
+  --font-weight-button-large:  300;
+  --line-height-button-large:  1.00;
+  --letter-spacing-button-large: normal;
+
+  /* Button — 17 px, weight 400, lh 2.41 */
+  --font-size-button:          1.0625rem;
+  --font-weight-button:        400;
+  --line-height-button:        2.41;
+  --letter-spacing-button:     normal;
+
+  /* Link — 14 px, weight 400, lh 1.43, ls -0.224 px */
+  --font-size-link:            0.875rem;
+  --font-weight-link:          400;
+  --line-height-link:          1.43;
+  --letter-spacing-link:       -0.224px;
+
+  /* Caption — 14 px, weight 400, lh 1.29, ls -0.224 px */
+  --font-size-caption:         0.875rem;
+  --font-weight-caption:       400;
+  --line-height-caption:       1.29;
+  --letter-spacing-caption:    -0.224px;
+
+  /* Caption Bold — 14 px, weight 600, lh 1.29, ls -0.224 px */
+  --font-weight-caption-bold:  600;
+
+  /* Micro — 12 px, weight 400, lh 1.33, ls -0.12 px */
+  --font-size-micro:           0.75rem;
+  --font-weight-micro:         400;
+  --line-height-micro:         1.33;
+  --letter-spacing-micro:      -0.12px;
+
+  /* Micro Bold — 12 px, weight 600 */
+  --font-weight-micro-bold:    600;
+
+  /* Nano — 10 px, weight 400, lh 1.47, ls -0.08 px */
+  --font-size-nano:            0.625rem;
+  --font-weight-nano:          400;
+  --line-height-nano:          1.47;
+  --letter-spacing-nano:       -0.08px;
+
+  /* Navigation bar — 12 px, weight 400 */
+  --font-size-nav:             0.75rem;
+  --font-weight-nav:           400;
+
+  /* ─────────────────────────────────────────────
+   * 8 px-based spacing scale (DESIGN.md §5)
+   * ───────────────────────────────────────────── */
+
+  --spacing-1:   2px;
+  --spacing-2:   4px;
+  --spacing-3:   5px;
+  --spacing-4:   6px;
+  --spacing-5:   7px;
+  --spacing-6:   8px;
+  --spacing-7:   9px;
+  --spacing-8:   10px;
+  --spacing-9:   11px;
+  --spacing-10:  14px;
+  --spacing-11:  15px;
+  --spacing-12:  17px;
+  --spacing-13:  20px;
+  --spacing-14:  24px;
+
+  /* ─────────────────────────────────────────────
+   * Border radius ladder (DESIGN.md §5)
+   * ───────────────────────────────────────────── */
+
+  --radius-micro:       5px;    /* small containers, link tags */
+  --radius-standard:    8px;    /* buttons, product cards, image containers */
+  --radius-comfortable: 11px;   /* search inputs, filter buttons */
+  --radius-large:       12px;   /* feature panels, lifestyle image containers */
+  --radius-pill:        980px;  /* CTA links — the signature Apple capsule shape */
+  --radius-circle:      50%;    /* media controls */
+
+  /* ─────────────────────────────────────────────
+   * Shadows (DESIGN.md §2 & §6)
+   * ───────────────────────────────────────────── */
+
+  /* Elevated product cards — the one soft diffused shadow Apple uses */
+  --shadow-card: rgb(0 0 0 / 22%) 3px 5px 30px 0px;
+
+  /* Focus outline — accessibility, all interactive elements */
+  --shadow-focus: 0 0 0 2px var(--colour-focus-ring);
+
+  /* Navigation glass backdrop */
+  --backdrop-nav: saturate(180%) blur(20px);
+
+  /* ─────────────────────────────────────────────
+   * Breakpoints (DESIGN.md §8)
+   * CSS custom properties cannot be used inside @media queries, so these are
+   * provided as reference values. Actual media queries use raw values.
+   * ───────────────────────────────────────────── */
+
+  --bp-mobile-min:      360px;
+  --bp-mobile-max:      480px;
+  --bp-mobile-large:    640px;
+  --bp-tablet-small:    640px;
+  --bp-tablet:          834px;
+  --bp-desktop-small:   1024px;
+  --bp-desktop:         1070px;
+  --bp-desktop-large:   1440px;
+
+  /* Content container max-width — echoed in 980 px pill radius */
+  --width-content-max:  980px;
+
+  /* Navigation height */
+  --height-nav:         48px;
+}

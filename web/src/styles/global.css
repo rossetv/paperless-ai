@@ -1,0 +1,246 @@
+/*
+ * Global stylesheet — resets, SF Pro font-stack fallback, and base element styles.
+ *
+ * Importing this file pulls in the entire design system: tokens.css defines every
+ * design value and themes.css provides light/dark overrides.
+ *
+ * All values reference var(--…) tokens; no hardcoded design values appear here.
+ */
+
+@import url('./tokens.css');
+@import url('./themes.css');
+
+/* ─────────────────────────────────────────────
+ * @font-face declarations for SF Pro.
+ *
+ * SF Pro is available on Apple devices via the system font stack. On non-Apple
+ * platforms the stack falls through to Helvetica Neue / Arial. The @font-face
+ * blocks below are intentionally empty format lists — they act as named aliases
+ * so components can reference --font-display / --font-text by their declared
+ * family names without the browser making network requests on platforms where the
+ * font is absent. Add src: url() entries here if a self-hosted web font is ever
+ * added.
+ * ───────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────
+ * Universal box-sizing
+ * ───────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ─────────────────────────────────────────────
+ * Root and body
+ * ───────────────────────────────────────────── */
+
+html {
+  /* Prevent font-size inflation on iOS */
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  background-color: var(--colour-bg);
+
+  /* Improve text rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+}
+
+/* ─────────────────────────────────────────────
+ * Headings
+ * SF Pro Display (via --font-display) at 20 px+;
+ * tight line-heights and negative tracking per DESIGN.md §3.
+ * ───────────────────────────────────────────── */
+
+h1 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-hero);
+  font-weight: var(--font-weight-hero);
+  line-height: var(--line-height-hero);
+  letter-spacing: var(--letter-spacing-hero);
+  color: var(--colour-text-primary);
+  margin: 0 0 var(--spacing-13);
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--colour-text-primary);
+  margin: 0 0 var(--spacing-13);
+}
+
+h3 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-tile);
+  font-weight: var(--font-weight-tile);
+  line-height: var(--line-height-tile);
+  letter-spacing: var(--letter-spacing-tile);
+  color: var(--colour-text-primary);
+  margin: 0 0 var(--spacing-13);
+}
+
+h4 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  line-height: var(--line-height-subheading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+  margin: 0 0 var(--spacing-14);
+}
+
+h5,
+h6 {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body-emphasis);
+  font-weight: var(--font-weight-body-emphasis);
+  line-height: var(--line-height-body-emphasis);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  margin: 0 0 var(--spacing-6);
+}
+
+/* ─────────────────────────────────────────────
+ * Paragraphs and text
+ * ───────────────────────────────────────────── */
+
+p {
+  margin: 0 0 var(--spacing-14);
+  color: var(--colour-text-secondary);
+}
+
+/* ─────────────────────────────────────────────
+ * Links
+ * Apple Blue on light; Bright Blue on dark backgrounds.
+ * Components override via --colour-link as needed.
+ * ───────────────────────────────────────────── */
+
+a {
+  color: var(--colour-link);
+  text-decoration: none;
+  font-family: var(--font-text);
+  font-size: var(--font-size-link);
+  font-weight: var(--font-weight-link);
+  line-height: var(--line-height-link);
+  letter-spacing: var(--letter-spacing-link);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--colour-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-micro);
+}
+
+/* ─────────────────────────────────────────────
+ * Lists
+ * ───────────────────────────────────────────── */
+
+ul,
+ol {
+  margin: 0 0 var(--spacing-14);
+  padding-left: var(--spacing-14);
+  color: var(--colour-text-secondary);
+}
+
+li {
+  margin-bottom: var(--spacing-6);
+}
+
+/* ─────────────────────────────────────────────
+ * Images and media
+ * ───────────────────────────────────────────── */
+
+img,
+video,
+picture {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ─────────────────────────────────────────────
+ * Form elements — base reset only;
+ * styled components handle the rest via tokens.
+ * ───────────────────────────────────────────── */
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--colour-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────
+ * Tables
+ * ───────────────────────────────────────────── */
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+/* ─────────────────────────────────────────────
+ * Code
+ * ───────────────────────────────────────────── */
+
+code,
+pre {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", monospace;
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-primary);
+}
+
+/* ─────────────────────────────────────────────
+ * Utility — visually hidden, accessible
+ * ───────────────────────────────────────────── */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
