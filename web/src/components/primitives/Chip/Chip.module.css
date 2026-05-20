@@ -1,0 +1,68 @@
+/*
+ * Chip primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
+ *
+ * Chip maps to the "Filter / Search Button" and "link tag" treatments in DESIGN.md §4:
+ *   - radius-micro (5px): small container / link tag radius per §5
+ *   - colour-button-light-bg (#fafafc): filter button background
+ *   - colour-text-secondary: muted label text
+ *   - colour-accent: selected/active state fill
+ *
+ * The remove button uses the accent focus ring (DESIGN.md §6 accessibility).
+ */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-2) var(--spacing-6);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── Selected / active state ── */
+.selected {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+  border-color: transparent;
+}
+
+/* ── Label text within the chip ── */
+.chip-label {
+  display: inline;
+}
+
+/* ── Remove (dismiss) button ── */
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: var(--font-size-body);
+  line-height: 1;
+  /* Tighten the touch target; add spacing-1 breathing room */
+  margin-inline-start: var(--spacing-1);
+}
+
+/* Focus ring on remove button — accessibility per DESIGN.md §6 */
+.chip-remove:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
+}
