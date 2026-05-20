@@ -13,23 +13,6 @@ export interface CitationLinkProps {
   onActivate: (index: number) => void;
 }
 
-// Visually-hidden text utility — puts text in the accessibility tree without
-// disturbing the visual layout. Inline style is intentional: this pattern is
-// standardised in the WCAG technique and does not require a CSS token.
-// Using inline style here avoids needing a CSS module in the features layer,
-// which is forbidden by §12.5. The pattern is identical to a11y-utils libraries.
-const visuallyHiddenStyle: React.CSSProperties = {
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  padding: 0,
-  margin: '-1px',
-  overflow: 'hidden',
-  clip: 'rect(0,0,0,0)',
-  whiteSpace: 'nowrap',
-  border: 0,
-};
-
 /**
  * Inline citation marker rendered as [n].
  *
@@ -42,9 +25,10 @@ const visuallyHiddenStyle: React.CSSProperties = {
  * corresponding SourceCard (e.g. scrolling it into view or highlighting it).
  *
  * No own CSS module — visual form comes entirely from the Button primitive.
- * The visually-hidden technique uses a self-contained inline style (a11y
- * standard practice; does not violate §12.5's prohibition on CSS modules in
- * the features layer).
+ * The screen-reader-only text uses the canonical `.visually-hidden` utility
+ * class from `styles/global.css`; the features layer carries no styling of its
+ * own (§12.5), and there is exactly one definition of the visually-hidden
+ * technique in the codebase.
  */
 export function CitationLink({ index, onActivate }: CitationLinkProps): React.ReactElement {
   return (
@@ -54,7 +38,7 @@ export function CitationLink({ index, onActivate }: CitationLinkProps): React.Re
       onClick={() => onActivate(index)}
     >
       <span aria-hidden="true">[{index}]</span>
-      <span style={visuallyHiddenStyle}>Citation {index}</span>
+      <span className="visually-hidden">Citation {index}</span>
     </Button>
   );
 }

@@ -33,16 +33,30 @@ describe('Skeleton', () => {
     expect((container.firstChild as Element).className).toMatch(/rectangular/);
   });
 
-  it('applies a custom width via inline style when width is provided', () => {
-    const { container } = render(<Skeleton width="200px" />);
-    const el = container.firstChild as HTMLElement;
-    expect(el.style.width).toBe('200px');
+  it('applies a token-backed width class when width is provided', () => {
+    const { container } = render(<Skeleton width="half" />);
+    // The closed sizing API maps a named width to a CSS-module class, never an
+    // inline style — so no raw CSS length leaks in.
+    expect((container.firstChild as Element).className).toMatch(/width-half/);
+    expect((container.firstChild as HTMLElement).style.width).toBe('');
   });
 
-  it('applies a custom height via inline style when height is provided', () => {
-    const { container } = render(<Skeleton height="40px" />);
-    const el = container.firstChild as HTMLElement;
-    expect(el.style.height).toBe('40px');
+  it('applies a token-backed height class when height is provided', () => {
+    const { container } = render(<Skeleton height="control" />);
+    expect((container.firstChild as Element).className).toMatch(/height-control/);
+    expect((container.firstChild as HTMLElement).style.height).toBe('');
+  });
+
+  it('renders one bar by default', () => {
+    const { container } = render(<Skeleton variant="text" />);
+    // A single bar — no multi-line wrapper.
+    expect(container.querySelectorAll('span')).toHaveLength(1);
+  });
+
+  it('renders one bar per line for a multi-line text skeleton', () => {
+    const { container } = render(<Skeleton variant="text" lines={3} />);
+    // A wrapper span plus three line bars.
+    expect(container.querySelectorAll('span')).toHaveLength(4);
   });
 
   it('forwards a custom className', () => {

@@ -88,9 +88,9 @@ export function FilterControls({
   if (isLoading || facets === undefined) {
     return (
       <Stack direction="vertical" gap={6}>
-        <Skeleton variant="rectangular" height="40px" />
-        <Skeleton variant="rectangular" height="40px" />
-        <Skeleton variant="rectangular" height="32px" />
+        <Skeleton variant="rectangular" height="control" />
+        <Skeleton variant="rectangular" height="control" />
+        <Skeleton variant="rectangular" height="control" />
       </Stack>
     );
   }

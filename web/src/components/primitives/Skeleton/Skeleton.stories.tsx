@@ -13,8 +13,15 @@ const meta = {
       control: 'radio',
       options: ['text', 'rectangular', 'circular'],
     },
-    width: { control: 'text' },
-    height: { control: 'text' },
+    width: {
+      control: 'radio',
+      options: [undefined, 'full', 'wide', 'half', 'narrow'],
+    },
+    height: {
+      control: 'radio',
+      options: [undefined, 'line', 'control', 'block', 'media'],
+    },
+    lines: { control: { type: 'number', min: 1, max: 6 } },
   },
 } satisfies Meta<typeof Skeleton>;
 
@@ -22,24 +29,35 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const TextLine: Story = {
-  args: { variant: 'text', width: '200px' },
+  args: { variant: 'text', width: 'wide' },
+};
+
+export const MultiLineText: Story = {
+  args: { variant: 'text', lines: 4 },
 };
 
 export const Rectangular: Story = {
-  args: { variant: 'rectangular', width: '300px', height: '80px' },
+  args: { variant: 'rectangular', width: 'wide', height: 'block' },
 };
 
 export const Circular: Story = {
-  args: { variant: 'circular', width: '48px', height: '48px' },
+  args: { variant: 'circular' },
 };
 
 export const CardSkeleton: StoryObj = {
+  // The wrapper sets layout only (a fixed-width Storybook canvas); the
+  // skeletons themselves size entirely from the closed token-backed API.
   render: () => (
-    <div style={{ width: '300px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <Skeleton variant="rectangular" height="160px" />
-      <Skeleton variant="text" width="60%" />
-      <Skeleton variant="text" width="80%" />
-      <Skeleton variant="text" width="40%" />
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--spacing-6)',
+        width: 'var(--width-empty-state)',
+      }}
+    >
+      <Skeleton variant="rectangular" height="media" />
+      <Skeleton variant="text" lines={3} />
     </div>
   ),
 };
