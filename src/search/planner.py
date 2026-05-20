@@ -12,10 +12,16 @@ Design notes:
   semantic query is the raw user query, with empty keyword_terms,
   sub_questions, and FilterCandidates.  A WARNING is logged.  The pipeline
   never raises on a bad LLM response.
-- The llm_client is the OpenAI-compatible client injected by the caller; the
-  planner calls llm_client.chat.completions.create(...) directly, iterating
-  through AI_MODELS on OpenAI API errors (mirroring the classifier's
-  model-fallback pattern).
+- All LLM calls go through ``OpenAIChatMixin._create_completion``
+  (CODE_GUIDELINES.md §8.1): the planner subclasses the mixin and inherits
+  the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
+  ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_PLANNER_MODEL
+  then AI_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
+- A failing model — whether a retry-exhausted retryable error or a
+  non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
+  ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
+  and the next model is tried.  When every model fails the planner degrades
+  to the safe fallback plan.  ``plan()`` therefore never raises.
 """
 
 from __future__ import annotations
@@ -27,7 +33,7 @@ from typing import TYPE_CHECKING
 import openai
 import structlog
 
-from common.llm import unique_models
+from common.llm import OpenAIChatMixin, unique_models
 from search.models import FilterCandidates, QueryPlan
 from search.prompts import build_planner_system_prompt
 
@@ -36,38 +42,38 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# OpenAI API errors that warrant trying the next model in the fallback chain.
-_RETRYABLE_ERRORS = (
-    openai.APIConnectionError,
-    openai.APITimeoutError,
-    openai.RateLimitError,
-    openai.InternalServerError,
-)
 
-
-class QueryPlanner:
+class QueryPlanner(OpenAIChatMixin):
     """Converts a raw user query into a structured QueryPlan via one LLM call.
 
     The planner is a pure function wrapped in a class for dependency injection.
-    All state is in the injected ``settings`` and ``llm_client``; QueryPlanner
-    instances are safe to share across threads.
+    All state is in the injected ``settings``; QueryPlanner instances are safe
+    to share across threads.
+
+    LLM calls go through the inherited ``OpenAIChatMixin._create_completion``,
+    which owns the shared OpenAI client singleton, retry, and the concurrency
+    limiter (CODE_GUIDELINES.md §8.1).
 
     Args:
         settings: Application settings; supplies SEARCH_PLANNER_MODEL and
-            AI_MODELS for the fallback chain.
-        llm_client: An OpenAI-compatible client (``openai.OpenAI`` or a mock
-            in tests).  Must expose ``chat.completions.create``.
+            AI_MODELS for the fallback chain, plus MAX_RETRIES /
+            MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
     """
 
-    def __init__(self, settings: Settings, llm_client: object) -> None:
-        self._settings = settings
-        self._llm_client = llm_client
+    # The planner keeps no stats; an empty tuple satisfies the mixin contract.
+    _STAT_KEYS: tuple[str, ...] = ()
+
+    def __init__(self, settings: Settings) -> None:
+        # ``self.settings`` is the attribute name the @retry decorator reads
+        # via the HasRetrySettings protocol — it must not be renamed.
+        self.settings = settings
+        self._init_stats()
 
     def plan(self, query: str) -> QueryPlan:
         """Analyse *query* and return a QueryPlan for the retrieval stages.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
-        AI_MODELS on retryable API errors.  On any parse failure or exhausted
+        AI_MODELS on any API error.  On any parse failure or exhausted
         fallback, returns a minimal safe plan containing only the raw query.
 
         Args:
@@ -101,34 +107,35 @@ class QueryPlanner:
         Returns the raw text content from the first successful call, or
         None if every model fails.
 
+        Each per-model attempt goes through ``_create_completion`` (the
+        inherited mixin call), so it gets the shared ``@retry`` backoff and
+        the ``llm_limiter`` concurrency limiter for free.  A model that still
+        fails — retry-exhausted retryable error or a non-retryable one such as
+        ``AuthenticationError`` — raises an ``openai.APIError`` subclass, which
+        is caught here as the terminal "skip this model" branch.
+
         The primary model (SEARCH_PLANNER_MODEL) is tried first.  If it is
         already in AI_MODELS it is not tried twice — unique_models deduplicates
         the combined list while preserving insertion order.
         """
-        primary = self._settings.SEARCH_PLANNER_MODEL
-        fallbacks = unique_models([primary] + list(self._settings.AI_MODELS))
+        primary = self.settings.SEARCH_PLANNER_MODEL
+        fallbacks = unique_models([primary] + list(self.settings.AI_MODELS))
 
         for model in fallbacks:
             try:
-                completion = self._llm_client.chat.completions.create(  # type: ignore[attr-defined]
+                completion = self._create_completion(
                     model=model,
                     messages=messages,
                 )
                 content: str = completion.choices[0].message.content or ""
                 return content
-            except _RETRYABLE_ERRORS as exc:
+            except openai.APIError as exc:
+                # Catches BOTH retry-exhausted retryable errors and
+                # non-retryable ones (AuthenticationError, PermissionDeniedError,
+                # NotFoundError, BadRequestError, …) — every one is an
+                # openai.APIError subclass.  Skip this model; try the next.
                 log.warning(
                     "planner.model_failed",
-                    model=model,
-                    error=str(exc),
-                    query_prefix=query[:60],
-                )
-                continue
-            except openai.BadRequestError as exc:
-                # A 400 is not recoverable by retrying the same query; skip
-                # this model rather than crashing the plan.
-                log.warning(
-                    "planner.model_rejected_request",
                     model=model,
                     error=str(exc),
                     query_prefix=query[:60],
@@ -249,21 +256,15 @@ def _build_query_plan(data: dict) -> QueryPlan:  # type: ignore[type-arg]
         KeyError: If a required nested key is absent.
         TypeError: If a field has an unexpected type.
     """
-    semantic_queries = tuple(
-        str(q) for q in (data.get("semantic_queries") or []) if q
-    )
-    keyword_terms = tuple(
-        str(t) for t in (data.get("keyword_terms") or []) if t
-    )
-    sub_questions = tuple(
-        str(q) for q in (data.get("sub_questions") or []) if q
-    )
+    semantic_queries = tuple(t for t in _str_list(data.get("semantic_queries")) if t)
+    keyword_terms = tuple(t for t in _str_list(data.get("keyword_terms")) if t)
+    sub_questions = tuple(t for t in _str_list(data.get("sub_questions")) if t)
 
     fc_raw = data.get("filter_candidates") or {}
     filter_candidates = FilterCandidates(
         correspondent=_str_or_none(fc_raw.get("correspondent")),
         document_type=_str_or_none(fc_raw.get("document_type")),
-        tags=tuple(str(t) for t in (fc_raw.get("tags") or []) if t),
+        tags=tuple(t for t in _str_list(fc_raw.get("tags")) if t),
         date_from=_str_or_none(fc_raw.get("date_from")),
         date_to=_str_or_none(fc_raw.get("date_to")),
     )
@@ -276,9 +277,48 @@ def _build_query_plan(data: dict) -> QueryPlan:  # type: ignore[type-arg]
     )
 
 
+def _str_list(value: object) -> list[str]:
+    """Coerce an LLM-supplied list-shaped field into a list of strings.
+
+    LLMs frequently emit a bare string where the schema asks for a list —
+    e.g. ``"keyword_terms": "invoice"`` instead of ``["invoice"]``.  Iterating
+    such a string character-by-character (``str(t) for t in value``) yields
+    garbage (``['i', 'n', 'v', ...]``) that poisons retrieval.  This helper
+    handles every shape:
+
+    - ``None`` or any non-string scalar (int, dict, …) → ``[]`` (no terms).
+    - a bare string → ``[value]`` (the single intended term).
+    - a list → each item ``str()``-ed (empty-string items are kept here; the
+      caller filters falsy entries).
+
+    Args:
+        value: The raw value pulled from the parsed LLM JSON.
+
+    Returns:
+        A list of strings safe to feed into retrieval.
+    """
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
 def _str_or_none(value: object) -> str | None:
-    """Return *value* as a stripped string, or None when falsy."""
-    if value is None:
+    """Return *value* as a stripped string, or None.
+
+    Only ``str``, ``int``, and ``float`` scalars are coerced.  Any other type
+    — notably a ``list`` or ``dict`` — returns ``None`` rather than its
+    ``repr``: an LLM that emits ``"correspondent": ["npower", "EDF"]`` must
+    not produce the filter candidate ``"['npower', 'EDF']"``.
+
+    Args:
+        value: The raw value pulled from the parsed LLM JSON.
+
+    Returns:
+        The stripped string form, or ``None`` when empty or not a scalar.
+    """
+    if not isinstance(value, (str, int, float)):
         return None
     text = str(value).strip()
     return text if text else None
