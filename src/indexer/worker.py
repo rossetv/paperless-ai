@@ -65,13 +65,6 @@ class DocumentIndexer:
         store_writer: The write-side store API.  A single instance is shared
             across threads; its internal lock serialises transactions.
         embedding_client: The batched embedding client.  Thread-safe.
-        taxonomy_lookup: Reserved for the reconciler's id-to-name maps (SPEC
-            §5.5).  The per-document worker builds ``DocumentMeta`` directly
-            from the Paperless document dict, which already carries ids, so
-            this parameter is not used inside the worker.  It is accepted to
-            match the interface described in the implementation plan without
-            requiring a separate reconciler parameter.  Pass ``None`` when
-            constructing from tests or when the lookup is not needed.
     """
 
     def __init__(
@@ -79,16 +72,10 @@ class DocumentIndexer:
         settings: Settings,
         store_writer: StoreWriter,
         embedding_client: EmbeddingClient,
-        taxonomy_lookup: Any,  # rationale: not used by the worker — see docstring
     ) -> None:
         self._settings = settings
         self._store_writer = store_writer
         self._embedding_client = embedding_client
-        # taxonomy_lookup is deliberately unused in this class; it is accepted
-        # for interface compatibility with the plan description (SPEC §5.5 notes
-        # that the reconciler rebuilds the id→name maps each cycle, but §5.3
-        # does not use them — DocumentMeta stores ids, not names).
-        _ = taxonomy_lookup
 
     def index_document(
         self,
