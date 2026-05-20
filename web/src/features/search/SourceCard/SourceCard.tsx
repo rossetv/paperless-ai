@@ -2,7 +2,10 @@ import React from 'react';
 import { Card } from '../../../components/primitives/Card/Card';
 import { Badge } from '../../../components/primitives/Badge/Badge';
 import { Link } from '../../../components/primitives/Link/Link';
+import { Text } from '../../../components/primitives/Text/Text';
 import { Stack } from '../../../components/layout/Stack/Stack';
+import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
+import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
 import type { SourceDocument } from '../../../api/types';
 
 export interface SourceCardProps {
@@ -23,16 +26,18 @@ export interface SourceCardProps {
 /**
  * Single search result card.
  *
- * Displays: citation index badge, document title, correspondent, document
- * type, creation date, snippet, and an "Open in Paperless" external link.
+ * Displays: citation index badge, document title, the document metadata row,
+ * the matched-content snippet, and an "Open in Paperless" external link.
  *
- * All optional fields from SourceDocument (title, correspondent, etc.) are
- * handled gracefully — null fields are omitted from the rendered output.
+ * The metadata row and the snippet are NOT re-implemented here — they are the
+ * `DocumentMeta` and `DocumentSnippet` document features, composed directly,
+ * so a search result and a bare document render their metadata identically.
+ * The title routes through the `Text` typography primitive.
  *
  * The "Open in Paperless" link uses the Link primitive with external=true,
  * which sets target="_blank" and rel="noopener noreferrer" automatically.
  *
- * Composed from: Card, Badge, Link, Stack.
+ * Composed from: Card, Badge, Link, Text, Stack, DocumentMeta, DocumentSnippet.
  * No own CSS module (§12.5 — features layer is composition-only).
  */
 export function SourceCard({
@@ -47,25 +52,17 @@ export function SourceCard({
         <Stack direction="horizontal" gap={4} align="center">
           <Badge variant="accent">[{index}]</Badge>
           {source.title !== null && source.title !== undefined && (
-            <strong>{source.title}</strong>
+            <Text as="strong" variant="body-emphasis">
+              {source.title}
+            </Text>
           )}
         </Stack>
 
-        {/* Metadata row: correspondent, document type, date */}
-        <Stack direction="horizontal" gap={4} wrap>
-          {source.correspondent !== null && source.correspondent !== undefined && (
-            <Badge variant="neutral">{source.correspondent}</Badge>
-          )}
-          {source.document_type !== null && source.document_type !== undefined && (
-            <Badge variant="neutral">{source.document_type}</Badge>
-          )}
-          {source.created !== null && source.created !== undefined && (
-            <time dateTime={source.created}>{source.created}</time>
-          )}
-        </Stack>
+        {/* Metadata row — the DocumentMeta feature, not an inline copy */}
+        <DocumentMeta source={source} />
 
-        {/* Snippet */}
-        <p>{source.snippet}</p>
+        {/* Snippet — the DocumentSnippet feature, not an inline copy */}
+        <DocumentSnippet snippet={source.snippet} />
 
         {/* External link to Paperless document */}
         <Link href={source.paperless_url} external variant="default">

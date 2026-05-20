@@ -1,6 +1,7 @@
 import React from 'react';
 import { Badge } from '../../../components/primitives/Badge/Badge';
 import { Icon } from '../../../components/primitives/Icon/Icon';
+import { Text } from '../../../components/primitives/Text/Text';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import type { QueryPlan, SearchStats } from '../../../api/types';
 
@@ -20,7 +21,7 @@ export interface QueryPlanSummaryProps {
  * The purpose is to give power users confidence in the results and signal
  * when the pipeline took extra steps (refinement) or extra time.
  *
- * Composed from: Badge, Icon, Stack.
+ * Composed from: Badge, Icon, Text, Stack.
  * No own CSS module (§12.5 — features layer is composition-only).
  */
 export function QueryPlanSummary({ plan, stats }: QueryPlanSummaryProps): React.ReactElement {
@@ -53,7 +54,9 @@ export function QueryPlanSummary({ plan, stats }: QueryPlanSummaryProps): React.
       {plan.sub_questions.length > 0 && (
         <Stack direction="vertical" gap={2}>
           {plan.sub_questions.map((q, i) => (
-            <span key={i}>{q}</span>
+            <Text key={i} as="span" variant="caption">
+              {q}
+            </Text>
           ))}
         </Stack>
       )}

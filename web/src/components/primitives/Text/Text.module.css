@@ -1,0 +1,79 @@
+/*
+ * Text primitive — CSS Module.
+ *
+ * The single typographic primitive for the application. Every `variant` maps
+ * to one step of the SF Pro type scale in tokens.css (DESIGN.md §3). Features
+ * route their text through this component instead of rendering raw <p>/<span>/
+ * <strong> and relying on global element styles — so typography is a reviewed,
+ * token-driven choice, never an accident of the cascade.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.text {
+  /* Reset element-level margins (a raw <p> carries a global bottom margin);
+     spacing between text blocks is the caller's job, via a layout primitive. */
+  margin: 0;
+  font-family: var(--font-text);
+  color: var(--colour-text-primary);
+}
+
+/* ── Body — 17 px regular; the default running-text style ── */
+.body {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+}
+
+/* ── Body emphasis — 17 px semibold; for an emphasised run of body text ── */
+.body-emphasis {
+  font-size: var(--font-size-body-emphasis);
+  font-weight: var(--font-weight-body-emphasis);
+  line-height: var(--line-height-body-emphasis);
+  letter-spacing: var(--letter-spacing-body);
+}
+
+/* ── Card title — 21 px bold; the heading of a card-sized content block ── */
+.card-title {
+  font-family: var(--font-display);
+  font-size: var(--font-size-card-title);
+  font-weight: var(--font-weight-card-title);
+  line-height: var(--line-height-card-title);
+  letter-spacing: var(--letter-spacing-card-title);
+}
+
+/* ── Caption — 14 px regular; secondary text, metadata, timestamps ── */
+.caption {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* ── Caption bold — 14 px semibold; an emphasised caption / small label ── */
+.caption-bold {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+}
+
+/* ── Micro — 12 px regular; the smallest readable supporting text ── */
+.micro {
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Tone modifiers — override the variant's default colour role ── */
+.tone-secondary {
+  color: var(--colour-text-secondary);
+}
+
+.tone-tertiary {
+  color: var(--colour-text-tertiary);
+}
