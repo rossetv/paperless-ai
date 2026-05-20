@@ -1,0 +1,60 @@
+/*
+ * Badge primitive — CSS Module.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
+ *
+ * DESIGN.md documents one chromatic accent (Apple Blue) and a neutral palette.
+ * Badge variants map to this system:
+ *   neutral — light-surface background with primary text
+ *   accent  — Apple Blue background with on-dark text (e.g. primary status)
+ *   success — reuses accent (blue is the only chromatic colour in the system)
+ *   warning — overlay background with primary text (muted, non-chromatic)
+ *   danger  — near-black background with on-dark text (serious attention)
+ *
+ * Badge is non-interactive; no focus ring required.
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-1) var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  white-space: nowrap;
+}
+
+/* ── Neutral — subtle, low-emphasis label ── */
+.neutral {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-secondary);
+}
+
+/* ── Accent — Apple Blue, high-emphasis ── */
+.accent {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+/* ── Success — reuses accent (blue is the sole chromatic token) ── */
+.success {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+/* ── Warning — muted non-chromatic treatment ── */
+.warning {
+  background-color: var(--colour-overlay);
+  color: var(--colour-text-primary);
+}
+
+/* ── Danger — high-contrast near-black ── */
+.danger {
+  background-color: var(--colour-text-primary);
+  color: var(--colour-text-on-dark);
+}
