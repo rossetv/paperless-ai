@@ -1,0 +1,116 @@
+/*
+ * Select pattern — CSS Module.
+ *
+ * Custom accessible dropdown styled in the Apple Filter/Search Button style
+ * from DESIGN.md §4: --radius-comfortable (11 px), light background,
+ * accent focus ring.
+ *
+ * The listbox uses --radius-standard (8 px) and --shadow-card for elevation,
+ * consistent with the Apple card pattern.
+ * All values come exclusively from design tokens.
+ */
+
+.select {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-caption);
+  line-height: var(--line-height-caption);
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  padding: var(--spacing-6) var(--spacing-10);
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trigger:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.trigger:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.trigger.open .trigger-icon {
+  transform: rotate(180deg);
+}
+
+.trigger-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trigger-icon {
+  display: flex;
+  align-items: center;
+  color: var(--colour-text-tertiary);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.listbox {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));
+  left: 0;
+  right: 0;
+  z-index: 100;
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-2) 0;
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-standard);
+  box-shadow: var(--shadow-card);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.option {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-7) var(--spacing-10);
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.option.highlighted,
+.option:hover {
+  background-color: var(--colour-bg);
+}
+
+.option.selected {
+  color: var(--colour-accent);
+  font-weight: var(--font-weight-body-emphasis);
+}
