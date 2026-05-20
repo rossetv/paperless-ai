@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -48,7 +49,7 @@ class TestConnect:
 
     def test_opens_database_at_given_path(self, tmp_path) -> None:
         db_path = str(tmp_path / "test.db")
-        conn = connect(db_path, read_only=False)
+        conn = connect(db_path)
         try:
             conn.execute("CREATE TABLE t (x INTEGER)")
             conn.execute("INSERT INTO t VALUES (1)")
@@ -59,7 +60,7 @@ class TestConnect:
 
     def test_journal_mode_is_wal(self, tmp_path) -> None:
         db_path = str(tmp_path / "wal.db")
-        conn = connect(db_path, read_only=False)
+        conn = connect(db_path)
         try:
             mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
             assert mode == "wal"
@@ -68,29 +69,32 @@ class TestConnect:
 
     def test_foreign_keys_are_on(self, tmp_path) -> None:
         db_path = str(tmp_path / "fk.db")
-        conn = connect(db_path, read_only=False)
+        conn = connect(db_path)
         try:
             fk_status = conn.execute("PRAGMA foreign_keys").fetchone()[0]
             assert fk_status == 1
         finally:
             conn.close()
 
-    def test_read_only_flag_does_not_change_connection_mode(self, tmp_path) -> None:
-        """read_only=True opens a normal read-write connection per SPEC §3.2.
+    def test_connect_always_opens_read_write(self, tmp_path) -> None:
+        """Every connect() opens a read-write connection, even a re-open.
 
-        A read-only SQLite connection cannot maintain the WAL -shm coordination
-        file while a separate writer process is live.  Read-only is enforced by
-        the StoreReader API surface and the flock, not by the URI.
+        connect() takes no read-only mode: a connection-level mode=ro URI is
+        deliberately avoided because a read-only SQLite connection cannot
+        maintain the WAL -shm coordination file while a separate writer process
+        is live.  Read-only access for the search server is enforced by the
+        StoreReader API surface and the indexer's flock, not by the URI
+        (SPEC §3.2).  A second connection to an existing file must therefore
+        still accept writes.
         """
-        db_path = str(tmp_path / "ro.db")
-        # Create the DB first so the read_only open has a file to open.
-        conn_rw = connect(db_path, read_only=False)
-        conn_rw.close()
+        db_path = str(tmp_path / "reopen.db")
+        # Create the DB first so the re-open has an existing file to open.
+        conn_first = connect(db_path)
+        conn_first.close()
 
-        conn = connect(db_path, read_only=True)
+        conn = connect(db_path)
         try:
-            # A genuinely read-only URI connection would reject writes;
-            # this must succeed — it is a normal connection.
+            # The re-opened connection is a normal read-write one — it writes.
             conn.execute("CREATE TABLE t (x INTEGER)")
         finally:
             conn.close()
@@ -98,7 +102,7 @@ class TestConnect:
     def test_sqlite_vec_extension_loaded(self, tmp_path) -> None:
         """vec_version() must succeed after connect()."""
         db_path = str(tmp_path / "vec.db")
-        conn = connect(db_path, read_only=False)
+        conn = connect(db_path)
         try:
             row = conn.execute("SELECT vec_version()").fetchone()
             assert row is not None
@@ -118,7 +122,7 @@ class TestEnsureSchema:
     @pytest.fixture()
     def conn(self, tmp_path) -> sqlite3.Connection:
         db_path = str(tmp_path / "schema.db")
-        c = connect(db_path, read_only=False)
+        c = connect(db_path)
         yield c
         c.close()
 
@@ -221,7 +225,7 @@ class TestDataclassImmutability:
         from store.models import IndexState
 
         obj = IndexState(modified="2024-01-01T00:00:00Z", content_hash="abc")
-        with pytest.raises(Exception):  # FrozenInstanceError (a subclass of AttributeError)
+        with pytest.raises(FrozenInstanceError):
             obj.modified = "2025-01-01T00:00:00Z"  # type: ignore[misc]
 
     def test_document_meta_is_frozen(self) -> None:
@@ -238,28 +242,28 @@ class TestDataclassImmutability:
             content_hash="deadbeef",
             page_count=None,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.title = "mutated"  # type: ignore[misc]
 
     def test_chunk_input_is_frozen(self) -> None:
         from store.models import ChunkInput
 
         obj = ChunkInput(chunk_index=0, text="hello", page_hint=None, embedding=(0.1, 0.2))
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.text = "world"  # type: ignore[misc]
 
     def test_taxonomy_entry_is_frozen(self) -> None:
         from store.models import TaxonomyEntry
 
         obj = TaxonomyEntry(kind="tag", id=1, name="invoice")
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.name = "receipt"  # type: ignore[misc]
 
     def test_chunk_hit_is_frozen(self) -> None:
         from store.models import ChunkHit
 
         obj = ChunkHit(chunk_id=1, document_id=2, text="abc", page_hint=None, score=0.9)
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.score = 0.5  # type: ignore[misc]
 
     def test_indexed_document_is_frozen(self) -> None:
@@ -273,7 +277,7 @@ class TestDataclassImmutability:
             tags=("a", "b"),
             created=None,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.title = "other"  # type: ignore[misc]
 
     def test_facet_set_is_frozen(self) -> None:
@@ -286,7 +290,7 @@ class TestDataclassImmutability:
             earliest=None,
             latest=None,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.earliest = "2024-01-01"  # type: ignore[misc]
 
     def test_index_stats_is_frozen(self) -> None:
@@ -298,5 +302,5 @@ class TestDataclassImmutability:
             last_reconcile_at=None,
             embedding_model=None,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             obj.document_count = 1  # type: ignore[misc]

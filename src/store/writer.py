@@ -53,7 +53,8 @@ class StoreWriter:
                 ``EMBEDDING_MODEL``, and ``EMBEDDING_DIMENSIONS`` are used.
         """
         self._settings = settings
-        self._conn = connect(settings.INDEX_DB_PATH, read_only=False)
+        # The writer is the index's sole writer process (SPEC §3.2).
+        self._conn = connect(settings.INDEX_DB_PATH)
         # Serialises all write transactions across threads (SPEC §5.6, §8.4).
         self._write_lock = threading.Lock()
         ensure_schema(self._conn)

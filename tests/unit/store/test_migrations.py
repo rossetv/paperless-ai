@@ -52,7 +52,7 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 def conn(tmp_path) -> sqlite3.Connection:
     """A fresh, configured connection with no schema applied."""
     db_path = str(tmp_path / "migrations_test.db")
-    c = connect(db_path, read_only=False)
+    c = connect(db_path)
     yield c
     c.close()
 

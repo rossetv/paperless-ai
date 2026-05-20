@@ -144,6 +144,36 @@ class FacetSet:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchFilters:
+    """Optional pre-ranking filters for vector_search and keyword_search.
+
+    A store-boundary input shape: the search pipeline constructs it and hands
+    it to the StoreReader, which applies the non-default fields as SQL WHERE
+    clauses on the documents table *before* ranking.  All fields default to
+    "no restriction", so an all-default SearchFilters leaves the candidate set
+    as the full document table.
+
+    Attributes:
+        date_from: Lower bound on documents.created (inclusive, ISO-8601
+            string, lexicographic comparison).  None means no lower bound.
+        date_to: Upper bound on documents.created (inclusive, ISO-8601
+            string, lexicographic comparison).  None means no upper bound.
+        correspondent_id: Exact match on documents.correspondent_id.
+            None means no restriction.
+        document_type_id: Exact match on documents.document_type_id.
+            None means no restriction.
+        tag_ids: Every id in the tuple must appear in documents.tag_ids.
+            An empty tuple means no restriction.
+    """
+
+    date_from: str | None
+    date_to: str | None
+    correspondent_id: int | None
+    document_type_id: int | None
+    tag_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class IndexStats:
     """Summary statistics for the search index.
 
