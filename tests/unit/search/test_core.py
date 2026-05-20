@@ -12,11 +12,16 @@ Verifies the SearchCore contract (spec §6.3, §6.4):
 - SourceDocuments carry resolved correspondent/type names and a correct
   paperless_url.
 
-The mock LLM client distinguishes a planner call from a synthesiser call by
+The mock LLM driver distinguishes a planner call from a synthesiser call by
 inspecting the system prompt (the planner prompt and the synthesiser prompt
-have distinct, stable opening sentences).  This lets one mock client serve
-the whole pipeline while the test asserts exactly how many calls of each
-kind were made.
+have distinct, stable opening sentences).  This lets one driver serve the
+whole pipeline while the test asserts exactly how many calls of each kind
+were made.
+
+LLM mocking: QueryPlanner and Synthesizer subclass OpenAIChatMixin and take
+only ``settings``.  ``_build_core`` patches each stage's ``_create_completion``
+with the scripted driver's router — mirroring tests/unit/classifier — never
+via constructor injection.
 """
 
 from __future__ import annotations
@@ -35,17 +40,21 @@ from store.reader import SearchFilters
 
 
 # ---------------------------------------------------------------------------
-# A scripted LLM client that classifies each call as planner or synthesiser
+# A scripted LLM driver that classifies each call as planner or synthesiser
 # ---------------------------------------------------------------------------
 
 
 class _ScriptedLLMClient:
-    """A fake OpenAI-compatible client driving both pipeline LLM stages.
+    """A scripted driver for ``_create_completion`` across both LLM stages.
 
-    The planner and synthesiser issue ``chat.completions.create`` calls with
-    distinct system prompts.  This client inspects the system message to route
-    each call to the planner response or the next synthesiser response, and
-    records every call so the test can assert the exact LLM-call count.
+    The planner and synthesiser call ``_create_completion`` with distinct
+    system prompts.  This driver inspects the system message to route each
+    call to the planner response or the next synthesiser response, and records
+    every call so the test can assert the exact LLM-call count.
+
+    ``route`` is installed as each stage's ``_create_completion`` by
+    ``_build_core``; it accepts the same ``model=`` / ``messages=`` keyword
+    arguments the mixin passes through to the OpenAI SDK.
 
     Args:
         planner_response: Raw JSON string the planner call returns.
@@ -63,15 +72,14 @@ class _ScriptedLLMClient:
         self._synthesiser_responses = synthesiser_responses
         self.planner_calls = 0
         self.synthesiser_calls = 0
-        self.chat = MagicMock()
-        self.chat.completions.create.side_effect = self._create
 
     @property
     def total_calls(self) -> int:
         """Total LLM chat calls made — planner plus synthesiser."""
         return self.planner_calls + self.synthesiser_calls
 
-    def _create(self, *, model: str, messages: list[dict[str, str]]) -> Any:
+    def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
+        """Stand-in for ``OpenAIChatMixin._create_completion``."""
         system = next(
             (m["content"] for m in messages if m["role"] == "system"), ""
         )
@@ -156,6 +164,11 @@ def _make_settings(
     settings.SEARCH_PLANNER_MODEL = "gpt-5.4-mini"
     settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
     settings.AI_MODELS = ["gpt-5.4-mini", "gpt-5.4"]
+    # Real ints so the OpenAIChatMixin @retry decorator on the planner /
+    # synthesiser is well-formed (tests patch _create_completion, so the
+    # retry loop is never actually entered).
+    settings.MAX_RETRIES = 3
+    settings.MAX_RETRY_BACKOFF_SECONDS = 30
     return settings
 
 
@@ -213,13 +226,16 @@ def _build_core(
 ) -> SearchCore:
     """Assemble a SearchCore with real pipeline stages over the given mocks.
 
-    The planner and synthesiser are real (driven by the scripted LLM client);
-    the retriever is real (driven by the mock store and embedding client); only
-    the store reader, embedding client, and LLM transport are mocks.
+    The planner and synthesiser are real (their ``_create_completion`` is
+    patched with the scripted driver's router); the retriever is real (driven
+    by the mock store and embedding client); only the store reader, embedding
+    client, and the LLM transport are mocks.
     """
-    planner = QueryPlanner(settings, llm_client)
+    planner = QueryPlanner(settings)
+    planner._create_completion = llm_client.route  # type: ignore[method-assign]
     retriever = Retriever(settings, store_reader, embedding_client)
-    synthesizer = Synthesizer(settings, llm_client)
+    synthesizer = Synthesizer(settings)
+    synthesizer._create_completion = llm_client.route  # type: ignore[method-assign]
     return SearchCore(
         settings=settings,
         store_reader=store_reader,
@@ -1052,3 +1068,80 @@ class TestUiFilters:
         # ui_filters set, resolution is bypassed and the UI filters are used.
         passed_filters = store_reader.vector_search.call_args[0][2]
         assert passed_filters is ui_filters
+
+
+# ---------------------------------------------------------------------------
+# Embedding failure — answer() degrades to the no-match result (finding C3)
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingFailure:
+    """An embedding-backend failure degrades to the no-match SearchResult.
+
+    Finding C3: an ``EmbeddingError`` (bad/expired key, embedding-endpoint
+    outage) raised inside retrieval used to propagate out of ``core.answer()``
+    as an unhandled 500.  The retriever now catches it and degrades the query
+    to empty; ``answer()`` then returns the ordinary "no matching documents"
+    result with no synthesis call.
+    """
+
+    def test_answer_returns_no_match_result_on_embedding_error(self) -> None:
+        """core.answer() returns a SearchResult, not an exception, when embed() fails."""
+        from common.embeddings import EmbeddingError
+
+        settings = _make_settings()
+        llm_client = _ScriptedLLMClient(
+            planner_response=_planner_json(),
+            synthesiser_responses=[_answered_json("unreachable", citations=[])],
+        )
+        store_reader = MagicMock()
+        store_reader.list_facets.return_value = _empty_facets()
+        store_reader.keyword_search.return_value = []
+        embedding_client = MagicMock()
+        embedding_client.embed.side_effect = EmbeddingError("expired OPENAI_API_KEY")
+
+        core = _build_core(
+            settings=settings,
+            llm_client=llm_client,
+            store_reader=store_reader,
+            embedding_client=embedding_client,
+        )
+
+        # Must NOT raise.
+        result = core.answer("a query whose embedding cannot be produced")
+
+        assert isinstance(result, SearchResult)
+        # Retrieval degraded to empty → the no-match short-circuit fired:
+        # only the planner ran, no synthesis call, no sources.
+        assert result.sources == ()
+        assert result.answer != ""
+        assert llm_client.planner_calls == 1
+        assert llm_client.synthesiser_calls == 0
+
+    def test_retrieve_returns_no_sources_on_embedding_error(self) -> None:
+        """core.retrieve() also degrades to empty sources on an embedding failure."""
+        from common.embeddings import EmbeddingError
+
+        settings = _make_settings()
+        llm_client = _ScriptedLLMClient(
+            planner_response=_planner_json(),
+            synthesiser_responses=[_answered_json("unreachable", citations=[])],
+        )
+        store_reader = MagicMock()
+        store_reader.list_facets.return_value = _empty_facets()
+        store_reader.keyword_search.return_value = []
+        embedding_client = MagicMock()
+        embedding_client.embed.side_effect = EmbeddingError("embedding endpoint down")
+
+        core = _build_core(
+            settings=settings,
+            llm_client=llm_client,
+            store_reader=store_reader,
+            embedding_client=embedding_client,
+        )
+
+        result = core.retrieve("a sources-only query")
+
+        assert isinstance(result, SearchResult)
+        assert result.sources == ()
+        assert result.stats.llm_calls == 1

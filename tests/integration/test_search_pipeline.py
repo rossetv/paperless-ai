@@ -11,6 +11,10 @@ transaction, every SQL query (vector search, keyword search, taxonomy join,
 document look-up), RRF fusion, filter resolution, and the bounded refinement
 loop run for real.
 
+LLM mocking: QueryPlanner and Synthesizer subclass OpenAIChatMixin and take
+only ``settings``.  ``_build_core`` patches each stage's ``_create_completion``
+with the scripted driver's router — never via constructor injection.
+
 Coverage:
 - A full pipeline run answers a query, citing a real seeded document.
 - The bounded refinement loop runs end to end and is capped at 3 LLM calls.
@@ -57,11 +61,12 @@ _AXIS_REFINED: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0)
 
 
 class _ScriptedLLMClient:
-    """A fake OpenAI-compatible client driving both pipeline LLM stages.
+    """A scripted driver for ``_create_completion`` across both LLM stages.
 
-    Routes a ``chat.completions.create`` call to the planner response or the
-    next synthesiser response by inspecting the system prompt, and records the
-    per-stage call counts so a test can assert the LLM budget.
+    Routes a ``_create_completion`` call to the planner response or the next
+    synthesiser response by inspecting the system prompt, and records the
+    per-stage call counts so a test can assert the LLM budget.  ``route`` is
+    installed as each stage's ``_create_completion`` by ``_build_core``.
     """
 
     def __init__(
@@ -73,15 +78,14 @@ class _ScriptedLLMClient:
         self._synthesiser_responses = synthesiser_responses
         self.planner_calls = 0
         self.synthesiser_calls = 0
-        self.chat = MagicMock()
-        self.chat.completions.create.side_effect = self._create
 
     @property
     def total_calls(self) -> int:
         """Total LLM chat calls — planner plus synthesiser."""
         return self.planner_calls + self.synthesiser_calls
 
-    def _create(self, *, model: str, messages: list[dict[str, str]]) -> Any:
+    def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
+        """Stand-in for ``OpenAIChatMixin._create_completion``."""
         system = next(
             (m["content"] for m in messages if m["role"] == "system"), ""
         )
@@ -165,6 +169,10 @@ def _make_settings(
     settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
     settings.AI_MODELS = ["gpt-5.4-mini", "gpt-5.4"]
     settings.PAPERLESS_URL = paperless_url
+    # Real ints so the OpenAIChatMixin @retry decorator on the planner /
+    # synthesiser is well-formed (tests patch _create_completion).
+    settings.MAX_RETRIES = 3
+    settings.MAX_RETRY_BACKOFF_SECONDS = 30
     return settings
 
 
@@ -217,10 +225,16 @@ def _build_core(
     llm_client: _ScriptedLLMClient,
     embedding_client: MagicMock,
 ) -> SearchCore:
-    """Assemble a SearchCore over the real stages and the real store reader."""
-    planner = QueryPlanner(settings, llm_client)
+    """Assemble a SearchCore over the real stages and the real store reader.
+
+    The planner and synthesiser are real; their ``_create_completion`` is
+    patched with the scripted driver's router so no network call is made.
+    """
+    planner = QueryPlanner(settings)
+    planner._create_completion = llm_client.route  # type: ignore[method-assign]
     retriever = Retriever(settings, store_reader, embedding_client)
-    synthesizer = Synthesizer(settings, llm_client)
+    synthesizer = Synthesizer(settings)
+    synthesizer._create_completion = llm_client.route  # type: ignore[method-assign]
     return SearchCore(
         settings=settings,
         store_reader=store_reader,

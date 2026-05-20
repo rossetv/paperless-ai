@@ -65,8 +65,10 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 # The guaranteed per-query LLM-call ceiling (spec §6.3, CODE_GUIDELINES §14.3):
-# one planner call plus at most two synthesiser calls.  Raising this is a
-# security-review point — it bounds per-request cost on a billable endpoint.
+# 1 planner + 1 exploratory synthesise + 1 refinement synthesise; answer()
+# performs at most one refinement regardless of SEARCH_MAX_REFINEMENTS.
+# Raising this is a security-review point — it bounds per-request cost on a
+# billable endpoint.
 _MAX_LLM_CALLS = 3
 
 # The maximum number of characters of chunk text shown as a source snippet in
@@ -85,9 +87,10 @@ class _LlmBudget:
     """A monotonically-increasing counter enforcing the 3-LLM-call ceiling.
 
     Every LLM chat call in the pipeline is recorded here before it is made.
-    ``record`` asserts the running total never exceeds ``_MAX_LLM_CALLS`` — the
-    defensive half of the ceiling guarantee (see the module docstring).  The
-    final ``count`` is the true number of calls reported in ``SearchStats``.
+    ``record`` raises if the running total would exceed ``_MAX_LLM_CALLS`` —
+    the defensive half of the ceiling guarantee (see the module docstring).
+    The final ``count`` is the true number of calls reported in
+    ``SearchStats``.
     """
 
     def __init__(self) -> None:
@@ -96,17 +99,23 @@ class _LlmBudget:
     def record(self) -> None:
         """Register one LLM chat call; fail loud if the ceiling is breached.
 
+        An explicit ``raise`` is used rather than ``assert`` — an ``assert`` is
+        stripped under ``python -O``, which would silently disable this cost
+        guard on a billable endpoint in exactly the deployments where it
+        matters most.
+
         Raises:
-            AssertionError: If recording this call would exceed the hard
-                ceiling of three LLM calls per query.  This is unreachable by
+            RuntimeError: If recording this call would exceed the hard ceiling
+                of three LLM calls per query.  This is unreachable by
                 ``SearchCore``'s own loop logic; it guards against a future
                 regression silently overspending (CODE_GUIDELINES §1.11).
         """
         self.count += 1
-        assert self.count <= _MAX_LLM_CALLS, (
-            f"LLM-call ceiling breached: {self.count} calls made, "
-            f"the hard limit is {_MAX_LLM_CALLS} (spec §6.3)."
-        )
+        if self.count > _MAX_LLM_CALLS:
+            raise RuntimeError(
+                f"LLM-call ceiling breached: {self.count} calls made, "
+                f"the hard limit is {_MAX_LLM_CALLS} (spec §6.3)."
+            )
 
 
 class SearchCore:
