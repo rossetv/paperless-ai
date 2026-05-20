@@ -20,6 +20,7 @@ from tests.helpers.factories import make_settings
 
 from search.auth import (
     cookie_attributes,
+    extract_bearer,
     is_request_authenticated,
     issue_session_token,
     verify_api_key,
@@ -74,6 +75,48 @@ def test_verify_api_key_returns_false_not_typeerror_for_various_non_ascii() -> N
     for bad_key in ("café", "naïve", "日本語", "éàü", "emoji🔑"):
         # Must not raise; must return False (the key is wrong, not just non-ASCII).
         assert verify_api_key(bad_key, _API_KEY) is False
+
+
+# ---------------------------------------------------------------------------
+# extract_bearer
+# ---------------------------------------------------------------------------
+
+
+def test_extract_bearer_returns_the_token_from_a_bearer_header() -> None:
+    assert extract_bearer("Bearer the-token-value") == "the-token-value"
+
+
+def test_extract_bearer_returns_none_for_a_missing_header() -> None:
+    assert extract_bearer(None) is None
+
+
+def test_extract_bearer_returns_none_for_an_empty_header() -> None:
+    assert extract_bearer("") is None
+
+
+def test_extract_bearer_returns_none_without_the_bearer_prefix() -> None:
+    """A raw token with no 'Bearer ' prefix is not a bearer credential."""
+    assert extract_bearer(_API_KEY) is None
+
+
+def test_extract_bearer_is_case_sensitive_on_the_scheme() -> None:
+    """The scheme must be exactly 'Bearer ' — 'bearer ' is not accepted."""
+    assert extract_bearer("bearer the-token") is None
+
+
+def test_extract_bearer_requires_the_separating_space() -> None:
+    """'Bearer' with no trailing space is not the bearer prefix."""
+    assert extract_bearer("Bearertoken") is None
+
+
+def test_extract_bearer_preserves_a_token_that_contains_spaces() -> None:
+    """Only the leading 'Bearer ' is stripped; the rest is the token verbatim."""
+    assert extract_bearer("Bearer token with spaces") == "token with spaces"
+
+
+def test_extract_bearer_returns_empty_string_for_a_bare_scheme() -> None:
+    """'Bearer ' with nothing after it yields an empty token, not None."""
+    assert extract_bearer("Bearer ") == ""
 
 
 # ---------------------------------------------------------------------------

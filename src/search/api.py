@@ -41,6 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from search.auth import (
     SESSION_COOKIE_NAME,
     cookie_attributes,
+    extract_bearer,
     is_request_authenticated,
     verify_api_key,
 )
@@ -111,10 +112,7 @@ def _make_require_auth(settings: Settings):  # type: ignore[return]
 
     def require_auth(request: Request) -> None:
         """FastAPI dependency; raises 401 if the request is not authenticated."""
-        auth_header = request.headers.get("authorization", "")
-        bearer: str | None = None
-        if auth_header.startswith("Bearer "):
-            bearer = auth_header[len("Bearer "):]
+        bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
         if not is_request_authenticated(

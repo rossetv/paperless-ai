@@ -35,7 +35,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from search.auth import SESSION_COOKIE_NAME, is_request_authenticated
+from search.auth import SESSION_COOKIE_NAME, extract_bearer, is_request_authenticated
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -85,7 +85,7 @@ class _BearerAuthMiddleware:
             return
 
         request = Request(scope)
-        bearer = _extract_bearer(request)
+        bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
         if not is_request_authenticated(bearer=bearer, cookie=cookie, settings=self._settings):
@@ -103,19 +103,6 @@ class _BearerAuthMiddleware:
             return
 
         await self._app(scope, receive, send)
-
-
-def _extract_bearer(request: Request) -> str | None:
-    """Extract the raw token from ``Authorization: Bearer <token>``.
-
-    Returns the token string when the header is present and starts with
-    ``Bearer `` (case-sensitive), or ``None`` otherwise.  The token value is
-    **never logged**.
-    """
-    auth_header = request.headers.get("authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return None
-    return auth_header[len("Bearer "):]
 
 
 # ---------------------------------------------------------------------------

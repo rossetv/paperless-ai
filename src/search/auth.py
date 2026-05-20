@@ -46,6 +46,10 @@ SESSION_COOKIE_NAME = "search_session"
 _COOKIE_SAMESITE = "strict"
 _COOKIE_PATH = "/"
 
+# The exact, case-sensitive prefix of an ``Authorization: Bearer <token>``
+# header.  The trailing space is part of the prefix.
+_BEARER_PREFIX = "Bearer "
+
 
 class AuthError(Exception):
     """Raised when an authentication operation cannot be completed.
@@ -56,6 +60,27 @@ class AuthError(Exception):
     :func:`is_request_authenticated` return ``False`` rather than raising, so
     a malformed or hostile request never produces an unhandled exception.
     """
+
+
+def extract_bearer(authorization_header: str | None) -> str | None:
+    """Extract the raw token from an ``Authorization: Bearer <token>`` header.
+
+    The single shared parser for the ``Authorization`` header, reused by the
+    FastAPI auth dependency and the MCP bearer-auth middleware so both surfaces
+    accept exactly the same header shape.
+
+    Args:
+        authorization_header: The raw ``Authorization`` header value, or
+            ``None`` when the request carried no such header.
+
+    Returns:
+        The token string when the header is present and starts with the
+        case-sensitive prefix ``"Bearer "``; ``None`` otherwise.  The token
+        value is **never logged** (CODE_GUIDELINES.md §7.4).
+    """
+    if authorization_header is None or not authorization_header.startswith(_BEARER_PREFIX):
+        return None
+    return authorization_header[len(_BEARER_PREFIX):]
 
 
 def verify_api_key(provided: str, configured: str) -> bool:
