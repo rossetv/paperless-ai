@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 paperless-ai = "ocr.daemon:main"
 paperless-classifier-daemon = "classifier.daemon:main"
+paperless-indexer-daemon = "indexer.daemon:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
