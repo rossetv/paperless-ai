@@ -172,4 +172,29 @@ describe('Select', () => {
     );
     expect(screen.getByText('Fruit')).toBeInTheDocument();
   });
+
+  it('sets aria-activedescendant to the highlighted option id as arrow keys move the highlight', async () => {
+    render(
+      <Select
+        id="fruit"
+        options={OPTIONS}
+        onChange={vi.fn()}
+        placeholder="Choose"
+      />,
+    );
+    const combobox = screen.getByRole('combobox');
+    combobox.focus();
+
+    // Open and highlight the first item
+    await userEvent.keyboard('{ArrowDown}');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-apple');
+
+    // Move to second item
+    await userEvent.keyboard('{ArrowDown}');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-banana');
+
+    // Move back to first
+    await userEvent.keyboard('{ArrowUp}');
+    expect(combobox).toHaveAttribute('aria-activedescendant', 'fruit-option-apple');
+  });
 });

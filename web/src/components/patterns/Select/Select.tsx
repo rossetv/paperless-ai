@@ -143,35 +143,6 @@ export function Select<T extends string = string>({
     }
   }
 
-  function handleListKeyDown(event: React.KeyboardEvent<HTMLUListElement>): void {
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        setHighlightedIndex((prev) => Math.min(prev + 1, options.length - 1));
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        setHighlightedIndex((prev) => Math.max(prev - 1, 0));
-        break;
-      case 'Enter':
-      case ' ':
-        event.preventDefault();
-        if (highlightedIndex >= 0) {
-          const highlighted = options[highlightedIndex];
-          if (highlighted !== undefined) {
-            selectOption(highlighted.value);
-          }
-        }
-        break;
-      case 'Escape':
-        event.preventDefault();
-        close();
-        break;
-      default:
-        break;
-    }
-  }
-
   const wrapperClasses = [styles['select'], className].filter(Boolean).join(' ');
 
   return (
@@ -191,6 +162,11 @@ export function Select<T extends string = string>({
         aria-controls={listboxId}
         aria-labelledby={label !== undefined ? `${id}-label ${id}` : undefined}
         aria-label={label === undefined ? displayLabel : undefined}
+        aria-activedescendant={
+          isOpen && highlightedIndex >= 0
+            ? `${id}-option-${options[highlightedIndex]?.value ?? ''}`
+            : undefined
+        }
         disabled={disabled}
         className={[styles['trigger'], isOpen ? styles['open'] : undefined]
           .filter(Boolean)
@@ -210,8 +186,6 @@ export function Select<T extends string = string>({
           role="listbox"
           aria-labelledby={label !== undefined ? `${id}-label` : undefined}
           className={styles['listbox']}
-          onKeyDown={handleListKeyDown}
-          tabIndex={-1}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;

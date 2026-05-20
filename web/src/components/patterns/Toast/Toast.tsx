@@ -11,18 +11,16 @@ const styles = stylesRaw as Record<string, string>;
  * Variant values and their ARIA / token mappings.
  *
  * DESIGN.md uses a single chromatic accent (Apple Blue, --colour-accent) with
- * no semantic error/success colours. We therefore map variants as follows —
- * documented here because it is a deliberate design decision, not an oversight:
+ * no semantic status colours. Two visually distinct treatments exist:
  *
- *   info    → --colour-accent border, role="status"    (informational, blue)
- *   success → --colour-accent border, role="status"    (same blue — only available accent)
- *   error   → --colour-text-primary border, role="alert"  (near-black, higher urgency)
+ *   info  → --colour-accent border, role="status"  (informational, blue)
+ *   error → --colour-text-primary border, role="alert" (near-black, assertive)
  *
- * The visual differentiation relies on the icon and the stronger ARIA role
- * rather than a separate colour, which is consistent with the Apple palette
- * constraint.
+ * The previous `success` variant was visually identical to `info` (both used
+ * --colour-accent) — a misleading API. It is removed to keep the type honest.
+ * Callers that previously used `success` should use `info`.
  */
-export type ToastVariant = 'info' | 'success' | 'error';
+export type ToastVariant = 'info' | 'error';
 
 export interface ToastProps {
   /** The message to display inside the toast. */
@@ -44,11 +42,13 @@ export interface ToastProps {
   className?: string;
 }
 
-// Icon per variant — maps to the Icon primitive's closed icon name set.
+// Icon per variant — decorative only; the toast's ARIA role carries the semantic
+// meaning (role="status" for info, role="alert" for error). The icons are
+// rendered inside an aria-hidden span, so they must not have a label — a
+// labelled icon inside aria-hidden is self-contradictory markup.
 const VARIANT_ICON: Record<ToastVariant, React.ReactElement> = {
-  info: <Icon name="info" size="small" label="Info" />,
-  success: <Icon name="check" size="small" label="Success" />,
-  error: <Icon name="warning" size="small" label="Error" />,
+  info: <Icon name="info" size="small" />,
+  error: <Icon name="warning" size="small" />,
 };
 
 /**
@@ -81,7 +81,7 @@ export function Toast({
   }, [dismissAfterMs, onDismiss]);
 
   // ── ARIA role ─────────────────────────────────────────────────────────────
-  // error is assertive (role="alert"); info/success are polite (role="status").
+  // error is assertive (role="alert"); info is polite (role="status").
   const role = variant === 'error' ? 'alert' : 'status';
 
   const rootClasses = [
