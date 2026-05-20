@@ -1,0 +1,66 @@
+/*
+ * Tabs pattern — CSS Module.
+ *
+ * Styled after the Apple link/navigation style from DESIGN.md: tabs are
+ * rendered as pill-shaped buttons using --radius-pill for the active tab
+ * indicator, with the accent colour reserved for the selected state only.
+ *
+ * All values come exclusively from design tokens.
+ */
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.tablist {
+  display: flex;
+  flex-direction: row;
+  gap: var(--spacing-2);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+  padding-bottom: var(--spacing-2);
+}
+
+.tab {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-secondary);
+  background: none;
+  border: none;
+  padding: var(--spacing-6) var(--spacing-10);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--colour-text-primary);
+  background-color: var(--colour-bg);
+}
+
+.tab:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* Active tab: accent colour text, pill background */
+.tab.active {
+  color: var(--colour-accent);
+  font-weight: var(--font-weight-body-emphasis);
+  background-color: var(--colour-button-light-bg);
+}
+
+.panel {
+  padding: var(--spacing-6) 0;
+  outline: none;
+}
+
+.panel:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
