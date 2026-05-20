@@ -276,12 +276,6 @@ describe('SearchPage', () => {
     renderSearchPage();
     await userEvent.click(screen.getByTestId('mock-search-bar'));
 
-    await waitFor(() => {
-      expect(screen.getByRole('status')).not.toBeInTheDocument();
-    }).catch(() => {
-      // if status spinner was never shown that's fine too
-    });
-
     // The answer card should not be rendered for an empty result
     expect(screen.queryByTestId('mock-answer-card')).not.toBeInTheDocument();
     // EmptyState should appear
