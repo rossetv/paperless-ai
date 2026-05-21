@@ -6,8 +6,8 @@
  * `AuthProvider`, `BrowserRouter`) are wired in `main.tsx` so this file
  * stays a thin composition root.
  *
- * Intentionally exempt from `eslint-plugin-boundaries` (see
- * `boundaries/ignore` in eslint.config.js).
+ * Classified as the `app` element type in `eslint-plugin-boundaries`; its
+ * imports are boundary-checked against the `app` row of the allow matrix.
  */
 
 import { AppRoutes } from './routes';
