@@ -28,13 +28,14 @@ from pathlib import Path
 import structlog
 
 from common.config import Settings
-from common.embeddings import EmbeddingClient
+from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS, EmbeddingClient
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
-from common.paperless import PaperlessClient
+from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
 from common.shutdown import is_shutdown_requested, register_signal_handlers
 from indexer.lock import IndexerLockError, acquire_writer_lock
 from indexer.reconciler import Reconciler
+from store import StoreError
 from store.writer import StoreWriter
 
 log = structlog.get_logger(__name__)
@@ -45,6 +46,13 @@ _WAKE_CHECK_INTERVAL: float = 5.0
 
 # Key used to embed a single token to verify the embedding model is reachable.
 _PREFLIGHT_EMBED_TEXT = "ping"
+
+# Combined exception tuple for the preflight boundary — covers both Paperless
+# transport errors and embedding model failures so the except clause is typed.
+_PREFLIGHT_EXCEPTIONS: tuple[type[Exception], ...] = (
+    *PAPERLESS_CALL_EXCEPTIONS,
+    *EMBEDDING_FAILURE_EXCEPTIONS,
+)
 
 
 def main() -> None:
@@ -100,13 +108,12 @@ def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
     paperless = PaperlessClient(settings)
     embedding_client = EmbeddingClient(settings)
     try:
-        _run_preflight(settings, paperless, embedding_client)
-    except Exception:
-        # rationale: startup-preflight fatal boundary — any failure verifying
-        # Paperless reachability or the embedding model must stop the daemon
-        # before it starts indexing (fail closed, CODE_GUIDELINES §1.11).
-        # exc_info=True keeps the CRITICAL level while attaching the traceback,
-        # which a plain error=str(exc) would discard on this fatal-exit path.
+        _run_preflight(paperless, embedding_client)
+    except _PREFLIGHT_EXCEPTIONS:
+        # rationale: startup-preflight fatal boundary — a Paperless transport
+        # failure or embedding model error must stop the daemon before indexing
+        # begins (fail closed, CODE_GUIDELINES §1.11).  exc_info=True attaches
+        # the traceback that error=str(exc) would discard on this exit path.
         log.critical("indexer.preflight_failed", exc_info=True)
         paperless.close()
         sys.exit(2)
@@ -120,12 +127,11 @@ def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
                 "indexer.embedding_model_rebuild_triggered",
                 advice="All chunks wiped; next reconciliation re-embeds everything.",
             )
-    except Exception:
+    except StoreError:
         # rationale: startup-preflight fatal boundary — a store error opening
         # or migrating the index, or applying an embedding-model change, must
         # stop the daemon before the loop runs (CODE_GUIDELINES §1.11).
-        # exc_info=True keeps the CRITICAL level and attaches the traceback the
-        # operator needs; error=str(exc) would discard the stack.
+        # exc_info=True attaches the traceback; error=str(exc) would discard it.
         log.critical("indexer.store_preflight_failed", exc_info=True)
         paperless.close()
         store_writer.close()
@@ -163,7 +169,6 @@ def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
 
 
 def _run_preflight(
-    settings: Settings,
     paperless: PaperlessClient,
     embedding_client: EmbeddingClient,
 ) -> None:
@@ -173,7 +178,6 @@ def _run_preflight(
     CRITICAL log and a non-zero exit.
 
     Args:
-        settings: Application settings.
         paperless: The live PaperlessClient the daemon will use.
         embedding_client: The live EmbeddingClient the daemon will use — the
             same instance, so preflight verifies what actually does the work.

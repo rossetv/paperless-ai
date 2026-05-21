@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, cast
 
 import structlog
 
-from common.paperless import PaperlessDocument
+from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessDocument
 
 if TYPE_CHECKING:
     from common.paperless import PaperlessClient
@@ -112,11 +112,10 @@ def fetch_retry_documents(
             retry_documents.append(
                 cast("PaperlessDocument", paperless.get_document(document_id))
             )
-        except Exception:
-            # rationale: per-document outer-boundary catch (CODE_GUIDELINES
-            # §6.4 site 2) — a transport error re-fetching one failed document
-            # must not abort the cycle.  The id keeps its count and is retried
-            # next cycle.
+        except PAPERLESS_CALL_EXCEPTIONS:
+            # rationale: per-document transport boundary — a network or HTTP
+            # error re-fetching one failed document must not abort the cycle.
+            # The id keeps its failure count and is retried next cycle.
             log.exception(
                 "reconcile.failed_document_refetch_failed",
                 document_id=document_id,

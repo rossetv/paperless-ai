@@ -20,6 +20,8 @@ import structlog
 
 from common.clock import utc_now_iso
 
+from common.paperless import PAPERLESS_CALL_EXCEPTIONS
+
 if TYPE_CHECKING:
     from common.paperless import PaperlessClient
     from store.writer import StoreWriter
@@ -113,11 +115,11 @@ def _enumerate_paperless_ids(paperless: PaperlessClient) -> set[int] | None:
     """
     try:
         return {doc["id"] for doc in paperless.iter_all_documents()}
-    except Exception:
-        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — any
-        # enumeration failure must downgrade to "prune nothing", never
-        # propagate as a partial id set.  Returning None forces the caller to
-        # abort; a partial set could delete the whole archive.
+    except PAPERLESS_CALL_EXCEPTIONS:
+        # rationale: Paperless transport boundary — any enumeration failure
+        # must downgrade to "prune nothing", never propagate as a partial id
+        # set.  Returning None forces the caller to abort; a partial set could
+        # delete documents from the archive (SPEC §5.4 rule 2).
         log.exception("reconcile.enumeration_failed")
         return None
 
@@ -137,10 +139,10 @@ def _confirm_absent(
     for document_id in candidates:
         try:
             still_exists = paperless.document_exists(document_id)
-        except Exception:
-            # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — a failed
-            # confirmation must never be read as "deleted"; keep the document
-            # and let the next sweep re-confirm.
+        except PAPERLESS_CALL_EXCEPTIONS:
+            # rationale: Paperless transport boundary — a failed confirmation
+            # must never be treated as "deleted"; keep the document and let the
+            # next sweep re-confirm (SPEC §5.4 rule 3).
             log.exception(
                 "reconcile.confirm_failed", document_id=document_id
             )
