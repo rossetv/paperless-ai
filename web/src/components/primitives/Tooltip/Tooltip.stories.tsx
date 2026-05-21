@@ -31,7 +31,7 @@ export const OnIconButton: StoryObj = {
     children: (
       <button
         type="button"
-        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 'var(--spacing-6)' }}
       >
         <Icon name="search" size="medium" />
       </button>

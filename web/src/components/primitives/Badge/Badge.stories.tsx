@@ -42,7 +42,7 @@ export const Count: Story = {
 
 export const AllVariants: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-6)', alignItems: 'center', flexWrap: 'wrap' }}>
       <Badge variant="neutral">Neutral</Badge>
       <Badge variant="accent">Accent</Badge>
       <Badge variant="accent">{99}</Badge>

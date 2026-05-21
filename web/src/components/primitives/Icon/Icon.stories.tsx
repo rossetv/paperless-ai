@@ -78,10 +78,10 @@ export const AllIcons: StoryObj = {
         {names.map((name) => (
           <div
             key={name}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-2)' }}
           >
             <Icon name={name} size="medium" />
-            <span style={{ fontSize: '11px', fontFamily: 'monospace' }}>{name}</span>
+            <span style={{ fontSize: 'var(--font-size-micro)', fontFamily: 'monospace' }}>{name}</span>
           </div>
         ))}
       </div>

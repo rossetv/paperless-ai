@@ -65,7 +65,7 @@ export const ToggleableSelected: Story = {
 
 export const AllVariants: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-6)', alignItems: 'center', flexWrap: 'wrap' }}>
       <Chip>Default</Chip>
       <Chip selected>Selected</Chip>
       <Chip onRemove={() => undefined}>Removable</Chip>
