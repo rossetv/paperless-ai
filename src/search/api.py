@@ -235,16 +235,14 @@ def main() -> None:
     Serving the operator's personal document archive without authentication
     is a data-breach one misconfiguration away (spec §9.2).
     """
-    from common.concurrency import llm_limiter
-    from common.config import Settings
-    from common.library_setup import setup_libraries
-    from common.logging_config import configure_logging
-    from common.shutdown import register_signal_handlers
+    from common.bootstrap import bootstrap_process
 
-    settings = Settings.from_environment()
-    configure_logging(settings)
-    setup_libraries(settings)
-    register_signal_handlers()
+    # Run the per-process startup shared with the daemons: Settings, logging,
+    # the library singletons (the OpenAI client), signal handlers, and the LLM
+    # concurrency limiter.  Centralised in common.bootstrap so the search
+    # server cannot drift from the daemons — omitting the limiter step here is
+    # what previously 500ed every query (see bootstrap_process).
+    settings = bootstrap_process()
 
     # Fail closed: the API key is mandatory (spec §10.1, §9.2).
     # Strip whitespace before checking — a key of "   " is effectively absent
@@ -256,14 +254,6 @@ def main() -> None:
             "SEARCH_API_KEY in the environment."
         )
         sys.exit(1)
-
-    # Initialise the LLM concurrency limiter — the final bootstrap step from
-    # common.bootstrap.bootstrap_daemon.  The planner and synthesiser acquire
-    # it on every query and it raises RuntimeError if used before init().  The
-    # search server inlines the boot sequence rather than calling
-    # bootstrap_daemon (it needs no Paperless preflight or stale-lock
-    # recovery), so this step must be kept in step with bootstrap_daemon.
-    llm_limiter.init(settings.LLM_MAX_CONCURRENT)
 
     app = create_app(settings)
 

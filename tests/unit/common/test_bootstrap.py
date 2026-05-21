@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from common.bootstrap import bootstrap_daemon
+from common.bootstrap import bootstrap_daemon, bootstrap_process
 from common.preflight import PreflightError
 
 MODULE = "common.bootstrap"
@@ -116,3 +116,38 @@ class TestBootstrapDaemon:
 
         assert result is None
         mock_client.close.assert_called_once()
+
+
+class TestBootstrapProcess:
+    """Tests for bootstrap_process() — the per-process startup shared by all."""
+
+    @patch(f"{MODULE}.llm_limiter")
+    @patch(f"{MODULE}.register_signal_handlers")
+    @patch(f"{MODULE}.setup_libraries")
+    @patch(f"{MODULE}.configure_logging")
+    @patch(f"{MODULE}.Settings")
+    def test_runs_every_step_and_initialises_the_limiter(
+        self,
+        mock_settings_cls,
+        mock_configure_logging,
+        mock_setup_libraries,
+        mock_register_signals,
+        mock_llm_limiter,
+    ):
+        """bootstrap_process runs all five steps and returns the settings.
+
+        Regression: an entry point that omits llm_limiter.init() leaves the
+        limiter uninitialised, so every LLM call raises RuntimeError at request
+        time — the search server 500ed on every query before this sequence was
+        centralised here.
+        """
+        mock_settings = MagicMock(LLM_MAX_CONCURRENT=4)
+        mock_settings_cls.from_environment.return_value = mock_settings
+
+        settings = bootstrap_process()
+
+        assert settings is mock_settings
+        mock_configure_logging.assert_called_once_with(mock_settings)
+        mock_setup_libraries.assert_called_once_with(mock_settings)
+        mock_register_signals.assert_called_once()
+        mock_llm_limiter.init.assert_called_once_with(4)
