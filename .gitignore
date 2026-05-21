@@ -136,6 +136,7 @@ data/
 web/node_modules/
 web/dist/
 web/storybook-static/
+web/coverage/
 
 # The `lib/` pattern above targets Python build artifacts; the frontend's
 # `web/src/lib/` is hand-written source and must be tracked.
