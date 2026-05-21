@@ -8,6 +8,17 @@ document the watermark advances to ``max(modified seen) - OVERLAP_MARGIN`` so a
 timestamp-boundary document is never missed and re-processing the overlap is
 free.
 
+The page stream is **never materialised whole**.  ``iter_all_documents`` is a
+lazy generator that pages Paperless at ``page_size=100``; each
+:class:`~common.paperless.PaperlessDocument` carries the document's full OCR
+text in its ``content`` field.  On a first-run backfill (watermark ``None`` →
+no server-side filter) that is the entire archive — materialising it OOM-kills
+the daemon host.  The sync therefore consumes the stream in fixed-size
+batches: a batch is indexed through the worker pool, its outcomes and ids are
+folded into cycle-wide accumulators, and the batch is then dropped so its
+document bodies are freed before the next batch is paged.  Peak memory is
+O(one batch), not O(whole archive).
+
 Failures do not freeze the watermark: a failed document is recorded in the
 persisted ``failed_documents`` map (see :mod:`._failed_documents`) and retried
 out-of-band each cycle.  The watermark advances unconditionally on the failure
@@ -21,10 +32,12 @@ by argument; the :class:`~indexer.reconciler.Reconciler` facade owns those.
 from __future__ import annotations
 
 import functools
+import itertools
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 import structlog
 
@@ -55,6 +68,16 @@ _LAST_RECONCILE_META_KEY = "last_reconcile_at"
 # Thread-pool name so log correlation and profilers can attribute the work
 # (CODE_GUIDELINES §8.6).
 _WORKER_THREAD_PREFIX = "indexer-document"
+
+# How many documents the watermark page stream is consumed in at a time.  Set
+# to the Paperless API ``page_size`` so one batch is one HTTP page: the indexer
+# holds at most one page of OCR bodies in RAM at once, never the whole archive.
+# (``itertools.batched`` would express this, but it is 3.12+ and the target
+# runtime is 3.11 — see :func:`_batched`.)
+_WATERMARK_PAGE_BATCH_SIZE = 100
+
+# Generic element type for the :func:`_batched` streaming helper.
+_T = TypeVar("_T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,21 +123,27 @@ def run_incremental_sync(
     i.e. no filter — on first run, so the first sync is the backfill).
     Refreshes the taxonomy once (SPEC §5.5).
 
-    The work list for a cycle is two parts:
+    The work for a cycle is two parts:
 
-    1. The watermark page — every document modified since the watermark.
+    1. The watermark page — every document modified since the watermark.  This
+       stream is **never materialised whole**: it is consumed in fixed-size
+       batches (:data:`_WATERMARK_PAGE_BATCH_SIZE`), each batch indexed and
+       then dropped so its OCR bodies are freed before the next batch is paged.
     2. Out-of-band retries — every document id in the persisted
        ``failed_documents`` map that the watermark page did **not** already
-       cover (see :mod:`._failed_documents`).
+       cover (see :mod:`._failed_documents`).  This set is bounded by the
+       failed-map size; it reuses the same batched indexing path.
 
     Both parts are fanned across the worker pool with per-document failure
     isolation (SPEC §5.7).  After indexing, the ``failed_documents`` map is
-    rebuilt.
+    rebuilt from the cycle-wide outcomes covering both parts.
 
     The watermark advances to ``max(modified) - OVERLAP_MARGIN`` whenever the
     watermark page held at least one document — **unconditionally on the
     failure count**, because failures are tracked and retried via the
-    ``failed_documents`` map rather than by freezing the watermark.
+    ``failed_documents`` map rather than by freezing the watermark.  Only the
+    watermark-page documents contribute to that maximum; retry documents do
+    not influence the watermark.
 
     Args:
         paperless: The Paperless API client.
@@ -132,17 +161,22 @@ def run_incremental_sync(
     # reflected even on a cycle that indexes nothing (SPEC §5.5).
     _refresh_taxonomy(paperless, store_writer)
 
-    # Materialise the page stream before fanning out: the worker pool needs the
-    # full work list, and a paging failure here propagates as a normal
-    # exception (the daemon loop's outer boundary handles it).  The Paperless
-    # client yields the raw document JSON; this is the boundary at which the
-    # indexer adopts the typed PaperlessDocument view of that foreign shape
-    # (CODE_GUIDELINES §5.3).
-    documents = cast(
-        "list[PaperlessDocument]",
-        list(paperless.iter_all_documents(modified_after=watermark)),
+    # The index state is id -> (modified, content_hash) — cheap, no OCR bodies —
+    # so it is read once upfront and shared by every batch's worker fan-out.
+    index_state = store_writer.get_index_state()
+
+    # Stream the watermark page in batches.  The Paperless client yields the raw
+    # document JSON; this is the boundary at which the indexer adopts the typed
+    # PaperlessDocument view of that foreign shape (CODE_GUIDELINES §5.3).  A
+    # paging failure mid-stream propagates as a normal exception — the daemon
+    # loop's outer boundary handles it; it is not swallowed here.
+    page_stream = cast(
+        "Iterator[PaperlessDocument]",
+        paperless.iter_all_documents(modified_after=watermark),
     )
-    page_ids = {doc["id"] for doc in documents}
+    outcomes, page_ids, latest_modified = _index_page_stream(
+        indexer, page_stream, index_state, worker_count
+    )
 
     # Re-attempt every previously-failed document the watermark page did not
     # already cover.  Ids gone from Paperless are dropped from the map.
@@ -150,19 +184,13 @@ def run_incremental_sync(
     retry_documents = _failed_documents.fetch_retry_documents(
         paperless, failed_map, page_ids
     )
-
-    # Combine into one work list, deduplicated by id (defensive — the watermark
-    # page and the retry set are constructed disjoint).
-    work_by_id: dict[int, PaperlessDocument] = {
-        doc["id"]: doc for doc in documents
-    }
-    for doc in retry_documents:
-        work_by_id.setdefault(doc["id"], doc)
-
-    index_state = store_writer.get_index_state()
-    outcomes = _index_documents(
-        indexer, list(work_by_id.values()), index_state, worker_count
-    )
+    # Retry documents are bounded by the failed-map size; index them through the
+    # same batched path for consistency and merge their outcomes into the
+    # cycle-wide dict.  They do NOT influence the watermark (see below).
+    for batch in _batched(retry_documents, _WATERMARK_PAGE_BATCH_SIZE):
+        outcomes.update(
+            _index_documents(indexer, list(batch), index_state, worker_count)
+        )
 
     # Rebuild and persist the failed-document map from this cycle's result.
     given_up = _failed_documents.update_failed_documents(
@@ -170,9 +198,10 @@ def run_incremental_sync(
     )
 
     # Advance the watermark whenever the page held a document — failure retry
-    # is decoupled, so a failure no longer freezes the watermark.
-    if documents:
-        _advance_watermark(store_writer, documents)
+    # is decoupled, so a failure no longer freezes the watermark.  Only the
+    # watermark-page documents feed ``latest_modified``; retries are excluded.
+    if page_ids:
+        _advance_watermark(store_writer, latest_modified)
     else:
         log.info("reconcile.watermark_held", reason="empty_page")
 
@@ -195,6 +224,53 @@ def run_incremental_sync(
         given_up=report.given_up,
     )
     return report
+
+
+def _index_page_stream(
+    indexer: DocumentIndexer,
+    page_stream: Iterator[PaperlessDocument],
+    index_state: dict[int, IndexState],
+    worker_count: int,
+) -> tuple[dict[int, IndexOutcome | None], set[int], datetime | None]:
+    """Consume the watermark page stream in batches and index each batch.
+
+    The stream is the lazy ``iter_all_documents`` generator — every document
+    carries its full OCR ``content``.  Materialising it whole would hold the
+    entire archive in RAM (the OOM bug this function exists to prevent), so it
+    is consumed :data:`_WATERMARK_PAGE_BATCH_SIZE` documents at a time.  For
+    each batch:
+
+    - the batch is fanned across the worker pool via :func:`_index_documents`,
+    - its outcomes are merged into the cycle-wide ``outcomes`` dict,
+    - its document ids are added to the cycle-wide ``page_ids`` set,
+    - its ``modified`` timestamps are folded into a running maximum,
+
+    and the batch is then dropped, so its document bodies are freed before the
+    next batch is paged.  Peak memory is O(one batch).
+
+    A paging failure mid-stream propagates as a normal exception (the daemon
+    loop's outer boundary handles it); it is not swallowed.
+
+    Returns:
+        A triple ``(outcomes, page_ids, latest_modified)`` — the per-id
+        indexing outcomes across every batch, the set of every page document
+        id, and the newest parseable ``modified`` timestamp seen (``None`` when
+        the stream was empty or carried no parseable timestamp).
+    """
+    outcomes: dict[int, IndexOutcome | None] = {}
+    page_ids: set[int] = set()
+    latest_modified: datetime | None = None
+    for batch in _batched(page_stream, _WATERMARK_PAGE_BATCH_SIZE):
+        # list(): the batch is the unit of work and is dropped at the end of
+        # this iteration — at most one page of OCR bodies is resident at once.
+        documents = list(batch)
+        outcomes.update(
+            _index_documents(indexer, documents, index_state, worker_count)
+        )
+        page_ids.update(doc["id"] for doc in documents)
+        latest_modified = _fold_latest_modified(latest_modified, documents)
+        log.info("reconcile.page_batch_indexed", batch_size=len(documents))
+    return outcomes, page_ids, latest_modified
 
 
 def _index_documents(
@@ -258,16 +334,17 @@ def _index_one(
 
 
 def _advance_watermark(
-    store_writer: StoreWriter, documents: list[PaperlessDocument]
+    store_writer: StoreWriter, latest: datetime | None
 ) -> None:
-    """Advance the watermark to ``max(modified) - OVERLAP_MARGIN``.
+    """Advance the watermark to ``latest - OVERLAP_MARGIN``.
 
-    Only the documents whose ``modified`` field parses as an ISO-8601 timestamp
-    contribute to the maximum; an unparseable value is logged and skipped
-    rather than crashing the cycle.  When no document yields a parseable
-    timestamp the watermark is left unchanged.
+    *latest* is the running maximum of the watermark-page documents' parseable
+    ``modified`` timestamps, folded batch by batch as the page stream was
+    consumed (see :func:`_fold_latest_modified`).  An unparseable value was
+    logged and skipped during that fold rather than crashing the cycle.  When
+    *latest* is ``None`` — no page document yielded a parseable timestamp — the
+    watermark is left unchanged.
     """
-    latest = _latest_modified(documents)
     if latest is None:
         log.warning("reconcile.watermark_no_parseable_modified")
         return
@@ -346,17 +423,21 @@ def _to_taxonomy_entries(
     return entries
 
 
-def _latest_modified(documents: list[PaperlessDocument]) -> datetime | None:
-    """Return the newest parseable ``modified`` timestamp across *documents*.
+def _fold_latest_modified(
+    latest: datetime | None, documents: list[PaperlessDocument]
+) -> datetime | None:
+    """Fold a batch's ``modified`` timestamps into a running maximum.
 
-    Each ``modified`` value is run through
+    Folds the newest parseable ``modified`` timestamp across *documents* into
+    *latest* (the running maximum carried across batches), so the watermark's
+    maximum is computed without ever holding more than one batch of documents
+    in memory.  Each ``modified`` value is run through
     :func:`common.clock.parse_paperless_timestamp` — the shared Paperless-
-    timestamp normaliser — so the maximum is computed over UTC-aware datetimes.
-    Returns ``None`` when no document carries a parseable ``modified`` value;
-    an unparseable value is logged and skipped rather than aborting the
-    watermark advance.
+    timestamp normaliser — so the maximum is over UTC-aware datetimes.  An
+    unparseable value is logged and skipped rather than aborting the watermark
+    advance; when neither *latest* nor any document carries a parseable value
+    the result is ``None`` and the watermark is left unchanged by the caller.
     """
-    latest: datetime | None = None
     for doc in documents:
         raw = doc.get("modified")
         if not raw:
@@ -372,3 +453,20 @@ def _latest_modified(documents: list[PaperlessDocument]) -> datetime | None:
         if latest is None or parsed > latest:
             latest = parsed
     return latest
+
+
+def _batched(
+    items: Iterable[_T], batch_size: int
+) -> Iterator[tuple[_T, ...]]:
+    """Yield *items* in tuples of at most *batch_size*, lazily.
+
+    A 3.11-compatible stand-in for :func:`itertools.batched` (3.12+).  The
+    source iterable is consumed lazily — one batch is pulled, yielded, and only
+    when the caller asks for the next is the following batch paged — which is
+    what keeps the reconciler's peak memory at O(one batch) rather than
+    O(whole archive).  The final batch may be shorter; an empty source yields
+    nothing.
+    """
+    iterator = iter(items)
+    while batch := tuple(itertools.islice(iterator, batch_size)):
+        yield batch

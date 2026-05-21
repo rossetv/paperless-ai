@@ -341,3 +341,111 @@ class TestIncrementalSyncIsolatesFailures:
 
         # The watermark is exactly where it started.
         assert store_writer._meta["modified_watermark"] == watermark
+
+
+# ---------------------------------------------------------------------------
+# incremental_sync — the watermark page is streamed, not materialised
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalSyncStreamsThePageStream:
+    """The watermark page is consumed in batches, not materialised whole.
+
+    Regression: ``run_incremental_sync`` used to wrap the lazy
+    ``iter_all_documents`` generator in ``list()``, materialising the entire
+    OCR corpus — every document's full ``content`` body — into RAM at once.  On
+    a first-run backfill (watermark ``None`` → no server filter) that pulled the
+    whole archive into memory and OOM-killed the daemon host.  The sync must now
+    pull one ``page_size`` batch, index it, drop it, then pull the next — so
+    indexing interleaves with paging and memory is O(one batch).
+    """
+
+    def test_indexing_interleaves_with_paging(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Indexing of an early batch begins before the whole stream is paged.
+
+        The document source is a real generator that records, at each ``yield``,
+        how many documents the worker has already indexed.  With the old
+        ``list()`` materialisation the generator is fully drained before a
+        single ``index_document`` call fires, so every recorded count is 0.
+        With batched streaming the first batch is indexed before the tail of
+        the stream is paged, so a later ``yield`` sees a non-zero count.
+        """
+        # Two full batches plus one — enough that the first batch is indexed
+        # and dropped before the generator is exhausted.
+        from indexer.reconciler._incremental import _WATERMARK_PAGE_BATCH_SIZE
+
+        total = _WATERMARK_PAGE_BATCH_SIZE * 2 + 1
+        indexed_count = 0
+        # Index calls recorded at each yield point of the document generator.
+        counts_at_yield: list[int] = []
+
+        def _index_document(
+            _self: object, doc: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            nonlocal indexed_count
+            indexed_count += 1
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        def _document_stream(**kwargs: object):
+            for doc_id in range(1, total + 1):
+                counts_at_yield.append(indexed_count)
+                yield make_paperless_document(doc_id=doc_id)
+
+        paperless = MagicMock()
+        paperless.iter_all_documents.side_effect = _document_stream
+        paperless.list_correspondents.return_value = []
+        paperless.list_document_types.return_value = []
+        paperless.list_tags.return_value = []
+        paperless.document_exists.return_value = False
+        store_writer = make_reconciler_store_writer()
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        assert report.indexed == total
+        # The decisive assertion: by the time the final document is yielded the
+        # worker has already indexed at least the first batch.  Under the old
+        # ``list()`` implementation every count is 0 — the whole stream is
+        # drained before indexing starts — and this fails.
+        assert counts_at_yield[-1] >= _WATERMARK_PAGE_BATCH_SIZE
+
+    def test_retry_documents_reuse_the_batched_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Out-of-band retry documents are indexed and counted like page docs.
+
+        After streaming the watermark page the sync still fetches and indexes
+        every previously-failed document the page did not cover — the streaming
+        refactor must not regress that out-of-band retry path.
+        """
+        # The watermark page holds doc 1; doc 2 is a previously-failed retry.
+        paperless = make_reconciler_paperless(
+            documents=[make_paperless_document(doc_id=1)]
+        )
+        paperless.document_exists.return_value = True
+        paperless.get_document.return_value = make_paperless_document(doc_id=2)
+        store_writer = make_reconciler_store_writer()
+        store_writer._meta["failed_documents"] = '{"2": 1}'
+
+        indexed_ids: list[int] = []
+
+        def _index_document(
+            _self: object, doc: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            indexed_ids.append(doc["id"])
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        # Both the page document and the out-of-band retry were indexed.
+        assert sorted(indexed_ids) == [1, 2]
+        assert report.indexed == 2
