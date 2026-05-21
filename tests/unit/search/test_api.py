@@ -370,6 +370,40 @@ def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
     mock_uvicorn.assert_not_called()
 
 
+def test_main_initialises_the_llm_concurrency_limiter() -> None:
+    """main() must call llm_limiter.init() before serving requests.
+
+    The limiter is a module-global singleton that raises RuntimeError if
+    acquire() is called before init().  main() inlines the bootstrap sequence
+    from common.bootstrap.bootstrap_daemon; this test fails if the
+    llm_limiter.init() step is dropped (regression: the search server 500ed on
+    every /api/search query in production because main() omitted it — the
+    planner acquires the limiter on the first LLM call).
+    """
+    from search.api import main
+
+    valid_settings = MagicMock()
+    valid_settings.SEARCH_API_KEY = "a-real-api-key"
+    valid_settings.LLM_MAX_CONCURRENT = 4
+
+    settings_stub = MagicMock()
+    settings_stub.from_environment.return_value = valid_settings
+
+    with (
+        patch("common.config.Settings", settings_stub),
+        patch("common.logging_config.configure_logging"),
+        patch("common.library_setup.setup_libraries"),
+        patch("common.shutdown.register_signal_handlers"),
+        patch("common.concurrency.llm_limiter") as mock_limiter,
+        patch("search.api.create_app"),
+        patch("search.api.uvicorn.run"),
+    ):
+        main()
+
+    # The limiter is initialised with the configured concurrency bound.
+    mock_limiter.init.assert_called_once_with(4)
+
+
 # ---------------------------------------------------------------------------
 # MINOR 2 regression — over-length query returns 422
 # ---------------------------------------------------------------------------

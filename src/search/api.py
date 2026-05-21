@@ -235,6 +235,7 @@ def main() -> None:
     Serving the operator's personal document archive without authentication
     is a data-breach one misconfiguration away (spec §9.2).
     """
+    from common.concurrency import llm_limiter
     from common.config import Settings
     from common.library_setup import setup_libraries
     from common.logging_config import configure_logging
@@ -255,6 +256,14 @@ def main() -> None:
             "SEARCH_API_KEY in the environment."
         )
         sys.exit(1)
+
+    # Initialise the LLM concurrency limiter — the final bootstrap step from
+    # common.bootstrap.bootstrap_daemon.  The planner and synthesiser acquire
+    # it on every query and it raises RuntimeError if used before init().  The
+    # search server inlines the boot sequence rather than calling
+    # bootstrap_daemon (it needs no Paperless preflight or stale-lock
+    # recovery), so this step must be kept in step with bootstrap_daemon.
+    llm_limiter.init(settings.LLM_MAX_CONCURRENT)
 
     app = create_app(settings)
 
