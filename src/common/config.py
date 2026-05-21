@@ -135,7 +135,7 @@ def _resolve_llm_provider() -> Literal["openai", "ollama"]:
     provider = os.getenv("LLM_PROVIDER", "openai")
     if provider not in ("openai", "ollama"):
         raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
-    # Validated above; narrow from str to Literal.
+    # rationale: validated above; mypy cannot narrow `str` → `Literal["openai","ollama"]`.
     return provider  # type: ignore[return-value]
 
 
@@ -144,7 +144,7 @@ def _resolve_log_format() -> Literal["json", "console"]:
     log_format = os.getenv("LOG_FORMAT", "console")
     if log_format not in ("json", "console"):
         raise ValueError("LOG_FORMAT must be 'json' or 'console'")
-    # Validated above; narrow from str to Literal.
+    # rationale: validated above; mypy cannot narrow `str` → `Literal["json","console"]`.
     return log_format  # type: ignore[return-value]
 
 

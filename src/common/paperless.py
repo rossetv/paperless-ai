@@ -280,10 +280,15 @@ class PaperlessClient:
         """
         payload: dict[str, object] = {}
         for key, api_field in self._METADATA_FIELDS.items():
+            # rationale: TypedDict.get() requires a Literal key; the loop variable
+            # `key` is typed as `str` so mypy cannot prove it is Literal["tags"|…].
             value = kwargs.get(key)  # type: ignore[literal-required]
             if value is None:
                 continue
             if key == "tags":
+                # rationale: `value` is `int | str | list[int] | None` from the
+                # TypedDict union; mypy cannot narrow to Iterable[int] here even
+                # though the runtime branch guarantees it when key == "tags".
                 value = list(value)  # type: ignore[call-overload]
             payload[api_field] = value
 

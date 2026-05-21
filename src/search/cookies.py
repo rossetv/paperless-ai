@@ -12,7 +12,7 @@ Depends on: starlette/fastapi Response, search.auth, common.config.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 from search.auth import (
     SESSION_COOKIE_NAME,
@@ -50,9 +50,9 @@ def set_session_cookie(
 
     Delegates every cookie attribute to :func:`search.auth.cookie_attributes`
     so that function is the single source of truth for HttpOnly, Secure,
-    SameSite, Path, and Max-Age.  Explicit keyword arguments (rather than a
-    ``**`` splat) keep mypy happy against ``Response.set_cookie``'s typed
-    signature.
+    SameSite, Path, and Max-Age.  Each value is extracted individually with an
+    explicit cast so mypy can verify the types match ``Response.set_cookie``'s
+    signature precisely — no ``# type: ignore`` required.
 
     Args:
         response: The response object to set the cookie on.
@@ -61,12 +61,29 @@ def set_session_cookie(
             ``SEARCH_SESSION_TTL``.
     """
     attrs = cookie_attributes(settings)
+    # The dict is keyed to match Response.set_cookie exactly; each value is
+    # narrowed to the concrete type that key always carries (see
+    # search.auth.cookie_attributes for the canonical definitions).
+    # cast() is used because the return type is dict[str, object] — the values
+    # are always the types below, but mypy cannot prove it from the signature.
+    max_age: int = cast(int, attrs["max_age"])
+    path: str = cast(str, attrs["path"])
+    httponly: bool = cast(bool, attrs["httponly"])
+    secure: bool = cast(bool, attrs["secure"])
+    # rationale: cookie_attributes() always returns _COOKIE_SAMESITE ("strict"),
+    # a Literal["strict"] constant — but the dict value type is `object`, so
+    # mypy cannot narrow it without a cast. A TypedDict return on
+    # cookie_attributes() would remove the need, but exports an extra public
+    # type from search.auth that no other caller requires.
+    samesite: Literal["strict", "lax", "none"] = cast(
+        Literal["strict", "lax", "none"], attrs["samesite"]
+    )
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        max_age=attrs["max_age"],  # type: ignore[arg-type]
-        path=attrs["path"],  # type: ignore[arg-type]
-        httponly=attrs["httponly"],  # type: ignore[arg-type]
-        secure=attrs["secure"],  # type: ignore[arg-type]
-        samesite=attrs["samesite"],  # type: ignore[arg-type]
+        max_age=max_age,
+        path=path,
+        httponly=httponly,
+        secure=secure,
+        samesite=samesite,
     )

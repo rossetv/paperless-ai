@@ -20,7 +20,8 @@ import sqlite3
 import threading
 from collections.abc import Sequence
 
-import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped
+# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import StoreError
 from store.models import ChunkHit, SearchFilters
