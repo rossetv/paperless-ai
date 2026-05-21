@@ -1,4 +1,6 @@
+import React from 'react';
 import { cn } from '../../../lib/cn';
+import { FormField } from '../FormField/FormField';
 import styles from './Input.module.css';
 
 export interface InputProps {
@@ -34,10 +36,10 @@ export interface InputProps {
  * Generic text input primitive.
  *
  * Renders a <label> + <input> pair, correctly associated via the `id` prop.
- * Validation errors appear below the input and set aria-invalid for
- * assistive technology.
+ * The label, the field wrapper, and the validation-error region come from the
+ * shared `FormField` scaffolding; this component only owns the <input> itself.
  *
- * Styled as the Filter/Search button style from DESIGN.md §4 — 11px radius,
+ * Styled as the Filter/Search field style from DESIGN.md §4 — 11px radius,
  * light background, accent focus ring.
  */
 export function Input({
@@ -55,38 +57,25 @@ export function Input({
   onBlur,
   className,
 }: InputProps): React.ReactElement {
-  const hasError = error !== undefined && error !== '';
-  const errorId = hasError ? `${id}-error` : undefined;
-
-  const wrapperClasses = cn(styles['wrapper'], className);
-
   return (
-    <div className={wrapperClasses}>
-      {label !== undefined && (
-        <label htmlFor={id} className={styles['label']}>
-          {label}
-        </label>
+    <FormField id={id} label={label} error={error} className={className}>
+      {({ hasError, errorId }) => (
+        <input
+          id={id}
+          type={type}
+          name={name}
+          value={value}
+          placeholder={placeholder}
+          disabled={disabled}
+          required={required}
+          aria-invalid={hasError ? 'true' : undefined}
+          aria-describedby={errorId}
+          onChange={onChange}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          className={cn(styles['input'], hasError && styles['input-error'])}
+        />
       )}
-      <input
-        id={id}
-        type={type}
-        name={name}
-        value={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        required={required}
-        aria-invalid={hasError ? 'true' : undefined}
-        aria-describedby={errorId}
-        onChange={onChange}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        className={cn(styles['input'], hasError ? styles['input-error'] : undefined)}
-      />
-      {hasError && (
-        <span id={errorId} className={styles['error-message']} role="alert">
-          {error}
-        </span>
-      )}
-    </div>
+    </FormField>
   );
 }

@@ -1,66 +1,19 @@
 /*
  * Input primitive — CSS Module.
  *
- * All values come exclusively from design tokens (var(--…)).
+ * The wrapper, label, and error-message styling come from the shared
+ * FormField scaffolding (FormField.module.css); this module owns only the
+ * <input> element itself, which composes the shared input shell.
  *
- * Styled after DESIGN.md §4 "Filter / Search Button":
- * --radius-comfortable (11px), light background, 2px accent focus ring.
- * This is the canonical Apple search/filter input style.
+ * All values come exclusively from design tokens (var(--…)).
  */
 
-.wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-.label {
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-body-emphasis);
-  color: var(--colour-text-primary);
-  letter-spacing: var(--letter-spacing-caption);
-  line-height: var(--line-height-caption);
-}
-
 .input {
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
-  line-height: var(--line-height-body);
-  letter-spacing: var(--letter-spacing-body);
-  color: var(--colour-text-primary);
-  background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border);
-  border-radius: var(--radius-comfortable);
+  composes: control from '../FormField/FormField.module.css';
   padding: var(--spacing-6) var(--spacing-10);
-  width: 100%;
-  box-sizing: border-box;
-  transition:
-    border-color var(--duration-standard) var(--easing-standard),
-    box-shadow var(--duration-standard) var(--easing-standard);
 }
 
-.input:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.input:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
-}
-
-/* Error state — border colour changes; aria-invalid is set in the component */
+/* Error state — border colour changes; aria-invalid is set in the component. */
 .input-error {
-  border-color: var(--colour-accent);
-}
-
-.error-message {
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  font-weight: var(--font-weight-micro);
-  line-height: var(--line-height-micro);
-  letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-accent);
+  composes: control-error from '../FormField/FormField.module.css';
 }

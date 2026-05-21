@@ -1,63 +1,41 @@
 /*
  * Select pattern — CSS Module.
  *
- * Custom accessible dropdown styled in the Apple Filter/Search Button style
- * from DESIGN.md §4: --radius-comfortable (11 px), light background,
- * accent focus ring.
+ * Custom accessible dropdown styled in the Apple Filter/Search field style
+ * from DESIGN.md §4. The field wrapper, label, and trigger shell come from
+ * the shared FormField scaffolding via `composes` — the trigger only adds the
+ * flexbox layout the shared shell does not cover. Select keeps its own markup
+ * (the label is a <span>, not a <label>, because the ARIA combobox trigger is
+ * a <button>) but shares all of FormField's styling.
  *
  * The listbox uses --radius-standard (8 px) and --shadow-card for elevation,
  * consistent with the Apple card pattern.
  * All values come exclusively from design tokens.
  */
 
+/* Field wrapper — the shared column field, made a positioning context so the
+   absolutely-positioned listbox anchors to it. */
 .select {
+  composes: field from '../../primitives/FormField/FormField.module.css';
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
 }
 
+/* Label — the shared field label. */
 .label {
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-body-emphasis);
-  color: var(--colour-text-primary);
-  letter-spacing: var(--letter-spacing-caption);
-  line-height: var(--line-height-caption);
+  composes: label from '../../primitives/FormField/FormField.module.css';
 }
 
+/* Trigger — the shared input shell plus the flex layout for the value and the
+   chevron. Focus-ring and disabled styling come with the composed shell. */
 .trigger {
+  composes: control from '../../primitives/FormField/FormField.module.css';
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-6);
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
-  line-height: var(--line-height-body);
-  letter-spacing: var(--letter-spacing-body);
-  color: var(--colour-text-primary);
-  background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border);
-  border-radius: var(--radius-comfortable);
   padding: var(--spacing-6) var(--spacing-10);
-  width: 100%;
-  box-sizing: border-box;
   cursor: pointer;
   text-align: left;
-  transition:
-    border-color var(--duration-standard) var(--easing-standard),
-    box-shadow var(--duration-standard) var(--easing-standard);
-}
-
-.trigger:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.trigger:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
 }
 
 .trigger-label {

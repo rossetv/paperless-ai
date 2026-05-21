@@ -1,6 +1,7 @@
 import React, { useId, useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
+import { FormField } from '../../primitives/FormField/FormField';
 import { cn } from '../../../lib/cn';
 import styles from './SearchField.module.css';
 
@@ -32,7 +33,8 @@ export interface SearchFieldProps {
  *
  * Styled using the Apple search-input style from DESIGN.md §4 — rounded field
  * with --radius-comfortable (11 px), a leading search icon, and an accessible
- * submit button. Composes the Icon and IconButton primitives.
+ * submit button. The label and field wrapper come from the shared `FormField`
+ * scaffolding; this component composes Icon, IconButton, and FormField.
  *
  * Fires onSubmit(value) on Enter keypress and on submit button click.
  * An empty value does not trigger a submission.
@@ -83,46 +85,36 @@ export function SearchField({
     }
   }
 
-  const wrapperClasses = cn(styles['search-field'], className);
-
   return (
-    <div className={wrapperClasses}>
-      {label !== undefined && (
-        <label htmlFor={inputId} className={styles['label']}>
-          {label}
-        </label>
-      )}
-      <div className={styles['input-wrapper']}>
-        {/* Leading decorative search icon — aria-hidden, communicates intent visually */}
-        <span className={styles['leading-icon']} aria-hidden="true">
-          <Icon name="search" size="small" />
-        </span>
-        <input
-          ref={inputRef}
-          id={inputId}
-          type="search"
-          role="searchbox"
-          placeholder={placeholder}
-          value={currentValue}
-          disabled={disabled}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          className={styles['input']}
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-        <span className={styles['trailing-button']}>
-          <IconButton
-            label="Search"
-            type="button"
-            disabled={disabled}
-            onClick={submit}
-          >
+    <FormField id={inputId} label={label} className={cn(styles['search-field'], className)}>
+      {() => (
+        <div className={styles['input-wrapper']}>
+          {/* Leading decorative search icon — aria-hidden, communicates intent visually */}
+          <span className={styles['leading-icon']} aria-hidden="true">
             <Icon name="search" size="small" />
-          </IconButton>
-        </span>
-      </div>
-    </div>
+          </span>
+          <input
+            ref={inputRef}
+            id={inputId}
+            type="search"
+            role="searchbox"
+            placeholder={placeholder}
+            value={currentValue}
+            disabled={disabled}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            className={styles['input']}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <span className={styles['trailing-button']}>
+            <IconButton label="Search" type="button" disabled={disabled} onClick={submit}>
+              <Icon name="search" size="small" />
+            </IconButton>
+          </span>
+        </div>
+      )}
+    </FormField>
   );
 }
