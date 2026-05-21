@@ -83,6 +83,10 @@ export class ApiError extends Error {
  * cookie is sent with every cross-origin same-site request. Because the
  * cookie is `HttpOnly` the JS bundle cannot read or forward the raw key —
  * the browser is the only entity that sees it.
+ *
+ * A 202/204 response carries no body — `request` resolves to `undefined`
+ * rather than attempting to parse one. An endpoint that returns no content
+ * is typed `request<void>`.
  */
 async function request<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -95,6 +99,11 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
       throw new Unauthenticated();
     }
     throw new ApiError(response.status);
+  }
+
+  // 202 Accepted / 204 No Content have no body to parse.
+  if (response.status === 202 || response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;
@@ -145,20 +154,10 @@ export async function getHealthz(): Promise<StatusResponse> {
 /**
  * POST /api/reconcile — trigger an immediate reconciliation cycle.
  *
- * Returns `undefined` on 202 Accepted; throws `ApiError` otherwise.
- * rationale: the 202 body is empty; callers only care whether it succeeded.
+ * Resolves on 202 Accepted; throws `Unauthenticated` on 401 and `ApiError`
+ * on any other non-2xx. Routes through the shared `request` wrapper, which
+ * skips body parsing for the empty 202 response.
  */
 export async function postReconcile(): Promise<void> {
-  const response = await fetch(`${BASE_URL}/api/reconcile`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Unauthenticated();
-    }
-    throw new ApiError(response.status);
-  }
-  // 202 Accepted — no body to parse.
+  return request<void>(`${BASE_URL}/api/reconcile`, { method: 'POST' });
 }

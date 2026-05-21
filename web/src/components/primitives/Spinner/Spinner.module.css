@@ -11,18 +11,8 @@
  * border colour for the track — matches the focus ring convention.
  */
 
-/* ── Visually hidden utility (for accessible label text) ── */
-.sr-only {
-  position: absolute;
-  width: var(--spacing-1);   /* 2 px — near-zero size */
-  height: var(--spacing-1);
-  padding: 0;
-  margin: calc(var(--spacing-1) * -1);
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
+/* The screen-reader label uses the canonical `.visually-hidden` utility in
+   styles/global.css — Spinner no longer carries its own copy. */
 
 /* ── Wrapper ── */
 .spinner {

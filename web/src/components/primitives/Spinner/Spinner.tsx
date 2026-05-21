@@ -31,16 +31,14 @@ export function Spinner({
   size = 'medium',
   className,
 }: SpinnerProps): React.ReactElement {
-  const classes = cn(
-    styles['spinner'],
-    styles[size],
-    className,
-  );
+  const classes = cn(styles['spinner'], styles[size], className);
 
   return (
     <span role="status" aria-label={label} className={classes}>
       <span className={styles['ring']} aria-hidden="true" />
-      <span className={styles['sr-only']}>{label}</span>
+      {/* Screen-reader label — the canonical `.visually-hidden` utility from
+          styles/global.css; there is one definition of the technique. */}
+      <span className="visually-hidden">{label}</span>
     </span>
   );
 }
