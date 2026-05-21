@@ -1,5 +1,6 @@
 import { cn } from '../../../lib/cn';
 import type { SpacingScale } from '../spacing';
+import gapStyles from '../gap.module.css';
 import styles from './Grid.module.css';
 
 /**
@@ -45,7 +46,7 @@ export function Grid({ columns, gap, children, className }: GridProps): React.Re
   const classes = cn(
     styles['grid'],
     styles[`columns-${columns}`],
-    gap !== undefined ? styles[`gap-${gap}`] : undefined,
+    gap !== undefined ? gapStyles[`gap-${gap}`] : undefined,
     className,
   );
 

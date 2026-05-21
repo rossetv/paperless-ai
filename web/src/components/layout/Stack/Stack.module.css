@@ -25,64 +25,6 @@
   flex-direction: row;
 }
 
-/* ── Gap — composed from the shared layout gap module so Stack and Grid
-   draw the spacing-token scale from one source (no duplicate rules). ── */
-.gap-1 {
-  composes: gap-1 from '../gap.module.css';
-}
-
-.gap-2 {
-  composes: gap-2 from '../gap.module.css';
-}
-
-.gap-3 {
-  composes: gap-3 from '../gap.module.css';
-}
-
-.gap-4 {
-  composes: gap-4 from '../gap.module.css';
-}
-
-.gap-5 {
-  composes: gap-5 from '../gap.module.css';
-}
-
-.gap-6 {
-  composes: gap-6 from '../gap.module.css';
-}
-
-.gap-7 {
-  composes: gap-7 from '../gap.module.css';
-}
-
-.gap-8 {
-  composes: gap-8 from '../gap.module.css';
-}
-
-.gap-9 {
-  composes: gap-9 from '../gap.module.css';
-}
-
-.gap-10 {
-  composes: gap-10 from '../gap.module.css';
-}
-
-.gap-11 {
-  composes: gap-11 from '../gap.module.css';
-}
-
-.gap-12 {
-  composes: gap-12 from '../gap.module.css';
-}
-
-.gap-13 {
-  composes: gap-13 from '../gap.module.css';
-}
-
-.gap-14 {
-  composes: gap-14 from '../gap.module.css';
-}
-
 /* ── Alignment (cross-axis) ── */
 .align-start    { align-items: flex-start; }
 .align-center   { align-items: center;     }

@@ -1,5 +1,6 @@
 import { cn } from '../../../lib/cn';
 import type { SpacingScale } from '../spacing';
+import gapStyles from '../gap.module.css';
 import styles from './Stack.module.css';
 
 /** Flex direction of the stack. */
@@ -59,7 +60,7 @@ export function Stack({
   const classes = cn(
     styles['stack'],
     styles[direction],
-    gap !== undefined ? styles[`gap-${gap}`] : undefined,
+    gap !== undefined ? gapStyles[`gap-${gap}`] : undefined,
     align !== undefined ? styles[`align-${align}`] : undefined,
     justify !== undefined ? styles[`justify-${justify}`] : undefined,
     wrap ? styles['wrap'] : styles['nowrap'],
