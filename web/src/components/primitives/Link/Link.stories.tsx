@@ -65,7 +65,7 @@ export const External: Story = {
 
 export const AllVariants: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-14)' }}>
       <Link href="#">Default link</Link>
       <Link href="#" variant="inline">Inline link</Link>
       <div style={{ background: 'var(--colour-surface-dark)', padding: 'var(--spacing-14)' }}>

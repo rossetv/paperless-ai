@@ -40,7 +40,7 @@ export const CustomLabel: Story = {
 
 export const AllSizes: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-14)', alignItems: 'center' }}>
       <Spinner size="small" label="Small spinner" />
       <Spinner size="medium" label="Medium spinner" />
       <Spinner size="large" label="Large spinner" />

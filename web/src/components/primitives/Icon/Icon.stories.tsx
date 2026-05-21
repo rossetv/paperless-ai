@@ -70,9 +70,9 @@ export const AllIcons: StoryObj = {
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '1.5rem',
+          gap: 'var(--spacing-14)',
           alignItems: 'center',
-          padding: '1rem',
+          padding: 'var(--spacing-14)',
         }}
       >
         {names.map((name) => (
@@ -91,7 +91,7 @@ export const AllIcons: StoryObj = {
 
 export const Sizes: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-14)', alignItems: 'center' }}>
       <Icon name="search" size="small" />
       <Icon name="search" size="medium" />
       <Icon name="search" size="large" />

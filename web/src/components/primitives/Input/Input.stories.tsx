@@ -60,7 +60,7 @@ export const WithoutLabel: Story = {
 
 export const AllStates: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '320px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-14)', width: 'var(--width-empty-state)' }}>
       <Input id="normal" label="Normal" placeholder="Enter text…" />
       <Input id="disabled" label="Disabled" placeholder="Disabled" disabled />
       <Input id="error" label="With error" value="bad" error="This field is required." />

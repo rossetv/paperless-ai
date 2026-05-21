@@ -48,7 +48,7 @@ export const LongContent: Story = {
 
 export const MultipleTooltips: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '1rem' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-14)' }}>
       <Tooltip content="Add filter">
         <Button>Filter</Button>
       </Tooltip>

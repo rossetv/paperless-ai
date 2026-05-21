@@ -54,7 +54,7 @@ export const Disabled: Story = {
 
 export const AllVariants: StoryObj = {
   render: () => (
-    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 'var(--spacing-14)', alignItems: 'center' }}>
       <Button variant="primary">Primary</Button>
       <Button variant="secondary">Secondary</Button>
       <Button size="small">Small</Button>
