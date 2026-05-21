@@ -36,6 +36,7 @@ def _iter_docs_to_ocr(list_client: PaperlessClient, settings: Settings) -> Itera
 
 
 def main() -> None:
+    """Bootstrap and run the OCR daemon until shutdown is requested."""
     result = bootstrap_daemon(
         get_processing_tag_id=lambda s: s.OCR_PROCESSING_TAG_ID,
         get_pre_tag_id=lambda s: s.PRE_TAG_ID,

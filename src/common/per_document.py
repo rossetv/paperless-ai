@@ -10,7 +10,8 @@ collapses to a single call.
 
 from __future__ import annotations
 
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from .config import Settings
 from .paperless import PaperlessClient
