@@ -53,18 +53,26 @@ describe('useFocusTrap', () => {
 
   it('wraps focus to the first element when Tab is pressed on the last', async () => {
     render(<TrapHarness isOpen onClose={vi.fn()} />);
+    const first = screen.getByRole('button', { name: 'first' });
     const last = screen.getByRole('button', { name: 'last' });
+    // Wait for the hook's rAF auto-focus to settle before moving focus to
+    // `last`; otherwise it can fire mid-interaction and clobber the result.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(first);
+    });
     last.focus();
     await userEvent.keyboard('{Tab}');
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'first' }),
-    );
+    expect(document.activeElement).toBe(first);
   });
 
   it('wraps focus to the last element when Shift+Tab is pressed on the first', async () => {
     render(<TrapHarness isOpen onClose={vi.fn()} />);
     const first = screen.getByRole('button', { name: 'first' });
-    first.focus();
+    // Wait for the hook's rAF auto-focus to settle before simulating input;
+    // otherwise it can fire mid-interaction and clobber the wrapped focus.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(first);
+    });
     await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
     expect(document.activeElement).toBe(
       screen.getByRole('button', { name: 'last' }),
