@@ -5,9 +5,9 @@
  * sees `LoginPage`; when true they see `SearchPage`. There is currently only
  * one route (`/`) — new pages extend this table.
  *
- * Intentionally exempt from the `eslint-plugin-boundaries` layer rules (see
- * `boundaries/ignore` in eslint.config.js) because the route table is the
- * integration point that knowingly imports from multiple layers.
+ * Classified as the `app` element type in `eslint-plugin-boundaries`; its
+ * cross-layer imports (pages, features, hooks) are boundary-checked against
+ * the `app` row of the allow matrix.
  */
 
 import React from 'react';
