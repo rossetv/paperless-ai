@@ -58,6 +58,9 @@ def _assemble_chunks(
     window.  When the next paragraph would overflow ``chunk_size``, the window
     is emitted and a new one begins from the last ``overlap`` characters of the
     previous chunk.  Paragraphs larger than ``chunk_size`` are sliced directly.
+    A paragraph that fits ``chunk_size`` alone but not alongside the carried-over
+    overlap prefix is placed in a fresh window with the overlap dropped — the
+    one bounded resolution; re-emitting the overlap prefix would loop forever.
 
     Args:
         paragraphs: Ordered list of ``(page_hint, text)`` pairs from Pass 1.
@@ -72,6 +75,12 @@ def _assemble_chunks(
     overlap_prefix: str = ""
     window_page: int | None = None
     window_text: str = ""
+    # True once a real paragraph has been added to the current window — as
+    # opposed to a window holding only the overlap prefix carried over from the
+    # previous chunk.  The distinction is load-bearing: a paragraph that fits
+    # chunk_size alone but not alongside the overlap prefix must drop the
+    # overlap rather than re-emit it forever (an unbounded loop otherwise).
+    window_has_para: bool = False
     prev_chunk_page: int | None = None
 
     def _emit(text: str, page: int | None) -> TextChunk:
@@ -90,31 +99,45 @@ def _assemble_chunks(
 
         if len(candidate) <= chunk_size:
             window_text = candidate
+            window_has_para = True
             if window_page is None and para_page is not None:
                 window_page = para_page
             paragraph_idx += 1
+        elif window_has_para:
+            # The window holds a real paragraph — emit it and retry this
+            # paragraph in a fresh window starting from the overlap tail.
+            prev_chunk_page = window_page
+            chunks.append(_emit(window_text, window_page))
+            overlap_prefix = window_text[-overlap:] if overlap > 0 else ""
+            window_text = ""
+            window_page = None
+            window_has_para = False
+        elif window_text:
+            # The window holds only the overlap prefix carried over from the
+            # previous chunk, and this paragraph does not fit alongside it.
+            # Drop the overlap so the paragraph gets a clean window — emitting
+            # the overlap prefix and retrying would loop forever, as the prefix
+            # never shrinks.  One overlap seam is lost; that is the correct,
+            # bounded resolution.  paragraph_idx is not advanced: the next
+            # iteration retries this paragraph in the now-empty window.
+            overlap_prefix = ""
+            window_text = ""
+            window_page = None
         else:
-            if window_text:
-                prev_chunk_page = window_page
-                chunks.append(_emit(window_text, window_page))
-                overlap_prefix = window_text[-overlap:] if overlap > 0 else ""
-                window_text = ""
-                window_page = None
-                # Retry this paragraph in the new window.
-            else:
-                # Paragraph exceeds chunk_size — slice it directly.
-                start = 0
-                while start < len(para_text):
-                    slice_text = para_text[start : start + chunk_size]
-                    prev_chunk_page = para_page
-                    chunks.append(_emit(slice_text, para_page))
-                    if start + chunk_size >= len(para_text):
-                        overlap_prefix = slice_text[-overlap:] if overlap > 0 else ""
-                        window_text = ""
-                        window_page = None
-                        break
-                    start += chunk_size - overlap
-                paragraph_idx += 1
+            # Truly empty window — the paragraph alone exceeds chunk_size, so
+            # slice it directly into chunk_size windows.
+            start = 0
+            while start < len(para_text):
+                slice_text = para_text[start : start + chunk_size]
+                prev_chunk_page = para_page
+                chunks.append(_emit(slice_text, para_page))
+                if start + chunk_size >= len(para_text):
+                    overlap_prefix = slice_text[-overlap:] if overlap > 0 else ""
+                    window_text = ""
+                    window_page = None
+                    break
+                start += chunk_size - overlap
+            paragraph_idx += 1
 
     if window_text:
         chunks.append(_emit(window_text, window_page))

@@ -242,3 +242,49 @@ class TestChunkTextChunkIndex:
     def test_single_chunk_index_is_zero(self) -> None:
         chunks = chunk_text("Short.", chunk_size=1000, overlap=100)
         assert chunks[0].chunk_index == 0
+
+
+class TestChunkTextOverlapPrefixOverflow:
+    """A paragraph that overflows only once the overlap prefix is prepended.
+
+    Regression: ``_assemble_chunks`` used to emit the carried-over overlap
+    prefix as a chunk and retry the paragraph without advancing whenever the
+    paragraph fit ``chunk_size`` alone but not alongside that prefix.  The
+    overlap prefix never shrinks, so the retry overflowed identically every
+    time — an infinite loop that grew the ``chunks`` list until the indexer
+    process was OOM-killed.  The fix drops the overlap for that one seam.
+    """
+
+    def test_paragraph_overflowing_only_with_overlap_terminates(self) -> None:
+        """The trigger case is chunked in bounded time, not looped on.
+
+        ``"A" * 20`` fills a 20-char chunk; its 10-char overlap tail plus the
+        ``"\\n\\n"`` separator plus ``"B" * 15`` is 27 chars — over chunk_size —
+        yet ``"B" * 15`` fits a chunk on its own.  That is the exact condition
+        that used to loop forever.
+        """
+        content = ("A" * 20) + "\n\n" + ("B" * 15)
+        chunks = chunk_text(content, chunk_size=20, overlap=10)
+        # Both paragraphs are captured intact, in order, with no runaway.
+        assert [c.text for c in chunks] == ["A" * 20, "B" * 15]
+        assert [c.chunk_index for c in chunks] == [0, 1]
+
+    def test_overflow_case_respects_chunk_size(self) -> None:
+        """Every emitted chunk still respects chunk_size on the trigger path."""
+        content = ("A" * 20) + "\n\n" + ("B" * 15)
+        chunks = chunk_text(content, chunk_size=20, overlap=10)
+        for chunk in chunks:
+            assert len(chunk.text) <= 20
+
+    def test_multiple_consecutive_trigger_paragraphs_terminate(self) -> None:
+        """Several back-to-back trigger paragraphs each resolve and advance."""
+        # Four paragraphs each in the (chunk_size - overlap - 2, chunk_size]
+        # band, so every one overflows when the overlap prefix is prepended.
+        content = "\n\n".join(letter * 18 for letter in "ABCD")
+        chunks = chunk_text(content, chunk_size=20, overlap=10)
+        assert [c.text for c in chunks] == [
+            "A" * 18,
+            "B" * 18,
+            "C" * 18,
+            "D" * 18,
+        ]
