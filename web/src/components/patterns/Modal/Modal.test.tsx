@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal } from './Modal';
 
@@ -99,12 +99,20 @@ describe('Modal', () => {
         <button type="button">Second</button>
       </Modal>,
     );
-    // The dialog contains: [close button, First, Second].
+    // The dialog contains: [close button, First, Second].  The focus trap
+    // moves focus to the first focusable element (the close button) on the
+    // next animation frame after opening — wait for that to settle before
+    // driving the keyboard, otherwise it can fire mid-interaction and clobber
+    // the wrapped focus.
+    const closeButton = screen.getByRole('button', { name: /close/i });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeButton);
+    });
+
     // Manually focus the last focusable element (Second) and fire a Tab
     // keydown — our document listener wraps focus to the first element.
     const second = screen.getByRole('button', { name: 'Second' });
     second.focus();
-    expect(document.activeElement).toBe(second);
 
     // Simulate Tab keydown. userEvent.keyboard fires on the active element
     // and the event bubbles to document; our listener intercepts it.
@@ -112,9 +120,11 @@ describe('Modal', () => {
 
     // Focus should have been wrapped to the first focusable element in the
     // dialog (the close button), not escaped to somewhere outside.
-    expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByRole('dialog')).toContainElement(
+      document.activeElement as HTMLElement,
+    );
     // Specifically: the close button should now be active.
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /close/i }));
+    expect(document.activeElement).toBe(closeButton);
   });
 
   it('restores focus to the previously focused element when closed', async () => {
@@ -149,7 +159,11 @@ describe('Modal', () => {
     // Modal is open — close it via Escape
     await userEvent.keyboard('{Escape}');
 
-    // Focus must be restored to the trigger button
-    expect(document.activeElement).toBe(trigger);
+    // Focus must be restored to the trigger button.  Wrapped in waitFor: the
+    // restore runs in the focus trap's effect cleanup as the modal unmounts,
+    // which can settle a tick after the Escape keypress resolves.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
   });
 });
