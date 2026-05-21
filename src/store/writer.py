@@ -20,7 +20,8 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
 
-import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped
+# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+import sqlite_vec  # type: ignore[import-untyped]
 import structlog
 
 from common.clock import utc_now_iso

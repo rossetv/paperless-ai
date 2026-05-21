@@ -86,6 +86,8 @@ def _get_usage_count(item: PaperlessItem) -> int:
     for key in ("document_count", "documents_count", "documents"):
         if key not in item:
             continue
+        # rationale: TypedDict key type is a union of the three string literals;
+        # mypy cannot prove that a runtime `str` variable is `Literal["…"]`.
         value = item[key]  # type: ignore[literal-required]
         if isinstance(value, int):
             return value

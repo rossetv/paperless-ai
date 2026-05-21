@@ -100,12 +100,11 @@ class OpenAIChatMixin:
     def _create_completion(self, **kwargs: object) -> ChatCompletion:
         client = _openai_holder.get()
         with llm_limiter.acquire():
+            # rationale: OpenAI SDK's create() is overloaded on `stream`; **kwargs:object
+            # cannot satisfy those overloads. Callers never pass stream=True, so the
+            # runtime return is always ChatCompletion; a tighter call-site type is impossible
+            # without replacing **kwargs with an explicit typed signature.
             return client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
-            # rationale: the OpenAI SDK's create() is overloaded on `stream`
-            # (False/True/bool) to return different types.  The generic
-            # **kwargs: object passthrough cannot satisfy those overloads, but
-            # callers always pass stream=False (or omit it), so the return is
-            # always ChatCompletion at runtime.  A blanket ignore is intentional
             # and narrowly scoped to this one call site.
 
     def _complete_with_model_fallback(

@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import sqlite3
 
-import sqlite_vec  # type: ignore[import-untyped]  # no stubs shipped with the package
+# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import run_migrations
 
