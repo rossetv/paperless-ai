@@ -46,6 +46,82 @@ class TextChunk:
     page_hint: int | None
 
 
+def _assemble_chunks(
+    paragraphs: list[tuple[int | None, str]],
+    *,
+    chunk_size: int,
+    overlap: int,
+) -> list[TextChunk]:
+    """Assemble (page, text) paragraph pairs into overlapping TextChunks.
+
+    Pass 2 of the chunking algorithm: paragraphs are accumulated into a running
+    window.  When the next paragraph would overflow ``chunk_size``, the window
+    is emitted and a new one begins from the last ``overlap`` characters of the
+    previous chunk.  Paragraphs larger than ``chunk_size`` are sliced directly.
+
+    Args:
+        paragraphs: Ordered list of ``(page_hint, text)`` pairs from Pass 1.
+        chunk_size: Maximum character length of each chunk.
+        overlap: Characters shared between the tail of chunk N and the start
+            of chunk N+1.
+
+    Returns:
+        Ordered list of :class:`TextChunk` instances.
+    """
+    chunks: list[TextChunk] = []
+    overlap_prefix: str = ""
+    window_page: int | None = None
+    window_text: str = ""
+    prev_chunk_page: int | None = None
+
+    def _emit(text: str, page: int | None) -> TextChunk:
+        return TextChunk(chunk_index=len(chunks), text=text, page_hint=page)
+
+    paragraph_idx = 0
+    while paragraph_idx < len(paragraphs):
+        para_page, para_text = paragraphs[paragraph_idx]
+
+        if window_text == "" and overlap_prefix:
+            window_text = overlap_prefix
+            window_page = prev_chunk_page
+
+        separator = "\n\n" if window_text else ""
+        candidate = window_text + separator + para_text
+
+        if len(candidate) <= chunk_size:
+            window_text = candidate
+            if window_page is None and para_page is not None:
+                window_page = para_page
+            paragraph_idx += 1
+        else:
+            if window_text:
+                prev_chunk_page = window_page
+                chunks.append(_emit(window_text, window_page))
+                overlap_prefix = window_text[-overlap:] if overlap > 0 else ""
+                window_text = ""
+                window_page = None
+                # Retry this paragraph in the new window.
+            else:
+                # Paragraph exceeds chunk_size — slice it directly.
+                start = 0
+                while start < len(para_text):
+                    slice_text = para_text[start : start + chunk_size]
+                    prev_chunk_page = para_page
+                    chunks.append(_emit(slice_text, para_page))
+                    if start + chunk_size >= len(para_text):
+                        overlap_prefix = slice_text[-overlap:] if overlap > 0 else ""
+                        window_text = ""
+                        window_page = None
+                        break
+                    start += chunk_size - overlap
+                paragraph_idx += 1
+
+    if window_text:
+        chunks.append(_emit(window_text, window_page))
+
+    return chunks
+
+
 def chunk_text(
     content: str,
     *,
@@ -84,7 +160,6 @@ def chunk_text(
     paragraphs: list[tuple[int | None, str]] = []
     current_page: int | None = None
     paragraph_lines: list[str] = []
-    # page number at the start of the current paragraph buffer
     paragraph_page: int | None = None
 
     def _flush_paragraph(
@@ -97,7 +172,6 @@ def chunk_text(
     for raw_line in content.splitlines():
         marker_match = _PAGE_MARKER_RE.match(raw_line)
         if marker_match:
-            # Flush the current paragraph before advancing the page counter.
             _flush_paragraph(paragraph_lines, paragraph_page, paragraphs)
             paragraph_lines = []
             current_page = int(marker_match.group(1))
@@ -105,97 +179,18 @@ def chunk_text(
             continue
 
         if raw_line.strip() == "":
-            # Blank line — paragraph boundary.
             _flush_paragraph(paragraph_lines, paragraph_page, paragraphs)
             paragraph_lines = []
             paragraph_page = current_page
         else:
             if not paragraph_lines:
-                # Record the page number at the start of this new paragraph.
                 paragraph_page = current_page
             paragraph_lines.append(raw_line)
 
-    # Flush any remaining paragraph.
     _flush_paragraph(paragraph_lines, paragraph_page, paragraphs)
 
     if not paragraphs:
         return []
 
     # --- Pass 2: assemble paragraphs into chunks.
-    chunks: list[TextChunk] = []
-
-    # The overlap tail carried forward from the previous chunk.
-    overlap_prefix: str = ""
-    # Page hint for the current window (set from the overlap tail's page, or
-    # the first paragraph added to this window).
-    window_page: int | None = None
-    window_text: str = ""
-
-    # When the overlap prefix is non-empty we need to initialise the window
-    # page from the previous chunk.  We track the previous chunk's page hint
-    # to propagate it into the overlap prefix of the next window.
-    prev_chunk_page: int | None = None
-
-    def _emit_chunk(text: str, page: int | None, index: int) -> TextChunk:
-        return TextChunk(chunk_index=index, text=text, page_hint=page)
-
-    paragraph_idx = 0
-    while paragraph_idx < len(paragraphs):
-        para_page, para_text = paragraphs[paragraph_idx]
-
-        # Start a new window from the overlap tail of the previous chunk.
-        if window_text == "" and overlap_prefix:
-            window_text = overlap_prefix
-            # The overlap tail was part of the previous chunk whose page hint
-            # we recorded; keep that page hint until a new paragraph with a
-            # different (non-None) page advances it.
-            window_page = prev_chunk_page
-
-        # Determine the separator between the current window content and the
-        # incoming paragraph (double newline for readability).
-        separator = "\n\n" if window_text else ""
-        candidate = window_text + separator + para_text
-
-        if len(candidate) <= chunk_size:
-            # Paragraph fits — add it to the current window.
-            window_text = candidate
-            if window_page is None and para_page is not None:
-                window_page = para_page
-            paragraph_idx += 1
-        else:
-            # Paragraph would overflow.
-            if window_text:
-                # Emit the current window as a chunk.
-                prev_chunk_page = window_page
-                chunks.append(_emit_chunk(window_text, window_page, len(chunks)))
-                overlap_prefix = window_text[-overlap:] if overlap > 0 else ""
-                window_text = ""
-                window_page = None
-                # Do NOT advance paragraph_idx — retry this paragraph in the
-                # new window.
-            else:
-                # The paragraph itself is larger than chunk_size; we must emit
-                # it in character-sized slices to honour the constraint.  Every
-                # slice carries the paragraph's own page hint.
-                start = 0
-                while start < len(para_text):
-                    slice_text = para_text[start : start + chunk_size]
-                    page_for_slice = para_page
-                    prev_chunk_page = page_for_slice
-                    chunks.append(
-                        _emit_chunk(slice_text, page_for_slice, len(chunks))
-                    )
-                    if start + chunk_size >= len(para_text):
-                        # Last slice — seed the overlap prefix for the next window.
-                        overlap_prefix = slice_text[-overlap:] if overlap > 0 else ""
-                        window_text = ""
-                        window_page = None
-                        break
-                    start += chunk_size - overlap
-                paragraph_idx += 1
-
-    # Emit any remaining window.
-    if window_text:
-        chunks.append(_emit_chunk(window_text, window_page, len(chunks)))
-
-    return chunks
+    return _assemble_chunks(paragraphs, chunk_size=chunk_size, overlap=overlap)
