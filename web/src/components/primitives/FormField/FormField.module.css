@@ -1,0 +1,79 @@
+/*
+ * Shared form-field scaffolding — CSS Module.
+ *
+ * Input, TextArea, SearchField, and Select each wrap a control in an
+ * identically-styled field: a column flex wrapper, a label, the 11px-radius
+ * light-background input shell, and (for the validated controls) an error
+ * message. Those rules lived four times. They live here once; each component
+ * pulls the classes it needs in via CSS Modules `composes`
+ * (CODE_GUIDELINES §1.3, §12.5).
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Field wrapper — label stacked above the control ── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* ── Label — the caption-scale text above a control ── */
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+  letter-spacing: var(--letter-spacing-caption);
+  line-height: var(--line-height-caption);
+}
+
+/* ── Input shell — the Apple Filter/Search field style (DESIGN.md §4):
+   11px radius, light background, hairline border. Shared by the <input>,
+   <textarea>, and the Select trigger button.
+
+   Padding is deliberately NOT set here: most controls use
+   `var(--spacing-6) var(--spacing-10)`, but SearchField needs asymmetric
+   padding for its leading icon and trailing button. Each consumer sets its
+   own padding so no cross-module cascade decides the winner. ── */
+.control {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  width: 100%;
+  box-sizing: border-box;
+  transition:
+    border-color var(--duration-standard) var(--easing-standard),
+    box-shadow var(--duration-standard) var(--easing-standard);
+}
+
+.control:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.control:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+/* ── Error state — the border colour changes; aria-invalid is set in JS. ── */
+.control-error {
+  border-color: var(--colour-accent);
+}
+
+/* ── Error message — the validation text shown below a control ── */
+.error-message {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-accent);
+}

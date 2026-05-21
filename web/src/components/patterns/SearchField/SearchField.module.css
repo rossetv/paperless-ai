@@ -1,11 +1,9 @@
 /*
  * SearchField pattern — CSS Module.
  *
- * Implements the Apple search-input style from DESIGN.md §4:
- * - --radius-comfortable rounded field
- * - Light --colour-button-light-bg background
- * - Leading search icon + trailing submit button
- * - --spacing-1 accent focus ring on the input
+ * The field wrapper and label come from the shared FormField scaffolding;
+ * the input composes the shared input shell and only overrides the padding
+ * to make room for the leading icon and trailing submit button.
  *
  * Design interpretation: the submit button uses the icon-button primitive
  * (Media Control style, circular) positioned at the trailing edge of the
@@ -13,20 +11,10 @@
  * All values come exclusively from design tokens.
  */
 
+/* Field wrapper — the shared column field, stretched to full width. */
 .search-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
+  composes: field from '../../primitives/FormField/FormField.module.css';
   width: 100%;
-}
-
-.label {
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-body-emphasis);
-  color: var(--colour-text-primary);
-  letter-spacing: var(--letter-spacing-caption);
-  line-height: var(--line-height-caption);
 }
 
 .input-wrapper {
@@ -44,24 +32,13 @@
   pointer-events: none;
 }
 
+/* The search input — shares the input shell, overriding only the padding to
+   leave room for the leading icon and the trailing submit button. */
 .input {
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
-  line-height: var(--line-height-body);
-  letter-spacing: var(--letter-spacing-body);
-  color: var(--colour-text-primary);
-  background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border);
-  border-radius: var(--radius-comfortable);
+  composes: control from '../../primitives/FormField/FormField.module.css';
 
   /* Pad left for the leading icon, right for the trailing button */
   padding: var(--spacing-6) var(--spacing-14) var(--spacing-6) var(--spacing-13);
-  width: 100%;
-  box-sizing: border-box;
-  transition:
-    border-color var(--duration-standard) var(--easing-standard),
-    box-shadow var(--duration-standard) var(--easing-standard);
 
   /* Remove the browser's default search-cancel button — the submit icon serves
      this interaction; a second cancel affordance clutters the field. */
@@ -71,16 +48,6 @@
 /* Remove WebKit search clear button */
 .input::-webkit-search-cancel-button {
   appearance: none;
-}
-
-.input:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.input:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
 }
 
 .trailing-button {

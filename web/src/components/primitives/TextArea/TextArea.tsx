@@ -1,4 +1,6 @@
+import React from 'react';
 import { cn } from '../../../lib/cn';
+import { FormField } from '../FormField/FormField';
 import styles from './TextArea.module.css';
 
 export interface TextAreaProps {
@@ -33,8 +35,10 @@ export interface TextAreaProps {
 /**
  * Generic multi-line text input primitive.
  *
- * Mirrors the structure of the Input primitive: <label> + <textarea> pair,
- * correctly associated via the `id` prop, with error display and aria-invalid.
+ * Mirrors the Input primitive: a <label> + <textarea> pair associated via the
+ * `id` prop. The label, the field wrapper, and the validation-error region
+ * come from the shared `FormField` scaffolding; this component owns only the
+ * <textarea> itself.
  *
  * Design tokens drive all visual values — no hardcoded sizes or colours.
  */
@@ -53,38 +57,25 @@ export function TextArea({
   onBlur,
   className,
 }: TextAreaProps): React.ReactElement {
-  const hasError = error !== undefined && error !== '';
-  const errorId = hasError ? `${id}-error` : undefined;
-
-  const wrapperClasses = cn(styles['wrapper'], className);
-
   return (
-    <div className={wrapperClasses}>
-      {label !== undefined && (
-        <label htmlFor={id} className={styles['label']}>
-          {label}
-        </label>
+    <FormField id={id} label={label} error={error} className={className}>
+      {({ hasError, errorId }) => (
+        <textarea
+          id={id}
+          name={name}
+          value={value}
+          placeholder={placeholder}
+          rows={rows}
+          disabled={disabled}
+          required={required}
+          aria-invalid={hasError ? 'true' : undefined}
+          aria-describedby={errorId}
+          onChange={onChange}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          className={cn(styles['textarea'], hasError && styles['textarea-error'])}
+        />
       )}
-      <textarea
-        id={id}
-        name={name}
-        value={value}
-        placeholder={placeholder}
-        rows={rows}
-        disabled={disabled}
-        required={required}
-        aria-invalid={hasError ? 'true' : undefined}
-        aria-describedby={errorId}
-        onChange={onChange}
-        onFocus={onFocus}
-        onBlur={onBlur}
-        className={cn(styles['textarea'], hasError ? styles['textarea-error'] : undefined)}
-      />
-      {hasError && (
-        <span id={errorId} className={styles['error-message']} role="alert">
-          {error}
-        </span>
-      )}
-    </div>
+    </FormField>
   );
 }
