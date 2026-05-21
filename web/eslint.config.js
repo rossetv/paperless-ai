@@ -102,14 +102,18 @@ export default [
       // The stack flows strictly downward. Within components/, the three tiers
       // also form a downward stack: patterns → layout → primitives → styles.
       //
-      //   app          → pages, features, api, hooks, styles
+      //   app          → pages, features, api, hooks, styles, lib
       //   pages        → features, components-layout, api, hooks  (NOT primitives, NOT patterns)
-      //   features     → any components-*, api, hooks, styles
-      //   patterns     → patterns, layout, primitives, styles
-      //   layout       → layout, primitives, styles
-      //   primitives   → primitives, styles
-      //   api / hooks  → leaves: nothing from application layers
-      //   styles       → nothing
+      //   features     → any components-*, api, hooks, styles, lib
+      //   patterns     → patterns, layout, primitives, hooks, styles, lib
+      //   layout       → layout, primitives, hooks, styles, lib
+      //   primitives   → primitives, hooks, styles, lib
+      //   api / hooks  → leaves: nothing from application layers (hooks/lib only)
+      //   styles / lib → nothing
+      //
+      // §12.3 names hooks/ "generic hooks importable by components, features,
+      // and pages" — so the component tiers may import hooks/, the same as the
+      // styles/ and lib/ leaves.
       //
       // A type may always import its own type (a primitive importing another
       // primitive, etc.) — that is intra-layer composition, not a boundary cross.
@@ -128,11 +132,16 @@ export default [
             // like styles/. Every layer above may import it.
             { from: 'lib', allow: [] },
 
-            // Component tiers — each may import lower tiers, styles, and lib.
-            { from: 'components-primitives', allow: ['components-primitives', 'styles', 'lib'] },
+            // Component tiers — each may import lower tiers, plus the
+            // cross-cutting leaves: hooks/ (§12.3 names hooks importable by
+            // components), styles/, and lib/.
+            {
+              from: 'components-primitives',
+              allow: ['components-primitives', 'hooks', 'styles', 'lib'],
+            },
             {
               from: 'components-layout',
-              allow: ['components-layout', 'components-primitives', 'styles', 'lib'],
+              allow: ['components-layout', 'components-primitives', 'hooks', 'styles', 'lib'],
             },
             {
               from: 'components-patterns',
@@ -140,6 +149,7 @@ export default [
                 'components-patterns',
                 'components-layout',
                 'components-primitives',
+                'hooks',
                 'styles',
                 'lib',
               ],
