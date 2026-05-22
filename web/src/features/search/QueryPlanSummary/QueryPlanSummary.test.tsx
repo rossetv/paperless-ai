@@ -3,54 +3,66 @@ import type { QueryPlan, SearchStats } from '../../../api/types';
 import { QueryPlanSummary } from './QueryPlanSummary';
 
 const plan: QueryPlan = {
-  semantic_queries: ['boiler warranty', 'heating system certificate'],
-  keyword_terms: ['boiler', 'warranty'],
-  sub_questions: ['When was the boiler installed?'],
+  semantic_queries: [
+    'Total annual energy payments to Npower in 2024',
+    'Direct debit schedule and upcoming collection date',
+  ],
+  keyword_terms: ['Npower', 'direct debit', '2024'],
+  sub_questions: [],
 };
 
-const stats: SearchStats = {
-  llm_calls: 2,
-  latency_ms: 1423,
-  refined: true,
-};
+const stats: SearchStats = { llm_calls: 3, latency_ms: 1842, refined: true };
 
 describe('QueryPlanSummary', () => {
-  it('renders the number of semantic queries searched', () => {
+  it('renders the summary heading', () => {
     render(<QueryPlanSummary plan={plan} stats={stats} />);
-    expect(screen.getByText(/2 queries searched/i)).toBeInTheDocument();
+    expect(screen.getByText(/how this answer was built/i)).toBeInTheDocument();
   });
 
-  it('renders the number of LLM calls', () => {
+  it('shows the semantic-query count', () => {
     render(<QueryPlanSummary plan={plan} stats={stats} />);
-    // "2 LLM calls" or similar
-    expect(screen.getByText(/llm/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 queries/i)).toBeInTheDocument();
   });
 
-  it('renders a refined indicator when stats.refined is true', () => {
+  it('shows the LLM call count', () => {
+    render(<QueryPlanSummary plan={plan} stats={stats} />);
+    expect(screen.getByText(/3 LLM calls/i)).toBeInTheDocument();
+  });
+
+  it('shows the latency in seconds', () => {
+    render(<QueryPlanSummary plan={plan} stats={stats} />);
+    expect(screen.getByText(/1\.84\s*s/i)).toBeInTheDocument();
+  });
+
+  it('shows the refined marker when the answer was refined', () => {
     render(<QueryPlanSummary plan={plan} stats={stats} />);
     expect(screen.getByText(/refined/i)).toBeInTheDocument();
   });
 
-  it('does not show a refined indicator when stats.refined is false', () => {
-    const unrefined = { ...stats, refined: false };
-    render(<QueryPlanSummary plan={plan} stats={unrefined} />);
+  it('omits the refined marker when not refined', () => {
+    render(
+      <QueryPlanSummary
+        plan={plan}
+        stats={{ ...stats, refined: false }}
+      />,
+    );
     expect(screen.queryByText(/refined/i)).not.toBeInTheDocument();
   });
 
-  it('renders the latency', () => {
+  it('lists every semantic query in the body', () => {
     render(<QueryPlanSummary plan={plan} stats={stats} />);
-    expect(screen.getByText(/1423/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Total annual energy payments to Npower in 2024'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Direct debit schedule and upcoming collection date'),
+    ).toBeInTheDocument();
   });
 
-  it('renders the sub-questions when present', () => {
+  it('lists every keyword term in the body', () => {
     render(<QueryPlanSummary plan={plan} stats={stats} />);
-    expect(screen.getByText(/When was the boiler installed/)).toBeInTheDocument();
-  });
-
-  it('renders gracefully when there are no sub-questions', () => {
-    const simplePlan: QueryPlan = { ...plan, sub_questions: [] };
-    render(<QueryPlanSummary plan={simplePlan} stats={stats} />);
-    // No crash; the latency and LLM call info still shows
-    expect(screen.getByText(/llm/i)).toBeInTheDocument();
+    expect(screen.getByText('Npower')).toBeInTheDocument();
+    expect(screen.getByText('direct debit')).toBeInTheDocument();
+    expect(screen.getByText('2024')).toBeInTheDocument();
   });
 });

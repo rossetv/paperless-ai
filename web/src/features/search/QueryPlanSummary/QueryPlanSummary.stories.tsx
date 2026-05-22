@@ -1,36 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import type { QueryPlan, SearchStats } from '../../../api/types';
 import { QueryPlanSummary } from './QueryPlanSummary';
-
-const basePlan: QueryPlan = {
-  semantic_queries: ['boiler warranty certificate'],
-  keyword_terms: ['boiler', 'warranty'],
-  sub_questions: [],
-};
-
-const refinedPlan: QueryPlan = {
-  semantic_queries: [
-    'boiler warranty certificate',
-    'central heating installation guarantee',
-  ],
-  keyword_terms: ['boiler', 'warranty', 'heating'],
-  sub_questions: [
-    'What is the boiler model number?',
-    'When was the boiler installed?',
-  ],
-};
-
-const baseStats: SearchStats = {
-  llm_calls: 1,
-  latency_ms: 342,
-  refined: false,
-};
-
-const refinedStats: SearchStats = {
-  llm_calls: 3,
-  latency_ms: 1087,
-  refined: true,
-};
 
 const meta = {
   title: 'Features/Search/QueryPlanSummary',
@@ -41,18 +10,28 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Simple single-query plan, no refinement. */
-export const Simple: Story = {
+export const Refined: Story = {
   args: {
-    plan: basePlan,
-    stats: baseStats,
+    plan: {
+      semantic_queries: [
+        'Total annual energy payments to Npower in 2024',
+        'Direct debit schedule and upcoming collection date',
+        'Tariff changes and price-cap revisions',
+      ],
+      keyword_terms: ['Npower', 'direct debit', '2024', 'price cap', 'Ofgem'],
+      sub_questions: [],
+    },
+    stats: { llm_calls: 3, latency_ms: 1842, refined: true },
   },
 };
 
-/** Refined plan — multiple semantic queries, sub-questions, refined badge shown. */
-export const Refined: Story = {
+export const NotRefined: Story = {
   args: {
-    plan: refinedPlan,
-    stats: refinedStats,
+    plan: {
+      semantic_queries: ['Single semantic query'],
+      keyword_terms: ['invoice'],
+      sub_questions: [],
+    },
+    stats: { llm_calls: 1, latency_ms: 640, refined: false },
   },
 };
