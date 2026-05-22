@@ -1,8 +1,10 @@
 import React from 'react';
+import { Disclosure } from '../../../components/primitives/Disclosure/Disclosure';
 import { Badge } from '../../../components/primitives/Badge/Badge';
-import { Icon } from '../../../components/primitives/Icon/Icon';
 import { Text } from '../../../components/primitives/Text/Text';
+import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Stack } from '../../../components/layout/Stack/Stack';
+import { Grid } from '../../../components/layout/Grid/Grid';
 import type { QueryPlan, SearchStats } from '../../../api/types';
 
 export interface QueryPlanSummaryProps {
@@ -13,53 +15,70 @@ export interface QueryPlanSummaryProps {
 }
 
 /**
- * Compact transparency line showing how the search was executed.
+ * Collapsible "how this answer was built" transparency panel.
  *
- * Surfaces: number of semantic queries, keyword terms, LLM call count,
- * latency, whether the answer was refined, and any sub-questions raised.
+ * Composes the `Disclosure` primitive: the summary row carries the headline
+ * plus a read-out (query count · LLM calls · latency · a "refined" marker
+ * when the pipeline ran a refinement pass); the body lists the semantic
+ * queries and the keyword terms in two columns.
  *
- * The purpose is to give power users confidence in the results and signal
- * when the pipeline took extra steps (refinement) or extra time.
- *
- * Composed from: Badge, Icon, Text, Stack.
- * No own CSS module (§12.5 — features layer is composition-only).
+ * Composed from: Disclosure, Badge, Text, Chip, Stack, Grid. No own CSS
+ * module (§12.5 — features layer is composition-only).
  */
-export function QueryPlanSummary({ plan, stats }: QueryPlanSummaryProps): React.ReactElement {
+export function QueryPlanSummary({
+  plan,
+  stats,
+}: QueryPlanSummaryProps): React.ReactElement {
   const queryCount = plan.semantic_queries.length;
+  const latencySeconds = (stats.latency_ms / 1000).toFixed(2);
+
+  const summary = (
+    <Stack direction="horizontal" gap={6} align="center" wrap>
+      <Text as="span" variant="caption-bold">
+        How this answer was built
+      </Text>
+      <Badge variant="neutral">
+        {queryCount} {queryCount === 1 ? 'query' : 'queries'}
+      </Badge>
+      <Badge variant="neutral">
+        {stats.llm_calls} LLM {stats.llm_calls === 1 ? 'call' : 'calls'}
+      </Badge>
+      <Badge variant="neutral">{latencySeconds}s</Badge>
+      {stats.refined && <Badge variant="accent">refined</Badge>}
+    </Stack>
+  );
 
   return (
-    <Stack direction="vertical" gap={4}>
-      {/* Primary stats line */}
-      <Stack direction="horizontal" gap={4} align="center" wrap>
-        <Icon name="info" size="small" label="Query plan" />
-
-        <Badge variant="neutral">
-          {queryCount} {queryCount === 1 ? 'query' : 'queries'} searched
-        </Badge>
-
-        <Badge variant="neutral">
-          {stats.llm_calls} LLM {stats.llm_calls === 1 ? 'call' : 'calls'}
-        </Badge>
-
-        <Badge variant="neutral">
-          {stats.latency_ms} ms
-        </Badge>
-
-        {stats.refined && (
-          <Badge variant="accent">refined</Badge>
-        )}
-      </Stack>
-
-      {/* Sub-questions raised by the planner */}
-      {plan.sub_questions.length > 0 && (
-        <Stack direction="vertical" gap={2}>
-          {plan.sub_questions.map((q, i) => (
-            <Text key={i} as="span" variant="caption">
-              {q}
-            </Text>
-          ))}
+    <Disclosure summary={summary} defaultOpen>
+      <Grid columns={2} gap={8}>
+        {/* Semantic queries — a numbered list */}
+        <Stack direction="vertical" gap={3}>
+          <Text as="span" variant="micro" tone="tertiary">
+            Semantic queries
+          </Text>
+          <ol>
+            {plan.semantic_queries.map((query, i) => (
+              <li key={i}>
+                <Text as="span" variant="caption">
+                  {query}
+                </Text>
+              </li>
+            ))}
+          </ol>
         </Stack>
-      )}
-    </Stack>
+
+        {/* Keyword terms — chips */}
+        <Stack direction="vertical" gap={3}>
+          <Text as="span" variant="micro" tone="tertiary">
+            Keyword terms
+          </Text>
+          <Stack direction="horizontal" gap={3} wrap>
+            {plan.keyword_terms.map((term, i) => (
+              <Chip key={i}>{term}</Chip>
+            ))}
+          </Stack>
+        </Stack>
+      </Grid>
+    </Disclosure>
   );
 }
