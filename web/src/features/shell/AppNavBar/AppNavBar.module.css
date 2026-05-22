@@ -1,0 +1,62 @@
+/*
+ * AppNavBar feature — CSS Module.
+ *
+ * Styles only the bits the layout NavBar does not own: the brand row
+ * (Brand mark + wordmark) and the nav-link appearance. The glass bar itself,
+ * its height and backdrop come from the layout NavBar.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Brand row — Brand mark beside the wordmark. ── */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-7);
+  color: var(--colour-text-on-dark);
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
+}
+
+.wordmark {
+  font-family: var(--font-text);
+  font-size: var(--font-size-nav);
+  font-weight: var(--font-weight-body-emphasis);
+  letter-spacing: var(--letter-spacing-micro);
+}
+
+.wordmark-dim {
+  font-weight: var(--font-weight-nav);
+  opacity: var(--opacity-disabled);
+}
+
+/* ── Nav links. ── */
+.link {
+  color: var(--colour-text-on-dark);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nav);
+  font-weight: var(--font-weight-nav);
+  text-decoration: none;
+  opacity: var(--opacity-disabled);
+  transition: opacity var(--duration-standard) var(--easing-standard);
+}
+
+.link:hover {
+  opacity: 1;
+}
+
+.link-active {
+  opacity: 1;
+  font-weight: var(--font-weight-body-emphasis);
+}
+
+.link:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
+}
