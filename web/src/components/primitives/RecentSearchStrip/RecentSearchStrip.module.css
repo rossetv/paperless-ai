@@ -1,0 +1,88 @@
+/*
+ * RecentSearchStrip primitive — CSS Module.
+ *
+ * A card listing the user's recent searches: a header, then rows of query +
+ * relative time + a chevron, each row a button. Two-column on wide viewports.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.strip {
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-large);
+  border: var(--spacing-1) solid var(--colour-border);
+  padding: var(--spacing-13) var(--spacing-14);
+}
+
+.heading {
+  margin: 0 0 var(--spacing-4);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/* Two-column row grid; collapses to one column on narrow viewports. */
+.rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--spacing-14);
+}
+
+@media (width <= 640px) {
+  .rows {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* One recent-search row — a full-width button. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  width: 100%;
+  padding: var(--spacing-8) 0;
+  background: none;
+  border: none;
+  border-top: var(--spacing-1) solid var(--colour-border);
+  cursor: pointer;
+  text-align: start;
+}
+
+/* The first row in each column has no top rule. */
+.row:nth-child(1),
+.row:nth-child(2) {
+  border-top: none;
+}
+
+.row:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+/* The query text — flexes to fill, truncates on overflow. */
+.query {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  color: var(--colour-text-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.time {
+  flex-shrink: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--colour-text-tertiary);
+}
