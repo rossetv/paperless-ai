@@ -1,11 +1,10 @@
 """The per-app account context for the search server.
 
-Wave 1's account endpoints and auth dependencies need three things at request
-time: where ``app.db`` lives, the in-memory first-run
-:class:`~search.setup.SetupState`, and the configured legacy
-``SEARCH_API_KEY``. Bundling them into one :class:`AppState` — created once by
-the app factory and stashed on ``app.state`` — keeps every route signature
-free of plumbing arguments.
+The account endpoints and auth dependencies need two things at request time:
+where ``app.db`` lives and the in-memory first-run
+:class:`~search.setup.SetupState`. Bundling them into one :class:`AppState` —
+created once by the app factory and stashed on ``app.state`` — keeps every
+route signature free of plumbing arguments.
 
 :class:`AppState` holds the ``app.db`` **path**, not a live connection. The
 connection is opened *per request* by the :func:`~search.deps.get_app_db`
@@ -48,13 +47,10 @@ class AppState:
             across requests, because it is not safe to drive from the multiple
             threads FastAPI serves concurrent requests on.
         setup_state: The in-memory first-run setup-token holder.
-        legacy_api_key: The configured ``SEARCH_API_KEY``; an empty string
-            when no legacy key is set.
     """
 
     app_db_path: str
     setup_state: SetupState
-    legacy_api_key: str
 
 
 def attach_app_state(app_state_target: object, state: AppState) -> None:
