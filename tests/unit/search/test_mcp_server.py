@@ -7,6 +7,8 @@ Covers the public contract of ``build_mcp_app``:
 - ``ask_documents`` calls ``core.answer`` and returns the full result (answer +
   sources).
 - An unauthenticated MCP request is rejected with HTTP 401 before any tool runs.
+- An ``mcp``-scoped API key authenticates; a key without the ``mcp`` scope is
+  rejected with HTTP 401 (web-redesign §5).
 - A tool call with a missing required argument is rejected cleanly (MCP error,
   not a server crash).
 - A core exception carrying a filesystem path does not leak the path to the
@@ -39,9 +41,8 @@ from tests.helpers.factories import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_API_KEY = "test-search-api-key"
-_VALID_AUTH_HEADER = f"Bearer {_API_KEY}"
-_WRONG_KEY = "wrong-key"
+# A junk bearer that resolves to no api_keys row — used by the rejection tests.
+_WRONG_KEY = "sk-pls-this-key-was-never-minted"
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +67,14 @@ def _answer_result() -> SearchResult:
     )
 
 
-def _make_settings(api_key: str = _API_KEY) -> MagicMock:
-    """Create a Settings-like mock for the MCP server, with a chosen API key."""
-    return make_search_settings(SEARCH_API_KEY=api_key)
+def _make_settings() -> MagicMock:
+    """Create a Settings-like mock for the MCP server.
+
+    ``settings`` is still a ``build_mcp_app`` parameter, but the retired
+    ``SEARCH_API_KEY`` is no longer read by the auth middleware (web-redesign
+    §5) — authentication is by session cookie or ``mcp``-scoped API key.
+    """
+    return make_search_settings()
 
 
 def _make_core(
@@ -86,10 +92,10 @@ def _app_db_path() -> str:
     """A fresh migrated app.db file for MCP auth tests, returning its path.
 
     ``build_mcp_app`` takes the ``app.db`` *path*; its auth middleware opens a
-    connection per request to resolve a browser session cookie. These unit
-    tests only exercise the legacy-bearer path (which short-circuits before any
-    ``app.db`` access), but a real migrated file keeps the helper correct for
-    any cookie-path test added later. The file is removed at process exit.
+    connection per request to resolve a session cookie or an API key. This
+    helper yields an empty migrated database — every credential check against
+    it fails, so it backs the unauthenticated / junk-bearer rejection tests.
+    The file is removed at process exit.
     """
     import atexit
     import os
@@ -105,6 +111,50 @@ def _app_db_path() -> str:
     ensure_schema(conn)
     conn.close()
     return path
+
+
+def _app_db_with_key(scopes: str = "mcp") -> tuple[str, str]:
+    """A migrated app.db file holding an owner and one API key.
+
+    Mirrors the ``app.db`` an authenticated MCP request resolves against: a
+    Member owner plus a single API key with the given *scopes*. The middleware
+    opens its own connection on the returned path, so the key is persisted and
+    committed before the path is handed back.
+
+    Args:
+        scopes: The comma-separated scope string for the minted key. Defaults
+            to ``"mcp"``; pass ``"api"`` to mint a key the MCP gate rejects.
+
+    Returns:
+        A ``(app_db_path, raw_key)`` pair — the database path for
+        ``build_mcp_app`` and the full raw key to send as a bearer token.
+    """
+    from appdb.api_keys import create as create_key
+    from appdb.connection import connect
+    from appdb.users import create as create_user
+    from search.api_keys import generate_raw_key, hash_key, key_display_prefix
+
+    path = _app_db_path()
+    raw = generate_raw_key()
+    conn = connect(path)
+    try:
+        create_user(
+            conn,
+            username="mcp-owner",
+            password_hash="h",
+            role="member",
+        )
+        create_key(
+            conn,
+            key_hash=hash_key(raw),
+            key_prefix=key_display_prefix(raw),
+            name="mcp",
+            owner_user_id=1,
+            scopes=scopes,
+        )
+    finally:
+        conn.close()
+    return path, raw
 
 
 # ---------------------------------------------------------------------------
@@ -299,17 +349,18 @@ def test_wrong_bearer_token_is_rejected_with_401() -> None:
     assert response.status_code == 401
 
 
-def test_valid_bearer_token_passes_auth_layer() -> None:
-    """An MCP request with a valid bearer token reaches the MCP handler (not 401)."""
+def test_mcp_scoped_api_key_passes_auth_layer() -> None:
+    """An MCP request with an ``mcp``-scoped API key reaches the handler (not 401)."""
     core = _make_core()
     settings = _make_settings()
+    app_db_path, raw_key = _app_db_with_key(scopes="mcp")
 
-    asgi_app = build_mcp_app(core, settings, _app_db_path())
+    asgi_app = build_mcp_app(core, settings, app_db_path)
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     response = client.post(
         "/mcp",
-        headers={"Authorization": _VALID_AUTH_HEADER},
+        headers={"Authorization": f"Bearer {raw_key}"},
         json={
             "jsonrpc": "2.0",
             "method": "initialize",
@@ -326,18 +377,40 @@ def test_valid_bearer_token_passes_auth_layer() -> None:
     assert response.status_code != 401
 
 
+def test_api_key_without_mcp_scope_is_rejected_with_401() -> None:
+    """An API key lacking the ``mcp`` scope cannot reach /mcp (web-redesign §5)."""
+    core = _make_core()
+    settings = _make_settings()
+    # An "api"-only key: valid for the data routes, but not for the MCP surface.
+    app_db_path, raw_key = _app_db_with_key(scopes="api")
+
+    asgi_app = build_mcp_app(core, settings, app_db_path)
+    client = TestClient(asgi_app, raise_server_exceptions=False)
+
+    response = client.post(
+        "/mcp",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+    )
+
+    assert response.status_code == 401
+
+
 def test_no_bearer_prefix_is_rejected() -> None:
     """A raw token without 'Bearer ' prefix is rejected with HTTP 401."""
     core = _make_core()
     settings = _make_settings()
+    # A real mcp-scoped key exists, but the header omits the 'Bearer ' prefix,
+    # so extract_bearer yields None and the key is never looked up.
+    app_db_path, raw_key = _app_db_with_key(scopes="mcp")
 
-    asgi_app = build_mcp_app(core, settings, _app_db_path())
+    asgi_app = build_mcp_app(core, settings, app_db_path)
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     # Send the key directly, without the 'Bearer ' prefix.
     response = client.post(
         "/mcp",
-        headers={"Authorization": _API_KEY},
+        headers={"Authorization": raw_key},
         json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
     )
 

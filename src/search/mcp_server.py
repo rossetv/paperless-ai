@@ -17,15 +17,15 @@ Both tools share one body helper (:func:`_run_search_tool`): length-check the
 query at the boundary, convert the optional filters, invoke the core method,
 serialise the result, and turn any failure into a sanitised tool error.
 
-Authentication (spec §7.3):
-  A request is authorised when it carries EITHER a legacy
-  ``Authorization: Bearer <SEARCH_API_KEY>`` token (an admin-equivalent through
-  Waves 1-2) OR a browser ``search_session`` cookie that resolves to an active
-  user.  The middleware returns HTTP 401 without reaching the MCP handler if
-  neither credential is valid.  The token is **never logged**
-  (CODE_GUIDELINES §7.4, §10.1).
+Authentication (web-redesign §5):
+  Every request must carry either a browser ``search_session`` cookie or an
+  ``Authorization: Bearer sk-pls-...`` API key whose scopes include ``mcp``.
+  The middleware calls :func:`search.sessions.resolve_session` and
+  :func:`search.api_keys.resolve_api_key` and returns HTTP 401 without
+  reaching the MCP handler if neither credential is valid. The legacy
+  ``SEARCH_API_KEY`` was retired in Wave 3. No secret is ever logged.
 
-Allowed deps: search (core, auth, sessions, deps, models, wire), store
+Allowed deps: search (core, api_keys, auth, sessions, models, wire), store
     (SearchFilters), appdb (connection), mcp SDK, starlette. The ``app.db``
     path is injected by the app factory; this module owns no SQL and opens a
     fresh connection per request, mirroring ``search.deps.get_app_db``.
@@ -46,8 +46,8 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from appdb.connection import connect
-from search.auth import SESSION_COOKIE_NAME, extract_bearer, legacy_api_key_user
-from search.deps import refresh_last_seen
+from search.api_keys import SCOPE_MCP, resolve_api_key
+from search.auth import SESSION_COOKIE_NAME, extract_bearer
 from search.models import SearchResult
 from search.sessions import resolve_session
 from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
@@ -71,23 +71,25 @@ _MCP_PATH = "/mcp"
 
 
 class _BearerAuthMiddleware:
-    """ASGI middleware that enforces bearer-token authentication.
+    """ASGI middleware that enforces session-cookie or API-key authentication.
 
     Extracts the ``Authorization: Bearer <token>`` header and the session
-    cookie, then authorises a request that carries EITHER a valid legacy
-    ``SEARCH_API_KEY`` bearer OR a browser session cookie that resolves to an
-    active user.  An unauthenticated request is rejected with HTTP 401 before
-    the inner ASGI app is called.
+    cookie, then authorises a request that carries EITHER a browser session
+    cookie that resolves to an active user (a human, not scope-limited) OR an
+    API key that resolves AND whose scope set includes ``mcp``.  An
+    unauthenticated request is rejected with HTTP 401 before the inner ASGI
+    app is called.
 
-    The token is **never logged** — a failed check records only whether a
-    header was present, never its value (CODE_GUIDELINES §7.4).
+    No secret is **ever logged** — a failed check records only whether a
+    header or cookie was present, never its value (CODE_GUIDELINES §7.4).
 
     Args:
         app: The inner ASGI application to protect.
-        settings: Application settings; ``SEARCH_API_KEY`` is read from here.
+        settings: Application settings. Kept for the constructor's public
+            shape; the retired ``SEARCH_API_KEY`` is no longer read.
         app_db_path: The filesystem path to ``app.db``. A fresh connection is
-            opened per request to resolve a browser session cookie to a user —
-            an ``app.db`` connection is never shared across requests.
+            opened per request to resolve the cookie or the API key — an
+            ``app.db`` connection is never shared across requests.
     """
 
     def __init__(self, app: ASGIApp, settings: Settings, app_db_path: str) -> None:
@@ -125,12 +127,11 @@ class _BearerAuthMiddleware:
     def _is_authenticated(self, bearer: str | None, cookie: str | None) -> bool:
         """Return whether the request carries a valid credential.
 
-        Authenticated when EITHER the legacy ``SEARCH_API_KEY`` bearer matches
-        OR a browser ``search_session`` cookie resolves to an active user. The
-        ``app.db`` lookup uses a fresh per-request connection, closed before
-        returning; when a cookie resolves, its ``last_seen_at`` is refreshed on
-        the same connection so a cookie-only MCP client is not left with a
-        frozen ``last_seen``.
+        Authenticated when EITHER a browser ``search_session`` cookie resolves
+        to an active user (a human, not scope-limited) OR an API key resolves
+        AND that key carries the ``mcp`` scope. A key without ``mcp`` — e.g. an
+        API-only key — cannot reach ``/mcp`` (web-redesign §5). The ``app.db``
+        lookup uses a fresh per-request connection, closed before returning.
 
         Args:
             bearer: The extracted ``Authorization: Bearer`` token, or ``None``.
@@ -139,14 +140,12 @@ class _BearerAuthMiddleware:
         Returns:
             ``True`` when the request is authorised, ``False`` otherwise.
         """
-        if legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY) is not None:
-            return True
         app_db = connect(self._app_db_path)
         try:
-            if resolve_session(app_db, cookie) is None:
-                return False
-            refresh_last_seen(app_db, cookie)
-            return True
+            if resolve_session(app_db, cookie) is not None:
+                return True
+            resolved = resolve_api_key(app_db, bearer)
+            return resolved is not None and SCOPE_MCP in resolved.scopes
         finally:
             app_db.close()
 
@@ -337,19 +336,19 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
     streamable-HTTP transport, registers the two search tools via
     :func:`_register_search_tools`, and wraps it in
     :class:`_BearerAuthMiddleware` so every MCP request must carry a valid
-    ``Authorization: Bearer`` token.
+    session cookie or ``mcp``-scoped API key.
 
     Args:
         core: The :class:`~search.core.SearchCore` orchestrating the search
             pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
-        settings: Application settings; ``SEARCH_API_KEY`` is used by the auth
-            middleware.
+        settings: Application settings. Kept for the builder's public shape;
+            the retired ``SEARCH_API_KEY`` is no longer read by the middleware.
         app_db_path: The filesystem path to ``app.db``, passed to the auth
-            middleware so a browser session cookie can authenticate an MCP
-            request. The middleware opens a fresh connection per request.
+            middleware so a session cookie or an API key can authenticate an
+            MCP request. The middleware opens a fresh connection per request.
 
     Returns:
-        An ASGI application wrapping the FastMCP server with bearer-token auth.
+        An ASGI application wrapping the FastMCP server with cookie/API-key auth.
     """
     mcp = FastMCP(
         name="paperless-search",
