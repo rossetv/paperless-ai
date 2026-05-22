@@ -1,0 +1,39 @@
+/*
+ * ScopePill primitive — CSS Module.
+ *
+ * A small monospace pill naming an API-key scope. A square-ish chip (micro
+ * radius), monospace label, semantic colour per scope. The base rule is the
+ * shared geometry; scope classes set only the colours.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-1) var(--spacing-6);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  white-space: nowrap;
+}
+
+/* ── API — informational blue ── */
+.api {
+  background-color: var(--colour-status-info-bg);
+  color: var(--colour-status-info-fg);
+}
+
+/* ── MCP — violet ── */
+.mcp {
+  background-color: var(--colour-status-violet-bg);
+  color: var(--colour-status-violet-fg);
+}
+
+/* ── Admin — red (the privileged scope) ── */
+.admin {
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+}
