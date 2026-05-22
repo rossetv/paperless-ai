@@ -1,0 +1,115 @@
+/*
+ * DocumentViewerChrome primitive — CSS Module.
+ *
+ * The in-app PDF viewer shell: a FORCED-DARK top bar (a close control, a
+ * breadcrumb, and Download / Open-in-Paperless actions) above the page area.
+ * Dark in both themes, like the handoff — it uses the --colour-dark-* tokens
+ * (added in Wave 1 Task F3), never the theme-aware --colour-* roles.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.chrome {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background-color: var(--colour-dark-bg);
+}
+
+/* Dark glass top bar. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-11);
+  flex-shrink: 0;
+  padding: var(--spacing-7) var(--spacing-12);
+  background-color: var(--colour-nav-bg);
+  border-bottom: var(--spacing-1) solid var(--colour-dark-border);
+  backdrop-filter: var(--backdrop-nav);
+}
+
+/* Close control. */
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch-target);
+  height: var(--size-touch-target);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-hover-dark);
+  color: var(--colour-dark-text-primary);
+  border: none;
+  cursor: pointer;
+}
+
+.close:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* Breadcrumb. */
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  min-width: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+}
+
+.crumb-context {
+  color: var(--colour-dark-text-tertiary);
+}
+
+.crumb-title {
+  overflow: hidden;
+  color: var(--colour-dark-text-primary);
+  font-weight: var(--font-weight-body-emphasis);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Pushes the actions to the trailing edge. */
+.spacer {
+  flex: 1;
+}
+
+/* Action group. */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  flex-shrink: 0;
+}
+
+/* A chrome action — Download / Open in Paperless. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-5) var(--spacing-10);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-hover-dark);
+  color: var(--colour-dark-text-primary);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  text-decoration: none;
+}
+
+.action:hover {
+  text-decoration: none;
+}
+
+.action:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* The page area below the bar. */
+.page-area {
+  flex: 1;
+  min-height: 0;
+}
