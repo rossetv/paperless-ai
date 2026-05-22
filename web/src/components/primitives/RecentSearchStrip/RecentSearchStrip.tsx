@@ -46,9 +46,9 @@ export function RecentSearchStrip({
     <div className={cn(styles['strip'], className)}>
       <p className={styles['heading']}>Recent searches</p>
       <div className={styles['rows']}>
-        {items.map((item, i) => (
+        {items.map((item) => (
           <button
-            key={i}
+            key={item.query}
             type="button"
             className={styles['row']}
             onClick={() => onSelect(item.query)}
