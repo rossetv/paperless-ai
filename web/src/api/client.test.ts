@@ -21,6 +21,14 @@ import {
   postReconcile,
   getRecentSearches,
   documentPdfUrl,
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  getApiKeys,
+  createApiKey,
+  updateApiKey,
+  deleteApiKey,
 } from './client';
 import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
 
@@ -492,5 +500,109 @@ describe('Wave 2 search endpoints', () => {
 
   it('documentPdfUrl builds the proxied PDF path for a document id', () => {
     expect(documentPdfUrl(9823)).toMatch(/\/api\/documents\/9823\/pdf$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 3 — user-management & API-key endpoints
+// ---------------------------------------------------------------------------
+
+const SAMPLE_KEY = {
+  id: 1,
+  name: 'Claude · MCP integration',
+  key_prefix: 'sk-pls-aF82C',
+  scopes: ['mcp', 'api'] as const,
+  owner_id: 1,
+  owner_name: 'Alex Morgan',
+  created_at: '2026-01-12T00:00:00Z',
+  expires_at: null,
+  last_used_at: '2026-05-22T09:00:00Z',
+  revoked_at: null,
+  request_count: 184602,
+};
+
+describe('Wave 3 user-management endpoints', () => {
+  it('getUsers GETs /api/users and returns the user list', async () => {
+    mockFetch(200, { users: [SAMPLE_USER] });
+    const result = await getUsers();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/users$/);
+    expect(init.method).toBe('GET');
+    expect(result.users[0].username).toBe('alex.morgan');
+  });
+
+  it('createUser POSTs /api/users with the new-user body', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const result = await createUser({
+      username: 'sam.patel',
+      password: 'password1',
+      display_name: 'Sam Patel',
+      email: 'sam@home.lan',
+      role: 'member',
+    });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/users$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string).role).toBe('member');
+    expect(result.user.id).toBe(1);
+  });
+
+  it('updateUser PATCHes /api/users/{id} with the partial body', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    await updateUser(7, { role: 'admin' });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/users\/7$/);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ role: 'admin' });
+  });
+
+  it('deleteUser DELETEs /api/users/{id} and resolves on 204', async () => {
+    mockFetch(204, null);
+    await expect(deleteUser(7)).resolves.toBeUndefined();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/users\/7$/);
+    expect(init.method).toBe('DELETE');
+  });
+});
+
+describe('Wave 3 API-key endpoints', () => {
+  it('getApiKeys GETs /api/api-keys and returns the key list', async () => {
+    mockFetch(200, { keys: [SAMPLE_KEY] });
+    const result = await getApiKeys();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/api-keys$/);
+    expect(init.method).toBe('GET');
+    expect(result.keys[0].key_prefix).toBe('sk-pls-aF82C');
+  });
+
+  it('createApiKey POSTs /api/api-keys and returns the one-time secret', async () => {
+    mockFetch(200, { api_key: SAMPLE_KEY, secret: 'sk-pls-aF82CdeadbeefSECRET' });
+    const result = await createApiKey({
+      name: 'n8n',
+      scopes: ['api'],
+      expires_at: null,
+    });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/api-keys$/);
+    expect(init.method).toBe('POST');
+    expect(result.secret).toBe('sk-pls-aF82CdeadbeefSECRET');
+  });
+
+  it('updateApiKey PATCHes /api/api-keys/{id} with the partial body', async () => {
+    mockFetch(200, { api_key: SAMPLE_KEY });
+    const result = await updateApiKey(3, { name: 'renamed' });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/api-keys\/3$/);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ name: 'renamed' });
+    expect(result.api_key.key_prefix).toBe('sk-pls-aF82C');
+  });
+
+  it('deleteApiKey DELETEs /api/api-keys/{id} and resolves on 204', async () => {
+    mockFetch(204, null);
+    await expect(deleteApiKey(3)).resolves.toBeUndefined();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/api-keys\/3$/);
+    expect(init.method).toBe('DELETE');
   });
 });
