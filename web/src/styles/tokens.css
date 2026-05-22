@@ -355,6 +355,14 @@
   --colour-dark-aurora-near:    rgb(0 113 227 / 30%);
   --colour-dark-aurora-far:     rgb(41 151 255 / 13%);
 
+  /* ─────────────────────────────────────────────
+   * Gradients
+   * ───────────────────────────────────────────── */
+
+  /* Default avatar background — neutral grey gradient for users without a
+   * custom colour. The specific stops match the DESIGN.md avatar handoff. */
+  --gradient-avatar-default:    linear-gradient(135deg, #5e6166, #2a2a2d);
+
   /* Card elevation shadow for the dark island */
   --shadow-dark-card:           0 30px 70px -24px rgb(0 0 0 / 70%);
 }
