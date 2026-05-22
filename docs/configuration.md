@@ -28,6 +28,12 @@ Both are bootstrap variables: they are read from the environment at startup
 and cannot be moved into the in-database configuration, because they tell the
 process where that database lives.
 
+**`SEARCH_API_KEY` is retired (Wave 3).** This environment variable was the
+legacy shared-secret bearer credential for programmatic and MCP access. It is
+no longer read by the search server. Programmatic access is now by minted API
+keys (Settings → API Keys in the web UI); a deployment with `SEARCH_API_KEY`
+set will see no effect — the variable is silently ignored.
+
 ---
 
 ## LLM Provider

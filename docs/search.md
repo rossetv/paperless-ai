@@ -145,7 +145,7 @@ FastAPI + uvicorn. Pydantic models validate requests and responses at this bound
 | `GET /api/stats` | Read-only+ | Index size, last reconcile timestamp, embedding model |
 | `POST /api/reconcile` | Member+ | Trigger an immediate reconciliation cycle (202 Accepted) |
 | `GET /` and assets | None | Serve the built React SPA (with a deep-link catch-all) |
-| `/mcp` | Bearer / session | MCP streamable-HTTP ASGI app |
+| `/mcp` | API key (`mcp` scope) / session | MCP streamable-HTTP ASGI app |
 
 The SPA is served by a catch-all that returns `index.html` for client-router
 deep links (`/login`, `/setup`) while leaving real assets and every `/api`
@@ -170,7 +170,7 @@ The MCP server uses the `FastMCP` streamable-HTTP transport (an ASGI app mounted
 
 `search_documents` saves one LLM call — the calling agent synthesises its own answer. `ask_documents` is appropriate when the agent wants a direct prose response.
 
-An ASGI bearer-token middleware wraps the MCP app: every request must carry `Authorization: Bearer <SEARCH_API_KEY>`. A missing or invalid token returns HTTP 401 without reaching the MCP handler. The token is never logged.
+An ASGI bearer-token middleware wraps the MCP app: every request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential returns HTTP 401 without reaching the MCP handler. Credentials are never logged.
 
 ---
 
@@ -210,11 +210,26 @@ guards protect administration: a user cannot delete, suspend or demote
 themselves, and the last remaining admin cannot be deleted, suspended or
 demoted.
 
-**Legacy access.** `Authorization: Bearer <SEARCH_API_KEY>` keeps working on
-`/api/*` and `/mcp` as an admin-equivalent caller through Waves 1–2; it is
-retired in Wave 3. With database-backed accounts the key is now **optional** —
-a deployment can run with no `SEARCH_API_KEY` at all, which simply disables
-the legacy bearer path.
+**API keys.** Programmatic and MCP access uses **API keys** minted in the web
+UI (Settings → API Keys), not a shared secret. A key looks like
+`sk-pls-<random>`; the full key is shown **once** at creation and is
+unrecoverable afterwards — only its SHA-256 hash and a short display prefix
+(`sk-pls-XXXXX`) are stored.
+
+Each key carries **scopes**: `api` (the REST data routes), `mcp` (the `/mcp`
+surface), `admin` (user and key administration). A request is authorised only
+if the presented key holds the required scope. A key's reach is also bounded
+by its **owner's role** — a key never exceeds what its owner could do directly.
+
+A key can be given an **expiry** and can be **revoked** at any time; revocation
+takes effect immediately. The owner can **edit** it — rename it, change its
+scopes, or change its expiry — at any time. Editing is owner-only: an admin
+may view and revoke other users' keys but not edit them.
+
+**`SEARCH_API_KEY` is retired.** The `SEARCH_API_KEY` environment variable is
+no longer read by the search server (Wave 3). A fresh install has no
+programmatic or MCP access until an account is created and a key is minted —
+there is no default credential.
 
 ---
 
@@ -258,7 +273,7 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 | `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion |
 | `synthesizer.py` | `Synthesizer` — one LLM call → `Answered` or `NeedsMore` |
 | `refinement.py` | `adjust_plan` / `broaden_plan` — plan mutation for the refinement step |
-| `auth.py` | Bearer extraction, the legacy `SEARCH_API_KEY` admin-equivalent check, role ranking |
+| `auth.py` | Bearer extraction, role ranking |
 | `sessions.py` | Opaque session tokens, SHA-256 hashing, the DB-backed session lifecycle |
 | `deps.py` | FastAPI auth dependencies — `get_current_user`, `require_role`, `require_admin` |
 | `setup.py` | First-run setup token generation, comparison, and setup-mode detection |
