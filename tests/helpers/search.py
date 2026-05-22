@@ -57,3 +57,41 @@ def build_search_core(
         retriever=retriever,
         synthesizer=synthesizer,
     )
+
+
+def seed_user_and_login(
+    app_db: object,
+    client: object,
+    *,
+    username: str = "tester",
+    password: str = "test-password",
+    role: str = "admin",
+) -> None:
+    """Create a user in *app_db* and log *client* in as them.
+
+    A convenience for tests that need an authenticated session against a
+    protected route. Creates the user directly through ``appdb`` (bypassing
+    the setup flow) and then drives ``POST /api/auth/login`` so the client's
+    cookie jar holds a real session cookie.
+
+    Args:
+        app_db: The app.db connection the test app is using.
+        client: A ``fastapi.testclient.TestClient`` over the app.
+        username: The username to create and log in as.
+        password: The password to set and authenticate with.
+        role: The role for the created user.
+    """
+    from appdb.passwords import hash_password
+    from appdb.users import create as create_user
+
+    create_user(
+        app_db,
+        username=username,
+        password_hash=hash_password(password),
+        role=role,
+    )
+    response = client.post(
+        "/api/auth/login",
+        json={"username": username, "password": password},
+    )
+    assert response.status_code == 200, response.text

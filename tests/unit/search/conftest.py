@@ -80,6 +80,7 @@ def build_test_client(
     *,
     core: MagicMock | None = None,
     store_reader: MagicMock | None = None,
+    app_db: Any | None = None,
 ) -> Any:
     """Build a FastAPI TestClient over the real ``create_app``.
 
@@ -95,6 +96,8 @@ def build_test_client(
         store_reader: An optional pre-built StoreReader stub; defaults to a
             MagicMock with a populated facet set, index stats, and a passing
             ``quick_check``.
+        app_db: An optional pre-migrated app.db connection. Defaults to a
+            fresh in-memory database, leaving the app in first-run setup mode.
 
     Returns:
         A ``fastapi.testclient.TestClient`` wrapping the configured app.
@@ -117,7 +120,16 @@ def build_test_client(
         store_reader.get_stats.return_value = make_index_stats()
         store_reader.quick_check.return_value = True
 
-    app = create_app(settings, core=core, store_reader=store_reader)
+    if app_db is None:
+        from appdb.connection import connect
+        from appdb.schema import ensure_schema
+
+        app_db = connect(":memory:")
+        ensure_schema(app_db)
+
+    app = create_app(
+        settings, core=core, store_reader=store_reader, app_db=app_db
+    )
     return TestClient(
         app, raise_server_exceptions=False, base_url="https://testserver"
     )
