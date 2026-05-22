@@ -1,0 +1,54 @@
+/*
+ * SearchScreenLayout layout primitive — CSS Module.
+ *
+ * The content shell for the Wave 2 search screens, sitting below AppNavBar.
+ * Two variants: `centred` — a single max-width centred column (idle,
+ * index-not-ready); `rail` — a filter-rail + content two-column grid
+ * (loading, results, no-results).
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.layout {
+  width: 100%;
+  margin-inline: auto;
+  padding: var(--spacing-14) var(--spacing-14) 0;
+}
+
+/* Centred single column. */
+.centred {
+  max-width: var(--width-content-max);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Filter-rail + content grid. */
+.rail {
+  max-width: var(--bp-desktop-large);
+  display: grid;
+  grid-template-columns: var(--width-empty-state) 1fr;
+  gap: var(--spacing-section);
+  align-items: start;
+}
+
+/* The grid gap above is generous; tighten it on smaller desktops. */
+@media (width <= 1070px) {
+  .rail {
+    gap: var(--spacing-14);
+  }
+}
+
+/* Stack the rail under the content on narrow viewports. */
+@media (width <= 834px) {
+  .rail {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rail-region {
+  min-width: 0;
+}
+
+.content-region {
+  min-width: 0;
+}
