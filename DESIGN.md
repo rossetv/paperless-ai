@@ -179,6 +179,39 @@ The color story is starkly binary. Product sections alternate between pure black
 - Each variant as a vertical card with image, name, and key specs
 - Minimal chrome — the products speak for themselves
 
+**Search experience (Wave 2)**
+- `DocThumb` — a fixed 96×124 SVG mockup of a document page: a header block,
+  a hairline, grey body line-stripes (matched rows drawn in `--colour-accent`),
+  and a footer totals band for statements and invoices.
+- `AnswerSurface` — the synthesised-answer card: a "Synthesised answer"
+  eyebrow with a spark glyph, the answer prose in SF Pro Display, and a
+  hairline-topped provenance footer (source count, latency, an optional
+  "Refined once" marker).
+- `CitationMark` — an inline citation chip: a 20px `--colour-accent` circle
+  carrying a white numeral; a real, focus-ringed `<button>`.
+- `SourceCardSurface` — the source-result card shell: a two-column grid (a
+  content column and a `DocThumb` column) with a circular citation badge
+  overlapping the thumbnail's top-left corner; a `highlighted` variant lifts
+  the card with `--shadow-source-highlight` and an `--colour-accent-ring`
+  outline.
+- `SnippetText` — matched-content text; `**bold**` runs render as
+  `--colour-accent-wash` highlight marks.
+- `Disclosure` — a native `<details>` collapsible panel with a chevron that
+  rotates a quarter-turn when open. Backs `QueryPlanSummary`.
+- `PipelineStages` — the agentic-search progress rail: an ordered list of
+  stages, each with a status dot (a tick when done, a pulsing core when
+  active, a muted disc when pending) and an "in progress" pill on the active
+  stage.
+- `RecentSearchStrip`, `IndexStatusFooter` — the idle-screen recent-search
+  list and index-status summary line.
+- `DocumentViewerChrome`, `PdfFrame`, `ViewerSplit` — the in-app PDF viewer:
+  a forced-dark chrome bar (the `--colour-dark-*` tokens), an `<iframe>` of
+  the proxied PDF, and the page-area / metadata-sidebar split.
+
+Search-screen layout uses the `SearchScreenLayout` primitive — a `centred`
+single column (idle, index-not-ready, error) or a `rail` filter-rail +
+content grid (loading, results, no-results).
+
 ## 5. Layout Principles
 
 ### Spacing System
