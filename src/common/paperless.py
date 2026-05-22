@@ -247,22 +247,31 @@ class PaperlessClient:
         """Stream a document's original file straight from Paperless-ngx.
 
         Unlike :meth:`download_content`, this never buffers the whole file:
-        it opens an ``httpx`` streaming response and returns the document's
-        content type plus an iterator that yields the body in chunks. It
-        backs the search server's in-app PDF viewer proxy (web-redesign §5),
-        where buffering a large scan into memory per request is wasteful.
+        it opens a *single* ``httpx`` streaming response and returns the
+        document's content type plus an iterator that yields the body in
+        chunks. It backs the search server's in-app PDF viewer proxy
+        (web-redesign §5), where buffering a large scan into memory per
+        request is wasteful.
+
+        The status and headers are read from the streaming response before
+        the body is consumed — ``httpx`` exposes them as soon as the
+        response head has arrived — so exactly one HTTP request is made per
+        call, not one to probe the headers and another for the body.
 
         The returned iterator owns the open HTTP response: it must be fully
         drained (or closed) by the caller so the underlying connection is
         released. The search server hands it to a Starlette
-        ``StreamingResponse``, which drains it as it writes the body.
+        ``StreamingResponse``, which drains it as it writes the body, and
+        also guards the un-drained paths (a client disconnect) by closing
+        the client. The iterator's ``finally`` closes the response so a
+        partially-consumed stream never leaks the connection.
 
         A non-2xx status (notably a 404 for an unknown ``doc_id``) is raised
-        as an :class:`httpx.HTTPStatusError` while the iterator is first
-        advanced; the caller maps that to an HTTP error. Server errors are
-        **not** retried here — a streaming body cannot be safely replayed
-        once partially consumed — so this deliberately does not use the
-        ``@retry``-wrapped ``_get``.
+        as an :class:`httpx.HTTPStatusError` *here*, before this method
+        returns — the stream is opened and ``raise_for_status`` is checked
+        eagerly. Server errors are **not** retried — a streaming body cannot
+        be safely replayed once partially consumed — so this deliberately
+        does not use the ``@retry``-wrapped ``_get``.
 
         Args:
             doc_id: The Paperless-ngx document id.
@@ -271,26 +280,38 @@ class PaperlessClient:
             A two-tuple of the response ``Content-Type`` (defaulting to
             ``application/pdf`` when Paperless omits the header) and an
             iterator yielding the file body in byte chunks.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response — the open stream
+                is closed before the exception propagates.
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/download/"
 
+        # A single stream. send(..., stream=True) opens the response without
+        # reading the body; the status and headers are available immediately.
+        # raise_for_status() is checked eagerly here so a non-2xx status
+        # surfaces before this method returns — the response is closed first
+        # so the failed-request connection is never leaked.
+        request = self._client.build_request("GET", url)
+        response = self._client.send(request, stream=True)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError:
+            response.close()
+            raise
+        content_type = response.headers.get("Content-Type", "application/pdf")
+
         def _iter_body() -> Iterator[bytes]:
-            """Open the streaming response and yield its body in chunks.
+            """Yield the body of the already-open streaming response.
 
-            The ``with`` block keeps the response open for the lifetime of
-            the iteration and closes it (releasing the connection) once the
-            caller has drained every chunk.
+            The ``finally`` closes the response — releasing the connection —
+            whether the caller drained every chunk, stopped early, or the
+            transfer raised mid-body.
             """
-            with self._client.stream("GET", url) as response:
-                response.raise_for_status()
+            try:
                 yield from response.iter_bytes()
-
-        # Peek the headers without consuming the body: a short-lived stream
-        # context yields the Content-Type, then closes. iter_bytes() in
-        # _iter_body re-opens its own stream for the actual transfer.
-        with self._client.stream("GET", url) as probe:
-            probe.raise_for_status()
-            content_type = probe.headers.get("Content-Type", "application/pdf")
+            finally:
+                response.close()
 
         return content_type, _iter_body()
 

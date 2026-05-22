@@ -638,11 +638,44 @@ class TestDownloadStream:
     def test_download_stream_raises_on_404(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A 404 from Paperless surfaces as httpx.HTTPStatusError."""
+        """A 404 surfaces as httpx.HTTPStatusError eagerly, before iterating.
+
+        The single-stream rewrite checks raise_for_status() when the stream
+        is opened, so the caller never receives a chunk iterator for a
+        failed request — the error is raised by download_stream itself.
+        """
         client = self._streaming_client(monkeypatch, body=b"not found", status_code=404)
         try:
             with pytest.raises(httpx.HTTPStatusError):
-                content_type, chunks = client.download_stream(999)
-                list(chunks)
+                client.download_stream(999)
         finally:
             client.close()
+
+    def test_download_stream_makes_a_single_http_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """download_stream opens exactly one upstream request, not two.
+
+        The previous implementation made a probe GET for the Content-Type
+        and a second GET for the body — doubling Paperless load per PDF
+        view. The rewrite reads the headers off the single body stream.
+        """
+        requests: list[httpx.Request] = []
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(200, content=b"%PDF-1.7\nbody\n%%EOF")
+
+        settings = MagicMock()
+        settings.PAPERLESS_URL = "https://paperless.example"
+        settings.PAPERLESS_TOKEN = "tok"
+        settings.REQUEST_TIMEOUT = 30
+        client = PaperlessClient(settings)
+        client._client.close()
+        client._client = httpx.Client(transport=httpx.MockTransport(_handler))
+        try:
+            _content_type, chunks = client.download_stream(100)
+            list(chunks)
+        finally:
+            client.close()
+        assert len(requests) == 1
