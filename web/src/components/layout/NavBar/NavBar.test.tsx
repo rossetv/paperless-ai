@@ -76,4 +76,46 @@ describe('NavBar', () => {
     await userEvent.tab();
     expect(document.activeElement).toBe(searchLink);
   });
+
+  it('renders the links slot when provided', () => {
+    render(
+      <NavBar
+        brand={<span>Brand</span>}
+        links={<a href="/search">Search</a>}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
+  });
+
+  it('does not render a links region when the links slot is omitted', () => {
+    const { container } = render(<NavBar brand={<span>Brand</span>} />);
+    expect(container.querySelector('[data-navbar-links]')).not.toBeInTheDocument();
+  });
+
+  it('renders brand, links and actions together', () => {
+    render(
+      <NavBar
+        brand={<span>Brand</span>}
+        links={<a href="/search">Search</a>}
+        actions={<span>Actions</span>}
+      />,
+    );
+    expect(screen.getByText('Brand')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Search' })).toBeInTheDocument();
+    expect(screen.getByText('Actions')).toBeInTheDocument();
+  });
+
+  it('keeps the links between brand and actions in DOM order', () => {
+    const { container } = render(
+      <NavBar
+        brand={<span data-testid="b">Brand</span>}
+        links={<a data-testid="l" href="/search">Search</a>}
+        actions={<span data-testid="a">Actions</span>}
+      />,
+    );
+    const order = Array.from(container.querySelectorAll('[data-testid]')).map(
+      (el) => el.getAttribute('data-testid'),
+    );
+    expect(order).toEqual(['b', 'l', 'a']);
+  });
 });

@@ -38,7 +38,6 @@
 .inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: 100%;
   max-width: var(--width-content-max);
   margin-inline: auto;
@@ -55,4 +54,17 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-8);
+}
+
+/* ── Centre links region — a row of nav links after the brand. ── */
+.links {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-13);
+  margin-inline-start: var(--spacing-13);
+}
+
+/* ── Flexible spacer — pushes .actions to the trailing edge. ── */
+.spacer {
+  flex: 1;
 }
