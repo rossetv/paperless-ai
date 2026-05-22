@@ -64,6 +64,7 @@
   /* Font families */
   --font-display:  "SF Pro Display", "SF Pro Icons", "Helvetica Neue", helvetica, arial, sans-serif;
   --font-text:     "SF Pro Text",    "SF Pro Icons", "Helvetica Neue", helvetica, arial, sans-serif;
+  --font-mono:     ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
 
   /* Display Hero — 56 px, weight 600, lh 1.07, ls -0.28 px */
   --font-size-hero:            3.5rem;
