@@ -25,34 +25,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
+import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
-
-/**
- * Full-viewport loading indicator shown while the bootstrap queries resolve.
- *
- * `role="status"` so assistive technology announces the wait. Kept inline —
- * it is a one-off shell concern, not a reusable component.
- */
-function BootstrapLoading(): React.ReactElement {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--colour-dark-bg)',
-        color: 'var(--colour-dark-text-secondary)',
-        fontFamily: 'var(--font-text)',
-        fontSize: 'var(--font-size-body)',
-      }}
-    >
-      Loading…
-    </div>
-  );
-}
 
 /**
  * Wraps the protected app. Resolves auth via `useMe`:
@@ -67,9 +41,11 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   const meQuery = useMe();
 
   if (meQuery.isLoading) {
-    return <BootstrapLoading />;
+    return <FullPageLoading />;
   }
-  if (meQuery.data?.user === undefined) {
+  // Branch explicitly on query success — guards against silently rendering
+  // protected UI if the me query errors or returns without a user.
+  if (!meQuery.isSuccess || meQuery.data.user === undefined) {
     return <Navigate to="/login" replace />;
   }
   return children;
@@ -93,14 +69,18 @@ function BootstrapGate({
   children: React.ReactElement;
 }): React.ReactElement {
   const setupQuery = useSetupStatus();
-  const meQuery = useMe();
+
+  // Resolve setup-needed from query data regardless of loading state so hooks
+  // are called unconditionally. `undefined` while still loading — treated as
+  // "not yet known", which disables the me query (no point hitting /api/auth/me
+  // while setup state is unknown or while setup is actively required).
+  const setupNeeded = setupQuery.data?.needed === true;
+  const meQuery = useMe({ enabled: !setupNeeded });
 
   // Wait for setup-status; me may still be loading and that is fine for /setup.
   if (setupQuery.isLoading) {
-    return <BootstrapLoading />;
+    return <FullPageLoading />;
   }
-
-  const setupNeeded = setupQuery.data?.needed === true;
 
   if (setupNeeded) {
     // Only the setup page is reachable until the first admin exists.
@@ -114,7 +94,7 @@ function BootstrapGate({
 
   // intent === 'login' — bounce an already-authenticated user to the app.
   if (meQuery.isLoading) {
-    return <BootstrapLoading />;
+    return <FullPageLoading />;
   }
   if (meQuery.data?.user !== undefined) {
     return <Navigate to="/" replace />;
@@ -169,7 +149,7 @@ function RootRoute(): React.ReactElement {
   const setupQuery = useSetupStatus();
 
   if (setupQuery.isLoading) {
-    return <BootstrapLoading />;
+    return <FullPageLoading />;
   }
   if (setupQuery.data?.needed === true) {
     return <Navigate to="/setup" replace />;

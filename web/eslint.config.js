@@ -190,9 +190,11 @@ export default [
 
             // app/ — the composition root: routes + providers. Mounts pages and
             // features, wires the API/hooks, and pulls in global styles.
+            // components-layout is also allowed so the bootstrap loading screen
+            // (FullPageLoading) can be rendered before any page has mounted.
             {
               from: 'app',
-              allow: ['app', 'pages', 'features', 'api', 'hooks', 'styles', 'lib'],
+              allow: ['app', 'pages', 'features', 'components-layout', 'api', 'hooks', 'styles', 'lib'],
             },
           ],
         },
