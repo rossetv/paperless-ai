@@ -258,9 +258,8 @@ def build_api_router(
         """Run the full agentic search pipeline and return a SearchResponse.
 
         Bounded by ``SEARCH_MAX_CONCURRENT`` to limit simultaneous LLM spend.
-        A successful search by a real session user is recorded in the
-        user's recent-search history; the legacy bearer (no user row) is
-        not recorded.
+        A successful search by an authenticated caller is recorded in that
+        caller's recent-search history.
         """
         result = await _search(body, core, search_semaphore)
         _record_recent_search(app_db, user, body.query)
@@ -343,29 +342,29 @@ def _reconcile(settings: Settings) -> Response:
     return Response(status_code=202)
 
 
-# The synthetic legacy-bearer user id. id 0 is not a real users row, so a
-# recent_searches insert for it would violate the foreign key; the legacy
-# bearer therefore never records a search.
-_LEGACY_USER_ID = 0
+# The sentinel user id for an identity with no backing ``users`` row. id 0
+# is never a real users row, so a recent_searches insert for it would
+# violate the foreign key — a caller with this id therefore records nothing.
+_NO_USER_ROW_ID = 0
 
 
 def _record_recent_search(
     app_db: sqlite3.Connection, user: CurrentUser, query: str
 ) -> None:
-    """Record a successful search in the user's recent-search history.
+    """Record a successful search in the caller's recent-search history.
 
-    A no-op for the legacy ``SEARCH_API_KEY`` bearer, whose synthetic admin
-    has ``id`` 0 and no ``users`` row. Best-effort: a database error while
-    writing the history row is logged and swallowed — it must never turn an
-    otherwise-successful search into a failed request.
+    A no-op for an identity with no backing ``users`` row (sentinel ``id``
+    0). Best-effort: a database error while writing the history row is logged
+    and swallowed — it must never turn an otherwise-successful search into a
+    failed request.
 
     Args:
         app_db: The per-request ``app.db`` connection.
         user: The authenticated user who ran the search.
         query: The verbatim search query to record.
     """
-    if user.id == _LEGACY_USER_ID:
-        # The legacy bearer carries no user identity — nothing to attribute.
+    if user.id == _NO_USER_ROW_ID:
+        # No backing users row — there is no foreign-key target to attribute.
         return
     try:
         recent_search_store.record(app_db, user_id=user.id, query=query)

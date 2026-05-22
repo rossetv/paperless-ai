@@ -13,8 +13,9 @@ request opens its own ``app.db`` connection — see :mod:`search.deps`.
 
 Security invariants (web-redesign §4; CODE_GUIDELINES §10):
 - Browser auth is a server-side session behind an opaque, hashed cookie.
-- ``Authorization: Bearer <SEARCH_API_KEY>`` keeps working as a legacy
-  admin-equivalent through Waves 1-2.
+- Programmatic access is by ``Authorization: Bearer sk-pls-...`` API keys,
+  looked up in ``app.db`` and bounded by their scopes and owner's role.
+  ``SEARCH_API_KEY`` is retired (web-redesign §5).
 - The index DB is never web-reachable — static serving is rooted only at the
   built frontend directory.
 
@@ -35,9 +36,10 @@ import uvicorn
 from fastapi import FastAPI
 
 from search.account_routes import build_account_router
+from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
 from search.appstate import AppState, attach_app_state
-from search.deps import get_current_user, require_role
+from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
 from search.mcp_server import build_mcp_app
 from search.routes import build_api_router
@@ -117,25 +119,22 @@ def create_app(
 
     attach_app_state(
         app.state,
-        AppState(
-            app_db_path=app_db_path,
-            setup_state=setup_state,
-            legacy_api_key=settings.SEARCH_API_KEY,
-        ),
+        AppState(app_db_path=app_db_path, setup_state=setup_state),
     )
 
     # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
     # precedence over static serving.
     app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
     app.include_router(build_account_router(store_reader))
+    app.include_router(build_api_key_router())
     app.include_router(build_document_router(settings))
     app.include_router(
         build_api_router(
             settings,
             core,
             store_reader,
-            require_reader=require_role("readonly"),
-            require_member=require_role("member"),
+            require_reader=require_api_scope,
+            require_member=require_api_scope_member,
             get_current_user=get_current_user,
         )
     )
@@ -183,10 +182,9 @@ def main() -> None:
     """Start the search server (entry point: ``paperless-search-server``).
 
     Runs the shared per-process bootstrap, then builds and serves the app.
-    ``app.db`` is migrated inside :func:`create_app`. The legacy
-    ``SEARCH_API_KEY`` is now **optional**: with database-backed accounts a
-    deployment can run with no legacy key at all, so an empty key is no
-    longer fatal — it simply disables the legacy bearer path.
+    ``app.db`` is migrated inside :func:`create_app`. ``SEARCH_API_KEY`` is
+    retired (Wave 3): programmatic access is by minted API keys only, so the
+    legacy key is neither read nor required.
 
     uvicorn is run with ``proxy_headers=True`` so that, behind the documented
     nginx + Cloudflare deployment, ``request.url.scheme`` reflects the real
@@ -200,16 +198,6 @@ def main() -> None:
     from common.bootstrap import bootstrap_process
 
     settings = bootstrap_process()
-
-    if not settings.SEARCH_API_KEY.strip():
-        # Not fatal any more — accounts are the primary auth. Just note it.
-        log.info(
-            "search.no_legacy_api_key",
-            message=(
-                "SEARCH_API_KEY is unset — the legacy Bearer path is "
-                "disabled; sign in with a user account."
-            ),
-        )
 
     try:
         app = create_app(settings)
