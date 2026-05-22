@@ -6,25 +6,8 @@ import { Brand } from '../../../components/primitives/Brand/Brand';
 import { UserMenu } from '../../../components/patterns/UserMenu/UserMenu';
 import { useAuth } from '../../../hooks/useAuth';
 import { useLogout } from '../../../api/hooks';
+import { deriveInitials } from '../../../lib/deriveInitials';
 import styles from './AppNavBar.module.css';
-
-/**
- * Derive 1–2 character initials from a display name or username.
- *
- * "Alex Morgan" → "AM"; "alex.morgan" → "AL"; single word → first two
- * letters; empty → "?".
- */
-function deriveInitials(displayName: string | null, username: string): string {
-  const source = (displayName ?? username).trim();
-  if (source === '') {
-    return '?';
-  }
-  const words = source.split(/[\s._-]+/).filter((w) => w.length > 0);
-  if (words.length >= 2) {
-    return (words[0]![0]! + words[1]![0]!).toUpperCase();
-  }
-  return source.slice(0, 2).toUpperCase();
-}
 
 /**
  * The authenticated application navigation bar.
@@ -47,11 +30,9 @@ export function AppNavBar(): React.ReactElement | null {
   const logout = useLogout();
   const navigate = useNavigate();
 
-  if (user === null) {
-    return null;
-  }
-
-  async function handleSignOut(): Promise<void> {
+  // Stable callback — avoids re-creating on every render and prevents the
+  // UserMenu from receiving a new function reference unnecessarily.
+  const handleSignOut = React.useCallback(async (): Promise<void> => {
     try {
       await logout.mutateAsync();
     } finally {
@@ -59,6 +40,10 @@ export function AppNavBar(): React.ReactElement | null {
       // `me` query, and the bootstrap gate will re-resolve auth.
       navigate('/login', { replace: true });
     }
+  }, [logout, navigate]);
+
+  if (user === null) {
+    return null;
   }
 
   const initials = deriveInitials(user.display_name, user.username);
@@ -67,7 +52,7 @@ export function AppNavBar(): React.ReactElement | null {
     <NavBar
       brand={
         <Link to="/" className={styles['brand']}>
-          <Brand size={20} color="#fff" />
+          <Brand size={20} />
           <span className={styles['wordmark']}>
             Paperless<span className={styles['wordmark-dim']}>AI</span>
           </span>
@@ -84,9 +69,7 @@ export function AppNavBar(): React.ReactElement | null {
           displayName={user.display_name}
           username={user.username}
           email={user.email}
-          onSignOut={() => {
-            void handleSignOut();
-          }}
+          onSignOut={() => { void handleSignOut(); }}
         />
       }
     />
