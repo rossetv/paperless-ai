@@ -144,27 +144,40 @@ def build_account_client(
     app_db: sqlite3.Connection,
     store_reader: StoreReader,
 ) -> TestClient:
-    """Build a ``TestClient`` over the real app with an explicit ``app.db``.
+    """Build a ``TestClient`` over the real app, sharing the test's ``app.db``.
 
-    Passes a pre-opened, migrated *app_db* into ``create_app`` so the test
-    owns the connection and can inspect it. ``base_url="https://testserver"``
-    keeps the ``Secure`` session cookie on follow-up requests.
+    The search app no longer holds a single shared ``app.db`` connection: it
+    opens one *per request* (see :func:`search.deps.get_app_db`). ``create_app``
+    is therefore given the ``app.db`` *path* — ``settings.APP_DB_PATH``, which
+    :func:`make_settings` points at ``tmp_path/app.db``, the same file
+    :func:`open_app_db` opened.
+
+    *app_db* is the test's own connection to that file: it is **not** handed to
+    the app — the caller keeps it purely to seed and inspect the database
+    directly. WAL mode means that connection sees every write the app's
+    per-request connections commit.
+
+    ``base_url="https://testserver"`` keeps the ``Secure`` session cookie on
+    follow-up requests.
 
     Args:
-        settings: The settings mock from :func:`make_settings`.
-        app_db: A pre-opened, migrated ``app.db`` connection.
+        settings: The settings mock from :func:`make_settings`; its
+            ``APP_DB_PATH`` is the ``app.db`` the app opens per request.
+        app_db: The test's own connection to that same ``app.db`` file, for
+            direct seeding and inspection — retained by the caller, not the app.
         store_reader: A real :class:`~store.reader.StoreReader`.
 
     Returns:
         A :class:`~fastapi.testclient.TestClient` over the app.
     """
+    # app_db is intentionally not passed to create_app — see the docstring.
+    _ = app_db
     from search.api import create_app
 
     app = create_app(
         settings,
         core=make_mock_core(),
         store_reader=store_reader,
-        app_db=app_db,
     )
     return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
 

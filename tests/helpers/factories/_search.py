@@ -18,6 +18,10 @@ each redeclare.
 
 from __future__ import annotations
 
+import atexit
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from search.models import (
@@ -294,6 +298,30 @@ def make_index_stats(
 # ---------------------------------------------------------------------------
 
 
+# A per-process temp directory for the unique ``APP_DB_PATH`` default below,
+# removed when the test process exits.
+_APP_DB_TMP_DIR = Path(tempfile.mkdtemp(prefix="paperless-ai-test-appdb-"))
+atexit.register(shutil.rmtree, _APP_DB_TMP_DIR, ignore_errors=True)
+
+# Counter giving every make_search_settings() call a distinct app.db path.
+_app_db_counter = 0
+
+
+def _unique_app_db_path() -> str:
+    """Return a fresh, unused ``app.db`` path for a settings mock.
+
+    ``search.api.create_app`` opens and migrates ``Settings.APP_DB_PATH`` at
+    startup, then each request opens its own connection to it. A test that
+    builds the app over the factory defaults therefore needs an ``app.db`` of
+    its own — a shared path would let one test's users leak into another's
+    first-run-setup state. Each call returns a distinct file under a
+    process-scoped temp directory.
+    """
+    global _app_db_counter
+    _app_db_counter += 1
+    return str(_APP_DB_TMP_DIR / f"app-{_app_db_counter}.db")
+
+
 def make_search_settings(**overrides: Any) -> Any:
     """Create a Settings-like MagicMock with every search-pipeline field set.
 
@@ -304,6 +332,11 @@ def make_search_settings(**overrides: Any) -> Any:
     ``@retry`` decorator on the planner and synthesiser well-formed even though
     tests patch ``_create_completion`` and never enter the retry loop.
 
+    ``APP_DB_PATH`` defaults to a *unique* path per call (see
+    :func:`_unique_app_db_path`) so a test building the search app over these
+    defaults gets an isolated ``app.db``; pass an explicit ``APP_DB_PATH``
+    override to point at a known file.
+
     Args:
         **overrides: Any field override — e.g. ``SEARCH_MAX_REFINEMENTS=0``.
     """
@@ -313,7 +346,7 @@ def make_search_settings(**overrides: Any) -> Any:
         "PAPERLESS_URL": "http://paperless.example:8000",
         "PAPERLESS_PUBLIC_URL": "http://paperless.example:8000",
         "INDEX_DB_PATH": "/tmp/test-index.db",
-        "APP_DB_PATH": "/tmp/test-app.db",
+        "APP_DB_PATH": _unique_app_db_path(),
         "EMBEDDING_MODEL": "text-embedding-3-small",
         "EMBEDDING_DIMENSIONS": 4,
         "SEARCH_TOP_K": 10,

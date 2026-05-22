@@ -25,17 +25,17 @@ Authentication (spec §7.3):
   neither credential is valid.  The token is **never logged**
   (CODE_GUIDELINES §7.4, §10.1).
 
-Allowed deps: search (core, auth, sessions, models, wire), store
-    (SearchFilters), mcp SDK, starlette. The ``app.db`` connection is injected
-    by the app factory; this module owns no SQL.
-Forbidden: FastAPI (api.py), ``sqlite3.connect``, direct LLM/HTTP calls.
+Allowed deps: search (core, auth, sessions, deps, models, wire), store
+    (SearchFilters), appdb (connection), mcp SDK, starlette. The ``app.db``
+    path is injected by the app factory; this module owns no SQL and opens a
+    fresh connection per request, mirroring ``search.deps.get_app_db``.
+Forbidden: FastAPI (api.py), direct LLM/HTTP calls.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
-import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -45,7 +45,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from appdb.connection import connect
 from search.auth import SESSION_COOKIE_NAME, extract_bearer, legacy_api_key_user
+from search.deps import refresh_last_seen
 from search.models import SearchResult
 from search.sessions import resolve_session
 from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
@@ -83,16 +85,15 @@ class _BearerAuthMiddleware:
     Args:
         app: The inner ASGI application to protect.
         settings: Application settings; ``SEARCH_API_KEY`` is read from here.
-        app_db: The open ``app.db`` connection, used to resolve a browser
-            session cookie to a user.
+        app_db_path: The filesystem path to ``app.db``. A fresh connection is
+            opened per request to resolve a browser session cookie to a user —
+            an ``app.db`` connection is never shared across requests.
     """
 
-    def __init__(
-        self, app: ASGIApp, settings: Settings, app_db: sqlite3.Connection
-    ) -> None:
+    def __init__(self, app: ASGIApp, settings: Settings, app_db_path: str) -> None:
         self._app = app
         self._settings = settings
-        self._app_db = app_db
+        self._app_db_path = app_db_path
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
@@ -103,12 +104,7 @@ class _BearerAuthMiddleware:
         bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
-        # Authenticated when EITHER the legacy SEARCH_API_KEY bearer matches
-        # OR a browser session cookie resolves to an active user.
-        authenticated = (
-            legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY) is not None
-            or resolve_session(self._app_db, cookie) is not None
-        )
+        authenticated = self._is_authenticated(bearer, cookie)
 
         if not authenticated:
             log.warning(
@@ -125,6 +121,34 @@ class _BearerAuthMiddleware:
             return
 
         await self._app(scope, receive, send)
+
+    def _is_authenticated(self, bearer: str | None, cookie: str | None) -> bool:
+        """Return whether the request carries a valid credential.
+
+        Authenticated when EITHER the legacy ``SEARCH_API_KEY`` bearer matches
+        OR a browser ``search_session`` cookie resolves to an active user. The
+        ``app.db`` lookup uses a fresh per-request connection, closed before
+        returning; when a cookie resolves, its ``last_seen_at`` is refreshed on
+        the same connection so a cookie-only MCP client is not left with a
+        frozen ``last_seen``.
+
+        Args:
+            bearer: The extracted ``Authorization: Bearer`` token, or ``None``.
+            cookie: The raw ``search_session`` cookie value, or ``None``.
+
+        Returns:
+            ``True`` when the request is authorised, ``False`` otherwise.
+        """
+        if legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY) is not None:
+            return True
+        app_db = connect(self._app_db_path)
+        try:
+            if resolve_session(app_db, cookie) is None:
+                return False
+            refresh_last_seen(app_db, cookie)
+            return True
+        finally:
+            app_db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +232,10 @@ def _run_search_tool(
         return _serialise_result(result)
     except Exception:
         log.exception(error_event)
-        raise ValueError("search failed — see server logs")
+        # from None: the original may carry filesystem paths or internal state
+        # (CODE_GUIDELINES §6.3, §10) — the chain is severed deliberately, and
+        # the full traceback is in the server log above.
+        raise ValueError("search failed — see server logs") from None
 
 
 # ---------------------------------------------------------------------------
@@ -227,18 +254,20 @@ class _McpApp:
     Args:
         fastmcp: The configured FastMCP server.
         settings: Application settings for the auth middleware.
-        app_db: The open ``app.db`` connection for session-cookie auth.
+        app_db_path: The filesystem path to ``app.db`` for session-cookie auth.
     """
 
     def __init__(
         self,
         fastmcp: FastMCP,
         settings: Settings,
-        app_db: sqlite3.Connection,
+        app_db_path: str,
     ) -> None:
         self._fastmcp = fastmcp
         starlette_app = fastmcp.streamable_http_app()
-        self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, settings, app_db)
+        self._asgi_app: ASGIApp = _BearerAuthMiddleware(
+            starlette_app, settings, app_db_path
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)
@@ -301,9 +330,7 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         )
 
 
-def build_mcp_app(
-    core: SearchCore, settings: Settings, app_db: sqlite3.Connection
-) -> _McpApp:
+def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _McpApp:
     """Build and return the MCP ASGI application (spec §7.2/§7.3).
 
     Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
@@ -317,9 +344,9 @@ def build_mcp_app(
             pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
         settings: Application settings; ``SEARCH_API_KEY`` is used by the auth
             middleware.
-        app_db: The open ``app.db`` connection, passed to the auth
+        app_db_path: The filesystem path to ``app.db``, passed to the auth
             middleware so a browser session cookie can authenticate an MCP
-            request.
+            request. The middleware opens a fresh connection per request.
 
     Returns:
         An ASGI application wrapping the FastMCP server with bearer-token auth.
@@ -334,4 +361,4 @@ def build_mcp_app(
         stateless_http=True,
     )
     _register_search_tools(mcp, core)
-    return _McpApp(mcp, settings, app_db)
+    return _McpApp(mcp, settings, app_db_path)

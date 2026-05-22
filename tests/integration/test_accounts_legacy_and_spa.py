@@ -175,13 +175,15 @@ def _build_spa_client(tmp_path: Path) -> TestClient:
 
     settings = make_settings(tmp_path)
     seed_store(settings)
-    app_db = open_app_db(tmp_path)
+    # Migrate the app.db at settings.APP_DB_PATH so the app starts cleanly; the
+    # connection is closed at once — the app opens its own per request, and the
+    # SPA tests do not inspect app.db directly.
+    open_app_db(tmp_path).close()
     store_reader = StoreReader(settings)
     app = search_api.create_app(
         settings,
         core=make_mock_core(),
         store_reader=store_reader,
-        app_db=app_db,
     )
     return TestClient(app, raise_server_exceptions=False)
 

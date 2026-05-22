@@ -1,14 +1,20 @@
 """The per-app account context for the search server.
 
-Wave 1's account endpoints and auth dependencies all need three things at
-request time: the open ``app.db`` connection, the in-memory first-run
+Wave 1's account endpoints and auth dependencies need three things at request
+time: where ``app.db`` lives, the in-memory first-run
 :class:`~search.setup.SetupState`, and the configured legacy
 ``SEARCH_API_KEY``. Bundling them into one :class:`AppState` — created once by
 the app factory and stashed on ``app.state`` — keeps every route signature
 free of plumbing arguments.
 
-:func:`get_app_state` is the FastAPI dependency that reads the bundle back
-off the incoming request.
+:class:`AppState` holds the ``app.db`` **path**, not a live connection. The
+connection is opened *per request* by the :func:`~search.deps.get_app_db`
+dependency and closed when the request ends: a ``sqlite3.Connection`` is not
+safe to share across the request threads FastAPI serves on, so one connection
+must never outlive a single request.
+
+:func:`get_app_state` is the FastAPI dependency that reads the bundle back off
+the incoming request.
 
 ``Request`` is imported at runtime, not under ``TYPE_CHECKING``: FastAPI
 introspects :func:`get_app_state`'s signature at app-build time to recognise
@@ -21,7 +27,6 @@ decorators, sqlite3 SQL.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
 from starlette.requests import Request
@@ -37,15 +42,17 @@ class AppState:
     """The account-subsystem context shared by every request.
 
     Attributes:
-        app_db: The open connection to ``app.db``. One connection is shared
-            across the server's request threads; ``check_same_thread=False``
-            and appdb's per-statement commits make that safe.
+        app_db_path: The filesystem path to ``app.db``. The connection is
+            opened per request by :func:`~search.deps.get_app_db` and closed
+            when the request ends — a ``sqlite3.Connection`` is never shared
+            across requests, because it is not safe to drive from the multiple
+            threads FastAPI serves concurrent requests on.
         setup_state: The in-memory first-run setup-token holder.
         legacy_api_key: The configured ``SEARCH_API_KEY``; an empty string
             when no legacy key is set.
     """
 
-    app_db: sqlite3.Connection
+    app_db_path: str
     setup_state: SetupState
     legacy_api_key: str
 
@@ -64,7 +71,7 @@ def get_app_state(request: Request) -> AppState:
     """Return the :class:`AppState` stashed on the request's application.
 
     The FastAPI dependency every account route and auth dependency uses to
-    reach the ``app.db`` connection, the setup state, and the legacy key.
+    reach the ``app.db`` path, the setup state, and the legacy key.
 
     Args:
         request: The incoming request.
