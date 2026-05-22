@@ -11,7 +11,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
-import { search, getFacets, getStats, login, logout, me, setupStatus } from './client';
+import { search, getFacets, getStats, login, logout, me, setup, setupStatus, publicStats } from './client';
 import type {
   SearchRequest,
   SearchResponse,
@@ -20,7 +20,10 @@ import type {
   LoginRequest,
   LoginResponse,
   MeResponse,
+  SetupRequest,
+  SetupResponse,
   SetupStatus,
+  PublicStats,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -33,6 +36,7 @@ const queryKeys = {
   stats: () => ['stats'] as const,
   me: () => ['auth', 'me'] as const,
   setupStatus: () => ['setup', 'status'] as const,
+  publicStats: () => ['stats', 'public'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -109,6 +113,21 @@ export function useSetupStatus(): UseQueryResult<SetupStatus, Error> {
   });
 }
 
+/**
+ * Minimal public splash counts — GET /api/stats/public.
+ *
+ * Used only by the login splash. `retry: false` and a callers-must-degrade
+ * contract: the login screen omits the numbers when this errors.
+ */
+export function usePublicStats(): UseQueryResult<PublicStats, Error> {
+  return useQuery({
+    queryKey: queryKeys.publicStats(),
+    queryFn: publicStats,
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mutation hooks
 // ---------------------------------------------------------------------------
@@ -142,6 +161,25 @@ export function useLogout(): UseMutationResult<void, Error, void> {
     mutationFn: logout,
     onSuccess: () => {
       queryClient.setQueryData(queryKeys.me(), undefined);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    },
+  });
+}
+
+/**
+ * First-run setup mutation — POST /api/setup.
+ *
+ * Creates the first admin account. On success the `setup-status` and `me`
+ * queries are invalidated so the bootstrap gate re-resolves — the freshly
+ * created admin is signed in by the same response's session cookie.
+ * On failure: `ApiError` with status 403 (bad token) or 409 (already set up).
+ */
+export function useSetup(): UseMutationResult<SetupResponse, Error, SetupRequest> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: setup,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
     },
   });
