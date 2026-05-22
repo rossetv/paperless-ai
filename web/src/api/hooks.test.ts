@@ -20,9 +20,13 @@ import {
   useSetupStatus,
   usePublicStats,
   useRecentSearches,
+  useUsers,
+  useCreateUser,
+  useUpdateUser,
+  useDeleteUser,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
-import { Unauthenticated } from './client';
+import { Unauthenticated, ApiError } from './client';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -352,5 +356,66 @@ describe('useRecentSearches', () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(Unauthenticated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 3 — user-management hooks
+// ---------------------------------------------------------------------------
+
+describe('useUsers', () => {
+  it('returns the user list on success', async () => {
+    mockFetch(200, { users: [SAMPLE_USER] });
+    const { result } = renderHook(() => useUsers(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.users[0].username).toBe('alex.morgan');
+  });
+});
+
+describe('useCreateUser', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useCreateUser(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves with the created user', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const { result } = renderHook(() => useCreateUser(), { wrapper: makeWrapper() });
+    result.current.mutate({
+      username: 'sam.patel',
+      password: 'password1',
+      display_name: 'Sam Patel',
+      email: 'sam@home.lan',
+      role: 'member',
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.user.id).toBe(1);
+  });
+});
+
+describe('useUpdateUser', () => {
+  it('resolves with the updated user', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const { result } = renderHook(() => useUpdateUser(), { wrapper: makeWrapper() });
+    result.current.mutate({ id: 7, body: { role: 'admin' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.user.role).toBe('admin');
+  });
+});
+
+describe('useDeleteUser', () => {
+  it('resolves on a 204 response', async () => {
+    mockFetch(204, null);
+    const { result } = renderHook(() => useDeleteUser(), { wrapper: makeWrapper() });
+    result.current.mutate(7);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('surfaces ApiError on a 409 (last-admin guard)', async () => {
+    mockFetch(409, { detail: 'Cannot delete the last admin' });
+    const { result } = renderHook(() => useDeleteUser(), { wrapper: makeWrapper() });
+    result.current.mutate(1);
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
   });
 });
