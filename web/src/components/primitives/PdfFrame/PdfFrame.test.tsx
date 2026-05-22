@@ -20,4 +20,13 @@ describe('PdfFrame', () => {
     );
     expect((container.firstChild as Element).className).toContain('extra');
   });
+
+  it('sandboxes the iframe with no script or same-origin grant', () => {
+    // The src is same-origin with the app; an empty sandbox denies any
+    // active content script execution and same-origin access — the
+    // stored-XSS defence-in-depth layer. allow-scripts must not appear.
+    render(<PdfFrame src="/api/documents/9823/pdf" title="t" />);
+    const frame = screen.getByTitle('t');
+    expect(frame).toHaveAttribute('sandbox', '');
+  });
 });
