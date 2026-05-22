@@ -1,78 +1,59 @@
-"""FastAPI search server — HTTP API, static Web UI, and MCP mount (spec §7.1).
+"""FastAPI search server — HTTP API, account management, SPA, and MCP mount.
 
 One uvicorn process serves:
-- ``POST /api/auth/login`` — API-key exchange for a signed session cookie
-- ``GET /api/healthz``     — liveness; 503 when the index is absent or corrupt
-- ``POST /api/search``     — full agentic search pipeline
-- ``GET /api/facets``      — taxonomy facets for the UI filter panel
-- ``GET /api/stats``       — index statistics
-- ``POST /api/reconcile``  — manual reconciliation trigger (spec §5.8)
-- ``/mcp``                 — MCP streamable-HTTP ASGI app (spec §7.2)
-- ``/``                    — the built React SPA (``web/dist``)
+- the account endpoints (setup, login/logout/me, user CRUD) — ``account_routes``
+- the search endpoints (search, facets, stats, reconcile, healthz) — ``routes``
+- ``/mcp``  — the MCP streamable-HTTP ASGI app
+- ``/``     — the built React SPA, with a deep-link catch-all
 
-The six ``/api/*`` route handlers live in :mod:`search.routes`; this module is
-component wiring only — build the core, build the auth dependency, create the
-app, mount the MCP sub-app and the ``/api`` router, mount the SPA.
+This module is component wiring only: build the core, open ``app.db`` and run
+its migrations, enter setup mode if there are no users, attach the per-app
+account context, mount the routers and the SPA.
 
-Security invariants (spec §9.2, ``CODE_GUIDELINES.md`` §10):
-- ``SEARCH_API_KEY`` is mandatory; the server refuses to start without it.
-- Every ``/api/*`` endpoint except ``/api/auth/login`` and ``/api/healthz``
-  requires a valid Bearer token or a valid signed session cookie.
-- The index DB is never web-reachable — ``StaticFiles`` is mounted **only** at
-  the built frontend directory, never over ``/data`` or any path that contains
-  the index file.
+Security invariants (web-redesign §4; CODE_GUIDELINES §10):
+- Browser auth is a server-side session behind an opaque, hashed cookie.
+- ``Authorization: Bearer <SEARCH_API_KEY>`` keeps working as a legacy
+  admin-equivalent through Waves 1-2.
+- The index DB is never web-reachable — static serving is rooted only at the
+  built frontend directory.
 
-Allowed deps: fastapi, uvicorn, starlette, search (routes, auth, core,
-    mcp_server), store (reader), common.config.
-Forbidden: sqlite3, direct LLM/HTTP calls, imports from indexer/.
+Allowed deps: fastapi, uvicorn, starlette, search (routes, account_routes,
+    deps, appstate, setup, spa, appdb_setup, mcp_server, core), store
+    (reader), appdb, common.config.
 """
 
 from __future__ import annotations
 
-import logging
 import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI
 
-from search.auth import (
-    SESSION_COOKIE_NAME,
-    extract_bearer,
-    is_request_authenticated,
-)
+from search.account_routes import build_account_router
+from search.appdb_setup import open_app_db
+from search.appstate import AppState, attach_app_state
+from search.deps import require_role
 from search.mcp_server import build_mcp_app
 from search.routes import build_api_router
+from search.setup import SetupState, generate_setup_token, is_setup_needed
+from search.spa import register_spa
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from common.config import Settings
     from search.core import SearchCore
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
-# Path to the built frontend.
-#
-# Resolution order (first non-empty value wins):
-# 1. ``FRONTEND_DIST`` environment variable — set to ``/app/web/dist`` by the
-#    Dockerfile so the installed-package path works correctly inside the
-#    container regardless of where pip placed ``api.py``.
-# 2. The path relative to this file's *repository* root — works for direct
-#    source-tree execution (``python -m search.api``) and for local dev where
-#    the package is installed with ``pip install -e .``.
-#
-# The path is resolved at import time; a missing directory silently skips the
-# static mount rather than crashing the server (unit tests, pre-build).
+# Path to the built frontend. Resolution order: the FRONTEND_DIST env var
+# (set by the Dockerfile), else the path relative to the repo root for
+# source-tree execution. Resolved at import time; a missing directory makes
+# the SPA mount a no-op rather than crashing the server.
 _env_frontend = os.environ.get("FRONTEND_DIST", "").strip()
 if _env_frontend:
     _FRONTEND_DIST = Path(_env_frontend)
@@ -81,84 +62,74 @@ else:
     _FRONTEND_DIST = _REPO_ROOT / "web" / "dist"
 
 
-# ---------------------------------------------------------------------------
-# Authentication dependency
-# ---------------------------------------------------------------------------
-
-
-def _make_require_auth(settings: Settings) -> Callable[[Request], None]:
-    """Return a FastAPI dependency that enforces authentication.
-
-    Extracts the Bearer token from the ``Authorization`` header and the session
-    cookie from the request, then delegates to
-    :func:`~search.auth.is_request_authenticated`.  Raises HTTP 401 on failure.
-
-    The key is **never logged** (``CODE_GUIDELINES.md`` §7.4, §10.3).
-
-    Args:
-        settings: Application settings carrying ``SEARCH_API_KEY``.
-    """
-
-    def require_auth(request: Request) -> None:
-        """FastAPI dependency; raises 401 if the request is not authenticated."""
-        bearer = extract_bearer(request.headers.get("authorization"))
-        cookie = request.cookies.get(SESSION_COOKIE_NAME)
-
-        if not is_request_authenticated(
-            bearer=bearer, cookie=cookie, settings=settings
-        ):
-            log.warning(
-                "api.auth_rejected",
-                has_auth_header=bearer is not None,
-                has_cookie=cookie is not None,
-            )
-            raise HTTPException(status_code=401, detail="Unauthorised")
-
-    return require_auth
-
-
-# ---------------------------------------------------------------------------
-# App factory
-# ---------------------------------------------------------------------------
-
-
 def create_app(
     settings: Settings,
     *,
     core: SearchCore | None = None,
     store_reader: StoreReader | None = None,
+    app_db: sqlite3.Connection | None = None,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
-    Constructs the search core from ``settings`` when *core* or *store_reader*
-    are not provided (i.e. in production).  Both parameters exist so that unit
-    and integration tests can inject pre-built stubs without touching the
-    environment or the filesystem.
+    Builds the search core from *settings* when *core*/*store_reader* are not
+    supplied (production), opens and migrates ``app.db`` when *app_db* is not
+    supplied, and wires the account context onto the app.
 
     Args:
         settings: Application settings.
-        core: An optional pre-built :class:`~search.core.SearchCore`.  When
-            ``None``, the core is constructed from *settings*.
+        core: An optional pre-built :class:`~search.core.SearchCore`.
         store_reader: An optional pre-built :class:`~store.reader.StoreReader`.
-            When ``None``, one is constructed from *settings*.
+        app_db: An optional pre-opened, migrated ``app.db`` connection. Tests
+            inject a ``tmp_path`` connection; production passes ``None`` and
+            gets one opened from ``settings.APP_DB_PATH``.
 
     Returns:
         A configured FastAPI application.
     """
     core, store_reader = _resolve_components(settings, core, store_reader)
+    app_db = open_app_db(settings.APP_DB_PATH) if app_db is None else app_db
 
-    app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="Paperless Semantic Search", docs_url=None, redoc_url=None
+    )
 
-    # Mount the MCP ASGI app and the /api router BEFORE the SPA catch-all so
-    # /mcp and /api/* take precedence over the static mount (spec §7.2).
-    app.mount("/mcp", build_mcp_app(core, settings))
+    # Build the first-run setup state: when app.db has no users the server is
+    # in setup mode — generate a token and log it prominently (spec §4.5).
+    setup_state = SetupState()
+    if is_setup_needed(app_db):
+        setup_state.token = generate_setup_token()
+        log.warning(
+            "search.setup_mode",
+            message=(
+                f"SETUP TOKEN: {setup_state.token} — open /setup to create "
+                "the first admin account"
+            ),
+        )
+
+    attach_app_state(
+        app.state,
+        AppState(
+            app_db=app_db,
+            setup_state=setup_state,
+            legacy_api_key=settings.SEARCH_API_KEY,
+        ),
+    )
+
+    # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
+    # precedence over static serving.
+    app.mount("/mcp", build_mcp_app(core, settings, app_db))
+    app.include_router(build_account_router(store_reader))
     app.include_router(
         build_api_router(
-            settings, core, store_reader, _make_require_auth(settings)
+            settings,
+            core,
+            store_reader,
+            require_reader=require_role("readonly"),
+            require_member=require_role("member"),
         )
     )
 
-    _mount_frontend(app)
+    register_spa(app, _FRONTEND_DIST)
     return app
 
 
@@ -197,65 +168,37 @@ def _resolve_components(
     return core, store_reader
 
 
-def _mount_frontend(app: FastAPI) -> None:
-    """Mount the built React SPA at ``/`` if its directory exists.
-
-    The static mount must come AFTER the ``/api/*`` and ``/mcp`` routes so
-    they take precedence.  A missing ``web/dist`` directory (unit tests,
-    pre-build) silently skips the mount rather than crashing the server.
-
-    Security: mounted ONLY at ``web/dist`` — never over ``/data`` or the index
-    directory, so the index DB is never web-reachable.
-    """
-    if _FRONTEND_DIST.is_dir():
-        app.mount(
-            "/",
-            StaticFiles(directory=str(_FRONTEND_DIST), html=True),
-            name="frontend",
-        )
-        log.info("api.frontend_mounted", path=str(_FRONTEND_DIST))
-    else:
-        log.info(
-            "api.frontend_not_mounted",
-            path=str(_FRONTEND_DIST),
-            reason="web/dist directory not found; skipping static mount",
-        )
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-
 def main() -> None:
     """Start the search server (entry point: ``paperless-search-server``).
 
-    PREFLIGHT — fail closed (spec §9.2, ``CODE_GUIDELINES.md`` §10.1):
-    An empty ``SEARCH_API_KEY`` is a fatal error; the server refuses to start.
-    Serving the operator's personal document archive without authentication
-    is a data-breach one misconfiguration away (spec §9.2).
+    Runs the shared per-process bootstrap, then builds and serves the app.
+    ``app.db`` is opened and migrated inside :func:`create_app`. The legacy
+    ``SEARCH_API_KEY`` is now **optional**: with database-backed accounts a
+    deployment can run with no legacy key at all, so an empty key is no
+    longer fatal — it simply disables the legacy bearer path.
     """
     from common.bootstrap import bootstrap_process
 
-    # Run the per-process startup shared with the daemons: Settings, logging,
-    # the library singletons (the OpenAI client), signal handlers, and the LLM
-    # concurrency limiter.  Centralised in common.bootstrap so the search
-    # server cannot drift from the daemons — omitting the limiter step here is
-    # what previously 500ed every query (see bootstrap_process).
     settings = bootstrap_process()
 
-    # Fail closed: the API key is mandatory (spec §10.1, §9.2).
-    # Strip whitespace before checking — a key of "   " is effectively absent
-    # and must not allow the server to start with a near-empty credential.
     if not settings.SEARCH_API_KEY.strip():
-        logging.critical(
-            "SEARCH_API_KEY is not set or is whitespace-only — the search "
-            "server refuses to start without a real API key.  Set "
-            "SEARCH_API_KEY in the environment."
+        # Not fatal any more — accounts are the primary auth. Just note it.
+        log.info(
+            "search.no_legacy_api_key",
+            message=(
+                "SEARCH_API_KEY is unset — the legacy Bearer path is "
+                "disabled; sign in with a user account."
+            ),
         )
-        sys.exit(1)
 
-    app = create_app(settings)
+    try:
+        app = create_app(settings)
+    except Exception:
+        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — a failure
+        # here (e.g. an app.db written by newer code) must abort startup
+        # loudly rather than serve a half-built app.
+        log.exception("search.startup_failed")
+        sys.exit(1)
 
     log.info(
         "search_server.starting",
