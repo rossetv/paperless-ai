@@ -3,26 +3,21 @@ import { DocumentSnippet } from './DocumentSnippet';
 
 describe('DocumentSnippet', () => {
   it('renders the snippet text', () => {
-    render(<DocumentSnippet snippet="The boiler warranty expires in 2026." />);
+    render(<DocumentSnippet snippet="The boiler was installed in 2021." />);
     expect(
-      screen.getByText('The boiler warranty expires in 2026.'),
+      screen.getByText(/The boiler was installed in 2021/),
     ).toBeInTheDocument();
   });
 
-  it('renders an empty snippet without crashing', () => {
-    expect(() => render(<DocumentSnippet snippet="" />)).not.toThrow();
+  it('highlights **bold** runs as marks', () => {
+    const { container } = render(
+      <DocumentSnippet snippet="A total of **£1,847.32** was paid." />,
+    );
+    expect(container.querySelectorAll('mark')).toHaveLength(1);
   });
 
-  it('renders nothing visible when snippet is empty', () => {
+  it('renders an accessible notice for an empty snippet', () => {
     render(<DocumentSnippet snippet="" />);
-    // The empty-state message should be present but the snippet text absent
-    expect(screen.getByText(/no excerpt/i)).toBeInTheDocument();
-  });
-
-  it('renders the snippet in a readable paragraph element', () => {
-    render(<DocumentSnippet snippet="Some excerpt text." />);
-    const paragraph = document.querySelector('p');
-    expect(paragraph).toBeInTheDocument();
-    expect(paragraph).toHaveTextContent('Some excerpt text.');
+    expect(screen.getByText(/no excerpt available/i)).toBeInTheDocument();
   });
 });
