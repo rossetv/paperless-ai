@@ -1,0 +1,85 @@
+/*
+ * UserEditDrawer feature component — CSS Module.
+ *
+ * The create / edit user form rendered inside the shared Modal. A two-column
+ * field grid above a footer split between a destructive action (left) and
+ * the save / cancel buttons (right).
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Two-column field grid. ── */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-13);
+}
+
+/* A field that spans the full grid width. */
+.full {
+  grid-column: 1 / -1;
+}
+
+/* ── A server / submit error banner. ── */
+.error {
+  margin-top: var(--spacing-10);
+  padding: var(--spacing-8) var(--spacing-10);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+}
+
+/* ── Footer — destructive action left, primary actions right. ── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-10);
+  margin-top: var(--spacing-14);
+  padding-top: var(--spacing-13);
+  border-top: var(--spacing-1) solid var(--colour-border);
+}
+
+/* The destructive cluster — suspend + delete. */
+.destructive {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+/* The primary cluster — cancel + save. */
+.primary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+/* ── A bare destructive text button (suspend / delete / confirm). ── */
+.dangerButton {
+  background: none;
+  border: none;
+  padding: var(--spacing-4) var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-status-danger-fg);
+  cursor: pointer;
+  border-radius: var(--radius-micro);
+}
+
+.dangerButton:hover:not(:disabled) {
+  background-color: var(--colour-status-danger-bg);
+}
+
+.dangerButton:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.dangerButton:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
