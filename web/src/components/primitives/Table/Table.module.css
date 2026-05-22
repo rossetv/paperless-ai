@@ -1,0 +1,81 @@
+/*
+ * Table primitive — CSS Module.
+ *
+ * A card-surfaced data table: a hairline-bordered rounded container, a
+ * tinted header row, hairline-separated body rows. Matches the Apple
+ * card-table look in the handoff. Column widths and alignment are applied
+ * inline by the component (they are per-column data); everything else is
+ * tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Outer container — the rounded card the table sits in. ── */
+.wrapper {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  overflow: hidden;
+}
+
+/* ── The table itself. ── */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-text);
+}
+
+/* ── Header. ── */
+.head {
+  background-color: var(--colour-button-light-bg);
+}
+
+.headCell {
+  padding: var(--spacing-9) var(--spacing-14);
+  text-align: left;
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+  white-space: nowrap;
+}
+
+.headCellEnd {
+  text-align: right;
+}
+
+/* ── Body. ── */
+.row {
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+/* The last body row needs no separator. */
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Muted rows — suspended users, expired keys: dimmed but legible. */
+.row[data-muted='true'] {
+  opacity: var(--opacity-disabled);
+}
+
+.cell {
+  padding: var(--spacing-10) var(--spacing-14);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+  vertical-align: middle;
+}
+
+.cellEnd {
+  text-align: right;
+}
+
+/* ── Empty state — a single full-width row. ── */
+.emptyCell {
+  padding: var(--spacing-section) var(--spacing-14);
+  text-align: center;
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+}
