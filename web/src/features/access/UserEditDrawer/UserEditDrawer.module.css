@@ -58,7 +58,7 @@
 }
 
 /* ── A bare destructive text button (suspend / delete / confirm). ── */
-.dangerButton {
+.danger-button {
   background: none;
   border: none;
   padding: var(--spacing-4) var(--spacing-6);
@@ -70,16 +70,16 @@
   border-radius: var(--radius-micro);
 }
 
-.dangerButton:hover:not(:disabled) {
-  background-color: var(--colour-status-danger-bg);
+.danger-button:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
 }
 
-.dangerButton:focus-visible {
+.danger-button:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
 }
 
-.dangerButton:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
+.danger-button:hover:not(:disabled) {
+  background-color: var(--colour-status-danger-bg);
 }

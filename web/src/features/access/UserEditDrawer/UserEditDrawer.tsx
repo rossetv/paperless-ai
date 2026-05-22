@@ -255,7 +255,7 @@ export function UserEditDrawer({
               <>
                 <button
                   type="button"
-                  className={styles['dangerButton']}
+                  className={styles['danger-button']}
                   disabled={isSelf || busy}
                   onClick={() => void handleToggleStatus()}
                 >
@@ -264,7 +264,7 @@ export function UserEditDrawer({
                 {confirmingDelete ? (
                   <button
                     type="button"
-                    className={styles['dangerButton']}
+                    className={styles['danger-button']}
                     disabled={isSelf || busy}
                     onClick={() => void handleDelete()}
                   >
@@ -273,7 +273,7 @@ export function UserEditDrawer({
                 ) : (
                   <button
                     type="button"
-                    className={styles['dangerButton']}
+                    className={styles['danger-button']}
                     disabled={isSelf || busy}
                     onClick={() => setConfirmingDelete(true)}
                   >

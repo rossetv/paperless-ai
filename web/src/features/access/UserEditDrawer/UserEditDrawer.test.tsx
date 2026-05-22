@@ -114,7 +114,7 @@ describe('UserEditDrawer — create mode', () => {
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(mutateAsync.mock.calls[0][0]).toMatchObject({
+    expect(mutateAsync.mock.calls[0]?.[0]).toMatchObject({
       username: 'sam.patel',
       password: 'password1',
       role: 'member',
@@ -146,7 +146,7 @@ describe('UserEditDrawer — edit mode', () => {
     await userEvent.type(name, 'Samuel Patel');
     await userEvent.click(screen.getByRole('button', { name: /^save/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(mutateAsync.mock.calls[0][0]).toEqual({
+    expect(mutateAsync.mock.calls[0]?.[0]).toEqual({
       id: 2,
       body: { display_name: 'Samuel Patel' },
     });
@@ -158,7 +158,7 @@ describe('UserEditDrawer — edit mode', () => {
     render(<UserEditDrawer user={SAMPLE_USER} isSelf={false} onClose={vi.fn()} />);
     await userEvent.click(screen.getByRole('button', { name: /^save/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
-    expect(mutateAsync.mock.calls[0][0].body).not.toHaveProperty('password');
+    expect(mutateAsync.mock.calls[0]?.[0].body).not.toHaveProperty('password');
   });
 
   it('calls deleteUser when delete is confirmed', async () => {
