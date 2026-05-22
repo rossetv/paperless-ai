@@ -10,20 +10,23 @@ free of plumbing arguments.
 :func:`get_app_state` is the FastAPI dependency that reads the bundle back
 off the incoming request.
 
-Depends on: starlette Request (typing only), search.setup. Forbidden:
-FastAPI route decorators, sqlite3 SQL.
+``Request`` is imported at runtime, not under ``TYPE_CHECKING``: FastAPI
+introspects :func:`get_app_state`'s signature at app-build time to recognise
+the special ``Request`` parameter — a string forward reference would be
+mis-read as a query parameter (a spurious 422).
+
+Depends on: starlette Request, search.setup. Forbidden: FastAPI route
+decorators, sqlite3 SQL.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+
+from starlette.requests import Request
 
 from search.setup import SetupState
-
-if TYPE_CHECKING:
-    from starlette.requests import Request
 
 # The attribute name under which the AppState is stored on app.state.
 _APP_STATE_ATTR = "app_state"
