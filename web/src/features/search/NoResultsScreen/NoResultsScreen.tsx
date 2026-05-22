@@ -14,6 +14,11 @@ export interface NoResultsScreenProps {
   filters: FilterRequest;
   /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
+  /**
+   * Called with a new query when the user submits the recap search field —
+   * the parent re-runs the search, so a second search needs no reload.
+   */
+  onSearch: (query: string) => void;
   /** Called when the user asks to clear all filters. */
   onClearFilters: () => void;
   /** Called when the user asks to re-run the search with no filters. */
@@ -36,6 +41,7 @@ export function NoResultsScreen({
   query,
   filters,
   onFiltersChange,
+  onSearch,
   onClearFilters,
   onSearchWithoutFilters,
 }: NoResultsScreenProps): React.ReactElement {
@@ -47,11 +53,14 @@ export function NoResultsScreen({
       }
     >
       <Stack direction="vertical" gap={10}>
+        {/* Query recap — editable: submitting it re-runs the search with the
+            new query, so the user is never stranded on this screen. Keyed by
+            `query` so it re-seeds whenever a fresh search lands. */}
         <SearchField
+          key={query}
           id="no-results-search"
-          value={query}
-          disabled
-          onSubmit={() => {}}
+          defaultValue={query}
+          onSubmit={onSearch}
         />
 
         <EmptyState

@@ -153,8 +153,10 @@ export function SearchPage(): React.ReactElement {
       }
       return (
         <SearchErrorScreen
+          query={query}
           message={searchResult.error.message}
           onRetry={() => searchResult.refetch()}
+          onSearch={runSearch}
         />
       );
     }
@@ -167,6 +169,7 @@ export function SearchPage(): React.ReactElement {
             query={query}
             filters={filters}
             onFiltersChange={handleFiltersChange}
+            onSearch={runSearch}
             onClearFilters={clearFilters}
             onSearchWithoutFilters={() => {
               clearFilters();
@@ -180,6 +183,7 @@ export function SearchPage(): React.ReactElement {
           filters={filters}
           result={searchResult.data}
           onFiltersChange={handleFiltersChange}
+          onSearch={runSearch}
           onCitationActivate={handleCitationActivate}
           onPreview={openPreview}
           {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}

@@ -26,24 +26,59 @@ vi.mock('../features/search/LoadingScreen/LoadingScreen', () => ({
     React.createElement('div', { 'data-testid': 'loading' }),
 }));
 vi.mock('../features/search/ResultsScreen/ResultsScreen', () => ({
-  ResultsScreen: ({ onPreview }: { onPreview: (id: number) => void }) =>
+  ResultsScreen: ({
+    query,
+    onPreview,
+    onSearch,
+  }: {
+    query: string;
+    onPreview: (id: number) => void;
+    onSearch: (q: string) => void;
+  }) =>
     React.createElement(
-      'button',
-      { 'data-testid': 'results', onClick: () => onPreview(9823) },
-      'results',
+      'div',
+      { 'data-testid': 'results' },
+      React.createElement('span', { 'data-testid': 'results-query' }, query),
+      React.createElement(
+        'button',
+        { 'data-testid': 'results-preview', onClick: () => onPreview(9823) },
+        'preview',
+      ),
+      React.createElement(
+        'button',
+        {
+          'data-testid': 'results-new-search',
+          onClick: () => onSearch('rolling-blackout refunds'),
+        },
+        'new search',
+      ),
     ),
 }));
 vi.mock('../features/search/NoResultsScreen/NoResultsScreen', () => ({
-  NoResultsScreen: () =>
-    React.createElement('div', { 'data-testid': 'no-results' }),
+  NoResultsScreen: ({ onSearch }: { onSearch: (q: string) => void }) =>
+    React.createElement(
+      'button',
+      {
+        'data-testid': 'no-results',
+        onClick: () => onSearch('octopus tariff'),
+      },
+      'no-results',
+    ),
 }));
 vi.mock('../features/search/IndexNotReadyScreen/IndexNotReadyScreen', () => ({
   IndexNotReadyScreen: () =>
     React.createElement('div', { 'data-testid': 'index-not-ready' }),
 }));
 vi.mock('../features/search/SearchErrorScreen/SearchErrorScreen', () => ({
-  SearchErrorScreen: () =>
-    React.createElement('div', { 'data-testid': 'search-error' }),
+  SearchErrorScreen: ({ onSearch }: { onSearch: (q: string) => void }) =>
+    React.createElement(
+      'button',
+      {
+        'data-testid': 'search-error',
+        onClick: () => onSearch('boiler service'),
+      },
+      'search-error',
+    ),
 }));
 vi.mock('../features/search/DocumentPreviewScreen/DocumentPreviewScreen', () => ({
   DocumentPreviewScreen: ({ onClose }: { onClose: () => void }) =>
@@ -185,7 +220,7 @@ describe('SearchPage', () => {
     );
     renderPage();
     await userEvent.click(screen.getByTestId('idle'));
-    await userEvent.click(screen.getByTestId('results'));
+    await userEvent.click(screen.getByTestId('results-preview'));
     expect(screen.getByTestId('preview')).toBeInTheDocument();
   });
 
@@ -195,8 +230,35 @@ describe('SearchPage', () => {
     );
     renderPage();
     await userEvent.click(screen.getByTestId('idle'));
-    await userEvent.click(screen.getByTestId('results'));
+    await userEvent.click(screen.getByTestId('results-preview'));
     await userEvent.click(screen.getByTestId('preview'));
     expect(screen.getByTestId('results')).toBeInTheDocument();
+  });
+
+  it('runs a second, different search from the results view', async () => {
+    // Regression: once a search ran, `query` never reset and only the idle
+    // screen had an editable field — the user was stranded on the results
+    // screen with no way to start a fresh search short of a full reload.
+    mockUseSearch.mockReturnValue(
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
+    );
+    renderPage();
+
+    // First search — from the idle hero.
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('results-query')).toHaveTextContent(
+      'npower bills',
+    );
+
+    // Second search — from the editable recap field on the results screen.
+    await userEvent.click(screen.getByTestId('results-new-search'));
+
+    // The page re-runs the search with the NEW query, no reload needed.
+    expect(screen.getByTestId('results-query')).toHaveTextContent(
+      'rolling-blackout refunds',
+    );
+    expect(mockUseSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'rolling-blackout refunds' }),
+    );
   });
 });

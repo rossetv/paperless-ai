@@ -44,6 +44,7 @@ function renderResults(overrides = {}) {
       filters={EMPTY_FILTERS}
       result={RESPONSE}
       onFiltersChange={() => {}}
+      onSearch={() => {}}
       onCitationActivate={() => {}}
       onPreview={() => {}}
       {...overrides}
@@ -57,6 +58,17 @@ describe('ResultsScreen', () => {
     expect(
       screen.getByDisplayValue('how much did I pay npower in 2024'),
     ).toBeInTheDocument();
+  });
+
+  it('runs a fresh search when the editable recap field is submitted', async () => {
+    const onSearch = vi.fn();
+    renderResults({ onSearch });
+    const recap = screen.getByDisplayValue(
+      'how much did I pay npower in 2024',
+    );
+    await userEvent.clear(recap);
+    await userEvent.type(recap, 'octopus tariff for 2025{Enter}');
+    expect(onSearch).toHaveBeenCalledWith('octopus tariff for 2025');
   });
 
   it('renders the filter rail', () => {

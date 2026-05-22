@@ -20,6 +20,7 @@ function renderScreen(overrides = {}) {
       query="payslip from 2019 with a bonus over £4000"
       filters={EMPTY_FILTERS}
       onFiltersChange={() => {}}
+      onSearch={() => {}}
       onClearFilters={() => {}}
       onSearchWithoutFilters={() => {}}
       {...overrides}
@@ -33,6 +34,17 @@ describe('NoResultsScreen', () => {
     expect(
       screen.getByDisplayValue('payslip from 2019 with a bonus over £4000'),
     ).toBeInTheDocument();
+  });
+
+  it('runs a fresh search when the editable recap field is submitted', async () => {
+    const onSearch = vi.fn();
+    renderScreen({ onSearch });
+    const recap = screen.getByDisplayValue(
+      'payslip from 2019 with a bonus over £4000',
+    );
+    await userEvent.clear(recap);
+    await userEvent.type(recap, '2020 payslips{Enter}');
+    expect(onSearch).toHaveBeenCalledWith('2020 payslips');
   });
 
   it('renders the filter rail', () => {
