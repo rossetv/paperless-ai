@@ -6,9 +6,10 @@ One uvicorn process serves:
 - ``/mcp``  — the MCP streamable-HTTP ASGI app
 - ``/``     — the built React SPA, with a deep-link catch-all
 
-This module is component wiring only: build the core, open ``app.db`` and run
-its migrations, enter setup mode if there are no users, attach the per-app
-account context, mount the routers and the SPA.
+This module is component wiring only: build the core, migrate ``app.db`` (a
+short-lived startup connection), enter setup mode if there are no users,
+attach the per-app account context, mount the routers and the SPA. Each
+request opens its own ``app.db`` connection — see :mod:`search.deps`.
 
 Security invariants (web-redesign §4; CODE_GUIDELINES §10):
 - Browser auth is a server-side session behind an opaque, hashed cookie.
@@ -25,7 +26,6 @@ Allowed deps: fastapi, uvicorn, starlette, search (routes, account_routes,
 from __future__ import annotations
 
 import os
-import sqlite3
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -67,47 +67,57 @@ def create_app(
     *,
     core: SearchCore | None = None,
     store_reader: StoreReader | None = None,
-    app_db: sqlite3.Connection | None = None,
+    app_db_path: str | None = None,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
     Builds the search core from *settings* when *core*/*store_reader* are not
-    supplied (production), opens and migrates ``app.db`` when *app_db* is not
-    supplied, and wires the account context onto the app.
+    supplied (production), migrates ``app.db``, detects first-run setup, and
+    wires the account context onto the app. The ``app.db`` *path* — not a live
+    connection — is what the app holds: each request opens its own connection
+    through :func:`~search.deps.get_app_db`, because a ``sqlite3.Connection``
+    cannot be safely shared across the threads FastAPI serves requests on.
 
     Args:
         settings: Application settings.
         core: An optional pre-built :class:`~search.core.SearchCore`.
         store_reader: An optional pre-built :class:`~store.reader.StoreReader`.
-        app_db: An optional pre-opened, migrated ``app.db`` connection. Tests
-            inject a ``tmp_path`` connection; production passes ``None`` and
-            gets one opened from ``settings.APP_DB_PATH``.
+        app_db_path: An optional ``app.db`` path. Tests pass a ``tmp_path``
+            file; production passes ``None`` and ``settings.APP_DB_PATH`` is
+            used.
 
     Returns:
         A configured FastAPI application.
     """
     core, store_reader = _resolve_components(settings, core, store_reader)
-    app_db = open_app_db(settings.APP_DB_PATH) if app_db is None else app_db
+    app_db_path = settings.APP_DB_PATH if app_db_path is None else app_db_path
 
     app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
 
-    # Build the first-run setup state: when app.db has no users the server is
-    # in setup mode — generate a token and log it prominently (spec §4.5).
+    # Startup uses ONE short-lived connection: migrate app.db, then decide
+    # whether first-run setup is needed. It is closed immediately — request
+    # work opens its own connection per request (search.deps.get_app_db).
     setup_state = SetupState()
-    if is_setup_needed(app_db):
-        setup_state.token = generate_setup_token()
-        log.warning(
-            "search.setup_mode",
-            message=(
-                f"SETUP TOKEN: {setup_state.token} — open /setup to create "
-                "the first admin account"
-            ),
-        )
+    startup_conn = open_app_db(app_db_path)
+    try:
+        if is_setup_needed(startup_conn):
+            # No users yet: enter setup mode — generate a token and log it
+            # prominently (spec §4.5).
+            setup_state.token = generate_setup_token()
+            log.warning(
+                "search.setup_mode",
+                message=(
+                    f"SETUP TOKEN: {setup_state.token} — open /setup to create "
+                    "the first admin account"
+                ),
+            )
+    finally:
+        startup_conn.close()
 
     attach_app_state(
         app.state,
         AppState(
-            app_db=app_db,
+            app_db_path=app_db_path,
             setup_state=setup_state,
             legacy_api_key=settings.SEARCH_API_KEY,
         ),
@@ -115,7 +125,7 @@ def create_app(
 
     # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
     # precedence over static serving.
-    app.mount("/mcp", build_mcp_app(core, settings, app_db))
+    app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
     app.include_router(build_account_router(store_reader))
     app.include_router(
         build_api_router(
@@ -170,10 +180,19 @@ def main() -> None:
     """Start the search server (entry point: ``paperless-search-server``).
 
     Runs the shared per-process bootstrap, then builds and serves the app.
-    ``app.db`` is opened and migrated inside :func:`create_app`. The legacy
+    ``app.db`` is migrated inside :func:`create_app`. The legacy
     ``SEARCH_API_KEY`` is now **optional**: with database-backed accounts a
     deployment can run with no legacy key at all, so an empty key is no
     longer fatal — it simply disables the legacy bearer path.
+
+    uvicorn is run with ``proxy_headers=True`` so that, behind the documented
+    nginx + Cloudflare deployment, ``request.url.scheme`` reflects the real
+    edge scheme (HTTPS — so the session cookie gets its ``Secure`` flag) and
+    ``request.client.host`` reflects the real client IP from
+    ``X-Forwarded-For`` (so ``sessions.ip`` records the client, not the
+    proxy). ``forwarded_allow_ips="*"`` trusts those headers from any peer:
+    the search server's port is never exposed directly — only the reverse
+    proxy reaches it — so every inbound connection is the trusted proxy.
     """
     from common.bootstrap import bootstrap_process
 
@@ -207,4 +226,6 @@ def main() -> None:
         app,
         host=settings.SEARCH_SERVER_HOST,
         port=settings.SEARCH_SERVER_PORT,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
