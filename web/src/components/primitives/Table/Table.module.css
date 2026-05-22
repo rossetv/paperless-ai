@@ -30,7 +30,7 @@
   background-color: var(--colour-button-light-bg);
 }
 
-.headCell {
+.head-cell {
   padding: var(--spacing-9) var(--spacing-14);
   text-align: left;
   font-size: var(--font-size-micro);
@@ -42,7 +42,7 @@
   white-space: nowrap;
 }
 
-.headCellEnd {
+.head-cell-end {
   text-align: right;
 }
 
@@ -68,12 +68,12 @@
   vertical-align: middle;
 }
 
-.cellEnd {
+.cell-end {
   text-align: right;
 }
 
 /* ── Empty state — a single full-width row. ── */
-.emptyCell {
+.empty-cell {
   padding: var(--spacing-section) var(--spacing-14);
   text-align: center;
   font-size: var(--font-size-caption);
