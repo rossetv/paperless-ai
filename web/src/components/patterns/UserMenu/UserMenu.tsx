@@ -27,8 +27,8 @@ export interface UserMenuProps {
   className?: string;
 }
 
-/** Default avatar colour — the neutral grey gradient from the handoff. */
-const DEFAULT_AVATAR_COLOUR = 'linear-gradient(135deg,#5e6166,#2a2a2d)';
+/** Default avatar colour — references the design token so it stays in sync with tokens.css. */
+const DEFAULT_AVATAR_COLOUR = 'var(--gradient-avatar-default)';
 
 /**
  * Account dropdown menu — an `Avatar` trigger that opens a small menu with a
