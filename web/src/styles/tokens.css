@@ -317,4 +317,44 @@
 
   /* Disabled controls — reduces prominence without hiding entirely */
   --opacity-disabled: 0.48;
+
+  /* ─────────────────────────────────────────────
+   * Forced-dark surface — the Login / First-run "dark island"
+   *
+   * LoginScreen and FirstRunSetupScreen are intentionally dark in BOTH
+   * light and dark themes (spec §4.7, §6). These tokens are therefore
+   * theme-INDEPENDENT — defined once here on :root and NOT overridden in
+   * themes.css. Ordinary, theme-aware screens must not use them.
+   * ───────────────────────────────────────────── */
+
+  /* Page backdrop behind the dark island */
+  --colour-dark-bg:             #000;
+
+  /* The raised card surface on the dark island */
+  --colour-dark-surface:        #161618;
+
+  /* A control (input) surface on the dark island — pure-black well */
+  --colour-dark-control-bg:     #000;
+
+  /* Text on the dark island */
+  --colour-dark-text-primary:   #fff;
+  --colour-dark-text-secondary: rgb(255 255 255 / 62%);
+  --colour-dark-text-tertiary:  rgb(255 255 255 / 38%);
+
+  /* Hairline borders on the dark island */
+  --colour-dark-border:         rgb(255 255 255 / 10%);
+  --colour-dark-border-card:    rgb(255 255 255 / 6%);
+
+  /* Label text on the dark island */
+  --colour-dark-label:          rgb(255 255 255 / 50%);
+
+  /* Link colour on the dark island */
+  --colour-dark-link:           #2997ff;
+
+  /* Aurora glow tints — soft radial brand light on the login backdrop */
+  --colour-dark-aurora-near:    rgb(0 113 227 / 30%);
+  --colour-dark-aurora-far:     rgb(41 151 255 / 13%);
+
+  /* Card elevation shadow for the dark island */
+  --shadow-dark-card:           0 30px 70px -24px rgb(0 0 0 / 70%);
 }
