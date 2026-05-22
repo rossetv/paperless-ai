@@ -72,6 +72,7 @@ describe('APIKeyCreatePanel — form', () => {
 
   it('rejects a submit with no scopes selected', async () => {
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     // the API scope is on by default — turn it off
     await userEvent.click(screen.getByRole('checkbox', { name: /api/i }));
@@ -83,6 +84,7 @@ describe('APIKeyCreatePanel — form', () => {
     const mutateAsync = vi.fn().mockResolvedValue(RESULT);
     mockCreate.mockReturnValue(stub(mutateAsync));
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
@@ -97,6 +99,8 @@ describe('APIKeyCreatePanel — form', () => {
 describe('APIKeyCreatePanel — one-time reveal', () => {
   it('shows the full secret after a successful mint', async () => {
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    // Wait for the Modal focus-trap rAF to complete before interacting.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() =>
@@ -106,6 +110,7 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
 
   it('hides the form fields once the secret is revealed', async () => {
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() =>
@@ -115,6 +120,7 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
 
   it('copies the secret to the clipboard when Copy is clicked', async () => {
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() => screen.getByRole('button', { name: /copy/i }));
@@ -127,6 +133,7 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
   it('calls onClose from the reveal panel Done button', async () => {
     const onClose = vi.fn();
     render(<APIKeyCreatePanel onClose={onClose} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() => screen.getByRole('button', { name: /done/i }));
@@ -137,6 +144,7 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
   it('surfaces an error when the mint fails', async () => {
     mockCreate.mockReturnValue(stub(() => Promise.reject(new Error('boom'))));
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() =>
