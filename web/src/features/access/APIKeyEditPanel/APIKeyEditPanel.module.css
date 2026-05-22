@@ -1,0 +1,121 @@
+/*
+ * APIKeyEditPanel feature component — CSS Module.
+ *
+ * The edit-key form, rendered inside the shared Modal. Layout-only styling:
+ * the name field, the scope rows, the expiry quick-pick chips, the footer,
+ * the error banner. Mirrors APIKeyCreatePanel's form classes — Wave 7
+ * reconciles the shared scope/expiry styling.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Sections. ── */
+.section {
+  margin-top: var(--spacing-13);
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+/* ── Scope rows — a stack of checkable options. ── */
+.scopeList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.scopeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-9);
+  padding: var(--spacing-9) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  cursor: pointer;
+}
+
+.scopeRowOn {
+  border-color: var(--colour-accent);
+  background-color: var(--colour-status-info-bg);
+}
+
+.scopeText {
+  flex: 1;
+  min-width: 0;
+}
+
+.scopeName {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  color: var(--colour-text-primary);
+}
+
+.scopeDesc {
+  margin-top: var(--spacing-2);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Expiry quick-pick chips. ── */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-6);
+}
+
+.chip {
+  padding: var(--spacing-3) var(--spacing-9);
+  border-radius: var(--radius-pill);
+  border: var(--spacing-1) solid var(--colour-border);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  color: var(--colour-text-secondary);
+  cursor: pointer;
+}
+
+.chipOn {
+  background-color: var(--colour-accent);
+  border-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+.chip:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Footer. ── */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+  margin-top: var(--spacing-14);
+  padding-top: var(--spacing-13);
+  border-top: var(--spacing-1) solid var(--colour-border);
+}
+
+/* ── Error banner. ── */
+.error {
+  margin-top: var(--spacing-10);
+  padding: var(--spacing-8) var(--spacing-10);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+}
