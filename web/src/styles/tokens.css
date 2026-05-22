@@ -275,6 +275,9 @@
   /* Navigation height */
   --height-nav:         48px;
 
+  /* Settings / access-control left rail width */
+  --width-settings-nav: 240px;
+
   /* ─────────────────────────────────────────────
    * Component dimensions
    *
