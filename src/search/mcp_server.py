@@ -48,6 +48,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from appdb.connection import connect
 from search.api_keys import SCOPE_MCP, resolve_api_key
 from search.auth import SESSION_COOKIE_NAME, extract_bearer
+from search.deps import refresh_last_seen
 from search.models import SearchResult
 from search.sessions import resolve_session
 from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
@@ -80,21 +81,22 @@ class _BearerAuthMiddleware:
     unauthenticated request is rejected with HTTP 401 before the inner ASGI
     app is called.
 
+    A successful cookie auth also refreshes ``last_seen_at`` (via
+    :func:`~search.deps.refresh_last_seen`) so MCP-only users do not have a
+    frozen last-seen timestamp.
+
     No secret is **ever logged** — a failed check records only whether a
     header or cookie was present, never its value (CODE_GUIDELINES §7.4).
 
     Args:
         app: The inner ASGI application to protect.
-        settings: Application settings. Kept for the constructor's public
-            shape; the retired ``SEARCH_API_KEY`` is no longer read.
         app_db_path: The filesystem path to ``app.db``. A fresh connection is
             opened per request to resolve the cookie or the API key — an
             ``app.db`` connection is never shared across requests.
     """
 
-    def __init__(self, app: ASGIApp, settings: Settings, app_db_path: str) -> None:
+    def __init__(self, app: ASGIApp, app_db_path: str) -> None:
         self._app = app
-        self._settings = settings
         self._app_db_path = app_db_path
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -143,6 +145,10 @@ class _BearerAuthMiddleware:
         app_db = connect(self._app_db_path)
         try:
             if resolve_session(app_db, cookie) is not None:
+                # Refresh last_seen_at so MCP-only users do not have a frozen
+                # timestamp — mirrors what search.deps.resolve_caller does for
+                # the REST surface (CODE_GUIDELINES §10).
+                refresh_last_seen(app_db, cookie)
                 return True
             resolved = resolve_api_key(app_db, bearer)
             return resolved is not None and SCOPE_MCP in resolved.scopes
@@ -252,21 +258,17 @@ class _McpApp:
 
     Args:
         fastmcp: The configured FastMCP server.
-        settings: Application settings for the auth middleware.
         app_db_path: The filesystem path to ``app.db`` for session-cookie auth.
     """
 
     def __init__(
         self,
         fastmcp: FastMCP,
-        settings: Settings,
         app_db_path: str,
     ) -> None:
         self._fastmcp = fastmcp
         starlette_app = fastmcp.streamable_http_app()
-        self._asgi_app: ASGIApp = _BearerAuthMiddleware(
-            starlette_app, settings, app_db_path
-        )
+        self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, app_db_path)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)
@@ -341,8 +343,8 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
     Args:
         core: The :class:`~search.core.SearchCore` orchestrating the search
             pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
-        settings: Application settings. Kept for the builder's public shape;
-            the retired ``SEARCH_API_KEY`` is no longer read by the middleware.
+        settings: Application settings passed to FastMCP itself; the auth
+            middleware no longer reads any setting directly.
         app_db_path: The filesystem path to ``app.db``, passed to the auth
             middleware so a session cookie or an API key can authenticate an
             MCP request. The middleware opens a fresh connection per request.
@@ -360,4 +362,4 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
         stateless_http=True,
     )
     _register_search_tools(mcp, core)
-    return _McpApp(mcp, settings, app_db_path)
+    return _McpApp(mcp, app_db_path)

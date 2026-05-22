@@ -418,6 +418,85 @@ def test_no_bearer_prefix_is_rejected() -> None:
 
 
 # ---------------------------------------------------------------------------
+# MAJOR-1 regression — cookie auth must refresh last_seen_at
+# ---------------------------------------------------------------------------
+
+
+def test_cookie_auth_refreshes_last_seen_at() -> None:
+    """A session-cookie MCP request must bump last_seen_at (MAJOR-1).
+
+    Before Wave 3 the MCP middleware called refresh_last_seen on a successful
+    cookie auth. Wave 3 regressed this by dropping the call. This test fails
+    if the second request does not update last_seen_at.
+
+    Strategy: create a session with a last_seen_at far in the past (beyond
+    the ~5-minute throttle window), issue two MCP requests with the cookie,
+    then assert the stored last_seen_at has moved forward.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from appdb.sessions import get_by_token_hash
+    from appdb.users import create as create_user
+    from search.auth import SESSION_COOKIE_NAME
+    from search.sessions import begin_session, hash_token
+
+    import atexit
+    import os
+    import tempfile
+
+    # Build a real app.db with a user and a session.
+    handle, path = tempfile.mkstemp(prefix="mcp-seen-test-", suffix=".db")
+    os.close(handle)
+    atexit.register(lambda: os.path.exists(path) and os.remove(path))
+
+    conn = connect(path)
+    ensure_schema(conn)
+    create_user(conn, username="cookie-user", password_hash="h", role="member")
+    issued = begin_session(conn, user_id=1, ttl_seconds=3600)
+    # Force last_seen_at to be stale — 10 minutes in the past.
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    conn.execute(
+        "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+        (stale, hash_token(issued.token)),
+    )
+    conn.commit()
+    conn.close()
+
+    core = _make_core()
+    settings = _make_settings()
+    asgi_app = build_mcp_app(core, settings, path)
+    client = TestClient(asgi_app, raise_server_exceptions=False)
+
+    # First request — should pass auth and trigger a last_seen_at refresh.
+    client.post(
+        "/mcp",
+        cookies={SESSION_COOKIE_NAME: issued.token},
+        json={
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "id": 1,
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1"},
+            },
+        },
+    )
+
+    # Read last_seen_at after the request.
+    conn2 = connect(path)
+    row = get_by_token_hash(conn2, hash_token(issued.token))
+    conn2.close()
+
+    assert row is not None, "Session row vanished"
+    assert row.last_seen_at != stale, (
+        f"last_seen_at was not refreshed: still {row.last_seen_at!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # I3 regression — core exceptions must not leak internals to the MCP client
 # ---------------------------------------------------------------------------
 

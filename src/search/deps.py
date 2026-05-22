@@ -145,7 +145,7 @@ def resolve_caller(
     cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
     user = resolve_session(app_db, cookie_token)
     if user is not None:
-        _refresh_last_seen(app_db, cookie_token)
+        refresh_last_seen(app_db, cookie_token)
         # A cookie caller is a human — bounded by role only, not by scopes.
         return Caller(user=user, scopes=None, api_key_id=None)
 
@@ -384,14 +384,15 @@ def require_key_management(
     return caller.user
 
 
-def _refresh_last_seen(
+def refresh_last_seen(
     app_db: sqlite3.Connection, cookie_token: str | None
 ) -> None:
     """Refresh the session's ``last_seen_at`` when it is stale.
 
     A no-op when *cookie_token* is absent or the stored timestamp is recent,
     so this is a database write only roughly once every five minutes per
-    session.
+    session. Public so that non-FastAPI surfaces (e.g. the MCP ASGI middleware)
+    can also keep ``last_seen_at`` current for cookie-authenticated requests.
 
     Args:
         app_db: The per-request ``app.db`` connection.
