@@ -232,8 +232,9 @@ def should_touch_last_seen(last_seen_at: str) -> bool:
         ``True`` when the timestamp should be refreshed.
     """
     now = datetime.now(timezone.utc)
-    # default=now → an unparseable value is "now", i.e. now - now = 0, which
-    # is NOT stale; flip that to stale explicitly by catching the parse.
+    # _parse_iso is called with default=None, so an unparseable stored
+    # timestamp yields None — treated as stale here so the next request
+    # rewrites last_seen_at with a well-formed value and repairs the row.
     parsed = _parse_iso(last_seen_at, default=None)
     if parsed is None:
         return True

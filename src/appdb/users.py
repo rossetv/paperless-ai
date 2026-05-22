@@ -275,11 +275,19 @@ def update(
     """Apply a partial update to a user and return the updated row.
 
     Only the keyword arguments actually supplied are written; an omitted
-    argument leaves that column untouched. Passing ``None`` explicitly is
-    indistinguishable from omitting it, which is acceptable here: the HTTP
-    layer never needs to *clear* ``display_name`` or ``email`` to NULL, only
-    to set them. ``updated_at`` is always advanced; ``password_changed_at``
-    is advanced only when *password_hash* is supplied.
+    argument leaves that column untouched. ``updated_at`` is always advanced;
+    ``password_changed_at`` is advanced only when *password_hash* is supplied.
+
+    **Known Wave-1 limitation — cannot clear a column to NULL.** ``None`` means
+    "leave this column unchanged", so it is indistinguishable from omitting the
+    argument. A consequence is that ``update`` **cannot blank a previously-set**
+    ``display_name`` or ``email`` back to ``NULL``: passing ``email=None`` is a
+    no-op, not a clear. This is a deliberate Wave-1 choice — the Wave-1 HTTP
+    layer only ever *sets* those optional fields, never clears them. When Wave 3
+    adds a Users screen that must support removing an email/display name, this
+    function needs an explicit "clear" signal (e.g. a sentinel distinct from
+    ``None``, or a separate ``clear_fields`` argument) — a partial ``UPDATE``
+    builder keyed solely on ``is None`` cannot express it.
 
     Args:
         conn: An open ``app.db`` connection.
