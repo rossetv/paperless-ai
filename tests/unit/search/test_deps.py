@@ -1,50 +1,63 @@
-"""Tests for search.deps — the FastAPI auth dependencies.
+"""Tests for search.deps — the post-Wave-3 auth and scope dependencies.
 
-Exercises the dependencies through a tiny FastAPI app and TestClient so the
-cookie/header plumbing is real. Covers: get_app_db yields a fresh connection
-per request; get_current_user resolves a session cookie and a legacy bearer;
-401 when neither is valid; require_role allows a sufficient role and 403s an
-insufficient one; require_admin gates on admin; a suspended user's cookie is
-rejected.
+Exercised through a tiny FastAPI app and TestClient so the cookie/header
+plumbing is real. Covers: a session cookie and an API key both resolve;
+401 when neither is valid; require_role gates on role; the scope
+dependencies gate an API key on its scopes; a cookie caller is never
+scope-limited; require_admin needs both an admin role and the Admin scope.
 
-The app holds the ``app.db`` *path* — each request opens its own connection
-via ``get_app_db`` — so the test seeds users through a separate connection to
-the same ``tmp_path/app.db`` file; WAL mode means the per-request connections
-see the seeded rows.
+The app holds the ``app.db`` *path*, not a live connection — each request
+opens its own connection via ``get_app_db``. The test seeds users and keys
+through the fixture's separate connection to the same ``tmp_path/app.db``
+file; WAL mode means the per-request connections see the seeded rows.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
 
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from appdb.api_keys import create as create_key
 from appdb.connection import connect
 from appdb.schema import ensure_schema
 from appdb.users import create as create_user
 from appdb.users import update as update_user
+from search.api_keys import generate_raw_key, hash_key, key_display_prefix
 from search.appstate import AppState, attach_app_state
 from search.auth import SESSION_COOKIE_NAME
-from search.deps import get_app_db, get_current_user, require_admin, require_role
+from search.deps import (
+    get_current_user,
+    require_admin,
+    require_api_scope,
+    require_api_scope_member,
+    require_mcp_scope,
+    require_role,
+)
 from search.sessions import CurrentUser, begin_session
 from search.setup import SetupState
 
-_LEGACY_KEY = "legacy-search-key"
+
+def _db_path(conn: sqlite3.Connection) -> str:
+    """Return the filesystem path of *conn*'s ``main`` database.
+
+    The app holds the ``app.db`` path and opens its own per-request
+    connection via ``get_app_db``; the test fixture owns a separate
+    connection to the same file. This bridges the fixture's connection back
+    to the path the app needs.
+    """
+    rows = conn.execute("PRAGMA database_list").fetchall()
+    return next(row[2] for row in rows if row[1] == "main")
 
 
-def _build_app(app_db_path: str) -> FastAPI:
+def _build_app(conn) -> FastAPI:
     """A tiny app exposing one route per dependency under test."""
     app = FastAPI()
     attach_app_state(
         app.state,
-        AppState(
-            app_db_path=app_db_path,
-            setup_state=SetupState(),
-            legacy_api_key=_LEGACY_KEY,
-        ),
+        AppState(app_db_path=_db_path(conn), setup_state=SetupState()),
     )
 
     @app.get("/me")
@@ -58,166 +71,230 @@ def _build_app(app_db_path: str) -> FastAPI:
         return {"ok": True}
 
     @app.get("/admin-area")
-    def admin_area(
-        user: CurrentUser = Depends(require_admin),
+    def admin_area(user: CurrentUser = Depends(require_admin)) -> dict:
+        return {"ok": True}
+
+    @app.get("/api-area")
+    def api_area(user: CurrentUser = Depends(require_api_scope)) -> dict:
+        return {"ok": True}
+
+    @app.get("/api-member-area")
+    def api_member_area(
+        user: CurrentUser = Depends(require_api_scope_member),
     ) -> dict:
+        return {"ok": True}
+
+    @app.get("/mcp-area")
+    def mcp_area(user: CurrentUser = Depends(require_mcp_scope)) -> dict:
         return {"ok": True}
 
     return app
 
 
 @pytest.fixture()
-def app_db_path(tmp_path) -> str:
-    """The path to a migrated, empty app.db file under tmp_path."""
-    path = str(tmp_path / "app.db")
-    conn = connect(path)
-    ensure_schema(conn)
-    conn.close()
-    return path
-
-
-@pytest.fixture()
-def conn(app_db_path) -> Iterator[sqlite3.Connection]:
-    """A connection to the migrated app.db, for seeding users in a test."""
-    c = connect(app_db_path)
+def conn(tmp_path):
+    """A migrated app.db connection."""
+    c = connect(str(tmp_path / "app.db"))
+    ensure_schema(c)
     yield c
     c.close()
 
 
-def _client(app_db_path: str) -> TestClient:
+def _client(conn) -> TestClient:
     return TestClient(
-        _build_app(app_db_path),
+        _build_app(conn),
         raise_server_exceptions=False,
         base_url="https://testserver",
     )
 
 
-def _login(conn, *, role: str, username: str = "u") -> str:
+def _cookie_login(conn, *, role: str, username: str = "u") -> str:
     """Create a user of *role* and return a live session token."""
-    user = create_user(conn, username=username, password_hash="h", role=role)
+    user = create_user(
+        conn, username=username, password_hash="h", role=role
+    )
     return begin_session(conn, user_id=user.id, ttl_seconds=3600).token
 
 
-def test_get_app_db_yields_a_fresh_connection_each_request(app_db_path) -> None:
-    """get_app_db opens a distinct sqlite3.Connection per request.
-
-    A shared connection across request threads is the BLOCKER fixed in this
-    wave: ``sqlite3.Connection`` is not safe for concurrent use. This proves
-    each request's ``get_app_db`` resolution yields its own connection object —
-    and that connections from two requests are never the same instance.
-    """
-    app = FastAPI()
-    attach_app_state(
-        app.state,
-        AppState(
-            app_db_path=app_db_path,
-            setup_state=SetupState(),
-            legacy_api_key=_LEGACY_KEY,
-        ),
+def _mint_key(conn, *, role: str, scopes: str, username: str) -> str:
+    """Create a user of *role* and an API key with *scopes*; return the key."""
+    user = create_user(
+        conn, username=username, password_hash="h", role=role
     )
-    seen: list[int] = []
-
-    @app.get("/probe")
-    def probe(app_db: sqlite3.Connection = Depends(get_app_db)) -> dict:
-        # The connection is a real, usable sqlite3 connection scoped to this
-        # request; record its identity so the test can assert per-request
-        # distinctness across calls.
-        assert isinstance(app_db, sqlite3.Connection)
-        seen.append(id(app_db))
-        return {"id": id(app_db)}
-
-    client = TestClient(app, raise_server_exceptions=False)
-    first = client.get("/probe").json()["id"]
-    second = client.get("/probe").json()["id"]
-    assert first != second, "each request must get its own app.db connection"
-    assert seen == [first, second]
+    raw = generate_raw_key()
+    create_key(
+        conn,
+        key_hash=hash_key(raw),
+        key_prefix=key_display_prefix(raw),
+        name="k",
+        owner_user_id=user.id,
+        scopes=scopes,
+    )
+    return raw
 
 
-def test_get_current_user_resolves_a_session_cookie(app_db_path, conn) -> None:
-    token = _login(conn, role="member", username="alice")
-    client = _client(app_db_path)
+def _bearer(raw_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {raw_key}"}
+
+
+# --- get_current_user --------------------------------------------------
+
+def test_get_current_user_resolves_a_session_cookie(conn) -> None:
+    token = _cookie_login(conn, role="member", username="alice")
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     response = client.get("/me")
     assert response.status_code == 200
     assert response.json() == {"username": "alice", "role": "member"}
 
 
-def test_get_current_user_resolves_a_legacy_bearer(app_db_path) -> None:
-    client = _client(app_db_path)
-    response = client.get("/me", headers={"Authorization": f"Bearer {_LEGACY_KEY}"})
+def test_get_current_user_resolves_an_api_key(conn) -> None:
+    raw = _mint_key(conn, role="admin", scopes="api", username="svc")
+    response = _client(conn).get("/me", headers=_bearer(raw))
     assert response.status_code == 200
-    assert response.json()["role"] == "admin"
+    assert response.json() == {"username": "svc", "role": "admin"}
 
 
-def test_get_current_user_401_when_no_credentials(app_db_path) -> None:
-    response = _client(app_db_path).get("/me")
-    assert response.status_code == 401
+def test_get_current_user_401_when_no_credentials(conn) -> None:
+    assert _client(conn).get("/me").status_code == 401
 
 
-def test_get_current_user_401_for_a_garbage_cookie(app_db_path) -> None:
-    client = _client(app_db_path)
+def test_get_current_user_401_for_a_garbage_cookie(conn) -> None:
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, "not-a-real-token")
     assert client.get("/me").status_code == 401
 
 
-def test_get_current_user_401_for_a_wrong_bearer(app_db_path) -> None:
-    client = _client(app_db_path)
-    response = client.get("/me", headers={"Authorization": "Bearer wrong-key"})
+def test_get_current_user_401_for_an_unknown_bearer(conn) -> None:
+    response = _client(conn).get("/me", headers=_bearer("sk-pls-nope"))
     assert response.status_code == 401
 
 
-def test_get_current_user_401_for_a_suspended_user(app_db_path, conn) -> None:
-    user = create_user(conn, username="susie", password_hash="h", role="member")
+def test_get_current_user_401_for_a_suspended_user(conn) -> None:
+    user = create_user(
+        conn, username="susie", password_hash="h", role="member"
+    )
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
     update_user(conn, user.id, status="suspended")
-    client = _client(app_db_path)
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     assert client.get("/me").status_code == 401
 
 
-def test_require_role_allows_a_sufficient_role(app_db_path, conn) -> None:
-    token = _login(conn, role="member")
-    client = _client(app_db_path)
+# --- require_role ------------------------------------------------------
+
+def test_require_role_allows_a_sufficient_role(conn) -> None:
+    token = _cookie_login(conn, role="member")
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     assert client.get("/member-area").status_code == 200
 
 
-def test_require_role_allows_a_higher_role(app_db_path, conn) -> None:
-    token = _login(conn, role="admin")
-    client = _client(app_db_path)
-    client.cookies.set(SESSION_COOKIE_NAME, token)
-    assert client.get("/member-area").status_code == 200
-
-
-def test_require_role_403s_an_insufficient_role(app_db_path, conn) -> None:
-    token = _login(conn, role="readonly")
-    client = _client(app_db_path)
+def test_require_role_403s_an_insufficient_role(conn) -> None:
+    token = _cookie_login(conn, role="readonly")
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     assert client.get("/member-area").status_code == 403
 
 
-def test_require_role_401s_when_unauthenticated(app_db_path) -> None:
-    assert _client(app_db_path).get("/member-area").status_code == 401
+def test_require_role_401s_when_unauthenticated(conn) -> None:
+    assert _client(conn).get("/member-area").status_code == 401
 
 
-def test_require_admin_allows_an_admin(app_db_path, conn) -> None:
-    token = _login(conn, role="admin")
-    client = _client(app_db_path)
+# --- require_admin -----------------------------------------------------
+
+def test_require_admin_allows_an_admin_cookie(conn) -> None:
+    token = _cookie_login(conn, role="admin")
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     assert client.get("/admin-area").status_code == 200
 
 
-def test_require_admin_403s_a_member(app_db_path, conn) -> None:
-    token = _login(conn, role="member")
-    client = _client(app_db_path)
+def test_require_admin_403s_a_member_cookie(conn) -> None:
+    token = _cookie_login(conn, role="member")
+    client = _client(conn)
     client.cookies.set(SESSION_COOKIE_NAME, token)
     assert client.get("/admin-area").status_code == 403
 
 
-def test_require_admin_allows_a_legacy_bearer(app_db_path) -> None:
-    """The legacy key resolves to a synthetic admin, so it passes admin gates."""
-    client = _client(app_db_path)
-    response = client.get(
-        "/admin-area", headers={"Authorization": f"Bearer {_LEGACY_KEY}"}
+def test_require_admin_allows_an_admin_key_with_admin_scope(conn) -> None:
+    raw = _mint_key(
+        conn, role="admin", scopes="admin", username="adminkey"
     )
-    assert response.status_code == 200
+    assert _client(conn).get(
+        "/admin-area", headers=_bearer(raw)
+    ).status_code == 200
+
+
+def test_require_admin_403s_an_admin_key_without_admin_scope(conn) -> None:
+    """An admin owner is not enough — the key itself needs the Admin scope."""
+    raw = _mint_key(conn, role="admin", scopes="api", username="apikey")
+    assert _client(conn).get(
+        "/admin-area", headers=_bearer(raw)
+    ).status_code == 403
+
+
+def test_require_admin_403s_an_admin_scope_key_owned_by_a_member(conn) -> None:
+    """A key never exceeds its owner's role, scope or no scope."""
+    raw = _mint_key(
+        conn, role="member", scopes="admin", username="memberkey"
+    )
+    assert _client(conn).get(
+        "/admin-area", headers=_bearer(raw)
+    ).status_code == 403
+
+
+# --- require_api_scope -------------------------------------------------
+
+def test_api_scope_allows_a_cookie_user_without_any_scope(conn) -> None:
+    """A logged-in human is never scope-limited."""
+    token = _cookie_login(conn, role="readonly")
+    client = _client(conn)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    assert client.get("/api-area").status_code == 200
+
+
+def test_api_scope_allows_a_key_with_the_api_scope(conn) -> None:
+    raw = _mint_key(conn, role="member", scopes="api", username="k1")
+    assert _client(conn).get(
+        "/api-area", headers=_bearer(raw)
+    ).status_code == 200
+
+
+def test_api_scope_403s_a_key_without_the_api_scope(conn) -> None:
+    raw = _mint_key(conn, role="member", scopes="mcp", username="k2")
+    assert _client(conn).get(
+        "/api-area", headers=_bearer(raw)
+    ).status_code == 403
+
+
+# --- require_api_scope_member -----------------------------------------
+
+def test_api_member_scope_403s_a_readonly_cookie(conn) -> None:
+    token = _cookie_login(conn, role="readonly")
+    client = _client(conn)
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    assert client.get("/api-member-area").status_code == 403
+
+
+def test_api_member_scope_allows_a_member_key_with_api_scope(conn) -> None:
+    raw = _mint_key(conn, role="member", scopes="api", username="k3")
+    assert _client(conn).get(
+        "/api-member-area", headers=_bearer(raw)
+    ).status_code == 200
+
+
+# --- require_mcp_scope -------------------------------------------------
+
+def test_mcp_scope_allows_a_key_with_the_mcp_scope(conn) -> None:
+    raw = _mint_key(conn, role="readonly", scopes="mcp", username="k4")
+    assert _client(conn).get(
+        "/mcp-area", headers=_bearer(raw)
+    ).status_code == 200
+
+
+def test_mcp_scope_403s_a_key_without_the_mcp_scope(conn) -> None:
+    raw = _mint_key(conn, role="readonly", scopes="api", username="k5")
+    assert _client(conn).get(
+        "/mcp-area", headers=_bearer(raw)
+    ).status_code == 403
