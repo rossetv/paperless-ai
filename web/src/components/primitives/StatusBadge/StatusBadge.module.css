@@ -1,0 +1,53 @@
+/*
+ * StatusBadge primitive — CSS Module.
+ *
+ * A pill with a leading colour dot, naming a state (account status, key
+ * state). The base rule is the shared geometry; tone classes set the
+ * surface/foreground; the dot inherits the foreground via currentColor.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-3) var(--spacing-8);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  white-space: nowrap;
+}
+
+/* ── The leading dot — takes the tone foreground via currentColor. ── */
+.dot {
+  width: var(--size-status-dot);
+  height: var(--size-status-dot);
+  border-radius: var(--radius-circle);
+  background-color: currentcolor;
+  flex-shrink: 0;
+}
+
+/* ── Tones ── */
+.ok {
+  background-color: var(--colour-status-ok-bg);
+  color: var(--colour-status-ok-fg);
+}
+
+.warn {
+  background-color: var(--colour-status-warn-bg);
+  color: var(--colour-status-warn-fg);
+}
+
+.danger {
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+}
+
+.info {
+  background-color: var(--colour-status-info-bg);
+  color: var(--colour-status-info-fg);
+}
