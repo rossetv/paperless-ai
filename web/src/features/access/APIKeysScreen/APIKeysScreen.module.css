@@ -10,11 +10,11 @@
  */
 
 /* ── Name + key cell. ── */
-.keyCell {
+.key-cell {
   min-width: 0;
 }
 
-.keyName {
+.key-name {
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
@@ -24,17 +24,17 @@
   color: var(--colour-text-primary);
 }
 
-.keyMeta {
+.key-meta {
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
   margin-top: var(--spacing-3);
-  font-family: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
 }
 
-.keyCount {
+.key-count {
   font-family: var(--font-text);
   color: var(--colour-text-tertiary);
 }
@@ -47,22 +47,22 @@
 }
 
 /* ── Expiry label tones. ── */
-.expiryWarn {
+.expiry-warn {
   color: var(--colour-status-warn-fg);
 }
 
-.expiryExpired {
+.expiry-expired {
   color: var(--colour-status-danger-fg);
 }
 
 /* ── Row actions. ── */
-.rowActions {
+.row-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-2);
 }
 
-.dangerButton {
+.danger-button {
   background: none;
   border: none;
   padding: var(--spacing-4) var(--spacing-8);
@@ -74,17 +74,17 @@
   cursor: pointer;
 }
 
-.dangerButton:hover {
+.danger-button:hover {
   background-color: var(--colour-status-danger-bg);
 }
 
-.dangerButton:focus-visible {
+.danger-button:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
 }
 
 /* ── Neutral row action — the "Edit" link-button. ── */
-.actionButton {
+.action-button {
   background: none;
   border: none;
   padding: var(--spacing-4) var(--spacing-8);
@@ -96,11 +96,11 @@
   cursor: pointer;
 }
 
-.actionButton:hover {
+.action-button:hover {
   background-color: var(--colour-button-light-bg);
 }
 
-.actionButton:focus-visible {
+.action-button:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
 }

@@ -128,13 +128,13 @@ export function APIKeyCreatePanel({
     return (
       <Modal isOpen title="API key created" onClose={onClose}>
         <div className={styles['reveal']}>
-          <p className={styles['revealNote']}>
+          <p className={styles['reveal-note']}>
             Copy this key now — it is shown <strong>once</strong>. After you
             close this panel only the prefix is stored and the full key cannot
             be recovered.
           </p>
-          <div className={styles['secretBox']}>
-            <code className={styles['secretValue']}>{secret}</code>
+          <div className={styles['secret-box']}>
+            <code className={styles['secret-value']}>{secret}</code>
             <Button variant="secondary" type="button" onClick={() => void handleCopy()}>
               {copied ? 'Copied' : 'Copy'}
             </Button>
@@ -167,14 +167,14 @@ export function APIKeyCreatePanel({
         </div>
 
         <div className={styles['section']}>
-          <span className={styles['sectionLabel']}>Scopes</span>
-          <div className={styles['scopeList']}>
+          <span className={styles['section-label']}>Scopes</span>
+          <div className={styles['scope-list']}>
             {SCOPES.map((scope) => {
               const on = scopes.has(scope.id);
               return (
                 <label
                   key={scope.id}
-                  className={cn(styles['scopeRow'], on && styles['scopeRowOn'])}
+                  className={cn(styles['scope-row'], on && styles['scope-row-on'])}
                 >
                   <input
                     type="checkbox"
@@ -182,12 +182,12 @@ export function APIKeyCreatePanel({
                     onChange={() => toggleScope(scope.id)}
                     aria-label={scope.id}
                   />
-                  <span className={styles['scopeText']}>
-                    <span className={styles['scopeName']}>
+                  <span className={styles['scope-text']}>
+                    <span className={styles['scope-name']}>
                       {scope.id.toUpperCase()}
                       <ScopePill scope={scope.id} />
                     </span>
-                    <span className={styles['scopeDesc']}>{scope.description}</span>
+                    <span className={styles['scope-desc']}>{scope.description}</span>
                   </span>
                 </label>
               );
@@ -201,15 +201,15 @@ export function APIKeyCreatePanel({
         </div>
 
         <div className={styles['section']}>
-          <span className={styles['sectionLabel']}>Expiration</span>
-          <div className={styles['chipRow']}>
+          <span className={styles['section-label']}>Expiration</span>
+          <div className={styles['chip-row']}>
             {EXPIRY_CHOICES.map((choice) => (
               <button
                 key={choice.label}
                 type="button"
                 className={cn(
                   styles['chip'],
-                  expiryDays === choice.days && styles['chipOn'],
+                  expiryDays === choice.days && styles['chip-on'],
                 )}
                 aria-pressed={expiryDays === choice.days}
                 onClick={() => setExpiryDays(choice.days)}

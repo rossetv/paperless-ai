@@ -48,7 +48,7 @@ function ExpiryLabel({ keyRow }: { keyRow: ApiKey }): React.ReactElement {
   const state = keyStateOf(keyRow);
   if (state === 'expired') {
     return (
-      <span className={styles['expiryExpired']}>
+      <span className={styles['expiry-expired']}>
         Expired {formatDate(keyRow.expires_at)}
       </span>
     );
@@ -101,19 +101,19 @@ export function APIKeysScreen(): React.ReactElement {
       render: (k) => {
         const state = keyStateOf(k);
         return (
-          <div className={styles['keyCell']}>
-            <span className={styles['keyName']}>
+          <div className={styles['key-cell']}>
+            <span className={styles['key-name']}>
               {k.name}
               {state === 'expired' && (
-                <span className={styles['expiryExpired']}>· expired</span>
+                <span className={styles['expiry-expired']}>· expired</span>
               )}
               {state === 'revoked' && (
-                <span className={styles['expiryExpired']}>· revoked</span>
+                <span className={styles['expiry-expired']}>· revoked</span>
               )}
             </span>
-            <span className={styles['keyMeta']}>
+            <span className={styles['key-meta']}>
               <span>{k.key_prefix}••••••••••</span>
-              <span className={styles['keyCount']}>
+              <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}
                 {formatDate(k.created_at)}
               </span>
@@ -158,11 +158,11 @@ export function APIKeysScreen(): React.ReactElement {
         // signed-in caller owns (the server enforces this too).
         const canEdit = state === 'active' && k.owner_id === me?.id;
         return (
-          <div className={styles['rowActions']}>
+          <div className={styles['row-actions']}>
             {canEdit && (
               <button
                 type="button"
-                className={styles['actionButton']}
+                className={styles['action-button']}
                 onClick={() => setEditingKey(k)}
               >
                 Edit
@@ -171,7 +171,7 @@ export function APIKeysScreen(): React.ReactElement {
             {confirmingId === k.id ? (
               <button
                 type="button"
-                className={styles['dangerButton']}
+                className={styles['danger-button']}
                 disabled={deleteKey.isPending}
                 onClick={() => void handleDelete(k.id)}
               >
@@ -180,7 +180,7 @@ export function APIKeysScreen(): React.ReactElement {
             ) : (
               <button
                 type="button"
-                className={styles['dangerButton']}
+                className={styles['danger-button']}
                 onClick={() => setConfirmingId(k.id)}
               >
                 {actionLabel}

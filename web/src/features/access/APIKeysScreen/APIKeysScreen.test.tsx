@@ -228,7 +228,6 @@ describe('APIKeysScreen', () => {
 
   it('hides Edit on a key the caller does not own', () => {
     // The signed-in caller is user 1; this key is owned by user 2.
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const othersKey: ApiKey = { ...KEYS[0]!, id: 9, owner_id: 2, owner_name: 'Sam Patel' };
     mockKeys.mockReturnValue(
       keysResult({ isSuccess: true, data: { keys: [othersKey] } }),

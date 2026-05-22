@@ -19,7 +19,7 @@
   margin-top: var(--spacing-13);
 }
 
-.sectionLabel {
+.section-label {
   display: block;
   margin-bottom: var(--spacing-6);
   font-family: var(--font-text);
@@ -30,13 +30,13 @@
 }
 
 /* ── Scope rows — a stack of checkable options. ── */
-.scopeList {
+.scope-list {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-6);
 }
 
-.scopeRow {
+.scope-row {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-9);
@@ -46,17 +46,17 @@
   cursor: pointer;
 }
 
-.scopeRowOn {
+.scope-row-on {
   border-color: var(--colour-accent);
   background-color: var(--colour-status-info-bg);
 }
 
-.scopeText {
+.scope-text {
   flex: 1;
   min-width: 0;
 }
 
-.scopeName {
+.scope-name {
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
@@ -66,7 +66,7 @@
   color: var(--colour-text-primary);
 }
 
-.scopeDesc {
+.scope-desc {
   margin-top: var(--spacing-2);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
@@ -75,7 +75,7 @@
 }
 
 /* ── Expiry quick-pick chips. ── */
-.chipRow {
+.chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-6);
@@ -93,7 +93,7 @@
   cursor: pointer;
 }
 
-.chipOn {
+.chip-on {
   background-color: var(--colour-accent);
   border-color: var(--colour-accent);
   color: var(--colour-text-on-dark);
@@ -132,14 +132,14 @@
   gap: var(--spacing-10);
 }
 
-.revealNote {
+.reveal-note {
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
   color: var(--colour-text-secondary);
 }
 
-.secretBox {
+.secret-box {
   display: flex;
   align-items: center;
   gap: var(--spacing-9);
@@ -148,11 +148,11 @@
   background-color: var(--colour-surface-dark);
 }
 
-.secretValue {
+.secret-value {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-family: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   color: var(--colour-text-on-dark);
 }
