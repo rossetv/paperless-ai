@@ -6,7 +6,7 @@
  * - a search renders the answer and sources once the query resolves
  * - the empty state shows when a search returns no results
  * - the initialising state shows when a search returns 503 index-not-ready
- * - an Unauthenticated error from a search call triggers useAuth().logout()
+ * - an Unauthenticated error from a search call invalidates the me query
  * - citation activation in AnswerCard highlights the matching source in SourceList
  */
 
@@ -18,7 +18,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SearchResponse, FacetsResponse } from '../api/types';
 import { Unauthenticated, ApiError } from '../api/client';
-import { AuthProvider, useAuth } from '../hooks/useAuth';
 import { SearchPage } from './SearchPage';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +75,10 @@ vi.mock('../features/search/QueryPlanSummary/QueryPlanSummary', () => ({
     React.createElement('div', { 'data-testid': 'mock-query-plan-summary' }),
 }));
 
+vi.mock('../features/shell/AppNavBar/AppNavBar', () => ({
+  AppNavBar: () => React.createElement('div', { 'data-testid': 'mock-app-navbar' }),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock API hooks
 // ---------------------------------------------------------------------------
@@ -83,7 +86,7 @@ vi.mock('../features/search/QueryPlanSummary/QueryPlanSummary', () => ({
 vi.mock('../api/hooks', () => ({
   useSearch: vi.fn(),
   useFacets: vi.fn(),
-  useLogin: vi.fn(),
+  ME_QUERY_KEY: ['auth', 'me'],
 }));
 
 import { useSearch, useFacets } from '../api/hooks';
@@ -173,7 +176,7 @@ const successResponse: SearchResponse = {
 // Render helper
 // ---------------------------------------------------------------------------
 
-function renderSearchPage(authLoggedIn = true) {
+function renderSearchPage() {
   mockUseFacets.mockReturnValue(makeFacetsResult());
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -183,35 +186,11 @@ function renderSearchPage(authLoggedIn = true) {
     return React.createElement(
       QueryClientProvider,
       { client: queryClient },
-      React.createElement(
-        MemoryRouter,
-        null,
-        React.createElement(
-          AuthProvider,
-          null,
-          React.createElement(AuthInitialiser, { loggedIn: authLoggedIn, children }),
-        ),
-      ),
+      React.createElement(MemoryRouter, null, children),
     );
   }
 
   return render(React.createElement(SearchPage), { wrapper: Wrapper });
-}
-
-/** Sets auth state before children render. */
-function AuthInitialiser({
-  loggedIn,
-  children,
-}: {
-  loggedIn: boolean;
-  children: React.ReactNode;
-}): React.ReactElement {
-  const auth = useAuth();
-  React.useEffect(() => {
-    if (loggedIn) auth.login();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return React.createElement(React.Fragment, null, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -299,14 +278,7 @@ describe('SearchPage', () => {
     });
   });
 
-  it('calls useAuth logout() when a search returns Unauthenticated', async () => {
-    let capturedAuth: ReturnType<typeof useAuth> | null = null;
-
-    function AuthSpy() {
-      capturedAuth = useAuth();
-      return null;
-    }
-
+  it('invalidates the me query when a search returns Unauthenticated', async () => {
     mockUseFacets.mockReturnValue(makeFacetsResult());
     mockUseSearch.mockReturnValue(
       makeSearchResult({
@@ -320,16 +292,12 @@ describe('SearchPage', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <AuthProvider>
-            <AuthInitialiser loggedIn>
-              <AuthSpy />
-              <SearchPage />
-            </AuthInitialiser>
-          </AuthProvider>
+          <SearchPage />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -337,7 +305,7 @@ describe('SearchPage', () => {
     await userEvent.click(screen.getByTestId('mock-search-bar'));
 
     await waitFor(() => {
-      expect(capturedAuth?.authenticated).toBe(false);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] });
     });
   });
 
