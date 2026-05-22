@@ -72,6 +72,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
     """
     defaults = {
         "PAPERLESS_URL": "http://paperless:8000",
+        "PAPERLESS_PUBLIC_URL": "http://paperless:8000",
         "PAPERLESS_TOKEN": "test-token",
         "OPENAI_API_KEY": "test-api-key",
         "LLM_PROVIDER": "openai",

@@ -196,6 +196,11 @@ class Settings:
     """
 
     PAPERLESS_URL: str
+    # Browser-facing base URL for Paperless-ngx document deep-links. Distinct
+    # from PAPERLESS_URL: the API may be reached over an internal address
+    # (e.g. http://paperless:8000) that the user's browser cannot resolve,
+    # while links rendered in the search UI need a public hostname.
+    PAPERLESS_PUBLIC_URL: str
     PAPERLESS_TOKEN: str
 
     LLM_PROVIDER: Literal["openai", "ollama"]
@@ -309,10 +314,21 @@ class Settings:
         classify_pre_tag_id = _get_optional_int_env("CLASSIFY_PRE_TAG_ID", post_tag_id)
         assert classify_pre_tag_id is not None  # default is an int → never None
 
+        # PAPERLESS_URL is the API base (often an internal address);
+        # PAPERLESS_PUBLIC_URL is the browser-facing base for document
+        # deep-links and falls back to PAPERLESS_URL when unset, so existing
+        # single-URL deployments are unaffected. Both are stored stripped of
+        # any trailing slash so callers can append paths cleanly.
+        paperless_url = os.getenv(
+            "PAPERLESS_URL", _DEFAULT_PAPERLESS_URL
+        ).rstrip("/")
+        paperless_public_url = os.getenv(
+            "PAPERLESS_PUBLIC_URL", paperless_url
+        ).rstrip("/")
+
         return cls(
-            PAPERLESS_URL=os.getenv(
-                "PAPERLESS_URL", _DEFAULT_PAPERLESS_URL
-            ).rstrip("/"),
+            PAPERLESS_URL=paperless_url,
+            PAPERLESS_PUBLIC_URL=paperless_public_url,
             PAPERLESS_TOKEN=_get_required_env("PAPERLESS_TOKEN"),
             LLM_PROVIDER=llm_provider,
             OLLAMA_BASE_URL=ollama_base_url,

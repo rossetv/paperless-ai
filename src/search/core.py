@@ -134,7 +134,7 @@ class SearchCore:
 
     Args:
         settings: Application settings; ``SEARCH_MAX_REFINEMENTS`` and
-            ``PAPERLESS_URL`` are read.
+            ``PAPERLESS_PUBLIC_URL`` are read.
         store_reader: The read-side store interface, for facets and document
             look-ups during source assembly.
         planner: The query-planning stage (LLM call #1).
@@ -395,11 +395,13 @@ class SearchCore:
     def _paperless_url(self, document_id: int) -> str:
         """Return the Paperless-ngx web deep-link for *document_id*.
 
-        ``PAPERLESS_URL`` is stored already stripped of any trailing slash
-        (see ``Settings.from_environment``); the document detail route in
-        the Paperless-ngx UI is ``/documents/{id}/``.
+        Built from ``PAPERLESS_PUBLIC_URL`` — the browser-facing base — not
+        ``PAPERLESS_URL``, which may be an internal API address the user's
+        browser cannot resolve. Both are stored already stripped of any
+        trailing slash (see ``Settings.from_environment``); the document
+        detail route in the Paperless-ngx UI is ``/documents/{id}/``.
         """
-        return f"{self._settings.PAPERLESS_URL}/documents/{document_id}/"
+        return f"{self._settings.PAPERLESS_PUBLIC_URL}/documents/{document_id}/"
 
     def _build_result(
         self,

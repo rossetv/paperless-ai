@@ -327,6 +327,33 @@ class TestPaperlessUrlTrailingSlash:
         assert s.PAPERLESS_URL == "http://example.com"
 
 
+class TestPaperlessPublicUrl:
+
+    def test_defaults_to_paperless_url_when_unset(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_URL": "http://paperless:8000"})
+        assert s.PAPERLESS_PUBLIC_URL == "http://paperless:8000"
+
+    def test_explicit_value_overrides_paperless_url(self, mocker):
+        s = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "PAPERLESS_URL": "http://paperless:8000",
+                "PAPERLESS_PUBLIC_URL": "https://docs.example.com",
+            },
+        )
+        assert s.PAPERLESS_PUBLIC_URL == "https://docs.example.com"
+        # The API base is untouched — the two URLs are independent.
+        assert s.PAPERLESS_URL == "http://paperless:8000"
+
+    def test_trailing_slash_stripped(self, mocker):
+        s = _build(
+            mocker,
+            {**_MINIMAL_ENV, "PAPERLESS_PUBLIC_URL": "https://docs.example.com/"},
+        )
+        assert s.PAPERLESS_PUBLIC_URL == "https://docs.example.com"
+
+
 class TestClassifyPreTagIdDefault:
 
     def test_defaults_to_post_tag_id(self, mocker):
