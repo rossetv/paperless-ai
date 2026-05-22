@@ -26,6 +26,12 @@ vi.mock('./pages/SearchPage', () => ({
 vi.mock('./pages/SetupPage', () => ({
   SetupPage: () => React.createElement('div', { 'data-testid': 'setup-page' }, 'Setup'),
 }));
+vi.mock('./pages/UsersPage', () => ({
+  UsersPage: () => React.createElement('div', { 'data-testid': 'users-page' }, 'Users'),
+}));
+vi.mock('./pages/KeysPage', () => ({
+  KeysPage: () => React.createElement('div', { 'data-testid': 'keys-page' }, 'Keys'),
+}));
 
 // --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
@@ -136,6 +142,35 @@ describe('AppRoutes', () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/setup');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  it('renders the users page for an admin at /settings/users', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/settings/users');
+    await waitFor(() => expect(screen.getByTestId('users-page')).toBeInTheDocument());
+  });
+
+  it('renders the keys page for an admin at /settings/keys', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/settings/keys');
+    await waitFor(() => expect(screen.getByTestId('keys-page')).toBeInTheDocument());
+  });
+
+  it('redirects a non-admin away from /settings/users to the app', async () => {
+    const member = { ...SAMPLE_USER, role: 'member' as const };
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: member } }));
+    renderAt('/settings/users');
+    await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
+  });
+
+  it('redirects an unauthenticated visitor from /settings/keys to /login', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    renderAt('/settings/keys');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 });

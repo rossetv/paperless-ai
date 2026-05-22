@@ -25,6 +25,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
+import { UsersPage } from './pages/UsersPage';
+import { KeysPage } from './pages/KeysPage';
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
 
@@ -47,6 +49,39 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   // protected UI if the me query errors or returns without a user.
   if (!meQuery.isSuccess || meQuery.data.user === undefined) {
     return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+/**
+ * Admin-only route guard — layered on `ProtectedRoute`.
+ *
+ * `ProtectedRoute` first enforces authentication (redirecting to `/login`
+ * while loading or unauthenticated). Once a user is resolved, this guard
+ * checks the role: a non-admin is redirected to `/` (the app root), an admin
+ * sees `children`.
+ *
+ * The role check is purely a navigation convenience — every admin endpoint
+ * is independently enforced server-side (spec §4.3). A user who reaches an
+ * admin screen by other means still cannot perform admin actions.
+ */
+function RequireAdmin({ children }: { children: React.ReactElement }): React.ReactElement {
+  return (
+    <ProtectedRoute>
+      <AdminGate>{children}</AdminGate>
+    </ProtectedRoute>
+  );
+}
+
+/**
+ * The inner half of `RequireAdmin`, rendered only once `ProtectedRoute` has
+ * confirmed a signed-in user. Reads the role from `useMe` and redirects a
+ * non-admin to the app root.
+ */
+function AdminGate({ children }: { children: React.ReactElement }): React.ReactElement {
+  const meQuery = useMe();
+  if (meQuery.data?.user.role !== 'admin') {
+    return <Navigate to="/" replace />;
   }
   return children;
 }
@@ -132,6 +167,22 @@ export function AppRoutes(): React.ReactElement {
         path="/"
         element={
           <RootRoute />
+        }
+      />
+      <Route
+        path="/settings/users"
+        element={
+          <RequireAdmin>
+            <UsersPage />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path="/settings/keys"
+        element={
+          <RequireAdmin>
+            <KeysPage />
+          </RequireAdmin>
         }
       />
       {/* Unknown paths fall back to the root, which re-resolves the gate. */}
