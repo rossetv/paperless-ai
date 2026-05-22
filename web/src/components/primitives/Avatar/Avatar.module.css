@@ -17,6 +17,7 @@
   justify-content: center;
   border-radius: var(--radius-circle);
   flex-shrink: 0;
+
   /* Background, width, height, font-size are applied inline — they are dynamic. */
   color: var(--colour-text-on-dark);
   font-family: var(--font-text);
