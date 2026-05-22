@@ -406,4 +406,42 @@
 
   /* Document-preview viewer — the metadata sidebar width */
   --width-preview-sidebar:      380px;
+
+  /* ─────────────────────────────────────────────
+   * Semantic status colours — for RoleBadge, StatusBadge, ScopePill.
+   *
+   * The core palette has ONE chromatic accent (Apple Blue). Access-control
+   * badges need to distinguish roles, account states and key scopes at a
+   * glance, so this set adds the minimum semantic colours. They are
+   * theme-INDEPENDENT — status meaning does not change between light and
+   * dark, so they are defined once here and not overridden in themes.css.
+   * Each pairs a translucent surface tint with a readable foreground.
+   * ───────────────────────────────────────────── */
+
+  /* Positive / active — green */
+  --colour-status-ok-bg:        rgb(52 199 89 / 12%);
+  --colour-status-ok-fg:        #15803d;
+
+  /* Caution / warning — amber */
+  --colour-status-warn-bg:      rgb(255 193 0 / 15%);
+  --colour-status-warn-fg:      #92560f;
+
+  /* Negative / suspended / expired — red */
+  --colour-status-danger-bg:    rgb(255 59 48 / 10%);
+  --colour-status-danger-fg:    #c0382e;
+
+  /* Informational / accent — blue */
+  --colour-status-info-bg:      rgb(0 113 227 / 10%);
+  --colour-status-info-fg:      #06c;
+
+  /* Distinct secondary — purple (the MCP scope) */
+  --colour-status-violet-bg:    rgb(88 86 214 / 12%);
+  --colour-status-violet-fg:    #3f3ca3;
+
+  /* Plain / neutral — a low-emphasis grey chip */
+  --colour-status-neutral-bg:   rgb(0 0 0 / 6%);
+  --colour-status-neutral-fg:   rgb(0 0 0 / 72%);
+
+  /* Status dot diameter — the leading dot inside a StatusBadge */
+  --size-status-dot:            6px;
 }
