@@ -1,34 +1,27 @@
 import React from 'react';
-import { Text } from '../../../components/primitives/Text/Text';
+import { SnippetText } from '../../../components/primitives/SnippetText/SnippetText';
 
 export interface DocumentSnippetProps {
   /**
-   * The matched-content excerpt from the search result.
-   * May be an empty string when no snippet is available for this document.
+   * The matched-content excerpt from the search result. `**phrase**` runs are
+   * rendered as accent highlights. May be an empty string when no snippet is
+   * available for this document.
    */
   snippet: string;
 }
 
 /**
- * Readable text excerpt from a search result document.
+ * Readable matched-content excerpt from a search result document.
  *
- * Renders the matched-content snippet as body text. When the snippet is empty
- * (the server had no excerpt for this document), a short accessible notice is
- * shown in place of the missing text — the component never renders a blank,
- * unparseable gap.
+ * Delegates rendering to the `SnippetText` primitive, which highlights
+ * `**bold**` runs and shows a "no excerpt" notice for an empty snippet — so a
+ * search result and a bare document render their snippet identically.
  *
- * Composed from: Text — typography comes from the type-scale primitive, not
- * global element CSS. No own CSS module (§12.5 — features layer is
+ * Composed from: SnippetText. No own CSS module (§12.5 — features layer is
  * composition-only).
  */
-export function DocumentSnippet({ snippet }: DocumentSnippetProps): React.ReactElement {
-  if (snippet.length === 0) {
-    // The visible text is itself the accessible notice — no aria-label needed.
-    return (
-      <Text variant="body" tone="tertiary">
-        No excerpt available.
-      </Text>
-    );
-  }
-  return <Text variant="body">{snippet}</Text>;
+export function DocumentSnippet({
+  snippet,
+}: DocumentSnippetProps): React.ReactElement {
+  return <SnippetText text={snippet} />;
 }
