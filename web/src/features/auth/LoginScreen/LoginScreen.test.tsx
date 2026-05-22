@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 import type { LoginRequest, LoginResponse, PublicStats } from '../../../api/types';
+import { Unauthenticated, ApiError } from '../../../api/client';
 import { LoginScreen } from './LoginScreen';
 
 // --- Mock the api hooks ---------------------------------------------------
@@ -89,7 +90,7 @@ describe('LoginScreen', () => {
     await userEvent.type(screen.getByLabelText(/username/i), 'ab');
     await userEvent.type(screen.getByLabelText(/password/i), 'longenough');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
-    expect(screen.getByText(/at least 3 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/between 3 and 64 characters/i)).toBeInTheDocument();
   });
 
   it('shows a username validation error on illegal characters', async () => {
@@ -146,9 +147,19 @@ describe('LoginScreen', () => {
     expect(screen.getByRole('button', { name: /signing in/i })).toBeDisabled();
   });
 
-  it('surfaces an invalid-credentials error as an alert', () => {
-    renderScreen(makeLogin({ isError: true, error: new Error('Invalid username or password') }));
-    expect(screen.getByRole('alert')).toHaveTextContent(/invalid username or password/i);
+  it('maps Unauthenticated (401 wrong creds) to a friendly message', () => {
+    renderScreen(makeLogin({ isError: true, error: new Unauthenticated() }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/incorrect username or password/i);
+  });
+
+  it('maps ApiError 403 (suspended account) to a friendly message', () => {
+    renderScreen(makeLogin({ isError: true, error: new ApiError(403) }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/account is suspended/i);
+  });
+
+  it('maps an unexpected ApiError to a generic fallback message', () => {
+    renderScreen(makeLogin({ isError: true, error: new ApiError(500) }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/sign-in failed/i);
   });
 
   it('shows the public stats when the query succeeds', () => {

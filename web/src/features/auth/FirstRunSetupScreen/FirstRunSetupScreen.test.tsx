@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type { SetupRequest, SetupResponse } from '../../../api/types';
+import { ApiError } from '../../../api/client';
 import { FirstRunSetupScreen } from './FirstRunSetupScreen';
 
 vi.mock('../../../api/hooks', () => ({
@@ -66,7 +67,7 @@ describe('FirstRunSetupScreen', () => {
     await userEvent.type(screen.getByLabelText(/^password/i), 'longenough');
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenough');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
-    expect(screen.getByText(/at least 3 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/between 3 and 64 characters/i)).toBeInTheDocument();
   });
 
   it('shows a validation error for a short password', async () => {
@@ -124,8 +125,18 @@ describe('FirstRunSetupScreen', () => {
     expect(screen.getByRole('button', { name: /creating/i })).toBeDisabled();
   });
 
-  it('surfaces a bad-token error as an alert', () => {
-    renderScreen(makeSetup({ isError: true, error: new Error('Invalid setup token') }));
+  it('maps ApiError 403 (bad setup token) to a friendly message', () => {
+    renderScreen(makeSetup({ isError: true, error: new ApiError(403) }));
     expect(screen.getByRole('alert')).toHaveTextContent(/invalid setup token/i);
+  });
+
+  it('maps ApiError 409 (already set up) to a friendly message', () => {
+    renderScreen(makeSetup({ isError: true, error: new ApiError(409) }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/already set up/i);
+  });
+
+  it('maps an unexpected error to a generic fallback message', () => {
+    renderScreen(makeSetup({ isError: true, error: new ApiError(500) }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/setup failed/i);
   });
 });
