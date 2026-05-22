@@ -36,6 +36,11 @@ SCHEMA_VERSION: int = 1
 # opaque cookie token — the raw token is never stored. user_id cascades on
 # delete so removing a user atomically revokes every session they hold.
 SCHEMA_V1: str = """
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id                  INTEGER PRIMARY KEY,
     username            TEXT NOT NULL UNIQUE,
