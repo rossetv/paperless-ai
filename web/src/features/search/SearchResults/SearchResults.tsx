@@ -120,6 +120,7 @@ export function SearchResults({
         <AnswerCard
           answer={answer}
           sources={sources}
+          stats={stats}
           onCitationActivate={onCitationActivate}
         />
         <SourceList
