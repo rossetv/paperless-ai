@@ -162,3 +162,25 @@ export interface StatsResponse {
 export interface StatusResponse {
   status: string;
 }
+
+// ---------------------------------------------------------------------------
+// Recent searches (Wave 2 — Search redesign)
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry in the signed-in user's recent-search history.
+ *
+ * Mirrors a row of the `recent_searches` table added by the Wave 2 backend
+ * (`app.db` migration v2). `searched_at` is an ISO-8601 UTC timestamp.
+ */
+export interface RecentSearch {
+  /** The raw query text the user searched for. */
+  query: string;
+  /** ISO-8601 UTC timestamp of when the search ran. */
+  searched_at: string;
+}
+
+/** Response body for GET /api/recent-searches — newest entry first. */
+export interface RecentSearchesResponse {
+  searches: RecentSearch[];
+}
