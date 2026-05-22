@@ -42,7 +42,7 @@ sessions, appstate).
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -228,7 +228,7 @@ def _enforce(caller: Caller, *, required_role: str, required_scope: str) -> None
         )
 
 
-def require_role(required_role: str) -> object:
+def require_role(required_role: str) -> Callable[..., CurrentUser]:
     """Return a FastAPI dependency that requires at least *required_role*.
 
     The dependency resolves the caller (so an unauthenticated request still
