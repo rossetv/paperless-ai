@@ -365,4 +365,45 @@
 
   /* Card elevation shadow for the dark island */
   --shadow-dark-card:           0 30px 70px -24px rgb(0 0 0 / 70%);
+
+  /* ─────────────────────────────────────────────
+   * Wave 2 — Search redesign
+   *
+   * Values the redesigned search experience needs and the base scale does
+   * not supply. The accent-wash colour is theme-INDEPENDENT (identical in
+   * light and dark, like --colour-accent) — it is the 10%-alpha accent used
+   * for citation chips, highlighted marks and the highlighted-source ring.
+   * ───────────────────────────────────────────── */
+
+  /* 10%-alpha accent wash — citation chips, <mark> highlight, source ring */
+  --colour-accent-wash:         rgb(0 113 227 / 10%);
+
+  /* Accent ring at 18% — the highlighted source-card outline */
+  --colour-accent-ring:         rgb(0 113 227 / 18%);
+
+  /* Success green — the "index ready" status dot */
+  --colour-status-ready:        #34c759;
+
+  /* Results answer-card lift — softer and bluer than --shadow-card */
+  --shadow-answer: 0 1px 2px rgb(0 0 0 / 4%), 0 12px 32px -16px rgb(0 0 0 / 10%);
+
+  /* Highlighted source-card lift — a faint accent-tinted drop */
+  --shadow-source-highlight:
+    0 1px 2px rgb(0 0 0 / 4%), 0 16px 36px -18px rgb(0 113 227 / 20%);
+
+  /* Document-thumbnail SVG — fixed artboard size (handoff DocThumb) */
+  --size-doc-thumb-width:       96px;
+  --size-doc-thumb-height:      124px;
+
+  /* Agentic-pipeline stage dot (LoadingScreen) */
+  --size-stage-dot:             18px;
+
+  /* Search hero field — the large idle-screen search input */
+  --height-search-hero:         64px;
+
+  /* Document-preview viewer — the page-navigation thumbnail rail width */
+  --width-preview-rail:         56px;
+
+  /* Document-preview viewer — the metadata sidebar width */
+  --width-preview-sidebar:      380px;
 }
