@@ -24,7 +24,7 @@
   gap: var(--spacing-3);
 }
 
-.groupTitle {
+.group-title {
   padding: 0 var(--spacing-10);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
@@ -59,12 +59,12 @@
 }
 
 /* ── Active link — tinted pill, accent text, heavier weight. ── */
-.linkActive {
+.link-active {
   background-color: var(--colour-status-info-bg);
   color: var(--colour-status-info-fg);
   font-weight: var(--font-weight-caption-bold);
 }
 
-.linkActive:hover {
+.link-active:hover {
   background-color: var(--colour-status-info-bg);
 }
