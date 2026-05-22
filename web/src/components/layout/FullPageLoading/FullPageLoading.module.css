@@ -1,0 +1,15 @@
+/*
+ * FullPageLoading layout component — CSS Module.
+ *
+ * A full-viewport centred loading overlay for use during bootstrap queries.
+ * Dark-surfaced to match the app shell's initial state before theme resolves.
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--colour-dark-bg);
+}
