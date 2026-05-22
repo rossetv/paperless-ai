@@ -13,6 +13,7 @@ from tests.helpers.factories import (
 )
 from tests.helpers.mocks import make_stateful_paperless
 
+
 def _make_settings(**overrides):
     """Create a settings mock suitable for classification e2e tests."""
     defaults = {
@@ -84,6 +85,7 @@ def _make_mock_classifier(result=None, model="gpt-5.4-mini"):
         "fallback_successes": 0,
     }
     return mock
+
 
 class TestClassifierHappyPath:
     """Complete classification lifecycle with realistic data."""
@@ -166,9 +168,7 @@ class TestClassifierHappyPath:
         # Verify custom fields (person field)
         custom_fields = kwargs.get("custom_fields")
         assert custom_fields is not None
-        person_field = next(
-            (f for f in custom_fields if f["field"] == 7), None
-        )
+        person_field = next((f for f in custom_fields if f["field"] == 7), None)
         assert person_field is not None
         assert person_field["value"] == "John Doe"
 
@@ -228,10 +228,13 @@ class TestClassifierHappyPath:
                 classification_call = c
                 break
 
-        assert classification_call is not None, "update_document_metadata was never called with 'title'"
+        assert classification_call is not None, (
+            "update_document_metadata was never called with 'title'"
+        )
         kwargs = classification_call[1]
         # custom_fields should be None (no person to set)
         assert kwargs.get("custom_fields") is None
+
 
 class TestClassifierEmptyContent:
     """Document has empty or blank content."""
@@ -285,6 +288,7 @@ class TestClassifierEmptyContent:
         processor.process()
 
         classifier.classify_text.assert_not_called()
+
 
 class TestClassifierRefusalContent:
     """Document content contains refusal markers."""

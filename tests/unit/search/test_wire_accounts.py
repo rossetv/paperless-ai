@@ -63,9 +63,7 @@ def test_login_request_rejects_a_short_password() -> None:
 
 
 def test_setup_request_accepts_a_valid_body() -> None:
-    body = SetupRequest(
-        token="setup-token", username="admin", password="password1"
-    )
+    body = SetupRequest(token="setup-token", username="admin", password="password1")
     assert body.token == "setup-token"
     assert body.username == "admin"
 
@@ -89,9 +87,7 @@ def test_create_user_request_accepts_a_full_body() -> None:
 
 def test_create_user_request_rejects_a_bad_role() -> None:
     with pytest.raises(ValidationError):
-        CreateUserRequest(
-            username="bob", password="password1", role="superuser"
-        )
+        CreateUserRequest(username="bob", password="password1", role="superuser")
 
 
 def test_create_user_request_rejects_a_bad_email() -> None:

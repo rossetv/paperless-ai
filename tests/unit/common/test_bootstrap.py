@@ -9,6 +9,7 @@ from common.preflight import PreflightError
 
 MODULE = "common.bootstrap"
 
+
 class TestBootstrapDaemon:
     """Tests for bootstrap_daemon()."""
 
@@ -72,7 +73,9 @@ class TestBootstrapDaemon:
     @patch(f"{MODULE}.configure_logging")
     @patch(f"{MODULE}.Settings")
     def test_value_error_from_configure_logging_returns_none(
-        self, mock_settings_cls, mock_configure_logging,
+        self,
+        mock_settings_cls,
+        mock_configure_logging,
     ):
         mock_settings_cls.from_environment.return_value = MagicMock(
             LLM_MAX_CONCURRENT=0

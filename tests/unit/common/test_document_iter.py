@@ -18,10 +18,15 @@ class TestYieldsValidDocuments:
         doc = {"id": 1, "title": "Test", "tags": [443]}
         client = _make_mock_client([doc])
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=None, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=None,
+                context="test",
+            )
+        )
 
         assert result == [doc]
 
@@ -32,10 +37,15 @@ class TestYieldsValidDocuments:
         ]
         client = _make_mock_client(docs)
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=None, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=None,
+                context="test",
+            )
+        )
 
         assert len(result) == 2
 
@@ -44,20 +54,30 @@ class TestSkipsInvalidIds:
     def test_skips_none_id(self):
         client = _make_mock_client([{"id": None, "tags": [443]}])
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=None, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=None,
+                context="test",
+            )
+        )
 
         assert result == []
 
     def test_skips_string_id(self):
         client = _make_mock_client([{"id": "abc", "tags": [443]}])
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=None, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=None,
+                context="test",
+            )
+        )
 
         assert result == []
 
@@ -66,10 +86,15 @@ class TestSkipsProcessedDocs:
     def test_skips_doc_with_post_tag(self):
         client = _make_mock_client([{"id": 1, "tags": [443, 444]}])
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=None, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=None,
+                context="test",
+            )
+        )
 
         assert result == []
 
@@ -77,10 +102,15 @@ class TestSkipsProcessedDocs:
     def test_removes_stale_pre_tag(self, mock_remove):
         client = _make_mock_client([{"id": 1, "tags": [443, 444]}])
 
-        list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=999, context="test",
-        ))
+        list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=999,
+                context="test",
+            )
+        )
 
         mock_remove.assert_called_once()
 
@@ -89,9 +119,14 @@ class TestSkipsClaimedDocs:
     def test_skips_doc_with_processing_tag(self):
         client = _make_mock_client([{"id": 1, "tags": [443, 999]}])
 
-        result = list(iter_documents_by_pipeline_tag(
-            client, pre_tag_id=443, post_tag_id=444,
-            processing_tag_id=999, context="test",
-        ))
+        result = list(
+            iter_documents_by_pipeline_tag(
+                client,
+                pre_tag_id=443,
+                post_tag_id=444,
+                processing_tag_id=999,
+                context="test",
+            )
+        )
 
         assert result == []

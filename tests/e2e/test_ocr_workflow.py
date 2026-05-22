@@ -131,6 +131,7 @@ class TestOcrHappyPath:
         assert "--- Page 1 ---" in content
         assert "--- Page 2 ---" in content
 
+
 class TestOcrErrorPath:
     """OCR provider fails, document gets error tag."""
 
@@ -220,6 +221,7 @@ class TestOcrErrorPath:
         # Error tag should be applied via update_document_metadata
         # The _finalise_with_error path calls update_document_metadata with error tag
         assert 552 in state["tags"]
+
 
 class TestOcrLockContention:
     """Document already has processing tag -- claim fails, early exit."""

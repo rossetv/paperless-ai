@@ -124,9 +124,7 @@ def _enumerate_paperless_ids(paperless: PaperlessClient) -> set[int] | None:
         return None
 
 
-def _confirm_absent(
-    paperless: PaperlessClient, candidates: set[int]
-) -> set[int]:
+def _confirm_absent(paperless: PaperlessClient, candidates: set[int]) -> set[int]:
     """Return the subset of *candidates* that Paperless confirms is gone.
 
     For each candidate, ``document_exists`` is the second confirmation against
@@ -143,9 +141,7 @@ def _confirm_absent(
             # rationale: Paperless transport boundary — a failed confirmation
             # must never be treated as "deleted"; keep the document and let the
             # next sweep re-confirm (SPEC §5.4 rule 3).
-            log.exception(
-                "reconcile.confirm_failed", document_id=document_id
-            )
+            log.exception("reconcile.confirm_failed", document_id=document_id)
             continue
         if not still_exists:
             prune_set.add(document_id)

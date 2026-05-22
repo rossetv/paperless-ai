@@ -7,6 +7,7 @@ from PIL import Image
 from common.content_checks import contains_redacted_marker, is_error_content
 from ocr.provider import is_blank
 
+
 class TestIsBlank:
     """Tests for is_blank(image, threshold=5)."""
 
@@ -54,6 +55,7 @@ class TestIsBlank:
         img = Image.new("L", (10, 10), color=128)
         assert is_blank(img) is False
 
+
 class TestContainsRedactedMarker:
     """Tests for contains_redacted_marker(text)."""
 
@@ -82,6 +84,7 @@ class TestContainsRedactedMarker:
 
     def test_no_marker_returns_false(self):
         assert contains_redacted_marker("This is normal text.") is False
+
 
 class TestIsErrorContent:
     """Tests for is_error_content(text, error_phrases)."""

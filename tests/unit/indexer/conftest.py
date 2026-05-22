@@ -85,9 +85,7 @@ def always_indexed(
     return IndexOutcome.INDEXED
 
 
-def run_incremental_sync(
-    paperless: MagicMock, store_writer: MagicMock
-) -> SyncReport:
+def run_incremental_sync(paperless: MagicMock, store_writer: MagicMock) -> SyncReport:
     """Construct a Reconciler over the mocks and run one incremental_sync.
 
     Settings and the embedding client are the shared factory defaults; the

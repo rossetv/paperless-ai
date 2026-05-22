@@ -116,8 +116,7 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             # Persist the new version in the same transaction so a crash
             # rolls back to the pre-migration state entirely.
             conn.execute(
-                "INSERT OR REPLACE INTO meta (key, value) "
-                "VALUES ('schema_version', ?)",
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(version),),
             )
             conn.commit()

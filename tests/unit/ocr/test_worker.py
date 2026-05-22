@@ -33,9 +33,7 @@ class TestProcessHappyPath:
             ERROR_TAG_ID=552,
         )
         paperless = make_mock_paperless()
-        paperless.get_document.return_value = {
-            "id": 1, "title": "Test", "tags": [443]
-        }
+        paperless.get_document.return_value = {"id": 1, "title": "Test", "tags": [443]}
         paperless.download_content.return_value = (b"pdf-data", "application/pdf")
 
         images = [make_image(), make_image()]
@@ -47,7 +45,10 @@ class TestProcessHappyPath:
             PageResult("Page 2 text", "model-a"),
         ]
 
-        mock_assemble.return_value = ("Full text\n\nTranscribed by model: model-a", {"model-a"})
+        mock_assemble.return_value = (
+            "Full text\n\nTranscribed by model: model-a",
+            {"model-a"},
+        )
 
         proc = OcrProcessor(
             {"id": 1, "title": "Test", "tags": [443]},
@@ -73,6 +74,7 @@ class TestProcessHappyPath:
         assert 444 in tags  # POST_TAG_ID added
         assert 443 not in tags  # PRE_TAG_ID removed
 
+
 class TestProcessClaimFails:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=False)
@@ -87,6 +89,7 @@ class TestProcessClaimFails:
         # Release not called because claimed=False
         mock_release.assert_not_called()
 
+
 class TestProcessErrorTagPresent:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag")
@@ -96,7 +99,9 @@ class TestProcessErrorTagPresent:
         paperless = make_mock_paperless()
         # Return doc with error tag
         paperless.get_document.return_value = {
-            "id": 1, "title": "T", "tags": [443, 552]
+            "id": 1,
+            "title": "T",
+            "tags": [443, 552],
         }
         mock_clean.return_value = {552}
 
@@ -109,6 +114,7 @@ class TestProcessErrorTagPresent:
         paperless.download_content.assert_not_called()
         mock_clean.assert_called_once()
         paperless.update_document_metadata.assert_called_once()
+
 
 class TestProcessRefreshFailure:
     @patch("ocr.worker.release_processing_tag")
@@ -125,6 +131,7 @@ class TestProcessRefreshFailure:
         mock_claim.assert_not_called()
         paperless.download_content.assert_not_called()
         mock_release.assert_not_called()
+
 
 class TestProcessImageConversionFailure:
     @patch("ocr.worker.release_processing_tag")
@@ -151,6 +158,7 @@ class TestProcessImageConversionFailure:
 
         mock_release.assert_called_once()
 
+
 class TestProcessAlwaysReleasesLock:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
@@ -173,9 +181,7 @@ class TestProcessAlwaysReleasesLock:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
     @patch("ocr.worker.bytes_to_images")
-    def test_lock_released_on_ocr_failure(
-        self, mock_b2i, mock_claim, mock_release
-    ):
+    def test_lock_released_on_ocr_failure(self, mock_b2i, mock_claim, mock_release):
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
         paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
@@ -194,6 +200,7 @@ class TestProcessAlwaysReleasesLock:
         proc.process()
 
         mock_release.assert_called_once()
+
 
 class TestImagesAlwaysClosed:
     @patch("ocr.worker.release_processing_tag")
@@ -225,9 +232,7 @@ class TestImagesAlwaysClosed:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
     @patch("ocr.worker.bytes_to_images")
-    def test_images_closed_on_ocr_error(
-        self, mock_b2i, mock_claim, mock_release
-    ):
+    def test_images_closed_on_ocr_error(self, mock_b2i, mock_claim, mock_release):
         img1 = MagicMock(spec=Image.Image)
         mock_b2i.return_value = [img1]
 
@@ -245,6 +250,7 @@ class TestImagesAlwaysClosed:
         proc.process()
 
         img1.close.assert_called_once()
+
 
 class TestOcrProcessorInit:
     def test_extracts_doc_id(self):
@@ -267,6 +273,7 @@ class TestOcrProcessorInit:
         proc = make_processor(doc=doc)
 
         assert proc.title == "My Document"
+
 
 class TestProcessNoPages:
     @patch("ocr.worker.release_processing_tag")

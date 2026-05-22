@@ -44,7 +44,9 @@ from tests.unit.search.conftest import build_test_client
 _API_KEY = "test-api-key-for-unit-tests"
 
 
-def _settings(*, db_path: str = "/nonexistent/index.db", **overrides: object) -> MagicMock:
+def _settings(
+    *, db_path: str = "/nonexistent/index.db", **overrides: object
+) -> MagicMock:
     """Build a Settings-like mock for API tests, with a chosen index DB path."""
     return make_search_settings(
         SEARCH_API_KEY=_API_KEY, INDEX_DB_PATH=db_path, **overrides
@@ -59,8 +61,12 @@ def _bearer_headers(key: str = _API_KEY) -> dict[str, str]:
 def _seeded_facets() -> object:
     """A FacetSet with one entry of each taxonomy kind, for the facets test."""
     return make_facet_set(
-        correspondents=(make_taxonomy_entry(kind="correspondent", entry_id=1, name="ACME"),),
-        document_types=(make_taxonomy_entry(kind="document_type", entry_id=2, name="Invoice"),),
+        correspondents=(
+            make_taxonomy_entry(kind="correspondent", entry_id=1, name="ACME"),
+        ),
+        document_types=(
+            make_taxonomy_entry(kind="document_type", entry_id=2, name="Invoice"),
+        ),
         tags=(make_taxonomy_entry(kind="tag", entry_id=3, name="important"),),
         earliest="2020-01-01T00:00:00Z",
         latest="2024-12-31T00:00:00Z",
@@ -313,9 +319,7 @@ def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
     probe.write_text("out-of-tree-secret")
     client = build_test_client(_settings())
 
-    response = client.get(
-        "/%2e%2e/%2e%2e/%2e%2e/etc/passwd", headers=_bearer_headers()
-    )
+    response = client.get("/%2e%2e/%2e%2e/%2e%2e/etc/passwd", headers=_bearer_headers())
     assert "out-of-tree-secret" not in response.text
     assert "root:" not in response.text
 

@@ -30,9 +30,7 @@ def test_two_tokens_differ() -> None:
 def test_new_token_is_url_safe() -> None:
     """The token contains only URL-safe characters (cookie-safe)."""
     token = new_token()
-    allowed = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-    )
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
     assert set(token) <= allowed
 
 

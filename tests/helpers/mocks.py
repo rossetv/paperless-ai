@@ -70,8 +70,7 @@ def make_mock_embeddings(
 
         response = MagicMock()
         response.data = [
-            MagicMock(embedding=vec, index=i)
-            for i, vec in enumerate(batch_vectors)
+            MagicMock(embedding=vec, index=i) for i, vec in enumerate(batch_vectors)
         ]
         last_response.clear()
         last_response.append(response)
@@ -82,10 +81,9 @@ def make_mock_embeddings(
 
     # Build a dummy response for callers that need the raw response object.
     dummy_response = MagicMock()
-    dummy_response.data = [
-        MagicMock(embedding=[0.0] * dimensions, index=0)
-    ]
+    dummy_response.data = [MagicMock(embedding=[0.0] * dimensions, index=0)]
     return mock_openai, dummy_response
+
 
 def make_mock_paperless(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a PaperlessClient.
@@ -179,16 +177,41 @@ def _stub_fixed_taxonomy(client: MagicMock) -> None:
     10).  Newly created items get monotonically increasing ids from 200.
     """
     client.list_correspondents.return_value = [
-        {"id": 1, "name": "Acme Corp", "document_count": 10, "matching_algorithm": "none"},
+        {
+            "id": 1,
+            "name": "Acme Corp",
+            "document_count": 10,
+            "matching_algorithm": "none",
+        },
     ]
     client.list_document_types.return_value = [
-        {"id": 10, "name": "Invoice", "document_count": 20, "matching_algorithm": "none"},
-        {"id": 11, "name": "Receipt", "document_count": 5, "matching_algorithm": "none"},
+        {
+            "id": 10,
+            "name": "Invoice",
+            "document_count": 20,
+            "matching_algorithm": "none",
+        },
+        {
+            "id": 11,
+            "name": "Receipt",
+            "document_count": 5,
+            "matching_algorithm": "none",
+        },
     ]
     client.list_tags.return_value = [
         {"id": 100, "name": "2025", "matching_algorithm": "none", "document_count": 30},
-        {"id": 101, "name": "invoice", "matching_algorithm": "none", "document_count": 15},
-        {"id": 102, "name": "payment", "matching_algorithm": "none", "document_count": 8},
+        {
+            "id": 101,
+            "name": "invoice",
+            "matching_algorithm": "none",
+            "document_count": 15,
+        },
+        {
+            "id": 102,
+            "name": "payment",
+            "matching_algorithm": "none",
+            "document_count": 8,
+        },
         {"id": 103, "name": "de", "matching_algorithm": "none", "document_count": 25},
     ]
 
@@ -200,8 +223,14 @@ def _stub_fixed_taxonomy(client: MagicMock) -> None:
         return {"id": tag_id, "name": name, "matching_algorithm": "none"}
 
     client.create_tag.side_effect = create_tag
-    client.create_correspondent.side_effect = lambda name, **kw: {"id": 300, "name": name}
-    client.create_document_type.side_effect = lambda name, **kw: {"id": 301, "name": name}
+    client.create_correspondent.side_effect = lambda name, **kw: {
+        "id": 300,
+        "name": name,
+    }
+    client.create_document_type.side_effect = lambda name, **kw: {
+        "id": 301,
+        "name": name,
+    }
 
 
 def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
@@ -228,6 +257,7 @@ def make_mock_ocr_provider(**overrides: Any) -> MagicMock:
         setattr(mock, key, value)
 
     return mock
+
 
 def make_mock_classify_provider(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a ClassificationProvider."""

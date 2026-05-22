@@ -22,7 +22,11 @@ from datetime import datetime
 import pytest
 import structlog.testing
 
-from indexer.reconciler import MAX_CONSECUTIVE_DOCUMENT_FAILURES, OVERLAP_MARGIN, Reconciler
+from indexer.reconciler import (
+    MAX_CONSECUTIVE_DOCUMENT_FAILURES,
+    OVERLAP_MARGIN,
+    Reconciler,
+)
 from indexer.worker import IndexOutcome
 from store.models import IndexState
 from tests.helpers.factories import make_paperless_document, make_settings_obj
@@ -67,7 +71,9 @@ class TestIncrementalSyncFailedDocumentRetry:
         )
 
         report = Reconciler(
-            make_settings_obj(), paperless, store_writer,
+            make_settings_obj(),
+            paperless,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
 
@@ -128,7 +134,9 @@ class TestIncrementalSyncFailedDocumentRetry:
             watermarks_seen.append(store_writer.read_meta("modified_watermark"))
 
             reconciler = Reconciler(
-                make_settings_obj(), paperless, store_writer,
+                make_settings_obj(),
+                paperless,
+                store_writer,
                 make_mock_embedding_client(),
             )
             # capture_logs intercepts structlog events as dicts regardless of
@@ -208,14 +216,14 @@ class TestIncrementalSyncFailedDocumentRetry:
             ]
         )
         report_one = Reconciler(
-            make_settings_obj(), paperless_one, store_writer,
+            make_settings_obj(),
+            paperless_one,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
 
         assert report_one.failed == 1
-        assert json.loads(store_writer._meta["failed_documents"]) == {
-            str(flaky_id): 1
-        }
+        assert json.loads(store_writer._meta["failed_documents"]) == {str(flaky_id): 1}
 
         # Cycle 2: the watermark has advanced past the flaky document, so it is
         # re-fetched out-of-band — and this time it succeeds.
@@ -225,7 +233,9 @@ class TestIncrementalSyncFailedDocumentRetry:
             doc_id=flaky_id, modified="2024-06-10T00:00:00+00:00"
         )
         report_two = Reconciler(
-            make_settings_obj(), paperless_two, store_writer,
+            make_settings_obj(),
+            paperless_two,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
 
@@ -260,19 +270,21 @@ class TestIncrementalSyncFailedDocumentRetry:
             documents=[make_paperless_document(doc_id=gone_id)]
         )
         Reconciler(
-            make_settings_obj(), paperless_one, store_writer,
+            make_settings_obj(),
+            paperless_one,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
-        assert json.loads(store_writer._meta["failed_documents"]) == {
-            str(gone_id): 1
-        }
+        assert json.loads(store_writer._meta["failed_documents"]) == {str(gone_id): 1}
 
         # Cycle 2: the document has been deleted from Paperless — document_exists
         # returns False, so the failed-document re-fetch must drop it.
         paperless_two = make_reconciler_paperless(documents=[])
         paperless_two.document_exists.return_value = False
         report = Reconciler(
-            make_settings_obj(), paperless_two, store_writer,
+            make_settings_obj(),
+            paperless_two,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
 
@@ -299,7 +311,9 @@ class TestIncrementalSyncFailedDocumentRetry:
             documents=[make_paperless_document(doc_id=1)]
         )
         report = Reconciler(
-            make_settings_obj(), paperless, store_writer,
+            make_settings_obj(),
+            paperless,
+            store_writer,
             make_mock_embedding_client(),
         ).incremental_sync()
 

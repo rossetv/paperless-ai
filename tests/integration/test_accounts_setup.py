@@ -180,9 +180,7 @@ def test_created_admin_can_log_in(tmp_path: Path) -> None:
             },
         )
         assert created.status_code == 201, created.text
-        response = login(
-            client, username="founder", password="founder-password"
-        )
+        response = login(client, username="founder", password="founder-password")
         assert response.status_code == 200, response.text
         assert response.json()["user"]["username"] == "founder"
     finally:

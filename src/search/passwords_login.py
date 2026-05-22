@@ -28,9 +28,7 @@ from appdb.users import User
 _DUMMY_HASH = hash_password("timing-equaliser-not-a-real-password")
 
 
-def authenticate(
-    conn: sqlite3.Connection, username: str, password: str
-) -> User | None:
+def authenticate(conn: sqlite3.Connection, username: str, password: str) -> User | None:
     """Return the :class:`User` for valid credentials, else ``None``.
 
     Looks the user up by *username* and verifies *password* against their

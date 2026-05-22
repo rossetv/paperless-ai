@@ -67,9 +67,7 @@ class TestIncrementalSyncEndToEnd:
         try:
             latest = "2024-06-10T09:00:00+00:00"
             docs = [
-                make_paperless_document(
-                    doc_id=1, modified="2024-06-01T00:00:00+00:00"
-                ),
+                make_paperless_document(doc_id=1, modified="2024-06-01T00:00:00+00:00"),
                 make_paperless_document(doc_id=2, modified=latest),
             ]
             report = Reconciler(

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from ocr.text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 
+
 class TestOcrErrorMarker:
     def test_value(self):
         assert OCR_ERROR_MARKER == "[OCR ERROR]"
 
     def test_is_string(self):
         assert isinstance(OCR_ERROR_MARKER, str)
+
 
 class TestAssembleFullTextSinglePage:
     """Single-page documents should not get page headers."""
@@ -43,6 +45,7 @@ class TestAssembleFullTextSinglePage:
 
         # Assert — text and footer separated by double newline
         assert "Page text\n\nTranscribed by model: model-a" == full_text
+
 
 class TestAssembleFullTextMultiPage:
     """Multi-page documents get "--- Page N ---" headers."""
@@ -99,6 +102,7 @@ class TestAssembleFullTextMultiPage:
         _, models = assemble_full_text(3, page_results)
 
         assert models == {"model-x", "model-y"}
+
 
 class TestAssembleFullTextBlankPages:
     """Blank and whitespace-only pages should be skipped."""
@@ -157,6 +161,7 @@ class TestAssembleFullTextBlankPages:
         assert "model-skipped" not in models
         assert "model-used" in models
 
+
 class TestAssembleFullTextIncludePageModels:
     """When include_page_models=True, model name appears in page header."""
 
@@ -166,9 +171,7 @@ class TestAssembleFullTextIncludePageModels:
             PageResult("Text B", "gpt-5.4-mini"),
         ]
 
-        full_text, _ = assemble_full_text(
-            2, page_results, include_page_models=True
-        )
+        full_text, _ = assemble_full_text(2, page_results, include_page_models=True)
 
         assert "--- Page 1 (gpt-5) ---" in full_text
         assert "--- Page 2 (gpt-5.4-mini) ---" in full_text
@@ -190,9 +193,7 @@ class TestAssembleFullTextIncludePageModels:
             PageResult("Text A", ""),
         ]
 
-        full_text, _ = assemble_full_text(
-            2, page_results, include_page_models=True
-        )
+        full_text, _ = assemble_full_text(2, page_results, include_page_models=True)
 
         assert "--- Page 1 ---" in full_text
         assert "()" not in full_text
@@ -201,11 +202,10 @@ class TestAssembleFullTextIncludePageModels:
         # Arrange — single page never gets header even with flag
         page_results = [PageResult("Text", "gpt-5")]
 
-        full_text, _ = assemble_full_text(
-            1, page_results, include_page_models=True
-        )
+        full_text, _ = assemble_full_text(1, page_results, include_page_models=True)
 
         assert "--- Page" not in full_text
+
 
 class TestAssembleFullTextFooter:
     """Footer lists all models sorted alphabetically."""
@@ -249,6 +249,7 @@ class TestAssembleFullTextFooter:
         # Assert — blank pages skipped, model not collected
         assert full_text == ""
         assert models == set()
+
 
 class TestAssembleFullTextEdgeCases:
     def test_empty_page_results_list(self):

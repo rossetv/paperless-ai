@@ -108,9 +108,7 @@ def test_chunk_in_multiple_lists_ranks_above_single_list() -> None:
     ]
     embedding_client.embed.return_value = [[0.1, 0.2]]
 
-    plan = make_query_plan(
-        semantic_queries=("query",), keyword_terms=("term",)
-    )
+    plan = make_query_plan(semantic_queries=("query",), keyword_terms=("term",))
     chunks = retriever.retrieve(plan, make_search_filters())
 
     score_by_chunk = {chunk.chunk_id: chunk.rrf_score for chunk in chunks}
@@ -158,9 +156,7 @@ def test_retrieve_results_ordered_by_fused_score_descending() -> None:
     ]
     embedding_client.embed.return_value = [[0.1]]
 
-    plan = make_query_plan(
-        semantic_queries=("query",), keyword_terms=("term",)
-    )
+    plan = make_query_plan(semantic_queries=("query",), keyword_terms=("term",))
     chunks = retriever.retrieve(plan, make_search_filters())
 
     scores = [chunk.rrf_score for chunk in chunks]
@@ -268,16 +264,12 @@ class TestRetrieveEmbeddingFailure:
     def test_embedding_failure_still_allows_keyword_results(self) -> None:
         """When vector embedding fails, keyword search still contributes hits."""
         retriever, store_reader, embedding_client = _retriever(top_k=10)
-        embedding_client.embed.side_effect = EmbeddingError(
-            "embedding endpoint down"
-        )
+        embedding_client.embed.side_effect = EmbeddingError("embedding endpoint down")
         store_reader.keyword_search.return_value = [
             make_chunk_hit(chunk_id=1, document_id=10),
         ]
 
-        plan = make_query_plan(
-            semantic_queries=("a query",), keyword_terms=("term",)
-        )
+        plan = make_query_plan(semantic_queries=("a query",), keyword_terms=("term",))
         chunks = retriever.retrieve(plan, make_search_filters())
 
         # The keyword hit survives even though vector embedding failed.

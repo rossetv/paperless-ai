@@ -59,7 +59,9 @@ class TestCompleteWithModelFallback:
 
     def test_returns_primary_model_content_on_success(self, client):
         """The first model's content is returned when the primary call succeeds."""
-        client._create_completion = MagicMock(return_value=_completion("primary answer"))
+        client._create_completion = MagicMock(
+            return_value=_completion("primary answer")
+        )
 
         result = client._complete_with_model_fallback(
             primary_model="m1",
@@ -155,7 +157,9 @@ class TestCompleteWithModelFallback:
 
     def test_per_model_failure_is_logged_without_the_messages(self, client):
         """A skipped model logs a warning carrying the model name, not the prompt."""
-        client._create_completion = MagicMock(side_effect=[_api_error(), _completion("ok")])
+        client._create_completion = MagicMock(
+            side_effect=[_api_error(), _completion("ok")]
+        )
 
         with patch("common.llm.log") as mock_log:
             client._complete_with_model_fallback(
@@ -166,7 +170,10 @@ class TestCompleteWithModelFallback:
             )
 
         mock_log.warning.assert_called_once()
-        event, kwargs = mock_log.warning.call_args.args[0], mock_log.warning.call_args.kwargs
+        event, kwargs = (
+            mock_log.warning.call_args.args[0],
+            mock_log.warning.call_args.kwargs,
+        )
         assert event == "planner.model_failed"
         assert kwargs["model"] == "m1"
 
@@ -282,9 +289,7 @@ class TestRetryLimiterIntegration:
         assert release_count == 3
 
     @patch("common.retry._sleep_backoff")
-    def test_api_call_happens_inside_limiter_context(
-        self, mock_sleep, client
-    ):
+    def test_api_call_happens_inside_limiter_context(self, mock_sleep, client):
         """The OpenAI API call occurs strictly inside the limiter context manager."""
         mock_openai = MagicMock()
         expected = MagicMock(name="chat_completion_result")
@@ -367,8 +372,12 @@ class TestRetryLimiterIntegration:
         # First attempt: acquire, api_call (raises), release
         # Second attempt: acquire, api_call (succeeds), release
         assert call_log == [
-            "acquire", "api_call", "release",
-            "acquire", "api_call", "release",
+            "acquire",
+            "api_call",
+            "release",
+            "acquire",
+            "api_call",
+            "release",
         ]
 
     @patch("common.retry._sleep_backoff")
@@ -390,5 +399,7 @@ class TestRetryLimiterIntegration:
         # The semaphore should be fully available again (not leaked).
         # With BoundedSemaphore(1), we can acquire once more without blocking.
         acquired = real_limiter._semaphore.acquire(blocking=False)
-        assert acquired, "Semaphore was leaked - could not re-acquire after all retries failed"
+        assert acquired, (
+            "Semaphore was leaked - could not re-acquire after all retries failed"
+        )
         real_limiter._semaphore.release()

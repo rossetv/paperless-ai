@@ -19,25 +19,29 @@ MODEL_FOOTER_RE: re.Pattern[str] = re.compile(
 
 # Document types that are too vague to be useful.  When the LLM returns one
 # of these we treat the classification as failed.
-GENERIC_DOCUMENT_TYPES: frozenset[str] = frozenset({
-    "document",
-    "documents",
-    "general",
-    "misc",
-    "miscellaneous",
-    "n/a",
-    "na",
-    "none",
-    "other",
-    "unknown",
-    "unspecified",
-})
+GENERIC_DOCUMENT_TYPES: frozenset[str] = frozenset(
+    {
+        "document",
+        "documents",
+        "general",
+        "misc",
+        "miscellaneous",
+        "n/a",
+        "na",
+        "none",
+        "other",
+        "unknown",
+        "unspecified",
+    }
+)
 
 # Tags that should never appear in the final tag set — they collide with
 # Paperless-internal labels or automation markers.
-BLACKLISTED_TAGS: frozenset[str] = frozenset({
-    "ai",
-    "error",
-    "indexed",
-    "new",
-})
+BLACKLISTED_TAGS: frozenset[str] = frozenset(
+    {
+        "ai",
+        "error",
+        "indexed",
+        "new",
+    }
+)

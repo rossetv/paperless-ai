@@ -87,8 +87,7 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     # (e.g. "-- …; the writer keeps…") would otherwise produce a broken fragment
     # starting with plain text rather than a SQL keyword.
     comment_stripped = "\n".join(
-        line for line in _SCHEMA.splitlines()
-        if not line.strip().startswith("--")
+        line for line in _SCHEMA.splitlines() if not line.strip().startswith("--")
     )
     for statement in comment_stripped.split(";"):
         stmt = statement.strip()

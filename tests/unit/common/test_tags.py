@@ -13,6 +13,7 @@ from common.tags import (
 )
 from tests.helpers.factories import make_settings_obj
 
+
 class TestExtractTags:
     """Tests for extract_tags()."""
 
@@ -58,6 +59,7 @@ class TestExtractTags:
 
         assert result == {5, 10}
 
+
 class TestGetLatestTags:
     """Tests for get_latest_tags()."""
 
@@ -95,6 +97,7 @@ class TestGetLatestTags:
 
         assert result == set()
 
+
 class TestRemoveStaleQueueTag:
     """Tests for remove_stale_queue_tag()."""
 
@@ -113,8 +116,11 @@ class TestRemoveStaleQueueTag:
         tags = {10, 20, 30}
 
         remove_stale_queue_tag(
-            client, doc_id=1, tags=tags,
-            pre_tag_id=10, processing_tag_id=20,
+            client,
+            doc_id=1,
+            tags=tags,
+            pre_tag_id=10,
+            processing_tag_id=20,
         )
 
         call_args = client.update_document_metadata.call_args
@@ -140,6 +146,7 @@ class TestRemoveStaleQueueTag:
         remove_stale_queue_tag(client, doc_id=1, tags=original_tags, pre_tag_id=10)
 
         assert original_tags == tags_copy
+
 
 class TestReleaseProcessingTag:
     """Tests for release_processing_tag()."""
@@ -190,14 +197,19 @@ class TestReleaseProcessingTag:
 
         client.update_document_metadata.assert_called_once()
 
+
 class TestCleanPipelineTags:
     """Tests for clean_pipeline_tags()."""
 
     def test_removes_pre_post_and_classify_pre_tag_ids(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
-            CLASSIFY_POST_TAG_ID=None, ERROR_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
+            CLASSIFY_POST_TAG_ID=None,
+            ERROR_TAG_ID=None,
         )
         tags = {1, 2, 3, 100, 200}
 
@@ -207,9 +219,13 @@ class TestCleanPipelineTags:
 
     def test_removes_optional_tags_when_configured(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=10, CLASSIFY_PROCESSING_TAG_ID=11,
-            CLASSIFY_POST_TAG_ID=12, ERROR_TAG_ID=13,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=10,
+            CLASSIFY_PROCESSING_TAG_ID=11,
+            CLASSIFY_POST_TAG_ID=12,
+            ERROR_TAG_ID=13,
         )
         tags = {1, 2, 3, 10, 11, 12, 13, 500}
 
@@ -219,9 +235,13 @@ class TestCleanPipelineTags:
 
     def test_skips_optional_tags_when_none(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
-            CLASSIFY_POST_TAG_ID=None, ERROR_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
+            CLASSIFY_POST_TAG_ID=None,
+            ERROR_TAG_ID=None,
         )
         tags = {1, 2, 3, 42}
 
@@ -231,9 +251,13 @@ class TestCleanPipelineTags:
 
     def test_preserves_user_assigned_tags(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
-            CLASSIFY_POST_TAG_ID=None, ERROR_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
+            CLASSIFY_POST_TAG_ID=None,
+            ERROR_TAG_ID=None,
         )
         user_tags = {800, 900, 1000}
         tags = {1, 2, 3} | user_tags
@@ -244,9 +268,13 @@ class TestCleanPipelineTags:
 
     def test_returns_new_set_does_not_mutate_original(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
-            CLASSIFY_POST_TAG_ID=None, ERROR_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
+            CLASSIFY_POST_TAG_ID=None,
+            ERROR_TAG_ID=None,
         )
         original = {1, 2, 3, 42}
         original_copy = set(original)
@@ -259,9 +287,13 @@ class TestCleanPipelineTags:
     def test_skips_optional_tags_when_zero(self):
         # Arrange — 0 is falsy, same as None for the `if optional_tag:` check
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2, CLASSIFY_PRE_TAG_ID=3,
-            OCR_PROCESSING_TAG_ID=0, CLASSIFY_PROCESSING_TAG_ID=0,
-            CLASSIFY_POST_TAG_ID=0, ERROR_TAG_ID=0,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            CLASSIFY_PRE_TAG_ID=3,
+            OCR_PROCESSING_TAG_ID=0,
+            CLASSIFY_PROCESSING_TAG_ID=0,
+            CLASSIFY_POST_TAG_ID=0,
+            ERROR_TAG_ID=0,
         )
         tags = {1, 2, 3, 42}
 

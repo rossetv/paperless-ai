@@ -15,10 +15,14 @@ from tests.helpers.factories import make_png_bytes
 
 def _make_tiff_bytes(num_frames: int = 3, width: int = 10, height: int = 10) -> bytes:
     """Create a multi-frame TIFF image as raw bytes."""
-    frames = [Image.new("RGB", (width, height), color=c) for c in ["red", "green", "blue"][:num_frames]]
+    frames = [
+        Image.new("RGB", (width, height), color=c)
+        for c in ["red", "green", "blue"][:num_frames]
+    ]
     buf = io.BytesIO()
     frames[0].save(buf, format="TIFF", save_all=True, append_images=frames[1:])
     return buf.getvalue()
+
 
 class TestFullOcrPipeline:
     """Real image conversion and text assembly with a mocked OCR provider."""
@@ -86,6 +90,7 @@ class TestFullOcrPipeline:
         assert "--- Page 2 (o4-mini) ---" in full_text
         assert models == {"gpt-5.4-mini", "o4-mini"}
 
+
 class TestMultiPageMixedResults:
     """Test assembly when some pages are blank or produce empty text."""
 
@@ -93,9 +98,9 @@ class TestMultiPageMixedResults:
         """Blank pages (empty text) are omitted from the assembled output."""
         page_results = [
             PageResult("First page content.", "gpt-5.4-mini"),
-            PageResult("", ""),            # blank page
+            PageResult("", ""),  # blank page
             PageResult("Third page content.", "gpt-5.4-mini"),
-            PageResult("   ", ""),         # whitespace-only page
+            PageResult("   ", ""),  # whitespace-only page
         ]
 
         full_text, models = assemble_full_text(4, page_results)
@@ -131,6 +136,7 @@ class TestMultiPageMixedResults:
         assert OCR_ERROR_MARKER in full_text
         assert "Failed to OCR page 2." in full_text
 
+
 class TestErrorPropagation:
     """Corrupt or invalid input triggers clear errors."""
 
@@ -150,6 +156,7 @@ class TestErrorPropagation:
         truncated = valid_png[:20]  # cut off most of the file
         with pytest.raises(ImageConversionError):
             bytes_to_images(truncated, "image/png")
+
 
 class TestContentPrepWithAssembly:
     """Test that assembled OCR text can be correctly truncated."""

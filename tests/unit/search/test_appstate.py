@@ -18,9 +18,7 @@ from search.setup import SetupState
 def test_app_state_carries_its_three_fields() -> None:
     conn = sqlite3.connect(":memory:")
     setup_state = SetupState()
-    state = AppState(
-        app_db=conn, setup_state=setup_state, legacy_api_key="key-1"
-    )
+    state = AppState(app_db=conn, setup_state=setup_state, legacy_api_key="key-1")
     assert state.app_db is conn
     assert state.setup_state is setup_state
     assert state.legacy_api_key == "key-1"
@@ -43,9 +41,7 @@ def test_get_app_state_returns_the_stashed_state() -> None:
 
     conn = sqlite3.connect(":memory:")
     app = _FakeApp()
-    state = AppState(
-        app_db=conn, setup_state=SetupState(), legacy_api_key=""
-    )
+    state = AppState(app_db=conn, setup_state=SetupState(), legacy_api_key="")
     app.state.app_state = state
     request = _FakeRequest(app)
     assert get_app_state(request) is state  # type: ignore[arg-type]

@@ -5,6 +5,7 @@ Verifies the three behavioural promises:
 - A second acquire on the same path raises IndexerLockError while the first holds.
 - Closing the first handle releases the lock so a subsequent acquire succeeds.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -23,7 +24,9 @@ def test_first_acquire_returns_file_handle(tmp_path: pytest.TempPathFactory) -> 
         handle.close()
 
 
-def test_second_acquire_raises_while_first_held(tmp_path: pytest.TempPathFactory) -> None:
+def test_second_acquire_raises_while_first_held(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
     """Acquiring the same lock a second time raises IndexerLockError."""
     db_path = str(tmp_path / "index.db")
     first = acquire_writer_lock(db_path)

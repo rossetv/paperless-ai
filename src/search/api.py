@@ -89,9 +89,7 @@ def create_app(
     core, store_reader = _resolve_components(settings, core, store_reader)
     app_db = open_app_db(settings.APP_DB_PATH) if app_db is None else app_db
 
-    app = FastAPI(
-        title="Paperless Semantic Search", docs_url=None, redoc_url=None
-    )
+    app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
 
     # Build the first-run setup state: when app.db has no users the server is
     # in setup mode — generate a token and log it prominently (spec §4.5).

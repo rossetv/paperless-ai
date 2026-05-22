@@ -144,9 +144,7 @@ class TestApiErrorNeverEscapes:
 
     def test_generic_api_error_degrades_to_fallback(self) -> None:
         """A bare openai.APIError (no subclass) also degrades, never escapes."""
-        settings = make_search_settings(
-            SEARCH_PLANNER_MODEL="m", AI_MODELS=["m"]
-        )
+        settings = make_search_settings(SEARCH_PLANNER_MODEL="m", AI_MODELS=["m"])
         planner = QueryPlanner(settings)
         planner._create_completion = MagicMock(  # type: ignore[method-assign]
             side_effect=make_api_error()

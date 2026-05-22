@@ -13,6 +13,7 @@ from common.shutdown import (
     reset_shutdown,
 )
 
+
 @pytest.fixture(autouse=True)
 def _clean_shutdown():
     """Reset the shutdown flag and restore original signal handlers."""
@@ -24,13 +25,13 @@ def _clean_shutdown():
     signal.signal(signal.SIGTERM, original_sigterm)
     signal.signal(signal.SIGINT, original_sigint)
 
-class TestInitialState:
 
+class TestInitialState:
     def test_not_shutdown_initially(self):
         assert is_shutdown_requested() is False
 
-class TestRequestShutdown:
 
+class TestRequestShutdown:
     def test_sets_flag(self):
         request_shutdown()
         assert is_shutdown_requested() is True
@@ -40,8 +41,8 @@ class TestRequestShutdown:
         request_shutdown()
         assert is_shutdown_requested() is True
 
-class TestIsShutdownRequested:
 
+class TestIsShutdownRequested:
     def test_returns_false_before_request(self):
         assert is_shutdown_requested() is False
 
@@ -49,8 +50,8 @@ class TestIsShutdownRequested:
         request_shutdown()
         assert is_shutdown_requested() is True
 
-class TestResetShutdown:
 
+class TestResetShutdown:
     def test_clears_flag(self):
         request_shutdown()
         assert is_shutdown_requested() is True
@@ -62,8 +63,8 @@ class TestResetShutdown:
         reset_shutdown()
         assert is_shutdown_requested() is False
 
-class TestRegisterSignalHandlers:
 
+class TestRegisterSignalHandlers:
     def test_installs_sigterm_handler(self):
         register_signal_handlers()
         handler = signal.getsignal(signal.SIGTERM)
@@ -78,8 +79,8 @@ class TestRegisterSignalHandlers:
         assert handler is not signal.SIG_DFL
         assert handler is not signal.SIG_IGN
 
-class TestSignalHandlerBehavior:
 
+class TestSignalHandlerBehavior:
     def test_sigterm_handler_triggers_shutdown(self):
         register_signal_handlers()
         handler = signal.getsignal(signal.SIGTERM)

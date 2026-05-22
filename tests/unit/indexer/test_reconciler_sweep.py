@@ -216,9 +216,7 @@ class TestDeletionSweepConfirmsBeforePruning:
 
         _reconciler(paperless, store_writer).deletion_sweep()
 
-        confirmed = {
-            call.args[0] for call in paperless.document_exists.call_args_list
-        }
+        confirmed = {call.args[0] for call in paperless.document_exists.call_args_list}
         assert confirmed == {5, 6}
 
 

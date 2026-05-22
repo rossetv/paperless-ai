@@ -33,9 +33,7 @@ def make_internal_server_error() -> openai.InternalServerError:
     response = MagicMock()
     response.status_code = 500
     response.headers = {}
-    return openai.InternalServerError(
-        message="boom", response=response, body=None
-    )
+    return openai.InternalServerError(message="boom", response=response, body=None)
 
 
 def make_authentication_error() -> openai.AuthenticationError:
@@ -102,9 +100,7 @@ def planner_response_json(
 
 def answered_response_json(answer: str, citations: list[int]) -> str:
     """Return a well-formed ``Answered`` synthesiser JSON response."""
-    return json.dumps(
-        {"outcome": "answered", "answer": answer, "citations": citations}
-    )
+    return json.dumps({"outcome": "answered", "answer": answer, "citations": citations})
 
 
 def needs_more_response_json(adjustment: str) -> str:
@@ -146,25 +142,19 @@ class ScriptedLLMClient:
         """Total LLM chat calls made — planner plus synthesiser."""
         return self.planner_calls + self.synthesiser_calls
 
-    def route(
-        self, *, model: str, messages: list[dict[str, str]], **_: Any
-    ) -> Any:
+    def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
         """Stand-in for ``OpenAIChatMixin._create_completion``.
 
         Accepts the same ``model=`` / ``messages=`` keyword arguments the mixin
         passes through, routes by the system prompt, and returns an
         OpenAI-shaped completion.
         """
-        system = next(
-            (m["content"] for m in messages if m["role"] == "system"), ""
-        )
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "search-query planning engine" in system:
             self.planner_calls += 1
             return make_chat_completion(self._planner_response)
 
         # Anything else is a synthesiser call.
         self.synthesiser_calls += 1
-        index = min(
-            self.synthesiser_calls - 1, len(self._synthesiser_responses) - 1
-        )
+        index = min(self.synthesiser_calls - 1, len(self._synthesiser_responses) - 1)
         return make_chat_completion(self._synthesiser_responses[index])

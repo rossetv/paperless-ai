@@ -10,12 +10,15 @@ from classifier.daemon import _iter_docs_to_classify, _process_document, main
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 
+
 def _settings(**overrides):
     return make_settings_obj(**overrides)
+
 
 def _doc(id, tags=None):
     """Shorthand for a document dict."""
     return make_document(id=id, tags=tags or [])
+
 
 class TestMainConfigError:
     """main() with a config error exits gracefully."""
@@ -33,6 +36,7 @@ class TestMainConfigError:
         main()
 
         mock_loop.assert_not_called()
+
 
 class TestIterDocsToClassifyValid:
     """Yields documents that pass all filter checks."""
@@ -66,6 +70,7 @@ class TestIterDocsToClassifyValid:
 
         assert len(result) == 3
 
+
 class TestIterDocsSkipsNonIntegerId:
     """Documents without an integer id are skipped."""
 
@@ -98,6 +103,7 @@ class TestIterDocsSkipsNonIntegerId:
         result = list(_iter_docs_to_classify(client, settings))
 
         assert result == []
+
 
 class TestIterDocsSkipsAlreadyClassified:
     """Documents with the post tag are skipped and stale pre-tag removed."""
@@ -154,6 +160,7 @@ class TestIterDocsSkipsAlreadyClassified:
 
         assert result == []
 
+
 class TestIterDocsSkipsAlreadyClaimed:
     """Documents already claimed (processing tag present) are skipped."""
 
@@ -185,6 +192,7 @@ class TestIterDocsSkipsAlreadyClaimed:
         result = list(_iter_docs_to_classify(client, settings))
 
         assert len(result) == 1
+
 
 class TestProcessDocument:
     """_process_document builds a ClassificationProcessor under run_per_document."""
@@ -227,6 +235,7 @@ class TestProcessDocument:
 
         client_instance.close.assert_called_once()
 
+
 class TestTaxonomyRefreshAsBatchHook:
     """TaxonomyCache.refresh is passed as before_each_batch."""
 
@@ -264,6 +273,7 @@ class TestTaxonomyRefreshAsBatchHook:
         # Call the hook — it should invoke taxonomy_cache.refresh()
         captured_before_batch([_doc(1)])
         taxonomy_instance.refresh.assert_called_once()
+
 
 class TestMainCleanup:
     """Clients are closed on exit."""

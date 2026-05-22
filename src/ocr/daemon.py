@@ -21,11 +21,15 @@ def _process_document(doc: dict, settings: Settings) -> None:
     run_per_document(
         doc,
         settings,
-        lambda d, paperless: OcrProcessor(d, paperless, OcrProvider(settings), settings),
+        lambda d, paperless: OcrProcessor(
+            d, paperless, OcrProvider(settings), settings
+        ),
     )
 
 
-def _iter_docs_to_ocr(list_client: PaperlessClient, settings: Settings) -> Iterable[dict]:
+def _iter_docs_to_ocr(
+    list_client: PaperlessClient, settings: Settings
+) -> Iterable[dict]:
     return iter_documents_by_pipeline_tag(
         list_client,
         pre_tag_id=settings.PRE_TAG_ID,

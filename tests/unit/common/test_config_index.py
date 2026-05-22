@@ -53,7 +53,12 @@ class TestIndexSettingsDefaults:
 
 _INDEX_CUSTOM = [
     ("INDEX_DB_PATH", "/mnt/store/search.db", "INDEX_DB_PATH", "/mnt/store/search.db"),
-    ("EMBEDDING_MODEL", "text-embedding-3-large", "EMBEDDING_MODEL", "text-embedding-3-large"),
+    (
+        "EMBEDDING_MODEL",
+        "text-embedding-3-large",
+        "EMBEDDING_MODEL",
+        "text-embedding-3-large",
+    ),
     ("EMBEDDING_DIMENSIONS", "3072", "EMBEDDING_DIMENSIONS", 3072),
     ("EMBEDDING_MAX_CONCURRENT", "8", "EMBEDDING_MAX_CONCURRENT", 8),
     ("RECONCILE_INTERVAL", "60", "RECONCILE_INTERVAL", 60),

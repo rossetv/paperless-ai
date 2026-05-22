@@ -174,9 +174,7 @@ def make_search_stats(
     refined: bool = False,
 ) -> SearchStats:
     """Create a SearchStats — the default models a normal two-call query."""
-    return SearchStats(
-        llm_calls=llm_calls, latency_ms=latency_ms, refined=refined
-    )
+    return SearchStats(llm_calls=llm_calls, latency_ms=latency_ms, refined=refined)
 
 
 def make_search_result(
@@ -193,11 +191,7 @@ def make_search_result(
     """
     return SearchResult(
         answer=answer,
-        sources=(
-            sources
-            if sources is not None
-            else (make_source_document(),)
-        ),
+        sources=(sources if sources is not None else (make_source_document(),)),
         plan=plan if plan is not None else make_query_plan(),
         stats=stats if stats is not None else make_search_stats(),
     )

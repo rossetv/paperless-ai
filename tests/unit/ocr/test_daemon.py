@@ -15,9 +15,11 @@ from tests.helpers.mocks import make_mock_paperless
 def _settings(**overrides):
     return make_settings_obj(**overrides)
 
+
 def _doc(id, tags=None):
     """Shorthand for a document dict."""
     return make_document(id=id, tags=tags or [])
+
 
 class TestMain:
     @patch("ocr.daemon.bootstrap_daemon", return_value=None)
@@ -139,6 +141,7 @@ class TestMain:
 
         list_client.close.assert_called_once()
 
+
 class TestIterDocsToOcrYieldsValid:
     def test_yields_valid_document(self):
         settings = _settings(
@@ -172,6 +175,7 @@ class TestIterDocsToOcrYieldsValid:
 
         assert len(result) == 2
 
+
 class TestIterDocsToOcrSkipsNonIntegerId:
     def test_skips_none_id(self):
         settings = _settings(PRE_TAG_ID=443, POST_TAG_ID=444)
@@ -202,6 +206,7 @@ class TestIterDocsToOcrSkipsNonIntegerId:
         result = list(_iter_docs_to_ocr(list_client, settings))
 
         assert result == []
+
 
 class TestIterDocsToOcrSkipsPostTagged:
     @patch("common.document_iter.remove_stale_queue_tag")
@@ -243,6 +248,7 @@ class TestIterDocsToOcrSkipsPostTagged:
         assert result == []
         mock_remove.assert_not_called()
 
+
 class TestIterDocsToOcrSkipsClaimed:
     def test_skips_doc_with_processing_tag(self):
         settings = _settings(
@@ -273,6 +279,7 @@ class TestIterDocsToOcrSkipsClaimed:
 
         assert len(result) == 1
 
+
 class TestIterDocsToOcrMixed:
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_mixed_bag_of_documents(self, mock_remove):
@@ -282,11 +289,11 @@ class TestIterDocsToOcrMixed:
             OCR_PROCESSING_TAG_ID=999,
         )
         docs = [
-            {"id": 1, "title": "Valid", "tags": [443]},           # valid
-            {"id": None, "title": "No ID", "tags": [443]},        # skip: no int id
-            {"id": 2, "title": "Done", "tags": [443, 444]},       # skip: has post tag
-            {"id": 3, "title": "Claimed", "tags": [443, 999]},    # skip: claimed
-            {"id": 4, "title": "Also Valid", "tags": [443]},      # valid
+            {"id": 1, "title": "Valid", "tags": [443]},  # valid
+            {"id": None, "title": "No ID", "tags": [443]},  # skip: no int id
+            {"id": 2, "title": "Done", "tags": [443, 444]},  # skip: has post tag
+            {"id": 3, "title": "Claimed", "tags": [443, 999]},  # skip: claimed
+            {"id": 4, "title": "Also Valid", "tags": [443]},  # valid
         ]
         list_client = make_mock_paperless()
         list_client.get_documents_by_tag.return_value = docs
@@ -296,6 +303,7 @@ class TestIterDocsToOcrMixed:
         assert len(result) == 2
         assert result[0]["id"] == 1
         assert result[1]["id"] == 4
+
 
 class TestProcessDocument:
     """_process_document builds an OcrProcessor under run_per_document."""

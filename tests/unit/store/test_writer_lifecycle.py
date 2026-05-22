@@ -292,9 +292,7 @@ class TestConcurrentUpserts:
             except Exception as exc:
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=upsert_doc, args=(i,)) for i in range(1, 11)
-        ]
+        threads = [threading.Thread(target=upsert_doc, args=(i,)) for i in range(1, 11)]
         for thread in threads:
             thread.start()
         for thread in threads:
@@ -308,9 +306,7 @@ class TestConcurrentUpserts:
         doc_count = conn.execute("SELECT count(*) FROM documents").fetchone()[0]
         chunk_count = conn.execute("SELECT count(*) FROM chunks").fetchone()[0]
         fts_count = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
-        chunk_ids = {
-            row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()
-        }
+        chunk_ids = {row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()}
         fts_rowids = {
             row[0] for row in conn.execute("SELECT rowid FROM chunks_fts").fetchall()
         }

@@ -41,7 +41,9 @@ def test_suspending_a_user_kills_their_live_session(tmp_path: Path) -> None:
     try:
         admin = seed_admin(app_db, username="boss", password="boss-password")
         victim = seed_user(
-            app_db, username="mallory", password="mallory-password",
+            app_db,
+            username="mallory",
+            password="mallory-password",
             role="member",
         )
 
@@ -60,9 +62,7 @@ def test_suspending_a_user_kills_their_live_session(tmp_path: Path) -> None:
         # The admin, on a separate client, suspends the victim.
         admin_client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                admin_client, username="boss", password="boss-password"
-            ).status_code
+            login(admin_client, username="boss", password="boss-password").status_code
             == 200
         )
         patched = admin_client.patch(
@@ -88,7 +88,9 @@ def test_deleting_a_user_kills_their_live_session(tmp_path: Path) -> None:
     try:
         seed_admin(app_db, username="boss", password="boss-password")
         victim = seed_user(
-            app_db, username="mallory", password="mallory-password",
+            app_db,
+            username="mallory",
+            password="mallory-password",
             role="member",
         )
 
@@ -104,9 +106,7 @@ def test_deleting_a_user_kills_their_live_session(tmp_path: Path) -> None:
 
         admin_client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                admin_client, username="boss", password="boss-password"
-            ).status_code
+            login(admin_client, username="boss", password="boss-password").status_code
             == 200
         )
         deleted = admin_client.delete(f"/api/users/{victim.id}")
@@ -126,14 +126,14 @@ def test_member_is_denied_an_admin_route(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_user(
-            app_db, username="member", password="member-password",
+            app_db,
+            username="member",
+            password="member-password",
             role="member",
         )
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                client, username="member", password="member-password"
-            ).status_code
+            login(client, username="member", password="member-password").status_code
             == 200
         )
         response = client.get("/api/users")
@@ -151,14 +151,14 @@ def test_readonly_is_denied_the_reconcile_route(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_user(
-            app_db, username="viewer", password="viewer-password",
+            app_db,
+            username="viewer",
+            password="viewer-password",
             role="readonly",
         )
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                client, username="viewer", password="viewer-password"
-            ).status_code
+            login(client, username="viewer", password="viewer-password").status_code
             == 200
         )
         response = client.post("/api/reconcile")
@@ -176,20 +176,17 @@ def test_readonly_can_reach_the_readonly_routes(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_user(
-            app_db, username="viewer", password="viewer-password",
+            app_db,
+            username="viewer",
+            password="viewer-password",
             role="readonly",
         )
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                client, username="viewer", password="viewer-password"
-            ).status_code
+            login(client, username="viewer", password="viewer-password").status_code
             == 200
         )
-        assert (
-            client.post("/api/search", json={"query": "gas"}).status_code
-            == 200
-        )
+        assert client.post("/api/search", json={"query": "gas"}).status_code == 200
         assert client.get("/api/facets").status_code == 200
         assert client.get("/api/stats").status_code == 200
     finally:
@@ -205,14 +202,14 @@ def test_member_can_reach_the_reconcile_route(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_user(
-            app_db, username="member", password="member-password",
+            app_db,
+            username="member",
+            password="member-password",
             role="member",
         )
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                client, username="member", password="member-password"
-            ).status_code
+            login(client, username="member", password="member-password").status_code
             == 200
         )
         assert client.post("/api/reconcile").status_code == 202
@@ -231,15 +228,9 @@ def test_admin_reaches_every_route(tmp_path: Path) -> None:
         seed_admin(app_db, username="boss", password="boss-password")
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(
-                client, username="boss", password="boss-password"
-            ).status_code
-            == 200
+            login(client, username="boss", password="boss-password").status_code == 200
         )
-        assert (
-            client.post("/api/search", json={"query": "gas"}).status_code
-            == 200
-        )
+        assert client.post("/api/search", json={"query": "gas"}).status_code == 200
         assert client.post("/api/reconcile").status_code == 202
         assert client.get("/api/users").status_code == 200
     finally:

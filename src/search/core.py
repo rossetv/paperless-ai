@@ -82,9 +82,7 @@ _SNIPPET_MAX_CHARS = 280
 
 # Shown as the answer when retrieval yields nothing (spec §6.3): a no-hits
 # query short-circuits before any synthesis call, so there is no model prose.
-_NO_MATCHES_ANSWER = (
-    "No matching documents were found in the archive for this query."
-)
+_NO_MATCHES_ANSWER = "No matching documents were found in the archive for this query."
 
 
 class _LlmBudget:
@@ -236,9 +234,7 @@ class SearchCore:
         plan = self._plan(query, budget)
         chunks = self._retrieve_with_broaden(plan, ui_filters)
         sources = self._assemble_sources(chunks)
-        return self._build_result(
-            "", sources, plan, budget, started, refined=False
-        )
+        return self._build_result("", sources, plan, budget, started, refined=False)
 
     # ------------------------------------------------------------------
     # Pipeline stages
@@ -264,9 +260,7 @@ class SearchCore:
         call.
         """
         facets = self._store_reader.list_facets()
-        filters = resolve_filters(
-            plan.filter_candidates, facets, ui_filters=ui_filters
-        )
+        filters = resolve_filters(plan.filter_candidates, facets, ui_filters=ui_filters)
         chunks = self._retriever.retrieve(plan, filters)
         if chunks:
             return chunks
@@ -419,9 +413,7 @@ class SearchCore:
             latency_ms=_elapsed_ms(started),
             refined=refined,
         )
-        return SearchResult(
-            answer=answer, sources=sources, plan=plan, stats=stats
-        )
+        return SearchResult(answer=answer, sources=sources, plan=plan, stats=stats)
 
     def _no_match_result(
         self,

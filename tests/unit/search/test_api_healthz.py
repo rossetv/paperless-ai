@@ -26,7 +26,11 @@ import pytest
 
 from search.routes import evaluate_index_health
 from store import SchemaNotReadyError, StoreError
-from tests.helpers.factories import make_index_stats, make_search_result, make_search_settings
+from tests.helpers.factories import (
+    make_index_stats,
+    make_search_result,
+    make_search_settings,
+)
 from tests.unit.search.conftest import build_test_client
 
 _API_KEY = "test-api-key-for-unit-tests"
@@ -81,9 +85,7 @@ class TestEvaluateIndexHealth:
 
     def test_not_ready_when_never_reconciled(self) -> None:
         store_reader = MagicMock()
-        store_reader.get_stats.return_value = make_index_stats(
-            last_reconcile_at=None
-        )
+        store_reader.get_stats.return_value = make_index_stats(last_reconcile_at=None)
 
         health = evaluate_index_health(store_reader)
         assert health.state == "index-not-ready"
@@ -305,9 +307,7 @@ async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
         # Wait until max_concurrent executor threads are inside core.answer,
         # confirming the semaphore is holding one request back.
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, lambda: blocked_enough.wait(timeout=5.0)
-        )
+        await loop.run_in_executor(None, lambda: blocked_enough.wait(timeout=5.0))
 
         with counter_lock:
             observed_peak = peak_inside

@@ -74,9 +74,7 @@ def verify_setup_token(state: SetupState, candidate: str) -> bool:
     """
     if state.token is None:
         return False
-    return hmac.compare_digest(
-        candidate.encode("utf-8"), state.token.encode("utf-8")
-    )
+    return hmac.compare_digest(candidate.encode("utf-8"), state.token.encode("utf-8"))
 
 
 def is_setup_needed(conn: sqlite3.Connection) -> bool:

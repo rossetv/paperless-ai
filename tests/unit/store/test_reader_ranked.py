@@ -32,9 +32,7 @@ def test_vector_search_ranks_nearest_chunk_first(populated_db: str) -> None:
     """The chunk whose embedding is closest (distance 0) comes back first."""
     reader = open_reader(populated_db)
     # Query along axis 0 — doc1's first chunk is the perfect match.
-    hits = reader.vector_search(
-        unit_vec(4, 0), k=10, filters=make_search_filters()
-    )
+    hits = reader.vector_search(unit_vec(4, 0), k=10, filters=make_search_filters())
     reader.close()
 
     assert len(hits) >= 1
@@ -150,9 +148,7 @@ def test_vector_search_date_range_both_bounds(populated_db: str) -> None:
 def test_keyword_search_matches_on_term(populated_db: str) -> None:
     """keyword_search returns chunks whose text contains the search term."""
     reader = open_reader(populated_db)
-    hits = reader.keyword_search(
-        ["boiler"], k=10, filters=make_search_filters()
-    )
+    hits = reader.keyword_search(["boiler"], k=10, filters=make_search_filters())
     reader.close()
 
     assert len(hits) >= 1
@@ -241,9 +237,7 @@ def test_keyword_search_respects_date_range_filter(db_path: str) -> None:
     writer.close()
 
     reader = open_reader(db_path)
-    all_hits = reader.keyword_search(
-        ["quarterly"], k=10, filters=make_search_filters()
-    )
+    all_hits = reader.keyword_search(["quarterly"], k=10, filters=make_search_filters())
     assert len(all_hits) == 2, "both docs match without a date filter"
 
     # Restrict to 2024 only — the 2022 document must be excluded.
@@ -283,9 +277,7 @@ def test_vector_search_k_negative_returns_empty(populated_db: str) -> None:
     """vector_search with k<0 must return [] rather than the whole table (the
     SQLite LIMIT -1 trap)."""
     reader = open_reader(populated_db)
-    hits = reader.vector_search(
-        unit_vec(4, 0), k=-1, filters=make_search_filters()
-    )
+    hits = reader.vector_search(unit_vec(4, 0), k=-1, filters=make_search_filters())
     reader.close()
     assert hits == []
 

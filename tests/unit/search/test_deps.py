@@ -64,7 +64,8 @@ def conn(tmp_path):
 
 def _client(conn) -> TestClient:
     return TestClient(
-        _build_app(conn), raise_server_exceptions=False,
+        _build_app(conn),
+        raise_server_exceptions=False,
         base_url="https://testserver",
     )
 
@@ -86,9 +87,7 @@ def test_get_current_user_resolves_a_session_cookie(conn) -> None:
 
 def test_get_current_user_resolves_a_legacy_bearer(conn) -> None:
     client = _client(conn)
-    response = client.get(
-        "/me", headers={"Authorization": f"Bearer {_LEGACY_KEY}"}
-    )
+    response = client.get("/me", headers={"Authorization": f"Bearer {_LEGACY_KEY}"})
     assert response.status_code == 200
     assert response.json()["role"] == "admin"
 
@@ -106,9 +105,7 @@ def test_get_current_user_401_for_a_garbage_cookie(conn) -> None:
 
 def test_get_current_user_401_for_a_wrong_bearer(conn) -> None:
     client = _client(conn)
-    response = client.get(
-        "/me", headers={"Authorization": "Bearer wrong-key"}
-    )
+    response = client.get("/me", headers={"Authorization": "Bearer wrong-key"})
     assert response.status_code == 401
 
 

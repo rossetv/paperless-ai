@@ -18,8 +18,8 @@ from common.llm import (
     _openai_holder,
 )
 
-class TestUniqueModels:
 
+class TestUniqueModels:
     def test_deduplicates_preserving_order(self):
         result = unique_models(["a", "b", "a", "c", "b"])
         assert result == ["a", "b", "c"]
@@ -88,7 +88,7 @@ class TestExtractJsonObject:
     def test_only_closing_brace_raises(self):
         """A closing brace before any opening brace is not recoverable."""
         with pytest.raises(json.JSONDecodeError):
-            extract_json_object('} not json {')
+            extract_json_object("} not json {")
 
 
 class _TestClient(OpenAIChatMixin):
@@ -99,7 +99,6 @@ class _TestClient(OpenAIChatMixin):
 
 
 class TestCreateCompletion:
-
     @pytest.fixture()
     def client(self):
         settings = MagicMock()
@@ -168,6 +167,3 @@ class TestCreateCompletion:
         _openai_holder._client = None
         with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
             client._create_completion(model="m")
-
-
-

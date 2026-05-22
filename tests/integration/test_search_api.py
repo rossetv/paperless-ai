@@ -5,9 +5,7 @@ Exercises the real FastAPI app via ``TestClient``, backed by a real
 The ``SearchCore`` uses a real store reader; only the LLM stages are mocked.
 
 Coverage:
-- POST /api/auth/login with the correct key sets the session cookie.
-- The session cookie authorises /api/search end to end.
-- A Bearer token authorises /api/search end to end.
+- The legacy SEARCH_API_KEY Bearer token authorises /api/search end to end.
 - An unauthenticated request is rejected 401.
 - GET /api/healthz returns 200 against a healthy seeded store.
 - GET /api/healthz returns 503 index-not-ready when the DB file is absent.
@@ -16,7 +14,10 @@ Coverage:
 - POST /api/reconcile writes the sentinel file alongside the index DB and
   returns 202.
 - POST /api/search returns a SearchResponse with sources from the seeded store.
-- The search server never serves the index DB over HTTP.
+- The search server never serves the index DB content over HTTP.
+
+The username/password login handshake and the resulting session-cookie path
+are exercised by the dedicated account integration suite (spec §4.8).
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
-from search.auth import SESSION_COOKIE_NAME
 from store.models import ChunkInput, DocumentMeta, TaxonomyEntry
 from store.reader import StoreReader
 from store.writer import StoreWriter
@@ -136,44 +136,18 @@ def _bearer(key: str = _API_KEY) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Auth — login sets a session cookie
+# Auth — the legacy bearer token authorises requests
 # ---------------------------------------------------------------------------
 
 
 class TestAuthIntegration:
-    """Login flow sets a real session cookie."""
+    """The legacy SEARCH_API_KEY bearer authorises an end-to-end search.
 
-    def test_login_sets_session_cookie(self, tmp_path: Path) -> None:
-        settings = _make_settings(tmp_path)
-        _seed_store(settings)
-        store_reader = StoreReader(settings)
-        try:
-            client = _build_client(settings, store_reader)
-            response = client.post(
-                "/api/auth/login",
-                json={"api_key": _API_KEY},
-            )
-            assert response.status_code == 200
-            assert SESSION_COOKIE_NAME in response.cookies
-        finally:
-            store_reader.close()
-
-    def test_session_cookie_authorises_search(self, tmp_path: Path) -> None:
-        settings = _make_settings(tmp_path)
-        _seed_store(settings)
-        store_reader = StoreReader(settings)
-        try:
-            client = _build_client(settings, store_reader)
-            # Log in.
-            login = client.post("/api/auth/login", json={"api_key": _API_KEY})
-            assert login.status_code == 200
-            # Cookie is retained; next search is authorised.
-            response = client.post(
-                "/api/search", json={"query": "gas bill total"}
-            )
-            assert response.status_code == 200
-        finally:
-            store_reader.close()
+    The username/password login handshake and the resulting session-cookie
+    path are exercised by the dedicated account integration suite (spec §4.8);
+    this class only covers the legacy-bearer credential, which ``search.api``
+    keeps working as an admin-equivalent through Waves 1-2.
+    """
 
     def test_bearer_token_authorises_search(self, tmp_path: Path) -> None:
         settings = _make_settings(tmp_path)
@@ -416,14 +390,21 @@ class TestIndexDbNotWebReachable:
     """The index DB must never be served over HTTP."""
 
     def test_db_file_is_not_accessible_via_http(self, tmp_path: Path) -> None:
+        """A GET for the index DB by name must never return the DB content.
+
+        The index DB lives under ``tmp_path`` (the data volume), never inside
+        ``web/dist``, so the SPA deep-link catch-all cannot resolve it to a
+        real file — it hands back the SPA shell instead. The DB's seeded
+        document text must not appear in the response under any circumstance.
+        """
         settings = _make_settings(tmp_path)
         _seed_store(settings)
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            # Try to GET the DB file by name — should 404 or redirect, never 200.
             response = client.get("/index.db", headers=_bearer())
-            assert response.status_code in (404, 307, 302)
+            assert "BritishGas Invoice" not in response.text
+            assert "£198.00" not in response.text
         finally:
             store_reader.close()
 
@@ -436,9 +417,7 @@ class TestIndexDbNotWebReachable:
 class TestSearchResponseIntegration:
     """POST /api/search returns a correctly structured response."""
 
-    def test_search_response_contains_expected_fields(
-        self, tmp_path: Path
-    ) -> None:
+    def test_search_response_contains_expected_fields(self, tmp_path: Path) -> None:
         settings = _make_settings(tmp_path)
         _seed_store(settings)
         store_reader = StoreReader(settings)

@@ -264,9 +264,7 @@ def _index_page_stream(
         # list(): the batch is the unit of work and is dropped at the end of
         # this iteration — at most one page of OCR bodies is resident at once.
         documents = list(batch)
-        outcomes.update(
-            _index_documents(indexer, documents, index_state, worker_count)
-        )
+        outcomes.update(_index_documents(indexer, documents, index_state, worker_count))
         page_ids.update(doc["id"] for doc in documents)
         latest_modified = _fold_latest_modified(latest_modified, documents)
         log.info("reconcile.page_batch_indexed", batch_size=len(documents))
@@ -321,9 +319,7 @@ def _index_one(
     """
     document_id = doc["id"]
     try:
-        return document_id, indexer.index_document(
-            doc, index_state.get(document_id)
-        )
+        return document_id, indexer.index_document(doc, index_state.get(document_id))
     except Exception:
         # rationale: per-document worker dispatch — one document's failure is
         # logged and isolated, the batch continues (CODE_GUIDELINES §6.4
@@ -333,9 +329,7 @@ def _index_one(
         return document_id, None
 
 
-def _advance_watermark(
-    store_writer: StoreWriter, latest: datetime | None
-) -> None:
+def _advance_watermark(store_writer: StoreWriter, latest: datetime | None) -> None:
     """Advance the watermark to ``latest - OVERLAP_MARGIN``.
 
     *latest* is the running maximum of the watermark-page documents' parseable
@@ -353,9 +347,7 @@ def _advance_watermark(
     log.info("reconcile.watermark_advanced", watermark=new_watermark)
 
 
-def _refresh_taxonomy(
-    paperless: PaperlessClient, store_writer: StoreWriter
-) -> None:
+def _refresh_taxonomy(paperless: PaperlessClient, store_writer: StoreWriter) -> None:
     """Rebuild the store's taxonomy from the current Paperless lists.
 
     Fetches correspondents, document types, and tags once, flattens them into
@@ -399,9 +391,7 @@ def _tally_outcomes(
     )
 
 
-def _to_taxonomy_entries(
-    kind: str, items: list[PaperlessItem]
-) -> list[TaxonomyEntry]:
+def _to_taxonomy_entries(kind: str, items: list[PaperlessItem]) -> list[TaxonomyEntry]:
     """Flatten a Paperless taxonomy list into TaxonomyEntry rows.
 
     Each item is a :class:`~common.paperless.PaperlessItem` from one of the
@@ -415,9 +405,7 @@ def _to_taxonomy_entries(
         entry_id = entry.get("id")
         name = entry.get("name")
         if entry_id is None or name is None:
-            log.warning(
-                "reconcile.taxonomy_entry_skipped", kind=kind, entry=entry
-            )
+            log.warning("reconcile.taxonomy_entry_skipped", kind=kind, entry=entry)
             continue
         entries.append(TaxonomyEntry(kind=kind, id=entry_id, name=name))
     return entries
@@ -455,9 +443,7 @@ def _fold_latest_modified(
     return latest
 
 
-def _batched(
-    items: Iterable[_T], batch_size: int
-) -> Iterator[tuple[_T, ...]]:
+def _batched(items: Iterable[_T], batch_size: int) -> Iterator[tuple[_T, ...]]:
     """Yield *items* in tuples of at most *batch_size*, lazily.
 
     A 3.11-compatible stand-in for :func:`itertools.batched` (3.12+).  The

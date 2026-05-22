@@ -70,9 +70,7 @@ class TestWellFormedResponse:
 
     def test_filter_candidates_document_type_is_parsed(self) -> None:
         payload = planner_response_json(document_type="invoice")
-        plan = build_planner(make_search_settings(), payload).plan(
-            "latest invoice"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("latest invoice")
 
         assert plan.filter_candidates.document_type == "invoice"
 
@@ -100,16 +98,16 @@ class TestWellFormedResponse:
         assert "What is the expiry date?" in plan.sub_questions
 
     def test_returns_query_plan_dataclass(self) -> None:
-        plan = build_planner(
-            make_search_settings(), planner_response_json()
-        ).plan("any query")
+        plan = build_planner(make_search_settings(), planner_response_json()).plan(
+            "any query"
+        )
 
         assert isinstance(plan, QueryPlan)
 
     def test_filter_candidates_is_frozen_dataclass(self) -> None:
-        plan = build_planner(
-            make_search_settings(), planner_response_json()
-        ).plan("any query")
+        plan = build_planner(make_search_settings(), planner_response_json()).plan(
+            "any query"
+        )
 
         assert isinstance(plan.filter_candidates, FilterCandidates)
         with pytest.raises(Exception):  # FrozenInstanceError
@@ -136,9 +134,7 @@ class TestRelativeDateLanguage:
     """Date strings from the LLM end up in filter_candidates.date_from/date_to."""
 
     def test_date_from_is_propagated(self) -> None:
-        payload = planner_response_json(
-            date_from="2024-01-01", date_to="2024-12-31"
-        )
+        payload = planner_response_json(date_from="2024-01-01", date_to="2024-12-31")
         plan = build_planner(make_search_settings(), payload).plan(
             "invoices from last year"
         )
@@ -157,9 +153,7 @@ class TestRelativeDateLanguage:
 
     def test_null_dates_produce_none(self) -> None:
         payload = planner_response_json(date_from=None, date_to=None)
-        plan = build_planner(make_search_settings(), payload).plan(
-            "all documents"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("all documents")
 
         assert plan.filter_candidates.date_from is None
         assert plan.filter_candidates.date_to is None
@@ -203,9 +197,7 @@ class TestFallbackOnBadResponse:
 
     def test_json_missing_required_keys_produces_fallback(self) -> None:
         """A JSON object that lacks 'semantic_queries' is treated as malformed."""
-        planner = build_planner(
-            make_search_settings(), '{"something": "unexpected"}'
-        )
+        planner = build_planner(make_search_settings(), '{"something": "unexpected"}')
 
         with patch("search.planner.log") as mock_log:
             plan = planner.plan("missing key query")
@@ -270,9 +262,7 @@ class TestStringValuedListFields:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "find the invoice"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("find the invoice")
 
         assert plan.keyword_terms == ("invoice",)
 
@@ -292,9 +282,7 @@ class TestStringValuedListFields:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.semantic_queries == ("boiler warranty expiry",)
 
@@ -313,9 +301,7 @@ class TestStringValuedListFields:
                 "sub_questions": "when was it installed?",
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.sub_questions == ("when was it installed?",)
 
@@ -335,9 +321,7 @@ class TestStringValuedListFields:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.filter_candidates.tags == ("electricity",)
 
@@ -357,9 +341,7 @@ class TestStringValuedListFields:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.keyword_terms == ()
 
@@ -391,9 +373,7 @@ class TestStrOrNoneRejectsContainers:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.filter_candidates.correspondent is None
 
@@ -412,8 +392,6 @@ class TestStrOrNoneRejectsContainers:
                 "sub_questions": [],
             }
         )
-        plan = build_planner(make_search_settings(), payload).plan(
-            "the raw query"
-        )
+        plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.filter_candidates.document_type is None

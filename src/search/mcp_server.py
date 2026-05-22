@@ -106,8 +106,7 @@ class _BearerAuthMiddleware:
         # Authenticated when EITHER the legacy SEARCH_API_KEY bearer matches
         # OR a browser session cookie resolves to an active user.
         authenticated = (
-            legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY)
-            is not None
+            legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY) is not None
             or resolve_session(self._app_db, cookie) is not None
         )
 
@@ -239,9 +238,7 @@ class _McpApp:
     ) -> None:
         self._fastmcp = fastmcp
         starlette_app = fastmcp.streamable_http_app()
-        self._asgi_app: ASGIApp = _BearerAuthMiddleware(
-            starlette_app, settings, app_db
-        )
+        self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, settings, app_db)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)

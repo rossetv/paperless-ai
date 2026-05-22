@@ -53,7 +53,9 @@ class _OpenAIClientHolder:
 
     def get(self) -> openai.OpenAI:
         if self._client is None:
-            raise RuntimeError("OpenAI client not initialised; call setup_libraries() first")
+            raise RuntimeError(
+                "OpenAI client not initialised; call setup_libraries() first"
+            )
         return self._client
 
 

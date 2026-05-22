@@ -31,7 +31,9 @@ def _check_paperless_reachable(settings: Settings, client: PaperlessClient) -> N
     """Verify that the Paperless-ngx API is reachable (single fast request, no retry)."""
     try:
         client.ping(timeout=10)
-        log.info("Preflight: Paperless-ngx API is reachable", url=settings.PAPERLESS_URL)
+        log.info(
+            "Preflight: Paperless-ngx API is reachable", url=settings.PAPERLESS_URL
+        )
     except PAPERLESS_CALL_EXCEPTIONS as exc:
         raise PreflightError(
             f"Paperless-ngx API is not reachable at {settings.PAPERLESS_URL}: {exc}"
@@ -42,7 +44,9 @@ def _check_tag_ids_exist(settings: Settings, client: PaperlessClient) -> None:
     try:
         all_tags = client.list_tags()
     except PAPERLESS_CALL_EXCEPTIONS:
-        log.warning("Preflight: Could not fetch tags from Paperless; skipping tag validation")
+        log.warning(
+            "Preflight: Could not fetch tags from Paperless; skipping tag validation"
+        )
         return
 
     existing_ids = {tag["id"] for tag in all_tags if "id" in tag}

@@ -29,9 +29,7 @@ from appdb.users import create as create_user
 
 def _iso(offset_seconds: int) -> str:
     """An ISO-8601 UTC timestamp *offset_seconds* from now."""
-    return (
-        datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
-    ).isoformat()
+    return (datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)).isoformat()
 
 
 @pytest.fixture()
@@ -47,9 +45,7 @@ def conn(tmp_path):
 @pytest.fixture()
 def user_id(conn) -> int:
     """The id of a member user to own test sessions."""
-    return create_user(
-        conn, username="owner", password_hash="h", role="member"
-    ).id
+    return create_user(conn, username="owner", password_hash="h", role="member").id
 
 
 def test_create_returns_a_session(conn, user_id) -> None:
@@ -70,17 +66,13 @@ def test_create_returns_a_session(conn, user_id) -> None:
 
 
 def test_create_populates_created_and_last_seen(conn, user_id) -> None:
-    session = create(
-        conn, token_hash="h", user_id=user_id, expires_at=_iso(3600)
-    )
+    session = create(conn, token_hash="h", user_id=user_id, expires_at=_iso(3600))
     assert session.created_at != ""
     assert session.last_seen_at != ""
 
 
 def test_create_allows_omitted_user_agent_and_ip(conn, user_id) -> None:
-    session = create(
-        conn, token_hash="h", user_id=user_id, expires_at=_iso(3600)
-    )
+    session = create(conn, token_hash="h", user_id=user_id, expires_at=_iso(3600))
     assert session.user_agent is None
     assert session.ip is None
 
@@ -132,9 +124,7 @@ def test_delete_for_user_removes_every_session_of_that_user(conn, user_id) -> No
 
 
 def test_delete_for_user_leaves_other_users_sessions(conn, user_id) -> None:
-    other = create_user(
-        conn, username="other", password_hash="h", role="member"
-    ).id
+    other = create_user(conn, username="other", password_hash="h", role="member").id
     create(conn, token_hash="mine", user_id=user_id, expires_at=_iso(3600))
     create(conn, token_hash="theirs", user_id=other, expires_at=_iso(3600))
     delete_for_user(conn, user_id)

@@ -166,9 +166,7 @@ class DocumentIndexer:
 # ---------------------------------------------------------------------------
 
 
-def _indexable_content(
-    doc: PaperlessDocument, error_tag_id: int | None
-) -> str | None:
+def _indexable_content(doc: PaperlessDocument, error_tag_id: int | None) -> str | None:
     """Return the OCR content to index, or ``None`` if the document is skipped.
 
     Applies the SPEC §5.3 step-1 gate: a document is skipped when its

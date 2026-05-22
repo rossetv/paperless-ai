@@ -18,6 +18,7 @@ from tests.helpers.factories import make_settings_obj
 
 BASE = "http://paperless:8000"
 
+
 def _make_settings(**overrides):
     defaults = dict(
         PAPERLESS_URL=BASE,
@@ -28,6 +29,7 @@ def _make_settings(**overrides):
     )
     defaults.update(overrides)
     return make_settings_obj(**defaults)
+
 
 class _ClientRegistry:
     """Tracks PaperlessClient instances for automatic cleanup."""
@@ -46,7 +48,9 @@ class _ClientRegistry:
             client.close()
         self.clients.clear()
 
+
 _registry = _ClientRegistry()
+
 
 @pytest.fixture(autouse=True)
 def _auto_close_clients():
@@ -54,6 +58,7 @@ def _auto_close_clients():
     _registry.close_all()
     yield
     _registry.close_all()
+
 
 def _make_client(settings=None):
     """Create a PaperlessClient with test settings.
@@ -67,6 +72,7 @@ def _make_client(settings=None):
     c = PaperlessClient(settings)
     return _registry.register(c)
 
+
 class TestInitialization:
     def test_creates_httpx_client_with_auth_header_and_timeout(self):
         settings = _make_settings()
@@ -76,21 +82,40 @@ class TestInitialization:
         assert client._client.timeout == httpx.Timeout(30)
         client.close()
 
+
 class TestListAllPagination:
     def test_follows_next_links_across_multiple_pages(self):
         url1 = f"{BASE}/api/things/"
         url2 = f"{BASE}/api/things/?page=2"
         url3 = f"{BASE}/api/things/?page=3"
         with respx.mock:
-            respx.get(url__eq=url1).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 1}], "next": url2,
-            }))
-            respx.get(url__eq=url2).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 2}], "next": url3,
-            }))
-            respx.get(url__eq=url3).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 3}], "next": None,
-            }))
+            respx.get(url__eq=url1).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}],
+                        "next": url2,
+                    },
+                )
+            )
+            respx.get(url__eq=url2).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 2}],
+                        "next": url3,
+                    },
+                )
+            )
+            respx.get(url__eq=url3).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 3}],
+                        "next": None,
+                    },
+                )
+            )
 
             client = _make_client()
 
@@ -103,12 +128,24 @@ class TestListAllPagination:
         url1 = f"{BASE}/api/x/"
         url2 = f"{BASE}/api/x/?page=2"
         with respx.mock:
-            respx.get(url__eq=url1).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 1}, {"id": 2}], "next": url2,
-            }))
-            respx.get(url__eq=url2).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 3}], "next": None,
-            }))
+            respx.get(url__eq=url1).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}, {"id": 2}],
+                        "next": url2,
+                    },
+                )
+            )
+            respx.get(url__eq=url2).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 3}],
+                        "next": None,
+                    },
+                )
+            )
 
             client = _make_client()
 
@@ -117,13 +154,20 @@ class TestListAllPagination:
         assert len(results) == 3
         client.close()
 
+
 class TestGetDocumentsByTag:
     def test_constructs_correct_url_with_tag_id(self):
         url = f"{BASE}/api/documents/?tags__id=443&page_size=100"
         with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 10}], "next": None,
-            }))
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 10}],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
             results = list(client.get_documents_by_tag(443))
@@ -135,18 +179,31 @@ class TestGetDocumentsByTag:
         url1 = f"{BASE}/api/documents/?tags__id=5&page_size=100"
         url2 = f"{BASE}/api/documents/?tags__id=5&page_size=100&page=2"
         with respx.mock:
-            respx.get(url__eq=url1).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 1}], "next": url2,
-            }))
-            respx.get(url__eq=url2).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 2}], "next": None,
-            }))
+            respx.get(url__eq=url1).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1}],
+                        "next": url2,
+                    },
+                )
+            )
+            respx.get(url__eq=url2).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 2}],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
             results = list(client.get_documents_by_tag(5))
 
         assert len(results) == 2
         client.close()
+
 
 class TestGetDocument:
     def test_fetches_single_document_by_id(self):
@@ -172,6 +229,7 @@ class TestGetDocument:
             with pytest.raises(httpx.HTTPStatusError):
                 client.get_document(99)
         client.close()
+
 
 class TestDownloadContent:
     def test_returns_bytes_and_content_type_tuple(self):
@@ -203,6 +261,7 @@ class TestDownloadContent:
         assert ct == "application/pdf"
         client.close()
 
+
 class TestUpdateDocument:
     def test_sends_patch_with_content_and_tags(self):
         with respx.mock:
@@ -217,6 +276,7 @@ class TestUpdateDocument:
         body = route.calls[0].request.content
         assert b"new content" in body
         client.close()
+
 
 class TestUpdateDocumentMetadata:
     def test_sends_only_non_none_fields(self):
@@ -247,14 +307,19 @@ class TestUpdateDocumentMetadata:
         assert not route.called
         client.close()
 
+
 class TestListEndpoints:
     def test_list_correspondents(self):
         url = f"{BASE}/api/correspondents/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
-                return_value=httpx.Response(200, json={
-                    "results": [{"id": 1, "name": "Alice"}], "next": None,
-                }),
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 1, "name": "Alice"}],
+                        "next": None,
+                    },
+                ),
             )
             client = _make_client()
 
@@ -267,9 +332,13 @@ class TestListEndpoints:
         url = f"{BASE}/api/document_types/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
-                return_value=httpx.Response(200, json={
-                    "results": [{"id": 2, "name": "Invoice"}], "next": None,
-                }),
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 2, "name": "Invoice"}],
+                        "next": None,
+                    },
+                ),
             )
             client = _make_client()
 
@@ -282,9 +351,13 @@ class TestListEndpoints:
         url = f"{BASE}/api/tags/?page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
-                return_value=httpx.Response(200, json={
-                    "results": [{"id": 3, "name": "ocr"}], "next": None,
-                }),
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 3, "name": "ocr"}],
+                        "next": None,
+                    },
+                ),
             )
             client = _make_client()
 
@@ -292,6 +365,7 @@ class TestListEndpoints:
 
         assert result == [{"id": 3, "name": "ocr"}]
         client.close()
+
 
 class TestCreateNamedItems:
     def test_creates_item_with_matching_algorithm(self):
@@ -363,6 +437,7 @@ class TestCreateNamedItems:
                 client.create_tag("fail-tag", matching_algorithm="none")
         client.close()
 
+
 class TestRetryBehavior:
     def test_retries_on_network_error(self):
         with respx.mock:
@@ -420,6 +495,7 @@ class TestRetryBehavior:
             assert route.call_count == 3
         client.close()
 
+
 class TestPing:
     def test_single_request_without_retry(self):
         with respx.mock:
@@ -461,6 +537,7 @@ class TestPing:
             with pytest.raises(httpx.HTTPStatusError):
                 client.ping()
         client.close()
+
 
 class TestClose:
     def test_closes_underlying_httpx_client(self):

@@ -174,7 +174,9 @@ class TaxonomyCache:
             self._document_types = self._client.list_document_types()
             self._tags = self._client.list_tags()
             self._correspondent_map = _index_items(self._correspondents, normalise_name)
-            self._document_type_map = _index_items(self._document_types, normalise_simple)
+            self._document_type_map = _index_items(
+                self._document_types, normalise_simple
+            )
             self._tag_map = _index_items(self._tags, normalise_simple)
             self._cached_correspondent_names = _top_names(
                 self._correspondents, self._taxonomy_limit
@@ -210,14 +212,22 @@ class TaxonomyCache:
 
     def _correspondent_kind(self) -> _TaxonomyKind:
         return _TaxonomyKind(
-            self._correspondents, self._correspondent_map, normalise_name,
-            True, self._client.create_correspondent, "correspondent",
+            self._correspondents,
+            self._correspondent_map,
+            normalise_name,
+            True,
+            self._client.create_correspondent,
+            "correspondent",
         )
 
     def _document_type_kind(self) -> _TaxonomyKind:
         return _TaxonomyKind(
-            self._document_types, self._document_type_map, normalise_simple,
-            False, self._client.create_document_type, "document type",
+            self._document_types,
+            self._document_type_map,
+            normalise_simple,
+            False,
+            self._client.create_document_type,
+            "document type",
         )
 
     def _tag_kind(self) -> _TaxonomyKind:
@@ -227,8 +237,12 @@ class TaxonomyCache:
             return self._client.create_tag(name, matching_algorithm=matching_algorithm)
 
         return _TaxonomyKind(
-            self._tags, self._tag_map, normalise_simple,
-            False, create_tag, "tag",
+            self._tags,
+            self._tag_map,
+            normalise_simple,
+            False,
+            create_tag,
+            "tag",
         )
 
     @staticmethod
@@ -243,14 +257,18 @@ class TaxonomyCache:
         return value if isinstance(value, int) else None
 
     def _get_or_create_item_id(
-        self, name: str, kind_factory: Callable[[], _TaxonomyKind],
+        self,
+        name: str,
+        kind_factory: Callable[[], _TaxonomyKind],
     ) -> int | None:
         """Look up an item by name, creating it if necessary."""
         if not name.strip():
             return None
         with self._lock:
             kind = kind_factory()
-            matched = _match_item(name, kind.mapping, kind.normaliser, kind.allow_substring)
+            matched = _match_item(
+                name, kind.mapping, kind.normaliser, kind.allow_substring
+            )
             if matched:
                 return self._extract_id(matched)
             try:
@@ -268,7 +286,10 @@ class TaxonomyCache:
                     raise
                 kind = kind_factory()
                 matched = _match_item(
-                    name, kind.mapping, kind.normaliser, kind.allow_substring,
+                    name,
+                    kind.mapping,
+                    kind.normaliser,
+                    kind.allow_substring,
                 )
                 if matched:
                     return self._extract_id(matched)

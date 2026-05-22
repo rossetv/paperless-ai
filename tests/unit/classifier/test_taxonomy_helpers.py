@@ -49,6 +49,7 @@ class TestIndexItems:
 
         assert "revolut" in mapping
 
+
 class TestMatchItem:
     """_match_item with exact and substring matching."""
 
@@ -70,7 +71,9 @@ class TestMatchItem:
         """Existing key 'revolut' found inside query 'revolut ltd'."""
         mapping = {"revolut": {"id": 7, "name": "Revolut"}}
 
-        result = _match_item("Revolut Ltd", mapping, normalise_name, allow_substring=True)
+        result = _match_item(
+            "Revolut Ltd", mapping, normalise_name, allow_substring=True
+        )
 
         assert result == {"id": 7, "name": "Revolut"}
 
@@ -85,7 +88,9 @@ class TestMatchItem:
     def test_substring_not_allowed(self):
         mapping = {"revolut": {"id": 7, "name": "Revolut"}}
 
-        result = _match_item("Revolut Ltd", mapping, normalise_simple, allow_substring=False)
+        result = _match_item(
+            "Revolut Ltd", mapping, normalise_simple, allow_substring=False
+        )
 
         assert result is None
 
@@ -95,6 +100,7 @@ class TestMatchItem:
         result = _match_item("", mapping, normalise_simple, allow_substring=True)
 
         assert result is None
+
 
 class TestGetUsageCount:
     """_get_usage_count handles different Paperless field name variants."""
@@ -120,6 +126,7 @@ class TestGetUsageCount:
     def test_priority_document_count_over_documents(self):
         """document_count is checked first."""
         assert _get_usage_count({"document_count": 10, "documents": [1, 2]}) == 10
+
 
 class TestTopNames:
     """_top_names returns sorted, limited, deduplicated names."""
@@ -152,7 +159,10 @@ class TestTopNames:
         assert len(_top_names(items, limit=0)) == 5
 
     def test_empty_names_skipped(self):
-        items = [{"name": "", "document_count": 5}, {"name": "Valid", "document_count": 1}]
+        items = [
+            {"name": "", "document_count": 5},
+            {"name": "Valid", "document_count": 1},
+        ]
         assert _top_names(items, limit=10) == ["Valid"]
 
     def test_tiebreaker_is_alphabetical(self):

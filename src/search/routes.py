@@ -115,9 +115,7 @@ def evaluate_index_health(store_reader: StoreReader) -> IndexHealth:
         # A present-but-empty database — the indexer has not built the schema.
         return IndexHealth(state="index-not-ready", reason="schema_missing")
     except StoreError as exc:
-        return IndexHealth(
-            state="index-not-ready", reason=f"stats_error: {exc}"
-        )
+        return IndexHealth(state="index-not-ready", reason=f"stats_error: {exc}")
 
     if stats.last_reconcile_at is None:
         # Schema present, but the first reconciliation has not finished.
