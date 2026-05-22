@@ -32,7 +32,7 @@ beforeEach(() => {
   mockRecent.mockReturnValue(
     ok({
       searches: [
-        { query: 'npower 2024', searched_at: '2026-05-22T10:00:00Z' },
+        { query: 'npower 2024', created_at: '2026-05-22T10:00:00Z' },
       ],
     }),
   );
@@ -77,6 +77,22 @@ describe('IdleScreen', () => {
   it('renders the recent searches', () => {
     render(<IdleScreen onSearch={() => {}} />);
     expect(screen.getByText('npower 2024')).toBeInTheDocument();
+  });
+
+  it('renders a relative-time label for each recent search', () => {
+    // relativeTime() reads `new Date()` for "now"; pin it so the label is
+    // deterministic. The search ran two hours before this fixed instant.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-22T12:00:00Z'));
+    try {
+      render(<IdleScreen onSearch={() => {}} />);
+      // Regression guard: the wire field is `created_at`. When it was read
+      // as the non-existent `searched_at`, relativeTime() got `undefined`
+      // and returned '' — the label silently never rendered.
+      expect(screen.getByText('2h ago')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('runs a search when a recent-search row is clicked', async () => {
