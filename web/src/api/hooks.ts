@@ -86,15 +86,21 @@ export function useStats(): UseQueryResult<StatsResponse, Error> {
  * The current authenticated user — GET /api/auth/me.
  *
  * `useAuth` is built on this hook. `retry: false` so a 401 (not signed in)
- * resolves to an error state immediately rather than retrying. `staleTime`
- * is short so a logout / login flips the result promptly.
+ * resolves to an error state immediately rather than retrying.
+ *
+ * `staleTime: 0` — deliberately short (differs from the 60 s global default)
+ * so a login or logout flips the auth state on the very next mount.
+ *
+ * `enabled` — pass `false` when setup is still needed to avoid a guaranteed-
+ * useless 401 round-trip on every first-run page load.
  */
-export function useMe(): UseQueryResult<MeResponse, Error> {
+export function useMe({ enabled = true }: { enabled?: boolean } = {}): UseQueryResult<MeResponse, Error> {
   return useQuery({
     queryKey: queryKeys.me(),
     queryFn: me,
     retry: false,
     staleTime: 0,
+    enabled,
   });
 }
 
@@ -103,6 +109,9 @@ export function useMe(): UseQueryResult<MeResponse, Error> {
  *
  * Public; used by the bootstrap gate before the user is known. `retry: false`
  * so a transient failure does not stall the gate.
+ *
+ * `staleTime: 0` — intentionally short (same reasoning as `useMe`): the gate
+ * must reflect a just-completed setup without a stale cache masking it.
  */
 export function useSetupStatus(): UseQueryResult<SetupStatus, Error> {
   return useQuery({
@@ -118,6 +127,10 @@ export function useSetupStatus(): UseQueryResult<SetupStatus, Error> {
  *
  * Used only by the login splash. `retry: false` and a callers-must-degrade
  * contract: the login screen omits the numbers when this errors.
+ *
+ * `staleTime: 60_000` — document counts change infrequently; one minute's
+ * staleness is fine for an informational splash display. This differs from
+ * the `staleTime: 0` on `useMe` / `useSetupStatus`, which are auth-critical.
  */
 export function usePublicStats(): UseQueryResult<PublicStats, Error> {
   return useQuery({

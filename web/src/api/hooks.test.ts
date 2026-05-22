@@ -39,11 +39,14 @@ function makeWrapper(): React.FC<{ children: React.ReactNode }> {
 }
 
 function mockFetch(status: number, body: unknown): void {
+  const serialised = body !== null ? JSON.stringify(body) : '';
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
       ok: status >= 200 && status < 300,
       status,
+      headers: new Headers(serialised ? { 'content-type': 'application/json' } : {}),
+      text: () => Promise.resolve(serialised),
       json: () => Promise.resolve(body),
     }),
   );
