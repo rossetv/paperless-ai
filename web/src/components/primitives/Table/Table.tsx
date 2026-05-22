@@ -78,8 +78,8 @@ export function Table<Row>({
                 key={col.key}
                 scope="col"
                 className={cn(
-                  styles['headCell'],
-                  col.align === 'end' && styles['headCellEnd'],
+                  styles['head-cell'],
+                  col.align === 'end' && styles['head-cell-end'],
                 )}
                 style={col.width !== undefined ? { width: col.width } : undefined}
               >
@@ -91,7 +91,7 @@ export function Table<Row>({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td className={styles['emptyCell']} colSpan={columns.length}>
+              <td className={styles['empty-cell']} colSpan={columns.length}>
                 {emptyMessage}
               </td>
             </tr>
@@ -107,7 +107,7 @@ export function Table<Row>({
                     key={col.key}
                     className={cn(
                       styles['cell'],
-                      col.align === 'end' && styles['cellEnd'],
+                      col.align === 'end' && styles['cell-end'],
                     )}
                   >
                     {col.render(row)}
