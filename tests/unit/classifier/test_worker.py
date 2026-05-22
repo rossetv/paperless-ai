@@ -16,7 +16,6 @@ from tests.unit.classifier.conftest import make_doc_with_content, make_processor
 
 
 class TestProcessHappyPath:
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_applies_metadata(self, mock_release, mock_claim):
@@ -39,7 +38,9 @@ class TestProcessHappyPath:
 
         proc.process()
 
-        proc.taxonomy_cache.get_or_create_correspondent_id.assert_called_once_with("Acme Corp")
+        proc.taxonomy_cache.get_or_create_correspondent_id.assert_called_once_with(
+            "Acme Corp"
+        )
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
@@ -50,7 +51,9 @@ class TestProcessHappyPath:
 
         proc.process()
 
-        proc.taxonomy_cache.get_or_create_document_type_id.assert_called_once_with("Invoice")
+        proc.taxonomy_cache.get_or_create_document_type_id.assert_called_once_with(
+            "Invoice"
+        )
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
@@ -153,7 +156,9 @@ class TestProcessEarlyExits:
 
         proc.classifier.classify_text.assert_not_called()
         proc.paperless_client.update_document_metadata.assert_called()
-        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get("tags")
+        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get(
+            "tags"
+        )
         assert 443 in tags  # PRE_TAG_ID — document was requeued for OCR
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
@@ -170,7 +175,9 @@ class TestProcessEarlyExits:
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     @patch("classifier.worker.needs_error_tag", return_value=True)
-    def test_refusal_content_finalises_with_error(self, mock_needs, mock_release, mock_claim):
+    def test_refusal_content_finalises_with_error(
+        self, mock_needs, mock_release, mock_claim
+    ):
         doc = make_doc_with_content("I'm sorry, I can't assist with that.")
         proc = make_processor(doc=doc)
         proc.paperless_client.get_document.return_value = doc
@@ -194,15 +201,22 @@ class TestProcessErrorPaths:
         proc.process()
 
         proc.paperless_client.update_document_metadata.assert_called()
-        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get("tags")
+        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get(
+            "tags"
+        )
         assert 552 in tags  # ERROR_TAG_ID
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_empty_fields_result_finalises_with_error(self, mock_release, mock_claim):
         empty_result = make_classification_result(
-            title="", correspondent="", tags=[], document_date="",
-            document_type="", language="", person=""
+            title="",
+            correspondent="",
+            tags=[],
+            document_date="",
+            document_type="",
+            language="",
+            person="",
         )
         doc = make_doc_with_content("valid content")
         proc = make_processor(doc=doc)
@@ -212,7 +226,9 @@ class TestProcessErrorPaths:
         proc.process()
 
         proc.paperless_client.update_document_metadata.assert_called()
-        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get("tags")
+        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get(
+            "tags"
+        )
         assert 552 in tags  # ERROR_TAG_ID
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
@@ -259,8 +275,13 @@ class TestProcessErrorPaths:
     def test_finalise_without_error_tag_still_updates(self, mock_release, mock_claim):
         doc = make_doc_with_content("text")
         result = make_classification_result(
-            title="", correspondent="", tags=[], document_date="",
-            document_type="", language="", person="",
+            title="",
+            correspondent="",
+            tags=[],
+            document_date="",
+            document_type="",
+            language="",
+            person="",
         )
         proc = make_processor(
             doc=doc,

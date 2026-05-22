@@ -9,26 +9,28 @@ _STRIP_NON_ALNUM_RE: re.Pattern[str] = re.compile(r"[^a-z0-9\s]")
 
 # Common corporate suffixes stripped when comparing organisation names.
 # Kept as a set for O(1) membership tests.
-COMPANY_SUFFIXES: frozenset[str] = frozenset({
-    "ab",
-    "as",
-    "bv",
-    "co",
-    "company",
-    "corp",
-    "corporation",
-    "gmbh",
-    "inc",
-    "incorporated",
-    "limited",
-    "llc",
-    "ltd",
-    "oy",
-    "plc",
-    "sa",
-    "sarl",
-    "spa",
-})
+COMPANY_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "ab",
+        "as",
+        "bv",
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "gmbh",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "oy",
+        "plc",
+        "sa",
+        "sarl",
+        "spa",
+    }
+)
 
 
 def normalise_simple(value: str) -> str:

@@ -146,9 +146,7 @@ class TestIncrementalSyncIndexesNewDocuments:
 
         run_incremental_sync(paperless, store_writer)
 
-        paperless.iter_all_documents.assert_called_once_with(
-            modified_after=watermark
-        )
+        paperless.iter_all_documents.assert_called_once_with(modified_after=watermark)
 
     def test_empty_cycle_does_not_change_the_watermark(
         self, monkeypatch: pytest.MonkeyPatch

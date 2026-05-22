@@ -32,7 +32,9 @@ class TestClassifyTextHappyPath:
 
         result, model = provider.classify_text(
             "Some document text",
-            TaxonomyContext(correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]),
+            TaxonomyContext(
+                correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]
+            ),
         )
 
         assert isinstance(result, ClassificationResult)
@@ -50,6 +52,7 @@ class TestClassifyTextHappyPath:
         assert stats["attempts"] == 1
         assert stats["api_errors"] == 0
         assert stats["fallback_successes"] == 0
+
 
 class TestClassifyTextInvalidJsonFallback:
     """Fallback to the next model when JSON parsing fails."""
@@ -86,6 +89,7 @@ class TestClassifyTextInvalidJsonFallback:
         assert model == "model-b"
         assert provider.get_stats()["invalid_json"] == 1
 
+
 class TestClassifyTextApiErrorFallback:
     """Fallback when _create_with_compat returns None (API error)."""
 
@@ -103,6 +107,7 @@ class TestClassifyTextApiErrorFallback:
         stats = provider.get_stats()
         assert stats["api_errors"] == 1
         assert stats["fallback_successes"] == 1
+
 
 class TestClassifyTextAllModelsFail:
     """When every model fails, returns (None, "")."""
@@ -126,6 +131,7 @@ class TestClassifyTextAllModelsFail:
         assert result is None
         assert model == ""
         assert provider.get_stats()["invalid_json"] == 2
+
 
 class TestClassifyTextEmptyInput:
     """Empty or whitespace-only text should short-circuit."""
@@ -154,6 +160,7 @@ class TestClassifyTextEmptyInput:
 
         provider._create_completion.assert_not_called()
 
+
 class TestClassifyTextTruncationNote:
     """Truncation note is appended to the user message."""
 
@@ -170,7 +177,9 @@ class TestClassifyTextTruncationNote:
 
         provider.classify_text(
             "text",
-            TaxonomyContext(correspondents=["Acme"], document_types=["Invoice"], tags=["tag"]),
+            TaxonomyContext(
+                correspondents=["Acme"], document_types=["Invoice"], tags=["tag"]
+            ),
             truncation_note="NOTE: Truncated to 3 pages.",
         )
 
@@ -192,6 +201,7 @@ class TestClassifyTextTruncationNote:
 
         user_msg = captured_kwargs["messages"][1]["content"]
         assert "NOTE:" not in user_msg
+
 
 class TestStatsTracking:
     """get_stats returns accurate counters."""
@@ -224,6 +234,7 @@ class TestStatsTracking:
         stats = provider.get_stats()
 
         assert all(v == 0 for v in stats.values())
+
 
 class TestModelDeduplication:
     """Duplicate models in AI_MODELS are tried only once."""

@@ -29,17 +29,21 @@ def _make_cache(
     cache = TaxonomyCache(client, taxonomy_limit)
     return cache
 
+
 def _corr(id: int, name: str, count: int = 0) -> dict:
     return {"id": id, "name": name, "document_count": count}
 
+
 def _dtype(id: int, name: str, count: int = 0) -> dict:
     return {"id": id, "name": name, "document_count": count}
+
 
 def _tag(id: int, name: str, count: int = 0, matching_algorithm=None) -> dict:
     d = {"id": id, "name": name, "document_count": count}
     if matching_algorithm is not None:
         d["matching_algorithm"] = matching_algorithm
     return d
+
 
 class TestRefresh:
     """refresh() populates internal caches from the client."""
@@ -76,15 +80,18 @@ class TestRefresh:
         cache._client.list_document_types.assert_called_once()
         cache._client.list_tags.assert_called_once()
 
+
 class TestNameLists:
     """Cached name lists are sorted by usage and limited."""
 
     def test_correspondent_names_sorted_by_usage_descending(self):
-        cache = _make_cache(correspondents=[
-            _corr(1, "Alpha", 1),
-            _corr(2, "Beta", 10),
-            _corr(3, "Gamma", 5),
-        ])
+        cache = _make_cache(
+            correspondents=[
+                _corr(1, "Alpha", 1),
+                _corr(2, "Beta", 10),
+                _corr(3, "Gamma", 5),
+            ]
+        )
         cache.refresh()
 
         names = cache.correspondent_names()
@@ -109,6 +116,7 @@ class TestNameLists:
         names.append("EXTRA")
 
         assert "EXTRA" not in cache.correspondent_names()
+
 
 class TestGetOrCreateCorrespondentId:
     """Resolve or create correspondents by name."""
@@ -180,6 +188,7 @@ class TestGetOrCreateCorrespondentId:
         with pytest.raises(OSError, match="gone"):
             cache.get_or_create_correspondent_id("Ghost Corp")
 
+
 class TestGetOrCreateDocumentTypeId:
     """Resolve or create document types by name."""
 
@@ -196,7 +205,10 @@ class TestGetOrCreateDocumentTypeId:
         cache = _make_cache(document_types=[_dtype(10, "Invoice")])
         cache.refresh()
         cache._client.create_document_type.side_effect = None
-        cache._client.create_document_type.return_value = {"id": 20, "name": "Tax Invoice"}
+        cache._client.create_document_type.return_value = {
+            "id": 20,
+            "name": "Tax Invoice",
+        }
 
         result = cache.get_or_create_document_type_id("Tax Invoice")
 
@@ -228,6 +240,7 @@ class TestGetOrCreateDocumentTypeId:
         result = cache.get_or_create_document_type_id("Payslip")
 
         assert result == 50
+
 
 class TestGetOrCreateTagIds:
     """Resolve or create multiple tags."""
@@ -286,6 +299,7 @@ class TestGetOrCreateTagIds:
 
         assert cache.get_or_create_tag_ids([]) == []
 
+
 class TestInferMatchingAlgorithm:
     """_infer_matching_algorithm detects int vs string convention."""
 
@@ -320,6 +334,7 @@ class TestInferMatchingAlgorithm:
         result = cache._infer_matching_algorithm()
 
         assert result == "none"
+
 
 class TestThreadSafety:
     """Concurrent access should not corrupt internal state."""
@@ -366,6 +381,7 @@ class TestThreadSafety:
         result = cache.get_or_create_correspondent_id("Acme")
 
         assert result == 1
+
 
 class TestCreationFailureReraise:
     """When creation fails and refresh doesn't find the item, re-raise."""

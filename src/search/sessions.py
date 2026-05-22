@@ -164,9 +164,7 @@ def begin_session(
     return IssuedSession(token=token, expires_at=expires_at)
 
 
-def resolve_session(
-    conn: sqlite3.Connection, token: str | None
-) -> CurrentUser | None:
+def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser | None:
     """Resolve a cookie token to a :class:`CurrentUser`, or ``None``.
 
     Hashes *token*, looks up the session, and returns ``None`` — failing
@@ -250,9 +248,7 @@ def _parse_iso(value: str, *, default: datetime) -> datetime: ...
 def _parse_iso(value: str, *, default: None) -> datetime | None: ...
 
 
-def _parse_iso(
-    value: str, *, default: datetime | None
-) -> datetime | None:
+def _parse_iso(value: str, *, default: datetime | None) -> datetime | None:
     """Parse an ISO-8601 timestamp, returning *default* on a malformed value.
 
     The overloads let the type checker see that a non-``None`` *default*

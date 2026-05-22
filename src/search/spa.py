@@ -83,11 +83,7 @@ def register_spa(app: FastAPI, dist_dir: Path) -> None:
         # Serve a real, in-tree file if the path resolves to one.
         candidate = (dist_dir / full_path).resolve()
         dist_root = dist_dir.resolve()
-        if (
-            full_path
-            and dist_root in candidate.parents
-            and candidate.is_file()
-        ):
+        if full_path and dist_root in candidate.parents and candidate.is_file():
             return FileResponse(candidate)
 
         # Otherwise hand the SPA shell to the client router.

@@ -55,9 +55,7 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
         # Each tag_id must appear in the JSON array stored in d.tag_ids.
         # json_each() expands the array into rows; EXISTS ensures the document
         # is only returned if the given id is present.
-        clauses.append(
-            "EXISTS (SELECT 1 FROM json_each(d.tag_ids) WHERE value = ?)"
-        )
+        clauses.append("EXISTS (SELECT 1 FROM json_each(d.tag_ids) WHERE value = ?)")
         params.append(tag_id)
 
     if not clauses:

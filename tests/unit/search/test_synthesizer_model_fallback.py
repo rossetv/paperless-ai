@@ -151,9 +151,7 @@ class TestApiErrorNeverEscapes:
     def test_authentication_error_in_exploratory_mode_returns_needs_more(self) -> None:
         """A wrong/expired key in exploratory mode degrades to NeedsMore, never raises."""
         chunks = [_chunk(1, "Some text.")]
-        settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="m", AI_MODELS=["m"]
-        )
+        settings = make_search_settings(SEARCH_ANSWER_MODEL="m", AI_MODELS=["m"])
         synthesiser = Synthesizer(settings)
         synthesiser._create_completion = MagicMock(  # type: ignore[method-assign]
             side_effect=make_authentication_error()

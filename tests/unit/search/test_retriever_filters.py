@@ -51,9 +51,7 @@ def test_resolve_filters_exact_document_type_match() -> None:
 def test_resolve_filters_exact_tag_match() -> None:
     """resolve_filters resolves a tag candidate by exact name."""
     candidates = make_filter_candidates(tags=("important",))
-    facets = make_facet_set(
-        tags=(_entry(kind="tag", entry_id=5, name="important"),)
-    )
+    facets = make_facet_set(tags=(_entry(kind="tag", entry_id=5, name="important"),))
 
     filters = resolve_filters(candidates, facets, ui_filters=None)
 
@@ -125,9 +123,7 @@ def test_resolve_filters_drops_unresolvable_candidate() -> None:
 def test_resolve_filters_drops_unresolvable_tag() -> None:
     """resolve_filters drops a tag that matches nothing; resolves the ones that do."""
     candidates = make_filter_candidates(tags=("real-tag", "ghost-tag"))
-    facets = make_facet_set(
-        tags=(_entry(kind="tag", entry_id=4, name="real-tag"),)
-    )
+    facets = make_facet_set(tags=(_entry(kind="tag", entry_id=4, name="real-tag"),))
 
     filters = resolve_filters(candidates, facets, ui_filters=None)
 
@@ -142,9 +138,7 @@ def test_resolve_filters_drops_unresolvable_tag() -> None:
 
 def test_resolve_filters_date_candidates_pass_through() -> None:
     """resolve_filters passes date_from/date_to straight through."""
-    candidates = make_filter_candidates(
-        date_from="2024-01-01", date_to="2024-12-31"
-    )
+    candidates = make_filter_candidates(date_from="2024-01-01", date_to="2024-12-31")
 
     filters = resolve_filters(candidates, make_facet_set(), ui_filters=None)
 

@@ -34,11 +34,7 @@ from tests.integration.accounts_helpers import (
 
 def _set_cookie_header(response) -> str:
     """Return the single ``set-cookie`` header value from *response*."""
-    headers = [
-        value
-        for key, value in response.headers.raw
-        if key == b"set-cookie"
-    ]
+    headers = [value for key, value in response.headers.raw if key == b"set-cookie"]
     assert len(headers) == 1, headers
     return headers[0].decode("latin-1")
 
@@ -49,13 +45,9 @@ def test_login_returns_the_user_and_sets_the_cookie(tmp_path: Path) -> None:
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="member"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="member")
         client = build_account_client(settings, app_db, store_reader)
-        response = login(
-            client, username="alice", password="alice-password"
-        )
+        response = login(client, username="alice", password="alice-password")
         assert response.status_code == 200, response.text
         assert response.json()["user"]["username"] == "alice"
         assert response.json()["user"]["role"] == "member"
@@ -72,13 +64,10 @@ def test_session_cookie_authorises_a_protected_route(tmp_path: Path) -> None:
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="member"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="member")
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(client, username="alice", password="alice-password")
-            .status_code
+            login(client, username="alice", password="alice-password").status_code
             == 200
         )
         # No Authorization header — the cookie in the jar is the only credential.
@@ -95,13 +84,10 @@ def test_auth_me_returns_the_logged_in_user(tmp_path: Path) -> None:
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="member"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="member")
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(client, username="alice", password="alice-password")
-            .status_code
+            login(client, username="alice", password="alice-password").status_code
             == 200
         )
         response = client.get("/api/auth/me")
@@ -138,13 +124,10 @@ def test_logout_destroys_the_session(tmp_path: Path) -> None:
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="member"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="member")
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(client, username="alice", password="alice-password")
-            .status_code
+            login(client, username="alice", password="alice-password").status_code
             == 200
         )
         logout = client.post("/api/auth/logout")
@@ -169,13 +152,10 @@ def test_logout_revokes_a_replayed_cookie(tmp_path: Path) -> None:
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="member"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="member")
         client = build_account_client(settings, app_db, store_reader)
         assert (
-            login(client, username="alice", password="alice-password")
-            .status_code
+            login(client, username="alice", password="alice-password").status_code
             == 200
         )
         captured = client.cookies.get(SESSION_COOKIE_NAME)
@@ -197,9 +177,7 @@ def test_login_with_a_wrong_password_returns_401(tmp_path: Path) -> None:
     try:
         seed_user(app_db, username="alice", password="alice-password")
         client = build_account_client(settings, app_db, store_reader)
-        response = login(
-            client, username="alice", password="the-wrong-password"
-        )
+        response = login(client, username="alice", password="the-wrong-password")
         assert response.status_code == 401
         assert SESSION_COOKIE_NAME not in response.cookies
     finally:
@@ -215,9 +193,7 @@ def test_login_with_an_unknown_username_returns_401(tmp_path: Path) -> None:
     try:
         seed_user(app_db, username="alice", password="alice-password")
         client = build_account_client(settings, app_db, store_reader)
-        response = login(
-            client, username="nobody", password="any-password"
-        )
+        response = login(client, username="nobody", password="any-password")
         assert response.status_code == 401
     finally:
         store_reader.close()
@@ -238,9 +214,7 @@ def test_login_for_a_suspended_account_returns_403(tmp_path: Path) -> None:
         )
         update_user(app_db, user.id, status="suspended")
         client = build_account_client(settings, app_db, store_reader)
-        response = login(
-            client, username="alice", password="alice-password"
-        )
+        response = login(client, username="alice", password="alice-password")
         assert response.status_code == 403
         assert SESSION_COOKIE_NAME not in response.cookies
     finally:

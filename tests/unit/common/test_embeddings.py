@@ -18,6 +18,7 @@ from tests.helpers.mocks import make_mock_embeddings
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_settings(
     *,
     max_retries: int = 3,
@@ -54,7 +55,6 @@ def _client_with(mock_openai: MagicMock) -> Iterator[None]:
 
 
 class TestClientIsPinnedToOpenAI:
-
     def test_constructs_openai_client_with_configured_api_key(self) -> None:
         """EmbeddingClient builds its own openai.OpenAI with OPENAI_API_KEY.
 
@@ -80,7 +80,6 @@ class TestClientIsPinnedToOpenAI:
 
 
 class TestEmptyInput:
-
     def test_empty_sequence_returns_empty_list(self) -> None:
         """embed([]) returns [] without calling the OpenAI API."""
         settings = _make_settings()
@@ -100,7 +99,6 @@ class TestEmptyInput:
 
 
 class TestReturnOrder:
-
     def test_single_text_returns_one_vector(self) -> None:
         """embed returns exactly one vector for a single input."""
         settings = _make_settings()
@@ -133,7 +131,6 @@ class TestReturnOrder:
 
 
 class TestBatching:
-
     def test_exactly_one_batch_for_small_input(self) -> None:
         """96 texts or fewer are sent in a single API request."""
         settings = _make_settings()
@@ -194,7 +191,6 @@ class TestBatching:
 
 
 class TestRetry:
-
     @patch("common.retry._sleep_backoff")
     def test_transient_error_retried_then_succeeds(self, mock_sleep) -> None:
         """A single transient API error triggers a retry and ultimately succeeds."""
@@ -219,7 +215,9 @@ class TestRetry:
         assert mock_openai.embeddings.create.call_count == 2
 
     @patch("common.retry._sleep_backoff")
-    def test_non_retryable_openai_error_raises_embedding_error(self, mock_sleep) -> None:
+    def test_non_retryable_openai_error_raises_embedding_error(
+        self, mock_sleep
+    ) -> None:
         """A non-retryable openai.OpenAIError is wrapped in EmbeddingError."""
         settings = _make_settings(max_retries=3)
         mock_openai = MagicMock()
@@ -280,7 +278,6 @@ class TestRetry:
 
 
 class TestConcurrencyGuard:
-
     def test_max_concurrent_zero_means_unbounded(self) -> None:
         """EMBEDDING_MAX_CONCURRENT=0 creates an unbounded guard (no semaphore)."""
         settings = _make_settings(embedding_max_concurrent=0)
@@ -378,7 +375,6 @@ class TestConcurrencyGuard:
 
 
 class TestModelPassthrough:
-
     def test_configured_model_sent_to_api(self) -> None:
         """embed passes settings.EMBEDDING_MODEL to the OpenAI embeddings.create call."""
         settings = _make_settings(embedding_model="text-embedding-3-large")
@@ -399,7 +395,6 @@ class TestModelPassthrough:
 
 
 class TestDimensionsPassthrough:
-
     def test_configured_dimensions_sent_to_api(self) -> None:
         """embed passes settings.EMBEDDING_DIMENSIONS to the OpenAI embeddings.create call.
 

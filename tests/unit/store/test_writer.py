@@ -58,9 +58,7 @@ class TestUpsertDocument:
         writer.close()
 
         conn = connect(db_path)
-        row = conn.execute(
-            "SELECT chunk_count FROM documents WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT chunk_count FROM documents WHERE id = 1").fetchone()
         conn.close()
         assert row[0] == 5
 
@@ -70,9 +68,7 @@ class TestUpsertDocument:
         writer.close()
 
         conn = connect(db_path)
-        row = conn.execute(
-            "SELECT indexed_at FROM documents WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT indexed_at FROM documents WHERE id = 1").fetchone()
         conn.close()
         assert row[0] is not None
         assert len(row[0]) > 0
@@ -114,9 +110,7 @@ class TestChunksFtsRowidInvariant:
         writer.close()
 
         conn = connect(db_path)
-        chunk_ids = {
-            row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()
-        }
+        chunk_ids = {row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()}
         fts_rowids = {
             row[0] for row in conn.execute("SELECT rowid FROM chunks_fts").fetchall()
         }
@@ -150,9 +144,7 @@ class TestReupsertReplacesChunks:
         # First upsert: 3 chunks → 3 FTS rows.
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
         conn = connect(db_path)
-        first_fts_count = conn.execute(
-            "SELECT count(*) FROM chunks_fts"
-        ).fetchone()[0]
+        first_fts_count = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
         conn.close()
         assert first_fts_count == 3
 
@@ -173,9 +165,7 @@ class TestReupsertReplacesChunks:
         writer.close()
 
         conn = connect(db_path)
-        chunk_ids = {
-            row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()
-        }
+        chunk_ids = {row[0] for row in conn.execute("SELECT id FROM chunks").fetchall()}
         fts_rowids = {
             row[0] for row in conn.execute("SELECT rowid FROM chunks_fts").fetchall()
         }
@@ -196,9 +186,9 @@ class TestDeleteDocuments:
         writer.close()
 
         conn = connect(db_path)
-        count = conn.execute(
-            "SELECT count(*) FROM documents WHERE id = 1"
-        ).fetchone()[0]
+        count = conn.execute("SELECT count(*) FROM documents WHERE id = 1").fetchone()[
+            0
+        ]
         conn.close()
         assert count == 0
 
@@ -299,9 +289,7 @@ class TestUpdateMetadata:
         writer.close()
 
         conn = connect(db_path)
-        row = conn.execute(
-            "SELECT chunk_count FROM documents WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT chunk_count FROM documents WHERE id = 1").fetchone()
         conn.close()
         assert row[0] == 3
 
@@ -421,4 +409,6 @@ class TestTransactionAtomicity:
 
         assert doc_count == 1, "document row must survive the rolled-back transaction"
         assert chunk_count == 2, "prior 2 chunks must be restored, not the partial 4"
-        assert fts_count == 2, "prior 2 FTS rows must be restored, not the partial write"
+        assert fts_count == 2, (
+            "prior 2 FTS rows must be restored, not the partial write"
+        )

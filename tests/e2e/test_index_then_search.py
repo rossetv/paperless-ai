@@ -55,9 +55,9 @@ from store.writer import StoreWriter
 
 _DIMENSIONS = 4
 
-_AXIS_TARGET: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)   # boiler warranty doc
-_AXIS_OTHER: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)    # unrelated document
-_AXIS_TO_DELETE: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0) # document to delete
+_AXIS_TARGET: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)  # boiler warranty doc
+_AXIS_OTHER: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)  # unrelated document
+_AXIS_TO_DELETE: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0)  # document to delete
 
 
 # ---------------------------------------------------------------------------
@@ -85,16 +85,12 @@ class _ScriptedLLMClient:
 
     def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
         """Stand-in for ``OpenAIChatMixin._create_completion``."""
-        system = next(
-            (m["content"] for m in messages if m["role"] == "system"), ""
-        )
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "search-query planning engine" in system:
             self.planner_calls += 1
             return _completion(self._planner_response)
         self.synthesiser_calls += 1
-        index = min(
-            self.synthesiser_calls - 1, len(self._synthesiser_responses) - 1
-        )
+        index = min(self.synthesiser_calls - 1, len(self._synthesiser_responses) - 1)
         return _completion(self._synthesiser_responses[index])
 
 
@@ -132,9 +128,7 @@ def _planner_json(semantic_queries: list[str]) -> str:
 
 def _answered_json(answer: str, citations: list[int]) -> str:
     """Return a well-formed Answered synthesiser response string."""
-    return json.dumps(
-        {"outcome": "answered", "answer": answer, "citations": citations}
-    )
+    return json.dumps({"outcome": "answered", "answer": answer, "citations": citations})
 
 
 # ---------------------------------------------------------------------------
@@ -381,9 +375,7 @@ class TestIndexThenSearch:
         assert result.answer != ""
         assert len(result.answer) > 0
         source_ids = {source.document_id for source in result.sources}
-        assert 1 in source_ids, (
-            f"expected document 1 in sources; got {source_ids}"
-        )
+        assert 1 in source_ids, f"expected document 1 in sources; got {source_ids}"
         # The synthesiser's citation list must include document 1.
         # The cited documents are a subset of the result's sources.
         assert any(source.document_id == 1 for source in result.sources)
@@ -451,7 +443,10 @@ class TestIndexThenSearch:
             # ---- deletion sweep: Paperless now only has docs 1 and 2 ----
             paperless_sweep = _make_paperless(all_ids=[1, 2])
             sweep_report = Reconciler(
-                settings, paperless_sweep, store_writer, _make_indexer_embedding_client({})
+                settings,
+                paperless_sweep,
+                store_writer,
+                _make_indexer_embedding_client({}),
             ).deletion_sweep()
 
             assert sweep_report.aborted is False

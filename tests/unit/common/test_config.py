@@ -68,7 +68,9 @@ _SIMPLE_DEFAULTS = [
 class TestDefaults:
     """Settings constructed with the minimal env should have correct defaults."""
 
-    @pytest.mark.parametrize("attr, expected", _SIMPLE_DEFAULTS, ids=[a for a, _ in _SIMPLE_DEFAULTS])
+    @pytest.mark.parametrize(
+        "attr, expected", _SIMPLE_DEFAULTS, ids=[a for a, _ in _SIMPLE_DEFAULTS]
+    )
     def test_default_value(self, mocker, attr, expected):
         s = _build(mocker, _MINIMAL_ENV)
         assert getattr(s, attr) == expected
@@ -135,7 +137,6 @@ class TestCustomEnvVars:
 
 
 class TestMissingRequired:
-
     def test_missing_paperless_token(self, mocker):
         with pytest.raises(ValueError, match="PAPERLESS_TOKEN"):
             _build(mocker, {"OPENAI_API_KEY": "sk-test"})
@@ -155,7 +156,6 @@ class TestMissingRequired:
 
 
 class TestOllamaConfig:
-
     def test_ollama_default_models(self, mocker):
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.AI_MODELS == ["gemma3:27b", "gemma3:12b"]
@@ -165,7 +165,9 @@ class TestOllamaConfig:
         assert s.OLLAMA_BASE_URL == "http://localhost:11434/v1/"
 
     def test_ollama_custom_base_url(self, mocker):
-        s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": "http://gpu:11434/v1/"})
+        s = _build(
+            mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": "http://gpu:11434/v1/"}
+        )
         assert s.OLLAMA_BASE_URL == "http://gpu:11434/v1/"
 
     def test_ollama_still_loads_openai_api_key(self, mocker):
@@ -209,8 +211,11 @@ _CLAMPED_TO_ONE = [
 
 
 class TestWorkerClamping:
-
-    @pytest.mark.parametrize("env_key, env_val", _CLAMPED_TO_ONE, ids=[f"{k}={v}" for k, v in _CLAMPED_TO_ONE])
+    @pytest.mark.parametrize(
+        "env_key, env_val",
+        _CLAMPED_TO_ONE,
+        ids=[f"{k}={v}" for k, v in _CLAMPED_TO_ONE],
+    )
     def test_clamped_to_1(self, mocker, env_key, env_val):
         s = _build(mocker, {**_MINIMAL_ENV, env_key: env_val})
         assert getattr(s, env_key) == 1
@@ -254,21 +259,27 @@ _CLAMPED_TO_ZERO = [
 
 
 class TestClassifyClamping:
-
-    @pytest.mark.parametrize("env_key, env_val", _CLAMPED_TO_ZERO, ids=[f"{k}={v}" for k, v in _CLAMPED_TO_ZERO])
+    @pytest.mark.parametrize(
+        "env_key, env_val",
+        _CLAMPED_TO_ZERO,
+        ids=[f"{k}={v}" for k, v in _CLAMPED_TO_ZERO],
+    )
     def test_clamped_to_zero(self, mocker, env_key, env_val):
         s = _build(mocker, {**_MINIMAL_ENV, env_key: env_val})
         assert getattr(s, env_key) == 0
 
 
 class TestAiModelsValidation:
-
     def test_all_commas_raises(self, mocker):
-        with pytest.raises(ValueError, match="AI_MODELS must contain at least one model"):
+        with pytest.raises(
+            ValueError, match="AI_MODELS must contain at least one model"
+        ):
             _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": ",,, ,"})
 
     def test_empty_string_raises(self, mocker):
-        with pytest.raises(ValueError, match="AI_MODELS must contain at least one model"):
+        with pytest.raises(
+            ValueError, match="AI_MODELS must contain at least one model"
+        ):
             _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": ""})
 
     def test_single_model(self, mocker):
@@ -281,9 +292,10 @@ class TestAiModelsValidation:
 
 
 class TestOcrRefusalMarkers:
-
     def test_custom_markers(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "OCR_REFUSAL_MARKERS": "forbidden,blocked, nope "})
+        s = _build(
+            mocker, {**_MINIMAL_ENV, "OCR_REFUSAL_MARKERS": "forbidden,blocked, nope "}
+        )
         assert s.OCR_REFUSAL_MARKERS == ["forbidden", "blocked", "nope"]
 
     def test_custom_markers_lowered(self, mocker):
@@ -296,13 +308,14 @@ class TestOcrRefusalMarkers:
 
 
 class TestBoolEnvParsing:
-
     @pytest.mark.parametrize("value", ["true", "True", "TRUE", "1", "yes", "y", "on"])
     def test_truthy_values(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_INCLUDE_PAGE_MODELS": value})
         assert s.OCR_INCLUDE_PAGE_MODELS is True
 
-    @pytest.mark.parametrize("value", ["false", "False", "FALSE", "0", "no", "n", "off"])
+    @pytest.mark.parametrize(
+        "value", ["false", "False", "FALSE", "0", "no", "n", "off"]
+    )
     def test_falsy_values(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_INCLUDE_PAGE_MODELS": value})
         assert s.OCR_INCLUDE_PAGE_MODELS is False
@@ -313,7 +326,6 @@ class TestBoolEnvParsing:
 
 
 class TestPaperlessUrlTrailingSlash:
-
     def test_trailing_slash_stripped(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_URL": "http://example.com/"})
         assert s.PAPERLESS_URL == "http://example.com"
@@ -328,7 +340,6 @@ class TestPaperlessUrlTrailingSlash:
 
 
 class TestPaperlessPublicUrl:
-
     def test_defaults_to_paperless_url_when_unset(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_URL": "http://paperless:8000"})
         assert s.PAPERLESS_PUBLIC_URL == "http://paperless:8000"
@@ -355,7 +366,6 @@ class TestPaperlessPublicUrl:
 
 
 class TestClassifyPreTagIdDefault:
-
     def test_defaults_to_post_tag_id(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "POST_TAG_ID": "999"})
         assert s.CLASSIFY_PRE_TAG_ID == 999
@@ -365,12 +375,13 @@ class TestClassifyPreTagIdDefault:
         assert s.CLASSIFY_PRE_TAG_ID == 111
 
     def test_empty_string_falls_back_to_post_tag_id(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_PRE_TAG_ID": "", "POST_TAG_ID": "888"})
+        s = _build(
+            mocker, {**_MINIMAL_ENV, "CLASSIFY_PRE_TAG_ID": "", "POST_TAG_ID": "888"}
+        )
         assert s.CLASSIFY_PRE_TAG_ID == 888
 
 
 class TestClassifyPersonFieldId:
-
     def test_not_set_is_none(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         assert s.CLASSIFY_PERSON_FIELD_ID is None
@@ -389,7 +400,6 @@ class TestClassifyPersonFieldId:
 
 
 class TestLlmMaxConcurrent:
-
     def test_negative_clamped_to_zero(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "-3"})
         assert s.LLM_MAX_CONCURRENT == 0

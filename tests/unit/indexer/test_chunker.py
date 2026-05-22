@@ -135,7 +135,7 @@ class TestChunkTextParagraphBoundaryPreference:
         # Two clearly separated paragraphs; chunk_size chosen so that the
         # first paragraph fits but extending to the second would exceed it.
         para1 = "Alpha " * 40  # 240 chars
-        para2 = "Beta " * 40   # 200 chars
+        para2 = "Beta " * 40  # 200 chars
         content = para1.rstrip() + "\n\n" + para2.rstrip()
 
         # chunk_size=300 means para1 (240 chars) fits, but para1+para2 (~442) does not.
@@ -184,8 +184,8 @@ class TestChunkTextPageHint:
 
     def test_page_hint_correct_for_each_page(self) -> None:
         # Build a document with two pages, each long enough for its own chunk.
-        page1 = "Alpha content. " * 50   # ~750 chars
-        page2 = "Beta content. " * 50    # ~700 chars
+        page1 = "Alpha content. " * 50  # ~750 chars
+        page2 = "Beta content. " * 50  # ~700 chars
         content = self._make_multipage_content([page1, page2])
 
         chunks = chunk_text(content, chunk_size=500, overlap=0)

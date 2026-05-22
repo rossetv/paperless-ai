@@ -97,12 +97,8 @@ def test_migrations_list_is_ordered_and_unique(conn) -> None:
 
 
 def test_future_schema_version_raises_appdb_error(conn) -> None:
-    conn.execute(
-        "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)"
-    )
-    conn.execute(
-        "INSERT INTO meta (key, value) VALUES ('schema_version', '9999')"
-    )
+    conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '9999')")
     conn.commit()
     with pytest.raises(AppDbError, match="9999"):
         run_migrations(conn)

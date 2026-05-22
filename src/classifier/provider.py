@@ -25,8 +25,13 @@ class ClassificationProvider(OpenAIChatMixin):
     """Classifies document text using OpenAI-compatible chat completions."""
 
     _STAT_KEYS = (
-        "attempts", "api_errors", "invalid_json", "fallback_successes",
-        "temperature_retries", "response_format_retries", "max_tokens_retries",
+        "attempts",
+        "api_errors",
+        "invalid_json",
+        "fallback_successes",
+        "temperature_retries",
+        "response_format_retries",
+        "max_tokens_retries",
     )
 
     def __init__(self, settings: Settings):
@@ -95,7 +100,10 @@ class ClassificationProvider(OpenAIChatMixin):
         return None
 
     def _try_strip_compat_param(
-        self, error: openai.BadRequestError, params: dict, model: str,
+        self,
+        error: openai.BadRequestError,
+        params: dict,
+        model: str,
     ) -> dict | None:
         """Strip the first unsupported parameter from *params*, or return ``None``."""
         for param_key, detector_name, stat_key in self._COMPAT_PARAMS:
@@ -127,9 +135,7 @@ class ClassificationProvider(OpenAIChatMixin):
             log.warning("Document content is empty; skipping classification.")
             return None, ""
 
-        user_content = self._build_user_message(
-            text, taxonomy, truncation_note
-        )
+        user_content = self._build_user_message(text, taxonomy, truncation_note)
         messages = [
             {"role": "system", "content": CLASSIFICATION_PROMPT},
             {"role": "user", "content": user_content},
@@ -214,5 +220,3 @@ class ClassificationProvider(OpenAIChatMixin):
         if response_format is not None:
             params["response_format"] = response_format
         return params
-
-

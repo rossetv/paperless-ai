@@ -103,9 +103,7 @@ def fetch_retry_documents(
                 # Gone from Paperless — stop retrying; the deletion sweep
                 # removes it from the store.
                 del failed_map[document_id]
-                log.info(
-                    "reconcile.failed_document_gone", document_id=document_id
-                )
+                log.info("reconcile.failed_document_gone", document_id=document_id)
                 continue
             # get_document yields the raw document JSON; the indexer adopts
             # the typed PaperlessDocument view at this boundary (§5.3).

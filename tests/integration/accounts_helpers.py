@@ -166,9 +166,7 @@ def build_account_client(
         store_reader=store_reader,
         app_db=app_db,
     )
-    return TestClient(
-        app, raise_server_exceptions=False, base_url="https://testserver"
-    )
+    return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
 
 
 def open_app_db(tmp_path: Path) -> sqlite3.Connection:

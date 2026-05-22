@@ -62,8 +62,11 @@ def test_guard_update_blocks_suspending_yourself(conn) -> None:
     create_user(conn, username="b", password_hash="h", role="admin")
     with pytest.raises(GuardError, match="yourself"):
         guard_update(
-            conn, target_id=admin.id, actor_id=admin.id,
-            new_role=None, new_status="suspended",
+            conn,
+            target_id=admin.id,
+            actor_id=admin.id,
+            new_role=None,
+            new_status="suspended",
         )
 
 
@@ -72,8 +75,11 @@ def test_guard_update_blocks_demoting_yourself(conn) -> None:
     create_user(conn, username="b", password_hash="h", role="admin")
     with pytest.raises(GuardError, match="yourself"):
         guard_update(
-            conn, target_id=admin.id, actor_id=admin.id,
-            new_role="member", new_status=None,
+            conn,
+            target_id=admin.id,
+            actor_id=admin.id,
+            new_role="member",
+            new_status=None,
         )
 
 
@@ -81,8 +87,11 @@ def test_guard_update_allows_editing_your_own_display_name(conn) -> None:
     """A self-edit that changes neither role nor status is fine."""
     admin = create_user(conn, username="a", password_hash="h", role="admin")
     guard_update(
-        conn, target_id=admin.id, actor_id=admin.id,
-        new_role=None, new_status=None,
+        conn,
+        target_id=admin.id,
+        actor_id=admin.id,
+        new_role=None,
+        new_status=None,
     )  # no raise
 
 
@@ -91,8 +100,11 @@ def test_guard_update_blocks_suspending_the_last_admin(conn) -> None:
     member = create_user(conn, username="b", password_hash="h", role="member")
     with pytest.raises(GuardError, match="last"):
         guard_update(
-            conn, target_id=only_admin.id, actor_id=member.id,
-            new_role=None, new_status="suspended",
+            conn,
+            target_id=only_admin.id,
+            actor_id=member.id,
+            new_role=None,
+            new_status="suspended",
         )
 
 
@@ -101,8 +113,11 @@ def test_guard_update_blocks_demoting_the_last_admin(conn) -> None:
     member = create_user(conn, username="b", password_hash="h", role="member")
     with pytest.raises(GuardError, match="last"):
         guard_update(
-            conn, target_id=only_admin.id, actor_id=member.id,
-            new_role="member", new_status=None,
+            conn,
+            target_id=only_admin.id,
+            actor_id=member.id,
+            new_role="member",
+            new_status=None,
         )
 
 
@@ -110,8 +125,11 @@ def test_guard_update_allows_demoting_a_non_last_admin(conn) -> None:
     actor = create_user(conn, username="a", password_hash="h", role="admin")
     other_admin = create_user(conn, username="b", password_hash="h", role="admin")
     guard_update(
-        conn, target_id=other_admin.id, actor_id=actor.id,
-        new_role="member", new_status=None,
+        conn,
+        target_id=other_admin.id,
+        actor_id=actor.id,
+        new_role="member",
+        new_status=None,
     )  # no raise — two admins exist
 
 
@@ -119,8 +137,11 @@ def test_guard_update_allows_promoting_a_member(conn) -> None:
     actor = create_user(conn, username="a", password_hash="h", role="admin")
     member = create_user(conn, username="b", password_hash="h", role="member")
     guard_update(
-        conn, target_id=member.id, actor_id=actor.id,
-        new_role="admin", new_status=None,
+        conn,
+        target_id=member.id,
+        actor_id=actor.id,
+        new_role="admin",
+        new_status=None,
     )  # no raise
 
 
@@ -132,6 +153,9 @@ def test_guard_update_treats_a_suspended_admin_as_not_counting(conn) -> None:
     member = create_user(conn, username="c", password_hash="h", role="member")
     with pytest.raises(GuardError, match="last"):
         guard_update(
-            conn, target_id=active_admin.id, actor_id=member.id,
-            new_role=None, new_status="suspended",
+            conn,
+            target_id=active_admin.id,
+            actor_id=member.id,
+            new_role=None,
+            new_status="suspended",
         )

@@ -44,7 +44,9 @@ def get_latest_tags(
             context=context,
         )
         if fallback_doc is not None:
-            return extract_tags(fallback_doc, doc_id=doc_id, context=f"{context}-fallback")
+            return extract_tags(
+                fallback_doc, doc_id=doc_id, context=f"{context}-fallback"
+            )
         return set()
     return extract_tags(latest, doc_id=doc_id, context=context)
 
@@ -192,7 +194,11 @@ class ErrorFinaliserMixin:
 
 def pipeline_tag_ids(settings: Settings) -> set[int]:
     """Collect all configured pipeline tag IDs from *settings*."""
-    ids: set[int] = {settings.PRE_TAG_ID, settings.POST_TAG_ID, settings.CLASSIFY_PRE_TAG_ID}
+    ids: set[int] = {
+        settings.PRE_TAG_ID,
+        settings.POST_TAG_ID,
+        settings.CLASSIFY_PRE_TAG_ID,
+    }
     for optional_tag in (
         settings.OCR_PROCESSING_TAG_ID,
         settings.CLASSIFY_PROCESSING_TAG_ID,

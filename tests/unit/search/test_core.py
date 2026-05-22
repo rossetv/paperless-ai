@@ -166,9 +166,7 @@ class TestRefinement:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[
-                needs_more_response_json(
-                    "Look for the 2028 warranty certificate."
-                ),
+                needs_more_response_json("Look for the 2028 warranty certificate."),
                 answered_response_json(
                     "The warranty expires in 2028 [2].", citations=[2]
                 ),
@@ -337,9 +335,7 @@ class TestEmptyRetrieval:
         """Empty retrieval even after broadening: only the planner ran."""
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(correspondent="npower"),
-            synthesiser_responses=[
-                answered_response_json("unreachable", citations=[])
-            ],
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
         core = build_search_core(
             settings=make_search_settings(),
@@ -356,9 +352,7 @@ class TestEmptyRetrieval:
     def test_empty_retrieval_reports_one_llm_call(self) -> None:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
-            synthesiser_responses=[
-                answered_response_json("unreachable", citations=[])
-            ],
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
         core = build_search_core(
             settings=make_search_settings(),
@@ -373,9 +367,7 @@ class TestEmptyRetrieval:
     def test_empty_retrieval_returns_no_sources(self) -> None:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
-            synthesiser_responses=[
-                answered_response_json("unreachable", citations=[])
-            ],
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
         core = build_search_core(
             settings=make_search_settings(),
@@ -392,9 +384,7 @@ class TestEmptyRetrieval:
         """The no-match SearchResult carries a non-empty answer for the UI."""
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
-            synthesiser_responses=[
-                answered_response_json("unreachable", citations=[])
-            ],
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
         core = build_search_core(
             settings=make_search_settings(),
@@ -412,9 +402,7 @@ class TestEmptyRetrieval:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(correspondent="npower"),
             synthesiser_responses=[
-                answered_response_json(
-                    "Found after broadening [1].", citations=[1]
-                )
+                answered_response_json("Found after broadening [1].", citations=[1])
             ],
         )
         store_reader = MagicMock()

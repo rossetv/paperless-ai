@@ -11,10 +11,13 @@ from PIL import Image
 from common.content_checks import is_error_content
 from ocr.provider import OcrProvider
 
+
 def _make_settings(**overrides):
     """Create a mock Settings for OcrProvider."""
     from tests.helpers.factories import make_settings_obj
+
     return make_settings_obj(**overrides)
+
 
 def _make_provider(settings=None, **setting_overrides):
     """Create an OcrProvider with mocked settings."""
@@ -24,6 +27,7 @@ def _make_provider(settings=None, **setting_overrides):
         provider = OcrProvider(settings)
     return provider
 
+
 def _make_response(text: str) -> MagicMock:
     """Create a mock OpenAI chat completion response."""
     response = MagicMock()
@@ -31,20 +35,25 @@ def _make_response(text: str) -> MagicMock:
     response.choices[0].message.content = text
     return response
 
+
 def _make_test_image(width: int = 100, height: int = 100) -> Image.Image:
     """Create a non-blank test image."""
     img = Image.new("RGB", (width, height), color="red")
     return img
 
+
 def _make_blank_image() -> Image.Image:
     """Create a blank (all-white) image."""
     return Image.new("RGB", (100, 100), color="white")
+
 
 class TestIsRefusal:
     def test_matching_marker(self):
         markers = ["chatgpt refused to transcribe"]
 
-        assert is_error_content("CHATGPT REFUSED TO TRANSCRIBE this page", markers) is True
+        assert (
+            is_error_content("CHATGPT REFUSED TO TRANSCRIBE this page", markers) is True
+        )
 
     def test_case_insensitive(self):
         markers = ["cannot process"]
@@ -93,6 +102,7 @@ class TestIsRefusal:
 
         assert is_error_content("normal document text", markers) is False
 
+
 class TestOcrProviderSuccess:
     def test_first_model_success(self):
         settings = _make_settings(AI_MODELS=["gpt-5.4-mini"])
@@ -118,6 +128,7 @@ class TestOcrProviderSuccess:
         page = provider.transcribe_image(image)
 
         assert page.text == "text with whitespace"
+
 
 class TestOcrProviderRefusalFallback:
     def test_fallback_on_refusal(self):
@@ -159,6 +170,7 @@ class TestOcrProviderRefusalFallback:
         assert stats["refusals"] == 1
         assert stats["attempts"] == 2
         assert stats["fallback_successes"] == 1
+
 
 class TestOcrProviderApiErrorFallback:
     def test_fallback_on_api_error(self):
@@ -202,6 +214,7 @@ class TestOcrProviderApiErrorFallback:
         assert stats["api_errors"] == 1
         assert stats["fallback_successes"] == 1
 
+
 class TestOcrProviderAllFail:
     def test_all_models_refuse_returns_refusal_mark(self):
         settings = _make_settings(
@@ -243,6 +256,7 @@ class TestOcrProviderAllFail:
         assert page.text == "REFUSED"
         assert page.model == ""
 
+
 class TestOcrProviderBlankImage:
     @patch("ocr.provider.is_blank", return_value=True)
     def test_blank_image_returns_empty_without_api_call(self, mock_is_blank):
@@ -269,6 +283,7 @@ class TestOcrProviderBlankImage:
         stats = provider.get_stats()
         assert stats["attempts"] == 0
 
+
 class TestOcrProviderImageResize:
     @patch("ocr.provider.is_blank", return_value=False)
     def test_large_image_resized(self, mock_is_blank):
@@ -277,9 +292,7 @@ class TestOcrProviderImageResize:
             OCR_MAX_SIDE=500,
         )
         provider = OcrProvider(settings)
-        provider._create_completion = MagicMock(
-            return_value=_make_response("text")
-        )
+        provider._create_completion = MagicMock(return_value=_make_response("text"))
         # Create image larger than OCR_MAX_SIDE
         image = _make_test_image(width=1000, height=800)
 
@@ -295,14 +308,13 @@ class TestOcrProviderImageResize:
             OCR_MAX_SIDE=2000,
         )
         provider = OcrProvider(settings)
-        provider._create_completion = MagicMock(
-            return_value=_make_response("text")
-        )
+        provider._create_completion = MagicMock(return_value=_make_response("text"))
         image = _make_test_image(width=100, height=100)
 
         provider.transcribe_image(image)
 
         assert image.size == (100, 100)
+
 
 class TestOcrProviderStats:
     def test_initial_stats(self):
@@ -361,6 +373,7 @@ class TestOcrProviderStats:
         assert stats["fallback_successes"] == 0
         assert stats["attempts"] == 1
 
+
 class TestOcrProviderThreadSafety:
     def test_concurrent_stat_increments(self):
         provider = _make_provider()
@@ -371,10 +384,7 @@ class TestOcrProviderThreadSafety:
             for _ in range(increments_per_thread):
                 provider._stats.inc("attempts")
 
-        threads = [
-            threading.Thread(target=increment_stats)
-            for _ in range(num_threads)
-        ]
+        threads = [threading.Thread(target=increment_stats) for _ in range(num_threads)]
         for t in threads:
             t.start()
         for t in threads:
@@ -382,6 +392,7 @@ class TestOcrProviderThreadSafety:
 
         stats = provider.get_stats()
         assert stats["attempts"] == num_threads * increments_per_thread
+
 
 class TestOcrProviderDuplicateModels:
     def test_duplicate_models_tried_once(self):
@@ -401,6 +412,7 @@ class TestOcrProviderDuplicateModels:
         assert page.text == "ok from b"
         assert page.model == "model-b"
         assert provider._create_completion.call_count == 2
+
 
 class TestOcrProviderNoneContent:
     def test_none_response_content_treated_as_empty(self):

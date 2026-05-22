@@ -84,9 +84,7 @@ class TestBoundedRefinementEndToEnd:
         finally:
             store_reader.close()
 
-    def test_inflated_budget_still_capped_at_three_calls(
-        self, tmp_path: Any
-    ) -> None:
+    def test_inflated_budget_still_capped_at_three_calls(self, tmp_path: Any) -> None:
         """Even with the refinement budget raised, the hard 3-call ceiling
         holds when every synthesise returns NeedsMore."""
         settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=99)
@@ -105,9 +103,7 @@ class TestBoundedRefinementEndToEnd:
         store_reader = StoreReader(settings)
         try:
             llm_client = ScriptedLLMClient(
-                planner_response=planner_response_json(
-                    semantic_queries=["a query"]
-                ),
+                planner_response=planner_response_json(semantic_queries=["a query"]),
                 synthesiser_responses=[needs_more_response_json("always more")],
             )
             core = build_search_core(

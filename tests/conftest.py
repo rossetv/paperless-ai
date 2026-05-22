@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+
 def _ensure_src_on_path() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     src_dir = repo_root / "src"
@@ -17,14 +18,18 @@ def _ensure_src_on_path() -> None:
 
 _ensure_src_on_path()
 
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "unit: Unit tests (fast, no I/O)")
-    config.addinivalue_line("markers", "integration: Integration tests (module boundaries)")
+    config.addinivalue_line(
+        "markers", "integration: Integration tests (module boundaries)"
+    )
     config.addinivalue_line("markers", "e2e: End-to-end tests (full workflows)")
     config.addinivalue_line(
         "markers",
         "anyio: Async test run on the anyio event loop (search API and MCP tests)",
     )
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
@@ -36,10 +41,12 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         elif "/e2e/" in path:
             item.add_marker(pytest.mark.e2e)
 
+
 @pytest.fixture
 def settings():
     """A real Settings instance with minimal valid configuration."""
     from tests.helpers.factories import make_settings
+
     return make_settings()
 
 
@@ -47,6 +54,7 @@ def settings():
 def settings_obj():
     """A MagicMock Settings with all attributes pre-populated."""
     from tests.helpers.factories import make_settings_obj
+
     return make_settings_obj()
 
 
@@ -54,6 +62,7 @@ def settings_obj():
 def mock_paperless():
     """A MagicMock PaperlessClient with sane defaults."""
     from tests.helpers.mocks import make_mock_paperless
+
     return make_mock_paperless()
 
 
@@ -61,4 +70,5 @@ def mock_paperless():
 def sample_document():
     """A Paperless document dict with default fields."""
     from tests.helpers.factories import make_document
+
     return make_document()

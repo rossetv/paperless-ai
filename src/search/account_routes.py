@@ -141,9 +141,7 @@ def build_account_router(store_reader: StoreReader) -> APIRouter:
     ) -> UserListResponse:
         """List every user (admin only)."""
         users = user_store.list_all(state.app_db)
-        return UserListResponse(
-            users=[to_user_response(u) for u in users]
-        )
+        return UserListResponse(users=[to_user_response(u) for u in users])
 
     @router.post("/api/users", status_code=201)
     async def create_user(
@@ -200,9 +198,7 @@ def _setup(body: SetupRequest, state: AppState) -> UserEnvelope:
     """
     # Fast pre-flight check — avoids the INSERT on every request after setup.
     if not is_setup_needed(state.app_db):
-        raise HTTPException(
-            status_code=409, detail="Setup has already been completed."
-        )
+        raise HTTPException(status_code=409, detail="Setup has already been completed.")
     if not verify_setup_token(state.setup_state, body.token):
         log.warning("search.setup_rejected")
         raise HTTPException(status_code=403, detail="Invalid setup token.")
@@ -213,9 +209,7 @@ def _setup(body: SetupRequest, state: AppState) -> UserEnvelope:
         password_hash=hash_password(body.password),
     )
     if user is None:
-        raise HTTPException(
-            status_code=409, detail="Setup has already been completed."
-        )
+        raise HTTPException(status_code=409, detail="Setup has already been completed.")
 
     # Setup is complete: drop the token so it can never be reused.
     state.setup_state.token = None
@@ -232,14 +226,10 @@ def _login(
         # Wrong username or password — one message for both, so the response
         # does not reveal whether the username exists.
         log.warning("search.login_rejected", username=body.username)
-        raise HTTPException(
-            status_code=401, detail="Invalid username or password."
-        )
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
     if user.status != "active":
         log.warning("search.login_suspended", username=body.username)
-        raise HTTPException(
-            status_code=403, detail="This account is suspended."
-        )
+        raise HTTPException(status_code=403, detail="This account is suspended.")
 
     ttl = cookie_ttl_seconds(remember=body.remember)
     issued = begin_session(
@@ -354,9 +344,7 @@ def _update_user(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # A password reset is hashed before it reaches the store.
-    password_hash = (
-        hash_password(body.password) if body.password is not None else None
-    )
+    password_hash = hash_password(body.password) if body.password is not None else None
     # `validate_role` and `validate_status` on the wire model have already
     # rejected anything outside the Role / UserStatus enums; the casts narrow
     # the validated `str | None` fields to the literal types appdb expects.
@@ -384,17 +372,13 @@ def _update_user(
     return UserEnvelope(user=to_user_response(updated))
 
 
-def _delete_user(
-    user_id: int, actor: CurrentUser, state: AppState
-) -> Response:
+def _delete_user(user_id: int, actor: CurrentUser, state: AppState) -> Response:
     """delete-user-handler body: existence check, guards, delete."""
     if user_store.get_by_id(state.app_db, user_id) is None:
         raise HTTPException(status_code=404, detail="User not found.")
 
     try:
-        guard_delete(
-            state.app_db, target_id=user_id, actor_id=actor.id
-        )
+        guard_delete(state.app_db, target_id=user_id, actor_id=actor.id)
     except GuardError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

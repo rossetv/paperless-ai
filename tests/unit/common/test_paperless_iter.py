@@ -81,15 +81,27 @@ class TestIterAllDocuments:
         url1 = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         url2 = f"{BASE}/api/documents/?ordering=modified&page_size=100&page=2"
         with respx.mock:
-            respx.get(url__eq=url1).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 1, "modified": "2024-01-01T00:00:00Z"},
-                             {"id": 2, "modified": "2024-01-02T00:00:00Z"}],
-                "next": url2,
-            }))
-            respx.get(url__eq=url2).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 3, "modified": "2024-01-03T00:00:00Z"}],
-                "next": None,
-            }))
+            respx.get(url__eq=url1).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [
+                            {"id": 1, "modified": "2024-01-01T00:00:00Z"},
+                            {"id": 2, "modified": "2024-01-02T00:00:00Z"},
+                        ],
+                        "next": url2,
+                    },
+                )
+            )
+            respx.get(url__eq=url2).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 3, "modified": "2024-01-03T00:00:00Z"}],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
             documents = list(client.iter_all_documents())
@@ -101,13 +113,20 @@ class TestIterAllDocuments:
         """Passing modified_after adds the modified__gt query parameter."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100&modified__gt=2024-06-01T00%3A00%3A00Z"
         with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [{"id": 5, "modified": "2024-06-02T00:00:00Z"}],
-                "next": None,
-            }))
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 5, "modified": "2024-06-02T00:00:00Z"}],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
-            documents = list(client.iter_all_documents(modified_after="2024-06-01T00:00:00Z"))
+            documents = list(
+                client.iter_all_documents(modified_after="2024-06-01T00:00:00Z")
+            )
 
         assert documents == [{"id": 5, "modified": "2024-06-02T00:00:00Z"}]
         client.close()
@@ -116,10 +135,15 @@ class TestIterAllDocuments:
         """iter_all_documents produces no items when Paperless returns an empty list."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [],
-                "next": None,
-            }))
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
             documents = list(client.iter_all_documents())
@@ -131,13 +155,18 @@ class TestIterAllDocuments:
         """Results come back in the order Paperless returns them (ordered by modified)."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         with respx.mock:
-            respx.get(url__eq=url).mock(return_value=httpx.Response(200, json={
-                "results": [
-                    {"id": 10, "modified": "2024-01-01T00:00:00Z"},
-                    {"id": 20, "modified": "2024-02-01T00:00:00Z"},
-                ],
-                "next": None,
-            }))
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [
+                            {"id": 10, "modified": "2024-01-01T00:00:00Z"},
+                            {"id": 20, "modified": "2024-02-01T00:00:00Z"},
+                        ],
+                        "next": None,
+                    },
+                )
+            )
             client = _make_client()
 
             documents = list(client.iter_all_documents())

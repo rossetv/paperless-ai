@@ -46,7 +46,10 @@ from search.models import (
     RetrievedChunk,
     SearchMode,
 )
-from search.prompts import build_synthesiser_system_prompt, build_synthesiser_user_message
+from search.prompts import (
+    build_synthesiser_system_prompt,
+    build_synthesiser_user_message,
+)
 from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
@@ -136,7 +139,9 @@ class Synthesizer(OpenAIChatMixin):
             log_event_prefix="synthesiser",
         )
         if raw_content is None:
-            return self._degrade(mode, reason="all models failed or returned empty content")
+            return self._degrade(
+                mode, reason="all models failed or returned empty content"
+            )
 
         return self._parse_response(query, raw_content, mode=mode)
 
@@ -175,12 +180,12 @@ class Synthesizer(OpenAIChatMixin):
         if outcome_type == "answered":
             try:
                 answer = str(data.get("answer") or "").strip()
-                citations = tuple(
-                    int(cid) for cid in (data.get("citations") or [])
-                )
+                citations = tuple(int(cid) for cid in (data.get("citations") or []))
                 return Answered(answer=answer, citations=citations)
             except (TypeError, ValueError) as exc:
-                return self._degrade(mode, reason=f"answered payload had unexpected structure: {exc}")
+                return self._degrade(
+                    mode, reason=f"answered payload had unexpected structure: {exc}"
+                )
 
         if outcome_type == "needs_more":
             adjustment = str(data.get("adjustment") or "").strip()
@@ -200,7 +205,9 @@ class Synthesizer(OpenAIChatMixin):
                 )
             return NeedsMore(adjustment=adjustment)
 
-        return self._degrade(mode, reason=f"LLM response had unknown outcome type: {outcome_type!r}")
+        return self._degrade(
+            mode, reason=f"LLM response had unknown outcome type: {outcome_type!r}"
+        )
 
     def _degrade(self, mode: SearchMode, reason: str) -> AnswerOutcome:
         """Return a safe fallback outcome and log a warning.

@@ -130,7 +130,9 @@ class TestExploratoryThinContext:
 
     def test_adjustment_text_is_propagated(self) -> None:
         chunks = [_chunk(1, "Nothing relevant here.")]
-        expected_adjustment = "Try searching for 'Worcester Bosch warranty certificate'."
+        expected_adjustment = (
+            "Try searching for 'Worcester Bosch warranty certificate'."
+        )
         synthesiser = build_synthesizer(
             make_search_settings(),
             needs_more_response_json(expected_adjustment),
@@ -185,9 +187,7 @@ class TestFinalMode:
         synthesiser = build_synthesizer(
             make_search_settings(), "This is not JSON at all."
         )
-        outcome = synthesiser.synthesise(
-            "What is the answer?", chunks, mode="final"
-        )
+        outcome = synthesiser.synthesise("What is the answer?", chunks, mode="final")
 
         assert isinstance(outcome, Answered)
 
@@ -215,18 +215,14 @@ class TestMalformedResponseExploratory:
         )
 
         # Must not raise; result type is Answered or NeedsMore.
-        outcome = synthesiser.synthesise(
-            "Any question?", chunks, mode="exploratory"
-        )
+        outcome = synthesiser.synthesise("Any question?", chunks, mode="exploratory")
 
         assert isinstance(outcome, (Answered, NeedsMore))
 
     def test_empty_response_does_not_raise(self) -> None:
         chunks = [_chunk(1, "Some text.")]
         synthesiser = build_synthesizer(make_search_settings(), "")
-        outcome = synthesiser.synthesise(
-            "Any question?", chunks, mode="exploratory"
-        )
+        outcome = synthesiser.synthesise("Any question?", chunks, mode="exploratory")
 
         assert isinstance(outcome, (Answered, NeedsMore))
 
@@ -308,7 +304,8 @@ class TestPromptInjectionSafety:
         """Each chunk is labelled [n] with its source document id for citation."""
         chunks = [_chunk(99, "Relevant content here.")]
         synthesiser = build_synthesizer(
-            make_search_settings(), answered_response_json("answer [99].", citations=[99])
+            make_search_settings(),
+            answered_response_json("answer [99].", citations=[99]),
         )
         synthesiser.synthesise("Query?", chunks, mode="exploratory")
 

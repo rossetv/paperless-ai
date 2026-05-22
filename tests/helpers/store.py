@@ -32,9 +32,7 @@ def open_writer(
         **overrides: Any further Settings field overrides.
     """
     return StoreWriter(
-        make_store_settings(
-            db_path, model=model, dimensions=dimensions, **overrides
-        )
+        make_store_settings(db_path, model=model, dimensions=dimensions, **overrides)
     )
 
 
@@ -54,7 +52,5 @@ def open_reader(
         **overrides: Any further Settings field overrides.
     """
     return StoreReader(
-        make_store_settings(
-            db_path, model=model, dimensions=dimensions, **overrides
-        )
+        make_store_settings(db_path, model=model, dimensions=dimensions, **overrides)
     )

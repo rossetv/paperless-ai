@@ -10,6 +10,7 @@ from PIL import Image
 
 from ocr.image_converter import ImageConversionError, bytes_to_images
 
+
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
     """Create valid PNG bytes from a small image."""
     img = Image.new("RGB", (width, height), color="red")
@@ -17,12 +18,16 @@ def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
     img.save(buf, format="PNG")
     return buf.getvalue()
 
+
 def _make_tiff_bytes(num_frames: int = 3) -> bytes:
     """Create valid multi-frame TIFF bytes."""
     frames = [Image.new("RGB", (10, 10), color=c) for c in ("red", "green", "blue")]
     buf = BytesIO()
-    frames[0].save(buf, format="TIFF", save_all=True, append_images=frames[1:num_frames])
+    frames[0].save(
+        buf, format="TIFF", save_all=True, append_images=frames[1:num_frames]
+    )
     return buf.getvalue()
+
 
 def _make_jpeg_bytes() -> bytes:
     """Create valid JPEG bytes."""
@@ -30,6 +35,7 @@ def _make_jpeg_bytes() -> bytes:
     buf = BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
+
 
 class TestBytesToImagesPng:
     def test_png_returns_list_of_one_image(self):
@@ -55,6 +61,7 @@ class TestBytesToImagesPng:
         # Assert — result should be a usable image with correct dimensions
         assert result[0].size == (10, 10)
         assert result[0].mode in ("RGB", "RGBA", "L")
+
 
 class TestBytesToImagesTiff:
     def test_tiff_multi_frame_returns_multiple_images(self):
@@ -82,6 +89,7 @@ class TestBytesToImagesTiff:
         result = bytes_to_images(tiff_bytes, "image/tiff")
 
         assert len(result) == 1
+
 
 class TestBytesToImagesPdf:
     @patch("ocr.image_converter.convert_from_bytes")
@@ -122,6 +130,7 @@ class TestBytesToImagesPdf:
         # Assert — still detected as PDF because "pdf" is in the string
         mock_convert.assert_called_once()
 
+
 class TestBytesToImagesInvalid:
     def test_invalid_bytes_raises_conversion_error(self):
         garbage = b"\x00\x01\x02\x03not-an-image"
@@ -134,6 +143,7 @@ class TestBytesToImagesInvalid:
 
         with pytest.raises(ImageConversionError):
             bytes_to_images(empty, "image/png")
+
 
 class TestBytesToImagesUnknownType:
     def test_unknown_type_attempts_image_open(self):
@@ -153,6 +163,7 @@ class TestBytesToImagesUnknownType:
 
         assert len(result) == 1
         assert isinstance(result[0], Image.Image)
+
 
 class TestContentTypeMatching:
     @patch("ocr.image_converter.convert_from_bytes")

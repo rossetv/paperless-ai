@@ -106,14 +106,10 @@ def verify_api_key(provided: str, configured: str) -> bool:
     """
     if not configured:
         return False
-    return hmac.compare_digest(
-        provided.encode("utf-8"), configured.encode("utf-8")
-    )
+    return hmac.compare_digest(provided.encode("utf-8"), configured.encode("utf-8"))
 
 
-def legacy_api_key_user(
-    bearer: str | None, configured_key: str
-) -> CurrentUser | None:
+def legacy_api_key_user(bearer: str | None, configured_key: str) -> CurrentUser | None:
     """Return :data:`LEGACY_API_KEY_USER` for a valid legacy bearer, else None.
 
     The legacy ``SEARCH_API_KEY`` path: a request whose bearer token equals

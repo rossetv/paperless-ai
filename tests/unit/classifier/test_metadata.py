@@ -33,6 +33,7 @@ def _make_result(**overrides) -> ClassificationResult:
     defaults.update(overrides)
     return ClassificationResult(**defaults)
 
+
 class TestParseDocumentDate:
     """Tests for parse_document_date(value)."""
 
@@ -63,6 +64,7 @@ class TestParseDocumentDate:
             result = parse_document_date("bad-date")
             assert result is None
             mock_log.warning.assert_called_once()
+
 
 class TestResolveDateForTags:
     """Tests for resolve_date_for_tags(result_date, existing_date)."""
@@ -96,6 +98,7 @@ class TestResolveDateForTags:
     def test_result_date_with_time_component(self):
         result = resolve_date_for_tags("2024-03-01T12:00:00", None)
         assert result == "2024-03-01"
+
 
 class TestNormaliseLanguage:
     """Tests for normalise_language(language)."""
@@ -131,6 +134,7 @@ class TestNormaliseLanguage:
     def test_three_letter_non_locale_returns_und(self):
         assert normalise_language("eng") == "und"
 
+
 class TestUpdateCustomFields:
     """Tests for update_custom_fields(existing, field_id, value)."""
 
@@ -157,6 +161,7 @@ class TestUpdateCustomFields:
     def test_empty_existing_list(self):
         result = update_custom_fields([], 5, "val")
         assert result == [{"field": 5, "value": "val"}]
+
 
 class TestIsEmptyClassification:
     """Tests for is_empty_classification(result)."""

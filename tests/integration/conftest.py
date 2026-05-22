@@ -89,7 +89,5 @@ def seed_pipeline_document(
         content_hash=f"hash-{document_id}",
         page_count=1,
     )
-    chunk = ChunkInput(
-        chunk_index=0, text=text, page_hint=1, embedding=embedding
-    )
+    chunk = ChunkInput(chunk_index=0, text=text, page_hint=1, embedding=embedding)
     store_writer.upsert_document(meta, [chunk])

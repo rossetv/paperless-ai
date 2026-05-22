@@ -49,9 +49,7 @@ class TestRunPerDocument:
         settings = make_settings_obj()
         client_instance = mock_client_cls.return_value
 
-        run_per_document(
-            make_document(), settings, lambda d, c: MagicMock()
-        )
+        run_per_document(make_document(), settings, lambda d, c: MagicMock())
 
         client_instance.close.assert_called_once()
 
@@ -63,9 +61,7 @@ class TestRunPerDocument:
         processor.process.side_effect = RuntimeError("processing boom")
 
         with pytest.raises(RuntimeError, match="processing boom"):
-            run_per_document(
-                make_document(), settings, lambda d, c: processor
-            )
+            run_per_document(make_document(), settings, lambda d, c: processor)
 
         client_instance.close.assert_called_once()
 

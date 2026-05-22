@@ -8,6 +8,7 @@ import pytest
 
 from common.retry import _sleep_backoff, retry
 
+
 class _FakeSettings:
     """Minimal object satisfying the ``RetrySettings`` protocol."""
 
@@ -34,16 +35,16 @@ class _Client:
         self._call_count += 1
         return "ok"
 
-class TestSuccessFirstAttempt:
 
+class TestSuccessFirstAttempt:
     def test_returns_value_immediately(self):
         client = _Client()
         result = client.flaky("hello")
         assert result == "hello"
         assert client._call_count == 1
 
-class TestRetryAfterTransientFailure:
 
+class TestRetryAfterTransientFailure:
     @patch("common.retry._sleep_backoff")
     def test_retries_then_succeeds(self, mock_sleep):
         call_count = 0
@@ -56,7 +57,8 @@ class TestRetryAfterTransientFailure:
             return value
 
         with patch.object(
-            _Client, "flaky",
+            _Client,
+            "flaky",
             retry(retryable_exceptions=(ConnectionError, TimeoutError))(side_effect),
         ):
             c = _Client(_FakeSettings(max_retries=5))
@@ -83,8 +85,8 @@ class TestRetryAfterTransientFailure:
         assert result == "done"
         assert len(attempts) == 3
 
-class TestExhaustedRetries:
 
+class TestExhaustedRetries:
     @patch("common.retry._sleep_backoff")
     def test_raises_after_all_retries(self, mock_sleep):
         def always_fail(self_inner):
@@ -98,8 +100,8 @@ class TestExhaustedRetries:
 
         assert mock_sleep.call_count == 2  # sleeps between attempts 1-2, 2-3
 
-class TestInvalidMaxRetries:
 
+class TestInvalidMaxRetries:
     def test_zero_retries_raises(self):
         client = _Client(_FakeSettings(max_retries=0))
         with pytest.raises(ValueError, match="MAX_RETRIES must be >= 1"):
@@ -110,8 +112,8 @@ class TestInvalidMaxRetries:
         with pytest.raises(ValueError, match="MAX_RETRIES must be >= 1"):
             client.flaky("x")
 
-class TestExceptionFiltering:
 
+class TestExceptionFiltering:
     def test_non_retryable_exception_propagates_immediately(self):
         """ValueError is not retryable so it should not be caught."""
         call_count = 0
@@ -148,8 +150,8 @@ class TestExceptionFiltering:
         assert result == "ok"
         assert len(attempts) == 2
 
-class TestSleepBackoff:
 
+class TestSleepBackoff:
     @patch("common.retry.time.sleep")
     @patch("common.retry.random.uniform", return_value=1.0)
     def test_exponential_base(self, mock_uniform, mock_sleep):
@@ -191,8 +193,8 @@ class TestSleepBackoff:
         _sleep_backoff(1, settings)
         mock_uniform.assert_called_once_with(0.8, 1.2)
 
-class TestBackoffCap:
 
+class TestBackoffCap:
     @patch("common.retry.time.sleep")
     @patch("common.retry.random.uniform", return_value=1.0)
     def test_delay_capped(self, mock_uniform, mock_sleep):
@@ -209,8 +211,8 @@ class TestBackoffCap:
         delay = mock_sleep.call_args[0][0]
         assert delay == 5.0
 
-class TestWraps:
 
+class TestWraps:
     def test_function_name_preserved(self):
         # The method on the class should preserve the original name
         assert _Client.flaky.__name__ == "flaky"

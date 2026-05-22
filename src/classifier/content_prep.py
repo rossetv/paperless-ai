@@ -61,9 +61,7 @@ def _format_page_ranges(page_numbers: list[int]) -> str:
             ranges.append((start, prev))
             start = prev = num
     ranges.append((start, prev))
-    return ", ".join(
-        str(s) if s == e else f"{s}-{e}" for s, e in ranges
-    )
+    return ", ".join(str(s) if s == e else f"{s}-{e}" for s, e in ranges)
 
 
 def _page_truncation_note(included_pages: list[int], total_pages: int) -> str:

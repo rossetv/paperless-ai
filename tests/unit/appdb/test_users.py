@@ -13,7 +13,14 @@ import pytest
 
 from appdb.connection import connect
 from appdb.schema import ensure_schema
-from appdb.users import User, UsernameTakenError, create, create_initial_admin, get_by_id, get_by_username
+from appdb.users import (
+    User,
+    UsernameTakenError,
+    create,
+    create_initial_admin,
+    get_by_id,
+    get_by_username,
+)
 
 
 @pytest.fixture()
@@ -44,9 +51,7 @@ def test_create_returns_a_user_with_an_id(conn) -> None:
 
 
 def test_create_populates_created_and_updated_timestamps(conn) -> None:
-    user = create(
-        conn, username="bob", password_hash="h", role="member"
-    )
+    user = create(conn, username="bob", password_hash="h", role="member")
     assert user.created_at != ""
     assert user.updated_at != ""
     assert user.last_login_at is None

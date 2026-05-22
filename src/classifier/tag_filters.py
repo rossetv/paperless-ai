@@ -62,7 +62,9 @@ def filter_redundant_tags(
     for tag in dedupe_tags(tags):
         tag_simple = normalise_simple(tag)
         tag_name = normalise_name(tag)
-        if correspondent_key and (tag_simple == correspondent_key or tag_name == correspondent_key):
+        if correspondent_key and (
+            tag_simple == correspondent_key or tag_name == correspondent_key
+        ):
             continue
         if document_type_key and tag_simple == document_type_key:
             continue
@@ -80,7 +82,8 @@ def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
     ['Bills']
     """
     return [
-        tag for tag in dedupe_tags(tags)
+        tag
+        for tag in dedupe_tags(tags)
         if normalise_simple(tag) not in BLACKLISTED_TAGS
     ]
 

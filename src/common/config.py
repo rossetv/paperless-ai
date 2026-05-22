@@ -184,9 +184,7 @@ def _resolve_server_port() -> int:
     """Resolve and validate ``SEARCH_SERVER_PORT`` to the valid TCP port range."""
     port = _get_int_env("SEARCH_SERVER_PORT", 8080)
     if not 1 <= port <= 65535:
-        raise ValueError(
-            f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}."
-        )
+        raise ValueError(f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}.")
     return port
 
 
@@ -299,7 +297,9 @@ class Settings:
         # Resolved first: these drive the provider-dependent defaults below.
         llm_provider = _resolve_llm_provider()
         post_tag_id = _get_int_env("POST_TAG_ID", 444)
-        chunk_size = _require_at_least_one("CHUNK_SIZE", _get_int_env("CHUNK_SIZE", 2000))
+        chunk_size = _require_at_least_one(
+            "CHUNK_SIZE", _get_int_env("CHUNK_SIZE", 2000)
+        )
 
         if llm_provider == "ollama":
             ollama_base_url: str | None = os.getenv(
@@ -325,12 +325,10 @@ class Settings:
         # deep-links and falls back to PAPERLESS_URL when unset, so existing
         # single-URL deployments are unaffected. Both are stored stripped of
         # any trailing slash so callers can append paths cleanly.
-        paperless_url = os.getenv(
-            "PAPERLESS_URL", _DEFAULT_PAPERLESS_URL
-        ).rstrip("/")
-        paperless_public_url = os.getenv(
-            "PAPERLESS_PUBLIC_URL", paperless_url
-        ).rstrip("/")
+        paperless_url = os.getenv("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
+        paperless_public_url = os.getenv("PAPERLESS_PUBLIC_URL", paperless_url).rstrip(
+            "/"
+        )
 
         return cls(
             PAPERLESS_URL=paperless_url,
@@ -357,9 +355,7 @@ class Settings:
                 "OCR_PROCESSING_TAG_ID"
             ),
             CLASSIFY_PRE_TAG_ID=classify_pre_tag_id,
-            CLASSIFY_POST_TAG_ID=_get_optional_positive_int_env(
-                "CLASSIFY_POST_TAG_ID"
-            ),
+            CLASSIFY_POST_TAG_ID=_get_optional_positive_int_env("CLASSIFY_POST_TAG_ID"),
             CLASSIFY_PROCESSING_TAG_ID=_get_optional_positive_int_env(
                 "CLASSIFY_PROCESSING_TAG_ID"
             ),
@@ -422,9 +418,7 @@ class Settings:
             SEARCH_PLANNER_MODEL=os.getenv(
                 "SEARCH_PLANNER_MODEL", default_planner_model
             ),
-            SEARCH_ANSWER_MODEL=os.getenv(
-                "SEARCH_ANSWER_MODEL", default_answer_model
-            ),
+            SEARCH_ANSWER_MODEL=os.getenv("SEARCH_ANSWER_MODEL", default_answer_model),
             # 0.0.0.0 is deliberate: the server is auth-gated (SEARCH_API_KEY
             # is mandatory, CODE_GUIDELINES §10.1); binding all interfaces lets
             # the operator restrict exposure at the reverse proxy / port map.
@@ -437,7 +431,5 @@ class Settings:
                 "SEARCH_SESSION_TTL", _get_int_env("SEARCH_SESSION_TTL", 604800)
             ),
             # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
-            SEARCH_MAX_CONCURRENT=max(
-                0, _get_int_env("SEARCH_MAX_CONCURRENT", 4)
-            ),
+            SEARCH_MAX_CONCURRENT=max(0, _get_int_env("SEARCH_MAX_CONCURRENT", 4)),
         )

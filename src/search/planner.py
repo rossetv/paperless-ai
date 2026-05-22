@@ -96,7 +96,9 @@ class QueryPlanner(OpenAIChatMixin):
             log_event_prefix="planner",
         )
         if raw_content is None:
-            return self._fallback_plan(query, reason="all models failed or returned empty content")
+            return self._fallback_plan(
+                query, reason="all models failed or returned empty content"
+            )
 
         return self._parse_response(query, raw_content)
 
@@ -124,10 +126,14 @@ class QueryPlanner(OpenAIChatMixin):
             return self._fallback_plan(query, reason="LLM response was not valid JSON")
 
         if not isinstance(data, dict):
-            return self._fallback_plan(query, reason="LLM response was not a JSON object")
+            return self._fallback_plan(
+                query, reason="LLM response was not a JSON object"
+            )
 
         if "semantic_queries" not in data:
-            return self._fallback_plan(query, reason="LLM response missing required key 'semantic_queries'")
+            return self._fallback_plan(
+                query, reason="LLM response missing required key 'semantic_queries'"
+            )
 
         try:
             return _build_query_plan(data)

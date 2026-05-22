@@ -34,10 +34,7 @@ from tests.integration.accounts_helpers import (
 def _admin_client(settings, app_db, store_reader, *, username, password):
     """Build a client and log it in as the given admin; return the client."""
     client = build_account_client(settings, app_db, store_reader)
-    assert (
-        login(client, username=username, password=password).status_code
-        == 200
-    )
+    assert login(client, username=username, password=password).status_code == 200
     return client
 
 
@@ -51,8 +48,11 @@ def test_admin_cannot_delete_themselves(tmp_path: Path) -> None:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         seed_admin(app_db, username="deputy", password="deputy-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
         response = client.delete(f"/api/users/{boss.id}")
         assert response.status_code == 409
@@ -71,12 +71,13 @@ def test_admin_cannot_suspend_themselves(tmp_path: Path) -> None:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         seed_admin(app_db, username="deputy", password="deputy-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
-        response = client.patch(
-            f"/api/users/{boss.id}", json={"status": "suspended"}
-        )
+        response = client.patch(f"/api/users/{boss.id}", json={"status": "suspended"})
         assert response.status_code == 409
         assert "yourself" in response.json()["detail"].lower()
     finally:
@@ -93,12 +94,13 @@ def test_admin_cannot_demote_themselves(tmp_path: Path) -> None:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         seed_admin(app_db, username="deputy", password="deputy-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
-        response = client.patch(
-            f"/api/users/{boss.id}", json={"role": "member"}
-        )
+        response = client.patch(f"/api/users/{boss.id}", json={"role": "member"})
         assert response.status_code == 409
     finally:
         store_reader.close()
@@ -122,8 +124,11 @@ def test_sole_admin_cannot_be_deleted(tmp_path: Path) -> None:
     try:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
         response = client.delete(f"/api/users/{boss.id}")
         assert response.status_code == 409, response.text
@@ -145,12 +150,13 @@ def test_sole_admin_cannot_be_suspended(tmp_path: Path) -> None:
     try:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
-        response = client.patch(
-            f"/api/users/{boss.id}", json={"status": "suspended"}
-        )
+        response = client.patch(f"/api/users/{boss.id}", json={"status": "suspended"})
         assert response.status_code == 409, response.text
     finally:
         store_reader.close()
@@ -166,12 +172,13 @@ def test_sole_admin_cannot_be_demoted(tmp_path: Path) -> None:
     try:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
-        response = client.patch(
-            f"/api/users/{boss.id}", json={"role": "member"}
-        )
+        response = client.patch(f"/api/users/{boss.id}", json={"role": "member"})
         assert response.status_code == 409, response.text
     finally:
         store_reader.close()
@@ -186,12 +193,13 @@ def test_a_non_last_admin_can_be_deleted(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_admin(app_db, username="boss", password="boss-password")
-        deputy = seed_admin(
-            app_db, username="deputy", password="deputy-password"
-        )
+        deputy = seed_admin(app_db, username="deputy", password="deputy-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
         # boss deletes deputy — two admins existed, so this is allowed.
         response = client.delete(f"/api/users/{deputy.id}")
@@ -209,16 +217,15 @@ def test_a_non_last_admin_can_be_demoted(tmp_path: Path) -> None:
     store_reader = StoreReader(settings)
     try:
         seed_admin(app_db, username="boss", password="boss-password")
-        deputy = seed_admin(
-            app_db, username="deputy", password="deputy-password"
-        )
+        deputy = seed_admin(app_db, username="deputy", password="deputy-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
-        response = client.patch(
-            f"/api/users/{deputy.id}", json={"role": "member"}
-        )
+        response = client.patch(f"/api/users/{deputy.id}", json={"role": "member"})
         assert response.status_code == 200, response.text
         assert response.json()["user"]["role"] == "member"
     finally:
@@ -235,8 +242,11 @@ def test_admin_can_edit_their_own_display_name(tmp_path: Path) -> None:
     try:
         boss = seed_admin(app_db, username="boss", password="boss-password")
         client = _admin_client(
-            settings, app_db, store_reader,
-            username="boss", password="boss-password",
+            settings,
+            app_db,
+            store_reader,
+            username="boss",
+            password="boss-password",
         )
         response = client.patch(
             f"/api/users/{boss.id}", json={"display_name": "The Boss"}

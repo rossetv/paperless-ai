@@ -84,9 +84,14 @@ class ClassificationProcessor(ErrorFinaliserMixin):
         try:
             document = self.paperless_client.get_document(self.doc_id)
             content = document.get("content", "") or ""
-            current_tags = extract_tags(document, doc_id=self.doc_id, context="classify-process")
+            current_tags = extract_tags(
+                document, doc_id=self.doc_id, context="classify-process"
+            )
 
-            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
+            if (
+                self.settings.ERROR_TAG_ID is not None
+                and self.settings.ERROR_TAG_ID in current_tags
+            ):
                 log.warning(
                     "Document has error tag; skipping classification",
                     doc_id=self.doc_id,
@@ -104,7 +109,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                 return
 
             if not content.strip():
-                log.warning("Document has no OCR content; requeueing", doc_id=self.doc_id)
+                log.warning(
+                    "Document has no OCR content; requeueing", doc_id=self.doc_id
+                )
                 self._requeue_for_ocr(current_tags)
                 return
 
@@ -121,7 +128,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
             result, model = self.classifier.classify_text(
                 input_text,
                 self.taxonomy_cache.taxonomy_context(),
-                truncation_note="\n".join(truncation_notes) if truncation_notes else None,
+                truncation_note="\n".join(truncation_notes)
+                if truncation_notes
+                else None,
             )
 
             usable = self._usable_result(result, current_tags)
@@ -218,7 +227,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
         try:
             self.paperless_client.update_document_metadata(self.doc_id, tags=updated)
         except PAPERLESS_CALL_EXCEPTIONS:
-            log.exception("Failed to requeue document for OCR; marking error", doc_id=self.doc_id)
+            log.exception(
+                "Failed to requeue document for OCR; marking error", doc_id=self.doc_id
+            )
             self._finalise_with_error(tags)
             return
         log.info("Requeued document for OCR", doc_id=self.doc_id)

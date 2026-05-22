@@ -10,6 +10,7 @@ it releases the lock.
 Depends on: standard library only (fcntl, os).
 Forbidden: no sqlite3, no httpx, no store imports.
 """
+
 from __future__ import annotations
 
 import fcntl

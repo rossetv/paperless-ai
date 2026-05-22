@@ -62,6 +62,7 @@ class TestOcrPagesInParallel:
         assert results == []
         assert failed == []
 
+
 class TestUpdatePaperlessDocumentHappy:
     @patch("ocr.worker.get_latest_tags")
     def test_happy_path_swaps_tags(self, mock_get_tags):
@@ -85,8 +86,9 @@ class TestUpdatePaperlessDocumentHappy:
         tag_set = set(tags)
         assert 443 not in tag_set  # pre removed
         assert 999 not in tag_set  # processing removed
-        assert 444 in tag_set      # post added
-        assert 100 in tag_set      # user tag preserved
+        assert 444 in tag_set  # post added
+        assert 100 in tag_set  # user tag preserved
+
 
 class TestUpdatePaperlessDocumentErrors:
     @patch("ocr.worker.get_latest_tags", return_value={443})
@@ -110,9 +112,7 @@ class TestUpdatePaperlessDocumentErrors:
         paperless = make_mock_paperless()
         proc = make_processor(paperless=paperless, settings=settings)
 
-        proc._update_paperless_document(
-            f"Some text {OCR_ERROR_MARKER} more", {"m"}
-        )
+        proc._update_paperless_document(f"Some text {OCR_ERROR_MARKER} more", {"m"})
 
         # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
@@ -129,9 +129,7 @@ class TestUpdatePaperlessDocumentErrors:
         paperless = make_mock_paperless()
         proc = make_processor(paperless=paperless, settings=settings)
 
-        proc._update_paperless_document(
-            "CHATGPT REFUSED TO TRANSCRIBE", set()
-        )
+        proc._update_paperless_document("CHATGPT REFUSED TO TRANSCRIBE", set())
 
         # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
@@ -151,6 +149,7 @@ class TestUpdatePaperlessDocumentErrors:
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
+
 
 class TestFinaliseWithError:
     @patch("common.tags.clean_pipeline_tags")
@@ -205,6 +204,7 @@ class TestFinaliseWithError:
 
         paperless.update_document_metadata.assert_called_once()
         paperless.update_document.assert_not_called()
+
 
 class TestLogOcrStats:
     @patch("ocr.worker.log")

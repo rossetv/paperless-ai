@@ -168,9 +168,7 @@ class TestMigrationAtomicity:
             c.execute("CREATE TABLE partial_migration_table (x INTEGER)")
             raise RuntimeError("simulated crash mid-migration")
 
-        monkeypatch.setattr(
-            "store.migrations.MIGRATIONS", [(1, _failing_migration)]
-        )
+        monkeypatch.setattr("store.migrations.MIGRATIONS", [(1, _failing_migration)])
         with pytest.raises(RuntimeError, match="simulated crash"):
             run_migrations(conn)
 

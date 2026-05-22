@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from common.stale_lock import recover_stale_locks
 
+
 class TestRecoverStaleLocks:
     """Tests for recover_stale_locks()."""
 
@@ -35,7 +36,9 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.return_value = [doc]
 
         result = recover_stale_locks(
-            client, processing_tag_id=processing_tag, pre_tag_id=pre_tag,
+            client,
+            processing_tag_id=processing_tag,
+            pre_tag_id=pre_tag,
         )
 
         assert result == 1
@@ -57,7 +60,9 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.return_value = docs
 
         result = recover_stale_locks(
-            client, processing_tag_id=processing_tag, pre_tag_id=pre_tag,
+            client,
+            processing_tag_id=processing_tag,
+            pre_tag_id=pre_tag,
         )
 
         assert result == 3
@@ -68,7 +73,9 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.side_effect = ConnectionError("API down")
 
         result = recover_stale_locks(
-            client, processing_tag_id=50, pre_tag_id=10,
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
         )
 
         assert result == 0
@@ -83,13 +90,15 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.return_value = docs
         # Second document fails
         client.update_document_metadata.side_effect = [
-            None,                           # doc 1 OK
+            None,  # doc 1 OK
             ConnectionError("update failed"),  # doc 2 fails
-            None,                           # doc 3 OK
+            None,  # doc 3 OK
         ]
 
         result = recover_stale_locks(
-            client, processing_tag_id=50, pre_tag_id=10,
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
         )
 
         assert result == 2  # only doc 1 and doc 3 counted
@@ -105,7 +114,9 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.return_value = docs
 
         result = recover_stale_locks(
-            client, processing_tag_id=50, pre_tag_id=10,
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
         )
 
         assert result == 0
@@ -120,7 +131,9 @@ class TestRecoverStaleLocks:
         client.get_documents_by_tag.return_value = docs
 
         result = recover_stale_locks(
-            client, processing_tag_id=50, pre_tag_id=10,
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
         )
 
         assert result == 2

@@ -8,6 +8,7 @@ from common.daemon_loop import _safe_item_summary, run_polling_threadpool
 
 MODULE = "common.daemon_loop"
 
+
 def _make_shutdown_after(n_iterations: int):
     """Return an is_shutdown_requested replacement that returns False n times, then True."""
     counter = {"calls": 0}
@@ -18,10 +19,12 @@ def _make_shutdown_after(n_iterations: int):
 
     return _is_shutdown
 
+
 def _make_sleep_noop():
     """Return a no-op sleep that records calls."""
     mock_sleep = MagicMock()
     return mock_sleep
+
 
 class TestRunPollingThreadpool:
     """Tests for run_polling_threadpool()."""
@@ -129,8 +132,10 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(2)), \
-             patch(f"{MODULE}.log") as mock_log:
+        with (
+            patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(2)),
+            patch(f"{MODULE}.log") as mock_log,
+        ):
             run_polling_threadpool(
                 daemon_name="test",
                 fetch_work=fetch_work,
@@ -142,8 +147,7 @@ class TestRunPollingThreadpool:
 
         # Assert — "No work found" logged only once despite two idle iterations
         idle_calls = [
-            c for c in mock_log.info.call_args_list
-            if "No work found" in str(c)
+            c for c in mock_log.info.call_args_list if "No work found" in str(c)
         ]
         assert len(idle_calls) == 1
 
@@ -233,8 +237,10 @@ class TestRunPollingThreadpool:
             # First call: enter loop; second call onwards: exit
             return call_count["n"] > 1
 
-        with patch(f"{MODULE}.is_shutdown_requested", _shutdown), \
-             patch(f"{MODULE}.log") as mock_log:
+        with (
+            patch(f"{MODULE}.is_shutdown_requested", _shutdown),
+            patch(f"{MODULE}.log") as mock_log,
+        ):
             run_polling_threadpool(
                 daemon_name="mytest",
                 fetch_work=fetch_work,
@@ -245,10 +251,12 @@ class TestRunPollingThreadpool:
             )
 
         shutdown_calls = [
-            c for c in mock_log.info.call_args_list
+            c
+            for c in mock_log.info.call_args_list
             if "Shutdown" in str(c) or "shutdown" in str(c)
         ]
         assert len(shutdown_calls) >= 1
+
 
 class TestSafeItemSummary:
     """Tests for _safe_item_summary()."""

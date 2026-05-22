@@ -21,6 +21,7 @@ from classifier.tag_filters import (
 )
 from classifier.taxonomy import TaxonomyCache
 
+
 class TestClassificationPipelineIntegration:
     """Full classification data pipeline with real functions."""
 
@@ -33,7 +34,9 @@ class TestClassificationPipelineIntegration:
         pages = []
         for i in range(1, 6):
             pages.append(f"--- Page {i} ---")
-            pages.append(f"This is the content of page {i}. It contains invoice details.")
+            pages.append(
+                f"This is the content of page {i}. It contains invoice details."
+            )
         body = "\n\n".join(pages)
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         ocr_text = body + footer
@@ -50,7 +53,7 @@ class TestClassificationPipelineIntegration:
         assert "Transcribed by model: gpt-5.4-mini" in truncated
 
         # Step 3: Parse a mock LLM JSON response
-        llm_json = '''{
+        llm_json = """{
             "title": "Invoice #12345",
             "correspondent": "Acme Corp Ltd",
             "tags": ["invoice", "payment", "urgent", "AI", "New"],
@@ -58,7 +61,7 @@ class TestClassificationPipelineIntegration:
             "document_type": "Invoice",
             "language": "en",
             "person": "John Doe"
-        }'''
+        }"""
         result = parse_classification_response(llm_json)
 
         assert result.title == "Invoice #12345"
@@ -107,7 +110,7 @@ class TestClassificationPipelineIntegration:
 
     def test_pipeline_with_empty_result_detection(self):
         """Parse an empty classification result and detect it."""
-        llm_json = '''{
+        llm_json = """{
             "title": "",
             "correspondent": "",
             "tags": [],
@@ -115,13 +118,13 @@ class TestClassificationPipelineIntegration:
             "document_type": "",
             "language": "",
             "person": ""
-        }'''
+        }"""
         result = parse_classification_response(llm_json)
         assert is_empty_classification(result) is True
 
     def test_pipeline_with_null_fields(self):
         """LLM returns null fields which parse correctly."""
-        llm_json = '''{
+        llm_json = """{
             "title": null,
             "correspondent": null,
             "tags": null,
@@ -129,7 +132,7 @@ class TestClassificationPipelineIntegration:
             "document_type": null,
             "language": null,
             "person": null
-        }'''
+        }"""
         result = parse_classification_response(llm_json)
         assert result.title == ""
         assert result.tags == []
@@ -137,7 +140,7 @@ class TestClassificationPipelineIntegration:
 
     def test_pipeline_with_markdown_wrapped_json(self):
         """LLM wraps response in markdown fences."""
-        llm_response = '''Here is the classification:
+        llm_response = """Here is the classification:
 ```json
 {
     "title": "Bank Statement",
@@ -148,11 +151,12 @@ class TestClassificationPipelineIntegration:
     "language": "en",
     "person": ""
 }
-```'''
+```"""
         result = parse_classification_response(llm_response)
         assert result.title == "Bank Statement"
         assert result.correspondent == "Revolut"
         assert len(result.tags) == 2
+
 
 class TestTaxonomyCacheIntegration:
     """Test TaxonomyCache with a mock PaperlessClient."""
@@ -171,9 +175,24 @@ class TestTaxonomyCacheIntegration:
             {"id": 12, "name": "Receipt", "document_count": 15},
         ]
         client.list_tags.return_value = [
-            {"id": 100, "name": "2025", "matching_algorithm": "none", "document_count": 40},
-            {"id": 101, "name": "banking", "matching_algorithm": "none", "document_count": 20},
-            {"id": 102, "name": "urgent", "matching_algorithm": "none", "document_count": 5},
+            {
+                "id": 100,
+                "name": "2025",
+                "matching_algorithm": "none",
+                "document_count": 40,
+            },
+            {
+                "id": 101,
+                "name": "banking",
+                "matching_algorithm": "none",
+                "document_count": 20,
+            },
+            {
+                "id": 102,
+                "name": "urgent",
+                "matching_algorithm": "none",
+                "document_count": 5,
+            },
         ]
         # Mock creation endpoints
         _next_id = [200]
@@ -190,7 +209,10 @@ class TestTaxonomyCacheIntegration:
 
         client.create_tag.side_effect = _create_tag
         client.create_correspondent.side_effect = _create_correspondent
-        client.create_document_type.side_effect = lambda name, **kw: {"id": 300, "name": name}
+        client.create_document_type.side_effect = lambda name, **kw: {
+            "id": 300,
+            "name": name,
+        }
         return client
 
     def test_refresh_and_resolve_existing_correspondent(self):

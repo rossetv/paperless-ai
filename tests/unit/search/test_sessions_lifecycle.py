@@ -40,9 +40,7 @@ def conn(tmp_path):
 @pytest.fixture()
 def user(conn):
     """An active member user."""
-    return create_user(
-        conn, username="alice", password_hash="h", role="member"
-    )
+    return create_user(conn, username="alice", password_hash="h", role="member")
 
 
 def test_begin_session_returns_a_raw_token(conn, user) -> None:
@@ -125,17 +123,13 @@ def test_end_session_is_silent_for_an_unknown_token(conn) -> None:
 
 def test_should_touch_last_seen_true_when_stale(self_unused=None) -> None:
     """last_seen older than the throttle window asks for a write."""
-    stale = (
-        datetime.now(timezone.utc) - timedelta(minutes=10)
-    ).isoformat()
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
     assert should_touch_last_seen(stale) is True
 
 
 def test_should_touch_last_seen_false_when_recent() -> None:
     """last_seen inside the throttle window does not ask for a write."""
-    recent = (
-        datetime.now(timezone.utc) - timedelta(minutes=1)
-    ).isoformat()
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     assert should_touch_last_seen(recent) is False
 
 

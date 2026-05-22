@@ -78,8 +78,7 @@ def _row_to_session(row: sqlite3.Row) -> Session:
 
 # The column list shared by every SELECT.
 _SESSION_COLUMNS = (
-    "id, token_hash, user_id, created_at, expires_at, last_seen_at, "
-    "user_agent, ip"
+    "id, token_hash, user_id, created_at, expires_at, last_seen_at, user_agent, ip"
 )
 
 
@@ -126,9 +125,7 @@ def create(
     return _row_to_session(row)
 
 
-def get_by_token_hash(
-    conn: sqlite3.Connection, token_hash: str
-) -> Session | None:
+def get_by_token_hash(conn: sqlite3.Connection, token_hash: str) -> Session | None:
     """Return the session whose ``token_hash`` matches, or ``None``.
 
     The row is returned even when ``expires_at`` is in the past — expiry is
@@ -145,9 +142,7 @@ def get_by_token_hash(
     return _row_to_session(row) if row is not None else None
 
 
-def touch_last_seen(
-    conn: sqlite3.Connection, token_hash: str, *, seen_at: str
-) -> None:
+def touch_last_seen(conn: sqlite3.Connection, token_hash: str, *, seen_at: str) -> None:
     """Set ``last_seen_at`` for the session with *token_hash* to *seen_at*.
 
     The caller (the auth dependency) throttles this to roughly once every
@@ -207,8 +202,6 @@ def prune_expired(conn: sqlite3.Connection, *, now_iso: str) -> int:
     Returns:
         The count of pruned rows.
     """
-    cursor = conn.execute(
-        "DELETE FROM sessions WHERE expires_at <= ?", (now_iso,)
-    )
+    cursor = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_iso,))
     conn.commit()
     return cursor.rowcount

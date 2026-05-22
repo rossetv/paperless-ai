@@ -18,10 +18,7 @@ _COOKIE_NAME = "search_session"
 
 def _set_cookie_header(response: Response) -> str:
     """Return the single Set-Cookie header value from *response*."""
-    headers = [
-        value for key, value in response.raw_headers
-        if key == b"set-cookie"
-    ]
+    headers = [value for key, value in response.raw_headers if key == b"set-cookie"]
     assert len(headers) == 1
     return headers[0].decode("latin-1")
 

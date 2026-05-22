@@ -9,6 +9,7 @@ import pytest
 
 from common.concurrency import llm_limiter
 
+
 @pytest.fixture(autouse=True)
 def _reset_semaphore():
     """Reset the limiter to its pre-init state before and after each test."""
@@ -16,8 +17,8 @@ def _reset_semaphore():
     yield
     llm_limiter._guard = None
 
-class TestInitZero:
 
+class TestInitZero:
     def test_zero_sets_semaphore_to_none(self):
         llm_limiter.init(0)
         assert llm_limiter._semaphore is None
@@ -27,8 +28,8 @@ class TestInitZero:
         llm_limiter.init(-1)
         assert llm_limiter._semaphore is None
 
-class TestInitPositive:
 
+class TestInitPositive:
     def test_creates_bounded_semaphore(self):
         llm_limiter.init(3)
         assert llm_limiter._semaphore is not None
@@ -38,8 +39,8 @@ class TestInitPositive:
         llm_limiter.init(1)
         assert llm_limiter._semaphore is not None
 
-class TestUnlimitedSemaphore:
 
+class TestUnlimitedSemaphore:
     def test_yields_immediately(self):
         llm_limiter.init(0)
         entered = False
@@ -64,8 +65,8 @@ class TestUnlimitedSemaphore:
 
         assert len(results) == 10
 
-class TestLimitedSemaphore:
 
+class TestLimitedSemaphore:
     def test_limits_concurrency(self):
         """With semaphore of 2, at most 2 threads run concurrently."""
         llm_limiter.init(2)
@@ -103,8 +104,8 @@ class TestLimitedSemaphore:
         with llm_limiter.acquire():
             pass  # would deadlock if not released
 
-class TestReInit:
 
+class TestReInit:
     def test_reinit_replaces_semaphore(self):
         llm_limiter.init(5)
         first = llm_limiter._semaphore
@@ -118,8 +119,8 @@ class TestReInit:
         llm_limiter.init(0)
         assert llm_limiter._semaphore is None
 
-class TestLLMConcurrencyLimiterDirect:
 
+class TestLLMConcurrencyLimiterDirect:
     def test_acquire_method(self):
         """Test the class acquire() method directly."""
         llm_limiter.init(1)
@@ -135,7 +136,6 @@ class TestLLMConcurrencyLimiterDirect:
 
 
 class TestUninitializedGuard:
-
     def test_acquire_before_init_raises(self):
         """Calling acquire() before init() should raise RuntimeError."""
         with pytest.raises(RuntimeError, match="before init"):

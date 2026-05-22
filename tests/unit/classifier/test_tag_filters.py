@@ -17,6 +17,7 @@ from classifier.tag_filters import (
 # deterministic regardless of the wall clock (CODE_GUIDELINES §11.4).
 _FIXED_TODAY = dt.date(2025, 5, 20)
 
+
 class TestDedupeTags:
     """Tests for dedupe_tags(tags)."""
 
@@ -43,6 +44,7 @@ class TestDedupeTags:
         result = dedupe_tags(["  bills  ", "finance"])
         assert result == ["bills", "finance"]
 
+
 class TestFilterBlacklistedTags:
     """Tests for filter_blacklisted_tags(tags)."""
 
@@ -61,6 +63,7 @@ class TestFilterBlacklistedTags:
     def test_empty_input(self):
         assert filter_blacklisted_tags([]) == []
 
+
 class TestFilterRedundantTags:
     """Tests for filter_redundant_tags(tags, correspondent, document_type, person)."""
 
@@ -73,7 +76,10 @@ class TestFilterRedundantTags:
     def test_removes_tag_matching_correspondent_with_suffix(self):
         """Tag 'Revolut Ltd' should be removed when correspondent is 'Revolut'."""
         result = filter_redundant_tags(
-            ["Revolut Ltd", "Bills"], correspondent="Revolut", document_type="", person=""
+            ["Revolut Ltd", "Bills"],
+            correspondent="Revolut",
+            document_type="",
+            person="",
         )
         assert result == ["Bills"]
 
@@ -91,7 +97,10 @@ class TestFilterRedundantTags:
 
     def test_keeps_non_redundant_tags(self):
         result = filter_redundant_tags(
-            ["Finance", "Tax"], correspondent="Acme", document_type="Invoice", person="Jane"
+            ["Finance", "Tax"],
+            correspondent="Acme",
+            document_type="Invoice",
+            person="Jane",
         )
         assert result == ["Finance", "Tax"]
 
@@ -106,6 +115,7 @@ class TestFilterRedundantTags:
             ["Bills", "bills", "Tax"], correspondent="", document_type="", person=""
         )
         assert result == ["Bills", "Tax"]
+
 
 class TestIsGenericDocumentType:
     """Tests for is_generic_document_type(value)."""
@@ -132,6 +142,7 @@ class TestIsGenericDocumentType:
     def test_specific_type_not_generic(self):
         assert is_generic_document_type("Bank Statement") is False
 
+
 class TestNeedsErrorTag:
     """Tests for needs_error_tag(text)."""
 
@@ -149,6 +160,7 @@ class TestNeedsErrorTag:
 
     def test_chatgpt_refused(self):
         assert needs_error_tag("ChatGPT refused to transcribe this document.") is True
+
 
 class TestExtractModelTags:
     """Tests for extract_model_tags(text)."""
@@ -182,6 +194,7 @@ class TestExtractModelTags:
         )
         result = extract_model_tags(text)
         assert result == ["gpt-5.4-mini", "o4-mini"]
+
 
 class TestEnrichTags:
     """Tests for enrich_tags(tags, text, document_date, default_country_tag, tag_limit)."""

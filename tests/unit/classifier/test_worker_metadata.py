@@ -14,7 +14,6 @@ from tests.unit.classifier.conftest import make_doc_with_content, make_processor
 
 
 class TestContentTruncation:
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     @patch("classifier.worker.truncate_content_by_pages")
@@ -48,7 +47,9 @@ class TestContentTruncation:
     @patch("classifier.worker.truncate_content_by_pages")
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
-    def test_page_truncation_note_passed_to_provider(self, mock_release, mock_claim, mock_trunc):
+    def test_page_truncation_note_passed_to_provider(
+        self, mock_release, mock_claim, mock_trunc
+    ):
         doc = make_doc_with_content("long text with pages")
         proc = make_processor(
             doc=doc,
@@ -66,7 +67,6 @@ class TestContentTruncation:
 
 
 class TestTagEnrichment:
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     @patch("classifier.worker.enrich_tags")
@@ -82,7 +82,6 @@ class TestTagEnrichment:
 
 
 class TestCustomFieldPerson:
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     @patch("classifier.worker.update_custom_fields")
@@ -139,7 +138,6 @@ class TestCustomFieldPerson:
 
 
 class TestStatsLogging:
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_stats_logged_after_success(self, mock_release, mock_claim):

@@ -120,7 +120,10 @@ async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
 
     core.retrieve.assert_called_once()
     call_args = core.retrieve.call_args
-    assert call_args.kwargs.get("query") == "invoice 2024" or call_args.args[0] == "invoice 2024"
+    assert (
+        call_args.kwargs.get("query") == "invoice 2024"
+        or call_args.args[0] == "invoice 2024"
+    )
 
     assert result.content
     payload = json.loads(result.content[0].text)
@@ -141,10 +144,10 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp
-    ) as client:
-        result = await client.call_tool("ask_documents", {"question": "What does the invoice cover?"})
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool(
+            "ask_documents", {"question": "What does the invoice cover?"}
+        )
 
     core.answer.assert_called_once()
     call_args = core.answer.call_args
@@ -171,9 +174,7 @@ async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None
 
     mcp_app = build_mcp_app(core, settings, _app_db())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp
-    ) as client:
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         await client.call_tool("search_documents", {"query": "boiler warranty"})
 
     core.retrieve.assert_called_once()
@@ -195,9 +196,7 @@ async def test_ask_documents_with_no_filters_passes_none_ui_filters() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp
-    ) as client:
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         await client.call_tool("ask_documents", {"question": "What is my name?"})
 
     core.answer.assert_called_once()
@@ -223,9 +222,7 @@ async def test_search_documents_missing_required_query_is_rejected() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp
-    ) as client:
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         result = await client.call_tool("search_documents", {})  # missing 'query'
 
     assert result.isError is True
@@ -247,9 +244,7 @@ async def test_ask_documents_missing_required_question_is_rejected() -> None:
 
     mcp_app = build_mcp_app(core, settings, _app_db())
 
-    async with create_connected_server_and_client_session(
-        mcp_app._fastmcp
-    ) as client:
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         result = await client.call_tool("ask_documents", {})  # missing 'question'
 
     assert result.isError is True
@@ -270,7 +265,9 @@ def test_unauthenticated_request_is_rejected_with_401() -> None:
     asgi_app = build_mcp_app(core, settings, _app_db())
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
-    response = client.post("/mcp", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1})
+    response = client.post(
+        "/mcp", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1}
+    )
 
     assert response.status_code == 401
 
@@ -303,11 +300,16 @@ def test_valid_bearer_token_passes_auth_layer() -> None:
     response = client.post(
         "/mcp",
         headers={"Authorization": _VALID_AUTH_HEADER},
-        json={"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "test", "version": "0.1"},
-        }},
+        json={
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "id": 1,
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0.1"},
+            },
+        },
     )
 
     # Any response other than 401 means auth passed (may be 200, 202, 406, etc.)

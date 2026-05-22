@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from classifier.normalisers import COMPANY_SUFFIXES, normalise_name, normalise_simple
 
+
 class TestNormaliseSimple:
     """Tests for normalise_simple(value)."""
 
@@ -24,6 +25,7 @@ class TestNormaliseSimple:
 
     def test_single_word(self):
         assert normalise_simple("HELLO") == "hello"
+
 
 class TestNormaliseName:
     """Tests for normalise_name(value)."""
@@ -71,6 +73,7 @@ class TestNormaliseName:
         # If the entire name is company suffixes
         assert normalise_name("Ltd Inc") == ""
 
+
 class TestCompanySuffixes:
     """Tests for the COMPANY_SUFFIXES constant."""
 
@@ -78,7 +81,17 @@ class TestCompanySuffixes:
         assert isinstance(COMPANY_SUFFIXES, frozenset)
 
     def test_contains_expected_entries(self):
-        expected = {"ltd", "gmbh", "inc", "llc", "corp", "sa", "plc", "limited", "company"}
+        expected = {
+            "ltd",
+            "gmbh",
+            "inc",
+            "llc",
+            "corp",
+            "sa",
+            "plc",
+            "limited",
+            "company",
+        }
         assert expected.issubset(COMPANY_SUFFIXES)
 
     def test_all_entries_are_lowercase(self):

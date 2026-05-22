@@ -53,13 +53,10 @@ def validate_username(username: str) -> str:
     """
     if not _USERNAME_MIN <= len(username) <= _USERNAME_MAX:
         raise ValueError(
-            f"username must be between {_USERNAME_MIN} and "
-            f"{_USERNAME_MAX} characters"
+            f"username must be between {_USERNAME_MIN} and {_USERNAME_MAX} characters"
         )
     if _USERNAME_RE.fullmatch(username) is None:
-        raise ValueError(
-            "username may contain only letters, digits, '.', '_' and '-'"
-        )
+        raise ValueError("username may contain only letters, digits, '.', '_' and '-'")
     return username
 
 
@@ -76,9 +73,7 @@ def validate_password(password: str) -> str:
         ValueError: The password is shorter than the minimum.
     """
     if len(password) < _PASSWORD_MIN:
-        raise ValueError(
-            f"password must be at least {_PASSWORD_MIN} characters"
-        )
+        raise ValueError(f"password must be at least {_PASSWORD_MIN} characters")
     return password
 
 
@@ -92,9 +87,7 @@ def validate_role(role: str) -> str:
         ValueError: *role* is not ``admin``, ``member``, or ``readonly``.
     """
     if role not in _ROLES:
-        raise ValueError(
-            "role must be one of: admin, member, readonly"
-        )
+        raise ValueError("role must be one of: admin, member, readonly")
     return role
 
 
@@ -113,9 +106,7 @@ def validate_display_name(display_name: str | None) -> str | None:
     if display_name is None:
         return None
     if len(display_name) > _DISPLAY_NAME_MAX:
-        raise ValueError(
-            f"display_name must be at most {_DISPLAY_NAME_MAX} characters"
-        )
+        raise ValueError(f"display_name must be at most {_DISPLAY_NAME_MAX} characters")
     return display_name
 
 

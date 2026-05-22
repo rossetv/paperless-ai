@@ -13,6 +13,7 @@ import pytest
 
 from classifier.result import parse_classification_response
 
+
 class TestParseClassificationResponse:
     """Tests for parse_classification_response(text)."""
 

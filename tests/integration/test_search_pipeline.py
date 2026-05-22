@@ -57,9 +57,7 @@ from tests.integration.conftest import (
 class TestFullPipelineAnswer:
     """The whole pipeline answers a query against a real store."""
 
-    def test_query_is_answered_citing_a_real_document(
-        self, tmp_path: Any
-    ) -> None:
+    def test_query_is_answered_citing_a_real_document(self, tmp_path: Any) -> None:
         settings = _make_settings(tmp_path)
         store_writer = StoreWriter(settings)
         try:
@@ -157,9 +155,7 @@ class TestFullPipelineAnswer:
         finally:
             store_reader.close()
 
-    def test_source_paperless_url_is_built_from_base_url(
-        self, tmp_path: Any
-    ) -> None:
+    def test_source_paperless_url_is_built_from_base_url(self, tmp_path: Any) -> None:
         settings = _make_settings(
             tmp_path, PAPERLESS_URL="http://paperless.example:8000"
         )
@@ -246,9 +242,7 @@ class TestEmptyRetrievalEndToEnd:
 class TestRetrieveOnlyEndToEnd:
     """retrieve() returns real ranked sources and never synthesises."""
 
-    def test_retrieve_returns_sources_without_an_answer(
-        self, tmp_path: Any
-    ) -> None:
+    def test_retrieve_returns_sources_without_an_answer(self, tmp_path: Any) -> None:
         settings = _make_settings(tmp_path)
         store_writer = StoreWriter(settings)
         try:

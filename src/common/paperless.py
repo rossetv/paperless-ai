@@ -243,7 +243,9 @@ class PaperlessClient:
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
-    def update_document(self, doc_id: int, content: str, new_tags: Iterable[int]) -> None:
+    def update_document(
+        self, doc_id: int, content: str, new_tags: Iterable[int]
+    ) -> None:
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
         tags_list = list(new_tags)
         log.info(
@@ -258,15 +260,17 @@ class PaperlessClient:
         log.info("Successfully updated document", doc_id=doc_id)
 
     # Maps DocumentMetadataUpdate keys to Paperless API field names.
-    _METADATA_FIELDS = types.MappingProxyType({
-        "title": "title",
-        "correspondent_id": "correspondent",
-        "document_type_id": "document_type",
-        "document_date": "created",
-        "tags": "tags",
-        "language": "language",
-        "custom_fields": "custom_fields",
-    })
+    _METADATA_FIELDS = types.MappingProxyType(
+        {
+            "title": "title",
+            "correspondent_id": "correspondent",
+            "document_type_id": "document_type",
+            "document_date": "created",
+            "tags": "tags",
+            "language": "language",
+            "custom_fields": "custom_fields",
+        }
+    )
 
     def update_document_metadata(
         self,
@@ -297,7 +301,9 @@ class PaperlessClient:
             return
 
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
-        log.info("Updating document metadata", doc_id=doc_id, payload_keys=list(payload))
+        log.info(
+            "Updating document metadata", doc_id=doc_id, payload_keys=list(payload)
+        )
         response = self._patch(url, json=payload)
         response.raise_for_status()
         log.info("Successfully updated document metadata", doc_id=doc_id)
@@ -330,12 +336,15 @@ class PaperlessClient:
         """Create a correspondent; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/correspondents/"
         # cast: the created-item body Paperless returns is a PaperlessItem.
-        return cast("PaperlessItem", self._create_named_item(
-            url=url,
-            name=name,
-            matching_algorithm=matching_algorithm,
-            item_label="correspondent",
-        ))
+        return cast(
+            "PaperlessItem",
+            self._create_named_item(
+                url=url,
+                name=name,
+                matching_algorithm=matching_algorithm,
+                item_label="correspondent",
+            ),
+        )
 
     def create_document_type(
         self, name: str, matching_algorithm: str | int | None = "none"
@@ -343,12 +352,15 @@ class PaperlessClient:
         """Create a document type; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/document_types/"
         # cast: the created-item body Paperless returns is a PaperlessItem.
-        return cast("PaperlessItem", self._create_named_item(
-            url=url,
-            name=name,
-            matching_algorithm=matching_algorithm,
-            item_label="document type",
-        ))
+        return cast(
+            "PaperlessItem",
+            self._create_named_item(
+                url=url,
+                name=name,
+                matching_algorithm=matching_algorithm,
+                item_label="document type",
+            ),
+        )
 
     def create_tag(
         self, name: str, matching_algorithm: str | int | None = "none"
@@ -356,14 +368,19 @@ class PaperlessClient:
         """Create a tag; return the decoded Paperless item body."""
         url = f"{self.settings.PAPERLESS_URL}/api/tags/"
         # cast: the created-item body Paperless returns is a PaperlessItem.
-        return cast("PaperlessItem", self._create_named_item(
-            url=url,
-            name=name,
-            matching_algorithm=matching_algorithm,
-            item_label="tag",
-        ))
+        return cast(
+            "PaperlessItem",
+            self._create_named_item(
+                url=url,
+                name=name,
+                matching_algorithm=matching_algorithm,
+                item_label="tag",
+            ),
+        )
 
-    def iter_all_documents(self, *, modified_after: str | None = None) -> Iterator[dict]:
+    def iter_all_documents(
+        self, *, modified_after: str | None = None
+    ) -> Iterator[dict]:
         """Yield every document from Paperless, ordered by ``modified`` ascending.
 
         Pages ``GET /api/documents/`` with ``ordering=modified`` via the

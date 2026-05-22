@@ -30,16 +30,17 @@ class TestRunPreflightChecks:
 
     def test_all_checks_pass_no_exception(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2,
-            OCR_PROCESSING_TAG_ID=3, CLASSIFY_PRE_TAG_ID=4,
-            CLASSIFY_POST_TAG_ID=5, CLASSIFY_PROCESSING_TAG_ID=6,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            OCR_PROCESSING_TAG_ID=3,
+            CLASSIFY_PRE_TAG_ID=4,
+            CLASSIFY_POST_TAG_ID=5,
+            CLASSIFY_PROCESSING_TAG_ID=6,
             ERROR_TAG_ID=7,
         )
         client = MagicMock()
         client.ping.return_value = None
-        client.list_tags.return_value = [
-            {"id": i} for i in range(1, 8)
-        ]
+        client.list_tags.return_value = [{"id": i} for i in range(1, 8)]
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
@@ -83,19 +84,21 @@ class TestRunPreflightChecks:
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
-        with patch(f"{MODULE}.log") as mock_log, \
-             _patch_openai_client(mock_openai_client):
+        with (
+            patch(f"{MODULE}.log") as mock_log,
+            _patch_openai_client(mock_openai_client),
+        ):
             run_preflight_checks(settings, client)
 
         warning_calls = [
-            c for c in mock_log.warning.call_args_list
-            if "does not exist" in str(c)
+            c for c in mock_log.warning.call_args_list if "does not exist" in str(c)
         ]
         assert len(warning_calls) >= 1
 
     def test_none_tag_id_is_skipped(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
             OCR_PROCESSING_TAG_ID=None,
             CLASSIFY_PRE_TAG_ID=3,
             CLASSIFY_POST_TAG_ID=None,
@@ -108,21 +111,25 @@ class TestRunPreflightChecks:
 
         mock_openai_client = MagicMock()
         mock_openai_client.models.list.return_value = []
-        with patch(f"{MODULE}.log") as mock_log, \
-             _patch_openai_client(mock_openai_client):
+        with (
+            patch(f"{MODULE}.log") as mock_log,
+            _patch_openai_client(mock_openai_client),
+        ):
             run_preflight_checks(settings, client)
 
         warning_calls = [
-            c for c in mock_log.warning.call_args_list
-            if "does not exist" in str(c)
+            c for c in mock_log.warning.call_args_list if "does not exist" in str(c)
         ]
         assert len(warning_calls) == 0
 
     def test_llm_unreachable_logs_warning_does_not_raise(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PRE_TAG_ID=3,
-            CLASSIFY_POST_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PRE_TAG_ID=3,
+            CLASSIFY_POST_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
             ERROR_TAG_ID=None,
         )
         client = MagicMock()
@@ -136,9 +143,12 @@ class TestRunPreflightChecks:
 
     def test_llm_client_not_initialised_logs_warning(self):
         settings = make_settings_obj(
-            PRE_TAG_ID=1, POST_TAG_ID=2,
-            OCR_PROCESSING_TAG_ID=None, CLASSIFY_PRE_TAG_ID=3,
-            CLASSIFY_POST_TAG_ID=None, CLASSIFY_PROCESSING_TAG_ID=None,
+            PRE_TAG_ID=1,
+            POST_TAG_ID=2,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PRE_TAG_ID=3,
+            CLASSIFY_POST_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
             ERROR_TAG_ID=None,
         )
         client = MagicMock()

@@ -34,9 +34,7 @@ def _process_batch(
     with ThreadPoolExecutor(
         max_workers=max_workers, thread_name_prefix=f"{daemon_name}-worker"
     ) as executor:
-        future_to_item = {
-            executor.submit(process_item, item): item for item in items
-        }
+        future_to_item = {executor.submit(process_item, item): item for item in items}
         for future in as_completed(future_to_item):
             item = future_to_item[future]
             try:
@@ -151,4 +149,3 @@ def _safe_item_summary(item: object) -> str:
         # raises (TypeError/ValueError/AttributeError). A genuine programming
         # bug outside that set is not swallowed.
         return "<unprintable>"
-

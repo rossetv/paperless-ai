@@ -154,9 +154,7 @@ def create(
     except sqlite3.IntegrityError as exc:
         conn.rollback()
         # The only UNIQUE constraint on users is username.
-        raise UsernameTakenError(
-            f"username {username!r} is already in use"
-        ) from exc
+        raise UsernameTakenError(f"username {username!r} is already in use") from exc
     # A successful single-row INSERT always sets lastrowid; the assert narrows
     # the int | None the sqlite3 stub declares so the type checker is satisfied.
     new_user_id = cursor.lastrowid
@@ -260,9 +258,7 @@ def list_all(conn: sqlite3.Connection) -> list[User]:
     Returns:
         A list of every :class:`User`; empty when no users exist.
     """
-    rows = conn.execute(
-        f"SELECT {_USER_COLUMNS} FROM users ORDER BY id"
-    ).fetchall()
+    rows = conn.execute(f"SELECT {_USER_COLUMNS} FROM users ORDER BY id").fetchall()
     return [_row_to_user(row) for row in rows]
 
 
@@ -372,8 +368,7 @@ def count_admins(conn: sqlite3.Connection) -> int:
         conn: An open ``app.db`` connection.
     """
     row = conn.execute(
-        "SELECT COUNT(*) FROM users "
-        "WHERE role = 'admin' AND status = 'active'"
+        "SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'"
     ).fetchone()
     return int(row[0])
 

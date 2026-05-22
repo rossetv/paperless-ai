@@ -82,9 +82,7 @@ class StoreReader:
 
         See :func:`store.reader._ranked.keyword_search`.
         """
-        return _ranked.keyword_search(
-            self._conn, self._query_lock, terms, k, filters
-        )
+        return _ranked.keyword_search(self._conn, self._query_lock, terms, k, filters)
 
     # ------------------------------------------------------------------
     # Look-ups and introspection

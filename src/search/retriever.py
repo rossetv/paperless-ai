@@ -238,9 +238,7 @@ def _top_document_ids(
         if score > doc_best_score.get(document_id, -1.0):
             doc_best_score[document_id] = score
 
-    ranked_doc_ids = sorted(
-        doc_best_score.items(), key=lambda kv: kv[1], reverse=True
-    )
+    ranked_doc_ids = sorted(doc_best_score.items(), key=lambda kv: kv[1], reverse=True)
     return {document_id for document_id, _ in ranked_doc_ids[:top_k]}
 
 
@@ -334,7 +332,9 @@ class Retriever:
         ranked_lists: list[list[ChunkHit]] = []
 
         # Collect all texts that need embedding in one batch.
-        texts_to_embed: list[str] = list(plan.semantic_queries) + list(plan.sub_questions)
+        texts_to_embed: list[str] = list(plan.semantic_queries) + list(
+            plan.sub_questions
+        )
 
         if texts_to_embed:
             embeddings = self._embed_queries(texts_to_embed)

@@ -82,9 +82,7 @@ def _would_remove_last_admin(
     return user_store.count_admins(conn) <= 1
 
 
-def guard_delete(
-    conn: sqlite3.Connection, *, target_id: int, actor_id: int
-) -> None:
+def guard_delete(conn: sqlite3.Connection, *, target_id: int, actor_id: int) -> None:
     """Raise :class:`GuardError` if deleting *target_id* is unsafe.
 
     Unsafe when the actor is deleting themselves, or when the target is the
@@ -140,7 +138,5 @@ def guard_update(
 
     if _would_remove_last_admin(conn, target_id, removes_admin=removes_admin):
         if suspending:
-            raise GuardError(
-                "You cannot suspend the last remaining admin."
-            )
+            raise GuardError("You cannot suspend the last remaining admin.")
         raise GuardError("You cannot demote the last remaining admin.")

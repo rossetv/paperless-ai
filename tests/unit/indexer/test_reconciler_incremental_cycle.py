@@ -192,9 +192,7 @@ class TestSyncReportShape:
     """SyncReport is a frozen dataclass and OVERLAP_MARGIN is a short delta."""
 
     def test_sync_report_is_frozen(self) -> None:
-        report = SyncReport(
-            indexed=1, metadata_only=0, skipped=0, failed=0, given_up=0
-        )
+        report = SyncReport(indexed=1, metadata_only=0, skipped=0, failed=0, given_up=0)
         with pytest.raises(FrozenInstanceError):
             report.indexed = 99  # type: ignore[misc]
 

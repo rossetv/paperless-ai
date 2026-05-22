@@ -63,9 +63,14 @@ class OcrProcessor(ErrorFinaliserMixin):
         try:
             document = self.paperless_client.get_document(self.doc_id)
             self.doc = document
-            current_tags = extract_tags(document, doc_id=self.doc_id, context="ocr-process")
+            current_tags = extract_tags(
+                document, doc_id=self.doc_id, context="ocr-process"
+            )
 
-            if self.settings.ERROR_TAG_ID is not None and self.settings.ERROR_TAG_ID in current_tags:
+            if (
+                self.settings.ERROR_TAG_ID is not None
+                and self.settings.ERROR_TAG_ID in current_tags
+            ):
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
                 self._finalise_with_error(current_tags)
                 return
@@ -202,8 +207,14 @@ class OcrProcessor(ErrorFinaliserMixin):
         and routes to :meth:`_finalise_with_error` instead of the happy path.
         """
         if not full_text.strip() or self._has_ocr_errors(full_text):
-            reason = "no text" if not full_text.strip() else "error/refusal/redacted markers"
-            log.warning("OCR produced error content; marking error", doc_id=self.doc_id, reason=reason)
+            reason = (
+                "no text" if not full_text.strip() else "error/refusal/redacted markers"
+            )
+            log.warning(
+                "OCR produced error content; marking error",
+                doc_id=self.doc_id,
+                reason=reason,
+            )
             self._finalise_with_error(
                 get_latest_tags(
                     self.paperless_client, self.doc_id, fallback_doc=self.doc
@@ -218,9 +229,7 @@ class OcrProcessor(ErrorFinaliserMixin):
         current_tags = clean_pipeline_tags(current_tags, self.settings)
         current_tags.add(self.settings.POST_TAG_ID)
 
-        self.paperless_client.update_document(
-            self.doc_id, full_text, current_tags
-        )
+        self.paperless_client.update_document(self.doc_id, full_text, current_tags)
         log.info(
             "Updated document tags",
             doc_id=self.doc_id,

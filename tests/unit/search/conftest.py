@@ -35,9 +35,7 @@ __all__ = [
 ]
 
 
-def build_planner(
-    settings: MagicMock, response_content: str | None
-) -> QueryPlanner:
+def build_planner(settings: MagicMock, response_content: str | None) -> QueryPlanner:
     """Build a QueryPlanner whose ``_create_completion`` returns *response_content*.
 
     Patches the instance's ``_create_completion`` with a single-return mock —
@@ -57,9 +55,7 @@ def build_planner(
     return planner
 
 
-def build_synthesizer(
-    settings: MagicMock, response_content: str | None
-) -> Synthesizer:
+def build_synthesizer(settings: MagicMock, response_content: str | None) -> Synthesizer:
     """Build a Synthesizer whose ``_create_completion`` returns *response_content*.
 
     The synthesiser counterpart of :func:`build_planner`.
@@ -127,9 +123,5 @@ def build_test_client(
         app_db = connect(":memory:")
         ensure_schema(app_db)
 
-    app = create_app(
-        settings, core=core, store_reader=store_reader, app_db=app_db
-    )
-    return TestClient(
-        app, raise_server_exceptions=False, base_url="https://testserver"
-    )
+    app = create_app(settings, core=core, store_reader=store_reader, app_db=app_db)
+    return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")

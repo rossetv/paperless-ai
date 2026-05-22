@@ -121,9 +121,7 @@ class TestAdjustPlan:
     ) -> None:
         adjustment = "include documents from 2018 to 2022"
         adjusted = adjust_plan(_populated_plan(), adjustment)
-        all_search_terms = " ".join(
-            adjusted.semantic_queries + adjusted.keyword_terms
-        )
+        all_search_terms = " ".join(adjusted.semantic_queries + adjusted.keyword_terms)
         assert adjustment in all_search_terms
 
     def test_original_semantic_queries_are_preserved(self) -> None:
@@ -157,12 +155,8 @@ class TestAdjustPlan:
             semantic_queries=("boiler warranty",), keyword_terms=("boiler",)
         )
         adjusted = adjust_plan(original, "also check heating service records")
-        total_original = len(original.semantic_queries) + len(
-            original.keyword_terms
-        )
-        total_adjusted = len(adjusted.semantic_queries) + len(
-            adjusted.keyword_terms
-        )
+        total_original = len(original.semantic_queries) + len(original.keyword_terms)
+        total_adjusted = len(adjusted.semantic_queries) + len(adjusted.keyword_terms)
         assert total_adjusted > total_original
 
 

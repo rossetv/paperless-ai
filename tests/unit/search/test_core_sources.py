@@ -63,9 +63,7 @@ def _unreachable_synth_client() -> ScriptedLLMClient:
     """A scripted client whose synthesiser response must never be reached."""
     return ScriptedLLMClient(
         planner_response=planner_response_json(),
-        synthesiser_responses=[
-            answered_response_json("must not happen", citations=[])
-        ],
+        synthesiser_responses=[answered_response_json("must not happen", citations=[])],
     )
 
 
@@ -176,9 +174,7 @@ class TestSourceDocumentAssembly:
             llm_client=llm_client,
             store_reader=_store_reader(
                 vector_hits=[
-                    make_chunk_hit(
-                        chunk_id=1, document_id=document_id, text=chunk_text
-                    )
+                    make_chunk_hit(chunk_id=1, document_id=document_id, text=chunk_text)
                 ],
                 documents=documents,
             ),
@@ -230,9 +226,7 @@ class TestSourceDocumentAssembly:
         """A document with no correspondent/type yields None on those fields."""
         result = self._answer_with_one_source(
             document_id=9,
-            documents=[
-                _indexed(document_id=9, correspondent=None, document_type=None)
-            ],
+            documents=[_indexed(document_id=9, correspondent=None, document_type=None)],
         )
 
         source = result.sources[0]
@@ -302,9 +296,7 @@ class TestEmbeddingFailure:
     def test_answer_returns_no_match_result_on_embedding_error(self) -> None:
         """core.answer() returns a SearchResult, not an exception, when embed() fails."""
         embedding_client = MagicMock()
-        embedding_client.embed.side_effect = EmbeddingError(
-            "expired OPENAI_API_KEY"
-        )
+        embedding_client.embed.side_effect = EmbeddingError("expired OPENAI_API_KEY")
         llm_client = _unreachable_synth_client()
         core = build_search_core(
             settings=make_search_settings(),
@@ -327,9 +319,7 @@ class TestEmbeddingFailure:
     def test_retrieve_returns_no_sources_on_embedding_error(self) -> None:
         """core.retrieve() also degrades to empty sources on an embedding failure."""
         embedding_client = MagicMock()
-        embedding_client.embed.side_effect = EmbeddingError(
-            "embedding endpoint down"
-        )
+        embedding_client.embed.side_effect = EmbeddingError("embedding endpoint down")
         core = build_search_core(
             settings=make_search_settings(),
             llm_client=_unreachable_synth_client(),

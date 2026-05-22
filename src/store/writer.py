@@ -79,7 +79,9 @@ class StoreWriter:
             ).fetchall()
         except sqlite3.Error as exc:
             raise StoreError("failed to read index state") from exc
-        return {row[0]: IndexState(modified=row[1], content_hash=row[2]) for row in rows}
+        return {
+            row[0]: IndexState(modified=row[1], content_hash=row[2]) for row in rows
+        }
 
     def get_all_document_ids(self) -> set[int]:
         """Return the set of all document ids currently in the index.
@@ -137,9 +139,7 @@ class StoreWriter:
         except sqlite3.Error as exc:
             raise StoreError(f"failed to write meta key {key!r}") from exc
 
-    def upsert_document(
-        self, meta: DocumentMeta, chunks: Sequence[ChunkInput]
-    ) -> None:
+    def upsert_document(self, meta: DocumentMeta, chunks: Sequence[ChunkInput]) -> None:
         """Atomically upsert one document: delete its old chunks, insert new ones.
 
         The operation runs in a single transaction under the write lock so
@@ -216,9 +216,7 @@ class StoreWriter:
                             (chunk_id, chunk.text),
                         )
         except sqlite3.Error as exc:
-            raise StoreError(
-                f"failed to upsert document {meta.id}"
-            ) from exc
+            raise StoreError(f"failed to upsert document {meta.id}") from exc
 
     def update_metadata(self, meta: DocumentMeta) -> None:
         """Update only the metadata columns; never touches chunks or chunk_count.
@@ -307,9 +305,7 @@ class StoreWriter:
                         document_ids,
                     )
         except sqlite3.Error as exc:
-            raise StoreError(
-                f"failed to delete documents {document_ids}"
-            ) from exc
+            raise StoreError(f"failed to delete documents {document_ids}") from exc
 
     def refresh_taxonomy(self, entries: Iterable[TaxonomyEntry]) -> None:
         """Replace the entire taxonomy table with the given entries.

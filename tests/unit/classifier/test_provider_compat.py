@@ -56,6 +56,7 @@ class TestTemperatureHandling:
         assert "temperature" in captured_kwargs
         assert captured_kwargs["temperature"] == 0.2
 
+
 class TestMaxTokensHandling:
     """CLASSIFY_MAX_TOKENS > 0 adds max_tokens param."""
 
@@ -88,6 +89,7 @@ class TestMaxTokensHandling:
         provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "max_tokens" not in captured_kwargs
+
 
 class TestCreateWithCompatTemperature:
     """Strips temperature on 400 error mentioning 'temperature unsupported'."""
@@ -128,6 +130,7 @@ class TestCreateWithCompatTemperature:
         assert "temperature" in calls[0]
         assert "temperature" not in calls[1]
 
+
 class TestCreateWithCompatResponseFormat:
     """Strips response_format on 400 error mentioning 'response_format'."""
 
@@ -137,7 +140,11 @@ class TestCreateWithCompatResponseFormat:
         error = make_bad_request_error("response_format is not supported")
         provider._create_completion = MagicMock(side_effect=[error, response])
         provider._stats.reset(provider._STAT_KEYS)
-        params = {"model": "m", "messages": [], "response_format": {"type": "json_schema"}}
+        params = {
+            "model": "m",
+            "messages": [],
+            "response_format": {"type": "json_schema"},
+        }
 
         result = provider._create_with_compat(params, "m")
 
@@ -150,11 +157,16 @@ class TestCreateWithCompatResponseFormat:
         error = make_bad_request_error("json_schema is not supported by this model")
         provider._create_completion = MagicMock(side_effect=[error, response])
         provider._stats.reset(provider._STAT_KEYS)
-        params = {"model": "m", "messages": [], "response_format": {"type": "json_schema"}}
+        params = {
+            "model": "m",
+            "messages": [],
+            "response_format": {"type": "json_schema"},
+        }
 
         result = provider._create_with_compat(params, "m")
 
         assert result is not None
+
 
 class TestCreateWithCompatMaxTokens:
     """Strips max_tokens on 400 error mentioning 'max_tokens'."""
@@ -185,6 +197,7 @@ class TestCreateWithCompatMaxTokens:
         assert result is not None
         assert provider.get_stats()["max_tokens_retries"] == 1
 
+
 class TestCreateWithCompatNon400:
     """Non-BadRequestError (e.g. 500) is not retried via compat."""
 
@@ -198,6 +211,7 @@ class TestCreateWithCompatNon400:
 
         assert result is None
         assert provider.get_stats()["api_errors"] == 1
+
 
 class TestCreateWithCompatRetryExhaustion:
     """All compat params stripped but model still rejects — returns None."""
@@ -279,6 +293,7 @@ class TestCreateWithCompatRetryExhaustion:
         assert result is None
         stats = provider.get_stats()
         assert stats["api_errors"] == 1
+
 
 class TestResponseFormat:
     """response_format is only included for openai provider."""

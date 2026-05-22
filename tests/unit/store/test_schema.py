@@ -197,7 +197,14 @@ class TestEnsureSchema:
         ensure_schema(conn)
         info = conn.execute("PRAGMA table_info(chunks)").fetchall()
         column_names = {row[1] for row in info}
-        expected = {"id", "document_id", "chunk_index", "text", "page_hint", "embedding"}
+        expected = {
+            "id",
+            "document_id",
+            "chunk_index",
+            "text",
+            "page_hint",
+            "embedding",
+        }
         assert expected <= column_names
 
     def test_meta_columns(self, conn) -> None:
@@ -248,7 +255,9 @@ class TestDataclassImmutability:
     def test_chunk_input_is_frozen(self) -> None:
         from store.models import ChunkInput
 
-        obj = ChunkInput(chunk_index=0, text="hello", page_hint=None, embedding=(0.1, 0.2))
+        obj = ChunkInput(
+            chunk_index=0, text="hello", page_hint=None, embedding=(0.1, 0.2)
+        )
         with pytest.raises(FrozenInstanceError):
             obj.text = "world"  # type: ignore[misc]
 

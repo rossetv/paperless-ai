@@ -13,6 +13,7 @@ from classifier.content_prep import (
 )
 from classifier.constants import PAGE_HEADER_RE
 
+
 class TestSplitFooter:
     """Tests for _split_footer(content)."""
 
@@ -51,6 +52,7 @@ class TestSplitFooter:
         assert body == content
         assert footer == ""
 
+
 class TestExtractPageNumbers:
     """Tests for _extract_page_numbers(matches)."""
 
@@ -81,6 +83,7 @@ class TestExtractPageNumbers:
         numbers = _extract_page_numbers(matches)
         assert numbers == [1]
 
+
 class TestFormatPageRanges:
     """Tests for _format_page_ranges(page_numbers)."""
 
@@ -107,6 +110,7 @@ class TestFormatPageRanges:
 
     def test_unsorted_input(self):
         assert _format_page_ranges([5, 1, 3, 2]) == "1-3, 5"
+
 
 class TestTruncateContentByChars:
     """Tests for truncate_content_by_chars(content, max_chars)."""
@@ -148,6 +152,7 @@ class TestTruncateContentByChars:
         content = "A" * 50
         assert truncate_content_by_chars(content, 50) == content
 
+
 class TestTruncateContentByPages:
     """Tests for truncate_content_by_pages(content, max_pages, tail_pages, headerless_char_limit)."""
 
@@ -163,14 +168,18 @@ class TestTruncateContentByPages:
 
     def test_within_page_limit_unchanged(self):
         content = self._make_paged_content(3)
-        result, note = truncate_content_by_pages(content, max_pages=5, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=5, tail_pages=1, headerless_char_limit=10000
+        )
         assert note is None
         assert "Page 1" in result
         assert "Page 3" in result
 
     def test_over_page_limit_head_tail_kept(self):
         content = self._make_paged_content(10)
-        result, note = truncate_content_by_pages(content, max_pages=3, tail_pages=2, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=3, tail_pages=2, headerless_char_limit=10000
+        )
         assert note is not None
         assert "Page 1" in result
         assert "Page 2" in result
@@ -183,50 +192,66 @@ class TestTruncateContentByPages:
 
     def test_no_page_headers_falls_back_to_char_truncation(self):
         content = "A" * 500 + "\n\nTranscribed by model: gpt-5.4-mini"
-        result, note = truncate_content_by_pages(content, max_pages=3, tail_pages=1, headerless_char_limit=100)
+        result, note = truncate_content_by_pages(
+            content, max_pages=3, tail_pages=1, headerless_char_limit=100
+        )
         assert note is not None
         assert "characters" in note.lower() or "page headers" in note.lower()
         assert "Transcribed by model" in result
 
     def test_no_page_headers_within_char_limit(self):
         content = "Short text"
-        result, note = truncate_content_by_pages(content, max_pages=3, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=3, tail_pages=1, headerless_char_limit=10000
+        )
         assert result == content
         assert note is None
 
     def test_max_pages_zero_unchanged(self):
         content = self._make_paged_content(10)
-        result, note = truncate_content_by_pages(content, max_pages=0, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=0, tail_pages=1, headerless_char_limit=10000
+        )
         assert result == content
         assert note is None
 
     def test_max_pages_negative_unchanged(self):
         content = self._make_paged_content(10)
-        result, note = truncate_content_by_pages(content, max_pages=-1, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=-1, tail_pages=1, headerless_char_limit=10000
+        )
         assert result == content
         assert note is None
 
     def test_overlapping_head_tail_all_pages_kept(self):
         content = self._make_paged_content(5)
         # max_pages=3 head + tail_pages=3 tail = covers all 5 pages
-        result, note = truncate_content_by_pages(content, max_pages=3, tail_pages=3, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=3, tail_pages=3, headerless_char_limit=10000
+        )
         assert note is None
         for i in range(1, 6):
             assert f"Page {i}" in result
 
     def test_footer_preserved_when_truncated(self):
         content = self._make_paged_content(10, footer=True)
-        result, note = truncate_content_by_pages(content, max_pages=2, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=2, tail_pages=1, headerless_char_limit=10000
+        )
         assert "Transcribed by model: gpt-5.4-mini" in result
 
     def test_footer_preserved_when_not_truncated(self):
         content = self._make_paged_content(3, footer=True)
-        result, note = truncate_content_by_pages(content, max_pages=5, tail_pages=1, headerless_char_limit=10000)
+        result, note = truncate_content_by_pages(
+            content, max_pages=5, tail_pages=1, headerless_char_limit=10000
+        )
         assert "Transcribed by model: gpt-5.4-mini" in result
 
     def test_truncation_note_includes_page_info(self):
         content = self._make_paged_content(10)
-        _, note = truncate_content_by_pages(content, max_pages=2, tail_pages=1, headerless_char_limit=10000)
+        _, note = truncate_content_by_pages(
+            content, max_pages=2, tail_pages=1, headerless_char_limit=10000
+        )
         assert note is not None
         assert "truncated" in note.lower()
         assert "10" in note  # total pages

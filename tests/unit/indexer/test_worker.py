@@ -43,6 +43,7 @@ def _make_doc(**overrides: Any) -> dict:
 # Gate: empty content
 # ---------------------------------------------------------------------------
 
+
 class TestGateEmptyContent:
     """Documents with empty or whitespace-only content are skipped."""
 
@@ -50,9 +51,7 @@ class TestGateEmptyContent:
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc(content="")
         outcome = indexer.index_document(doc, existing=None)
@@ -64,9 +63,7 @@ class TestGateEmptyContent:
 
     def test_whitespace_content_returns_skipped(self) -> None:
         settings = make_settings_obj()
-        indexer = DocumentIndexer(
-            settings, MagicMock(), make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, MagicMock(), make_mock_embedding_client())
 
         doc = _make_doc(content="   \n\t  ")
         assert indexer.index_document(doc, existing=None) is IndexOutcome.SKIPPED
@@ -74,9 +71,7 @@ class TestGateEmptyContent:
     def test_none_content_returns_skipped(self) -> None:
         """Paperless may return null content for un-OCR'd documents."""
         settings = make_settings_obj()
-        indexer = DocumentIndexer(
-            settings, MagicMock(), make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, MagicMock(), make_mock_embedding_client())
 
         doc = _make_doc(content=None)
         assert indexer.index_document(doc, existing=None) is IndexOutcome.SKIPPED
@@ -86,6 +81,7 @@ class TestGateEmptyContent:
 # Gate: error tag
 # ---------------------------------------------------------------------------
 
+
 class TestGateErrorTag:
     """Documents carrying the ERROR_TAG_ID are skipped."""
 
@@ -93,9 +89,7 @@ class TestGateErrorTag:
         settings = make_settings_obj(ERROR_TAG_ID=552)
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc(tags=[10, 552, 20])
         outcome = indexer.index_document(doc, existing=None)
@@ -109,9 +103,7 @@ class TestGateErrorTag:
         settings = make_settings_obj(ERROR_TAG_ID=None)
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc(tags=[552])
         outcome = indexer.index_document(doc, existing=None)
@@ -124,6 +116,7 @@ class TestGateErrorTag:
 # New document: full index path
 # ---------------------------------------------------------------------------
 
+
 class TestNewDocument:
     """A document with no existing IndexState follows the full embed + upsert path."""
 
@@ -131,9 +124,7 @@ class TestNewDocument:
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc()
         outcome = indexer.index_document(doc, existing=None)
@@ -143,9 +134,7 @@ class TestNewDocument:
     def test_new_document_calls_embed(self) -> None:
         settings = make_settings_obj()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, MagicMock(), embedding_client
-        )
+        indexer = DocumentIndexer(settings, MagicMock(), embedding_client)
 
         doc = _make_doc()
         indexer.index_document(doc, existing=None)
@@ -155,9 +144,7 @@ class TestNewDocument:
     def test_new_document_calls_upsert_document(self) -> None:
         settings = make_settings_obj()
         store_writer = MagicMock()
-        indexer = DocumentIndexer(
-            settings, store_writer, make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
 
         doc = _make_doc()
         indexer.index_document(doc, existing=None)
@@ -169,6 +156,7 @@ class TestNewDocument:
 # ---------------------------------------------------------------------------
 # Unchanged hash: metadata-only path
 # ---------------------------------------------------------------------------
+
 
 class TestUnchangedHash:
     """When content hash is unchanged, only metadata is updated — no re-embed."""
@@ -187,9 +175,7 @@ class TestUnchangedHash:
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc()
         existing = self._existing_state_for(doc)
@@ -200,9 +186,7 @@ class TestUnchangedHash:
     def test_unchanged_hash_does_not_call_embed(self) -> None:
         settings = make_settings_obj()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, MagicMock(), embedding_client
-        )
+        indexer = DocumentIndexer(settings, MagicMock(), embedding_client)
 
         doc = _make_doc()
         existing = self._existing_state_for(doc)
@@ -213,9 +197,7 @@ class TestUnchangedHash:
     def test_unchanged_hash_calls_update_metadata(self) -> None:
         settings = make_settings_obj()
         store_writer = MagicMock()
-        indexer = DocumentIndexer(
-            settings, store_writer, make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
 
         doc = _make_doc()
         existing = self._existing_state_for(doc)
@@ -229,6 +211,7 @@ class TestUnchangedHash:
 # Changed hash: re-index path
 # ---------------------------------------------------------------------------
 
+
 class TestChangedHash:
     """When the content hash changes, the document is re-chunked and re-embedded."""
 
@@ -236,9 +219,7 @@ class TestChangedHash:
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, store_writer, embedding_client
-        )
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
         doc = _make_doc()
         existing = IndexState(
@@ -252,9 +233,7 @@ class TestChangedHash:
     def test_changed_hash_calls_embed(self) -> None:
         settings = make_settings_obj()
         embedding_client = make_mock_embedding_client()
-        indexer = DocumentIndexer(
-            settings, MagicMock(), embedding_client
-        )
+        indexer = DocumentIndexer(settings, MagicMock(), embedding_client)
 
         doc = _make_doc()
         existing = IndexState(
@@ -268,9 +247,7 @@ class TestChangedHash:
     def test_changed_hash_calls_upsert_document(self) -> None:
         settings = make_settings_obj()
         store_writer = MagicMock()
-        indexer = DocumentIndexer(
-            settings, store_writer, make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
 
         doc = _make_doc()
         existing = IndexState(
@@ -287,6 +264,7 @@ class TestChangedHash:
 # Date normalisation
 # ---------------------------------------------------------------------------
 
+
 class TestDateNormalisation:
     """created and modified are normalised to UTC ISO-8601 in DocumentMeta."""
 
@@ -294,9 +272,7 @@ class TestDateNormalisation:
         """Run index_document and return the DocumentMeta passed to upsert_document."""
         settings = make_settings_obj()
         store_writer = MagicMock()
-        indexer = DocumentIndexer(
-            settings, store_writer, make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
         indexer.index_document(doc, existing=None)
         # upsert_document is called as upsert_document(meta, chunks)
         return store_writer.upsert_document.call_args[0][0]
@@ -309,7 +285,10 @@ class TestDateNormalisation:
         # datetime.fromisoformat + isoformat.
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
-        assert dt.utctimetuple() == datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        assert (
+            dt.utctimetuple()
+            == datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        )
 
     def test_modified_offset_normalised_to_utc(self) -> None:
         """A modified value with a non-UTC offset is converted to UTC."""
@@ -319,7 +298,10 @@ class TestDateNormalisation:
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
         # 12:00 +02:00 = 10:00 UTC
-        assert dt.utctimetuple() == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        assert (
+            dt.utctimetuple()
+            == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        )
 
     def test_created_none_preserved(self) -> None:
         """A None created date is stored as None."""
@@ -345,7 +327,10 @@ class TestDateNormalisation:
         dt = datetime.fromisoformat(meta.created)
         assert dt.tzinfo is not None
         # 10:00 +02:00 = 08:00 UTC
-        assert dt.utctimetuple() == datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        assert (
+            dt.utctimetuple()
+            == datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        )
 
     def test_metadata_only_path_also_normalises_dates(self) -> None:
         """Date normalisation applies on the METADATA_ONLY path too."""
@@ -353,9 +338,7 @@ class TestDateNormalisation:
 
         settings = make_settings_obj()
         store_writer = MagicMock()
-        indexer = DocumentIndexer(
-            settings, store_writer, make_mock_embedding_client()
-        )
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
         doc = _make_doc(
             content="Stable content.",
             modified="2024-06-01T12:00:00+02:00",
@@ -369,12 +352,16 @@ class TestDateNormalisation:
         meta = store_writer.update_metadata.call_args[0][0]
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
-        assert dt.utctimetuple() == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        assert (
+            dt.utctimetuple()
+            == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
+        )
 
 
 # ---------------------------------------------------------------------------
 # Unparseable dates are logged, not silently swallowed
 # ---------------------------------------------------------------------------
+
 
 class TestUnparseableDateIsLogged:
     """A Paperless date that does not parse is stored verbatim AND logged.
@@ -404,9 +391,7 @@ class TestUnparseableDateIsLogged:
         assert meta.modified == "not-a-real-timestamp"
         # A WARNING names the document, the field, and the offending value.
         warnings = [
-            event
-            for event in captured
-            if event["event"] == "worker.unparseable_date"
+            event for event in captured if event["event"] == "worker.unparseable_date"
         ]
         assert len(warnings) == 1
         assert warnings[0]["log_level"] == "warning"
@@ -415,13 +400,9 @@ class TestUnparseableDateIsLogged:
 
     def test_parseable_dates_log_no_warning(self) -> None:
         """A document with valid dates produces no unparseable-date warning."""
-        doc = _make_doc(
-            created="2024-01-15", modified="2024-06-01T12:00:00+00:00"
-        )
+        doc = _make_doc(created="2024-01-15", modified="2024-06-01T12:00:00+00:00")
         _, captured = self._index_and_capture_logs(doc)
 
         assert not [
-            event
-            for event in captured
-            if event["event"] == "worker.unparseable_date"
+            event for event in captured if event["event"] == "worker.unparseable_date"
         ]

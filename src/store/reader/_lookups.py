@@ -188,14 +188,11 @@ def get_taxonomy(
     except sqlite3.Error as exc:
         raise StoreError(f"get_taxonomy query failed for kind {kind!r}") from exc
     return [
-        TaxonomyEntry(kind=row["kind"], id=row["id"], name=row["name"])
-        for row in rows
+        TaxonomyEntry(kind=row["kind"], id=row["id"], name=row["name"]) for row in rows
     ]
 
 
-def list_facets(
-    conn: sqlite3.Connection, query_lock: threading.Lock
-) -> FacetSet:
+def list_facets(conn: sqlite3.Connection, query_lock: threading.Lock) -> FacetSet:
     """Return all taxonomy entries grouped by kind, plus the date range.
 
     Returns:
@@ -243,9 +240,7 @@ def list_facets(
     )
 
 
-def get_stats(
-    conn: sqlite3.Connection, query_lock: threading.Lock
-) -> IndexStats:
+def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStats:
     """Return summary statistics for the search index.
 
     Returns:
@@ -261,12 +256,8 @@ def get_stats(
     """
     try:
         with query_lock:
-            doc_count_row = conn.execute(
-                "SELECT COUNT(*) FROM documents"
-            ).fetchone()
-            chunk_count_row = conn.execute(
-                "SELECT COUNT(*) FROM chunks"
-            ).fetchone()
+            doc_count_row = conn.execute("SELECT COUNT(*) FROM documents").fetchone()
+            chunk_count_row = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()
             reconcile_row = conn.execute(
                 "SELECT value FROM meta WHERE key = 'last_reconcile_at'"
             ).fetchone()

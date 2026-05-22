@@ -10,6 +10,7 @@ import pytest
 
 from common.logging_config import configure_logging
 
+
 def _make_settings(log_format: str = "console", log_level: str = "INFO") -> MagicMock:
     s = MagicMock()
     s.LOG_FORMAT = log_format
@@ -29,8 +30,8 @@ def _clean_root_logger():
     root.level = original_level
     structlog.configure(**original_structlog_config)
 
-class TestConsoleFormat:
 
+class TestConsoleFormat:
     def test_uses_console_renderer(self):
         settings = _make_settings(log_format="console")
         configure_logging(settings)
@@ -43,8 +44,8 @@ class TestConsoleFormat:
         # The processor chain should end with ConsoleRenderer
         assert isinstance(formatter.processors[-1], structlog.dev.ConsoleRenderer)
 
-class TestJsonFormat:
 
+class TestJsonFormat:
     def test_uses_json_renderer(self):
         settings = _make_settings(log_format="json")
         configure_logging(settings)
@@ -55,8 +56,8 @@ class TestJsonFormat:
         assert isinstance(formatter, structlog.stdlib.ProcessorFormatter)
         assert isinstance(formatter.processors[-1], structlog.processors.JSONRenderer)
 
-class TestLogLevel:
 
+class TestLogLevel:
     def test_log_level_set_to_debug(self):
         settings = _make_settings(log_level="DEBUG")
         configure_logging(settings)
@@ -72,8 +73,8 @@ class TestLogLevel:
         configure_logging(settings)
         assert logging.getLogger().level == logging.INFO
 
-class TestThirdPartyLoggers:
 
+class TestThirdPartyLoggers:
     def test_httpx_logger_set_to_warning(self):
         settings = _make_settings()
         configure_logging(settings)
