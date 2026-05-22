@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { SourceDocument } from '../../../api/types';
+import type { SourceDocument, SearchStats } from '../../../api/types';
 import { AnswerCard } from './AnswerCard';
 
 const makeSource = (id: number): SourceDocument => ({
@@ -14,56 +14,85 @@ const makeSource = (id: number): SourceDocument => ({
   score: 0.9,
 });
 
+const stats: SearchStats = { llm_calls: 3, latency_ms: 1842, refined: false };
+
 describe('AnswerCard', () => {
   it('renders the answer text', () => {
-    const sources = [makeSource(1)];
-    render(<AnswerCard answer="The boiler was installed in 2021." sources={sources} />);
-    expect(screen.getByText(/The boiler was installed in 2021/)).toBeInTheDocument();
-  });
-
-  it('renders citation [n] buttons for each inline marker in the answer', () => {
-    const sources = [makeSource(1), makeSource(2)];
     render(
       <AnswerCard
-        answer="The boiler [1] was installed by a contractor [2] in 2021."
-        sources={sources}
+        answer="The boiler was installed in 2021."
+        sources={[makeSource(1)]}
+        stats={stats}
       />,
     );
-    // Two citation buttons rendered
-    expect(screen.getByRole('button', { name: /citation 1/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /citation 2/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/The boiler was installed in 2021/),
+    ).toBeInTheDocument();
   });
 
-  it('calls onCitationActivate with the correct index when a citation is clicked', async () => {
-    const handler = vi.fn();
-    const sources = [makeSource(1), makeSource(2)];
+  it('renders a citation button for each inline [n] marker', () => {
     render(
       <AnswerCard
-        answer="See [1] and also [2] for more."
-        sources={sources}
+        answer="The boiler [1] was fitted by a contractor [2] in 2021."
+        sources={[makeSource(1), makeSource(2)]}
+        stats={stats}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: /citation 1/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /citation 2/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('calls onCitationActivate with the index when a citation is clicked', async () => {
+    const handler = vi.fn();
+    render(
+      <AnswerCard
+        answer="The boiler [1] was fitted in 2021."
+        sources={[makeSource(1)]}
+        stats={stats}
         onCitationActivate={handler}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: /citation 2/i }));
-    expect(handler).toHaveBeenCalledWith(2);
+    await userEvent.click(screen.getByRole('button', { name: /citation 1/i }));
+    expect(handler).toHaveBeenCalledWith(1);
   });
 
-  it('renders plain text segments between citation markers', () => {
-    const sources = [makeSource(1)];
-    render(<AnswerCard answer="Before [1] after." sources={sources} />);
-    expect(screen.getByText(/Before/)).toBeInTheDocument();
-    expect(screen.getByText(/after/)).toBeInTheDocument();
+  it('renders an out-of-range [n] marker as plain text, not a button', () => {
+    render(
+      <AnswerCard
+        answer="An unknown citation [9] appears here."
+        sources={[makeSource(1)]}
+        stats={stats}
+      />,
+    );
+    expect(screen.getByText(/\[9\]/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /citation 9/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders answer with no citations as plain text', () => {
-    render(<AnswerCard answer="No citations here." sources={[]} />);
-    expect(screen.getByText('No citations here.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /citation/i })).not.toBeInTheDocument();
+  it('shows the provenance footer source count', () => {
+    render(
+      <AnswerCard
+        answer="An answer."
+        sources={[makeSource(1), makeSource(2)]}
+        stats={stats}
+      />,
+    );
+    expect(screen.getByText(/2 sources/i)).toBeInTheDocument();
   });
 
-  it('renders as an article element for semantic correctness', () => {
-    render(<AnswerCard answer="Answer." sources={[]} />);
-    // Card uses `as="article"` — the article element should be present
-    expect(document.querySelector('article')).toBeInTheDocument();
+  it('shows the refined marker when stats.refined is true', () => {
+    render(
+      <AnswerCard
+        answer="An answer."
+        sources={[makeSource(1)]}
+        stats={{ ...stats, refined: true }}
+      />,
+    );
+    expect(screen.getByText(/refined once/i)).toBeInTheDocument();
   });
 });

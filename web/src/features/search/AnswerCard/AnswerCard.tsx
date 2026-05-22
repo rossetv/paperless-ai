@@ -1,13 +1,16 @@
 import React from 'react';
-import { Card } from '../../../components/primitives/Card/Card';
-import { Text } from '../../../components/primitives/Text/Text';
-import { Stack } from '../../../components/layout/Stack/Stack';
-import type { SourceDocument } from '../../../api/types';
+import { AnswerSurface } from '../../../components/primitives/AnswerSurface/AnswerSurface';
+import type { SourceDocument, SearchStats } from '../../../api/types';
 import { CitationLink } from '../CitationLink/CitationLink';
 
 export interface AnswerCardProps {
+  /** The synthesised answer text, with `[n]` inline citation markers. */
   answer: string;
+  /** The ranked sources — used to validate citation indices. */
   sources: SourceDocument[];
+  /** Execution statistics — drives the provenance footer. */
+  stats: SearchStats;
+  /** Called with a 1-based index when a citation marker is activated. */
   onCitationActivate?: (index: number) => void;
 }
 
@@ -15,6 +18,12 @@ type TextSegment = { type: 'text'; value: string };
 type CitationSegment = { type: 'citation'; index: number };
 type Segment = TextSegment | CitationSegment;
 
+/**
+ * Split an answer string into plain-text and citation segments.
+ *
+ * `[n]` runs become citation segments; everything else is plain text. The
+ * caller renders citation segments as `CitationLink`s and text verbatim.
+ */
 function parseAnswer(answer: string): Segment[] {
   const segments: Segment[] = [];
   const pattern = /\[(\d+)\]/g;
@@ -23,9 +32,11 @@ function parseAnswer(answer: string): Segment[] {
 
   while ((match = pattern.exec(answer)) !== null) {
     if (match.index > lastIndex) {
-      segments.push({ type: 'text', value: answer.slice(lastIndex, match.index) });
+      segments.push({
+        type: 'text',
+        value: answer.slice(lastIndex, match.index),
+      });
     }
-    // match[1] is the capture group for \d+ — always defined when the regex matches
     segments.push({ type: 'citation', index: parseInt(match[1] ?? '0', 10) });
     lastIndex = pattern.lastIndex;
   }
@@ -37,9 +48,21 @@ function parseAnswer(answer: string): Segment[] {
   return segments;
 }
 
+/**
+ * The synthesised-answer card, restyled to the search-redesign design.
+ *
+ * Composes the `AnswerSurface` primitive (the eyebrow + display-prose +
+ * provenance footer). The answer text is parsed into plain runs and `[n]`
+ * citation markers; in-range markers render as `CitationLink`s, out-of-range
+ * markers render verbatim so a bad citation never becomes a dead control.
+ *
+ * Composed from: AnswerSurface, CitationLink. No own CSS module (§12.5 —
+ * features layer is composition-only).
+ */
 export function AnswerCard({
   answer,
   sources,
+  stats,
   onCitationActivate,
 }: AnswerCardProps): React.ReactElement {
   const segments = parseAnswer(answer);
@@ -49,29 +72,30 @@ export function AnswerCard({
   }
 
   return (
-    <Card as="article" elevated>
-      <Stack direction="vertical" gap={6}>
-        <Text as="p" variant="body">
-          {segments.map((segment, i) => {
-            if (segment.type === 'text') {
-              return <React.Fragment key={i}>{segment.value}</React.Fragment>;
-            }
+    <AnswerSurface
+      sourceCount={sources.length}
+      latencyMs={stats.latency_ms}
+      refined={stats.refined}
+    >
+      {segments.map((segment, i) => {
+        if (segment.type === 'text') {
+          return <React.Fragment key={i}>{segment.value}</React.Fragment>;
+        }
 
-            const exists = segment.index >= 1 && segment.index <= sources.length;
-            if (!exists) {
-              return <React.Fragment key={i}>[{segment.index}]</React.Fragment>;
-            }
+        const inRange =
+          segment.index >= 1 && segment.index <= sources.length;
+        if (!inRange) {
+          return <React.Fragment key={i}>[{segment.index}]</React.Fragment>;
+        }
 
-            return (
-              <CitationLink
-                key={i}
-                index={segment.index}
-                onActivate={handleCitationActivate}
-              />
-            );
-          })}
-        </Text>
-      </Stack>
-    </Card>
+        return (
+          <CitationLink
+            key={i}
+            index={segment.index}
+            onActivate={handleCitationActivate}
+          />
+        );
+      })}
+    </AnswerSurface>
   );
 }
