@@ -15,7 +15,8 @@ One uvicorn process serves everything:
 | Path | Purpose |
 |:---|:---|
 | `GET /` and static assets | The built React SPA (from `web/dist`) |
-| `POST /api/auth/login` | API-key exchange for a signed session cookie |
+| `POST /api/setup` | First-run setup — create the first admin account |
+| `POST /api/auth/login` | Username/password sign-in — sets the session cookie |
 | `GET /api/healthz` | Liveness; unauthenticated |
 | `POST /api/search` | Full agentic search pipeline |
 | `GET /api/facets` | Taxonomy facets for the filter panel |
@@ -128,16 +129,29 @@ FastAPI + uvicorn. Pydantic models validate requests and responses at this bound
 
 | Endpoint | Auth | Purpose |
 |:---|:---|:---|
-| `POST /api/auth/login` | None | Exchange API key for a signed session cookie |
+| `GET /api/setup/status` | None | `{ needed }` — is first-run setup still required? |
+| `POST /api/setup` | Setup token | Create the first admin account; `409` once set up |
+| `POST /api/auth/login` | None | `{username, password, remember}` → session cookie + `{user}` |
+| `POST /api/auth/logout` | Session | Destroy the current session |
+| `GET /api/auth/me` | Session | The current user and role; `401` if unauthenticated |
+| `GET /api/users` | Admin | List user accounts |
+| `POST /api/users` | Admin | Create a user account |
+| `PATCH /api/users/{id}` | Admin | Edit role / status / display name / reset password |
+| `DELETE /api/users/{id}` | Admin | Delete a user account |
 | `GET /api/healthz` | None | Liveness; 503 if index is not ready or corrupt |
-| `POST /api/search` | Required | `{query, filters?}` → `SearchResult` |
-| `GET /api/facets` | Required | Correspondents, document types, tags, date range |
-| `GET /api/stats` | Required | Index size, last reconcile timestamp, embedding model |
-| `POST /api/reconcile` | Required | Trigger an immediate reconciliation cycle (202 Accepted) |
-| `GET /` and assets | None | Serve the built React SPA |
-| `/mcp` | Bearer token | MCP streamable-HTTP ASGI app |
+| `GET /api/stats/public` | None | Minimal splash counts — `{document_count, chunk_count}` |
+| `POST /api/search` | Read-only+ | `{query, filters?}` → `SearchResult` |
+| `GET /api/facets` | Read-only+ | Correspondents, document types, tags, date range |
+| `GET /api/stats` | Read-only+ | Index size, last reconcile timestamp, embedding model |
+| `POST /api/reconcile` | Member+ | Trigger an immediate reconciliation cycle (202 Accepted) |
+| `GET /` and assets | None | Serve the built React SPA (with a deep-link catch-all) |
+| `/mcp` | Bearer / session | MCP streamable-HTTP ASGI app |
 
-`StaticFiles` is mounted **only** at the built frontend directory (`web/dist`). The `/data` volume is under no served path; the index database is never web-reachable.
+The SPA is served by a catch-all that returns `index.html` for client-router
+deep links (`/login`, `/setup`) while leaving real assets and every `/api`
+and `/mcp` path untouched. Static serving is rooted **only** at the built
+frontend directory (`web/dist`); the `/data` volume is under no served path,
+so the index and application databases are never web-reachable.
 
 ### Abuse protection
 
@@ -160,24 +174,47 @@ An ASGI bearer-token middleware wraps the MCP app: every request must carry `Aut
 
 ---
 
-## Authentication (`search/auth.py`)
+## Authentication (`search/auth.py`, `search/sessions.py`, `search/deps.py`)
 
-`SEARCH_API_KEY` is **mandatory**. An unset or empty key is a fatal preflight error — the search server refuses to start. It never runs in an unauthenticated state.
+Authentication is **database-backed user accounts** with role-based access
+control. Accounts and sessions live in `app.db` (`APP_DB_PATH`), separate
+from the search index.
 
-Two authentication paths:
+**First-run setup.** When `app.db` has no users, the server enters *setup
+mode*: it generates a one-off setup token, logs it to the container
+(`SETUP TOKEN: … — open /setup to create the first admin`), and `POST /api/setup`
+— guarded by a constant-time comparison of that token — creates the first
+admin. Once any user exists, `/api/setup` returns `409`.
 
-**Programmatic and MCP access** — present `Authorization: Bearer <SEARCH_API_KEY>`. Verified with `hmac.compare_digest` (constant-time comparison to prevent timing side channels).
+**Sign-in.** `POST /api/auth/login` verifies the username and password
+(argon2id) and, on success, inserts a row in the `sessions` table and sets an
+opaque `search_session` cookie. The cookie is `HttpOnly`, `Secure`,
+`SameSite=Strict`, `Path=/`; its `Max-Age` is seven days when "keep me signed
+in" is ticked, eight hours otherwise. The database stores only the SHA-256 of
+the token — the raw token is never persisted. `SameSite=Strict` is the CSRF
+defence; no separate CSRF token is needed.
 
-**Web UI** — the SPA is served unauthenticated (there is no token yet). The browser shows a login screen; the user enters the key once. The SPA `POST`s it to `/api/auth/login`, which verifies it and sets a **stateless signed session cookie**:
+**Every request.** `get_current_user` hashes the cookie token, looks the
+session up, checks expiry, loads the user and checks the account is active.
+`last_seen_at` is refreshed at most once every ~5 minutes, so authentication
+is not a database write per request. `POST /api/auth/logout` deletes the
+session row; suspending or deleting a user deletes **all** that user's
+sessions, so access is revoked instantly — the key advantage of server-side
+sessions over a stateless token.
 
-- Cookie attributes: `HttpOnly`, `Secure`, `SameSite=Strict`, path `/`.
-- Cookie value: `issued_at.ttl_seconds.signature` — URL-safe base64, URL-safe, no padding. The signature is HMAC-SHA256 of the `issued_at.ttl_seconds` payload keyed by `SEARCH_API_KEY`. Both the timestamp and the TTL are tamper-evident; expiry is enforced at verification time.
-- Lifetime: `SEARCH_SESSION_TTL` seconds (default 604800 = 7 days).
-- No server-side session store is needed.
+**RBAC.** Three roles rank `readonly` < `member` < `admin`. The dependency
+`require_role(...)` raises `403` on an insufficient role; `require_admin` is
+the common admin gate. Search, facets and stats require Read-only or above;
+reconcile requires Member or above; user management requires Admin. Two
+guards protect administration: a user cannot delete, suspend or demote
+themselves, and the last remaining admin cannot be deleted, suspended or
+demoted.
 
-The API key is **never shipped to the browser** — the SPA sends it once to `/api/auth/login` and immediately discards it; all subsequent requests use the cookie.
-
-Every `/api/*` request except `login` and `healthz`, and every `/mcp` request, is accepted on **either** a valid bearer token **or** a valid, unexpired session cookie. The gate is `is_request_authenticated(bearer, cookie, settings)` in `search/auth.py`.
+**Legacy access.** `Authorization: Bearer <SEARCH_API_KEY>` keeps working on
+`/api/*` and `/mcp` as an admin-equivalent caller through Waves 1–2; it is
+retired in Wave 3. With database-backed accounts the key is now **optional** —
+a deployment can run with no `SEARCH_API_KEY` at all, which simply disables
+the legacy bearer path.
 
 ---
 
@@ -221,7 +258,12 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 | `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion |
 | `synthesizer.py` | `Synthesizer` — one LLM call → `Answered` or `NeedsMore` |
 | `refinement.py` | `adjust_plan` / `broaden_plan` — plan mutation for the refinement step |
-| `auth.py` | `verify_api_key`, `issue_session_token`, `is_request_authenticated` |
+| `auth.py` | Bearer extraction, the legacy `SEARCH_API_KEY` admin-equivalent check, role ranking |
+| `sessions.py` | Opaque session tokens, SHA-256 hashing, the DB-backed session lifecycle |
+| `deps.py` | FastAPI auth dependencies — `get_current_user`, `require_role`, `require_admin` |
+| `setup.py` | First-run setup token generation, comparison, and setup-mode detection |
+| `account_routes.py` | The account `/api` router — setup, login/logout/me, user CRUD |
+| `accounts.py` | The self and last-admin account guards |
 | `models.py` | Frozen dataclasses: `QueryPlan`, `SearchResult`, `SourceDocument`, `SearchStats`, `Answered`, `NeedsMore`, `RetrievedChunk` |
 | `wire.py` | Pydantic request/response models and mapping functions (HTTP boundary only) |
 | `prompts.py` | System prompts for the planner and synthesiser |
