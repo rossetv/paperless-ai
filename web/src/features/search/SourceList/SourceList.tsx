@@ -12,6 +12,11 @@ export interface SourceListProps {
    * When undefined, no source is highlighted.
    */
   highlightedIndex?: number;
+  /**
+   * Called with a document id when a source card's "Preview document" action
+   * is activated. Threaded straight through to every `SourceCard`.
+   */
+  onPreview: (documentId: number) => void;
 }
 
 /**
@@ -28,6 +33,7 @@ export interface SourceListProps {
 export function SourceList({
   sources,
   highlightedIndex,
+  onPreview,
 }: SourceListProps): React.ReactElement {
   if (sources.length === 0) {
     return (
@@ -50,6 +56,7 @@ export function SourceList({
                 source={source}
                 index={index}
                 highlighted={highlightedIndex === index}
+                onPreview={onPreview}
               />
             </li>
           );
