@@ -9,7 +9,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { useSearch, useFacets, useStats, useLogin } from './hooks';
+import {
+  useSearch,
+  useFacets,
+  useStats,
+  useLogin,
+  useLogout,
+  useMe,
+  useSetupStatus,
+} from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated } from './client';
 
@@ -181,25 +189,87 @@ describe('useStats', () => {
 // useLogin
 // ---------------------------------------------------------------------------
 
+const SAMPLE_USER = {
+  id: 1,
+  username: 'alex.morgan',
+  display_name: 'Alex Morgan',
+  email: 'alex@home.lan',
+  role: 'admin' as const,
+  status: 'active' as const,
+  created_at: '2026-05-01T00:00:00Z',
+  last_login_at: null,
+};
+
 describe('useLogin', () => {
   it('mutation starts idle', () => {
     const { result } = renderHook(() => useLogin(), { wrapper: makeWrapper() });
     expect(result.current.isIdle).toBe(true);
   });
 
-  it('resolves with status ok on correct key', async () => {
-    mockFetch(200, { status: 'ok' });
+  it('resolves with the user on correct credentials', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
     const { result } = renderHook(() => useLogin(), { wrapper: makeWrapper() });
-    result.current.mutate({ api_key: 'correct-key' });
+    result.current.mutate({ username: 'alex.morgan', password: 'secret123', remember: false });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.status).toBe('ok');
+    expect(result.current.data?.user.username).toBe('alex.morgan');
   });
 
-  it('surfaces error state on 401', async () => {
-    mockFetch(401, { detail: 'Invalid API key' });
+  it('surfaces Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Invalid credentials' });
     const { result } = renderHook(() => useLogin(), { wrapper: makeWrapper() });
-    result.current.mutate({ api_key: 'wrong-key' });
+    result.current.mutate({ username: 'x', password: 'y', remember: false });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(Unauthenticated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useLogout
+// ---------------------------------------------------------------------------
+
+describe('useLogout', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useLogout(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves on a 204 response', async () => {
+    mockFetch(204, null);
+    const { result } = renderHook(() => useLogout(), { wrapper: makeWrapper() });
+    result.current.mutate();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useMe
+// ---------------------------------------------------------------------------
+
+describe('useMe', () => {
+  it('returns the current user on success', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const { result } = renderHook(() => useMe(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.user.role).toBe('admin');
+  });
+
+  it('surfaces Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthenticated' });
+    const { result } = renderHook(() => useMe(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(Unauthenticated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useSetupStatus
+// ---------------------------------------------------------------------------
+
+describe('useSetupStatus', () => {
+  it('returns { needed } on success', async () => {
+    mockFetch(200, { needed: true });
+    const { result } = renderHook(() => useSetupStatus(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.needed).toBe(true);
   });
 });
