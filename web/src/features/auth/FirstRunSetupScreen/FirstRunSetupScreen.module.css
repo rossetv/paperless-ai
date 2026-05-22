@@ -1,0 +1,115 @@
+/*
+ * FirstRunSetupScreen feature — CSS Module.
+ *
+ * The dark first-run admin-creation screen — the same visual family as
+ * LoginScreen but a single, centred card (no hero column). Dark-surfaced in
+ * BOTH themes via the forced-dark tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.screen {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background-color: var(--colour-dark-bg);
+  color: var(--colour-dark-text-primary);
+  font-family: var(--font-text);
+  overflow: hidden;
+  padding: var(--spacing-14);
+  box-sizing: border-box;
+}
+
+/* ── Aurora glow — a single quiet radial behind the card. ── */
+.aurora {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    50% 40% at 50% 10%,
+    var(--colour-dark-aurora-near),
+    transparent 60%
+  );
+}
+
+/* ── The centred card. ── */
+.card {
+  position: relative;
+  z-index: var(--z-base);
+  width: var(--width-modal);
+  max-width: 100%;
+  background-color: var(--colour-dark-surface);
+  border: var(--spacing-1) solid var(--colour-dark-border-card);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-dark-card);
+  padding: var(--spacing-section);
+  box-sizing: border-box;
+}
+
+/* ── Brand row at the top of the card. ── */
+.brand-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-14);
+}
+
+.wordmark {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body-emphasis);
+  font-weight: var(--font-weight-body-emphasis);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-dark-text-primary);
+}
+
+.wordmark-dim {
+  font-weight: var(--font-weight-body);
+  color: var(--colour-dark-text-secondary);
+}
+
+.title {
+  margin: 0 0 var(--spacing-2);
+  font-family: var(--font-display);
+  font-size: var(--font-size-tile);
+  font-weight: var(--font-weight-hero);
+  letter-spacing: var(--letter-spacing-tile);
+  color: var(--colour-dark-text-primary);
+}
+
+.subtitle {
+  margin: 0 0 var(--spacing-14);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-dark-text-secondary);
+}
+
+/* ── Form internals. ── */
+.field + .field {
+  margin-top: var(--spacing-10);
+}
+
+/* ── Submit button — full-width accent. ── */
+.submit {
+  width: 100%;
+  margin-top: var(--spacing-13);
+}
+
+/* ── Inline error alert. ── */
+.error {
+  margin-top: var(--spacing-10);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-accent);
+}
+
+/* ── Footer hint — where to find the setup token. ── */
+.note {
+  margin-top: var(--spacing-13);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-dark-text-tertiary);
+  text-align: center;
+}
