@@ -97,6 +97,44 @@ CREATE INDEX IF NOT EXISTS idx_recent_searches_user_created
     ON recent_searches (user_id, created_at);
 """
 
+# Migration v3 DDL — the api_keys table (web-redesign §5; Wave 3). A
+# programmatic credential for the REST and MCP surfaces.
+#
+# key_hash is the SHA-256 hex of the raw key; the raw key (sk-pls-...) is
+# never stored, so a database leak yields no usable credential. key_hash is
+# UNIQUE — the bearer auth path looks a key up by this column. key_prefix is
+# the first ~12 characters of the raw key, kept purely so the UI can show
+# "sk-pls-AbC1..." without holding the secret.
+#
+# owner_user_id REFERENCES users(id) ON DELETE CASCADE: deleting a user
+# atomically destroys every key they own. scopes is a comma-separated list
+# drawn from api,mcp,admin. revoked_at being non-NULL means the key is dead;
+# expires_at being non-NULL and in the past also kills it. request_count and
+# last_used_at are updated by a throttled "touch" so auth is not a write per
+# request.
+SCHEMA_V3: str = """
+CREATE TABLE IF NOT EXISTS api_keys (
+    id             INTEGER PRIMARY KEY,
+    key_hash       TEXT NOT NULL UNIQUE,
+    key_prefix     TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    owner_user_id  INTEGER NOT NULL
+                       REFERENCES users(id) ON DELETE CASCADE,
+    scopes         TEXT NOT NULL,
+    created_at     TEXT NOT NULL,
+    expires_at     TEXT,
+    last_used_at   TEXT,
+    revoked_at     TEXT,
+    request_count  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash
+    ON api_keys (key_hash);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_owner_user_id
+    ON api_keys (owner_user_id);
+"""
+
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     """Bring ``app.db`` up to the latest schema by running pending migrations.
