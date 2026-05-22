@@ -188,3 +188,112 @@ def test_pdf_proxy_allows_a_legacy_bearer(app_db_path) -> None:
         headers={"Authorization": f"Bearer {_LEGACY_KEY}"},
     )
     assert response.status_code == 200
+
+
+class TestRecentSearchesRoute:
+    """GET /api/recent-searches returns the current user's search history."""
+
+    @staticmethod
+    def _build_app_no_paperless(app_db_path: str) -> FastAPI:
+        """A FastAPI app with the document router; Paperless is never called."""
+        app = FastAPI()
+        attach_app_state(
+            app.state,
+            AppState(
+                app_db_path=app_db_path,
+                setup_state=SetupState(),
+                legacy_api_key=_LEGACY_KEY,
+            ),
+        )
+        settings = MagicMock()
+        app.include_router(
+            build_document_router(
+                settings, paperless_factory=lambda _s: MagicMock()
+            )
+        )
+        return app
+
+    def _client_no_paperless(self, app_db_path: str) -> TestClient:
+        return TestClient(
+            self._build_app_no_paperless(app_db_path),
+            raise_server_exceptions=False,
+            base_url="https://testserver",
+        )
+
+    def test_recent_searches_returns_the_users_history(
+        self, app_db_path, conn
+    ) -> None:
+        """A signed-in user's recorded searches come back newest-first."""
+        from appdb.recent_searches import record
+
+        user = create_user(
+            conn, username="alice", password_hash="h", role="readonly"
+        )
+        record(conn, user_id=user.id, query="first query")
+        record(conn, user_id=user.id, query="second query")
+        token = begin_session(
+            conn, user_id=user.id, ttl_seconds=3600
+        ).token
+
+        client = self._client_no_paperless(app_db_path)
+        client.cookies.set(SESSION_COOKIE_NAME, token)
+        response = client.get("/api/recent-searches")
+        assert response.status_code == 200
+        queries = [s["query"] for s in response.json()["searches"]]
+        assert queries == ["second query", "first query"]
+
+    def test_recent_searches_empty_for_a_user_with_no_history(
+        self, app_db_path, conn
+    ) -> None:
+        """A user who has never searched gets an empty list, 200."""
+        user = create_user(
+            conn, username="bob", password_hash="h", role="readonly"
+        )
+        token = begin_session(
+            conn, user_id=user.id, ttl_seconds=3600
+        ).token
+        client = self._client_no_paperless(app_db_path)
+        client.cookies.set(SESSION_COOKIE_NAME, token)
+        response = client.get("/api/recent-searches")
+        assert response.status_code == 200
+        assert response.json() == {"searches": []}
+
+    def test_recent_searches_isolates_users(self, app_db_path, conn) -> None:
+        """One user never sees another user's recent searches."""
+        from appdb.recent_searches import record
+
+        alice = create_user(
+            conn, username="alice", password_hash="h", role="readonly"
+        )
+        bob = create_user(
+            conn, username="bob", password_hash="h", role="readonly"
+        )
+        record(conn, user_id=alice.id, query="alice secret")
+        record(conn, user_id=bob.id, query="bob query")
+        token = begin_session(conn, user_id=bob.id, ttl_seconds=3600).token
+
+        client = self._client_no_paperless(app_db_path)
+        client.cookies.set(SESSION_COOKIE_NAME, token)
+        response = client.get("/api/recent-searches")
+        queries = [s["query"] for s in response.json()["searches"]]
+        assert queries == ["bob query"]
+        assert "alice secret" not in queries
+
+    def test_recent_searches_401_when_unauthenticated(
+        self, app_db_path
+    ) -> None:
+        """An unauthenticated request is rejected 401."""
+        client = self._client_no_paperless(app_db_path)
+        assert client.get("/api/recent-searches").status_code == 401
+
+    def test_recent_searches_empty_for_the_legacy_bearer(
+        self, app_db_path
+    ) -> None:
+        """The legacy bearer (synthetic admin id=0) has no history — []."""
+        client = self._client_no_paperless(app_db_path)
+        response = client.get(
+            "/api/recent-searches",
+            headers={"Authorization": f"Bearer {_LEGACY_KEY}"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"searches": []}

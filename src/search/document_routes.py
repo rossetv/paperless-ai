@@ -6,24 +6,29 @@ UI (web-redesign §5):
 
 - ``GET /api/documents/{id}/pdf`` — stream a document's original PDF out of
   Paperless-ngx, so the in-app DocumentPreview viewer renders it without the
-  browser leaving the app. (Recent-searches route added in W2B6.)
+  browser leaving the app.
+- ``GET /api/recent-searches`` — the current user's recent searches, newest
+  first, for the search UI's recent-searches strip.
 
 The PDF proxy streams the body through the existing
-:class:`~common.paperless.PaperlessClient` — buffering a large scan into
-memory per request is wasteful — and maps Paperless failures to HTTP errors:
-a 404 for an unknown id, a 502 for an unreachable or erroring Paperless.
+:class:`~common.paperless.PaperlessClient` and maps Paperless failures to
+HTTP errors: a 404 for an unknown id, a 502 for an unreachable or erroring
+Paperless. A fresh ``PaperlessClient`` is built per request — the client is
+**not thread-safe** (CODE_GUIDELINES §8.3) — and the blocking download is
+dispatched off the event loop.
 
-A fresh ``PaperlessClient`` is built per request: the client is **not
-thread-safe** (CODE_GUIDELINES §8.3) and this router runs on FastAPI's
-thread pool. The blocking download is dispatched off the event loop.
+Recent searches are stored per real user. The legacy ``SEARCH_API_KEY``
+bearer resolves to a synthetic admin with no user row, so its history is
+always empty — correct, as the legacy key carries no user identity.
 
-Allowed deps: fastapi, starlette, httpx, structlog, search (deps),
-    common (paperless, config).
+Allowed deps: fastapi, starlette, httpx, structlog, appdb (recent_searches),
+    search (deps, wire), common (paperless, config).
 """
 
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -32,8 +37,11 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
+from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
-from search.deps import require_role
+from search.deps import get_app_db, get_current_user, require_role
+from search.sessions import CurrentUser
+from search.wire import RecentSearchEntry, RecentSearchesResponse
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -57,7 +65,7 @@ def build_document_router(
         _default_paperless_factory
     ),
 ) -> APIRouter:
-    """Build the ``/api`` document router (web-redesign §5).
+    """Build the ``/api`` document and search-history router (§5).
 
     Args:
         settings: Application settings, forwarded to the Paperless client
@@ -88,6 +96,18 @@ def build_document_router(
         return await _stream_document_pdf(
             document_id, settings, paperless_factory
         )
+
+    @router.get("/api/recent-searches")
+    def recent_searches(
+        app_db: sqlite3.Connection = Depends(get_app_db),
+        user: CurrentUser = Depends(get_current_user),
+    ) -> RecentSearchesResponse:
+        """Return the current user's recent searches, newest first.
+
+        Auth: any authenticated user. The legacy bearer's synthetic admin
+        has no user row (id=0), so it receives an empty list.
+        """
+        return _recent_searches(app_db, user)
 
     return router
 
@@ -179,3 +199,24 @@ def _safe_chunks(
     except httpx.HTTPError:
         log.warning("api.document_pdf_stream_aborted", document_id=document_id)
         raise
+
+
+def _recent_searches(
+    app_db: sqlite3.Connection, user: CurrentUser
+) -> RecentSearchesResponse:
+    """recent-searches handler body: read the user's history from app.db.
+
+    Args:
+        app_db: The per-request ``app.db`` connection.
+        user: The authenticated current user.
+
+    Returns:
+        The user's recent searches as a :class:`RecentSearchesResponse`.
+    """
+    rows = recent_search_store.list_for_user(app_db, user.id)
+    return RecentSearchesResponse(
+        searches=[
+            RecentSearchEntry(query=row.query, created_at=row.created_at)
+            for row in rows
+        ]
+    )

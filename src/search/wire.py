@@ -11,7 +11,8 @@ Request models:
     :class:`LoginRequest`, :class:`FilterRequest`, :class:`SearchRequest`
 
 Response models:
-    :class:`SearchResponse`, :class:`FacetsResponse`, :class:`StatsResponse`
+    :class:`SearchResponse`, :class:`FacetsResponse`, :class:`StatsResponse`,
+    :class:`RecentSearchesResponse`
 
 Mapping functions (wire model ⇄ internal dataclass):
     :func:`to_search_filters` (request → store input shape),
@@ -178,6 +179,19 @@ class StatsResponse(BaseModel):
     chunk_count: int
     last_reconcile_at: str | None
     embedding_model: str | None
+
+
+class RecentSearchEntry(BaseModel):
+    """One entry in GET /api/recent-searches — a single past search."""
+
+    query: str
+    created_at: str
+
+
+class RecentSearchesResponse(BaseModel):
+    """Response body for GET /api/recent-searches — the user's history."""
+
+    searches: list[RecentSearchEntry]
 
 
 # ---------------------------------------------------------------------------
