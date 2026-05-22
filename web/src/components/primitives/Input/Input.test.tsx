@@ -64,4 +64,20 @@ describe('Input', () => {
     render(<Input id="f" name="query" />);
     expect(screen.getByRole('textbox')).toHaveAttribute('name', 'query');
   });
+
+  it('applies the dark control class when surface="dark"', () => {
+    render(<Input id="dk" label="Username" surface="dark" />);
+    expect(screen.getByRole('textbox').className).toMatch(/input-dark/);
+  });
+
+  it('uses the light control by default (no dark class)', () => {
+    render(<Input id="lt" label="Username" />);
+    expect(screen.getByRole('textbox').className).not.toMatch(/input-dark/);
+  });
+
+  it('forwards surface="dark" through to the FormField label', () => {
+    const { container } = render(<Input id="dl" label="Password" surface="dark" />);
+    const label = container.querySelector('label');
+    expect(label?.className).toMatch(/label-dark/);
+  });
 });

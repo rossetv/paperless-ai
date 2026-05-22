@@ -77,3 +77,17 @@
   letter-spacing: var(--letter-spacing-micro);
   color: var(--colour-accent);
 }
+
+/* ── Dark-surface variant — the forced-dark login / setup island.
+   `field-dark` is a marker class (re-themes descendant controls via the
+   Input module); `label-dark` re-colours the label text. ── */
+.field-dark {
+  /* Marker only — descendant controls opt in via their own dark class. */
+  color: var(--colour-dark-text-primary);
+}
+
+.label-dark {
+  color: var(--colour-dark-label);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caption);
+}

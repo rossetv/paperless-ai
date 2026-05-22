@@ -22,6 +22,11 @@ export interface InputProps {
   required?: boolean;
   /** Validation error message — also sets aria-invalid. */
   error?: string;
+  /**
+   * Surface the input is rendered on. `'dark'` switches the control and its
+   * label to the forced-dark island tokens. Defaults to `'light'`.
+   */
+  surface?: 'light' | 'dark';
   /** Change handler for controlled usage. */
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /** Focus handler. */
@@ -56,9 +61,10 @@ export function Input({
   onFocus,
   onBlur,
   className,
+  surface = 'light',
 }: InputProps): React.ReactElement {
   return (
-    <FormField id={id} label={label} error={error} className={className}>
+    <FormField id={id} label={label} error={error} className={className} surface={surface}>
       {({ hasError, errorId }) => (
         <input
           id={id}
@@ -73,7 +79,11 @@ export function Input({
           onChange={onChange}
           onFocus={onFocus}
           onBlur={onBlur}
-          className={cn(styles['input'], hasError && styles['input-error'])}
+          className={cn(
+            styles['input'],
+            surface === 'dark' && styles['input-dark'],
+            hasError && styles['input-error'],
+          )}
         />
       )}
     </FormField>

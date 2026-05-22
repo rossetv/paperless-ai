@@ -82,4 +82,22 @@ describe('FormField', () => {
     );
     expect((container.firstChild as Element).className).toContain('my-field');
   });
+
+  it('applies the dark surface class when surface="dark"', () => {
+    const { container } = render(
+      <FormField id="d" label="Username" surface="dark">
+        {probeControl('d')}
+      </FormField>,
+    );
+    expect((container.firstChild as Element).className).toMatch(/field-dark/);
+  });
+
+  it('does not apply the dark surface class by default', () => {
+    const { container } = render(
+      <FormField id="l" label="Username">
+        {probeControl('l')}
+      </FormField>,
+    );
+    expect((container.firstChild as Element).className).not.toMatch(/field-dark/);
+  });
 });

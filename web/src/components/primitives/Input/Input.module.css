@@ -17,3 +17,21 @@
 .input-error {
   composes: control-error from '../FormField/FormField.module.css';
 }
+
+/* ── Dark-surface variant — the forced-dark login / setup island.
+   A pure-black well with a hairline white border; placeholder and text
+   use the forced-dark tokens. Wins over `.input` via source order, but
+   the overrides are explicit so no cross-module cascade is relied on. ── */
+.input-dark {
+  background-color: var(--colour-dark-control-bg);
+  color: var(--colour-dark-text-primary);
+  border-color: var(--colour-dark-border);
+}
+
+.input-dark::placeholder {
+  color: var(--colour-dark-text-tertiary);
+}
+
+.input-dark:focus-visible {
+  outline-color: var(--colour-accent);
+}

@@ -35,6 +35,12 @@ export interface FormFieldProps {
   children: (control: FieldControlProps) => React.ReactNode;
   /** Additional class names to merge onto the field wrapper. */
   className?: string | undefined;
+  /**
+   * Surface the field is rendered on. `'dark'` switches the label, control
+   * border and control background to the forced-dark island tokens — used by
+   * LoginScreen / FirstRunSetupScreen. Defaults to `'light'`.
+   */
+  surface?: 'light' | 'dark' | undefined;
 }
 
 /**
@@ -54,14 +60,16 @@ export function FormField({
   error,
   children,
   className,
+  surface = 'light',
 }: FormFieldProps): React.ReactElement {
   const hasError = error !== undefined && error !== '';
   const errorId = hasError ? `${id}-error` : undefined;
+  const isDark = surface === 'dark';
 
   return (
-    <div className={cn(styles['field'], className)}>
+    <div className={cn(styles['field'], isDark && styles['field-dark'], className)}>
       {label !== undefined && (
-        <label htmlFor={id} className={styles['label']}>
+        <label htmlFor={id} className={cn(styles['label'], isDark && styles['label-dark'])}>
           {label}
         </label>
       )}

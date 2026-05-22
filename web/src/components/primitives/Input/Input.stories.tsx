@@ -67,3 +67,14 @@ export const AllStates: StoryObj = {
     </div>
   ),
 };
+
+export const DarkSurface: StoryObj = {
+  parameters: { backgrounds: { default: 'dark' } },
+  render: () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-14)', width: 'var(--width-empty-state)', background: 'var(--colour-dark-surface)', padding: 'var(--spacing-14)', borderRadius: 'var(--radius-large)' }}>
+      <Input id="dark-user" label="Username" surface="dark" placeholder="alex.morgan" />
+      <Input id="dark-pass" label="Password" surface="dark" type="password" placeholder="••••••••" />
+      <Input id="dark-err" label="Username" surface="dark" value="ab" error="Username must be at least 3 characters." />
+    </div>
+  ),
+};
