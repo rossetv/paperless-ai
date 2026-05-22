@@ -1,0 +1,128 @@
+/*
+ * APIKeysScreen feature component — CSS Module.
+ *
+ * Layout-only styling for the API-key management screen: the name + prefix
+ * cell, the scope cluster, the row-action buttons, the footer note, the
+ * loading / error states. The page chrome comes from SettingsLayout; the
+ * table from the Table primitive.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Name + key cell. ── */
+.keyCell {
+  min-width: 0;
+}
+
+.keyName {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  color: var(--colour-text-primary);
+}
+
+.keyMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin-top: var(--spacing-3);
+  font-family: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.keyCount {
+  font-family: var(--font-text);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Scope cluster. ── */
+.scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+/* ── Expiry label tones. ── */
+.expiryWarn {
+  color: var(--colour-status-warn-fg);
+}
+
+.expiryExpired {
+  color: var(--colour-status-danger-fg);
+}
+
+/* ── Row actions. ── */
+.rowActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-2);
+}
+
+.dangerButton {
+  background: none;
+  border: none;
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--radius-micro);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-status-danger-fg);
+  cursor: pointer;
+}
+
+.dangerButton:hover {
+  background-color: var(--colour-status-danger-bg);
+}
+
+.dangerButton:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Neutral row action — the "Edit" link-button. ── */
+.actionButton {
+  background: none;
+  border: none;
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--radius-micro);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-link);
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  background-color: var(--colour-button-light-bg);
+}
+
+.actionButton:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Footer note. ── */
+.note {
+  display: flex;
+  gap: var(--spacing-9);
+  padding: var(--spacing-10) var(--spacing-13);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-button-light-bg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* ── Loading / error state. ── */
+.state {
+  padding: var(--spacing-section) 0;
+  text-align: center;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  color: var(--colour-text-tertiary);
+}
