@@ -90,7 +90,7 @@ describe('APIKeyEditPanel', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /mcp/i }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(mutateAsync.mock.calls[0][0]).toEqual({
+    expect(mutateAsync.mock.calls[0]?.[0]).toEqual({
       id: 7,
       body: { name: 'CI renamed', scopes: ['api', 'mcp'], expires_at: null },
     });

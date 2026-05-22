@@ -86,7 +86,7 @@ describe('APIKeyCreatePanel — form', () => {
     await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
     await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(mutateAsync.mock.calls[0][0]).toMatchObject({
+    expect(mutateAsync.mock.calls[0]?.[0]).toMatchObject({
       name: 'n8n',
       scopes: ['api'],
       expires_at: null,
