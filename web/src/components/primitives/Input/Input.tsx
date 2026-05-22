@@ -27,6 +27,8 @@ export interface InputProps {
    * label to the forced-dark island tokens. Defaults to `'light'`.
    */
   surface?: 'light' | 'dark';
+  /** Browser autofill hint — forwarded to the native `autocomplete` attribute. */
+  autoComplete?: string;
   /** Change handler for controlled usage. */
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /** Focus handler. */
@@ -62,6 +64,7 @@ export function Input({
   onBlur,
   className,
   surface = 'light',
+  autoComplete,
 }: InputProps): React.ReactElement {
   return (
     <FormField id={id} label={label} error={error} className={className} surface={surface}>
@@ -70,6 +73,7 @@ export function Input({
           id={id}
           type={type}
           name={name}
+          autoComplete={autoComplete}
           value={value}
           placeholder={placeholder}
           disabled={disabled}
