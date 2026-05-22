@@ -208,10 +208,13 @@ def build_api_router(
         settings: Application settings.
         core: The search pipeline entry point, backing ``/api/search``.
         store_reader: The read-side store, backing healthz, facets, and stats.
-        require_reader: A FastAPI dependency requiring an authenticated user
-            of role Read-only or above. Gates search, facets, and stats.
-        require_member: A FastAPI dependency requiring role Member or above.
-            Gates the reconcile trigger.
+        require_reader: A FastAPI dependency requiring an authenticated
+            caller of role Read-only or above; an API-key caller must also
+            hold the ``api`` scope (web-redesign §5). Gates search, facets,
+            and stats.
+        require_member: A FastAPI dependency requiring role Member or above;
+            an API-key caller must also hold the ``api`` scope. Gates the
+            reconcile trigger.
         get_current_user: The FastAPI dependency resolving the request to a
             :class:`~search.sessions.CurrentUser`. The ``/api/search``
             handler uses it to attribute a recorded recent search.
