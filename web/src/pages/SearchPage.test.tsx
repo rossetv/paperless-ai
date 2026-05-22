@@ -1,336 +1,202 @@
-/**
- * Tests for SearchPage.
- *
- * Verifies that:
- * - an idle page renders the search bar with no results
- * - a search renders the answer and sources once the query resolves
- * - the empty state shows when a search returns no results
- * - the initialising state shows when a search returns 503 index-not-ready
- * - an Unauthenticated error from a search call invalidates the me query
- * - citation activation in AnswerCard highlights the matching source in SourceList
- */
-
+import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { UseQueryResult } from '@tanstack/react-query';
-import type { SearchResponse, FacetsResponse } from '../api/types';
-import { Unauthenticated, ApiError } from '../api/client';
+import { MemoryRouter } from 'react-router-dom';
+import { ApiError, Unauthenticated } from '../api/client';
 import { SearchPage } from './SearchPage';
 
-// ---------------------------------------------------------------------------
-// Mock the feature components so the page layer is isolated
-// ---------------------------------------------------------------------------
-
-vi.mock('../features/search/SearchBar/SearchBar', () => ({
-  SearchBar: ({ onSearch }: { onSearch: (q: string) => void }) =>
-    React.createElement('button', {
-      onClick: () => onSearch('test query'),
-      'data-testid': 'mock-search-bar',
-    }, 'Search'),
-}));
-
-vi.mock('../features/search/FilterControls/FilterControls', () => ({
-  FilterControls: () => React.createElement('div', { 'data-testid': 'mock-filter-controls' }),
-}));
-
-vi.mock('../features/search/AnswerCard/AnswerCard', () => ({
-  AnswerCard: ({
-    answer,
-    onCitationActivate,
-  }: {
-    answer: string;
-    onCitationActivate?: (n: number) => void;
-  }) =>
-    React.createElement(
-      'div',
-      { 'data-testid': 'mock-answer-card' },
-      answer,
-      React.createElement('button', {
-        onClick: () => onCitationActivate?.(1),
-        'data-testid': 'mock-citation-btn',
-      }, 'Activate [1]'),
-    ),
-}));
-
-vi.mock('../features/search/SourceList/SourceList', () => ({
-  SourceList: ({
-    sources,
-    highlightedIndex,
-  }: {
-    sources: { document_id: number; title: string | null }[];
-    highlightedIndex?: number;
-  }) =>
-    React.createElement(
-      'div',
-      { 'data-testid': 'mock-source-list' },
-      `sources:${sources.length} highlighted:${highlightedIndex ?? 'none'}`,
-    ),
-}));
-
-vi.mock('../features/search/QueryPlanSummary/QueryPlanSummary', () => ({
-  QueryPlanSummary: () =>
-    React.createElement('div', { 'data-testid': 'mock-query-plan-summary' }),
-}));
-
+// AppNavBar drives useAuth/useLogout + router; mock it to a plain div.
 vi.mock('../features/shell/AppNavBar/AppNavBar', () => ({
-  AppNavBar: () => React.createElement('div', { 'data-testid': 'mock-app-navbar' }),
+  AppNavBar: () => React.createElement('div', { 'data-testid': 'mock-navbar' }),
 }));
 
-// ---------------------------------------------------------------------------
-// Mock API hooks
-// ---------------------------------------------------------------------------
+// The screen features are exercised in their own suites; here, mock each to a
+// tiny probe so the page-orchestration logic is tested in isolation.
+vi.mock('../features/search/IdleScreen/IdleScreen', () => ({
+  IdleScreen: ({ onSearch }: { onSearch: (q: string) => void }) =>
+    React.createElement(
+      'button',
+      { 'data-testid': 'idle', onClick: () => onSearch('npower bills') },
+      'idle',
+    ),
+}));
+vi.mock('../features/search/LoadingScreen/LoadingScreen', () => ({
+  LoadingScreen: () =>
+    React.createElement('div', { 'data-testid': 'loading' }),
+}));
+vi.mock('../features/search/ResultsScreen/ResultsScreen', () => ({
+  ResultsScreen: ({ onPreview }: { onPreview: (id: number) => void }) =>
+    React.createElement(
+      'button',
+      { 'data-testid': 'results', onClick: () => onPreview(9823) },
+      'results',
+    ),
+}));
+vi.mock('../features/search/NoResultsScreen/NoResultsScreen', () => ({
+  NoResultsScreen: () =>
+    React.createElement('div', { 'data-testid': 'no-results' }),
+}));
+vi.mock('../features/search/IndexNotReadyScreen/IndexNotReadyScreen', () => ({
+  IndexNotReadyScreen: () =>
+    React.createElement('div', { 'data-testid': 'index-not-ready' }),
+}));
+vi.mock('../features/search/SearchErrorScreen/SearchErrorScreen', () => ({
+  SearchErrorScreen: () =>
+    React.createElement('div', { 'data-testid': 'search-error' }),
+}));
+vi.mock('../features/search/DocumentPreviewScreen/DocumentPreviewScreen', () => ({
+  DocumentPreviewScreen: ({ onClose }: { onClose: () => void }) =>
+    React.createElement(
+      'button',
+      { 'data-testid': 'preview', onClick: onClose },
+      'preview',
+    ),
+}));
 
 vi.mock('../api/hooks', () => ({
   useSearch: vi.fn(),
-  useFacets: vi.fn(),
   ME_QUERY_KEY: ['auth', 'me'],
 }));
 
-import { useSearch, useFacets } from '../api/hooks';
+import { useSearch } from '../api/hooks';
 const mockUseSearch = useSearch as ReturnType<typeof vi.fn>;
-const mockUseFacets = useFacets as ReturnType<typeof vi.fn>;
 
-function makeFacetsResult(): UseQueryResult<FacetsResponse, Error> {
-  return {
-    data: {
-      correspondents: [],
-      document_types: [],
-      tags: [],
-      earliest: null,
-      latest: null,
-    },
-    isLoading: false,
-    isError: false,
-    error: null,
-    status: 'success',
-    isSuccess: true,
-    isPending: false,
-    isFetching: false,
-    isRefetching: false,
-    isLoadingError: false,
-    isRefetchError: false,
-    isPlaceholderData: false,
-    dataUpdatedAt: 0,
-    errorUpdatedAt: 0,
-    failureCount: 0,
-    failureReason: null,
-    fetchStatus: 'idle',
-    isPaused: false,
-    isStale: false,
-    isInitialLoading: false,
-    refetch: vi.fn(),
-  } as unknown as UseQueryResult<FacetsResponse, Error>;
-}
-
-function makeSearchResult(
-  overrides: Partial<UseQueryResult<SearchResponse, Error>>,
-): UseQueryResult<SearchResponse, Error> {
+/** Build a useSearch result stub in the requested state. */
+function searchResult(overrides: Record<string, unknown>) {
   return {
     data: undefined,
-    isLoading: false,
-    isError: false,
     error: null,
-    status: 'pending',
-    isSuccess: false,
-    isPending: true,
+    isPending: false,
     isFetching: false,
-    isRefetching: false,
-    isLoadingError: false,
-    isRefetchError: false,
-    isPlaceholderData: false,
-    dataUpdatedAt: 0,
-    errorUpdatedAt: 0,
-    failureCount: 0,
-    failureReason: null,
-    fetchStatus: 'idle',
-    isPaused: false,
-    isStale: false,
-    isInitialLoading: false,
+    isError: false,
+    isSuccess: false,
     refetch: vi.fn(),
     ...overrides,
-  } as unknown as UseQueryResult<SearchResponse, Error>;
+  };
 }
 
-const successResponse: SearchResponse = {
-  answer: 'The boiler was installed in 2021 [1].',
+const SUCCESS_DATA = {
+  answer: 'An answer [1].',
   sources: [
     {
-      document_id: 1,
-      title: 'Boiler contract',
-      correspondent: 'Company Ltd',
-      document_type: 'Contract',
-      created: '2021-01-01',
-      snippet: 'boiler installation',
-      paperless_url: 'https://paperless.example.com/documents/1/',
-      score: 0.95,
+      document_id: 9823,
+      title: 'A document',
+      correspondent: 'Npower',
+      document_type: 'Statement',
+      created: '2025-01-12',
+      snippet: 'snippet',
+      paperless_url: 'https://paperless.example.com/documents/9823/',
+      score: 0.9,
     },
   ],
-  plan: { semantic_queries: ['boiler'], keyword_terms: [], sub_questions: [] },
-  stats: { llm_calls: 2, latency_ms: 500, refined: false },
+  plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+  stats: { llm_calls: 1, latency_ms: 100, refined: false },
 };
 
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
-
-function renderSearchPage() {
-  mockUseFacets.mockReturnValue(makeFacetsResult());
+function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-
-  function Wrapper({ children }: { children: React.ReactNode }) {
-    return React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      React.createElement(MemoryRouter, null, children),
-    );
-  }
-
-  return render(React.createElement(SearchPage), { wrapper: Wrapper });
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('SearchPage', () => {
-  beforeEach(() => {
-    // By default, search is idle (empty query — hook disabled)
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({ status: 'pending', isPending: true, data: undefined }),
-    );
-  });
-
-  it('renders the search bar in the idle state', () => {
-    renderSearchPage();
-    expect(screen.getByTestId('mock-search-bar')).toBeInTheDocument();
-  });
-
-  it('renders filter controls', () => {
-    renderSearchPage();
-    expect(screen.getByTestId('mock-filter-controls')).toBeInTheDocument();
-  });
-
-  it('shows a loading indicator while a search is in flight', async () => {
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({ status: 'pending', isPending: true, isFetching: true }),
-    );
-    renderSearchPage();
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
-    expect(screen.getByRole('status')).toBeInTheDocument();
-  });
-
-  it('renders the answer card and source list when a search succeeds', async () => {
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({
-        status: 'success',
-        isSuccess: true,
-        isPending: false,
-        data: successResponse,
-      }),
-    );
-    renderSearchPage();
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-answer-card')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('mock-source-list')).toBeInTheDocument();
-    expect(screen.getByTestId('mock-query-plan-summary')).toBeInTheDocument();
-  });
-
-  it('shows the empty state when a search returns no results', async () => {
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({
-        status: 'success',
-        isSuccess: true,
-        isPending: false,
-        data: { ...successResponse, answer: '', sources: [] },
-      }),
-    );
-    renderSearchPage();
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
-
-    // The answer card should not be rendered for an empty result
-    expect(screen.queryByTestId('mock-answer-card')).not.toBeInTheDocument();
-    // EmptyState should appear
-    expect(screen.getByText(/no results/i)).toBeInTheDocument();
-  });
-
-  it('shows the initialising state on 503 index-not-ready error', async () => {
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({
-        status: 'error',
-        isError: true,
-        isPending: false,
-        error: new ApiError(503, 'index-not-ready'),
-      }),
-    );
-    renderSearchPage();
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
-
-    await waitFor(() => {
-      expect(screen.getByText(/index is initialising/i)).toBeInTheDocument();
-    });
-  });
-
-  it('invalidates the me query when a search returns Unauthenticated', async () => {
-    mockUseFacets.mockReturnValue(makeFacetsResult());
-    mockUseSearch.mockReturnValue(
-      makeSearchResult({
-        status: 'error',
-        isError: true,
-        isPending: false,
-        error: new Unauthenticated(),
-      }),
-    );
-
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-
-    render(
+  return {
+    queryClient,
+    ...render(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
           <SearchPage />
         </MemoryRouter>
       </QueryClientProvider>,
+    ),
+  };
+}
+
+describe('SearchPage', () => {
+  it('renders the IdleScreen when there is no query', () => {
+    mockUseSearch.mockReturnValue(searchResult({ isPending: true }));
+    renderPage();
+    expect(screen.getByTestId('idle')).toBeInTheDocument();
+  });
+
+  it('renders the LoadingScreen while a search is in flight', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isPending: false, isFetching: true }),
     );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
+  });
 
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
+  it('renders the ResultsScreen on a successful search with sources', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('results')).toBeInTheDocument();
+  });
 
+  it('renders the NoResultsScreen when a search returns zero sources', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({
+        isSuccess: true,
+        data: { ...SUCCESS_DATA, sources: [] },
+      }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('no-results')).toBeInTheDocument();
+  });
+
+  it('renders the IndexNotReadyScreen on a 503 search error', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isError: true, error: new ApiError(503) }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('index-not-ready')).toBeInTheDocument();
+  });
+
+  it('renders the SearchErrorScreen on a generic search error', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isError: true, error: new ApiError(500) }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    expect(screen.getByTestId('search-error')).toBeInTheDocument();
+  });
+
+  it('invalidates the me query when a search returns Unauthenticated', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isError: true, error: new Unauthenticated() }),
+    );
+    const { queryClient } = renderPage();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    await userEvent.click(screen.getByTestId('idle'));
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['auth', 'me'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ['auth', 'me'],
+      });
     });
   });
 
-  it('passes highlightedIndex to SourceList when a citation is activated', async () => {
+  it('opens the DocumentPreviewScreen when a source preview is requested', async () => {
     mockUseSearch.mockReturnValue(
-      makeSearchResult({
-        status: 'success',
-        isSuccess: true,
-        isPending: false,
-        data: successResponse,
-      }),
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
     );
-    renderSearchPage();
-    await userEvent.click(screen.getByTestId('mock-search-bar'));
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    await userEvent.click(screen.getByTestId('results'));
+    expect(screen.getByTestId('preview')).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-answer-card')).toBeInTheDocument();
-    });
-
-    // Before activation: no highlight
-    expect(screen.getByTestId('mock-source-list')).toHaveTextContent('highlighted:none');
-
-    // Activate citation [1]
-    await userEvent.click(screen.getByTestId('mock-citation-btn'));
-
-    expect(screen.getByTestId('mock-source-list')).toHaveTextContent('highlighted:1');
+  it('closes the preview and returns to the results', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    await userEvent.click(screen.getByTestId('results'));
+    await userEvent.click(screen.getByTestId('preview'));
+    expect(screen.getByTestId('results')).toBeInTheDocument();
   });
 });
