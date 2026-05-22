@@ -37,7 +37,7 @@ from fastapi import FastAPI
 from search.account_routes import build_account_router
 from search.appdb_setup import open_app_db
 from search.appstate import AppState, attach_app_state
-from search.deps import require_role
+from search.deps import get_current_user, require_role
 from search.document_routes import build_document_router
 from search.mcp_server import build_mcp_app
 from search.routes import build_api_router
@@ -136,6 +136,7 @@ def create_app(
             store_reader,
             require_reader=require_role("readonly"),
             require_member=require_role("member"),
+            get_current_user=get_current_user,
         )
     )
 

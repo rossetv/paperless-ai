@@ -13,14 +13,16 @@ the store raises :class:`~store.SchemaNotReadyError` for a present-but-empty
 database, so this module distinguishes "not built yet" from "corrupt" through
 a typed exception, never a string match (``CODE_GUIDELINES.md`` §8.2).
 
-Allowed deps: fastapi, search (auth, wire), store (reader, errors),
-    common.config.
-Forbidden: sqlite3, direct LLM/HTTP calls, imports from indexer/.
+Allowed deps: fastapi, search (appstate, deps, wire), store (reader, errors),
+    appdb (recent_searches), common.config.
+Forbidden: direct LLM/HTTP calls, imports from indexer/.
 """
 
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
@@ -28,6 +30,9 @@ from typing import TYPE_CHECKING, Literal, TypeVar
 import structlog
 from fastapi import APIRouter, Depends, Response
 
+from appdb import recent_searches as recent_search_store
+from search.deps import get_app_db
+from search.sessions import CurrentUser
 from search.wire import (
     FacetsResponse,
     SearchRequest,
@@ -41,11 +46,8 @@ from search.wire import (
 from store import SchemaNotReadyError, StoreError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from common.config import Settings
     from search.core import SearchCore
-    from search.sessions import CurrentUser
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
@@ -193,6 +195,7 @@ def build_api_router(
     *,
     require_reader: Callable[..., CurrentUser],
     require_member: Callable[..., CurrentUser],
+    get_current_user: Callable[..., CurrentUser],
 ) -> APIRouter:
     """Build the ``/api`` router with all six route handlers (spec §7.1).
 
@@ -209,6 +212,9 @@ def build_api_router(
             of role Read-only or above. Gates search, facets, and stats.
         require_member: A FastAPI dependency requiring role Member or above.
             Gates the reconcile trigger.
+        get_current_user: The FastAPI dependency resolving the request to a
+            :class:`~search.sessions.CurrentUser`. The ``/api/search``
+            handler uses it to attribute a recorded recent search.
 
     Returns:
         A configured :class:`~fastapi.APIRouter`.
@@ -239,13 +245,23 @@ def build_api_router(
         """
         return _healthz(settings, store_reader)
 
-    @router.post("/api/search", dependencies=[reader_auth])
-    async def search(body: SearchRequest) -> SearchResponse:
+    @router.post("/api/search")
+    async def search(
+        body: SearchRequest,
+        _role: object = Depends(require_reader),
+        user: CurrentUser = Depends(get_current_user),
+        app_db: sqlite3.Connection = Depends(get_app_db),
+    ) -> SearchResponse:
         """Run the full agentic search pipeline and return a SearchResponse.
 
         Bounded by ``SEARCH_MAX_CONCURRENT`` to limit simultaneous LLM spend.
+        A successful search by a real session user is recorded in the
+        user's recent-search history; the legacy bearer (no user row) is
+        not recorded.
         """
-        return await _search(body, core, search_semaphore)
+        result = await _search(body, core, search_semaphore)
+        _record_recent_search(app_db, user, body.query)
+        return result
 
     @router.get("/api/facets", dependencies=[reader_auth])
     async def facets() -> FacetsResponse:
@@ -322,3 +338,36 @@ def _reconcile(settings: Settings) -> Response:
     sentinel.touch()
     log.info("api.reconcile_triggered", sentinel=str(sentinel))
     return Response(status_code=202)
+
+
+# The synthetic legacy-bearer user id. id 0 is not a real users row, so a
+# recent_searches insert for it would violate the foreign key; the legacy
+# bearer therefore never records a search.
+_LEGACY_USER_ID = 0
+
+
+def _record_recent_search(
+    app_db: sqlite3.Connection, user: CurrentUser, query: str
+) -> None:
+    """Record a successful search in the user's recent-search history.
+
+    A no-op for the legacy ``SEARCH_API_KEY`` bearer, whose synthetic admin
+    has ``id`` 0 and no ``users`` row. Best-effort: a database error while
+    writing the history row is logged and swallowed — it must never turn an
+    otherwise-successful search into a failed request.
+
+    Args:
+        app_db: The per-request ``app.db`` connection.
+        user: The authenticated user who ran the search.
+        query: The verbatim search query to record.
+    """
+    if user.id == _LEGACY_USER_ID:
+        # The legacy bearer carries no user identity — nothing to attribute.
+        return
+    try:
+        recent_search_store.record(app_db, user_id=user.id, query=query)
+    except Exception:
+        # rationale: a recent-search write failure must not fail the search
+        # itself (CODE_GUIDELINES §6.4). The search response has already been
+        # built; logging and swallowing here is the correct outer-boundary act.
+        log.warning("api.recent_search_record_failed", user_id=user.id)
