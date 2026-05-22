@@ -19,6 +19,7 @@ const meta = {
       date_to: null,
     },
     onFiltersChange: () => {},
+    onSearch: (q: string) => globalThis.console.log('search', q),
     onClearFilters: () => globalThis.console.log('clear filters'),
     onSearchWithoutFilters: () => globalThis.console.log('search no filters'),
   },

@@ -61,6 +61,20 @@ describe('SearchField', () => {
     expect(screen.getByRole('searchbox')).toHaveValue('prefilled');
   });
 
+  it('renders pre-filled yet editable when given a defaultValue', async () => {
+    const handleSubmit = vi.fn();
+    render(
+      <SearchField id="q" onSubmit={handleSubmit} defaultValue="old query" />,
+    );
+    const input = screen.getByRole('searchbox');
+    expect(input).toHaveValue('old query');
+    // The field is uncontrolled — the user can clear it and type a new query.
+    await userEvent.clear(input);
+    await userEvent.type(input, 'new query');
+    await userEvent.keyboard('{Enter}');
+    expect(handleSubmit).toHaveBeenCalledWith('new query');
+  });
+
   it('disables the input and button when disabled prop is true', () => {
     render(<SearchField id="q" onSubmit={vi.fn()} disabled />);
     expect(screen.getByRole('searchbox')).toBeDisabled();

@@ -57,6 +57,7 @@ const meta = {
     },
     result: RESPONSE,
     onFiltersChange: () => {},
+    onSearch: (q: string) => globalThis.console.log('search', q),
     onCitationActivate: (i: number) => globalThis.console.log('cite', i),
     onPreview: (id: number) => globalThis.console.log('preview', id),
   },

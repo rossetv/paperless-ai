@@ -18,6 +18,11 @@ export interface ResultsScreenProps {
   result: SearchResponse;
   /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
+  /**
+   * Called with a new query when the user submits the recap search field —
+   * the parent re-runs the search, so a second search needs no reload.
+   */
+  onSearch: (query: string) => void;
   /** Called with a 1-based index when a citation marker is activated. */
   onCitationActivate: (index: number) => void;
   /** Called with a document id when a source's preview action is activated. */
@@ -46,6 +51,7 @@ export function ResultsScreen({
   filters,
   result,
   onFiltersChange,
+  onSearch,
   onCitationActivate,
   onPreview,
   highlightedIndex,
@@ -60,12 +66,14 @@ export function ResultsScreen({
       }
     >
       <Stack direction="vertical" gap={10}>
-        {/* Query recap. */}
+        {/* Query recap — editable: submitting it re-runs the search with the
+            new query, so a second search needs no browser reload. Keyed by
+            `query` so it re-seeds whenever a fresh search lands. */}
         <SearchField
+          key={query}
           id="results-search"
-          value={query}
-          disabled
-          onSubmit={() => {}}
+          defaultValue={query}
+          onSubmit={onSearch}
         />
 
         {/* Synthesised answer. */}

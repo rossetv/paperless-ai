@@ -14,6 +14,11 @@ export interface SearchFieldProps {
   placeholder?: string;
   /** Controlled value. Supply alongside onChange for controlled usage. */
   value?: string;
+  /**
+   * Initial value for uncontrolled usage — the field is editable and
+   * pre-filled with this text. Ignored when `value` (controlled) is set.
+   */
+  defaultValue?: string;
   /** Whether the field and submit button are non-interactive. */
   disabled?: boolean;
   /** Change handler for controlled usage. */
@@ -44,14 +49,17 @@ export function SearchField({
   label,
   placeholder,
   value,
+  defaultValue = '',
   disabled = false,
   onChange,
   onSubmit,
   className,
 }: SearchFieldProps): React.ReactElement {
-  // Internal state for uncontrolled usage. When `value` is provided (controlled),
-  // this state is ignored and the controlled value drives the input.
-  const [internalValue, setInternalValue] = useState('');
+  // Internal state for uncontrolled usage, seeded from `defaultValue` so the
+  // field can render pre-filled yet stay editable. When `value` is provided
+  // (controlled), this state is ignored and the controlled value drives the
+  // input.
+  const [internalValue, setInternalValue] = useState(defaultValue);
 
   // Use a ref to always read the latest value at submit time — avoids stale
   // closure inside the submit handler without needing to track every change.

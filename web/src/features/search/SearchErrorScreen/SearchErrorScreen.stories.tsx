@@ -5,7 +5,11 @@ const meta = {
   title: 'Features/Search/SearchErrorScreen',
   component: SearchErrorScreen,
   parameters: { layout: 'fullscreen' },
-  args: { onRetry: () => globalThis.console.log('retry') },
+  args: {
+    query: 'how much did I pay Npower across 2024?',
+    onRetry: () => globalThis.console.log('retry'),
+    onSearch: (q: string) => globalThis.console.log('search', q),
+  },
 } satisfies Meta<typeof SearchErrorScreen>;
 
 export default meta;
