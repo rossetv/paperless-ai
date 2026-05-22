@@ -1,0 +1,68 @@
+/*
+ * SourceCardSurface primitive — CSS Module.
+ *
+ * The bespoke source-result card shell: a two-column grid (a content column
+ * and a thumbnail column) with a circular citation badge overlapping the
+ * thumbnail's top-left corner. The `highlighted` modifier lifts the card and
+ * adds an accent ring — used for the top-ranked source.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.surface {
+  display: grid;
+  grid-template-columns: 1fr var(--size-doc-thumb-width);
+  gap: var(--spacing-14);
+  align-items: start;
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-large);
+  border: var(--spacing-1) solid var(--colour-border);
+  padding: var(--spacing-13) var(--spacing-14);
+}
+
+/* Highlighted (top-ranked) source — lift + accent ring, no flat border. */
+.highlighted {
+  border-color: transparent;
+  box-shadow: var(--shadow-source-highlight);
+  outline: var(--spacing-1) solid var(--colour-accent-ring);
+}
+
+/* The content column — min-width 0 so long text can ellipsate/wrap. */
+.content {
+  min-width: 0;
+}
+
+/* The thumbnail column — relatively positioned so the badge can overlap. */
+.thumb {
+  position: relative;
+}
+
+/* Circular citation badge — overlaps the thumbnail's top-left corner. */
+.badge {
+  position: absolute;
+  top: calc(-1 * var(--spacing-4));
+  left: calc(-1 * var(--spacing-4));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-13);
+  height: var(--spacing-13);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  box-shadow: 0 0 0 var(--spacing-1) var(--colour-surface);
+}
+
+/* Stack the columns on narrow viewports. */
+@media (width <= 640px) {
+  .surface {
+    grid-template-columns: 1fr;
+  }
+
+  .thumb {
+    justify-self: start;
+  }
+}
