@@ -110,9 +110,7 @@ def _client(tmp_path, core: MagicMock) -> TestClient:
 
 def test_successful_search_records_a_recent_search(conn, tmp_path) -> None:
     """A signed-in user's successful search is written to recent_searches."""
-    user = create_user(
-        conn, username="alice", password_hash="h", role="readonly"
-    )
+    user = create_user(conn, username="alice", password_hash="h", role="readonly")
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
     client = _client(tmp_path, _mock_core())
     client.cookies.set(SESSION_COOKIE_NAME, token)
@@ -140,9 +138,7 @@ def test_legacy_bearer_search_records_nothing(conn, tmp_path) -> None:
 
 def test_failed_search_records_nothing(conn, tmp_path) -> None:
     """A search that raises does not write a recent_searches row."""
-    user = create_user(
-        conn, username="bob", password_hash="h", role="readonly"
-    )
+    user = create_user(conn, username="bob", password_hash="h", role="readonly")
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
     client = _client(tmp_path, _mock_core(fail=True))
     client.cookies.set(SESSION_COOKIE_NAME, token)
@@ -154,17 +150,13 @@ def test_failed_search_records_nothing(conn, tmp_path) -> None:
 
 def test_record_failure_does_not_fail_the_search(conn, tmp_path, monkeypatch) -> None:
     """A database error while recording is swallowed — the search still 200s."""
-    user = create_user(
-        conn, username="carol", password_hash="h", role="readonly"
-    )
+    user = create_user(conn, username="carol", password_hash="h", role="readonly")
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
 
     def _boom(*args, **kwargs):
         raise RuntimeError("recent_searches write failed")
 
-    monkeypatch.setattr(
-        "search.routes.recent_search_store.record", _boom
-    )
+    monkeypatch.setattr("search.routes.recent_search_store.record", _boom)
     client = _client(tmp_path, _mock_core())
     client.cookies.set(SESSION_COOKIE_NAME, token)
 

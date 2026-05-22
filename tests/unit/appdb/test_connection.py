@@ -138,8 +138,7 @@ def test_concurrent_writers_each_own_connection_lose_no_writes(tmp_path) -> None
             conn.close()
 
     threads = [
-        threading.Thread(target=worker, args=(index,))
-        for index in range(threads_count)
+        threading.Thread(target=worker, args=(index,)) for index in range(threads_count)
     ]
     for thread in threads:
         thread.start()

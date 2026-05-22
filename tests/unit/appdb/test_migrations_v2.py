@@ -51,9 +51,7 @@ def test_schema_version_constant_is_two() -> None:
 
 def test_fresh_database_reaches_schema_version_two(conn) -> None:
     run_migrations(conn)
-    row = conn.execute(
-        "SELECT value FROM meta WHERE key = 'schema_version'"
-    ).fetchone()
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     assert int(row[0]) == 2
 
 
@@ -82,9 +80,7 @@ def test_recent_searches_user_id_cascades_on_user_delete(conn) -> None:
     conn.commit()
     conn.execute("DELETE FROM users WHERE id = 1")
     conn.commit()
-    remaining = conn.execute(
-        "SELECT COUNT(*) FROM recent_searches"
-    ).fetchone()[0]
+    remaining = conn.execute("SELECT COUNT(*) FROM recent_searches").fetchone()[0]
     assert remaining == 0
 
 
@@ -137,7 +133,5 @@ def test_v1_database_migrates_forward_keeping_users(conn) -> None:
     # Now run the full migration list — v2 should apply on top.
     run_migrations(conn)
     assert "recent_searches" in _table_names(conn)
-    kept = conn.execute(
-        "SELECT username FROM users WHERE id = 7"
-    ).fetchone()
+    kept = conn.execute("SELECT username FROM users WHERE id = 7").fetchone()
     assert kept["username"] == "kept"

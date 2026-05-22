@@ -70,9 +70,7 @@ def patched_paperless(monkeypatch: pytest.MonkeyPatch) -> type[_StubPaperlessCli
     Resets ``next_outcome`` to the default success before each test.
     """
     _StubPaperlessClient.next_outcome = ("application/pdf", _PDF_BYTES)
-    monkeypatch.setattr(
-        "search.document_routes.PaperlessClient", _StubPaperlessClient
-    )
+    monkeypatch.setattr("search.document_routes.PaperlessClient", _StubPaperlessClient)
     return _StubPaperlessClient
 
 
@@ -80,9 +78,7 @@ def _make_404_error() -> httpx.HTTPStatusError:
     """Build an httpx.HTTPStatusError carrying a 404 response."""
     request = httpx.Request("GET", "https://paperless.example/x")
     response = httpx.Response(404, request=request)
-    return httpx.HTTPStatusError(
-        "not found", request=request, response=response
-    )
+    return httpx.HTTPStatusError("not found", request=request, response=response)
 
 
 def test_pdf_proxy_streams_for_a_signed_in_user(
@@ -94,9 +90,7 @@ def test_pdf_proxy_streams_for_a_signed_in_user(
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
     try:
-        seed_user(
-            app_db, username="alice", password="alice-password", role="readonly"
-        )
+        seed_user(app_db, username="alice", password="alice-password", role="readonly")
         client = build_account_client(settings, app_db, store_reader)
         login = client.post(
             "/api/auth/login",

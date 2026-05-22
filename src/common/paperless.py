@@ -243,9 +243,7 @@ class PaperlessClient:
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
-    def download_stream(
-        self, doc_id: int
-    ) -> tuple[str, Iterator[bytes]]:
+    def download_stream(self, doc_id: int) -> tuple[str, Iterator[bytes]]:
         """Stream a document's original file straight from Paperless-ngx.
 
         Unlike :meth:`download_content`, this never buffers the whole file:
@@ -292,9 +290,7 @@ class PaperlessClient:
         # _iter_body re-opens its own stream for the actual transfer.
         with self._client.stream("GET", url) as probe:
             probe.raise_for_status()
-            content_type = probe.headers.get(
-                "Content-Type", "application/pdf"
-            )
+            content_type = probe.headers.get("Content-Type", "application/pdf")
 
         return content_type, _iter_body()
 

@@ -74,9 +74,7 @@ def _row_to_recent_search(row: sqlite3.Row) -> RecentSearch:
     )
 
 
-def record(
-    conn: sqlite3.Connection, *, user_id: int, query: str
-) -> RecentSearch:
+def record(conn: sqlite3.Connection, *, user_id: int, query: str) -> RecentSearch:
     """Record one search for *user_id* and return the stored row.
 
     De-duplicates first: any existing rows for this user whose ``query``
@@ -103,17 +101,14 @@ def record(
         (user_id, query),
     )
     cursor = conn.execute(
-        "INSERT INTO recent_searches (user_id, query, created_at) "
-        "VALUES (?, ?, ?)",
+        "INSERT INTO recent_searches (user_id, query, created_at) VALUES (?, ?, ?)",
         (user_id, query, now),
     )
     new_id = int(cursor.lastrowid or 0)
     _trim_to_cap(conn, user_id)
     conn.commit()
     log.info("appdb.recent_search_recorded", user_id=user_id)
-    return RecentSearch(
-        id=new_id, user_id=user_id, query=query, created_at=now
-    )
+    return RecentSearch(id=new_id, user_id=user_id, query=query, created_at=now)
 
 
 def _trim_to_cap(conn: sqlite3.Connection, user_id: int) -> None:
