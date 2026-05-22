@@ -19,6 +19,8 @@ import {
   getStats,
   getHealthz,
   postReconcile,
+  getRecentSearches,
+  documentPdfUrl,
 } from './client';
 import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
 
@@ -464,5 +466,31 @@ describe('Wave 1 accounts endpoints', () => {
     expect(url).toMatch(/\/api\/stats\/public$/);
     expect(init.method).toBe('GET');
     expect(result.document_count).toBe(14238);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 2 — search-redesign endpoints
+// ---------------------------------------------------------------------------
+
+describe('Wave 2 search endpoints', () => {
+  it('getRecentSearches GETs /api/recent-searches', async () => {
+    mockFetch(200, {
+      searches: [{ query: 'npower 2024', searched_at: '2026-05-22T10:00:00Z' }],
+    });
+    const result = await getRecentSearches();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/recent-searches$/);
+    expect(init.method).toBe('GET');
+    expect(result.searches[0]?.query).toBe('npower 2024');
+  });
+
+  it('getRecentSearches throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthenticated' });
+    await expect(getRecentSearches()).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('documentPdfUrl builds the proxied PDF path for a document id', () => {
+    expect(documentPdfUrl(9823)).toMatch(/\/api\/documents\/9823\/pdf$/);
   });
 });
