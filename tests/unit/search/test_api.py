@@ -2,31 +2,31 @@
 
 Covers the security-critical contracts (spec §7.1, §7.3, §7.4):
 
-- An unauthenticated POST /api/search → 401; login sets the session cookie;
-  the cookie and a Bearer token both then authorise /api/search.
+- An unauthenticated POST /api/search → 401; a legacy ``SEARCH_API_KEY``
+  Bearer token then authorises /api/search — even before any user exists.
 - POST /api/search / GET /api/facets / GET /api/stats return correctly-mapped
   wire responses; POST /api/reconcile writes the sentinel and returns 202.
-- StaticFiles cannot serve a path outside the frontend directory, and the
-  index DB is never web-reachable.
-- main() exits non-zero when SEARCH_API_KEY is whitespace-only (I1).
+- The SPA catch-all never serves a path outside the frontend directory, and
+  the index DB is never web-reachable.
+- main() delegates per-process startup to ``common.bootstrap``.
 - POST /api/search returns 422 when query exceeds max length (MINOR 2).
 
-The healthz three-state endpoint and the SEARCH_MAX_CONCURRENT semaphore are
-covered in :mod:`test_api_healthz` (split for the 500-line ceiling, §3.1).
+The username/password login handshake and the session-cookie path are
+exercised by the account integration suite (spec §4.8). The healthz
+three-state endpoint and the SEARCH_MAX_CONCURRENT semaphore are covered in
+:mod:`test_api_healthz` (split for the 500-line ceiling, §3.1).
 
 ``build_test_client`` (see conftest.py) wraps the real ``create_app`` with a
-mock core and store reader.
+mock core, a mock store reader, and a fresh in-memory ``app.db``.
 """
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from search.auth import SESSION_COOKIE_NAME, issue_session_token
 from tests.helpers.factories import (
     make_facet_set,
     make_index_stats,
@@ -95,57 +95,8 @@ def test_unauthenticated_reconcile_returns_401() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Authentication — login sets the session cookie
+# Authentication — bearer token authorises requests
 # ---------------------------------------------------------------------------
-
-
-def test_login_with_correct_key_sets_session_cookie() -> None:
-    """POST /api/auth/login with the correct key must set the session cookie."""
-    client = build_test_client(_settings())
-    response = client.post(
-        "/api/auth/login", json={"api_key": _API_KEY}, follow_redirects=False
-    )
-    assert response.status_code == 200
-    assert SESSION_COOKIE_NAME in response.cookies
-
-
-def test_login_with_wrong_key_returns_401() -> None:
-    client = build_test_client(_settings())
-    response = client.post("/api/auth/login", json={"api_key": "wrong-key"})
-    assert response.status_code == 401
-
-
-def test_login_with_non_ascii_api_key_returns_401_not_500() -> None:
-    """POST /api/auth/login with a non-ASCII api_key must return 401, not 500.
-
-    Before the fix, ``hmac.compare_digest`` raised ``TypeError`` on non-ASCII
-    str arguments, which surfaced as an uncaught HTTP 500.  The fix uses
-    UTF-8 bytes comparison.  This test fails if the comparison is reverted to
-    str-based ``hmac.compare_digest``.
-    """
-    client = build_test_client(_settings())
-    response = client.post("/api/auth/login", json={"api_key": "café"})
-    assert response.status_code == 401, (
-        f"Expected 401 for non-ASCII key, got {response.status_code}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Authentication — session cookie / bearer token authorise requests
-# ---------------------------------------------------------------------------
-
-
-def test_session_cookie_authorises_search() -> None:
-    """A session cookie obtained via login must authorise /api/search."""
-    client = build_test_client(_settings())
-
-    login = client.post("/api/auth/login", json={"api_key": _API_KEY})
-    assert login.status_code == 200
-    assert SESSION_COOKIE_NAME in login.cookies
-
-    # The TestClient retains cookies automatically; next request uses the cookie.
-    response = client.post("/api/search", json={"query": "boiler warranty"})
-    assert response.status_code == 200
 
 
 def test_bearer_token_authorises_search() -> None:
@@ -259,6 +210,23 @@ def test_search_with_filters_passes_filters_to_core() -> None:
     assert 10 in ui_filters.tag_ids
 
 
+def test_legacy_bearer_authorises_even_in_setup_mode() -> None:
+    """With no users yet, the legacy SEARCH_API_KEY bearer still authorises.
+
+    build_test_client defaults to a fresh in-memory app.db (no users), so the
+    app is in setup mode. The legacy bearer path does not depend on a user
+    row, so a Bearer token equal to SEARCH_API_KEY still reaches a protected
+    route.
+    """
+    client = build_test_client(_settings())
+    response = client.post(
+        "/api/search",
+        json={"query": "anything"},
+        headers={"Authorization": f"Bearer {_API_KEY}"},
+    )
+    assert response.status_code == 200
+
+
 # ---------------------------------------------------------------------------
 # Facets — correct wire mapping
 # ---------------------------------------------------------------------------
@@ -316,54 +284,45 @@ def test_stats_returns_correctly_mapped_response() -> None:
 
 
 def test_index_db_is_not_served_over_http(tmp_path: Path) -> None:
-    """The index DB must never be served via the static files mount."""
+    """The index DB must never be served via the SPA static mount.
+
+    The SPA catch-all serves a real file only when it resolves inside
+    ``web/dist``; ``/index.db`` does not, so the deep-link catch-all hands
+    back the SPA shell (``index.html``) instead. The index DB content is
+    never reachable over HTTP — that is the invariant under test.
+    """
     db_path = tmp_path / "index.db"
     db_path.write_text("sensitive data")
     client = build_test_client(_settings(db_path=str(db_path)))
 
     response = client.get("/index.db", headers=_bearer_headers())
-    assert response.status_code in (404, 307, 302)
     assert "sensitive data" not in response.text
 
 
-def test_path_traversal_on_static_mount_is_rejected() -> None:
-    """Path-traversal attempts on the static mount must not escape the frontend dir."""
+def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
+    """Path traversal on the SPA mount must not escape the frontend directory.
+
+    A percent-encoded ``..`` survives client-side URL normalisation and
+    reaches the catch-all as a literal traversal segment. ``register_spa``
+    resolves the candidate path and refuses to serve anything outside
+    ``web/dist`` — so a crafted path cannot read an out-of-tree file. The
+    catch-all falls back to the SPA shell; the probe file's content must
+    never appear in the response.
+    """
+    probe = tmp_path / "traversal_probe.txt"
+    probe.write_text("out-of-tree-secret")
     client = build_test_client(_settings())
 
-    # FastAPI/Starlette rejects path traversal with 400 or 404.
-    response = client.get("/../../../../etc/passwd", headers=_bearer_headers())
-    assert response.status_code in (400, 404)
+    response = client.get(
+        "/%2e%2e/%2e%2e/%2e%2e/etc/passwd", headers=_bearer_headers()
+    )
+    assert "out-of-tree-secret" not in response.text
+    assert "root:" not in response.text
 
 
 # ---------------------------------------------------------------------------
-# I1 regression — whitespace-only SEARCH_API_KEY must exit non-zero
+# Entry point — main() delegates to the shared bootstrap
 # ---------------------------------------------------------------------------
-
-
-def test_main_exits_nonzero_when_api_key_is_whitespace_only() -> None:
-    """main() must exit(1) when SEARCH_API_KEY is whitespace-only.
-
-    A key of ``"   "`` is truthy (so ``if not key:`` passes it through), but
-    it is effectively absent.  The fix checks ``.strip()``; this test fails if
-    that check is reverted to ``if not key:``.
-    """
-    from search.api import main
-
-    whitespace_settings = MagicMock()
-    whitespace_settings.SEARCH_API_KEY = "   "  # whitespace-only key
-
-    with (
-        patch(
-            "common.bootstrap.bootstrap_process",
-            return_value=whitespace_settings,
-        ),
-        patch("search.api.uvicorn.run") as mock_uvicorn,
-        pytest.raises(SystemExit) as exc_info,
-    ):
-        main()
-
-    assert exc_info.value.code != 0, "main() must exit non-zero for a whitespace key"
-    mock_uvicorn.assert_not_called()
 
 
 def test_main_runs_the_shared_process_bootstrap() -> None:
@@ -410,21 +369,3 @@ def test_search_returns_422_when_query_exceeds_max_length() -> None:
         "/api/search", json={"query": too_long_query}, headers=_bearer_headers()
     )
     assert response.status_code == 422
-
-
-# ---------------------------------------------------------------------------
-# Session-token helper sanity — used by the cookie auth path
-# ---------------------------------------------------------------------------
-
-
-def test_issued_session_token_authorises_search() -> None:
-    """A directly-issued session token, set as the cookie, authorises /api/search.
-
-    Confirms the cookie path independently of the login handshake.
-    """
-    client = build_test_client(_settings())
-    token = issue_session_token(_API_KEY, ttl_seconds=3600, now=time.time())
-    client.cookies.set(SESSION_COOKIE_NAME, token)
-
-    response = client.post("/api/search", json={"query": "test"})
-    assert response.status_code == 200
