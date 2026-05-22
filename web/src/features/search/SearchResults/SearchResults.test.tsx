@@ -83,7 +83,7 @@ describe('SearchResults', () => {
       <SearchResults
         query=""
         result={makeResult({})}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -94,7 +94,7 @@ describe('SearchResults', () => {
       <SearchResults
         query="boiler"
         result={makeResult({ isPending: true, isFetching: true })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(screen.getByRole('status')).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('SearchResults', () => {
           error: new ApiError(503, 'index-not-ready'),
           status: 'error',
         })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(screen.getByText(/index is initialising/i)).toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('SearchResults', () => {
           error: new ApiError(500, 'boom'),
           status: 'error',
         })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(screen.getByText(/search failed/i)).toBeInTheDocument();
@@ -142,7 +142,7 @@ describe('SearchResults', () => {
           error: new Unauthenticated(),
           status: 'error',
         })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(container).toBeEmptyDOMElement();
@@ -158,7 +158,7 @@ describe('SearchResults', () => {
           status: 'success',
           data: { ...successResponse, answer: '', sources: [] },
         })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
       />,
     );
     expect(screen.getByText(/no results found/i)).toBeInTheDocument();
@@ -175,7 +175,7 @@ describe('SearchResults', () => {
           status: 'success',
           data: successResponse,
         })}
-        onCitationActivate={vi.fn()}
+        onCitationActivate={vi.fn()} onPreview={vi.fn()}
         highlightedIndex={1}
       />,
     );

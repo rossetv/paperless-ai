@@ -27,6 +27,11 @@ export interface SearchResultsProps {
    * When undefined, no source is highlighted.
    */
   highlightedIndex?: number;
+  /**
+   * Called with a document id when a source card's "Preview document" action
+   * is activated. Threaded through to `SourceList` and each `SourceCard`.
+   */
+  onPreview: (documentId: number) => void;
 }
 
 /**
@@ -59,6 +64,7 @@ export function SearchResults({
   result,
   onCitationActivate,
   highlightedIndex,
+  onPreview,
 }: SearchResultsProps): React.ReactElement | null {
   // Idle: no query submitted yet.
   if (query.trim().length === 0) {
@@ -118,6 +124,7 @@ export function SearchResults({
         />
         <SourceList
           sources={sources}
+          onPreview={onPreview}
           {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}
         />
         <QueryPlanSummary plan={plan} stats={stats} />

@@ -87,6 +87,10 @@ export function SearchPage(): React.ReactElement {
     setHighlightedIndex(index);
   }
 
+  function handlePreview(_documentId: number): void {
+    // TODO: open the in-app document-preview viewer (wired in Part 010).
+  }
+
   return (
     <Page>
       <AppNavBar />
@@ -101,6 +105,7 @@ export function SearchPage(): React.ReactElement {
             query={query}
             result={searchResult}
             onCitationActivate={handleCitationActivate}
+            onPreview={handlePreview}
             {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}
           />
         </Stack>

@@ -52,6 +52,9 @@ const meta = {
   title: 'Features/Search/SearchResults',
   component: SearchResults,
   parameters: { layout: 'padded' },
+  args: {
+    onPreview: (id: number) => console.log('preview', id),
+  },
 } satisfies Meta<typeof SearchResults>;
 
 export default meta;
