@@ -8,6 +8,7 @@ test_paperless_iter.py (§3.1 500-line ceiling split).
 from __future__ import annotations
 
 import json as json_mod
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -547,3 +548,103 @@ class TestClose:
 
         # Assert — httpx.Client is closed; subsequent requests would fail
         assert client._client.is_closed
+
+
+class TestDownloadStream:
+    """PaperlessClient.download_stream streams a document without buffering."""
+
+    @staticmethod
+    def _streaming_client(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        body: bytes,
+        status_code: int = 200,
+        content_type: str = "application/pdf",
+    ) -> PaperlessClient:
+        """Build a PaperlessClient whose httpx session is a MockTransport.
+
+        The transport answers any request with *body*, *status_code* and
+        *content_type*, so download_stream is exercised with no network.
+        """
+        settings = MagicMock()
+        settings.PAPERLESS_URL = "https://paperless.example"
+        settings.PAPERLESS_TOKEN = "tok"
+        settings.REQUEST_TIMEOUT = 30
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status_code,
+                content=body,
+                headers={"Content-Type": content_type},
+            )
+
+        client = PaperlessClient(settings)
+        # Replace the real httpx session with one backed by the mock
+        # transport; close the original first so no socket leaks.
+        client._client.close()
+        client._client = httpx.Client(transport=httpx.MockTransport(_handler))
+        return client
+
+    def test_download_stream_yields_the_body(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The chunk iterator reassembles to the full document body."""
+        pdf = b"%PDF-1.7\nfake pdf payload\n%%EOF"
+        client = self._streaming_client(monkeypatch, body=pdf)
+        try:
+            content_type, chunks = client.download_stream(100)
+            assembled = b"".join(chunks)
+        finally:
+            client.close()
+        assert assembled == pdf
+
+    def test_download_stream_returns_the_content_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The Paperless Content-Type header is returned to the caller."""
+        client = self._streaming_client(
+            monkeypatch, body=b"%PDF-1.7", content_type="application/pdf"
+        )
+        try:
+            content_type, chunks = client.download_stream(100)
+            list(chunks)  # drain so the stream context closes cleanly
+        finally:
+            client.close()
+        assert content_type == "application/pdf"
+
+    def test_download_stream_defaults_content_type_when_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing Content-Type header falls back to application/pdf."""
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            # No Content-Type header at all.
+            return httpx.Response(200, content=b"%PDF-1.7")
+
+        settings = MagicMock()
+        settings.PAPERLESS_URL = "https://paperless.example"
+        settings.PAPERLESS_TOKEN = "tok"
+        settings.REQUEST_TIMEOUT = 30
+        client = PaperlessClient(settings)
+        client._client.close()
+        client._client = httpx.Client(transport=httpx.MockTransport(_handler))
+        try:
+            content_type, chunks = client.download_stream(100)
+            list(chunks)
+        finally:
+            client.close()
+        assert content_type == "application/pdf"
+
+    def test_download_stream_raises_on_404(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 404 from Paperless surfaces as httpx.HTTPStatusError."""
+        client = self._streaming_client(
+            monkeypatch, body=b"not found", status_code=404
+        )
+        try:
+            with pytest.raises(httpx.HTTPStatusError):
+                content_type, chunks = client.download_stream(999)
+                list(chunks)
+        finally:
+            client.close()

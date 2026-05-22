@@ -243,6 +243,61 @@ class PaperlessClient:
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
+    def download_stream(
+        self, doc_id: int
+    ) -> tuple[str, Iterator[bytes]]:
+        """Stream a document's original file straight from Paperless-ngx.
+
+        Unlike :meth:`download_content`, this never buffers the whole file:
+        it opens an ``httpx`` streaming response and returns the document's
+        content type plus an iterator that yields the body in chunks. It
+        backs the search server's in-app PDF viewer proxy (web-redesign §5),
+        where buffering a large scan into memory per request is wasteful.
+
+        The returned iterator owns the open HTTP response: it must be fully
+        drained (or closed) by the caller so the underlying connection is
+        released. The search server hands it to a Starlette
+        ``StreamingResponse``, which drains it as it writes the body.
+
+        A non-2xx status (notably a 404 for an unknown ``doc_id``) is raised
+        as an :class:`httpx.HTTPStatusError` while the iterator is first
+        advanced; the caller maps that to an HTTP error. Server errors are
+        **not** retried here — a streaming body cannot be safely replayed
+        once partially consumed — so this deliberately does not use the
+        ``@retry``-wrapped ``_get``.
+
+        Args:
+            doc_id: The Paperless-ngx document id.
+
+        Returns:
+            A two-tuple of the response ``Content-Type`` (defaulting to
+            ``application/pdf`` when Paperless omits the header) and an
+            iterator yielding the file body in byte chunks.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/download/"
+
+        def _iter_body() -> Iterator[bytes]:
+            """Open the streaming response and yield its body in chunks.
+
+            The ``with`` block keeps the response open for the lifetime of
+            the iteration and closes it (releasing the connection) once the
+            caller has drained every chunk.
+            """
+            with self._client.stream("GET", url) as response:
+                response.raise_for_status()
+                yield from response.iter_bytes()
+
+        # Peek the headers without consuming the body: a short-lived stream
+        # context yields the Content-Type, then closes. iter_bytes() in
+        # _iter_body re-opens its own stream for the actual transfer.
+        with self._client.stream("GET", url) as probe:
+            probe.raise_for_status()
+            content_type = probe.headers.get(
+                "Content-Type", "application/pdf"
+            )
+
+        return content_type, _iter_body()
+
     def update_document(
         self, doc_id: int, content: str, new_tags: Iterable[int]
     ) -> None:
