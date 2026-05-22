@@ -44,15 +44,16 @@ def conn(tmp_path):
     c.close()
 
 
-def test_schema_version_constant_is_two() -> None:
-    """SCHEMA_VERSION advanced to 2 — migration v2 is the new head."""
-    assert SCHEMA_VERSION == 2
+def test_schema_version_constant_includes_migration_v2() -> None:
+    """SCHEMA_VERSION advanced to at least 2 — migration v2 is registered."""
+    assert SCHEMA_VERSION >= 2
 
 
-def test_fresh_database_reaches_schema_version_two(conn) -> None:
+def test_fresh_database_reaches_at_least_schema_version_two(conn) -> None:
     run_migrations(conn)
     row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
-    assert int(row[0]) == 2
+    assert int(row[0]) >= 2
+    assert int(row[0]) == SCHEMA_VERSION
 
 
 def test_fresh_database_has_the_recent_searches_table(conn) -> None:
