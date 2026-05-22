@@ -23,6 +23,7 @@ Allowed deps: fastapi, structlog, search (auth, sessions, appstate).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import structlog
@@ -86,7 +87,7 @@ def get_current_user(
     raise HTTPException(status_code=401, detail="Not authenticated")
 
 
-def require_role(required_role: str) -> object:
+def require_role(required_role: str) -> Callable[..., CurrentUser]:
     """Return a FastAPI dependency that requires at least *required_role*.
 
     The dependency resolves the current user via :func:`get_current_user`
@@ -98,7 +99,8 @@ def require_role(required_role: str) -> object:
         required_role: The minimum role the route demands.
 
     Returns:
-        A FastAPI dependency callable.
+        A FastAPI dependency callable resolving to the authorised
+        :class:`~search.sessions.CurrentUser`.
     """
 
     def _dependency(
