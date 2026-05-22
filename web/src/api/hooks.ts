@@ -9,16 +9,18 @@
  * (leaf module — CODE_GUIDELINES §12.3, never imports components/features/pages).
  */
 
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
-import { search, getFacets, getStats, login } from './client';
+import { search, getFacets, getStats, login, logout, me, setupStatus } from './client';
 import type {
   SearchRequest,
   SearchResponse,
   FacetsResponse,
   StatsResponse,
-  StatusResponse,
   LoginRequest,
+  LoginResponse,
+  MeResponse,
+  SetupStatus,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -29,7 +31,12 @@ const queryKeys = {
   search: (req: SearchRequest) => ['search', req] as const,
   facets: () => ['facets'] as const,
   stats: () => ['stats'] as const,
+  me: () => ['auth', 'me'] as const,
+  setupStatus: () => ['setup', 'status'] as const,
 } as const;
+
+/** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
+export const ME_QUERY_KEY = ['auth', 'me'] as const;
 
 // ---------------------------------------------------------------------------
 // Query hooks
@@ -68,19 +75,74 @@ export function useStats(): UseQueryResult<StatsResponse, Error> {
 }
 
 // ---------------------------------------------------------------------------
+// Auth query hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * The current authenticated user — GET /api/auth/me.
+ *
+ * `useAuth` is built on this hook. `retry: false` so a 401 (not signed in)
+ * resolves to an error state immediately rather than retrying. `staleTime`
+ * is short so a logout / login flips the result promptly.
+ */
+export function useMe(): UseQueryResult<MeResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.me(),
+    queryFn: me,
+    retry: false,
+    staleTime: 0,
+  });
+}
+
+/**
+ * Whether first-run setup is still needed — GET /api/setup/status.
+ *
+ * Public; used by the bootstrap gate before the user is known. `retry: false`
+ * so a transient failure does not stall the gate.
+ */
+export function useSetupStatus(): UseQueryResult<SetupStatus, Error> {
+  return useQuery({
+    queryKey: queryKeys.setupStatus(),
+    queryFn: setupStatus,
+    retry: false,
+    staleTime: 0,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Mutation hooks
 // ---------------------------------------------------------------------------
 
 /**
  * Login mutation — POST /api/auth/login.
  *
- * On success the server sets an `HttpOnly` session cookie; the caller receives
- * `{ status: 'ok' }`. On failure the mutation exposes `Unauthenticated` as the
- * error so the caller can display an "invalid key" message without a separate
- * `instanceof` check.
+ * On success the server sets an `HttpOnly` session cookie and the `me` query
+ * is invalidated so `useAuth` re-resolves to the signed-in user. On failure
+ * the mutation exposes `Unauthenticated` (401) or `ApiError` (403 suspended).
  */
-export function useLogin(): UseMutationResult<StatusResponse, Error, LoginRequest> {
+export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest> {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: login,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    },
+  });
+}
+
+/**
+ * Logout mutation — POST /api/auth/logout.
+ *
+ * On success the `me` query cache is cleared so `useAuth` immediately reports
+ * the user as signed out and the router sends them to `/login`.
+ */
+export function useLogout(): UseMutationResult<void, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: logout,
+    onSuccess: () => {
+      queryClient.setQueryData(queryKeys.me(), undefined);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    },
   });
 }
