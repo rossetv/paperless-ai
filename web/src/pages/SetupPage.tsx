@@ -1,13 +1,16 @@
 /**
  * First-run setup page — hosts the `FirstRunSetupScreen` feature.
  *
- * Placeholder body for now; the real `FirstRunSetupScreen` is wired in a
- * later task. Zero styling of its own (CODE_GUIDELINES §12.5).
+ * `FirstRunSetupScreen` is a full-bleed dark screen that owns its own
+ * layout, the admin-creation form and the `useSetup` mutation. The page adds
+ * only the route binding — no chrome, no styling of its own
+ * (CODE_GUIDELINES §12.5).
  */
 
 import React from 'react';
+import { FirstRunSetupScreen } from '../features/auth/FirstRunSetupScreen/FirstRunSetupScreen';
 
-/** Full-page first-run setup view, shown at `/setup` when no users exist. */
+/** Full-page first-run setup view, mounted at `/setup`. */
 export function SetupPage(): React.ReactElement {
-  return <div data-testid="setup-page">Setup</div>;
+  return <FirstRunSetupScreen />;
 }
