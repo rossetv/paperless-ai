@@ -50,7 +50,7 @@ export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
     recent.isSuccess && recent.data !== undefined
       ? recent.data.searches.map((entry) => ({
           query: entry.query,
-          time: relativeTime(entry.searched_at),
+          time: relativeTime(entry.created_at),
         }))
       : [];
 

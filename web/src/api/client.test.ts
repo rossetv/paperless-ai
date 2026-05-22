@@ -476,7 +476,7 @@ describe('Wave 1 accounts endpoints', () => {
 describe('Wave 2 search endpoints', () => {
   it('getRecentSearches GETs /api/recent-searches', async () => {
     mockFetch(200, {
-      searches: [{ query: 'npower 2024', searched_at: '2026-05-22T10:00:00Z' }],
+      searches: [{ query: 'npower 2024', created_at: '2026-05-22T10:00:00Z' }],
     });
     const result = await getRecentSearches();
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];

@@ -333,8 +333,8 @@ describe('useRecentSearches', () => {
   it('returns the recent searches on success', async () => {
     mockFetch(200, {
       searches: [
-        { query: 'npower 2024', searched_at: '2026-05-22T10:00:00Z' },
-        { query: 'bupa dental', searched_at: '2026-05-21T09:00:00Z' },
+        { query: 'npower 2024', created_at: '2026-05-22T10:00:00Z' },
+        { query: 'bupa dental', created_at: '2026-05-21T09:00:00Z' },
       ],
     });
     const { result } = renderHook(() => useRecentSearches(), {
