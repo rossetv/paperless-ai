@@ -1,0 +1,120 @@
+/*
+ * UsersScreen feature component — CSS Module.
+ *
+ * Layout-only styling for the user-management screen: the stat row, the
+ * search box in the header, the "You" / "Suspended" inline tags, and the
+ * row-action text buttons. The page chrome comes from SettingsLayout; the
+ * table from the Table primitive.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Stat row — four cards across. ── */
+.statRow {
+  display: flex;
+  gap: var(--spacing-10);
+}
+
+/* ── Header search box. ── */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+  padding: var(--spacing-5) var(--spacing-9);
+  width: var(--width-empty-state);
+}
+
+.searchInput {
+  border: none;
+  outline: none;
+  background: none;
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+/* ── The user identity cell — avatar beside name + username. ── */
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-9);
+  min-width: 0;
+}
+
+.identityText {
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+.name {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.username {
+  font-family: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── A small inline tag ("You"). ── */
+.tag {
+  padding: var(--spacing-1) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-info-bg);
+  color: var(--colour-status-info-fg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-micro-bold);
+}
+
+/* ── Row action buttons — a bare text "Edit". ── */
+.rowActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-2);
+}
+
+.actionButton {
+  background: none;
+  border: none;
+  padding: var(--spacing-4) var(--spacing-8);
+  border-radius: var(--radius-micro);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-link);
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  background-color: var(--colour-button-light-bg);
+}
+
+.actionButton:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Loading / error states. ── */
+.state {
+  padding: var(--spacing-section) 0;
+  text-align: center;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  color: var(--colour-text-tertiary);
+}
