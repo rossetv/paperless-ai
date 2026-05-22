@@ -103,3 +103,50 @@ export const OnDarkBackground: Story = {
     ),
   ],
 };
+
+const NavLinks = () => (
+  <>
+    <a
+      href="/"
+      style={{
+        color: 'var(--colour-text-on-dark)',
+        fontSize: 'var(--font-size-nav)',
+        textDecoration: 'none',
+        fontFamily: 'var(--font-text)',
+        fontWeight: 500,
+      }}
+    >
+      Search
+    </a>
+    <a
+      href="/library"
+      style={{
+        color: 'var(--colour-text-on-dark)',
+        fontSize: 'var(--font-size-nav)',
+        textDecoration: 'none',
+        fontFamily: 'var(--font-text)',
+        opacity: 0.62,
+      }}
+    >
+      Library
+    </a>
+  </>
+);
+
+export const WithCentreLinks: Story = {
+  args: {
+    brand: <BrandMark />,
+    links: <NavLinks />,
+    actions: <NavActions />,
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ background: 'var(--colour-bg)', minHeight: 'var(--width-empty-state)' }}>
+        <Story />
+        <div style={{ padding: 'var(--spacing-14)' }}>
+          Page content scrolling behind the glass nav.
+        </div>
+      </div>
+    ),
+  ],
+};
