@@ -21,7 +21,7 @@ export interface InputProps {
   /** Whether the input is required. */
   required?: boolean;
   /** Validation error message — also sets aria-invalid. */
-  error?: string;
+  error?: string | undefined;
   /**
    * Surface the input is rendered on. `'dark'` switches the control and its
    * label to the forced-dark island tokens. Defaults to `'light'`.
