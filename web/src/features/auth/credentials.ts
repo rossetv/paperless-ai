@@ -19,11 +19,8 @@ const USERNAME_PATTERN = /^[A-Za-z0-9._-]+$/;
  * Validate a username. Returns an error message, or `undefined` when valid.
  */
 export function validateUsername(value: string): string | undefined {
-  if (value.length < 3) {
-    return 'Username must be at least 3 characters.';
-  }
-  if (value.length > 64) {
-    return 'Username must be at most 64 characters.';
+  if (value.length < 3 || value.length > 64) {
+    return 'Username must be between 3 and 64 characters.';
   }
   if (!USERNAME_PATTERN.test(value)) {
     return 'Username may use only letters, numbers, dots, underscores and hyphens.';
