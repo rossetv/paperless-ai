@@ -1,89 +1,72 @@
-"""Session-cookie issuance for the search server's login handshake.
+"""Session-cookie set and clear for the search server.
 
-A thin layer over :mod:`search.auth`: :func:`issue_token` stamps a signed
-session token with the current wall clock, and :func:`set_session_cookie`
-writes it onto a response with every required security flag.  Both the login
-route handler and the app factory's wiring use these, so the cookie attributes
-have exactly one home (``CODE_GUIDELINES.md`` §1.3).
+Two thin helpers over a Starlette/FastAPI ``Response``:
+:func:`set_session_cookie` writes the opaque session token with every
+required security flag, and :func:`clear_session_cookie` removes it on
+logout. The cookie's name and security attributes live here so they have
+exactly one home.
 
-Depends on: starlette/fastapi Response, search.auth, common.config.
+The cookie is ``HttpOnly`` (a JavaScript XSS bug cannot read the token),
+``SameSite=Strict`` (never sent cross-site — the CSRF defence, spec §4.4),
+and scoped to ``Path=/``. The ``Secure`` flag is conditional on the request
+scheme: set it over HTTPS, omit it over HTTP — a ``Secure`` cookie is
+silently dropped by the browser over HTTP, which makes login appear to
+succeed (200) but leaves no session cookie. The caller derives the flag as
+``secure = request.url.scheme == "https"``. ``Max-Age`` is supplied by the
+caller: seven days for a "remember me" login, eight hours otherwise.
+
+Deployment note: run uvicorn with ``--proxy-headers`` so that
+``request.url.scheme`` reflects the real edge scheme (HTTPS) behind
+nginx/Cloudflare, not the plain-HTTP hop from the reverse proxy to the
+origin.
+
+Depends on: starlette/fastapi Response, search.auth (the cookie name).
 """
 
 from __future__ import annotations
 
-import time
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING
 
-from search.auth import (
-    SESSION_COOKIE_NAME,
-    cookie_attributes,
-    issue_session_token,
-)
+from search.auth import SESSION_COOKIE_NAME
 
 if TYPE_CHECKING:
-    from fastapi import Response
-
-    from common.config import Settings
-
-
-def issue_token(settings: Settings) -> str:
-    """Issue a signed session token using the current wall clock.
-
-    Args:
-        settings: Application settings; ``SEARCH_API_KEY`` signs the token and
-            ``SEARCH_SESSION_TTL`` sets its lifetime.
-
-    Returns:
-        The signed, URL-safe session token string.
-    """
-    return issue_session_token(
-        settings.SEARCH_API_KEY,
-        ttl_seconds=settings.SEARCH_SESSION_TTL,
-        now=time.time(),
-    )
+    from starlette.responses import Response
 
 
 def set_session_cookie(
-    response: Response, token: str, settings: Settings
+    response: Response, *, token: str, max_age: int, secure: bool
 ) -> None:
-    """Set the signed session cookie on *response* with all security flags.
-
-    Delegates every cookie attribute to :func:`search.auth.cookie_attributes`
-    so that function is the single source of truth for HttpOnly, Secure,
-    SameSite, Path, and Max-Age.  Each value is extracted individually with an
-    explicit cast so mypy can verify the types match ``Response.set_cookie``'s
-    signature precisely — no ``# type: ignore`` required.
+    """Write the opaque session *token* onto *response* with all security flags.
 
     Args:
-        response: The response object to set the cookie on.
-        token: The signed session token string.
-        settings: Application settings; passed to ``cookie_attributes`` for
-            ``SEARCH_SESSION_TTL``.
+        response: The response to set the cookie on.
+        token: The raw opaque session token (from
+            :func:`search.sessions.begin_session`).
+        max_age: The cookie lifetime in seconds; the browser drops the cookie
+            after this, in step with the server-side session expiry.
+        secure: Whether to set the ``Secure`` cookie flag. Pass
+            ``request.url.scheme == "https"`` so the flag is present over
+            HTTPS and absent over plain HTTP — a ``Secure`` cookie is silently
+            dropped over HTTP.
     """
-    attrs = cookie_attributes(settings)
-    # The dict is keyed to match Response.set_cookie exactly; each value is
-    # narrowed to the concrete type that key always carries (see
-    # search.auth.cookie_attributes for the canonical definitions).
-    # cast() is used because the return type is dict[str, object] — the values
-    # are always the types below, but mypy cannot prove it from the signature.
-    max_age: int = cast(int, attrs["max_age"])
-    path: str = cast(str, attrs["path"])
-    httponly: bool = cast(bool, attrs["httponly"])
-    secure: bool = cast(bool, attrs["secure"])
-    # rationale: cookie_attributes() always returns _COOKIE_SAMESITE ("strict"),
-    # a Literal["strict"] constant — but the dict value type is `object`, so
-    # mypy cannot narrow it without a cast. A TypedDict return on
-    # cookie_attributes() would remove the need, but exports an extra public
-    # type from search.auth that no other caller requires.
-    samesite: Literal["strict", "lax", "none"] = cast(
-        Literal["strict", "lax", "none"], attrs["samesite"]
-    )
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
         max_age=max_age,
-        path=path,
-        httponly=httponly,
+        path="/",
+        httponly=True,
         secure=secure,
-        samesite=samesite,
+        samesite="strict",
     )
+
+
+def clear_session_cookie(response: Response) -> None:
+    """Delete the session cookie from *response* (the logout path).
+
+    Uses the same name and ``Path`` as :func:`set_session_cookie` so the
+    browser actually drops the right cookie.
+
+    Args:
+        response: The response to clear the cookie on.
+    """
+    response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
