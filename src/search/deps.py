@@ -30,6 +30,8 @@ Surface:
 - :func:`require_api_scope` / :func:`require_api_scope_member` /
   :func:`require_mcp_scope` — gate a route on the ``api`` / ``mcp`` scope (a
   no-op extra check for a cookie caller).
+- :func:`require_key_management` — gate the API-key management endpoints: a
+  Member+ role, plus the ``admin`` scope for an API-key caller.
 
 ``last_seen_at`` on a resolved session is refreshed at most once every ~5
 minutes; an API key's ``last_used_at`` at most once every ~60 s — so
@@ -351,6 +353,34 @@ def require_mcp_scope(
         HTTPException: ``403`` when an API key lacks the ``mcp`` scope.
     """
     _enforce(caller, required_role="readonly", required_scope=SCOPE_MCP)
+    return caller.user
+
+
+def require_key_management(
+    caller: Caller = Depends(resolve_caller),
+) -> CurrentUser:
+    """FastAPI dependency: gate the API-key management endpoints.
+
+    Per spec §4.3 a Member manages their own keys and an Admin manages all.
+    A cookie caller needs role Member or above. An API-key caller must
+    additionally hold the ``admin`` scope — managing credentials through a
+    non-admin key would be a privilege-escalation hole.
+
+    The *ownership* check (own key vs any key) is left to the route handler,
+    which has the key row; this dependency only enforces the role/scope bar
+    to even reach the endpoint.
+
+    Args:
+        caller: The resolved caller (injected).
+
+    Returns:
+        The :class:`CurrentUser`.
+
+    Raises:
+        HTTPException: ``403`` for a Read-only caller, or an API key without
+            the ``admin`` scope.
+    """
+    _enforce(caller, required_role="member", required_scope=SCOPE_ADMIN)
     return caller.user
 
 
