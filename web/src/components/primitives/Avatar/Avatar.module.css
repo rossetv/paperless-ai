@@ -1,0 +1,26 @@
+/*
+ * Avatar primitive — CSS Module.
+ *
+ * Circular initials avatar used in the NavBar user-menu trigger, the Users
+ * table, and anywhere a user identity needs a visual handle.
+ *
+ * Background colour and font size are set inline by the component because
+ * they are dynamic (per-user colour, size prop). All static structural values
+ * use design tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-circle);
+  flex-shrink: 0;
+  /* Background, width, height, font-size are applied inline — they are dynamic. */
+  color: var(--colour-text-on-dark);
+  font-family: var(--font-text);
+  font-weight: var(--font-weight-body-emphasis);
+  letter-spacing: var(--letter-spacing-micro);
+  user-select: none;
+}
