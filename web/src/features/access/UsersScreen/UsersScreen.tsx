@@ -25,7 +25,8 @@ const AVATAR_PALETTE = [
 
 /** Pick a stable avatar colour for a user by id. */
 function avatarColour(id: number): string {
-  return AVATAR_PALETTE[id % AVATAR_PALETTE.length];
+  // Modulo guarantees the index is in bounds; the fallback satisfies TypeScript.
+  return AVATAR_PALETTE[id % AVATAR_PALETTE.length] ?? AVATAR_PALETTE[0];
 }
 
 /** Derive up-to-two-character initials from a user. */
@@ -95,8 +96,8 @@ export function UsersScreen(): React.ReactElement {
       render: (u) => (
         <div className={styles['identity']}>
           <Avatar initials={initialsOf(u)} colour={avatarColour(u.id)} />
-          <div className={styles['identityText']}>
-            <div className={styles['nameRow']}>
+          <div className={styles['identity-text']}>
+            <div className={styles['name-row']}>
               <span className={styles['name']}>
                 {u.display_name ?? u.username}
               </span>
@@ -124,10 +125,10 @@ export function UsersScreen(): React.ReactElement {
       width: '90px',
       align: 'end',
       render: (u) => (
-        <div className={styles['rowActions']}>
+        <div className={styles['row-actions']}>
           <button
             type="button"
-            className={styles['actionButton']}
+            className={styles['action-button']}
             onClick={() => setDrawerUser(u)}
           >
             Edit
@@ -142,7 +143,7 @@ export function UsersScreen(): React.ReactElement {
       <div className={styles['search']}>
         <input
           type="search"
-          className={styles['searchInput']}
+          className={styles['search-input']}
           placeholder="Search users…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -171,7 +172,7 @@ export function UsersScreen(): React.ReactElement {
         </div>
       ) : (
         <>
-          <div className={styles['statRow']}>
+          <div className={styles['stat-row']}>
             <StatCard value={total} label="total accounts" />
             <StatCard value={active} label="active accounts" />
             <StatCard value={admins} label="administrators" />

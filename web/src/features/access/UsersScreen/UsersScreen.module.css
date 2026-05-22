@@ -10,7 +10,7 @@
  */
 
 /* ── Stat row — four cards across. ── */
-.statRow {
+.stat-row {
   display: flex;
   gap: var(--spacing-10);
 }
@@ -27,7 +27,7 @@
   width: var(--width-empty-state);
 }
 
-.searchInput {
+.search-input {
   border: none;
   outline: none;
   background: none;
@@ -47,11 +47,11 @@
   min-width: 0;
 }
 
-.identityText {
+.identity-text {
   min-width: 0;
 }
 
-.nameRow {
+.name-row {
   display: flex;
   align-items: center;
   gap: var(--spacing-6);
@@ -66,7 +66,7 @@
 }
 
 .username {
-  font-family: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
 }
@@ -83,13 +83,13 @@
 }
 
 /* ── Row action buttons — a bare text "Edit". ── */
-.rowActions {
+.row-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-2);
 }
 
-.actionButton {
+.action-button {
   background: none;
   border: none;
   padding: var(--spacing-4) var(--spacing-8);
@@ -101,13 +101,13 @@
   cursor: pointer;
 }
 
-.actionButton:hover {
-  background-color: var(--colour-button-light-bg);
-}
-
-.actionButton:focus-visible {
+.action-button:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
+}
+
+.action-button:hover {
+  background-color: var(--colour-button-light-bg);
 }
 
 /* ── Loading / error states. ── */
