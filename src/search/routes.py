@@ -26,11 +26,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Response
 
 from search.wire import (
     FacetsResponse,
-    LoginRequest,
     SearchRequest,
     SearchResponse,
     StatsResponse,
@@ -46,6 +45,7 @@ if TYPE_CHECKING:
 
     from common.config import Settings
     from search.core import SearchCore
+    from search.sessions import CurrentUser
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
@@ -192,27 +192,32 @@ def build_api_router(
     settings: Settings,
     core: SearchCore,
     store_reader: StoreReader,
-    require_auth: Callable[..., object],
+    *,
+    require_reader: Callable[..., CurrentUser],
+    require_member: Callable[..., CurrentUser],
 ) -> APIRouter:
     """Build the ``/api`` router with all six route handlers (spec §7.1).
 
     The handlers close over the injected dependencies; the app factory in
-    ``search/api.py`` mounts the returned router.  ``/api/auth/login`` and
-    ``/api/healthz`` are unauthenticated; the other four are gated by the
-    *require_auth* dependency.
+    ``search/api.py`` mounts the returned router.  ``/api/healthz`` is
+    unauthenticated; search, facets, and stats need Read-only or above, and
+    the reconcile trigger needs Member or above.
 
     Args:
         settings: Application settings.
         core: The search pipeline entry point, backing ``/api/search``.
         store_reader: The read-side store, backing healthz, facets, and stats.
-        require_auth: The FastAPI dependency that enforces authentication on
-            the protected endpoints.
+        require_reader: A FastAPI dependency requiring an authenticated user
+            of role Read-only or above. Gates search, facets, and stats.
+        require_member: A FastAPI dependency requiring role Member or above.
+            Gates the reconcile trigger.
 
     Returns:
         A configured :class:`~fastapi.APIRouter`.
     """
     router = APIRouter()
-    auth = Depends(require_auth)
+    reader_auth = Depends(require_reader)
+    member_auth = Depends(require_member)
 
     # The /api/search concurrency cap (spec §7.4, CODE_GUIDELINES §10.6).  The
     # semaphore is created lazily on the first search so it is always bound to
@@ -220,18 +225,6 @@ def build_api_router(
     # running at router-build time.  asyncio's single-threaded contract means
     # only one coroutine touches the holder at a time, so no lock is needed.
     search_semaphore = _LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
-
-    @router.post("/api/auth/login")
-    async def login(body: LoginRequest, response: Response) -> dict[str, str]:
-        """Exchange the API key for a signed session cookie (spec §7.3).
-
-        Returns:
-            A JSON body with ``status: "ok"`` on success.
-
-        Raises:
-            HTTPException 401: When the supplied key does not match.
-        """
-        return _login(body, response, settings)
 
     # response_model=None: healthz returns a hand-built Response (a fixed
     # JSON body and an explicit status code), so FastAPI must not try to
@@ -248,7 +241,7 @@ def build_api_router(
         """
         return _healthz(settings, store_reader)
 
-    @router.post("/api/search", dependencies=[auth])
+    @router.post("/api/search", dependencies=[reader_auth])
     async def search(body: SearchRequest) -> SearchResponse:
         """Run the full agentic search pipeline and return a SearchResponse.
 
@@ -256,19 +249,19 @@ def build_api_router(
         """
         return await _search(body, core, search_semaphore)
 
-    @router.get("/api/facets", dependencies=[auth])
+    @router.get("/api/facets", dependencies=[reader_auth])
     async def facets() -> FacetsResponse:
         """Return taxonomy facets for the search UI filter panel."""
         facet_set = await _run_blocking(store_reader.list_facets)
         return to_facets_response(facet_set)
 
-    @router.get("/api/stats", dependencies=[auth])
+    @router.get("/api/stats", dependencies=[reader_auth])
     async def stats() -> StatsResponse:
         """Return summary statistics for the search index."""
         index_stats = await _run_blocking(store_reader.get_stats)
         return to_stats_response(index_stats)
 
-    @router.post("/api/reconcile", dependencies=[auth])
+    @router.post("/api/reconcile", dependencies=[member_auth])
     async def reconcile() -> Response:
         """Touch the reconciliation sentinel file and return 202 Accepted.
 
@@ -285,23 +278,6 @@ def build_api_router(
 # ---------------------------------------------------------------------------
 # Handler bodies — pure of FastAPI routing, easy to read and test
 # ---------------------------------------------------------------------------
-
-
-def _login(
-    body: LoginRequest, response: Response, settings: Settings
-) -> dict[str, str]:
-    """Verify the API key and set the signed session cookie (spec §7.3)."""
-    from search.auth import verify_api_key
-    from search.cookies import issue_token, set_session_cookie
-
-    if not verify_api_key(body.api_key, settings.SEARCH_API_KEY):
-        # The wrong key is never logged — only that an attempt was made.
-        log.warning("api.login_rejected")
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    set_session_cookie(response, issue_token(settings), settings)
-    log.info("api.login_ok")
-    return {"status": "ok"}
 
 
 def _healthz(settings: Settings, store_reader: StoreReader) -> Response:
