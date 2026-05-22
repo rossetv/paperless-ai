@@ -13,6 +13,23 @@ All configuration is via environment variables. No config files are needed. Sett
 
 ---
 
+## Application & Index Databases
+
+The search subsystem uses two separate SQLite databases on the `/data` volume.
+They are kept apart so that rebuilding the search index never destroys user
+accounts or configuration.
+
+| Variable | Description | Default | Required |
+|:---|:---|:---|:---|
+| `INDEX_DB_PATH` | Path to the search index database (`index.db`) — chunks, embeddings and taxonomy. Recreated by an index rebuild. | `/data/index.db` | No |
+| `APP_DB_PATH` | Path to the application database (`app.db`) — user accounts and sessions. Survives an index rebuild. | `/data/app.db` | No |
+
+Both are bootstrap variables: they are read from the environment at startup
+and cannot be moved into the in-database configuration, because they tell the
+process where that database lives.
+
+---
+
 ## LLM Provider
 
 | Variable | Description | Default | Required |
