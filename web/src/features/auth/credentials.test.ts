@@ -14,11 +14,11 @@ describe('validateUsername', () => {
   });
 
   it('rejects a username shorter than 3 characters', () => {
-    expect(validateUsername('ab')).toMatch(/at least 3 characters/i);
+    expect(validateUsername('ab')).toMatch(/between 3 and 64 characters/i);
   });
 
   it('rejects a username longer than 64 characters', () => {
-    expect(validateUsername('a'.repeat(65))).toMatch(/at most 64 characters/i);
+    expect(validateUsername('a'.repeat(65))).toMatch(/between 3 and 64 characters/i);
   });
 
   it('rejects a username with spaces', () => {
