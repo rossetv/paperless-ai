@@ -180,6 +180,7 @@ These variables are read by the indexer daemon and the search server, in additio
 | Variable | Type | Default | Purpose |
 |:---|:---|:---|:---|
 | `INDEX_DB_PATH` | string | `/data/index.db` | Path to the SQLite search index file |
+| `APP_DB_PATH` | string | `/data/app.db` | Path to the SQLite application database (accounts, sessions, config) — kept separate from the index so rebuilding the index never destroys accounts |
 | `EMBEDDING_MODEL` | string | `text-embedding-3-small` | OpenAI embedding model (always OpenAI; see note above) |
 | `EMBEDDING_DIMENSIONS` | int | `1536` | Vector dimensions — must match the model |
 | `EMBEDDING_MAX_CONCURRENT` | int | `4` | Maximum concurrent embedding API calls |
