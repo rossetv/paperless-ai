@@ -1,8 +1,9 @@
 import React from 'react';
-import { Card } from '../../../components/primitives/Card/Card';
-import { Badge } from '../../../components/primitives/Badge/Badge';
-import { Link } from '../../../components/primitives/Link/Link';
+import { SourceCardSurface } from '../../../components/primitives/SourceCardSurface/SourceCardSurface';
+import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Text } from '../../../components/primitives/Text/Text';
+import { Button } from '../../../components/primitives/Button/Button';
+import { Link } from '../../../components/primitives/Link/Link';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
@@ -13,7 +14,7 @@ export interface SourceCardProps {
   source: SourceDocument;
   /**
    * 1-based citation index corresponding to the [n] markers in the AnswerCard.
-   * Displayed as a badge so the user can cross-reference citations to sources.
+   * Shown as the badge so the user can cross-reference citations to sources.
    */
   index: number;
   /**
@@ -21,54 +22,88 @@ export interface SourceCardProps {
    * user activates a CitationLink pointing to this source.
    */
   highlighted?: boolean;
+  /**
+   * Called with the document id when "Preview document" is activated. The
+   * page opens the in-app document-preview viewer for that id.
+   */
+  onPreview: (documentId: number) => void;
 }
 
 /**
- * Single search result card.
+ * Pick a thumbnail style from the document's type.
  *
- * Displays: citation index badge, document title, the document metadata row,
- * the matched-content snippet, and an "Open in Paperless" external link.
+ * The `DocThumb` primitive offers three page shapes; map the free-text
+ * Paperless document type onto the nearest one, defaulting to a statement.
+ */
+function thumbKindFor(documentType: string | null): DocThumbKind {
+  const type = (documentType ?? '').toLowerCase();
+  if (type.includes('invoice') || type.includes('receipt')) {
+    return 'invoice';
+  }
+  if (type.includes('letter') || type.includes('notification')) {
+    return 'letter';
+  }
+  return 'statement';
+}
+
+/**
+ * Single search-result source card, restyled to the handoff design.
  *
- * The metadata row and the snippet are NOT re-implemented here — they are the
- * `DocumentMeta` and `DocumentSnippet` document features, composed directly,
- * so a search result and a bare document render their metadata identically.
- * The title routes through the `Text` typography primitive.
+ * Composes the `SourceCardSurface` shell (the two-column grid with the
+ * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
+ * display-font title, the highlighted `DocumentSnippet`, a "Preview document"
+ * action that opens the in-app viewer, an "Open in Paperless" external link,
+ * and the relevance score. The metadata and snippet are the shared `document`
+ * features — not re-implemented here.
  *
- * The "Open in Paperless" link uses the Link primitive with external=true,
- * which sets target="_blank" and rel="noopener noreferrer" automatically.
- *
- * Composed from: Card, Badge, Link, Text, Stack, DocumentMeta, DocumentSnippet.
- * No own CSS module (§12.5 — features layer is composition-only).
+ * Composed from: SourceCardSurface, Text, Button, Link, Stack, DocumentMeta,
+ * DocumentSnippet. No own CSS module (§12.5 — features layer is
+ * composition-only).
  */
 export function SourceCard({
   source,
   index,
   highlighted = false,
+  onPreview,
 }: SourceCardProps): React.ReactElement {
   return (
-    <Card as="article" elevated={highlighted}>
+    <SourceCardSurface
+      index={index}
+      thumbKind={thumbKindFor(source.document_type)}
+      matched={highlighted ? [3, 4, 7] : [5, 6]}
+      highlighted={highlighted}
+    >
       <Stack direction="vertical" gap={5}>
-        {/* Header row: citation badge + title */}
-        <Stack direction="horizontal" gap={4} align="center">
-          <Badge variant="accent">[{index}]</Badge>
-          {source.title !== null && source.title !== undefined && (
-            <Text as="strong" variant="body-emphasis">
-              {source.title}
-            </Text>
-          )}
-        </Stack>
-
-        {/* Metadata row — the DocumentMeta feature, not an inline copy */}
+        {/* Single-line meta row — correspondent · type · created */}
         <DocumentMeta source={source} />
 
-        {/* Snippet — the DocumentSnippet feature, not an inline copy */}
+        {/* Title — display-font emphasis */}
+        {source.title !== null && source.title !== undefined && (
+          <Text as="strong" variant="card-title">
+            {source.title}
+          </Text>
+        )}
+
+        {/* Highlighted matched-content snippet */}
         <DocumentSnippet snippet={source.snippet} />
 
-        {/* External link to Paperless document */}
-        <Link href={source.paperless_url} external variant="default">
-          Open in Paperless
-        </Link>
+        {/* Actions row — preview, open externally, relevance */}
+        <Stack direction="horizontal" gap={6} align="center" wrap>
+          <Button
+            variant="primary"
+            size="small"
+            onClick={() => onPreview(source.document_id)}
+          >
+            Preview document
+          </Button>
+          <Link href={source.paperless_url} external variant="default">
+            Open in Paperless
+          </Link>
+          <Text as="span" variant="micro" tone="tertiary">
+            relevance · {source.score.toFixed(2)}
+          </Text>
+        </Stack>
       </Stack>
-    </Card>
+    </SourceCardSurface>
   );
 }
