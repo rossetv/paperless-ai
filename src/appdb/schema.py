@@ -22,7 +22,7 @@ from appdb.migrations import run_migrations
 
 # The highest schema version the current code knows. Recorded in
 # meta.schema_version by the migration runner after the last migration.
-SCHEMA_VERSION: int = 2
+SCHEMA_VERSION: int = 3
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration

@@ -84,12 +84,36 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
             conn.execute(stmt)
 
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """Apply the v3 schema: the api_keys table and its two indexes.
+
+    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V3`
+    individually via ``conn.execute`` so every statement stays inside the
+    single explicit transaction :func:`run_migrations` opens.
+    ``conn.executescript`` is deliberately avoided — it issues an implicit
+    ``COMMIT`` first, which would break the atomicity of the surrounding
+    transaction.
+
+    The import of ``SCHEMA_V3`` is deferred to the function body to keep the
+    ``schema`` <-> ``migrations`` import cycle broken, exactly as
+    :func:`_migrate_v1` does.
+    """
+    # Deferred import breaks the schema <-> migrations circular dependency.
+    from appdb.schema import SCHEMA_V3  # noqa: PLC0415
+
+    for statement in SCHEMA_V3.split(";"):
+        stmt = statement.strip()
+        if stmt:
+            conn.execute(stmt)
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate_v1),
     (2, _migrate_v2),
+    (3, _migrate_v3),
 ]
 
 
