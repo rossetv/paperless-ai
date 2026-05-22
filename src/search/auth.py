@@ -1,265 +1,155 @@
-"""API-key and signed-cookie authentication for the search server.
+"""Authentication primitives for the search server (web-redesign §4).
 
-The search server is network-facing and holds the operator's personal
-documents, so authentication fails closed (spec §7.3, §9.2;
-``CODE_GUIDELINES.md`` §10.1):
+Wave 1 replaced the shared-secret login with database-backed user accounts
+and server-side sessions. The session lifecycle lives in
+:mod:`search.sessions`; this module holds the pieces that are *not* the
+session store:
 
-- **Programmatic and MCP access** present ``Authorization: Bearer
-  <SEARCH_API_KEY>``; :func:`verify_api_key` checks it in constant time.
-- **The Web UI** never embeds the key. The browser is served the static SPA
-  shell unauthenticated, the user enters the key once on a login screen, and
-  the server issues a **stateless** signed session cookie. There is no
-  server-side session store: the token carries its own ``issued_at``
-  timestamp and TTL, both covered by an HMAC-SHA256 signature keyed by
-  ``SEARCH_API_KEY``.
+- :func:`extract_bearer` — the one parser for the ``Authorization`` header,
+  reused by the API dependency and the MCP middleware.
+- :func:`verify_api_key` — a constant-time compare for the **legacy**
+  ``SEARCH_API_KEY`` bearer token, which stays valid through Waves 1-2 as an
+  admin-equivalent caller and is retired in Wave 3.
+- :data:`LEGACY_API_KEY_USER` — the :class:`~search.sessions.CurrentUser`
+  that a valid legacy key resolves to: a synthetic admin with no user row.
+- :func:`authorise_role` — the pure RBAC predicate the role dependency uses.
 
-:func:`is_request_authenticated` is the single gate reused by both the
-FastAPI dependency and the MCP middleware: a request is authenticated on a
-valid bearer token *or* a valid, unexpired session cookie.
+This module is deliberately free of FastAPI so that
+:mod:`search.mcp_server`, which imports it, keeps its narrow dependency set.
+The FastAPI dependencies (``get_current_user``, ``require_role``) live in
+:mod:`search.deps`.
 
-Security invariants enforced here:
+Security invariants:
 
-- Every secret comparison uses :func:`hmac.compare_digest` — constant-time,
-  no early-exit on the first differing byte.
-- Any malformed or garbage token yields ``False``; a verify function never
-  raises to its caller.
-- No secret — the API key, a session token, or a signature — is ever logged.
+- Every secret comparison uses :func:`hmac.compare_digest` — constant-time.
+- A failed credential check returns a value (``None`` / ``False``); it never
+  raises, so a hostile request cannot trigger a 500.
+- No secret — the API key, a session token — is ever logged.
 """
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import hmac
-import time
 
-from common.config import Settings
+from search.sessions import CurrentUser
 
-# A session token is ``issued_at.ttl_seconds.signature``; the signed payload
-# is the ``issued_at.ttl_seconds`` prefix, so neither the timestamp nor the
-# TTL can be tampered without invalidating the signature.
-_TOKEN_FIELD_SEPARATOR = "."
-_TOKEN_FIELD_COUNT = 3
-
-# The session-cookie name and its security attributes (spec §7.3).
+# The session-cookie name. Unchanged from Wave 0 so existing browser sessions
+# and the frontend's expectations are not disturbed.
 SESSION_COOKIE_NAME = "search_session"
-_COOKIE_SAMESITE = "strict"
-_COOKIE_PATH = "/"
 
-# The exact, case-sensitive prefix of an ``Authorization: Bearer <token>``
-# header.  The trailing space is part of the prefix.
+# The exact, case-sensitive prefix of an ``Authorization: Bearer`` header.
+# The trailing space is part of the prefix.
 _BEARER_PREFIX = "Bearer "
+
+# The synthetic identity a valid legacy SEARCH_API_KEY bearer resolves to.
+# id 0 marks "no user row"; role admin grants it every capability, matching
+# the Wave 0 behaviour where the key was all-powerful. Retired in Wave 3.
+LEGACY_API_KEY_USER = CurrentUser(id=0, username="legacy-api-key", role="admin")
+
+# Role ranking for RBAC (web-redesign §4.3). A request satisfies a required
+# role when the caller's rank is >= the requirement's rank.
+_ROLE_RANK: dict[str, int] = {
+    "readonly": 0,
+    "member": 1,
+    "admin": 2,
+}
 
 
 class AuthError(Exception):
-    """Raised when an authentication operation cannot be completed.
+    """Raised for a configuration-shaped authentication failure.
 
-    This is a configuration-shaped failure — for example, issuing a session
-    token from an empty signing key. A *failed* credential check is not an
-    error: :func:`verify_api_key`, :func:`verify_session_token`, and
-    :func:`is_request_authenticated` return ``False`` rather than raising, so
-    a malformed or hostile request never produces an unhandled exception.
+    A *failed credential check* is not an error — the verify helpers return
+    ``False`` / ``None``. This type is for misconfiguration, e.g. asking to
+    treat an empty ``SEARCH_API_KEY`` as a usable credential.
     """
 
 
 def extract_bearer(authorization_header: str | None) -> str | None:
     """Extract the raw token from an ``Authorization: Bearer <token>`` header.
 
-    The single shared parser for the ``Authorization`` header, reused by the
-    FastAPI auth dependency and the MCP bearer-auth middleware so both surfaces
-    accept exactly the same header shape.
+    The single shared parser, reused by the FastAPI auth dependency and the
+    MCP bearer-auth middleware so both surfaces accept exactly the same
+    header shape.
 
     Args:
         authorization_header: The raw ``Authorization`` header value, or
             ``None`` when the request carried no such header.
 
     Returns:
-        The token string when the header is present and starts with the
-        case-sensitive prefix ``"Bearer "``; ``None`` otherwise.  The token
-        value is **never logged** (CODE_GUIDELINES.md §7.4).
+        The token string when the header starts with the case-sensitive
+        prefix ``"Bearer "``; ``None`` otherwise. The token is never logged.
     """
-    if authorization_header is None or not authorization_header.startswith(_BEARER_PREFIX):
+    if authorization_header is None or not authorization_header.startswith(
+        _BEARER_PREFIX
+    ):
         return None
-    return authorization_header[len(_BEARER_PREFIX):]
+    return authorization_header[len(_BEARER_PREFIX) :]
 
 
 def verify_api_key(provided: str, configured: str) -> bool:
-    """Return whether *provided* equals *configured*, compared in constant time.
+    """Return whether *provided* equals *configured*, in constant time.
 
-    Uses :func:`hmac.compare_digest` on the UTF-8 encoded bytes so the
-    comparison takes the same time regardless of where the two values first
-    differ — an ``==`` comparison leaks the length of the matching prefix
-    through a timing side channel.  Comparing bytes (rather than str) also
-    avoids a ``TypeError`` when *provided* contains non-ASCII characters, which
-    would otherwise surface as an uncaught 500 at the login endpoint.
-    """
-    return hmac.compare_digest(provided.encode("utf-8"), configured.encode("utf-8"))
+    Uses :func:`hmac.compare_digest` on the UTF-8 bytes so the comparison
+    takes the same time regardless of where the values first differ — an
+    ``==`` comparison leaks the matching-prefix length through timing.
+    Comparing bytes also avoids a ``TypeError`` on non-ASCII input.
 
-
-def issue_session_token(api_key: str, *, ttl_seconds: int, now: float) -> str:
-    """Issue a stateless signed session token valid for *ttl_seconds*.
-
-    The token is ``issued_at.ttl_seconds.signature``, URL-safe base64-encoded
-    without padding. ``signature`` is the HMAC-SHA256 of the
-    ``issued_at.ttl_seconds`` payload keyed by *api_key*; both the timestamp
-    and the TTL are therefore tamper-evident. Expiry is enforced at
-    verification time (:func:`verify_session_token`), keeping the server
-    stateless — no session store.
+    An empty *configured* key always returns ``False``: a deployment with no
+    legacy key set must not be unlocked by an empty bearer token.
 
     Args:
-        api_key: The signing key (``SEARCH_API_KEY``).
-        ttl_seconds: Token lifetime; the token expires ``ttl_seconds`` after
-            ``issued_at``.
-        now: The current Unix time, injected for testability.
+        provided: The bearer token from the request.
+        configured: The configured ``SEARCH_API_KEY``.
 
-    Raises:
-        AuthError: If *api_key* is empty — a token signed with no key offers
-            no security and must never be issued (fail closed).
+    Returns:
+        ``True`` only when both are non-empty and equal.
     """
-    if not api_key:
-        raise AuthError("Cannot issue a session token without a signing key.")
-
-    issued_at = int(now)
-    payload = f"{issued_at}{_TOKEN_FIELD_SEPARATOR}{ttl_seconds}"
-    signature = _sign(payload, api_key)
-    raw = f"{payload}{_TOKEN_FIELD_SEPARATOR}{signature}"
-    return _encode(raw)
-
-
-def verify_session_token(token: str, api_key: str, *, now: float) -> bool:
-    """Return whether *token* is a valid, unexpired session token.
-
-    Returns ``True`` only when the signature verifies (constant-time, keyed
-    by *api_key*) **and** the token is within its lifetime relative to *now*
-    — that is, ``issued_at <= now <= issued_at + ttl_seconds``. Any malformed
-    token — bad base64, wrong field count, non-numeric timestamp or TTL — and
-    any token signed with a different key returns ``False``. This function
-    never raises.
-
-    Args:
-        token: The URL-safe base64 token from the session cookie.
-        api_key: The signing key the token must verify against.
-        now: The current Unix time, injected for testability.
-    """
-    fields = _decode_token_fields(token)
-    if fields is None:
+    if not configured:
         return False
-    issued_at, ttl_seconds, signature = fields
-
-    payload = f"{issued_at}{_TOKEN_FIELD_SEPARATOR}{ttl_seconds}"
-    expected_signature = _sign(payload, api_key)
-    if not hmac.compare_digest(signature, expected_signature):
-        return False
-
-    # The signature is valid, so issued_at and ttl_seconds are trustworthy:
-    # honour the token only within [issued_at, issued_at + ttl_seconds].
-    return issued_at <= now <= issued_at + ttl_seconds
+    return hmac.compare_digest(
+        provided.encode("utf-8"), configured.encode("utf-8")
+    )
 
 
-def cookie_attributes(settings: Settings) -> dict[str, object]:
-    """Return the session-cookie attributes for the login response.
+def legacy_api_key_user(
+    bearer: str | None, configured_key: str
+) -> CurrentUser | None:
+    """Return :data:`LEGACY_API_KEY_USER` for a valid legacy bearer, else None.
 
-    The cookie is ``HttpOnly`` (unreadable by JavaScript, so an XSS bug
-    cannot steal the session), ``Secure`` (sent only over HTTPS),
-    ``SameSite=Strict`` (not sent on cross-site requests, blunting CSRF),
-    scoped to ``Path=/``, and given a ``Max-Age`` of ``SEARCH_SESSION_TTL``
-    so the browser drops it in step with server-side expiry (spec §7.3).
-
-    The keys match the keyword arguments of FastAPI's
-    ``Response.set_cookie``, so a caller can splat the dict straight in.
-    """
-    return {
-        "httponly": True,
-        "secure": True,
-        "samesite": _COOKIE_SAMESITE,
-        "path": _COOKIE_PATH,
-        "max_age": settings.SEARCH_SESSION_TTL,
-    }
-
-
-def is_request_authenticated(
-    bearer: str | None,
-    cookie: str | None,
-    settings: Settings,
-    *,
-    now: float | None = None,
-) -> bool:
-    """Return whether a request carries a valid credential.
-
-    The shared authentication gate for both the FastAPI dependency and the
-    MCP middleware. A request is authenticated when **either**:
-
-    - *bearer* is present and is a valid API key (:func:`verify_api_key`
-      against ``settings.SEARCH_API_KEY``), **or**
-    - *cookie* is present and is a valid, unexpired session token
-      (:func:`verify_session_token` against ``settings.SEARCH_API_KEY``).
-
-    Both credentials absent, or both present-but-invalid, returns ``False``
-    (fail closed). An invalid bearer never aborts the check — a valid cookie
-    is still honoured, and vice versa.
+    The legacy ``SEARCH_API_KEY`` path: a request whose bearer token equals
+    the configured key is treated as a synthetic admin caller (Waves 1-2).
 
     Args:
-        bearer: The ``Authorization: Bearer`` token, or ``None`` if absent.
-        cookie: The session-cookie value, or ``None`` if absent.
-        settings: Configuration carrying ``SEARCH_API_KEY``.
-        now: The current Unix time; defaults to the wall clock. Injected for
-            testability so cookie-expiry can be exercised deterministically.
+        bearer: The extracted bearer token, or ``None``.
+        configured_key: The configured ``SEARCH_API_KEY`` (may be empty).
+
+    Returns:
+        The synthetic admin :class:`CurrentUser` on a match, else ``None``.
     """
-    api_key = settings.SEARCH_API_KEY
-
-    if bearer is not None and verify_api_key(bearer, api_key):
-        return True
-
-    if cookie is not None:
-        current_time = time.time() if now is None else now
-        if verify_session_token(cookie, api_key, now=current_time):
-            return True
-
-    return False
+    if bearer is None:
+        return None
+    if verify_api_key(bearer, configured_key):
+        return LEGACY_API_KEY_USER
+    return None
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+def authorise_role(user_role: str, required_role: str) -> bool:
+    """Return whether *user_role* satisfies *required_role* (web-redesign §4.3).
 
+    Roles are ranked ``readonly`` < ``member`` < ``admin``; a caller is
+    authorised when its rank is at least the requirement's. An unknown role
+    string ranks below everything, so it is never authorised — fail closed.
 
-def _sign(payload: str, api_key: str) -> str:
-    """Return the hex HMAC-SHA256 of *payload* keyed by *api_key*."""
-    return hmac.new(
-        api_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
-    ).hexdigest()
+    Args:
+        user_role: The authenticated caller's role.
+        required_role: The role the route demands.
 
-
-def _encode(raw: str) -> str:
-    """URL-safe base64-encode *raw*, stripping ``=`` padding for a clean cookie."""
-    return base64.urlsafe_b64encode(raw.encode("ascii")).decode("ascii").rstrip("=")
-
-
-def _decode_token_fields(token: str) -> tuple[int, int, str] | None:
-    """Decode *token* into ``(issued_at, ttl_seconds, signature)``.
-
-    Returns ``None`` for any malformed token — non-base64 input, the wrong
-    number of fields, or a non-numeric timestamp or TTL — so callers never
-    have to handle a decode exception. The signature is *not* verified here;
-    that is :func:`verify_session_token`'s job.
+    Returns:
+        ``True`` when the caller's role is sufficient.
     """
-    try:
-        padding = "=" * (-len(token) % 4)
-        raw = base64.urlsafe_b64decode(token + padding).decode("ascii")
-    except ValueError:
-        # binascii.Error (bad base64) and UnicodeDecodeError (non-ASCII
-        # bytes) are both ValueError subclasses; either means a junk token.
-        return None
-
-    fields = raw.split(_TOKEN_FIELD_SEPARATOR)
-    if len(fields) != _TOKEN_FIELD_COUNT:
-        return None
-
-    issued_at_text, ttl_text, signature = fields
-    try:
-        issued_at = int(issued_at_text)
-        ttl_seconds = int(ttl_text)
-    except ValueError:
-        return None
-
-    return issued_at, ttl_seconds, signature
+    caller_rank = _ROLE_RANK.get(user_role, -1)
+    required_rank = _ROLE_RANK.get(required_role, -1)
+    if required_rank < 0:
+        # An unknown requirement is a programming error — fail closed.
+        return False
+    return caller_rank >= required_rank
