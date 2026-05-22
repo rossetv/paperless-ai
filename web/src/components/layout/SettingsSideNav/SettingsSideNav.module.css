@@ -1,0 +1,70 @@
+/*
+ * SettingsSideNav layout component — CSS Module.
+ *
+ * The left navigation rail of the settings / access-control area: stacked
+ * groups, each an uppercase title above a column of NavLinks. The active
+ * link gets a tinted pill background. Fixed rail width.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.nav {
+  width: var(--width-settings-nav);
+  flex-shrink: 0;
+  padding: var(--spacing-14) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-14);
+}
+
+/* ── One group — title + its links. ── */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.groupTitle {
+  padding: 0 var(--spacing-10);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── A single nav link. ── */
+.link {
+  display: flex;
+  align-items: center;
+  padding: var(--spacing-6) var(--spacing-10);
+  border-radius: var(--radius-large);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+  text-decoration: none;
+  transition: background-color var(--duration-standard) var(--easing-standard);
+}
+
+.link:hover {
+  background-color: var(--colour-button-light-bg);
+}
+
+.link:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+/* ── Active link — tinted pill, accent text, heavier weight. ── */
+.linkActive {
+  background-color: var(--colour-status-info-bg);
+  color: var(--colour-status-info-fg);
+  font-weight: var(--font-weight-caption-bold);
+}
+
+.linkActive:hover {
+  background-color: var(--colour-status-info-bg);
+}
