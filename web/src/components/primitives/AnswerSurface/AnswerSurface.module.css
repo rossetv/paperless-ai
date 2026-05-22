@@ -1,0 +1,84 @@
+/*
+ * AnswerSurface primitive — CSS Module.
+ *
+ * The synthesised-answer card shell: a "Synthesised answer" eyebrow, the
+ * answer prose (supplied as children), and a provenance footer.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.surface {
+  background-color: var(--colour-surface);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-14);
+  box-shadow: var(--shadow-answer);
+}
+
+/* Eyebrow row — accent spark glyph + label. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin-bottom: var(--spacing-13);
+}
+
+.spark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-13);
+  height: var(--spacing-13);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-accent-wash);
+  color: var(--colour-accent);
+}
+
+.eyebrow-label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  letter-spacing: var(--letter-spacing-micro);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/* Answer prose — display font, larger than body. */
+.prose {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-tile);
+  font-weight: var(--font-weight-tile);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-tile);
+  color: var(--colour-text-primary);
+  text-wrap: pretty;
+}
+
+/* Provenance footer — a hairline-topped row of facts. */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-13);
+  margin-top: var(--spacing-14);
+  padding-top: var(--spacing-11);
+  border-top: var(--spacing-1) solid var(--colour-border);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* The "refined" footer fact — accent-coloured. */
+.refined {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  color: var(--colour-link);
+}
+
+.refined-dot {
+  width: var(--spacing-4);
+  height: var(--spacing-4);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-accent);
+}
