@@ -3,8 +3,16 @@
  *
  * The in-app PDF viewer shell: a FORCED-DARK top bar (a close control, a
  * breadcrumb, and Download / Open-in-Paperless actions) above the page area.
- * Dark in both themes, like the handoff — it uses the --colour-dark-* tokens
- * (added in Wave 1 Task F3), never the theme-aware --colour-* roles.
+ * Dark in both themes, like the handoff. Surfaces and text use the forced-dark
+ * --colour-dark-* tokens (added in Wave 1 Task F3); the bar background, the
+ * control-hover fill and the focus ring use --colour-nav-bg / --colour-hover-dark
+ * / --colour-focus-ring, which are --colour-* roles declared to the SAME value
+ * in both the light :root and the dark theme — so the shell stays dark either way.
+ *
+ * .chrome is a full-screen overlay, so it anchors its own height with
+ * 100dvh: every descendant height (the page area, ViewerSplit, PdfFrame) is a
+ * percentage and would collapse to zero without a fixed-height ancestor —
+ * <Page> only sets min-height, and html/body/#root carry no height.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -12,7 +20,7 @@
 .chrome {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100dvh;
   min-height: 0;
   background-color: var(--colour-dark-bg);
 }

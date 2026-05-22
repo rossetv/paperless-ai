@@ -26,8 +26,15 @@ export interface DocumentViewerChromeProps {
  *
  * A forced-dark top bar — a close control, a "Search results › title"
  * breadcrumb, and Download / Open-in-Paperless actions — above the page area
- * supplied as `children`. Dark in both themes (the `--colour-dark-*` tokens),
- * matching the handoff's dedicated viewer chrome.
+ * supplied as `children`, matching the handoff's dedicated viewer chrome.
+ *
+ * Dark in both themes. Most surfaces and text use the forced-dark
+ * `--colour-dark-*` tokens (theme-independent by definition). The bar
+ * background, the control-hover fill and the focus ring additionally use
+ * `--colour-nav-bg`, `--colour-hover-dark` and `--colour-focus-ring`: those
+ * are `--colour-*` roles, but each is declared to the *same* value in both
+ * the light `:root` and the dark theme, so the shell stays dark regardless
+ * of the active theme.
  *
  * App-agnostic: it knows a title and two URLs, nothing about the document
  * API. The `DocumentPreviewScreen` feature supplies the page iframe.
