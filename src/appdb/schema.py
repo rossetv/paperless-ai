@@ -7,9 +7,9 @@ the current code knows; it is the single source of truth the migration
 runner records in ``meta``.
 
 The Wave 1 schema (migration v1) is the ``users`` and ``sessions`` tables of
-spec §4.2. Wave 3 adds ``api_keys`` and Wave 4 adds ``config`` as further
-migrations — each a new entry in :data:`appdb.migrations.MIGRATIONS`, never an
-edit to v1.
+spec §4.2. Wave 2 adds ``recent_searches`` (migration v2); Wave 3 adds
+``api_keys`` and Wave 4 adds ``config`` as further migrations — each a new
+entry in :data:`appdb.migrations.MIGRATIONS`, never an edit to v1.
 
 Allowed deps: sqlite3, appdb.migrations. Forbidden: store, search, daemons.
 """
@@ -22,7 +22,7 @@ from appdb.migrations import run_migrations
 
 # The highest schema version the current code knows. Recorded in
 # meta.schema_version by the migration runner after the last migration.
-SCHEMA_VERSION: int = 1
+SCHEMA_VERSION: int = 2
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
@@ -77,6 +77,24 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
     ON sessions (expires_at);
+"""
+
+# Migration v2 DDL — the recent_searches table (web-redesign §5). One row per
+# search a signed-in user runs; the search server keeps at most ~20 newest
+# rows per user. user_id REFERENCES users(id) ON DELETE CASCADE so deleting
+# an account drops their search history atomically. The composite index on
+# (user_id, created_at) serves the per-user "newest first" list directly.
+SCHEMA_V2: str = """
+CREATE TABLE IF NOT EXISTS recent_searches (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL
+                    REFERENCES users(id) ON DELETE CASCADE,
+    query       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_recent_searches_user_created
+    ON recent_searches (user_id, created_at);
 """
 
 
