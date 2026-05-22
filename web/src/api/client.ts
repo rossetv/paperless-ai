@@ -93,6 +93,11 @@ export class ApiError extends Error {
  * A 202/204 response carries no body — `request` resolves to `undefined`
  * rather than attempting to parse one. An endpoint that returns no content
  * is typed `request<void>`.
+ *
+ * Additionally, a body-presence check guards against future endpoints that
+ * return 200 with an empty body (e.g. a 304-equivalent or a no-content 200):
+ * reading an empty body as JSON would throw a `SyntaxError`. The guard reads
+ * the text first and skips JSON parsing when the body is empty.
  */
 async function request<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -107,12 +112,24 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
     throw new ApiError(response.status);
   }
 
-  // 202 Accepted / 204 No Content have no body to parse.
+  // 202 Accepted / 204 No Content explicitly carry no body.
   if (response.status === 202 || response.status === 204) {
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  // Guard against an empty body on any other 2xx — a `content-length: 0`
+  // header or an actually-empty body both indicate no JSON to parse.
+  const contentLength = response.headers.get('content-length');
+  if (contentLength === '0') {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (text.trim().length === 0) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 // ---------------------------------------------------------------------------

@@ -27,11 +27,14 @@ import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } fro
 // ---------------------------------------------------------------------------
 
 function mockFetch(status: number, body: unknown): void {
+  const serialised = body !== null ? JSON.stringify(body) : '';
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
       ok: status >= 200 && status < 300,
       status,
+      headers: new Headers(serialised ? { 'content-type': 'application/json' } : {}),
+      text: () => Promise.resolve(serialised),
       json: () => Promise.resolve(body),
     }),
   );
@@ -277,6 +280,46 @@ describe('successful responses parse into typed shapes', () => {
   it('postReconcile resolves without throwing on 202', async () => {
     mockFetch(202, null);
     await expect(postReconcile()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty-body guard — a 200 with empty content must not throw a SyntaxError
+// ---------------------------------------------------------------------------
+
+describe('empty-body guard', () => {
+  it('resolves to undefined when the response body is empty (content-length 0)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': '0' }),
+        text: () => Promise.resolve(''),
+        json: () => { throw new SyntaxError('Unexpected end of JSON input'); },
+      }),
+    );
+    await expect(getHealthz()).resolves.toBeUndefined();
+  });
+
+  it('resolves to undefined when the response body is empty (empty text, no content-length)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: () => Promise.resolve(''),
+        json: () => { throw new SyntaxError('Unexpected end of JSON input'); },
+      }),
+    );
+    await expect(getHealthz()).resolves.toBeUndefined();
+  });
+
+  it('still parses JSON when the body is present', async () => {
+    mockFetch(200, { status: 'ok' });
+    const result = await getHealthz();
+    expect(result.status).toBe('ok');
   });
 });
 
