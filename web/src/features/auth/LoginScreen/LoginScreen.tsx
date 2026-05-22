@@ -1,9 +1,9 @@
 import React from 'react';
-import { cn } from '../../../lib/cn';
 import { Brand } from '../../../components/primitives/Brand/Brand';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
 import { useLogin, usePublicStats } from '../../../api/hooks';
+import { Unauthenticated, ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../credentials';
 import styles from './LoginScreen.module.css';
 
@@ -16,6 +16,18 @@ interface SplashStat {
 /** Format an integer with thousands separators (e.g. 14238 → "14,238"). */
 function formatCount(n: number): string {
   return n.toLocaleString('en-GB');
+}
+
+/**
+ * Map a login error to user-friendly copy.
+ *
+ * 401 → wrong credentials; 403 → suspended account; anything else → generic.
+ * The raw Error.message is never shown — it is internal (e.g. "API error 403").
+ */
+function loginErrorMessage(e: Error): string {
+  if (e instanceof Unauthenticated) return 'Incorrect username or password.';
+  if (e instanceof ApiError && e.status === 403) return 'This account is suspended.';
+  return 'Sign-in failed. Please try again.';
 }
 
 /**
@@ -64,7 +76,7 @@ export function LoginScreen(): React.ReactElement {
     : null;
 
   const errorMessage =
-    login.isError && login.error !== null ? login.error.message : null;
+    login.isError && login.error !== null ? loginErrorMessage(login.error) : null;
 
   return (
     <div className={styles['screen']}>
@@ -75,7 +87,7 @@ export function LoginScreen(): React.ReactElement {
         {/* Left — brand + hero + stats */}
         <div className={styles['hero']}>
           <div className={styles['brand-row']}>
-            <Brand size={26} color="#fff" />
+            <Brand size={26} />
             <span className={styles['wordmark']}>
               Paperless<span className={styles['wordmark-dim']}>AI</span>
             </span>
@@ -173,7 +185,7 @@ export function LoginScreen(): React.ReactElement {
                   type="submit"
                   variant="primary"
                   disabled={login.isPending}
-                  className={cn(styles['submit'])}
+                  className={styles['submit-button'] ?? ''}
                 >
                   {login.isPending ? 'Signing in…' : 'Sign in'}
                 </Button>

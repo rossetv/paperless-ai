@@ -1,9 +1,9 @@
 import React from 'react';
-import { cn } from '../../../lib/cn';
 import { Brand } from '../../../components/primitives/Brand/Brand';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
 import { useSetup } from '../../../api/hooks';
+import { ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../credentials';
 import styles from './FirstRunSetupScreen.module.css';
 
@@ -34,6 +34,18 @@ export function FirstRunSetupScreen(): React.ReactElement {
 
   const setup = useSetup();
 
+  /**
+   * Map a setup error to user-friendly copy.
+   *
+   * 403 → bad token; 409 → already set up; anything else → generic.
+   * The raw Error.message is never shown — it is internal (e.g. "API error 403").
+   */
+  function setupErrorMessage(e: Error): string {
+    if (e instanceof ApiError && e.status === 403) return 'Invalid setup token.';
+    if (e instanceof ApiError && e.status === 409) return 'Paperless AI is already set up.';
+    return 'Setup failed. Please try again.';
+  }
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();
 
@@ -56,7 +68,7 @@ export function FirstRunSetupScreen(): React.ReactElement {
   }
 
   const errorMessage =
-    setup.isError && setup.error !== null ? setup.error.message : null;
+    setup.isError && setup.error !== null ? setupErrorMessage(setup.error) : null;
 
   return (
     <div className={styles['screen']}>
@@ -64,7 +76,7 @@ export function FirstRunSetupScreen(): React.ReactElement {
 
       <div className={styles['card']}>
         <div className={styles['brand-row']}>
-          <Brand size={26} color="#fff" />
+          <Brand size={26} />
           <span className={styles['wordmark']}>
             Paperless<span className={styles['wordmark-dim']}>AI</span>
           </span>
@@ -145,7 +157,7 @@ export function FirstRunSetupScreen(): React.ReactElement {
               type="submit"
               variant="primary"
               disabled={setup.isPending}
-              className={cn(styles['submit'])}
+              className={styles['submit-button'] ?? ''}
             >
               {setup.isPending ? 'Creating…' : 'Create admin account'}
             </Button>

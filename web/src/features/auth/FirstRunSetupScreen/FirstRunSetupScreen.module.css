@@ -92,8 +92,12 @@
 
 /* ── Submit button — full-width accent. ── */
 .submit {
-  width: 100%;
   margin-top: var(--spacing-13);
+}
+
+/* The button itself fills the full width of its .submit container. */
+.submit-button {
+  width: 100%;
 }
 
 /* ── Inline error alert. ── */
