@@ -1,0 +1,55 @@
+/*
+ * Disclosure primitive — CSS Module.
+ *
+ * A native <details>/<summary> collapsible panel: a summary row with a
+ * rotating chevron and a revealed body. Used by QueryPlanSummary.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.disclosure {
+  border-radius: var(--radius-large);
+  background-color: var(--colour-button-light-bg);
+  overflow: hidden;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-9);
+  padding: var(--spacing-10) var(--spacing-13);
+  cursor: pointer;
+
+  /* Remove the native disclosure triangle. */
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+/* Chevron — rotates a quarter-turn when the panel is open. */
+.chevron {
+  display: inline-flex;
+  color: var(--colour-text-tertiary);
+  transition: transform var(--duration-slow) var(--easing-emphasis);
+}
+
+.disclosure[open] .chevron {
+  transform: rotate(90deg);
+}
+
+.body {
+  padding: var(--spacing-6) var(--spacing-13) var(--spacing-13);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
