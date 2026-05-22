@@ -1,0 +1,33 @@
+/*
+ * IndexStatusFooter primitive — CSS Module.
+ *
+ * The index-status summary line at the foot of the search idle screen:
+ * a ready dot, the document/chunk counts and the embedding model.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-12);
+  padding: var(--spacing-10) 0 var(--spacing-section);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.dot {
+  width: var(--spacing-5);
+  height: var(--spacing-5);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-status-ready);
+}
