@@ -18,20 +18,24 @@ query at the boundary, convert the optional filters, invoke the core method,
 serialise the result, and turn any failure into a sanitised tool error.
 
 Authentication (spec §7.3):
-  Every request must carry ``Authorization: Bearer <SEARCH_API_KEY>``.  The
-  middleware calls :func:`search.auth.is_request_authenticated` and returns
-  HTTP 401 without reaching the MCP handler if the token is absent or invalid.
-  The token is **never logged** (CODE_GUIDELINES §7.4, §10.1).
+  A request is authorised when it carries EITHER a legacy
+  ``Authorization: Bearer <SEARCH_API_KEY>`` token (an admin-equivalent through
+  Waves 1-2) OR a browser ``search_session`` cookie that resolves to an active
+  user.  The middleware returns HTTP 401 without reaching the MCP handler if
+  neither credential is valid.  The token is **never logged**
+  (CODE_GUIDELINES §7.4, §10.1).
 
-Allowed deps: search (core, auth, models, wire), store (SearchFilters),
-    mcp SDK, starlette.
-Forbidden: FastAPI (api.py), sqlite3, direct LLM/HTTP calls.
+Allowed deps: search (core, auth, sessions, models, wire), store
+    (SearchFilters), mcp SDK, starlette. The ``app.db`` connection is injected
+    by the app factory; this module owns no SQL.
+Forbidden: FastAPI (api.py), ``sqlite3.connect``, direct LLM/HTTP calls.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import json
+import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -41,8 +45,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from search.auth import SESSION_COOKIE_NAME, extract_bearer, is_request_authenticated
+from search.auth import SESSION_COOKIE_NAME, extract_bearer, legacy_api_key_user
 from search.models import SearchResult
+from search.sessions import resolve_session
 from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
 from store import SearchFilters
 
@@ -66,10 +71,11 @@ _MCP_PATH = "/mcp"
 class _BearerAuthMiddleware:
     """ASGI middleware that enforces bearer-token authentication.
 
-    Extracts the ``Authorization: Bearer <token>`` header (and the session
-    cookie as a fallback) and delegates the credential check to
-    :func:`search.auth.is_request_authenticated`.  An unauthenticated request
-    is rejected with HTTP 401 before the inner ASGI app is called.
+    Extracts the ``Authorization: Bearer <token>`` header and the session
+    cookie, then authorises a request that carries EITHER a valid legacy
+    ``SEARCH_API_KEY`` bearer OR a browser session cookie that resolves to an
+    active user.  An unauthenticated request is rejected with HTTP 401 before
+    the inner ASGI app is called.
 
     The token is **never logged** — a failed check records only whether a
     header was present, never its value (CODE_GUIDELINES §7.4).
@@ -77,11 +83,16 @@ class _BearerAuthMiddleware:
     Args:
         app: The inner ASGI application to protect.
         settings: Application settings; ``SEARCH_API_KEY`` is read from here.
+        app_db: The open ``app.db`` connection, used to resolve a browser
+            session cookie to a user.
     """
 
-    def __init__(self, app: ASGIApp, settings: Settings) -> None:
+    def __init__(
+        self, app: ASGIApp, settings: Settings, app_db: sqlite3.Connection
+    ) -> None:
         self._app = app
         self._settings = settings
+        self._app_db = app_db
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
@@ -92,7 +103,15 @@ class _BearerAuthMiddleware:
         bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
-        if not is_request_authenticated(bearer=bearer, cookie=cookie, settings=self._settings):
+        # Authenticated when EITHER the legacy SEARCH_API_KEY bearer matches
+        # OR a browser session cookie resolves to an active user.
+        authenticated = (
+            legacy_api_key_user(bearer, self._settings.SEARCH_API_KEY)
+            is not None
+            or resolve_session(self._app_db, cookie) is not None
+        )
+
+        if not authenticated:
             log.warning(
                 "mcp.auth_rejected",
                 has_auth_header=bearer is not None,
@@ -209,12 +228,20 @@ class _McpApp:
     Args:
         fastmcp: The configured FastMCP server.
         settings: Application settings for the auth middleware.
+        app_db: The open ``app.db`` connection for session-cookie auth.
     """
 
-    def __init__(self, fastmcp: FastMCP, settings: Settings) -> None:
+    def __init__(
+        self,
+        fastmcp: FastMCP,
+        settings: Settings,
+        app_db: sqlite3.Connection,
+    ) -> None:
         self._fastmcp = fastmcp
         starlette_app = fastmcp.streamable_http_app()
-        self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, settings)
+        self._asgi_app: ASGIApp = _BearerAuthMiddleware(
+            starlette_app, settings, app_db
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)
@@ -277,7 +304,9 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         )
 
 
-def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
+def build_mcp_app(
+    core: SearchCore, settings: Settings, app_db: sqlite3.Connection
+) -> _McpApp:
     """Build and return the MCP ASGI application (spec §7.2/§7.3).
 
     Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
@@ -291,6 +320,9 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
             pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
         settings: Application settings; ``SEARCH_API_KEY`` is used by the auth
             middleware.
+        app_db: The open ``app.db`` connection, passed to the auth
+            middleware so a browser session cookie can authenticate an MCP
+            request.
 
     Returns:
         An ASGI application wrapping the FastMCP server with bearer-token auth.
@@ -305,4 +337,4 @@ def build_mcp_app(core: SearchCore, settings: Settings) -> _McpApp:
         stateless_http=True,
     )
     _register_search_tools(mcp, core)
-    return _McpApp(mcp, settings)
+    return _McpApp(mcp, settings, app_db)

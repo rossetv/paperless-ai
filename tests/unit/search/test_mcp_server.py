@@ -82,6 +82,21 @@ def _make_core(
     return core
 
 
+def _app_db() -> object:
+    """A fresh migrated in-memory app.db for MCP auth tests.
+
+    ``build_mcp_app`` needs the connection so its auth middleware can resolve a
+    browser session cookie. These unit tests only exercise the legacy-bearer
+    path, so an empty (user-less) database is enough.
+    """
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(":memory:")
+    ensure_schema(conn)
+    return conn
+
+
 # ---------------------------------------------------------------------------
 # In-process MCP tool tests (via in-memory transport)
 # ---------------------------------------------------------------------------
@@ -96,7 +111,7 @@ async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
     core = _make_core(retrieve_result=retrieve_result)
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp  # access the FastMCP instance for in-memory transport
@@ -124,7 +139,7 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
     core = _make_core(answer_result=answer_result)
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp
@@ -154,7 +169,7 @@ async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp
@@ -178,7 +193,7 @@ async def test_ask_documents_with_no_filters_passes_none_ui_filters() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp
@@ -206,7 +221,7 @@ async def test_search_documents_missing_required_query_is_rejected() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp
@@ -230,7 +245,7 @@ async def test_ask_documents_missing_required_question_is_rejected() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp
@@ -252,7 +267,7 @@ def test_unauthenticated_request_is_rejected_with_401() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    asgi_app = build_mcp_app(core, settings)
+    asgi_app = build_mcp_app(core, settings, _app_db())
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     response = client.post("/mcp", json={"jsonrpc": "2.0", "method": "tools/list", "id": 1})
@@ -265,7 +280,7 @@ def test_wrong_bearer_token_is_rejected_with_401() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    asgi_app = build_mcp_app(core, settings)
+    asgi_app = build_mcp_app(core, settings, _app_db())
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     response = client.post(
@@ -282,7 +297,7 @@ def test_valid_bearer_token_passes_auth_layer() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    asgi_app = build_mcp_app(core, settings)
+    asgi_app = build_mcp_app(core, settings, _app_db())
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     response = client.post(
@@ -304,7 +319,7 @@ def test_no_bearer_prefix_is_rejected() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    asgi_app = build_mcp_app(core, settings)
+    asgi_app = build_mcp_app(core, settings, _app_db())
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
     # Send the key directly, without the 'Bearer ' prefix.
@@ -341,7 +356,7 @@ async def test_search_documents_core_exception_does_not_leak_path() -> None:
     )
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         result = await client.call_tool("search_documents", {"query": "test"})
@@ -375,7 +390,7 @@ async def test_ask_documents_core_exception_does_not_leak_path() -> None:
     )
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         result = await client.call_tool("ask_documents", {"question": "test"})
@@ -403,7 +418,7 @@ async def test_search_documents_rejects_over_length_query() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     too_long = "x" * 4001
 
@@ -427,7 +442,7 @@ async def test_ask_documents_rejects_over_length_question() -> None:
     core = _make_core()
     settings = _make_settings()
 
-    mcp_app = build_mcp_app(core, settings)
+    mcp_app = build_mcp_app(core, settings, _app_db())
 
     too_long = "x" * 4001
 
