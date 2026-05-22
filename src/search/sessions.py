@@ -28,6 +28,7 @@ import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import overload
 
 from appdb import sessions as session_store
 from appdb import users as user_store
@@ -241,10 +242,22 @@ def should_touch_last_seen(last_seen_at: str) -> bool:
     return (now - parsed) > _LAST_SEEN_REFRESH
 
 
+@overload
+def _parse_iso(value: str, *, default: datetime) -> datetime: ...
+
+
+@overload
+def _parse_iso(value: str, *, default: None) -> datetime | None: ...
+
+
 def _parse_iso(
     value: str, *, default: datetime | None
 ) -> datetime | None:
     """Parse an ISO-8601 timestamp, returning *default* on a malformed value.
+
+    The overloads let the type checker see that a non-``None`` *default*
+    yields a non-``None`` result — :func:`resolve_session` relies on that to
+    compare the parsed expiry against the clock without a redundant guard.
 
     Args:
         value: The ISO-8601 string to parse.
