@@ -39,6 +39,7 @@ const meta = {
   title: 'Features/Search/SourceList',
   component: SourceList,
   parameters: { layout: 'padded' },
+  args: { onPreview: (id: number) => console.log('preview', id) },
 } satisfies Meta<typeof SourceList>;
 
 export default meta;
