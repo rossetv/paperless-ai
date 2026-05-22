@@ -241,3 +241,147 @@ def create_initial_admin(
     # The row was just inserted in this connection — it must be present.
     assert created is not None
     return created
+
+
+def list_all(conn: sqlite3.Connection) -> list[User]:
+    """Return every user, ordered by ascending id.
+
+    Args:
+        conn: An open ``app.db`` connection.
+
+    Returns:
+        A list of every :class:`User`; empty when no users exist.
+    """
+    rows = conn.execute(
+        f"SELECT {_USER_COLUMNS} FROM users ORDER BY id"
+    ).fetchall()
+    return [_row_to_user(row) for row in rows]
+
+
+def update(
+    conn: sqlite3.Connection,
+    user_id: int,
+    *,
+    display_name: str | None = None,
+    email: str | None = None,
+    role: Role | None = None,
+    status: UserStatus | None = None,
+    password_hash: str | None = None,
+) -> User | None:
+    """Apply a partial update to a user and return the updated row.
+
+    Only the keyword arguments actually supplied are written; an omitted
+    argument leaves that column untouched. Passing ``None`` explicitly is
+    indistinguishable from omitting it, which is acceptable here: the HTTP
+    layer never needs to *clear* ``display_name`` or ``email`` to NULL, only
+    to set them. ``updated_at`` is always advanced; ``password_changed_at``
+    is advanced only when *password_hash* is supplied.
+
+    Args:
+        conn: An open ``app.db`` connection.
+        user_id: The id of the user to update.
+        display_name: A new display name, or ``None`` to leave it.
+        email: A new email, or ``None`` to leave it.
+        role: A new role, or ``None`` to leave it.
+        status: A new status, or ``None`` to leave it.
+        password_hash: A new argon2id hash, or ``None`` to leave it.
+
+    Returns:
+        The updated :class:`User`, or ``None`` when *user_id* does not exist.
+    """
+    now = _utc_now_iso()
+    # Build the SET clause from only the supplied columns. Column names are
+    # fixed literals chosen here — never interpolated user input — and every
+    # value is bound as a parameter, so this carries no injection.
+    assignments: list[str] = ["updated_at = ?"]
+    values: list[object] = [now]
+    if display_name is not None:
+        assignments.append("display_name = ?")
+        values.append(display_name)
+    if email is not None:
+        assignments.append("email = ?")
+        values.append(email)
+    if role is not None:
+        assignments.append("role = ?")
+        values.append(role)
+    if status is not None:
+        assignments.append("status = ?")
+        values.append(status)
+    if password_hash is not None:
+        assignments.append("password_hash = ?")
+        values.append(password_hash)
+        assignments.append("password_changed_at = ?")
+        values.append(now)
+
+    values.append(user_id)
+    cursor = conn.execute(
+        f"UPDATE users SET {', '.join(assignments)} WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    if cursor.rowcount == 0:
+        # No row matched user_id — the user does not exist.
+        return None
+    log.info("appdb.user_updated", user_id=user_id)
+    return get_by_id(conn, user_id)
+
+
+def delete(conn: sqlite3.Connection, user_id: int) -> None:
+    """Delete the user with *user_id*; a no-op when no such user exists.
+
+    The ``sessions`` foreign key cascades, so every session the user holds is
+    deleted in the same statement — their access is revoked instantly.
+
+    Args:
+        conn: An open ``app.db`` connection.
+        user_id: The id of the user to delete.
+    """
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    log.info("appdb.user_deleted", user_id=user_id)
+
+
+def count_all(conn: sqlite3.Connection) -> int:
+    """Return the total number of users.
+
+    Used by first-run setup detection: a count of 0 means the server enters
+    setup mode.
+
+    Args:
+        conn: An open ``app.db`` connection.
+    """
+    row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
+    return int(row[0])
+
+
+def count_admins(conn: sqlite3.Connection) -> int:
+    """Return the number of *active* admin users.
+
+    A suspended admin cannot perform any action, so it does not count: the
+    last-admin guard must treat "one admin, suspended" as zero live admins.
+
+    Args:
+        conn: An open ``app.db`` connection.
+    """
+    row = conn.execute(
+        "SELECT COUNT(*) FROM users "
+        "WHERE role = 'admin' AND status = 'active'"
+    ).fetchone()
+    return int(row[0])
+
+
+def record_login(conn: sqlite3.Connection, user_id: int) -> None:
+    """Stamp ``last_login_at`` with the current UTC time after a login.
+
+    Called from the login handler once the password has verified and the
+    session row has been created.
+
+    Args:
+        conn: An open ``app.db`` connection.
+        user_id: The id of the user who logged in.
+    """
+    conn.execute(
+        "UPDATE users SET last_login_at = ? WHERE id = ?",
+        (_utc_now_iso(), user_id),
+    )
+    conn.commit()
