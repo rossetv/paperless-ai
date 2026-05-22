@@ -26,6 +26,10 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  getApiKeys,
+  createApiKey,
+  updateApiKey,
+  deleteApiKey,
 } from './client';
 import type {
   SearchRequest,
@@ -44,6 +48,11 @@ import type {
   UpdateUserRequest,
   UsersResponse,
   UserResponse,
+  CreateApiKeyRequest,
+  UpdateApiKeyRequest,
+  ApiKeysResponse,
+  CreateApiKeyResponse,
+  ApiKeyEnvelope,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +68,7 @@ const queryKeys = {
   publicStats: () => ['stats', 'public'] as const,
   recentSearches: () => ['recent-searches'] as const,
   users: () => ['users'] as const,
+  apiKeys: () => ['api-keys'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -293,6 +303,72 @@ export function useDeleteUser(): UseMutationResult<void, Error, number> {
     mutationFn: deleteUser,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.users() });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// API-key hooks (Wave 3 — Access Control)
+//
+// The mutations invalidate the `apiKeys` query so the keys table re-fetches
+// after a key is minted or revoked.
+// ---------------------------------------------------------------------------
+
+/** Fetch the API keys visible to the caller — GET /api/api-keys. */
+export function useApiKeys(): UseQueryResult<ApiKeysResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.apiKeys(),
+    queryFn: getApiKeys,
+  });
+}
+
+/**
+ * Create-API-key mutation — POST /api/api-keys.
+ *
+ * The success payload carries the full one-time `secret`. The caller shows
+ * it once and discards it. Invalidates the keys list so the new key appears.
+ */
+export function useCreateApiKey(): UseMutationResult<
+  CreateApiKeyResponse,
+  Error,
+  CreateApiKeyRequest
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createApiKey,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() });
+    },
+  });
+}
+
+/**
+ * Edit-API-key mutation — PATCH /api/api-keys/{id}.
+ *
+ * Editing is owner-only on the server. Invalidates the keys list so the
+ * edited key's new name / scopes / expiry show in the table.
+ */
+export function useUpdateApiKey(): UseMutationResult<
+  ApiKeyEnvelope,
+  Error,
+  { id: number; body: UpdateApiKeyRequest }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }) => updateApiKey(id, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() });
+    },
+  });
+}
+
+/** Delete / revoke API-key mutation — DELETE /api/api-keys/{id}. */
+export function useDeleteApiKey(): UseMutationResult<void, Error, number> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteApiKey,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() });
     },
   });
 }

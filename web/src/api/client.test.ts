@@ -528,7 +528,7 @@ describe('Wave 3 user-management endpoints', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/users$/);
     expect(init.method).toBe('GET');
-    expect(result.users[0].username).toBe('alex.morgan');
+    expect(result.users[0]?.username).toBe('alex.morgan');
   });
 
   it('createUser POSTs /api/users with the new-user body', async () => {
@@ -572,7 +572,7 @@ describe('Wave 3 API-key endpoints', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/api-keys$/);
     expect(init.method).toBe('GET');
-    expect(result.keys[0].key_prefix).toBe('sk-pls-aF82C');
+    expect(result.keys[0]?.key_prefix).toBe('sk-pls-aF82C');
   });
 
   it('createApiKey POSTs /api/api-keys and returns the one-time secret', async () => {

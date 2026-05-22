@@ -24,6 +24,10 @@ import {
   useCreateUser,
   useUpdateUser,
   useDeleteUser,
+  useApiKeys,
+  useCreateApiKey,
+  useUpdateApiKey,
+  useDeleteApiKey,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated, ApiError } from './client';
@@ -368,7 +372,7 @@ describe('useUsers', () => {
     mockFetch(200, { users: [SAMPLE_USER] });
     const { result } = renderHook(() => useUsers(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.users[0].username).toBe('alex.morgan');
+    expect(result.current.data?.users[0]?.username).toBe('alex.morgan');
   });
 });
 
@@ -417,5 +421,71 @@ describe('useDeleteUser', () => {
     result.current.mutate(1);
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(ApiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 3 — API-key hooks
+// ---------------------------------------------------------------------------
+
+const SAMPLE_KEY = {
+  id: 1,
+  name: 'Claude · MCP integration',
+  key_prefix: 'sk-pls-aF82C',
+  scopes: ['mcp'] as const,
+  owner_id: 1,
+  owner_name: 'Alex Morgan',
+  created_at: '2026-01-12T00:00:00Z',
+  expires_at: null,
+  last_used_at: '2026-05-22T09:00:00Z',
+  revoked_at: null,
+  request_count: 184602,
+};
+
+describe('useApiKeys', () => {
+  it('returns the key list on success', async () => {
+    mockFetch(200, { keys: [SAMPLE_KEY] });
+    const { result } = renderHook(() => useApiKeys(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.keys[0]?.key_prefix).toBe('sk-pls-aF82C');
+  });
+});
+
+describe('useCreateApiKey', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useCreateApiKey(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves with the one-time secret', async () => {
+    mockFetch(200, { api_key: SAMPLE_KEY, secret: 'sk-pls-aF82CdeadbeefSECRET' });
+    const { result } = renderHook(() => useCreateApiKey(), { wrapper: makeWrapper() });
+    result.current.mutate({ name: 'n8n', scopes: ['api'], expires_at: null });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.secret).toBe('sk-pls-aF82CdeadbeefSECRET');
+  });
+});
+
+describe('useUpdateApiKey', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useUpdateApiKey(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves with the updated key on a successful edit', async () => {
+    mockFetch(200, { api_key: { ...SAMPLE_KEY, name: 'renamed' } });
+    const { result } = renderHook(() => useUpdateApiKey(), { wrapper: makeWrapper() });
+    result.current.mutate({ id: 1, body: { name: 'renamed' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.api_key.name).toBe('renamed');
+  });
+});
+
+describe('useDeleteApiKey', () => {
+  it('resolves on a 204 response', async () => {
+    mockFetch(204, null);
+    const { result } = renderHook(() => useDeleteApiKey(), { wrapper: makeWrapper() });
+    result.current.mutate(3);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
