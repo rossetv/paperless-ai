@@ -21,6 +21,10 @@ from .constants import REFUSAL_PHRASES
 
 # Default store path used by the indexer and search server.
 _DEFAULT_INDEX_DB_PATH = "/data/index.db"
+# Default application-database path. app.db holds accounts, sessions, and
+# (from later waves) config; it is separate from index.db so rebuilding the
+# search index never destroys accounts.
+_DEFAULT_APP_DB_PATH = "/data/app.db"
 
 # Default URLs used when environment variables are not set.
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
@@ -250,6 +254,8 @@ class Settings:
 
     # Indexer / store settings (semantic-search spec §10)
     INDEX_DB_PATH: str
+    # Application-database path (web-redesign spec §4.1) — accounts/sessions.
+    APP_DB_PATH: str
     EMBEDDING_MODEL: str
     EMBEDDING_DIMENSIONS: int
     EMBEDDING_MAX_CONCURRENT: int
@@ -391,6 +397,7 @@ class Settings:
                 0, _get_int_env("CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
             ),
             INDEX_DB_PATH=os.getenv("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
+            APP_DB_PATH=os.getenv("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
             EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
             EMBEDDING_DIMENSIONS=_require_at_least_one(
                 "EMBEDDING_DIMENSIONS", _get_int_env("EMBEDDING_DIMENSIONS", 1536)

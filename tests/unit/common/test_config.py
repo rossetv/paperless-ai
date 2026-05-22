@@ -393,3 +393,17 @@ class TestLlmMaxConcurrent:
     def test_negative_clamped_to_zero(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "-3"})
         assert s.LLM_MAX_CONCURRENT == 0
+
+
+class TestAppDbPath:
+    """The APP_DB_PATH bootstrap setting (web-redesign spec §4.1)."""
+
+    def test_app_db_path_defaults_to_data_app_db(self, mocker):
+        """APP_DB_PATH defaults to /data/app.db when the env var is unset."""
+        s = _build(mocker, _MINIMAL_ENV)
+        assert s.APP_DB_PATH == "/data/app.db"
+
+    def test_app_db_path_is_read_from_the_environment(self, mocker):
+        """APP_DB_PATH is taken verbatim from the environment when set."""
+        s = _build(mocker, {**_MINIMAL_ENV, "APP_DB_PATH": "/custom/accounts.db"})
+        assert s.APP_DB_PATH == "/custom/accounts.db"

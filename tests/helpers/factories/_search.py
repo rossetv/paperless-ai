@@ -319,6 +319,7 @@ def make_search_settings(**overrides: Any) -> Any:
         "PAPERLESS_URL": "http://paperless.example:8000",
         "PAPERLESS_PUBLIC_URL": "http://paperless.example:8000",
         "INDEX_DB_PATH": "/tmp/test-index.db",
+        "APP_DB_PATH": "/tmp/test-app.db",
         "EMBEDDING_MODEL": "text-embedding-3-small",
         "EMBEDDING_DIMENSIONS": 4,
         "SEARCH_TOP_K": 10,
