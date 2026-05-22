@@ -9,6 +9,11 @@ import {
   Unauthenticated,
   ApiError,
   login,
+  logout,
+  me,
+  setup,
+  setupStatus,
+  publicStats,
   search,
   getFacets,
   getStats,
@@ -49,13 +54,28 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Shared fixtures
+// ---------------------------------------------------------------------------
+
+const SAMPLE_USER = {
+  id: 1,
+  username: 'alex.morgan',
+  display_name: 'Alex Morgan',
+  email: 'alex@home.lan',
+  role: 'admin' as const,
+  status: 'active' as const,
+  created_at: '2026-05-01T00:00:00Z',
+  last_login_at: null,
+};
+
+// ---------------------------------------------------------------------------
 // credentials: 'include' — every request carries the session cookie
 // ---------------------------------------------------------------------------
 
 describe('every request sends credentials: include', () => {
   it('login sends credentials include', async () => {
-    mockFetch(200, { status: 'ok' });
-    await login({ api_key: 'test-key' });
+    mockFetch(200, { user: SAMPLE_USER });
+    await login({ username: 'u', password: 'p', remember: false });
     const [, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(init.credentials).toBe('include');
   });
@@ -182,10 +202,10 @@ describe('non-2xx non-401 responses throw ApiError', () => {
 // ---------------------------------------------------------------------------
 
 describe('successful responses parse into typed shapes', () => {
-  it('login resolves with status ok', async () => {
-    mockFetch(200, { status: 'ok' });
-    const result = await login({ api_key: 'correct-key' });
-    expect(result.status).toBe('ok');
+  it('login resolves with the user object', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const result = await login({ username: 'alex.morgan', password: 'secret123', remember: false });
+    expect(result.user.username).toBe('alex.morgan');
   });
 
   it('search resolves with SearchResponse shape', async () => {
@@ -266,8 +286,8 @@ describe('successful responses parse into typed shapes', () => {
 
 describe('correct HTTP methods and endpoint paths', () => {
   it('login POSTs to /api/auth/login', async () => {
-    mockFetch(200, { status: 'ok' });
-    await login({ api_key: 'k' });
+    mockFetch(200, { user: SAMPLE_USER });
+    await login({ username: 'u', password: 'p', remember: false });
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/auth\/login$/);
     expect(init.method).toBe('POST');
@@ -327,5 +347,79 @@ describe('correct HTTP methods and endpoint paths', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/reconcile$/);
     expect(init.method).toBe('POST');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 1 — accounts endpoints
+// ---------------------------------------------------------------------------
+
+describe('Wave 1 accounts endpoints', () => {
+  it('setupStatus GETs /api/setup/status and returns { needed }', async () => {
+    mockFetch(200, { needed: true });
+    const result = await setupStatus();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/setup\/status$/);
+    expect(init.method).toBe('GET');
+    expect(result.needed).toBe(true);
+  });
+
+  it('setup POSTs /api/setup with token, username, password', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const result = await setup({ token: 't', username: 'admin', password: 'password1' });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/setup$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      token: 't',
+      username: 'admin',
+      password: 'password1',
+    });
+    expect(result.user.username).toBe('alex.morgan');
+  });
+
+  it('login POSTs /api/auth/login with username, password, remember', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const result = await login({ username: 'alex.morgan', password: 'secret123', remember: true });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/auth\/login$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      username: 'alex.morgan',
+      password: 'secret123',
+      remember: true,
+    });
+    expect(result.user.role).toBe('admin');
+  });
+
+  it('logout POSTs /api/auth/logout and resolves on 204', async () => {
+    mockFetch(204, null);
+    await expect(logout()).resolves.toBeUndefined();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/auth\/logout$/);
+    expect(init.method).toBe('POST');
+  });
+
+  it('me GETs /api/auth/me and returns the current user', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const result = await me();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/auth\/me$/);
+    expect(init.method).toBe('GET');
+    expect(result.user.id).toBe(1);
+  });
+
+  it('me throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthenticated' });
+    await expect(me()).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('publicStats GETs /api/stats/public', async () => {
+    mockFetch(200, { document_count: 14238, chunk_count: 187000 });
+    const result = await publicStats();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/stats\/public$/);
+    expect(init.method).toBe('GET');
+    expect(result.document_count).toBe(14238);
   });
 });
