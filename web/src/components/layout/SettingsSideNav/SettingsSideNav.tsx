@@ -53,13 +53,13 @@ export function SettingsSideNav({
     <nav className={cn(styles['nav'], className)} aria-label="Settings">
       {groups.map((group) => (
         <div key={group.title} className={styles['group']}>
-          <span className={styles['groupTitle']}>{group.title}</span>
+          <span className={styles['group-title']}>{group.title}</span>
           {group.items.map((item) => (
             <NavLink
               key={item.id}
               to={item.to}
               className={({ isActive }) =>
-                cn(styles['link'], isActive && styles['linkActive'])
+                cn(styles['link'], isActive && styles['link-active'])
               }
               end
             >

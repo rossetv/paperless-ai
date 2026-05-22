@@ -62,7 +62,7 @@ export function SettingsLayout({
       <SettingsSideNav groups={SETTINGS_NAV_GROUPS} />
       <div className={styles['content']}>
         <header className={styles['header']}>
-          <div className={styles['headerText']}>
+          <div className={styles['header-text']}>
             <h1 className={styles['title']}>{title}</h1>
             {subtitle !== undefined && (
               <p className={styles['subtitle']}>{subtitle}</p>

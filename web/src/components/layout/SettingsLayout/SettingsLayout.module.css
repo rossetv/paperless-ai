@@ -33,7 +33,7 @@
   margin-bottom: var(--spacing-14);
 }
 
-.headerText {
+.header-text {
   flex: 1;
   min-width: 0;
 }
