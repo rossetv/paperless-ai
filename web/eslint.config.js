@@ -155,10 +155,13 @@ export default [
               ],
             },
 
-            // api/ and hooks/ — cross-cutting leaves; no application-layer
-            // imports, but the framework-agnostic lib/ leaf is allowed.
+            // api/ — cross-cutting leaf; no application-layer imports.
             { from: 'api', allow: ['api', 'lib'] },
-            { from: 'hooks', allow: ['hooks', 'lib'] },
+
+            // hooks/ — cross-cutting leaf; may import api/ so that domain
+            // hooks such as useAuth can wrap TanStack Query hooks from api/.
+            // No component or page imports are permitted.
+            { from: 'hooks', allow: ['hooks', 'api', 'lib'] },
 
             // features/ — the only layer that knows the domain; may use any
             // component tier plus the cross-cutting leaves and styles.
