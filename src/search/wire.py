@@ -43,6 +43,7 @@ from search.validation import (
 from store import SearchFilters
 
 if TYPE_CHECKING:
+    from appdb.api_keys import ApiKey
     from appdb.users import User
     from search.models import SearchResult
     from store.models import FacetSet, IndexStats
@@ -485,4 +486,174 @@ def to_user_response(user: User) -> UserResponse:
         status=user.status,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# API-key wire models (web-redesign §5; Wave 3)
+# ---------------------------------------------------------------------------
+
+# The valid API-key scopes. Duplicated from search.api_keys deliberately:
+# wire.py is the HTTP-boundary module and must not import the auth layer, so
+# the literal set lives here too. search.api_keys.serialise_scopes re-checks.
+# Lowercase is the canonical wire form — the frontend `ApiScope` type uses
+# the same values, so no case transform is needed at the boundary.
+_VALID_API_KEY_SCOPES: frozenset[str] = frozenset({"api", "mcp", "admin"})
+
+
+def _validate_scope_list(value: list[str]) -> list[str]:
+    """Reject any scope outside the documented three.
+
+    Shared by :class:`CreateApiKeyRequest` and :class:`UpdateApiKeyRequest`
+    so the scope-validation rule lives in one place.
+    """
+    unknown = set(value) - _VALID_API_KEY_SCOPES
+    if unknown:
+        raise ValueError(f"unknown scope(s): {sorted(unknown)}")
+    return value
+
+
+class CreateApiKeyRequest(BaseModel):
+    """The body of ``POST /api/api-keys`` — request a new key.
+
+    Attributes:
+        name: A human label, 1-100 characters.
+        scopes: A non-empty list drawn from ``api``/``mcp``/``admin``.
+        expires_at: An optional ISO-8601 UTC expiry; omitted = never expires.
+    """
+
+    name: str = Field(min_length=1, max_length=100)
+    scopes: list[str] = Field(min_length=1)
+    expires_at: str | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def _scopes_are_valid(cls, value: list[str]) -> list[str]:
+        """Reject any scope outside the documented three."""
+        return _validate_scope_list(value)
+
+
+class UpdateApiKeyRequest(BaseModel):
+    """The body of ``PATCH /api/api-keys/{id}`` — edit a key.
+
+    Every field is optional: the caller sends only what it wants changed, and
+    an absent field is left untouched (an empty body is a valid no-op edit).
+    The immutable fields — the key itself, its owner, its prefix — can never
+    be edited; only ``name``, ``scopes`` and ``expires_at`` are mutable.
+
+    A *supplied* field still has to be valid: ``name`` cannot be empty and
+    ``scopes`` cannot be empty or contain an unknown scope. To leave a field
+    unchanged, omit it rather than sending an empty value.
+
+    ``expires_at`` is special: ``None`` is itself a meaningful value — it
+    means "this key never expires" — so the route handler distinguishes
+    "clear the expiry" (``expires_at`` present and ``null``) from "leave the
+    expiry unchanged" (``expires_at`` absent) via Pydantic's
+    ``model_fields_set``, not the parsed value. See ``_update_api_key`` in
+    Task W3B15.
+
+    Attributes:
+        name: A new human label, 1-100 characters, or ``None``/absent.
+        scopes: A new non-empty scope list, or ``None``/absent.
+        expires_at: A new ISO-8601 UTC expiry; ``null`` clears the expiry;
+            absent leaves it unchanged.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    scopes: list[str] | None = Field(default=None, min_length=1)
+    expires_at: str | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def _scopes_are_valid(cls, value: list[str] | None) -> list[str] | None:
+        """Reject any scope outside the documented three, when supplied."""
+        if value is None:
+            return None
+        return _validate_scope_list(value)
+
+
+class ApiKeyResponse(BaseModel):
+    """One API key in an HTTP response — never carries the secret.
+
+    Mirrors :class:`appdb.api_keys.ApiKey` minus ``key_hash``: the hash is a
+    server-side secret and must never cross the wire. The dataclass column
+    ``owner_user_id`` is exposed here as ``owner_id`` (the wire layer must
+    not leak the DB column name), and ``owner_name`` — the owning user's
+    display name — is added; it is resolved from the ``users`` table by the
+    caller, since the key row itself only stores the owner's id.
+    """
+
+    id: int
+    name: str
+    key_prefix: str
+    owner_id: int
+    owner_name: str
+    scopes: list[str]
+    created_at: str
+    expires_at: str | None
+    last_used_at: str | None
+    revoked_at: str | None
+    request_count: int
+
+
+class ApiKeyListResponse(BaseModel):
+    """The body of ``GET /api/api-keys`` — a list of keys."""
+
+    keys: list[ApiKeyResponse]
+
+
+class ApiKeyEnvelope(BaseModel):
+    """The body of ``PATCH /api/api-keys/{id}`` — one key, no secret.
+
+    The updated key after an edit. Unlike :class:`CreatedApiKeyResponse` it
+    carries **no** ``secret`` — editing a key never re-reveals it.
+    """
+
+    api_key: ApiKeyResponse
+
+
+class CreatedApiKeyResponse(BaseModel):
+    """The body of ``POST /api/api-keys`` — the one-time key reveal.
+
+    ``secret`` is the full raw ``sk-pls-...`` key, returned **exactly once**
+    at creation. No other endpoint ever returns it; the client must store it
+    immediately. ``api_key`` is the persisted metadata (no secret).
+    """
+
+    api_key: ApiKeyResponse
+    secret: str
+
+
+def to_api_key_response(api_key: ApiKey, owner_name: str) -> ApiKeyResponse:
+    """Map an :class:`appdb.api_keys.ApiKey` to its wire shape.
+
+    Copies every public field and **omits** ``key_hash`` — the hash is a
+    secret and never appears in a response. The stored comma-separated
+    ``scopes`` string is split into a list for the JSON shape. The dataclass
+    ``owner_user_id`` becomes the wire ``owner_id``; the owner's display name
+    is not on the key row, so the caller resolves it from the ``users`` table
+    and supplies it as *owner_name*.
+
+    Args:
+        api_key: The persisted key row.
+        owner_name: The owning user's display name (the caller looks the
+            owner up in the ``users`` table; falls back to the username when
+            no display name is set).
+
+    Returns:
+        The :class:`ApiKeyResponse` for the HTTP layer.
+    """
+    scope_list = [s for s in api_key.scopes.split(",") if s]
+    return ApiKeyResponse(
+        id=api_key.id,
+        name=api_key.name,
+        key_prefix=api_key.key_prefix,
+        owner_id=api_key.owner_user_id,
+        owner_name=owner_name,
+        scopes=scope_list,
+        created_at=api_key.created_at,
+        expires_at=api_key.expires_at,
+        last_used_at=api_key.last_used_at,
+        revoked_at=api_key.revoked_at,
+        request_count=api_key.request_count,
     )
