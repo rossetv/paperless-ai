@@ -11,6 +11,9 @@ Adaptation from the plan: AppState takes app_db_path (a path string), not a
 live connection. The app is built with the tmp_path file; test fixtures seed
 data via a separate connection to the same file, matching the established
 pattern from test_deps.py.
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer is retired. Tests that
+exercised the legacy bearer path have been removed.
 """
 
 from __future__ import annotations
@@ -32,7 +35,6 @@ from search.document_routes import build_document_router
 from search.sessions import begin_session
 from search.setup import SetupState
 
-_LEGACY_KEY = "doc-routes-legacy-key"
 _PDF_BYTES = b"%PDF-1.7\nstreamed document body\n%%EOF"
 
 
@@ -55,7 +57,6 @@ def _build_app(app_db_path: str, paperless_client) -> FastAPI:
         AppState(
             app_db_path=app_db_path,
             setup_state=SetupState(),
-            legacy_api_key=_LEGACY_KEY,
         ),
     )
     settings = MagicMock()
@@ -205,21 +206,6 @@ def test_pdf_proxy_401_when_unauthenticated(app_db_path) -> None:
     paperless.download_stream.assert_not_called()
 
 
-def test_pdf_proxy_allows_a_legacy_bearer(app_db_path) -> None:
-    """The legacy SEARCH_API_KEY bearer (a synthetic admin) is allowed."""
-    paperless = MagicMock()
-    paperless.download_stream.return_value = (
-        "application/pdf",
-        iter([_PDF_BYTES]),
-    )
-    client = _client(app_db_path, paperless)
-    response = client.get(
-        "/api/documents/100/pdf",
-        headers={"Authorization": f"Bearer {_LEGACY_KEY}"},
-    )
-    assert response.status_code == 200
-
-
 class TestRecentSearchesRoute:
     """GET /api/recent-searches returns the current user's search history."""
 
@@ -232,7 +218,6 @@ class TestRecentSearchesRoute:
             AppState(
                 app_db_path=app_db_path,
                 setup_state=SetupState(),
-                legacy_api_key=_LEGACY_KEY,
             ),
         )
         settings = MagicMock()
@@ -297,13 +282,3 @@ class TestRecentSearchesRoute:
         """An unauthenticated request is rejected 401."""
         client = self._client_no_paperless(app_db_path)
         assert client.get("/api/recent-searches").status_code == 401
-
-    def test_recent_searches_empty_for_the_legacy_bearer(self, app_db_path) -> None:
-        """The legacy bearer (synthetic admin id=0) has no history — []."""
-        client = self._client_no_paperless(app_db_path)
-        response = client.get(
-            "/api/recent-searches",
-            headers={"Authorization": f"Bearer {_LEGACY_KEY}"},
-        )
-        assert response.status_code == 200
-        assert response.json() == {"searches": []}

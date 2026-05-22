@@ -1,15 +1,14 @@
-"""Integration tests for legacy-bearer auth and the SPA catch-all (§4.8).
+"""Integration tests for the SPA catch-all (§4.8).
 
-Two concerns, both exercised through the real FastAPI app:
-
-- The legacy ``Authorization: Bearer <SEARCH_API_KEY>`` credential still
-  authorises ``/api/*`` as an admin-equivalent caller (Waves 1-2).
-- The SPA deep-link catch-all serves ``index.html`` for client-router paths
-  such as ``/login`` and ``/setup`` so a hard refresh resolves.
+The SPA deep-link catch-all serves ``index.html`` for client-router paths
+such as ``/login`` and ``/setup`` so a hard refresh resolves.
 
 ``search.api`` resolves ``FRONTEND_DIST`` at *import* time, so the SPA tests
 set the env var, build the app in a child process-free way by reloading the
 module, and restore the environment afterwards.
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer tests are removed. The legacy
+bearer is retired as of Wave 3; programmatic access is by minted API keys.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from fastapi.testclient import TestClient
 from store.reader import StoreReader
 
 from tests.integration.accounts_helpers import (
-    LEGACY_API_KEY,
     build_account_client,
     make_mock_core,
     make_settings,
@@ -31,105 +29,8 @@ from tests.integration.accounts_helpers import (
 )
 
 
-def _bearer() -> dict[str, str]:
-    """The legacy SEARCH_API_KEY presented as a Bearer header."""
-    return {"Authorization": f"Bearer {LEGACY_API_KEY}"}
-
-
-# ---------------------------------------------------------------------------
-# Legacy bearer — admin-equivalent through Waves 1-2
-# ---------------------------------------------------------------------------
-
-
-def test_legacy_bearer_authorises_search(tmp_path: Path) -> None:
-    """A request carrying the legacy key as a Bearer reaches POST /api/search."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        client = build_account_client(settings, app_db, store_reader)
-        response = client.post(
-            "/api/search", json={"query": "gas bill"}, headers=_bearer()
-        )
-        assert response.status_code == 200, response.text
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
-def test_legacy_bearer_authorises_an_admin_route(tmp_path: Path) -> None:
-    """The legacy key is admin-equivalent — it reaches GET /api/users."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        client = build_account_client(settings, app_db, store_reader)
-        response = client.get("/api/users", headers=_bearer())
-        assert response.status_code == 200, response.text
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
-def test_legacy_bearer_authorises_reconcile(tmp_path: Path) -> None:
-    """The legacy key reaches the Member-gated POST /api/reconcile."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        client = build_account_client(settings, app_db, store_reader)
-        response = client.post("/api/reconcile", headers=_bearer())
-        assert response.status_code == 202
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
-def test_legacy_bearer_works_in_setup_mode(tmp_path: Path) -> None:
-    """With no users yet, the legacy bearer still authorises a protected route.
-
-    The legacy path does not depend on a user row, so it works even before
-    the first admin is created.
-    """
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)  # no users -> setup mode
-    store_reader = StoreReader(settings)
-    try:
-        client = build_account_client(settings, app_db, store_reader)
-        assert client.get("/api/setup/status").json() == {"needed": True}
-        response = client.post(
-            "/api/search", json={"query": "anything"}, headers=_bearer()
-        )
-        assert response.status_code == 200, response.text
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
-def test_auth_me_reports_the_legacy_identity(tmp_path: Path) -> None:
-    """GET /api/auth/me on the legacy bearer returns the synthetic admin."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        client = build_account_client(settings, app_db, store_reader)
-        response = client.get("/api/auth/me", headers=_bearer())
-        assert response.status_code == 200, response.text
-        user = response.json()["user"]
-        assert user["role"] == "admin"
-        assert user["id"] == 0
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
 def test_a_wrong_bearer_is_rejected_401(tmp_path: Path) -> None:
-    """A Bearer token that is not the legacy key does not authorise."""
+    """An unrecognised Bearer token does not authorise."""
     settings = make_settings(tmp_path)
     seed_store(settings)
     app_db = open_app_db(tmp_path)
@@ -139,7 +40,7 @@ def test_a_wrong_bearer_is_rejected_401(tmp_path: Path) -> None:
         response = client.post(
             "/api/search",
             json={"query": "gas"},
-            headers={"Authorization": "Bearer not-the-real-key"},
+            headers={"Authorization": "Bearer not-a-real-key"},
         )
         assert response.status_code == 401
     finally:

@@ -1,9 +1,9 @@
 """Tests for the recent-search record hook on POST /api/search.
 
 A successful search by a real session user must write a recent_searches
-row; the legacy bearer (synthetic admin, id=0) must not; a failed search
-must not record; and a database error while recording must not fail the
-search. These exercise the real search router over a tmp_path app.db.
+row; a failed search must not record; and a database error while recording
+must not fail the search. These exercise the real search router over a
+tmp_path app.db.
 
 Adaptation note: the plan specified ``AppState(app_db=conn, ...)`` but
 ``AppState`` holds ``app_db_path: str``, not a live connection.  The
@@ -32,9 +32,6 @@ from search.routes import build_api_router
 from search.sessions import begin_session
 from search.setup import SetupState
 from tests.helpers.factories import make_search_result, make_source_document
-
-_LEGACY_KEY = "record-hook-legacy-key"
-
 
 def _mock_core(*, fail: bool = False) -> MagicMock:
     """A stub SearchCore returning a fixed result, or raising when *fail*."""
@@ -73,7 +70,6 @@ def _build_app(tmp_path, core: MagicMock) -> FastAPI:
         AppState(
             app_db_path=app_db_path,
             setup_state=SetupState(),
-            legacy_api_key=_LEGACY_KEY,
         ),
     )
     settings = MagicMock()
@@ -120,20 +116,6 @@ def test_successful_search_records_a_recent_search(conn, tmp_path) -> None:
 
     history = list_for_user(conn, user.id)
     assert [r.query for r in history] == ["gas bill total"]
-
-
-def test_legacy_bearer_search_records_nothing(conn, tmp_path) -> None:
-    """The legacy bearer has no user row, so nothing is recorded."""
-    client = _client(tmp_path, _mock_core())
-    response = client.post(
-        "/api/search",
-        json={"query": "gas bill"},
-        headers={"Authorization": f"Bearer {_LEGACY_KEY}"},
-    )
-    assert response.status_code == 200
-    # id 0 is the synthetic admin; its history is empty and no FK violation
-    # was raised.
-    assert list_for_user(conn, 0) == []
 
 
 def test_failed_search_records_nothing(conn, tmp_path) -> None:

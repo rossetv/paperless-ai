@@ -10,11 +10,12 @@ Coverage:
   GET /api/recent-searches.
 - Recent searches come back newest-first.
 - One user never sees another user's recent searches.
-- The legacy SEARCH_API_KEY bearer records nothing.
 - GET /api/recent-searches is rejected 401 when unauthenticated.
 
 Note: passwords use "alice-password" / "bob-password" (≥8 chars) because
 the LoginRequest validator enforces a minimum password length.
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer test is removed.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from pathlib import Path
 
 from store.reader import StoreReader
 from tests.integration.accounts_helpers import (
-    LEGACY_API_KEY,
     build_account_client,
     login,
     make_settings,
@@ -109,31 +109,6 @@ def test_recent_searches_isolate_users(tmp_path: Path) -> None:
         queries = [s["query"] for s in recent.json()["searches"]]
         assert queries == ["bob query"]
         assert "alice private query" not in queries
-    finally:
-        store_reader.close()
-        app_db.close()
-
-
-def test_legacy_bearer_search_is_not_recorded(tmp_path: Path) -> None:
-    """A search via the legacy bearer records nothing — no user identity."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        # A user exists (past setup), but the search uses the legacy bearer.
-        seed_user(app_db, username="alice", password="alice-password", role="readonly")
-        client = build_account_client(settings, app_db, store_reader)
-        bearer = {"Authorization": f"Bearer {LEGACY_API_KEY}"}
-
-        search = client.post(
-            "/api/search", json={"query": "legacy query"}, headers=bearer
-        )
-        assert search.status_code == 200
-
-        # The recent_searches table has no row for the synthetic admin.
-        count = app_db.execute("SELECT COUNT(*) FROM recent_searches").fetchone()[0]
-        assert count == 0
     finally:
         store_reader.close()
         app_db.close()

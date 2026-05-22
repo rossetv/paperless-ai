@@ -59,6 +59,44 @@ def build_search_core(
     )
 
 
+def mint_api_key(
+    app_db: object,
+    *,
+    owner_user_id: int,
+    scopes: str = "api",
+    name: str = "test-key",
+) -> str:
+    """Create an API key in *app_db* and return the raw key string.
+
+    For tests that need to authenticate a request as an API key. The key is
+    created the proper way — generated, hashed, and stored — so the bearer
+    path resolves it exactly as production would. The raw key is returned;
+    send it as ``Authorization: Bearer <raw key>``.
+
+    Args:
+        app_db: The app.db connection the test app is using.
+        owner_user_id: The id of the owning user (must already exist).
+        scopes: The comma-separated scope string for the key.
+        name: The key's label.
+
+    Returns:
+        The full raw ``sk-pls-...`` key.
+    """
+    from appdb.api_keys import create as create_key
+    from search.api_keys import generate_raw_key, hash_key, key_display_prefix
+
+    raw = generate_raw_key()
+    create_key(
+        app_db,
+        key_hash=hash_key(raw),
+        key_prefix=key_display_prefix(raw),
+        name=name,
+        owner_user_id=owner_user_id,
+        scopes=scopes,
+    )
+    return raw
+
+
 def seed_user_and_login(
     app_db: object,
     client: object,

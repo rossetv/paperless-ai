@@ -5,7 +5,7 @@ Exercises the real FastAPI app via ``TestClient``, backed by a real
 The ``SearchCore`` uses a real store reader; only the LLM stages are mocked.
 
 Coverage:
-- The legacy SEARCH_API_KEY Bearer token authorises /api/search end to end.
+- A DB-backed API key Bearer token authorises /api/search end to end.
 - An unauthenticated request is rejected 401.
 - GET /api/healthz returns 200 against a healthy seeded store.
 - GET /api/healthz returns 503 index-not-ready when the DB file is absent.
@@ -18,6 +18,9 @@ Coverage:
 
 The username/password login handshake and the resulting session-cookie path
 are exercised by the dedicated account integration suite (spec §4.8).
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer is retired. Tests that used it
+now mint a real DB-backed API key.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from tests.helpers.factories import (
     make_search_settings,
     make_source_document,
 )
+from tests.helpers.search import mint_api_key
 
 # ---------------------------------------------------------------------------
 # Embedding geometry
@@ -47,16 +51,37 @@ _AXIS_A: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)
 # Helpers
 # ---------------------------------------------------------------------------
 
-_API_KEY = "integration-test-api-key"
 
-
-def _make_settings(tmp_path: Path, *, api_key: str = _API_KEY) -> MagicMock:
+def _make_settings(tmp_path: Path) -> MagicMock:
     """Build a settings mock pointing at the tmp_path store."""
     return make_search_settings(
-        SEARCH_API_KEY=api_key,
         INDEX_DB_PATH=str(tmp_path / "index.db"),
         EMBEDDING_DIMENSIONS=_DIMENSIONS,
     )
+
+
+def _seed_api_key(settings: MagicMock) -> str:
+    """Seed a user and an API key in app.db; return the raw key string.
+
+    Called after ``create_app`` has migrated app.db at ``settings.APP_DB_PATH``.
+    Opens a second connection to the same file to insert seed rows — the
+    per-request connection pattern.
+    """
+    from appdb.connection import connect
+    from appdb.passwords import hash_password
+    from appdb.users import create as create_user
+
+    conn = connect(settings.APP_DB_PATH)
+    try:
+        user = create_user(
+            conn,
+            username="api-user",
+            password_hash=hash_password("pw"),
+            role="member",
+        )
+        return mint_api_key(conn, owner_user_id=user.id, scopes="api")
+    finally:
+        conn.close()
 
 
 def _seed_store(settings: MagicMock) -> None:
@@ -131,8 +156,8 @@ def _build_client(settings: MagicMock, store_reader: StoreReader) -> TestClient:
     return TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
 
 
-def _bearer(key: str = _API_KEY) -> dict[str, str]:
-    return {"Authorization": f"Bearer {key}"}
+def _bearer(raw_key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {raw_key}"}
 
 
 # ---------------------------------------------------------------------------
@@ -141,12 +166,11 @@ def _bearer(key: str = _API_KEY) -> dict[str, str]:
 
 
 class TestAuthIntegration:
-    """The legacy SEARCH_API_KEY bearer authorises an end-to-end search.
+    """A DB-backed API key bearer authorises an end-to-end search.
 
     The username/password login handshake and the resulting session-cookie
     path are exercised by the dedicated account integration suite (spec §4.8);
-    this class only covers the legacy-bearer credential, which ``search.api``
-    keeps working as an admin-equivalent through Waves 1-2.
+    this class covers bearer-key auth via the minted API key mechanism.
     """
 
     def test_bearer_token_authorises_search(self, tmp_path: Path) -> None:
@@ -155,10 +179,11 @@ class TestAuthIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
+            raw_key = _seed_api_key(settings)
             response = client.post(
                 "/api/search",
                 json={"query": "gas bill"},
-                headers=_bearer(),
+                headers=_bearer(raw_key),
             )
             assert response.status_code == 200
         finally:
@@ -294,7 +319,8 @@ class TestFacetsIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            response = client.get("/api/facets", headers=_bearer())
+            raw_key = _seed_api_key(settings)
+            response = client.get("/api/facets", headers=_bearer(raw_key))
             assert response.status_code == 200
             body = response.json()
             correspondent_names = [c["name"] for c in body["correspondents"]]
@@ -319,7 +345,8 @@ class TestStatsIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            response = client.get("/api/stats", headers=_bearer())
+            raw_key = _seed_api_key(settings)
+            response = client.get("/api/stats", headers=_bearer(raw_key))
             assert response.status_code == 200
             body = response.json()
             assert body["document_count"] == 1
@@ -342,7 +369,8 @@ class TestReconcileIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            response = client.post("/api/reconcile", headers=_bearer())
+            raw_key = _seed_api_key(settings)
+            response = client.post("/api/reconcile", headers=_bearer(raw_key))
             assert response.status_code == 202
 
             sentinel = tmp_path / "reconcile.request"
@@ -361,7 +389,8 @@ class TestReconcileIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            client.post("/api/reconcile", headers=_bearer())
+            raw_key = _seed_api_key(settings)
+            client.post("/api/reconcile", headers=_bearer(raw_key))
         finally:
             store_reader.close()
 
@@ -402,7 +431,9 @@ class TestIndexDbNotWebReachable:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
-            response = client.get("/index.db", headers=_bearer())
+            # The SPA mount does not enforce auth — this is a path-containment
+            # security check, not an auth check.
+            response = client.get("/index.db")
             assert "BritishGas Invoice" not in response.text
             assert "£198.00" not in response.text
         finally:
@@ -423,10 +454,11 @@ class TestSearchResponseIntegration:
         store_reader = StoreReader(settings)
         try:
             client = _build_client(settings, store_reader)
+            raw_key = _seed_api_key(settings)
             response = client.post(
                 "/api/search",
                 json={"query": "gas bill amount"},
-                headers=_bearer(),
+                headers=_bearer(raw_key),
             )
             assert response.status_code == 200
             body = response.json()

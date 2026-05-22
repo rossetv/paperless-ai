@@ -31,21 +31,37 @@ from tests.helpers.factories import (
     make_search_result,
     make_search_settings,
 )
+from tests.helpers.search import mint_api_key
 from tests.unit.search.conftest import build_test_client
-
-_API_KEY = "test-api-key-for-unit-tests"
 
 
 def _settings(db_path: str, **overrides: object) -> MagicMock:
     """Build a Settings-like mock pointing at *db_path*."""
-    return make_search_settings(
-        SEARCH_API_KEY=_API_KEY, INDEX_DB_PATH=db_path, **overrides
-    )
+    return make_search_settings(INDEX_DB_PATH=db_path, **overrides)
 
 
-def _bearer_headers(key: str = _API_KEY) -> dict[str, str]:
-    """Return an Authorization header carrying *key* as a Bearer token."""
-    return {"Authorization": f"Bearer {key}"}
+def _seed_api_key(settings: MagicMock) -> str:
+    """Seed a user and an API key in the app.db; return the raw key string."""
+    from appdb.connection import connect
+    from appdb.passwords import hash_password
+    from appdb.users import create as create_user
+
+    conn = connect(settings.APP_DB_PATH)
+    try:
+        user = create_user(
+            conn,
+            username="api-user",
+            password_hash=hash_password("pw"),
+            role="member",
+        )
+        return mint_api_key(conn, owner_user_id=user.id, scopes="api")
+    finally:
+        conn.close()
+
+
+def _bearer_headers(raw_key: str) -> dict[str, str]:
+    """Return an Authorization header carrying *raw_key* as a Bearer token."""
+    return {"Authorization": f"Bearer {raw_key}"}
 
 
 # ---------------------------------------------------------------------------
@@ -223,13 +239,13 @@ def test_search_max_concurrent_semaphore_is_created_and_limits_search() -> None:
     """
     core = MagicMock()
     core.answer.return_value = make_search_result()
-    client = build_test_client(
-        _settings("/nonexistent/index.db", SEARCH_MAX_CONCURRENT=2), core=core
-    )
+    settings = _settings("/nonexistent/index.db", SEARCH_MAX_CONCURRENT=2)
+    client = build_test_client(settings, core=core)
+    raw_key = _seed_api_key(settings)
 
     for _ in range(3):
         response = client.post(
-            "/api/search", json={"query": "test"}, headers=_bearer_headers()
+            "/api/search", json={"query": "test"}, headers=_bearer_headers(raw_key)
         )
         assert response.status_code == 200
 
@@ -287,6 +303,7 @@ async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
     store_reader.get_stats.return_value = None
     store_reader.quick_check.return_value = True
     app = create_app(settings, core=core, store_reader=store_reader)
+    raw_key = _seed_api_key(settings)
 
     total_requests = max_concurrent + 1
 
@@ -298,7 +315,7 @@ async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
                 aclient.post(
                     "/api/search",
                     json={"query": "test"},
-                    headers=_bearer_headers(),
+                    headers=_bearer_headers(raw_key),
                 )
             )
             for _ in range(total_requests)

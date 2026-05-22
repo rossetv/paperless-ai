@@ -11,7 +11,8 @@ Coverage:
 - An unknown document id maps to 404.
 - An unreachable Paperless maps to 502.
 - An unauthenticated request is rejected 401.
-- The legacy SEARCH_API_KEY bearer is authorised.
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer test is removed.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ import pytest
 
 from store.reader import StoreReader
 from tests.integration.accounts_helpers import (
-    LEGACY_API_KEY,
     build_account_client,
     make_settings,
     open_app_db,
@@ -172,23 +172,3 @@ def test_pdf_proxy_401_when_unauthenticated(
         app_db.close()
 
 
-def test_pdf_proxy_allows_the_legacy_bearer(
-    tmp_path: Path, patched_paperless: type[_StubPaperlessClient]
-) -> None:
-    """The legacy SEARCH_API_KEY bearer is authorised for the PDF proxy."""
-    settings = make_settings(tmp_path)
-    seed_store(settings)
-    app_db = open_app_db(tmp_path)
-    store_reader = StoreReader(settings)
-    try:
-        seed_user(app_db, username="alice", password="alice-password", role="readonly")
-        client = build_account_client(settings, app_db, store_reader)
-        response = client.get(
-            "/api/documents/100/pdf",
-            headers={"Authorization": f"Bearer {LEGACY_API_KEY}"},
-        )
-        assert response.status_code == 200
-        assert response.content == _PDF_BYTES
-    finally:
-        store_reader.close()
-        app_db.close()

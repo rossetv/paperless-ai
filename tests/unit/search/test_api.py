@@ -2,8 +2,8 @@
 
 Covers the security-critical contracts (spec §7.1, §7.3, §7.4):
 
-- An unauthenticated POST /api/search → 401; a legacy ``SEARCH_API_KEY``
-  Bearer token then authorises /api/search — even before any user exists.
+- An unauthenticated POST /api/search → 401; a DB-backed API key Bearer token
+  authorises /api/search.
 - POST /api/search / GET /api/facets / GET /api/stats return correctly-mapped
   wire responses; POST /api/reconcile writes the sentinel and returns 202.
 - The SPA catch-all never serves a path outside the frontend directory, and
@@ -18,6 +18,9 @@ three-state endpoint and the SEARCH_MAX_CONCURRENT semaphore are covered in
 
 ``build_test_client`` (see conftest.py) wraps the real ``create_app`` with a
 mock core, a mock store reader, and a fresh in-memory ``app.db``.
+
+Wave 3 note: the legacy SEARCH_API_KEY bearer is retired. Tests that relied on
+it now use a minted DB-backed API key or a session cookie.
 """
 
 from __future__ import annotations
@@ -35,27 +38,49 @@ from tests.helpers.factories import (
     make_source_document,
     make_taxonomy_entry,
 )
+from tests.helpers.search import mint_api_key
 from tests.unit.search.conftest import build_test_client
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_API_KEY = "test-api-key-for-unit-tests"
-
 
 def _settings(
     *, db_path: str = "/nonexistent/index.db", **overrides: object
 ) -> MagicMock:
     """Build a Settings-like mock for API tests, with a chosen index DB path."""
-    return make_search_settings(
-        SEARCH_API_KEY=_API_KEY, INDEX_DB_PATH=db_path, **overrides
-    )
+    return make_search_settings(INDEX_DB_PATH=db_path, **overrides)
 
 
-def _bearer_headers(key: str = _API_KEY) -> dict[str, str]:
-    """Return an Authorization header carrying *key* as a Bearer token."""
-    return {"Authorization": f"Bearer {key}"}
+def _seed_api_key(settings: MagicMock) -> str:
+    """Seed a user and an API key in the app.db at *settings.APP_DB_PATH*.
+
+    Returns the raw key string for use as a Bearer token. The app.db is
+    already migrated by ``create_app`` inside ``build_test_client``, so this
+    function opens a second connection to the same file to insert the seed
+    rows — the established per-request connection pattern.
+    """
+    from appdb.connection import connect
+    from appdb.passwords import hash_password
+    from appdb.users import create as create_user
+
+    conn = connect(settings.APP_DB_PATH)
+    try:
+        user = create_user(
+            conn,
+            username="api-user",
+            password_hash=hash_password("pw"),
+            role="member",
+        )
+        return mint_api_key(conn, owner_user_id=user.id, scopes="api")
+    finally:
+        conn.close()
+
+
+def _bearer_headers(raw_key: str) -> dict[str, str]:
+    """Return an Authorization header carrying *raw_key* as a Bearer token."""
+    return {"Authorization": f"Bearer {raw_key}"}
 
 
 def _seeded_facets() -> object:
@@ -106,12 +131,14 @@ def test_unauthenticated_reconcile_returns_401() -> None:
 
 
 def test_bearer_token_authorises_search() -> None:
-    """A valid Bearer token must authorise /api/search."""
-    client = build_test_client(_settings())
+    """A valid DB-backed API key Bearer token must authorise /api/search."""
+    settings = _settings()
+    client = build_test_client(settings)
+    raw_key = _seed_api_key(settings)
     response = client.post(
         "/api/search",
         json={"query": "boiler warranty"},
-        headers=_bearer_headers(),
+        headers=_bearer_headers(raw_key),
     )
     assert response.status_code == 200
 
@@ -131,17 +158,21 @@ def test_wrong_bearer_token_returns_401() -> None:
 
 def test_reconcile_writes_sentinel_and_returns_202(tmp_path: Path) -> None:
     """POST /api/reconcile must touch the sentinel file and return 202."""
-    client = build_test_client(_settings(db_path=str(tmp_path / "index.db")))
+    settings = _settings(db_path=str(tmp_path / "index.db"))
+    client = build_test_client(settings)
+    raw_key = _seed_api_key(settings)
 
-    response = client.post("/api/reconcile", headers=_bearer_headers())
+    response = client.post("/api/reconcile", headers=_bearer_headers(raw_key))
     assert response.status_code == 202
     assert (tmp_path / "reconcile.request").exists(), "Sentinel was not created."
 
 
 def test_reconcile_does_not_write_index_db(tmp_path: Path) -> None:
     """POST /api/reconcile must ONLY write the sentinel; never the index DB."""
-    client = build_test_client(_settings(db_path=str(tmp_path / "index.db")))
-    client.post("/api/reconcile", headers=_bearer_headers())
+    settings = _settings(db_path=str(tmp_path / "index.db"))
+    client = build_test_client(settings)
+    raw_key = _seed_api_key(settings)
+    client.post("/api/reconcile", headers=_bearer_headers(raw_key))
 
     assert not (tmp_path / "index.db").exists(), (
         "Reconcile must never write the index DB."
@@ -168,10 +199,12 @@ def test_search_returns_correctly_mapped_response() -> None:
             ),
         ),
     )
-    client = build_test_client(_settings(), core=core)
+    settings = _settings()
+    client = build_test_client(settings, core=core)
+    raw_key = _seed_api_key(settings)
 
     response = client.post(
-        "/api/search", json={"query": "boiler warranty"}, headers=_bearer_headers()
+        "/api/search", json={"query": "boiler warranty"}, headers=_bearer_headers(raw_key)
     )
     assert response.status_code == 200
     body = response.json()
@@ -192,7 +225,9 @@ def test_search_with_filters_passes_filters_to_core() -> None:
     """Filters in the search request must be forwarded to SearchCore."""
     core = MagicMock()
     core.answer.return_value = make_search_result()
-    client = build_test_client(_settings(), core=core)
+    settings = _settings()
+    client = build_test_client(settings, core=core)
+    raw_key = _seed_api_key(settings)
 
     client.post(
         "/api/search",
@@ -204,7 +239,7 @@ def test_search_with_filters_passes_filters_to_core() -> None:
                 "tag_ids": [10, 20],
             },
         },
-        headers=_bearer_headers(),
+        headers=_bearer_headers(raw_key),
     )
 
     call_args = core.answer.call_args
@@ -214,23 +249,6 @@ def test_search_with_filters_passes_filters_to_core() -> None:
     assert ui_filters.correspondent_id == 5
     assert ui_filters.document_type_id == 2
     assert 10 in ui_filters.tag_ids
-
-
-def test_legacy_bearer_authorises_even_in_setup_mode() -> None:
-    """With no users yet, the legacy SEARCH_API_KEY bearer still authorises.
-
-    build_test_client defaults to a fresh in-memory app.db (no users), so the
-    app is in setup mode. The legacy bearer path does not depend on a user
-    row, so a Bearer token equal to SEARCH_API_KEY still reaches a protected
-    route.
-    """
-    client = build_test_client(_settings())
-    response = client.post(
-        "/api/search",
-        json={"query": "anything"},
-        headers={"Authorization": f"Bearer {_API_KEY}"},
-    )
-    assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -243,9 +261,11 @@ def test_facets_returns_correctly_mapped_response() -> None:
     store_reader = MagicMock()
     store_reader.list_facets.return_value = _seeded_facets()
     store_reader.quick_check.return_value = True
-    client = build_test_client(_settings(), store_reader=store_reader)
+    settings = _settings()
+    client = build_test_client(settings, store_reader=store_reader)
+    raw_key = _seed_api_key(settings)
 
-    response = client.get("/api/facets", headers=_bearer_headers())
+    response = client.get("/api/facets", headers=_bearer_headers(raw_key))
     assert response.status_code == 200
     body = response.json()
     assert len(body["correspondents"]) == 1
@@ -273,9 +293,11 @@ def test_stats_returns_correctly_mapped_response() -> None:
         embedding_model="text-embedding-3-small",
     )
     store_reader.quick_check.return_value = True
-    client = build_test_client(_settings(), store_reader=store_reader)
+    settings = _settings()
+    client = build_test_client(settings, store_reader=store_reader)
+    raw_key = _seed_api_key(settings)
 
-    response = client.get("/api/stats", headers=_bearer_headers())
+    response = client.get("/api/stats", headers=_bearer_headers(raw_key))
     assert response.status_code == 200
     body = response.json()
     assert body["document_count"] == 100
@@ -299,9 +321,12 @@ def test_index_db_is_not_served_over_http(tmp_path: Path) -> None:
     """
     db_path = tmp_path / "index.db"
     db_path.write_text("sensitive data")
-    client = build_test_client(_settings(db_path=str(db_path)))
+    # No auth needed — the SPA mount does not enforce authentication;
+    # the invariant is about path containment, not auth.
+    settings = _settings(db_path=str(db_path))
+    client = build_test_client(settings)
 
-    response = client.get("/index.db", headers=_bearer_headers())
+    response = client.get("/index.db")
     assert "sensitive data" not in response.text
 
 
@@ -319,7 +344,7 @@ def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
     probe.write_text("out-of-tree-secret")
     client = build_test_client(_settings())
 
-    response = client.get("/%2e%2e/%2e%2e/%2e%2e/etc/passwd", headers=_bearer_headers())
+    response = client.get("/%2e%2e/%2e%2e/%2e%2e/etc/passwd")
     assert "out-of-tree-secret" not in response.text
     assert "root:" not in response.text
 
@@ -364,12 +389,16 @@ def test_search_returns_422_when_query_exceeds_max_length() -> None:
     """POST /api/search returns 422 when query exceeds the 4000-character limit.
 
     Pydantic enforces ``max_length=MAX_QUERY_LENGTH`` on SearchRequest.query;
-    this test confirms the constraint is present and active.
+    this test confirms the constraint is present and active. The 422 fires
+    before the auth dependency runs in FastAPI (body-schema rejection), so no
+    key is required.
     """
-    client = build_test_client(_settings())
+    settings = _settings()
+    client = build_test_client(settings)
+    raw_key = _seed_api_key(settings)
 
     too_long_query = "x" * 4001
     response = client.post(
-        "/api/search", json={"query": too_long_query}, headers=_bearer_headers()
+        "/api/search", json={"query": too_long_query}, headers=_bearer_headers(raw_key)
     )
     assert response.status_code == 422
