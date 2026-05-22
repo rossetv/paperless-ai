@@ -103,6 +103,27 @@ describe('AppNavBar', () => {
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('shows a Settings link for an admin user', () => {
+    renderNavBar();
+    expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+  });
+
+  it('hides the Settings link for a non-admin user', () => {
+    mockUseAuth.mockReturnValue({
+      user: { ...SAMPLE_USER, role: 'member' },
+      role: 'member',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    render(
+      <MemoryRouter>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+  });
+
   it('renders nothing when there is no authenticated user', () => {
     mockUseAuth.mockReturnValue({
       user: null,

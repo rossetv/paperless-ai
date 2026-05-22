@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../../lib/cn';
 import { NavBar } from '../../../components/layout/NavBar/NavBar';
 import { Brand } from '../../../components/primitives/Brand/Brand';
@@ -26,9 +26,10 @@ import styles from './AppNavBar.module.css';
  * primitives, api and hooks.
  */
 export function AppNavBar(): React.ReactElement | null {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const logout = useLogout();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   // Stable callback — avoids re-creating on every render and prevents the
   // UserMenu from receiving a new function reference unnecessarily.
@@ -59,9 +60,28 @@ export function AppNavBar(): React.ReactElement | null {
         </Link>
       }
       links={
-        <Link to="/" className={cn(styles['link'], styles['link-active'])}>
-          Search
-        </Link>
+        <>
+          <Link
+            to="/"
+            className={cn(
+              styles['link'],
+              pathname === '/' && styles['link-active'],
+            )}
+          >
+            Search
+          </Link>
+          {role === 'admin' && (
+            <Link
+              to="/settings/users"
+              className={cn(
+                styles['link'],
+                pathname.startsWith('/settings') && styles['link-active'],
+              )}
+            >
+              Settings
+            </Link>
+          )}
+        </>
       }
       actions={
         <UserMenu
