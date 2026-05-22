@@ -1,0 +1,106 @@
+/*
+ * UserMenu pattern — CSS Module.
+ *
+ * An Avatar trigger button plus an anchored dropdown. The dropdown uses the
+ * standard light surface, the card shadow, and the dropdown z-index rung so
+ * it floats above page content but below tooltips and modals.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.root {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ── Trigger — a bare button wrapping the Avatar. ── */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius-circle);
+}
+
+.trigger:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Dropdown — anchored to the trigger's trailing edge. ── */
+.dropdown {
+  position: absolute;
+  top: calc(100% + var(--spacing-6));
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: var(--width-toast-min);
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+  padding: var(--spacing-4);
+  overflow: hidden;
+}
+
+/* ── Header — name + email block. ── */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-6) var(--spacing-8);
+}
+
+.name {
+  font-family: var(--font-text);
+  font-size: var(--font-size-body-emphasis);
+  font-weight: var(--font-weight-body-emphasis);
+  line-height: var(--line-height-body-emphasis);
+  color: var(--colour-text-primary);
+}
+
+.email {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Divider between header and items. ── */
+.divider {
+  height: var(--spacing-1);
+  margin: var(--spacing-4) 0;
+  background-color: var(--colour-border);
+  border: none;
+}
+
+/* ── Menu item — full-width, left-aligned. ── */
+.item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-6) var(--spacing-8);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-standard);
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-primary);
+  text-align: left;
+  transition: background-color var(--duration-standard) var(--easing-standard);
+}
+
+.item:hover {
+  background-color: var(--colour-button-active-bg);
+}
+
+.item:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
