@@ -157,8 +157,12 @@ def create(
         raise UsernameTakenError(
             f"username {username!r} is already in use"
         ) from exc
-    log.info("appdb.user_created", user_id=cursor.lastrowid, role=role)
-    created = get_by_id(conn, int(cursor.lastrowid))
+    # A successful single-row INSERT always sets lastrowid; the assert narrows
+    # the int | None the sqlite3 stub declares so the type checker is satisfied.
+    new_user_id = cursor.lastrowid
+    assert new_user_id is not None
+    log.info("appdb.user_created", user_id=new_user_id, role=role)
+    created = get_by_id(conn, new_user_id)
     # The row was just inserted in this connection — it must be present.
     assert created is not None
     return created
@@ -236,8 +240,12 @@ def create_initial_admin(
     conn.commit()
     if cursor.rowcount != 1:
         return None
-    log.info("appdb.initial_admin_created", user_id=cursor.lastrowid)
-    created = get_by_id(conn, int(cursor.lastrowid))
+    # The INSERT inserted exactly one row, so lastrowid is set; the assert
+    # narrows the int | None the sqlite3 stub declares.
+    new_user_id = cursor.lastrowid
+    assert new_user_id is not None
+    log.info("appdb.initial_admin_created", user_id=new_user_id)
+    created = get_by_id(conn, new_user_id)
     # The row was just inserted in this connection — it must be present.
     assert created is not None
     return created
