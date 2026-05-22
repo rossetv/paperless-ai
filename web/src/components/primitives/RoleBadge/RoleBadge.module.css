@@ -1,0 +1,46 @@
+/*
+ * RoleBadge primitive — CSS Module.
+ *
+ * A semantic-coloured pill naming a user's RBAC role. Each role maps to a
+ * status-colour token pair (background tint + foreground). The base rule is
+ * the shared pill geometry; the four role classes set only the colours.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-1) var(--spacing-7);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  white-space: nowrap;
+}
+
+/* ── Admin — informational blue (the privileged role) ── */
+.admin {
+  background-color: var(--colour-status-info-bg);
+  color: var(--colour-status-info-fg);
+}
+
+/* ── Member — neutral grey ── */
+.member {
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-status-neutral-fg);
+}
+
+/* ── Read-only — the faintest neutral (lowest privilege) ── */
+.readonly {
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Service — amber (a non-human daemon identity) ── */
+.service {
+  background-color: var(--colour-status-warn-bg);
+  color: var(--colour-status-warn-fg);
+}
