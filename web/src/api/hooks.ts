@@ -11,7 +11,22 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
-import { search, getFacets, getStats, login, logout, me, setup, setupStatus, publicStats, getRecentSearches } from './client';
+import {
+  search,
+  getFacets,
+  getStats,
+  login,
+  logout,
+  me,
+  setup,
+  setupStatus,
+  publicStats,
+  getRecentSearches,
+  getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+} from './client';
 import type {
   SearchRequest,
   SearchResponse,
@@ -25,6 +40,10 @@ import type {
   SetupStatus,
   PublicStats,
   RecentSearchesResponse,
+  CreateUserRequest,
+  UpdateUserRequest,
+  UsersResponse,
+  UserResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +58,7 @@ const queryKeys = {
   setupStatus: () => ['setup', 'status'] as const,
   publicStats: () => ['stats', 'public'] as const,
   recentSearches: () => ['recent-searches'] as const,
+  users: () => ['users'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -212,6 +232,67 @@ export function useSetup(): UseMutationResult<SetupResponse, Error, SetupRequest
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// User-management hooks (Wave 3 — Access Control)
+//
+// The mutations invalidate the `users` query so the Users table re-fetches
+// after every create / edit / delete.
+// ---------------------------------------------------------------------------
+
+/** Fetch every user account — GET /api/users. */
+export function useUsers(): UseQueryResult<UsersResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.users(),
+    queryFn: getUsers,
+  });
+}
+
+/** Create-user mutation — POST /api/users. Invalidates the users list. */
+export function useCreateUser(): UseMutationResult<
+  UserResponse,
+  Error,
+  CreateUserRequest
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.users() });
+    },
+  });
+}
+
+/**
+ * Update-user mutation — PATCH /api/users/{id}.
+ *
+ * Takes `{ id, body }` so a single hook covers role changes, suspension and
+ * password resets. Invalidates the users list on success.
+ */
+export function useUpdateUser(): UseMutationResult<
+  UserResponse,
+  Error,
+  { id: number; body: UpdateUserRequest }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }) => updateUser(id, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.users() });
+    },
+  });
+}
+
+/** Delete-user mutation — DELETE /api/users/{id}. Invalidates the users list. */
+export function useDeleteUser(): UseMutationResult<void, Error, number> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.users() });
     },
   });
 }
