@@ -11,7 +11,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
-import { search, getFacets, getStats, login, logout, me, setup, setupStatus, publicStats } from './client';
+import { search, getFacets, getStats, login, logout, me, setup, setupStatus, publicStats, getRecentSearches } from './client';
 import type {
   SearchRequest,
   SearchResponse,
@@ -24,6 +24,7 @@ import type {
   SetupResponse,
   SetupStatus,
   PublicStats,
+  RecentSearchesResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,7 @@ const queryKeys = {
   me: () => ['auth', 'me'] as const,
   setupStatus: () => ['setup', 'status'] as const,
   publicStats: () => ['stats', 'public'] as const,
+  recentSearches: () => ['recent-searches'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -75,6 +77,22 @@ export function useStats(): UseQueryResult<StatsResponse, Error> {
   return useQuery({
     queryKey: queryKeys.stats(),
     queryFn: getStats,
+  });
+}
+
+/**
+ * The signed-in user's recent-search history — GET /api/recent-searches.
+ *
+ * Drives the idle search screen's "Recent searches" strip. `retry: false` so
+ * a 401 (session gone) resolves to an error state at once rather than
+ * retrying; the idle screen treats any error as "no recent searches" and
+ * simply omits the strip.
+ */
+export function useRecentSearches(): UseQueryResult<RecentSearchesResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.recentSearches(),
+    queryFn: getRecentSearches,
+    retry: false,
   });
 }
 

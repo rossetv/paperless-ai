@@ -19,6 +19,7 @@ import {
   useSetup,
   useSetupStatus,
   usePublicStats,
+  useRecentSearches,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated } from './client';
@@ -321,5 +322,35 @@ describe('useSetup', () => {
     const { result } = renderHook(() => useSetup(), { wrapper: makeWrapper() });
     result.current.mutate({ token: 'bad', username: 'admin', password: 'longenough' });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useRecentSearches
+// ---------------------------------------------------------------------------
+
+describe('useRecentSearches', () => {
+  it('returns the recent searches on success', async () => {
+    mockFetch(200, {
+      searches: [
+        { query: 'npower 2024', searched_at: '2026-05-22T10:00:00Z' },
+        { query: 'bupa dental', searched_at: '2026-05-21T09:00:00Z' },
+      ],
+    });
+    const { result } = renderHook(() => useRecentSearches(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.searches).toHaveLength(2);
+    expect(result.current.data?.searches[0]?.query).toBe('npower 2024');
+  });
+
+  it('surfaces Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthenticated' });
+    const { result } = renderHook(() => useRecentSearches(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(Unauthenticated);
   });
 });
