@@ -1,0 +1,74 @@
+/*
+ * SettingsLayout layout component — CSS Module.
+ *
+ * The shared shell of the settings / access-control area: a fixed-width
+ * left rail beside a content column. The content column has a page header
+ * (title + subtitle + actions) above a scrollable region. Centred within a
+ * max-width container.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.layout {
+  display: flex;
+  gap: var(--spacing-section);
+  max-width: var(--width-content-max);
+  margin: 0 auto;
+  padding: 0 var(--spacing-14);
+  align-items: flex-start;
+}
+
+/* ── The content column — header + scrollable body. ── */
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-14) 0;
+}
+
+/* ── Page header — title block on the left, actions on the right. ── */
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-13);
+  margin-bottom: var(--spacing-14);
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--colour-text-primary);
+}
+
+.subtitle {
+  margin: var(--spacing-4) 0 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Header actions — buttons / search, right-aligned. ── */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  flex-shrink: 0;
+}
+
+/* ── The scrollable content region. ── */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-14);
+}
