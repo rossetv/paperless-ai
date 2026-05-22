@@ -639,9 +639,7 @@ class TestDownloadStream:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A 404 from Paperless surfaces as httpx.HTTPStatusError."""
-        client = self._streaming_client(
-            monkeypatch, body=b"not found", status_code=404
-        )
+        client = self._streaming_client(monkeypatch, body=b"not found", status_code=404)
         try:
             with pytest.raises(httpx.HTTPStatusError):
                 content_type, chunks = client.download_stream(999)

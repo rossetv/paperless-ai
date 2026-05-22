@@ -40,9 +40,7 @@ def _make_404_status_error() -> httpx.HTTPStatusError:
     """Build an httpx.HTTPStatusError carrying a 404 response."""
     request = httpx.Request("GET", "https://paperless.example/x")
     response = httpx.Response(404, request=request)
-    return httpx.HTTPStatusError(
-        "not found", request=request, response=response
-    )
+    return httpx.HTTPStatusError("not found", request=request, response=response)
 
 
 def _build_app(app_db_path: str, paperless_client) -> FastAPI:
@@ -62,9 +60,7 @@ def _build_app(app_db_path: str, paperless_client) -> FastAPI:
     )
     settings = MagicMock()
     app.include_router(
-        build_document_router(
-            settings, paperless_factory=lambda _s: paperless_client
-        )
+        build_document_router(settings, paperless_factory=lambda _s: paperless_client)
     )
     return app
 
@@ -143,9 +139,7 @@ def test_pdf_proxy_404_for_an_unknown_document(app_db_path, conn) -> None:
 def test_pdf_proxy_502_when_paperless_is_unreachable(app_db_path, conn) -> None:
     """A Paperless network error maps to a 502 Bad Gateway."""
     paperless = MagicMock()
-    paperless.download_stream.side_effect = httpx.ConnectError(
-        "connection refused"
-    )
+    paperless.download_stream.side_effect = httpx.ConnectError("connection refused")
     client = _client(app_db_path, paperless)
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
     response = client.get("/api/documents/100/pdf")
@@ -207,9 +201,7 @@ class TestRecentSearchesRoute:
         )
         settings = MagicMock()
         app.include_router(
-            build_document_router(
-                settings, paperless_factory=lambda _s: MagicMock()
-            )
+            build_document_router(settings, paperless_factory=lambda _s: MagicMock())
         )
         return app
 
@@ -220,20 +212,14 @@ class TestRecentSearchesRoute:
             base_url="https://testserver",
         )
 
-    def test_recent_searches_returns_the_users_history(
-        self, app_db_path, conn
-    ) -> None:
+    def test_recent_searches_returns_the_users_history(self, app_db_path, conn) -> None:
         """A signed-in user's recorded searches come back newest-first."""
         from appdb.recent_searches import record
 
-        user = create_user(
-            conn, username="alice", password_hash="h", role="readonly"
-        )
+        user = create_user(conn, username="alice", password_hash="h", role="readonly")
         record(conn, user_id=user.id, query="first query")
         record(conn, user_id=user.id, query="second query")
-        token = begin_session(
-            conn, user_id=user.id, ttl_seconds=3600
-        ).token
+        token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
 
         client = self._client_no_paperless(app_db_path)
         client.cookies.set(SESSION_COOKIE_NAME, token)
@@ -246,12 +232,8 @@ class TestRecentSearchesRoute:
         self, app_db_path, conn
     ) -> None:
         """A user who has never searched gets an empty list, 200."""
-        user = create_user(
-            conn, username="bob", password_hash="h", role="readonly"
-        )
-        token = begin_session(
-            conn, user_id=user.id, ttl_seconds=3600
-        ).token
+        user = create_user(conn, username="bob", password_hash="h", role="readonly")
+        token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
         client = self._client_no_paperless(app_db_path)
         client.cookies.set(SESSION_COOKIE_NAME, token)
         response = client.get("/api/recent-searches")
@@ -262,12 +244,8 @@ class TestRecentSearchesRoute:
         """One user never sees another user's recent searches."""
         from appdb.recent_searches import record
 
-        alice = create_user(
-            conn, username="alice", password_hash="h", role="readonly"
-        )
-        bob = create_user(
-            conn, username="bob", password_hash="h", role="readonly"
-        )
+        alice = create_user(conn, username="alice", password_hash="h", role="readonly")
+        bob = create_user(conn, username="bob", password_hash="h", role="readonly")
         record(conn, user_id=alice.id, query="alice secret")
         record(conn, user_id=bob.id, query="bob query")
         token = begin_session(conn, user_id=bob.id, ttl_seconds=3600).token
@@ -279,16 +257,12 @@ class TestRecentSearchesRoute:
         assert queries == ["bob query"]
         assert "alice secret" not in queries
 
-    def test_recent_searches_401_when_unauthenticated(
-        self, app_db_path
-    ) -> None:
+    def test_recent_searches_401_when_unauthenticated(self, app_db_path) -> None:
         """An unauthenticated request is rejected 401."""
         client = self._client_no_paperless(app_db_path)
         assert client.get("/api/recent-searches").status_code == 401
 
-    def test_recent_searches_empty_for_the_legacy_bearer(
-        self, app_db_path
-    ) -> None:
+    def test_recent_searches_empty_for_the_legacy_bearer(self, app_db_path) -> None:
         """The legacy bearer (synthetic admin id=0) has no history — []."""
         client = self._client_no_paperless(app_db_path)
         response = client.get(

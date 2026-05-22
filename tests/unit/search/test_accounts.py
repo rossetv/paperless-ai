@@ -235,8 +235,12 @@ def test_concurrent_guarded_demotes_cannot_reach_zero_admins(tmp_path) -> None:
     db_path = str(tmp_path / "app.db")
     setup_conn = connect(db_path)
     ensure_schema(setup_conn)
-    admin_a = create_user(setup_conn, username="admin-a", password_hash="h", role="admin")
-    admin_b = create_user(setup_conn, username="admin-b", password_hash="h", role="admin")
+    admin_a = create_user(
+        setup_conn, username="admin-a", password_hash="h", role="admin"
+    )
+    admin_b = create_user(
+        setup_conn, username="admin-b", password_hash="h", role="admin"
+    )
     # A non-admin actor, so the guard hit is "last admin", not "yourself".
     actor = create_user(setup_conn, username="actor", password_hash="h", role="member")
     setup_conn.close()

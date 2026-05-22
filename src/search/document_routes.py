@@ -93,9 +93,7 @@ def build_document_router(
         for an unknown document id; a 502 when Paperless is unreachable or
         returns a server error.
         """
-        return await _stream_document_pdf(
-            document_id, settings, paperless_factory
-        )
+        return await _stream_document_pdf(document_id, settings, paperless_factory)
 
     @router.get("/api/recent-searches")
     def recent_searches(
@@ -145,9 +143,7 @@ async def _stream_document_pdf(
         status = exc.response.status_code
         if status == 404:
             log.info("api.document_pdf_not_found", document_id=document_id)
-            raise HTTPException(
-                status_code=404, detail="Document not found"
-            ) from exc
+            raise HTTPException(status_code=404, detail="Document not found") from exc
         # Any other Paperless HTTP error — a 5xx, a 403 — is an upstream
         # failure the browser cannot act on: report a 502.
         log.warning(
@@ -175,9 +171,7 @@ async def _stream_document_pdf(
     )
 
 
-def _safe_chunks(
-    chunks: Iterator[bytes], document_id: int
-) -> Iterator[bytes]:
+def _safe_chunks(chunks: Iterator[bytes], document_id: int) -> Iterator[bytes]:
     """Yield body chunks, logging any error raised mid-stream.
 
     The first HTTP error inside :meth:`PaperlessClient.download_stream` is

@@ -42,13 +42,12 @@ def test_a_search_is_recorded_and_then_listed(tmp_path: Path) -> None:
     try:
         seed_user(app_db, username="alice", password="alice-password", role="readonly")
         client = build_account_client(settings, app_db, store_reader)
-        assert login(
-            client, username="alice", password="alice-password"
-        ).status_code == 200
-
-        search = client.post(
-            "/api/search", json={"query": "british gas bill"}
+        assert (
+            login(client, username="alice", password="alice-password").status_code
+            == 200
         )
+
+        search = client.post("/api/search", json={"query": "british gas bill"})
         assert search.status_code == 200
 
         recent = client.get("/api/recent-searches")
@@ -72,9 +71,7 @@ def test_recent_searches_are_newest_first(tmp_path: Path) -> None:
         login(client, username="alice", password="alice-password")
 
         for query in ("first search", "second search", "third search"):
-            assert client.post(
-                "/api/search", json={"query": query}
-            ).status_code == 200
+            assert client.post("/api/search", json={"query": query}).status_code == 200
 
         recent = client.get("/api/recent-searches")
         queries = [s["query"] for s in recent.json()["searches"]]
@@ -135,9 +132,7 @@ def test_legacy_bearer_search_is_not_recorded(tmp_path: Path) -> None:
         assert search.status_code == 200
 
         # The recent_searches table has no row for the synthetic admin.
-        count = app_db.execute(
-            "SELECT COUNT(*) FROM recent_searches"
-        ).fetchone()[0]
+        count = app_db.execute("SELECT COUNT(*) FROM recent_searches").fetchone()[0]
         assert count == 0
     finally:
         store_reader.close()
