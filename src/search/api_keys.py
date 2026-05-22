@@ -25,8 +25,13 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+
+from appdb import api_keys as key_store
+from appdb import users as user_store
 
 # The literal prefix every raw key carries. Lets a leaked string be spotted
 # as a Paperless-AI key, and namespaces it from other "sk-" credentials.
@@ -164,3 +169,100 @@ def should_touch(last_used_at: str | None) -> bool:
     except ValueError:
         return True
     return datetime.now(timezone.utc) - stamped >= _TOUCH_INTERVAL
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedKey:
+    """A presented API key resolved to an authenticated identity.
+
+    The output of :func:`resolve_api_key` — everything the auth layer needs
+    to authorise the request: which key it was (for usage tracking), who
+    owns it, the owner's *current* role (which bounds the key's reach), and
+    the scopes granted to the key itself.
+
+    Attributes:
+        api_key_id: The id of the matched ``api_keys`` row.
+        owner_user_id: The owning user's id.
+        owner_username: The owning user's login name, for logging/display.
+        owner_role: The owner's current role. A key never grants more than
+            its owner's role allows.
+        scopes: The frozenset of scopes parsed from the key's ``scopes``
+            column.
+        last_used_at: The key's stored ``last_used_at`` (or ``None``), so the
+            caller can decide whether a usage "touch" is due.
+    """
+
+    api_key_id: int
+    owner_user_id: int
+    owner_username: str
+    owner_role: str
+    scopes: frozenset[str]
+    last_used_at: str | None
+
+
+def _is_expired(expires_at: str | None) -> bool:
+    """Return whether *expires_at* is set and already in the past.
+
+    A key with no expiry (``None``) never expires. An unparseable expiry is
+    treated as expired — corrupt data must fail closed, not grant access.
+    """
+    if expires_at is None:
+        return False
+    try:
+        expiry = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) >= expiry
+
+
+def resolve_api_key(
+    conn: sqlite3.Connection, raw_key: str | None
+) -> ResolvedKey | None:
+    """Resolve a presented raw API key to a :class:`ResolvedKey`, or ``None``.
+
+    The bearer-auth lookup. It returns ``None`` — never raises — for every
+    rejection, so a hostile request cannot trigger a 500:
+
+    - *raw_key* is ``None`` (no credential presented);
+    - no ``api_keys`` row has the matching ``key_hash``;
+    - the key has been revoked (``revoked_at`` set);
+    - the key has expired (``expires_at`` in the past);
+    - the owning user is missing or suspended.
+
+    On success the returned :class:`ResolvedKey` carries the owner's
+    *current* role, so demoting or suspending an owner immediately reins in
+    every key they own.
+
+    Args:
+        conn: The open ``app.db`` connection.
+        raw_key: The bearer token presented by the request, or ``None``.
+
+    Returns:
+        A :class:`ResolvedKey` when the key is live and usable, else
+        ``None``.
+    """
+    if raw_key is None:
+        return None
+
+    record = key_store.get_by_hash(conn, hash_key(raw_key))
+    if record is None:
+        return None
+    if record.revoked_at is not None:
+        return None
+    if _is_expired(record.expires_at):
+        return None
+
+    owner = user_store.get_by_id(conn, record.owner_user_id)
+    if owner is None or owner.status != "active":
+        # A deleted owner cascades the key away, but a suspended owner does
+        # not — guard it here so a suspended owner's keys go dead too.
+        return None
+
+    return ResolvedKey(
+        api_key_id=record.id,
+        owner_user_id=owner.id,
+        owner_username=owner.username,
+        owner_role=owner.role,
+        scopes=parse_scopes(record.scopes),
+        last_used_at=record.last_used_at,
+    )
