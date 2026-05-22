@@ -16,7 +16,9 @@ import {
   useLogin,
   useLogout,
   useMe,
+  useSetup,
   useSetupStatus,
+  usePublicStats,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated } from './client';
@@ -271,5 +273,50 @@ describe('useSetupStatus', () => {
     const { result } = renderHook(() => useSetupStatus(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.needed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// usePublicStats
+// ---------------------------------------------------------------------------
+
+describe('usePublicStats', () => {
+  it('returns the public counts on success', async () => {
+    mockFetch(200, { document_count: 14238, chunk_count: 187000 });
+    const { result } = renderHook(() => usePublicStats(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.document_count).toBe(14238);
+  });
+
+  it('exposes an error state on failure (caller must degrade)', async () => {
+    mockFetch(500, { detail: 'error' });
+    const { result } = renderHook(() => usePublicStats(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useSetup
+// ---------------------------------------------------------------------------
+
+describe('useSetup', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useSetup(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves with the created admin user on success', async () => {
+    mockFetch(200, { user: SAMPLE_USER });
+    const { result } = renderHook(() => useSetup(), { wrapper: makeWrapper() });
+    result.current.mutate({ token: 't', username: 'admin', password: 'longenough' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.user.role).toBe('admin');
+  });
+
+  it('surfaces an ApiError on a 403 bad-token response', async () => {
+    mockFetch(403, { detail: 'Invalid setup token' });
+    const { result } = renderHook(() => useSetup(), { wrapper: makeWrapper() });
+    result.current.mutate({ token: 'bad', username: 'admin', password: 'longenough' });
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
