@@ -113,17 +113,53 @@ def test_pdf_proxy_streams_the_document(app_db_path, conn) -> None:
     assert response.content == _PDF_BYTES
 
 
-def test_pdf_proxy_forwards_the_content_type(app_db_path, conn) -> None:
-    """The Content-Type from Paperless is forwarded to the browser."""
+def test_pdf_proxy_pins_content_type_to_pdf(app_db_path, conn) -> None:
+    """The response is always application/pdf, never Paperless's type.
+
+    A malicious .html/.svg in the library reports text/html / image/svg+xml;
+    forwarding that into the same-origin viewer iframe would execute script
+    in the app origin. The proxy pins application/pdf with nosniff so the
+    browser cannot be tricked into rendering active content.
+    """
     paperless = MagicMock()
+    # Paperless reports a script-executing content type for a hostile file.
     paperless.download_stream.return_value = (
-        "application/pdf",
-        iter([_PDF_BYTES]),
+        "text/html",
+        iter([b"<script>steal()</script>"]),
     )
     client = _client(app_db_path, paperless)
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
     response = client.get("/api/documents/100/pdf")
+    assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == "inline"
+
+
+def test_pdf_proxy_closes_the_client_on_success(app_db_path, conn) -> None:
+    """The per-request Paperless client is closed once the body is drained.
+
+    The client owns an httpx connection pool; without a deterministic close
+    every PDF request leaks a socket until the server hits EMFILE.
+    """
+    paperless = MagicMock()
+    paperless.download_stream.return_value = ("application/pdf", iter([_PDF_BYTES]))
+    client = _client(app_db_path, paperless)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+    response = client.get("/api/documents/100/pdf")
+    assert response.status_code == 200
+    paperless.close.assert_called_once()
+
+
+def test_pdf_proxy_closes_the_client_on_an_upstream_error(app_db_path, conn) -> None:
+    """The client is closed even when download_stream raises before a body."""
+    paperless = MagicMock()
+    paperless.download_stream.side_effect = httpx.ConnectError("refused")
+    client = _client(app_db_path, paperless)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+    response = client.get("/api/documents/100/pdf")
+    assert response.status_code == 502
+    paperless.close.assert_called_once()
 
 
 def test_pdf_proxy_404_for_an_unknown_document(app_db_path, conn) -> None:

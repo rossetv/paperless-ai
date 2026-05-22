@@ -15,7 +15,15 @@ The PDF proxy streams the body through the existing
 HTTP errors: a 404 for an unknown id, a 502 for an unreachable or erroring
 Paperless. A fresh ``PaperlessClient`` is built per request — the client is
 **not thread-safe** (CODE_GUIDELINES §8.3) — and the blocking download is
-dispatched off the event loop.
+dispatched off the event loop. The client owns an ``httpx`` connection pool;
+it is closed deterministically once the streamed body is drained (or the
+client disconnects), never left to garbage collection.
+
+The proxy serves what the UI treats as a PDF: the response content type is
+pinned to ``application/pdf`` with ``X-Content-Type-Options: nosniff`` rather
+than forwarding Paperless's upstream type, so a malicious ``.html``/``.svg``
+in the library cannot be served as active content into the same-origin
+viewer iframe (CODE_GUIDELINES §10 — stored-XSS defence in depth).
 
 Recent searches are stored per real user. The legacy ``SEARCH_API_KEY``
 bearer resolves to a synthetic admin with no user row, so its history is
@@ -110,6 +118,19 @@ def build_document_router(
     return router
 
 
+# The proxy serves a document the UI treats as a PDF. The upstream
+# Content-Type is deliberately NOT forwarded: a malicious .html/.svg in the
+# Paperless library would otherwise be served as active content into the
+# same-origin viewer iframe (a stored-XSS vector). The response is pinned to
+# application/pdf, with nosniff so the browser cannot second-guess it, and an
+# inline disposition so it renders in the viewer rather than downloading.
+_PDF_RESPONSE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": "inline",
+}
+_PDF_MEDIA_TYPE = "application/pdf"
+
+
 async def _stream_document_pdf(
     document_id: int,
     settings: Settings,
@@ -121,13 +142,21 @@ async def _stream_document_pdf(
     the event loop's default executor so the loop stays free. The returned
     :class:`StreamingResponse` then drains the chunk iterator as it writes.
 
+    The per-request :class:`PaperlessClient` owns an ``httpx`` connection
+    pool that only an explicit ``close()`` releases. The body iterator
+    outlives this handler, so the close is tied to the stream: on the error
+    paths it is closed here; on the success path :func:`_safe_chunks` closes
+    it in a ``finally`` once the body is drained — or once Starlette cancels
+    the iterator on a client disconnect.
+
     Args:
         document_id: The Paperless-ngx document id.
         settings: Application settings.
         paperless_factory: Builds the per-request Paperless client.
 
     Returns:
-        A :class:`StreamingResponse` over the document body.
+        A :class:`StreamingResponse` over the document body, pinned to the
+        ``application/pdf`` content type with ``nosniff``.
 
     Raises:
         HTTPException: ``404`` for an unknown document; ``502`` when
@@ -136,10 +165,13 @@ async def _stream_document_pdf(
     client = paperless_factory(settings)
     loop = asyncio.get_event_loop()
     try:
-        content_type, chunks = await loop.run_in_executor(
+        _content_type, chunks = await loop.run_in_executor(
             None, client.download_stream, document_id
         )
     except httpx.HTTPStatusError as exc:
+        # download_stream failed before returning a body; nothing will drain
+        # the chunk iterator, so close the client here.
+        client.close()
         status = exc.response.status_code
         if status == 404:
             log.info("api.document_pdf_not_found", document_id=document_id)
@@ -155,6 +187,7 @@ async def _stream_document_pdf(
             status_code=502, detail="Document store unavailable"
         ) from exc
     except httpx.HTTPError as exc:
+        client.close()
         # A network-level failure (connect error, timeout, read error).
         log.warning(
             "api.document_pdf_unreachable",
@@ -165,14 +198,20 @@ async def _stream_document_pdf(
             status_code=502, detail="Document store unavailable"
         ) from exc
 
+    # Success: the body iterator now owns the client's lifetime — it closes
+    # the client when fully drained, on a mid-stream error, or on the
+    # GeneratorExit Starlette raises when the client disconnects early.
     return StreamingResponse(
-        _safe_chunks(chunks, document_id),
-        media_type=content_type,
+        _safe_chunks(chunks, client, document_id),
+        media_type=_PDF_MEDIA_TYPE,
+        headers=_PDF_RESPONSE_HEADERS,
     )
 
 
-def _safe_chunks(chunks: Iterator[bytes], document_id: int) -> Iterator[bytes]:
-    """Yield body chunks, logging any error raised mid-stream.
+def _safe_chunks(
+    chunks: Iterator[bytes], client: PaperlessClient, document_id: int
+) -> Iterator[bytes]:
+    """Yield body chunks, logging mid-stream errors and closing the client.
 
     The first HTTP error inside :meth:`PaperlessClient.download_stream` is
     already mapped in :func:`_stream_document_pdf`; an error raised *while
@@ -181,8 +220,16 @@ def _safe_chunks(chunks: Iterator[bytes], document_id: int) -> Iterator[bytes]:
     and re-raised so the connection is closed rather than silently
     truncated.
 
+    The ``finally`` closes the :class:`PaperlessClient` — releasing its
+    ``httpx`` connection pool — on every exit: a fully drained body, a
+    mid-stream error, or the ``GeneratorExit`` Starlette raises into this
+    iterator when the client disconnects before the body is finished.
+    Without it every PDF request would leak a socket (CODE_GUIDELINES §8.1).
+
     Args:
         chunks: The document body chunk iterator.
+        client: The per-request Paperless client to close once the body is
+            done streaming.
         document_id: The document id, for the log line.
 
     Yields:
@@ -193,6 +240,8 @@ def _safe_chunks(chunks: Iterator[bytes], document_id: int) -> Iterator[bytes]:
     except httpx.HTTPError:
         log.warning("api.document_pdf_stream_aborted", document_id=document_id)
         raise
+    finally:
+        client.close()
 
 
 def _recent_searches(
