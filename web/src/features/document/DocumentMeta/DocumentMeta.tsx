@@ -1,15 +1,15 @@
 import React from 'react';
 import { Badge } from '../../../components/primitives/Badge/Badge';
 import { Stack } from '../../../components/layout/Stack/Stack';
-import type { SourceDocument } from '../../../api/types';
+import type { PreviewableDocument } from '../../../api/types';
 
 export interface DocumentMetaProps {
   /**
-   * The source document whose metadata is to be displayed.
-   * All fields except document_id, snippet, paperless_url, and score may be
-   * null — the component renders gracefully when any of them are absent.
+   * The document whose metadata is to be displayed.
+   * All fields except document_id, snippet, and score may be null —
+   * the component renders gracefully when any of them are absent.
    */
-  source: SourceDocument;
+  source: PreviewableDocument;
 }
 
 /**

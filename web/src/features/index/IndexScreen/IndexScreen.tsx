@@ -184,7 +184,7 @@ export function IndexScreen(): React.ReactElement {
           document_type: null,
           created: null,
           snippet: '',
-          paperless_url: '',
+          paperless_url: null,
           score: 0,
         };
         return (

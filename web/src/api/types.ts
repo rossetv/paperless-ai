@@ -94,13 +94,17 @@ export interface CreateUserRequest {
  *
  * Every field is optional: only the supplied fields are changed. A non-empty
  * `password` resets the password; omit it to keep the current one.
+ *
+ * `role`, `status`, and `password` mirror the Python `wire.py` declaration of
+ * `str | None = None` — each is therefore `field?: X | null` per the contract
+ * guideline at the top of this file.
  */
 export interface UpdateUserRequest {
   display_name?: string | null;
   email?: string | null;
-  role?: 'admin' | 'member' | 'readonly';
-  status?: 'active' | 'suspended';
-  password?: string;
+  role?: 'admin' | 'member' | 'readonly' | null;
+  status?: 'active' | 'suspended' | null;
+  password?: string | null;
 }
 
 /** Response body for GET /api/users — all user accounts. */
@@ -226,8 +230,19 @@ export interface TaxonomyEntry {
   name: string;
 }
 
-/** One ranked source document in the search response. */
-export interface SourceDocument {
+/**
+ * The superset document shape accepted by the preview viewer.
+ *
+ * Library and Index screens fabricate a local object to open the viewer —
+ * they do not have a deep-link URL, so `paperless_url` is `string | null`
+ * here. The wire-strict `SourceDocument` (below) extends this with a
+ * non-nullable `paperless_url: string` matching the backend wire contract.
+ *
+ * `DocumentPreviewScreen` and `DocumentViewerChrome` accept this looser
+ * interface so both fabricated and wire-originated documents can be previewed
+ * without type assertions.
+ */
+export interface PreviewableDocument {
   document_id: number;
   title: string | null;
   correspondent: string | null;
@@ -237,12 +252,25 @@ export interface SourceDocument {
   /**
    * The deep-link URL to the document in the Paperless web UI.
    *
-   * Null when the URL is not available — e.g. when the document was opened
-   * from the Library, which does not carry deep-link URLs.  The
+   * Null when the URL is not available (e.g. Library/Index preview). The
    * `DocumentViewerChrome` omits the "Open in Paperless" action when null.
    */
   paperless_url: string | null;
   score: number;
+}
+
+/**
+ * One ranked source document in the search response.
+ *
+ * Wire-strict: mirrors `SourceDocumentResponse` in `wire.py` exactly.
+ * `paperless_url` is a non-nullable `str` on the backend — the search API
+ * always resolves the public Paperless URL before returning results.
+ *
+ * Screens that fabricate a local document object (Library, Index) use
+ * `PreviewableDocument` instead and supply `null` for `paperless_url`.
+ */
+export interface SourceDocument extends PreviewableDocument {
+  paperless_url: string;
 }
 
 /** The query plan for UI transparency (spec §7.1). */
