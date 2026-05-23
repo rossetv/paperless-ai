@@ -79,9 +79,9 @@ function SettingsContent({
   };
 
   const actions = (
-    <div className={styles['headerActions']}>
+    <div className={styles['header-actions']}>
       {changedKeys.length > 0 && (
-        <span className={styles['unsavedCount']}>
+        <span className={styles['unsaved-count']}>
           {changedKeys.length} unsaved{' '}
           {changedKeys.length === 1 ? 'change' : 'changes'}
         </span>
@@ -170,7 +170,7 @@ export function SettingsScreen(): React.ReactElement {
   if (query.isError || query.data === undefined) {
     return (
       <SettingsLayout title="Settings">
-        <div className={`${styles['placeholder']} ${styles['placeholderError']}`}>
+        <div className={`${styles['placeholder']} ${styles['placeholder-error']}`}>
           Could not load settings. Refresh to try again.
         </div>
       </SettingsLayout>
