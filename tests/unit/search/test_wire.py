@@ -72,3 +72,128 @@ class TestLibraryWireModels:
         )
         assert response.documents == []
         assert response.total == 0
+
+
+class TestBrowseQueryParser:
+    """to_document_browse_query maps validated HTTP params to the store shape."""
+
+    def test_defaults_produce_a_first_page_descending_by_added(self) -> None:
+        """With only page/page_size, the query defaults sensibly."""
+        from search.wire import to_document_browse_query
+
+        query = to_document_browse_query(
+            page=1,
+            page_size=20,
+            sort="added",
+            descending=True,
+            text=None,
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=[],
+        )
+        assert query.offset == 0
+        assert query.limit == 20
+        assert query.sort == "indexed_at"
+        assert query.descending is True
+        assert query.tag_ids == ()
+
+    def test_page_two_offsets_by_one_page_size(self) -> None:
+        """offset is (page - 1) * page_size."""
+        from search.wire import to_document_browse_query
+
+        query = to_document_browse_query(
+            page=3,
+            page_size=25,
+            sort="created",
+            descending=True,
+            text=None,
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=[],
+        )
+        assert query.offset == 50
+        assert query.limit == 25
+
+    def test_added_sort_maps_to_indexed_at(self) -> None:
+        """The public 'added' sort name maps to the store's indexed_at column."""
+        from search.wire import to_document_browse_query
+
+        query = to_document_browse_query(
+            page=1,
+            page_size=20,
+            sort="added",
+            descending=False,
+            text=None,
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=[],
+        )
+        assert query.sort == "indexed_at"
+
+    def test_created_and_title_sorts_pass_through(self) -> None:
+        """created and title are passed to the store unchanged."""
+        from search.wire import to_document_browse_query
+
+        for public_sort in ("created", "title"):
+            query = to_document_browse_query(
+                page=1,
+                page_size=20,
+                sort=public_sort,
+                descending=True,
+                text=None,
+                date_from=None,
+                date_to=None,
+                correspondent_id=None,
+                document_type_id=None,
+                tag_ids=[],
+            )
+            assert query.sort == public_sort
+
+    def test_unknown_sort_raises_value_error(self) -> None:
+        """An unrecognised sort name is rejected with ValueError."""
+        import pytest
+
+        from search.wire import to_document_browse_query
+
+        with pytest.raises(ValueError, match="sort"):
+            to_document_browse_query(
+                page=1,
+                page_size=20,
+                sort="relevance",
+                descending=True,
+                text=None,
+                date_from=None,
+                date_to=None,
+                correspondent_id=None,
+                document_type_id=None,
+                tag_ids=[],
+            )
+
+    def test_filters_and_text_are_carried_through(self) -> None:
+        """Every filter and the text query reach the store shape."""
+        from search.wire import to_document_browse_query
+
+        query = to_document_browse_query(
+            page=1,
+            page_size=20,
+            sort="created",
+            descending=True,
+            text="gas bill",
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+            correspondent_id=10,
+            document_type_id=20,
+            tag_ids=[101, 102],
+        )
+        assert query.text == "gas bill"
+        assert query.date_from == "2024-01-01"
+        assert query.date_to == "2024-12-31"
+        assert query.correspondent_id == 10
+        assert query.document_type_id == 20
+        assert query.tag_ids == (101, 102)

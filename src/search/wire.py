@@ -43,6 +43,7 @@ from search.validation import (
     validate_username,
 )
 from store import SearchFilters
+from store.models import DocumentBrowseQuery
 
 if TYPE_CHECKING:
     from appdb.api_keys import ApiKey
@@ -56,6 +57,12 @@ if TYPE_CHECKING:
 # boundary (``SearchRequest.query``) and the MCP boundary (``mcp_server``) so
 # both surfaces enforce one limit (CODE_GUIDELINES §3.5).
 MAX_QUERY_LENGTH = 4000
+
+# The maximum Library page size accepted by ``GET /api/documents``.  Bounds
+# the row count one request can pull from the index and the JSON payload
+# size; the Library UI's pager never asks for more.  Applied at the HTTP
+# boundary via ``Query(le=MAX_PAGE_SIZE)`` and re-asserted in the parser.
+MAX_PAGE_SIZE = 100
 
 
 # ---------------------------------------------------------------------------
@@ -893,3 +900,75 @@ class TestConnectionResponse(BaseModel):
     ok: bool
     document_count: int
     detail: str
+
+
+# Maps the public ``sort`` query-parameter values to the store's sort keys.
+# The public API exposes ``added`` (a friendly name); the store column is
+# ``indexed_at``.  ``created`` and ``title`` are identical on both sides.
+_BROWSE_SORT_ALIASES: dict[str, str] = {
+    "created": "created",
+    "title": "title",
+    "added": "indexed_at",
+}
+
+
+def to_document_browse_query(
+    *,
+    page: int,
+    page_size: int,
+    sort: str,
+    descending: bool,
+    text: str | None,
+    date_from: str | None,
+    date_to: str | None,
+    correspondent_id: int | None,
+    document_type_id: int | None,
+    tag_ids: list[int],
+) -> DocumentBrowseQuery:
+    """Map validated HTTP query parameters to a store browse query.
+
+    The single converter from the ``GET /api/documents`` query string to
+    :class:`~store.models.DocumentBrowseQuery`.  *page* and *page_size* are
+    already range-checked by FastAPI's ``Query`` constraints on the handler;
+    this function trusts those bounds and derives the zero-based ``offset``.
+
+    The public ``sort`` value is translated through
+    :data:`_BROWSE_SORT_ALIASES` — the API name ``added`` maps to the store
+    column ``indexed_at``; ``created`` and ``title`` pass through.
+
+    Args:
+        page: The 1-based page number (FastAPI enforces ``>= 1``).
+        page_size: Rows per page (FastAPI enforces ``1..MAX_PAGE_SIZE``).
+        sort: One of ``created``, ``title``, ``added``.
+        descending: True for a descending sort, False for ascending.
+        text: Optional in-library text query, or None.
+        date_from: Optional inclusive ISO-8601 lower date bound, or None.
+        date_to: Optional inclusive ISO-8601 upper date bound, or None.
+        correspondent_id: Optional correspondent filter id, or None.
+        document_type_id: Optional document-type filter id, or None.
+        tag_ids: Tag-id filter list; empty means no tag restriction.
+
+    Returns:
+        The :class:`~store.models.DocumentBrowseQuery` for the store reader.
+
+    Raises:
+        ValueError: *sort* is not a recognised sort name.
+    """
+    store_sort = _BROWSE_SORT_ALIASES.get(sort)
+    if store_sort is None:
+        allowed = ", ".join(sorted(_BROWSE_SORT_ALIASES))
+        raise ValueError(
+            f"unknown sort {sort!r}; expected one of {allowed}"
+        )
+    return DocumentBrowseQuery(
+        text=text,
+        date_from=date_from,
+        date_to=date_to,
+        correspondent_id=correspondent_id,
+        document_type_id=document_type_id,
+        tag_ids=tuple(tag_ids),
+        sort=store_sort,
+        descending=descending,
+        offset=(page - 1) * page_size,
+        limit=page_size,
+    )
