@@ -28,6 +28,7 @@ import { SetupPage } from './pages/SetupPage';
 import { UsersPage } from './pages/UsersPage';
 import { KeysPage } from './pages/KeysPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LibraryPage } from './pages/LibraryPage';
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
 
@@ -168,6 +169,14 @@ export function AppRoutes(): React.ReactElement {
         path="/"
         element={
           <RootRoute />
+        }
+      />
+      <Route
+        path="/library"
+        element={
+          <ProtectedRoute>
+            <LibraryPage />
+          </ProtectedRoute>
         }
       />
       <Route

@@ -35,6 +35,9 @@ vi.mock('./pages/KeysPage', () => ({
 vi.mock('./pages/SettingsPage', () => ({
   SettingsPage: () => React.createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
 }));
+vi.mock('./pages/LibraryPage', () => ({
+  LibraryPage: () => React.createElement('div', { 'data-testid': 'library-page' }, 'Library'),
+}));
 
 // --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
@@ -196,6 +199,20 @@ describe('AppRoutes', () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/settings');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  it('renders LibraryPage for an authenticated user at /library', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/library');
+    await waitFor(() => expect(screen.getByTestId('library-page')).toBeInTheDocument());
+  });
+
+  it('redirects an unauthenticated user away from /library', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    renderAt('/library');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 });

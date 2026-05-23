@@ -124,6 +124,42 @@ describe('AppNavBar', () => {
     expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
   });
 
+  it('renders a Library link pointing at /library', () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: 1, username: 'amy', display_name: 'Amy', email: null, role: 'member', status: 'active', created_at: '', last_login_at: null },
+      role: 'member',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    render(
+      <MemoryRouter>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute(
+      'href',
+      '/library',
+    );
+  });
+
+  it('marks the Library link active when on /library', () => {
+    mockUseAuth.mockReturnValue({
+      user: { id: 1, username: 'amy', display_name: 'Amy', email: null, role: 'member', status: 'active', created_at: '', last_login_at: null },
+      role: 'member',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    render(
+      <MemoryRouter initialEntries={['/library']}>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole('link', { name: 'Library' });
+    expect(link).toHaveAttribute('aria-current', 'page');
+  });
+
   it('renders nothing when there is no authenticated user', () => {
     mockUseAuth.mockReturnValue({
       user: null,

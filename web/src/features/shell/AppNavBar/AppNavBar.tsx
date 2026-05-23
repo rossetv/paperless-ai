@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { cn } from '../../../lib/cn';
 import { NavBar } from '../../../components/layout/NavBar/NavBar';
 import { Brand } from '../../../components/primitives/Brand/Brand';
@@ -29,7 +29,6 @@ export function AppNavBar(): React.ReactElement | null {
   const { user, role } = useAuth();
   const logout = useLogout();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
 
   // Stable callback — avoids re-creating on every render and prevents the
   // UserMenu from receiving a new function reference unnecessarily.
@@ -61,25 +60,32 @@ export function AppNavBar(): React.ReactElement | null {
       }
       links={
         <>
-          <Link
+          <NavLink
             to="/"
-            className={cn(
-              styles['link'],
-              pathname === '/' && styles['link-active'],
-            )}
+            end
+            className={({ isActive }) =>
+              cn(styles['link'], isActive && styles['link-active'])
+            }
           >
             Search
-          </Link>
+          </NavLink>
+          <NavLink
+            to="/library"
+            className={({ isActive }) =>
+              cn(styles['link'], isActive && styles['link-active'])
+            }
+          >
+            Library
+          </NavLink>
           {role === 'admin' && (
-            <Link
+            <NavLink
               to="/settings"
-              className={cn(
-                styles['link'],
-                pathname.startsWith('/settings') && styles['link-active'],
-              )}
+              className={({ isActive }) =>
+                cn(styles['link'], isActive && styles['link-active'])
+              }
             >
               Settings
-            </Link>
+            </NavLink>
           )}
         </>
       }
