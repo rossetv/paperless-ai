@@ -21,9 +21,13 @@ import json
 import sqlite3
 import threading
 
+import structlog
+
 from store.migrations import StoreError
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 from store.reader._filters import build_browse_where
+
+log = structlog.get_logger(__name__)
 
 # The browse sort whitelist.  ``sort`` is a SQL identifier, not a value, so it
 # cannot be bound as a ``?`` parameter — it is mapped here through a fixed
@@ -148,7 +152,19 @@ def list_documents(
 
     documents: list[DocumentSummary] = []
     for row in page_rows:
-        tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
+        raw_tag_ids = row["tag_ids"]
+        if raw_tag_ids:
+            try:
+                tag_ids: list[int] = json.loads(raw_tag_ids)
+            except json.JSONDecodeError:
+                log.warning(
+                    "browse.tag_ids_parse_error",
+                    document_id=row["id"],
+                    raw=raw_tag_ids[:80],
+                )
+                tag_ids = []
+        else:
+            tag_ids = []
         tag_names = tuple(
             tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
         )
