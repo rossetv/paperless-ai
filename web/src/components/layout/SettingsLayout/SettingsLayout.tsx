@@ -7,12 +7,27 @@ import styles from './SettingsLayout.module.css';
 /**
  * The settings nav groups.
  *
- * Wave 3 ships exactly one group — Access Control. Wave 4 (Settings / config)
- * prepends a "Configuration" group; that is a Wave 4 change to this constant.
- * It lives here, not in the page, so the rail is identical on every settings
- * screen.
+ * Two groups: "Configuration" (the nine config sections — Wave 4) and
+ * "Access Control" (Users, API Keys — Wave 3). The Configuration items are
+ * in-page anchors: every section renders on the single `/settings` route, so
+ * each link is `/settings#<anchor>` and the hash scrolls to that
+ * `SectionCard`. Access-control items are their own routed pages.
  */
 const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
+  {
+    title: 'Configuration',
+    items: [
+      { id: 'paperless', label: 'Paperless Connection', to: '/settings#paperless' },
+      { id: 'llm', label: 'LLM Provider', to: '/settings#llm' },
+      { id: 'search', label: 'Search Server', to: '/settings#search' },
+      { id: 'embed', label: 'Embeddings & Index', to: '/settings#embed' },
+      { id: 'ocr', label: 'OCR', to: '/settings#ocr' },
+      { id: 'classify', label: 'Classification', to: '/settings#classify' },
+      { id: 'tags', label: 'Pipeline Tags', to: '/settings#tags' },
+      { id: 'perf', label: 'Performance', to: '/settings#perf' },
+      { id: 'logs', label: 'Logging', to: '/settings#logs' },
+    ],
+  },
   {
     title: 'Access Control',
     items: [
