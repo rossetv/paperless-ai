@@ -64,6 +64,13 @@ MAX_QUERY_LENGTH = 4000
 # boundary via ``Query(le=MAX_PAGE_SIZE)`` and re-asserted in the parser.
 MAX_PAGE_SIZE = 100
 
+# The maximum ``page`` number accepted by ``GET /api/documents``.  Without
+# this bound a caller can send ``page=9_999_999_999`` producing a 9.9e11-row
+# ``OFFSET`` that holds the StoreReader lock for a measurable duration on every
+# query.  10 000 × 100 (MAX_PAGE_SIZE) = 1 000 000 rows — far more than any
+# realistic Paperless instance.
+MAX_PAGE_NUMBER = 10_000
+
 
 # ---------------------------------------------------------------------------
 # Request models

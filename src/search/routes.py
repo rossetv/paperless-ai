@@ -37,6 +37,7 @@ from search.sessions import CurrentUser
 from search.wire import (
     DocumentListResponse,
     FacetsResponse,
+    MAX_PAGE_NUMBER,
     MAX_PAGE_SIZE,
     MAX_QUERY_LENGTH,
     SearchRequest,
@@ -337,14 +338,14 @@ def build_api_router(
 
     @router.get("/api/documents", dependencies=[reader_auth])
     async def documents(  # noqa: PLR0913 — one param per browse filter
-        page: int = Query(default=1, ge=1),
+        page: int = Query(default=1, ge=1, le=MAX_PAGE_NUMBER),
         page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
         sort: Literal["created", "title", "added"] = Query(default="added"),
         descending: bool = Query(default=True),
         query: str | None = Query(default=None, max_length=MAX_QUERY_LENGTH),
         correspondent_id: int | None = Query(default=None),
         document_type_id: int | None = Query(default=None),
-        tag_ids: list[int] = Query(default_factory=list),
+        tag_ids: list[int] = Query(default_factory=list, max_length=64),
         date_from: str | None = Query(default=None),
         date_to: str | None = Query(default=None),
     ) -> DocumentListResponse:
