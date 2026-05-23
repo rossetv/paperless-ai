@@ -1,4 +1,11 @@
-"""Classification daemon entry point."""
+"""Classification daemon entry point.
+
+Configuration is loaded from the application database (``app.db``) layered
+over the environment by :func:`common.bootstrap.bootstrap_daemon` (web-redesign
+spec §5). The daemon imports no database package directly — it remains barred
+from ``store``; the only database access is the ``appdb`` read inside the
+shared bootstrap.
+"""
 
 from __future__ import annotations
 
