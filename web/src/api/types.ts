@@ -468,3 +468,101 @@ export interface DocumentsResponse {
   /** The page size echoed back. */
   page_size: number;
 }
+
+// ---------------------------------------------------------------------------
+// Index operations types (Wave 6 — Index)
+// ---------------------------------------------------------------------------
+
+/**
+ * The run-state of a worker daemon.
+ *
+ * `running` — actively processing work; `idle` — alive but with nothing to
+ * do (e.g. the indexer between reconcile cycles); `stopped` — the daemon is
+ * not running or has missed its heartbeat window.
+ */
+export type DaemonState = 'running' | 'idle' | 'stopped';
+
+/**
+ * One worker daemon's status, as published to the Index dashboard.
+ *
+ * `key` identifies the daemon (`ocr` | `classifier` | `indexer` | `search`).
+ * `detail` is a short human sentence ("3 documents in flight", "Next cycle
+ * in 4m 21s"); `throughput` is a short metric string ("412 pages / hr").
+ */
+export interface DaemonStatus {
+  key: 'ocr' | 'classifier' | 'indexer' | 'search';
+  name: string;
+  role: string;
+  state: DaemonState;
+  detail: string;
+  throughput: string;
+}
+
+/**
+ * Overall index health, shown in the dashboard hero.
+ *
+ * `healthy` is the single boolean the hero keys its tone on. `headline` and
+ * `detail` are server-rendered human strings. `uptime` is a short string
+ * ("14d 6h"); `since` is an ISO-8601 timestamp or `null`.
+ */
+export interface IndexHealth {
+  healthy: boolean;
+  headline: string;
+  detail: string;
+  uptime: string;
+  since: string | null;
+}
+
+/** Response body for GET /api/index/status. */
+export interface IndexStatusResponse {
+  health: IndexHealth;
+  daemons: DaemonStatus[];
+  /** Headline figures for the stat-tile row. */
+  document_count: number;
+  chunk_count: number;
+  embedding_model: string | null;
+  index_size_bytes: number;
+}
+
+/** The outcome class of a single reconcile-activity entry. */
+export type ActivityStatus = 'ok' | 'warn' | 'idle' | 'error';
+
+/**
+ * One entry in the reconcile-activity history.
+ *
+ * `id` is a stable key for React lists. `status` drives the leading dot
+ * colour. `label`/`detail` are server-rendered human strings. `at` is an
+ * ISO-8601 timestamp; for the synthetic "next cycle" row the server sends
+ * `at: null` and `status: 'idle'`.
+ */
+export interface ActivityEntry {
+  id: string;
+  status: ActivityStatus;
+  label: string;
+  detail: string;
+  at: string | null;
+}
+
+/** Response body for GET /api/index/activity. */
+export interface ActivityResponse {
+  entries: ActivityEntry[];
+}
+
+/**
+ * One document that failed OCR, classification or indexing.
+ *
+ * `document_id` is the Paperless document id. `reason` is the server's
+ * human explanation; `failed_at` is an ISO-8601 timestamp. Documents are
+ * opened via the in-app DocumentPreviewScreen, not by an external link.
+ */
+export interface FailedDocument {
+  document_id: number;
+  title: string;
+  reason: string;
+  failed_at: string;
+}
+
+/** Response body for GET /api/index/failed. */
+export interface FailedResponse {
+  documents: FailedDocument[];
+}
