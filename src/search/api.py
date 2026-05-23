@@ -122,6 +122,12 @@ def create_app(
         AppState(app_db_path=app_db_path, setup_state=setup_state),
     )
 
+    # Pre-populate the per-request core cache with the startup-built core so
+    # the first request hits the cache and pays only a one-row SELECT — the
+    # per-request accessor takes over from here, rebuilding only on a config
+    # change (web-redesign §5, Wave 4).
+    _seed_core_cache(app_db_path, core)
+
     # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
     # precedence over static serving.
     app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
@@ -131,7 +137,7 @@ def create_app(
     app.include_router(
         build_api_router(
             settings,
-            core,
+            _resolve_search_core,
             store_reader,
             require_reader=require_api_scope,
             require_member=require_api_scope_member,
@@ -176,6 +182,85 @@ def _resolve_components(
             Synthesizer(settings),
         )
     return core, store_reader
+
+
+# Process-local hot-reload cache for the search core: app.db path ->
+# (config_version, core). _resolve_search_core rebuilds the config-derived
+# component graph only when the configuration has changed (web-redesign §5,
+# Wave 4); a steady-state request pays one cheap one-row SELECT.
+_CORE_CACHE: dict[str, tuple[int, "SearchCore"]] = {}
+
+
+def _resolve_search_core(app_db_path: str) -> SearchCore:
+    """Return the search core for the current configuration, rebuilt on change.
+
+    Called per request. Reads the one-row ``config_version``; when it is
+    unchanged since the last call for this *app_db_path*, returns the cached
+    core. When it has moved, rebuilds the core (and its :class:`Settings`,
+    via :func:`common.config.current_settings`) from the new configuration so
+    the next query uses the edited values — no restart.
+
+    Args:
+        app_db_path: Filesystem path to ``app.db``. The search server passes
+            ``AppState.app_db_path`` (the value resolved at app build time).
+
+    Returns:
+        The current :class:`SearchCore`.
+    """
+    from appdb import config as config_store  # noqa: PLC0415
+    from appdb.connection import connect  # noqa: PLC0415
+    from appdb.schema import ensure_schema  # noqa: PLC0415
+    from common.config import current_settings  # noqa: PLC0415
+
+    conn = connect(app_db_path)
+    try:
+        ensure_schema(conn)
+        version = config_store.get_config_version(conn)
+    finally:
+        conn.close()
+
+    cached = _CORE_CACHE.get(app_db_path)
+    if cached is not None and cached[0] == version:
+        return cached[1]
+
+    settings = current_settings(app_db_path)
+    core, _store_reader = _resolve_components(settings, None, None)
+    # Re-read config_version after current_settings(), because the first call
+    # for a deployment may have seeded the config table from the environment
+    # (bumping the version). Caching the post-seed version means the next
+    # call hits the cache instead of rebuilding spuriously — mirroring the
+    # same trick in common.config.current_settings.
+    conn = connect(app_db_path)
+    try:
+        current_version = config_store.get_config_version(conn)
+    finally:
+        conn.close()
+    _CORE_CACHE[app_db_path] = (current_version, core)
+    return core
+
+
+def _reset_core_cache_for_test() -> None:
+    """Clear the process-local search-core cache — for tests only."""
+    _CORE_CACHE.clear()
+
+
+def _seed_core_cache(app_db_path: str, core: SearchCore) -> None:
+    """Prime the per-request core cache with the startup-built *core*.
+
+    Reads the current ``config_version`` from *app_db_path* and stores the
+    pair so the first request hits the cache and pays only a one-row
+    ``SELECT`` — the per-request accessor rebuilds only on a later config
+    change (web-redesign §5, Wave 4).
+    """
+    from appdb import config as config_store  # noqa: PLC0415
+    from appdb.connection import connect  # noqa: PLC0415
+
+    conn = connect(app_db_path)
+    try:
+        version = config_store.get_config_version(conn)
+    finally:
+        conn.close()
+    _CORE_CACHE[app_db_path] = (version, core)
 
 
 def main() -> None:

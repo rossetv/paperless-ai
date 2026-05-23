@@ -77,7 +77,7 @@ def _build_app(tmp_path, core: MagicMock) -> FastAPI:
     app.include_router(
         build_api_router(
             settings,
-            core,
+            lambda _path: core,
             MagicMock(),
             require_reader=require_role("readonly"),
             require_member=require_role("member"),
