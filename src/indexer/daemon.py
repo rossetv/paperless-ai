@@ -55,6 +55,11 @@ log = structlog.get_logger(__name__)
 # to shutdown and manual triggers promptly; long enough to avoid busy-looping.
 _WAKE_CHECK_INTERVAL: float = 5.0
 
+# The rebuild-sentinel file name. Written beside index.db by the search
+# server's POST /api/index/rebuild; consumed here at cycle entry to wipe and
+# re-index the whole archive (web-redesign spec §5, Wave 6).
+_REBUILD_SENTINEL_NAME = "rebuild.request"
+
 # Key used to embed a single token to verify the embedding model is reachable.
 _PREFLIGHT_EMBED_TEXT = "ping"
 
@@ -396,6 +401,14 @@ def _run_loop(
         if manual_trigger:
             log.info("indexer.manual_trigger_consumed")
 
+        # Consume a rebuild trigger at cycle entry — wipe the index before
+        # this cycle's sync so the sync re-indexes the whole archive
+        # (web-redesign spec §5, Wave 6). The rebuild sentinel lives beside
+        # index.db, the same directory as the reconcile sentinel.
+        rebuild_sentinel = sentinel_path.parent / _REBUILD_SENTINEL_NAME
+        if _consume_sentinel(rebuild_sentinel):
+            _run_rebuild(store_writer, cycle_recorder)
+
         # Determine whether a deletion sweep is due this cycle. The interval
         # is read live from settings so a hot-loaded change takes effect now.
         elapsed = clock() - last_sweep_at
@@ -551,6 +564,36 @@ def _consume_sentinel(sentinel_path: Path) -> bool:
         sentinel_path.unlink(missing_ok=True)
         return True
     return False
+
+
+def _run_rebuild(
+    store_writer: StoreWriter,
+    cycle_recorder: IndexerActivityRecorder | None,
+) -> None:
+    """Wipe the index in response to a consumed rebuild sentinel.
+
+    Calls :meth:`~store.writer.StoreWriter.rebuild_index` and records the
+    rebuild into the dashboard's activity log. A :class:`~store.StoreError`
+    from the wipe is logged and swallowed — a failed rebuild must not crash
+    the daemon; the operator can re-trigger it. The cycle's normal
+    incremental sync runs next regardless: on a successful wipe it re-indexes
+    everything; on a failed wipe it is an ordinary incremental sync.
+    """
+    log.warning("indexer.rebuild_triggered")
+    rebuild_started = utc_now_iso()
+    try:
+        store_writer.rebuild_index()
+    except StoreError:
+        # rationale: a rebuild failure is a recoverable operational error —
+        # logged with its traceback, not fatal. The operator re-triggers it.
+        log.exception("indexer.rebuild_failed")
+        return
+    if cycle_recorder is not None:
+        cycle_recorder.record_rebuild(
+            started_at=rebuild_started,
+            finished_at=utc_now_iso(),
+        )
+    log.warning("indexer.rebuild_completed")
 
 
 if __name__ == "__main__":

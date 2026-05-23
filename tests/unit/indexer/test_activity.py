@@ -120,3 +120,29 @@ def test_beat_idle_writes_an_idle_indexer_heartbeat(conn) -> None:
     rows = daemon_status.read_statuses(conn)
     assert rows[0].name == "indexer"
     assert rows[0].detail == "idle"
+
+
+def test_record_rebuild_writes_a_sync_kind_row(conn) -> None:
+    """A recorded rebuild is a 'sync'-kind reconcile_activity row (the
+    rebuild is followed by a full re-index), flagged in its detail."""
+    recorder = IndexerActivityRecorder(conn)
+    recorder.record_rebuild(
+        started_at="2026-05-22T12:00:00+00:00",
+        finished_at="2026-05-22T12:00:02+00:00",
+    )
+    rows = reconcile_activity.read_recent(conn, limit=10)
+    assert len(rows) == 1
+    assert rows[0].kind == "sync"
+    assert rows[0].ok is True
+    assert "rebuilt" in rows[0].detail.lower()
+
+
+def test_record_rebuild_against_a_closed_connection_is_swallowed(conn) -> None:
+    """Recording a rebuild must never crash the indexer."""
+    recorder = IndexerActivityRecorder(conn)
+    conn.close()
+    # Must not raise.
+    recorder.record_rebuild(
+        started_at="2026-05-22T12:00:00+00:00",
+        finished_at="2026-05-22T12:00:02+00:00",
+    )
