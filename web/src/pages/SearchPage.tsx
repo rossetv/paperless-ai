@@ -120,12 +120,19 @@ export function SearchPage(): React.ReactElement {
       searchResult.isSuccess &&
       searchResult.data !== undefined
     ) {
-      const source = searchResult.data.sources.find(
+      const sources = searchResult.data.sources;
+      const sourceIdx = sources.findIndex(
         (s) => s.document_id === previewDocumentId,
       );
-      if (source !== undefined) {
+      const previewSource = sourceIdx !== -1 ? sources[sourceIdx] : undefined;
+      if (previewSource !== undefined) {
         return (
-          <DocumentPreviewScreen source={source} onClose={closePreview} />
+          <DocumentPreviewScreen
+            source={previewSource}
+            onClose={closePreview}
+            sourceIndex={sourceIdx + 1}
+            sourceCount={sources.length}
+          />
         );
       }
     }
@@ -182,8 +189,10 @@ export function SearchPage(): React.ReactElement {
           query={query}
           filters={filters}
           result={searchResult.data}
+          docCount={searchResult.data.sources.length}
           onFiltersChange={handleFiltersChange}
           onSearch={runSearch}
+          onClearFilters={clearFilters}
           onCitationActivate={handleCitationActivate}
           onPreview={openPreview}
           {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}

@@ -1,0 +1,160 @@
+/*
+ * SettingsListField primitive — CSS Module.
+ *
+ * A pill-list control for the Settings screen: numbered pills stacked
+ * vertically, each with reorder arrows and a remove button, plus an inline
+ * add-input below.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  width: 100%;
+}
+
+/* ── Pill list ── */
+
+.pill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  padding: var(--spacing-5) var(--spacing-8);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.pill-number {
+  flex-shrink: 0;
+  min-width: var(--spacing-10);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+  text-align: right;
+}
+
+.pill-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+}
+
+.order-button,
+.remove-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--spacing-4);
+  height: var(--spacing-11);
+  border: none;
+  border-radius: var(--radius-standard);
+  background-color: transparent;
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.remove-button {
+  color: var(--colour-status-error);
+}
+
+.order-button:disabled,
+.remove-button:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.order-button:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-primary);
+}
+
+.remove-button:hover:not(:disabled) {
+  background-color: var(--colour-status-error-bg);
+  color: var(--colour-status-error);
+}
+
+/* ── Add row ── */
+
+.add-row {
+  display: flex;
+  gap: var(--spacing-6);
+  align-items: center;
+}
+
+.add-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--spacing-7) var(--spacing-9);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.add-input::placeholder {
+  color: var(--colour-text-tertiary);
+  font-family: var(--font-text);
+}
+
+.add-input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+.add-input:disabled {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-secondary);
+}
+
+.add-button {
+  flex-shrink: 0;
+  padding: var(--spacing-7) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-accent);
+  cursor: pointer;
+}
+
+.add-button:disabled {
+  color: var(--colour-text-tertiary);
+  cursor: not-allowed;
+}
+
+.add-button:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
+}

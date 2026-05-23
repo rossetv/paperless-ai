@@ -12,6 +12,7 @@ const makeSource = (id: number): SourceDocument => ({
   snippet: 'Some text snippet',
   paperless_url: `https://paperless.example.com/documents/${id}/`,
   score: 0.9,
+  tags: [],
 });
 
 const stats: SearchStats = { llm_calls: 3, latency_ms: 1842, refined: false };

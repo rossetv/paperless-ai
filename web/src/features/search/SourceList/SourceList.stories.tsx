@@ -12,6 +12,7 @@ const sources: SourceDocument[] = [
     snippet: 'The boiler model EcoTec Plus 838 was installed on 15 March 2021. The warranty covers parts and labour for five years.',
     paperless_url: 'https://paperless.example.com/documents/1/',
     score: 0.95,
+    tags: [],
   },
   {
     document_id: 2,
@@ -22,6 +23,7 @@ const sources: SourceDocument[] = [
     snippet: 'Annual council tax bill for the period 1 April 2023 to 31 March 2024.',
     paperless_url: 'https://paperless.example.com/documents/2/',
     score: 0.87,
+    tags: [],
   },
   {
     document_id: 3,
@@ -32,6 +34,7 @@ const sources: SourceDocument[] = [
     snippet: 'Scanned document — only OCR text available.',
     paperless_url: 'https://paperless.example.com/documents/3/',
     score: 0.72,
+    tags: [],
   },
 ];
 

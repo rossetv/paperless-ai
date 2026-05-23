@@ -3,7 +3,6 @@ import { SourceCardSurface } from '../../../components/primitives/SourceCardSurf
 import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Button } from '../../../components/primitives/Button/Button';
-import { Link } from '../../../components/primitives/Link/Link';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
@@ -52,11 +51,14 @@ function thumbKindFor(documentType: string | null): DocThumbKind {
  * Composes the `SourceCardSurface` shell (the two-column grid with the
  * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
  * display-font title, the highlighted `DocumentSnippet`, a "Preview" button
- * that opens the in-app viewer, an "Open in Paperless" external link, and the
- * relevance score. The metadata and snippet are the shared `document`
- * features — not re-implemented here.
+ * that opens the in-app viewer, and the relevance score. The metadata and
+ * snippet are the shared `document` features — not re-implemented here.
  *
- * Composed from: SourceCardSurface, Text, Button, Link, Stack, DocumentMeta,
+ * Note: `source.paperless_url` is present on the wire type but intentionally
+ * not rendered — all document access goes through the in-app
+ * DocumentPreviewScreen.
+ *
+ * Composed from: SourceCardSurface, Text, Button, Stack, DocumentMeta,
  * DocumentSnippet. No own CSS module (§12.5 — features layer is
  * composition-only).
  */
@@ -87,7 +89,7 @@ export function SourceCard({
         {/* Highlighted matched-content snippet */}
         <DocumentSnippet snippet={source.snippet} />
 
-        {/* Actions row — preview, open externally, relevance */}
+        {/* Actions row — preview + relevance */}
         <Stack direction="horizontal" gap={6} align="center" wrap>
           <Button
             variant="primary"
@@ -96,11 +98,6 @@ export function SourceCard({
           >
             Preview
           </Button>
-          {source.paperless_url != null && source.paperless_url !== '' && (
-            <Link href={source.paperless_url} external variant="default">
-              Open in Paperless
-            </Link>
-          )}
           <Text as="span" variant="micro" tone="tertiary">
             relevance · {source.score.toFixed(2)}
           </Text>

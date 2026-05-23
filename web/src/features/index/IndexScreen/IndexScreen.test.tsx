@@ -231,6 +231,58 @@ describe('IndexScreen', () => {
     expect(screen.queryByRole('button', { name: /reconcile now/i })).not.toBeInTheDocument();
   });
 
+  it('always renders the "View live log" button regardless of role', () => {
+    primeAll('readonly');
+    render(<IndexScreen />);
+    expect(screen.getByRole('button', { name: /view live log/i })).toBeInTheDocument();
+  });
+
+  it('renders sub-lines on all four stat tiles', () => {
+    primeAll();
+    render(<IndexScreen />);
+    // Documents indexed — "synced X ago"
+    expect(screen.getByText(/synced/i)).toBeInTheDocument();
+    // Semantic chunks — chunks-per-document
+    expect(screen.getByText(/chunks per document/i)).toBeInTheDocument();
+    // Embedding model — hard-coded dims
+    expect(screen.getByText('1,536 dimensions')).toBeInTheDocument();
+    // Last reconcile — formatted date sub-line (en-GB locale date)
+    const dateSub = screen.getAllByText(/\d{2}\/\d{2}\/\d{4}/);
+    expect(dateSub.length).toBeGreaterThan(0);
+  });
+
+  it('does not show "View full log ›" when cycles fit within the limit', () => {
+    // ACTIVITY fixture has 1 cycle — well under ACTIVITY_ROW_LIMIT (5)
+    primeAll();
+    render(<IndexScreen />);
+    expect(screen.queryByRole('link', { name: /view full log/i })).not.toBeInTheDocument();
+  });
+
+  it('shows "View full log ›" and expands all rows when cycles exceed the limit', async () => {
+    primeAll();
+    // Override activity with 6 cycles (> ACTIVITY_ROW_LIMIT = 5)
+    const manyCycles = Array.from({ length: 6 }, (_, i) => ({
+      id: i + 1,
+      kind: 'sync' as const,
+      started_at: '2026-05-22T08:56:00Z',
+      finished_at: '2026-05-22T08:56:02Z',
+      ok: true,
+      summary: { indexed: i, failed: 0 },
+      detail: `cycle detail ${i + 1}`,
+    }));
+    mockActivity.mockReturnValue(
+      queryResult({ data: { cycles: manyCycles }, isSuccess: true, status: 'success' }),
+    );
+    render(<IndexScreen />);
+    const link = screen.getByRole('link', { name: /view full log/i });
+    expect(link).toBeInTheDocument();
+    // Clicking toggles to "Show less" and expands all rows
+    await userEvent.click(link);
+    expect(screen.getByRole('link', { name: /show less/i })).toBeInTheDocument();
+    // ActivityRow renders detail inline with summary — use partial match
+    expect(screen.getByText(/cycle detail 6/)).toBeInTheDocument();
+  });
+
   it('shows the rebuild danger-zone card for an admin', () => {
     primeAll('admin');
     render(<IndexScreen />);

@@ -8,24 +8,12 @@ import { RecentSearchStrip } from '../../../components/primitives/RecentSearchSt
 import { IndexStatusFooter } from '../../../components/primitives/IndexStatusFooter/IndexStatusFooter';
 import { useRecentSearches, useStats } from '../../../api/hooks';
 import { relativeTime } from '../../../lib/relativeTime';
+import { QUICK_FILTERS } from '../lib/quickFilters';
 
 export interface IdleScreenProps {
   /** Called with a query string when the user starts a search. */
   onSearch: (query: string) => void;
 }
-
-/**
- * Preset quick-filter queries shown as chips below the search field.
- * These are canned query strings, not data — clicking a chip runs that query.
- */
-const QUICK_FILTERS: readonly string[] = [
-  'Invoices this month',
-  'Recent contracts',
-  'Tax 2024',
-  'Bank statements',
-  'Medical receipts',
-  'Personal IDs',
-];
 
 /**
  * The search idle screen — the hero.
@@ -57,9 +45,19 @@ export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
   return (
     <SearchScreenLayout variant="centred">
       <Stack direction="vertical" gap={13} align="center">
-        <Text as="p" variant="card-title">
+        <Text as="h1" variant="hero">
           Ask your library.
         </Text>
+
+        {stats.isSuccess && stats.data !== undefined && (
+          <Text as="p" variant="body-large" tone="tertiary">
+            Semantic + keyword search across{' '}
+            <strong style={{ color: 'var(--colour-text-primary)', fontWeight: 600 }}>
+              {stats.data.document_count.toLocaleString('en-GB')}
+            </strong>{' '}
+            documents in your Paperless library.
+          </Text>
+        )}
 
         <SearchField
           id="idle-search"

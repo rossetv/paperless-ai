@@ -2,6 +2,7 @@ import React from 'react';
 import { DocThumb } from '../../../components/primitives/DocThumb/DocThumb';
 import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Chip } from '../../../components/primitives/Chip/Chip';
+import { Icon } from '../../../components/primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
 import type { LibraryDocument } from '../../../api/types';
 import styles from './LibraryCard.module.css';
@@ -101,6 +102,7 @@ export function LibraryCard({
           <DocThumb kind={thumbKindFor(document.document_type)} />
         </div>
         <span className={styles['open-affordance']} aria-hidden="true">
+          <Icon name="eye" size="small" />
           Preview
         </span>
       </div>

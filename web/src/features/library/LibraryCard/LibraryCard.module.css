@@ -40,12 +40,12 @@
   display: flex;
   justify-content: center;
   padding: var(--spacing-13) var(--spacing-13) var(--spacing-11);
-  background-color: var(--colour-bg);
+  background: linear-gradient(180deg, var(--colour-bg) 0%, var(--colour-button-light-bg) 100%);
 }
 
 .thumb {
   /* The DocThumb is authored small; scale it up for the card hero. */
-  transform: scale(1.5);
+  transform: scale(1.6);
   transform-origin: top center;
   margin-block-start: var(--spacing-9);
 }

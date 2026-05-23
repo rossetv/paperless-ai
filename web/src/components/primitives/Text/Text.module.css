@@ -18,6 +18,24 @@
   color: var(--colour-text-primary);
 }
 
+/* ── Hero — 56 px semibold; the display headline on the idle search screen ── */
+.hero {
+  font-family: var(--font-display);
+  font-size: var(--font-size-hero);
+  font-weight: var(--font-weight-hero);
+  line-height: var(--line-height-hero);
+  letter-spacing: var(--letter-spacing-hero);
+}
+
+/* ── Body large — 24 px light; the hero subtitle / subnav scale ── */
+.body-large {
+  font-family: var(--font-display);
+  font-size: var(--font-size-subnav);
+  font-weight: var(--font-weight-subnav);
+  line-height: var(--line-height-subnav);
+  letter-spacing: var(--letter-spacing-subnav);
+}
+
 /* ── Body — 17 px regular; the default running-text style ── */
 .body {
   font-size: var(--font-size-body);
@@ -32,6 +50,15 @@
   font-weight: var(--font-weight-body-emphasis);
   line-height: var(--line-height-body-emphasis);
   letter-spacing: var(--letter-spacing-body);
+}
+
+/* ── Sub-heading — 22 px semibold display; section title below card level ── */
+.sub-heading {
+  font-family: var(--font-display);
+  font-size: var(--font-size-sub-heading);
+  font-weight: var(--font-weight-sub-heading);
+  line-height: var(--line-height-sub-heading);
+  letter-spacing: var(--letter-spacing-sub-heading);
 }
 
 /* ── Card title — 21 px bold; the heading of a card-sized content block ── */

@@ -43,6 +43,8 @@
   font-weight: var(--font-weight-nav);
   text-decoration: none;
   opacity: var(--opacity-disabled);
+  padding: var(--spacing-2) var(--spacing-1);
+  position: relative;
   transition: opacity var(--duration-standard) var(--easing-standard);
 }
 
@@ -55,8 +57,43 @@
   font-weight: var(--font-weight-body-emphasis);
 }
 
+/* 2 px accent underline bar — matches design handoff lines 117-121. */
+.link-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--spacing-6));
+  height: var(--spacing-1);
+  background: var(--colour-accent);
+  border-radius: var(--spacing-1);
+}
+
 .link:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
   border-radius: var(--radius-micro);
+}
+
+/* ── Index-status pill. ── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nav);
+  font-weight: var(--font-weight-nav);
+  color: var(--colour-text-on-dark);
+  opacity: var(--opacity-disabled);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.pill-dot {
+  width: var(--spacing-5);
+  height: var(--spacing-5);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-status-ready);
+  box-shadow: var(--shadow-status-ready-ring);
+  flex-shrink: 0;
 }

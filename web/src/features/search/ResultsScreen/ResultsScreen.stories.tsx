@@ -15,6 +15,7 @@ const RESPONSE: SearchResponse = {
       snippet: 'Total charges for the period: **£1,847.32**.',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.92,
+      tags: [],
     },
     {
       document_id: 9120,
@@ -25,6 +26,7 @@ const RESPONSE: SearchResponse = {
       snippet: '**£153.94 was collected** on 5 December 2024.',
       paperless_url: 'https://paperless.example.com/documents/9120/',
       score: 0.86,
+      tags: [],
     },
   ],
   plan: {
@@ -56,8 +58,10 @@ const meta = {
       date_to: null,
     },
     result: RESPONSE,
+    docCount: 2,
     onFiltersChange: () => {},
     onSearch: (q: string) => globalThis.console.log('search', q),
+    onClearFilters: () => globalThis.console.log('clear filters'),
     onCitationActivate: (i: number) => globalThis.console.log('cite', i),
     onPreview: (id: number) => globalThis.console.log('preview', id),
   },
@@ -69,5 +73,5 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 
 export const WithHighlightedSource: Story = {
-  args: { highlightedIndex: 1 },
+  args: { docCount: 2, onClearFilters: () => {}, highlightedIndex: 1 },
 };

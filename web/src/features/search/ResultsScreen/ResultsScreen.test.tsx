@@ -7,6 +7,11 @@ vi.mock('../FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 
+// ActiveFiltersStrip calls useFacets — mock it so the test has no query client.
+vi.mock('../ActiveFiltersStrip/ActiveFiltersStrip', () => ({
+  ActiveFiltersStrip: () => null,
+}));
+
 const EMPTY_FILTERS = {
   tag_ids: [],
   correspondent_id: null,
@@ -27,6 +32,7 @@ const RESPONSE: SearchResponse = {
       snippet: 'Total charges were **£1,847.32**.',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.92,
+      tags: [],
     },
   ],
   plan: {
@@ -43,8 +49,10 @@ function renderResults(overrides = {}) {
       query="how much did I pay npower in 2024"
       filters={EMPTY_FILTERS}
       result={RESPONSE}
+      docCount={RESPONSE.sources.length}
       onFiltersChange={() => {}}
       onSearch={() => {}}
+      onClearFilters={() => {}}
       onCitationActivate={() => {}}
       onPreview={() => {}}
       {...overrides}
@@ -85,6 +93,13 @@ describe('ResultsScreen', () => {
     renderResults();
     expect(
       screen.getByRole('heading', { name: /sources/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the Sources caption', () => {
+    renderResults();
+    expect(
+      screen.getByText(/the documents that grounded the answer above/i),
     ).toBeInTheDocument();
   });
 

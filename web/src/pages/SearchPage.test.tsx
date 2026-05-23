@@ -123,6 +123,7 @@ const SUCCESS_DATA = {
       snippet: 'snippet',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.9,
+      tags: ['Utilities'],
     },
   ],
   plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },

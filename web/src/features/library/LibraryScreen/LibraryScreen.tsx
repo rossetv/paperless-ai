@@ -224,6 +224,8 @@ export function LibraryScreen(): React.ReactElement {
       <DocumentPreviewScreen
         source={source}
         onClose={() => setPreviewDocumentId(null)}
+        sourceIndex={1}
+        sourceCount={1}
       />
     );
   }

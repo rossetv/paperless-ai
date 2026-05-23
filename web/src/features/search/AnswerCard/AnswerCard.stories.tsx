@@ -12,6 +12,7 @@ const sources: SourceDocument[] = [
     snippet: 'The boiler model EcoTec Plus 838 was installed on 15 March 2021.',
     paperless_url: 'https://paperless.example.com/documents/1/',
     score: 0.95,
+    tags: [],
   },
   {
     document_id: 2,
@@ -22,6 +23,7 @@ const sources: SourceDocument[] = [
     snippet: 'Labour and parts for boiler installation, total GBP 1,240.',
     paperless_url: 'https://paperless.example.com/documents/2/',
     score: 0.88,
+    tags: [],
   },
 ];
 

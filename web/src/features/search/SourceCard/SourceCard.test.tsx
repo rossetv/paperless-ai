@@ -12,6 +12,7 @@ const makeSource = (overrides: Partial<SourceDocument> = {}): SourceDocument => 
   snippet: 'Total charges were **£1,847.32** for the year.',
   paperless_url: 'https://paperless.example.com/documents/9823/',
   score: 0.92,
+  tags: [],
   ...overrides,
 });
 
@@ -47,16 +48,6 @@ describe('SourceCard', () => {
       screen.getByRole('button', { name: /^preview$/i }),
     );
     expect(onPreview).toHaveBeenCalledWith(9823);
-  });
-
-  it('renders an "Open in Paperless" external link', () => {
-    render(<SourceCard source={makeSource()} index={1} onPreview={() => {}} />);
-    const link = screen.getByRole('link', { name: /open in paperless/i });
-    expect(link).toHaveAttribute(
-      'href',
-      'https://paperless.example.com/documents/9823/',
-    );
-    expect(link).toHaveAttribute('target', '_blank');
   });
 
   it('shows the relevance score', () => {

@@ -73,6 +73,17 @@ describe('LoadingScreen', () => {
     expect(screen.getByText(/in progress/i)).toBeInTheDocument();
   });
 
+  it('renders the ETA pill', () => {
+    render(
+      <LoadingScreen
+        query="q"
+        filters={EMPTY_FILTERS}
+        onFiltersChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('~2s')).toBeInTheDocument();
+  });
+
   it('renders skeleton source placeholders', () => {
     const { container } = render(
       <LoadingScreen

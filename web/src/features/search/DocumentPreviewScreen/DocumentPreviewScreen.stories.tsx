@@ -28,6 +28,9 @@ export const Default: Story = {
         'Twelve equal monthly direct debits of **£153.94** were collected, with a **£0.00** closing balance.',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.92,
+      tags: ['Utilities', 'Energy', '2024', 'Statement'],
     },
+    sourceIndex: 1,
+    sourceCount: 4,
   },
 };
