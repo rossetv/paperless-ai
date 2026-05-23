@@ -1,0 +1,97 @@
+/*
+ * IndexHealthHero feature component — CSS Module.
+ *
+ * The Index dashboard health hero: a status icon, a headline + detail, and
+ * a right-aligned uptime block. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.hero {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-14);
+  align-items: center;
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-14);
+}
+
+/* ── Circular status icon. ── */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-touch-target);
+  height: var(--size-touch-target);
+  border-radius: var(--radius-circle);
+  flex-shrink: 0;
+}
+
+.healthy {
+  background-color: var(--colour-status-ok-bg);
+  color: var(--colour-status-ok-fg);
+}
+
+.unhealthy {
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+}
+
+/* ── Centre column. ── */
+.eyebrow {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+.headline {
+  margin: var(--spacing-2) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-tile);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-tile);
+  letter-spacing: var(--letter-spacing-tile);
+  color: var(--colour-text-primary);
+}
+
+.detail {
+  margin: var(--spacing-4) 0 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Right-aligned uptime block. ── */
+.uptime {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-2);
+  padding-left: var(--spacing-14);
+  border-left: var(--spacing-1) solid var(--colour-border);
+}
+
+.uptime-value {
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+.uptime-since {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
