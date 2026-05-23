@@ -1,0 +1,32 @@
+/*
+ * TestConnectionRow feature — CSS Module.
+ *
+ * Lays out the Run-test button beside its inline result message. The message
+ * is colour-coded: green for success, red for any failure.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  flex-wrap: wrap;
+}
+
+.result {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+}
+
+.resultOk {
+  color: var(--colour-status-ok-fg);
+}
+
+.resultError {
+  color: var(--colour-status-danger-fg);
+}
