@@ -12,12 +12,12 @@ Request models:
 
 Response models:
     :class:`SearchResponse`, :class:`FacetsResponse`, :class:`StatsResponse`,
-    :class:`RecentSearchesResponse`
+    :class:`RecentSearchesResponse`, :class:`DocumentListResponse`
 
 Mapping functions (wire model ⇄ internal dataclass):
     :func:`to_search_filters` (request → store input shape),
     :func:`to_search_response`, :func:`to_facets_response`,
-    :func:`to_stats_response`
+    :func:`to_stats_response`, :func:`to_document_list_response`
 
 Constants:
     :data:`MAX_QUERY_LENGTH` — the documented maximum query length, applied at
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from appdb.api_keys import ApiKey
     from appdb.users import User
     from search.models import SearchResult
-    from store.models import FacetSet, IndexStats
+    from store.models import DocumentPage, FacetSet, IndexStats
 
 # The documented maximum length of a search query / question (§10.4).  Long
 # enough for any reasonable natural-language question; short enough to bound
@@ -151,6 +151,24 @@ class SearchStatsResponse(BaseModel):
     refined: bool
 
 
+class DocumentSummaryResponse(BaseModel):
+    """One document in the Library list (web-redesign §5).
+
+    The full per-document payload the Library card renders: identity, the
+    resolved taxonomy display names, the document date, the tag names, and
+    the page count. No deep-link URL — documents are opened via the in-app
+    DocumentPreviewScreen, not by linking out to Paperless.
+    """
+
+    id: int
+    title: str | None
+    correspondent: str | None
+    document_type: str | None
+    created: str | None
+    tags: list[str]
+    page_count: int | None
+
+
 # ---------------------------------------------------------------------------
 # Top-level response models
 # ---------------------------------------------------------------------------
@@ -182,6 +200,23 @@ class StatsResponse(BaseModel):
     chunk_count: int
     last_reconcile_at: str | None
     embedding_model: str | None
+
+
+class DocumentListResponse(BaseModel):
+    """Response body for GET /api/documents — one page of the Library.
+
+    Attributes:
+        documents: The document summaries for this page, in sort order.
+        total: The total number of documents matching the request's filters,
+            ignoring pagination — drives the UI pager.
+        page: The 1-based page number this response represents.
+        page_size: The page size that produced this response.
+    """
+
+    documents: list[DocumentSummaryResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 class RecentSearchEntry(BaseModel):
@@ -309,6 +344,53 @@ def to_stats_response(stats: IndexStats) -> StatsResponse:
         chunk_count=stats.chunk_count,
         last_reconcile_at=stats.last_reconcile_at,
         embedding_model=stats.embedding_model,
+    )
+
+
+def to_document_list_response(
+    page: DocumentPage,
+    *,
+    page_number: int,
+    page_size: int,
+) -> DocumentListResponse:
+    """Convert a store :class:`~store.models.DocumentPage` to the wire model.
+
+    The explicit, tested boundary conversion (``CODE_GUIDELINES.md`` §5.6):
+    no Pydantic model leaks into the store layer, no store dataclass leaks
+    into the HTTP response.  *page_number* and *page_size* are supplied by the
+    handler (which derived them from the validated query parameters) rather
+    than recomputed here, so this function is a pure field copy.
+
+    No deep-link URL is computed — documents are opened via the in-app
+    DocumentPreviewScreen (``/api/documents/{id}/pdf``), not by linking out
+    to Paperless.
+
+    Args:
+        page: The browse page from
+            :meth:`~store.reader.StoreReader.list_documents`.
+        page_number: The 1-based page number this response represents.
+        page_size: The page size that produced *page*.
+
+    Returns:
+        A :class:`DocumentListResponse` ready to serialise as JSON.
+    """
+    documents = [
+        DocumentSummaryResponse(
+            id=summary.id,
+            title=summary.title,
+            correspondent=summary.correspondent,
+            document_type=summary.document_type,
+            created=summary.created,
+            tags=list(summary.tags),
+            page_count=summary.page_count,
+        )
+        for summary in page.documents
+    ]
+    return DocumentListResponse(
+        documents=documents,
+        total=page.total,
+        page=page_number,
+        page_size=page_size,
     )
 
 
