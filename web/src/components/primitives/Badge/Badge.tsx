@@ -30,6 +30,17 @@ export interface BadgeProps {
  * Renders as a <span> so it sits naturally in flowing text or flex layouts.
  * Reads all design values from CSS tokens — no hardcoded colours or sizes.
  * Not interactive; does not need a focus ring.
+ *
+ * Badge family (W7 audit decision):
+ *   Badge        — generic, app-agnostic (neutral / accent variants only)
+ *   RoleBadge    — domain-aware; RBAC role with distinct status-colour tokens
+ *   StatusBadge  — domain-aware; semantic tone (ok/warn/danger/info) with a
+ *                  leading colour dot
+ *   ScopePill    — domain-aware; API-key scope in a monospace pill
+ *
+ * RoleBadge/StatusBadge/ScopePill are intentionally separate primitives: each
+ * encodes domain knowledge (label maps, dot DOM) that does not belong in the
+ * generic Badge. They are NOT duplicates — they are a documented badge family.
  */
 export function Badge({
   variant = 'neutral',
