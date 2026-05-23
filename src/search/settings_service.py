@@ -28,7 +28,7 @@ from common.config import (
     CONFIG_KEYS,
     REINDEX_KEYS,
     SECRET_KEYS,
-    _build_settings,
+    build_settings,
 )
 
 # Where a key's effective value came from, in precedence order.
@@ -131,7 +131,7 @@ def validate_change_set(
     merged: dict[str, str] = dict(environ)
     merged.update(config_table)
     merged.update(changes)
-    # _build_settings requires PAPERLESS_TOKEN and OPENAI_API_KEY — the same
+    # build_settings requires PAPERLESS_TOKEN and OPENAI_API_KEY — the same
     # two keys as SECRET_KEYS. They may be absent when the caller changes an
     # unrelated key on a fresh instance that has not yet been configured. Inject
     # sentinel values so the builder can validate the type/range of the changed
@@ -139,7 +139,7 @@ def validate_change_set(
     _SENTINEL = "__validation_placeholder__"
     for req in SECRET_KEYS:
         merged.setdefault(req, _SENTINEL)
-    _build_settings(merged)  # raises ValueError on a bad value
+    build_settings(merged)  # raises ValueError on a bad value
 
     # Determine which keys genuinely change. The current effective value is
     # the table value if present, else the environment value, else absent.
