@@ -1,0 +1,56 @@
+/*
+ * Segmented primitive — CSS Module.
+ *
+ * A horizontal single-choice control styled as one connected pill: a tinted
+ * track holding equal-width segment buttons. The selected segment sits on a
+ * raised white chip; the rest are transparent. Recreated as a real
+ * radiogroup so it is keyboard-navigable and screen-reader-correct.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.group {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1);
+  border-radius: var(--radius-standard);
+  background-color: var(--colour-segmented-track);
+}
+
+.groupDisabled {
+  opacity: var(--opacity-disabled);
+}
+
+/* ── One segment button. ── */
+.segment {
+  padding: var(--spacing-4) var(--spacing-10);
+  border: none;
+  border-radius: var(--radius-micro);
+  background-color: transparent;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--easing-standard),
+    color var(--duration-fast) var(--easing-standard);
+}
+
+.segment:disabled {
+  cursor: not-allowed;
+}
+
+.segment:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── The selected segment — raised white chip, primary text. ── */
+.segmentSelected {
+  background-color: var(--colour-surface);
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-caption-bold);
+  box-shadow: var(--shadow-card);
+}
