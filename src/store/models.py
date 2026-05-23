@@ -104,6 +104,28 @@ class ChunkHit:
 
 
 @dataclass(frozen=True, slots=True)
+class FailedDocument:
+    """A document the indexer has failed to index, for the Index dashboard.
+
+    Sourced from the ``failed_documents`` map in ``index.db`` meta — the
+    indexer's record of documents whose indexing raised (web-redesign spec
+    §5, Wave 6). The indexer re-attempts every entry each cycle until it
+    succeeds or is dead-lettered.
+
+    Attributes:
+        document_id: The Paperless document id.
+        title: The document's title from the index, or ``None`` when the
+            document has no indexed row (it failed before it was ever
+            stored).
+        failure_count: How many consecutive cycles the document has failed.
+    """
+
+    document_id: int
+    title: str | None
+    failure_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class IndexedDocument:
     """A documents row joined to taxonomy display names.
 

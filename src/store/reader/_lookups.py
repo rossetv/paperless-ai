@@ -21,6 +21,7 @@ from store._sql import placeholders
 from store.migrations import SchemaNotReadyError, StoreError
 from store.models import (
     ChunkHit,
+    FailedDocument,
     FacetSet,
     IndexedDocument,
     IndexStats,
@@ -277,6 +278,103 @@ def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStat
         last_reconcile_at=reconcile_row[0] if reconcile_row else None,
         embedding_model=model_row[0] if model_row else None,
     )
+
+
+# The index.db meta key under which the indexer persists its failed-document
+# map: a JSON object of str(doc_id) -> consecutive_failure_count. Owned by
+# the indexer (indexer.reconciler._failed_documents); read here for the
+# Index dashboard.
+_FAILED_DOCUMENTS_META_KEY = "failed_documents"
+
+
+def get_failed_documents(
+    conn: sqlite3.Connection, query_lock: threading.Lock
+) -> list[FailedDocument]:
+    """Return the documents the indexer has failed to index.
+
+    Reads the ``failed_documents`` JSON map from ``index.db`` meta and joins
+    each id to the ``documents`` table for its title. A document that failed
+    before it was ever stored has no ``documents`` row — its title is
+    ``None`` and it is still listed.
+
+    A missing meta key, an empty value, or a value that does not parse as the
+    expected ``{str: int}`` shape yields an empty list — a corrupt entry must
+    not break the dashboard, exactly as the indexer's own reader tolerates it.
+
+    Args:
+        conn: The open index connection.
+        query_lock: The StoreReader's lock, held for the query's duration.
+
+    Returns:
+        A list of :class:`~store.models.FailedDocument`, ordered by document
+        id. Empty when nothing is currently failing.
+
+    Raises:
+        SchemaNotReadyError: The index schema is not present.
+        StoreError: On any other SQLite error.
+    """
+    try:
+        with query_lock:
+            meta_row = conn.execute(
+                "SELECT value FROM meta WHERE key = ?",
+                (_FAILED_DOCUMENTS_META_KEY,),
+            ).fetchone()
+            failure_counts = _parse_failed_documents(
+                meta_row[0] if meta_row else None
+            )
+            if not failure_counts:
+                return []
+            titles = _fetch_titles(conn, list(failure_counts))
+    except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "get_failed_documents query failed: schema not present"
+            ) from exc
+        raise StoreError("get_failed_documents query failed") from exc
+
+    return [
+        FailedDocument(
+            document_id=doc_id,
+            title=titles.get(doc_id),
+            failure_count=count,
+        )
+        for doc_id, count in sorted(failure_counts.items())
+    ]
+
+
+def _parse_failed_documents(raw: str | None) -> dict[int, int]:
+    """Decode the failed_documents meta JSON into an id -> count map.
+
+    A missing, empty, or malformed value decodes to an empty map — a corrupt
+    meta entry must never break the dashboard read.
+    """
+    if not raw:
+        return {}
+    try:
+        decoded = json.loads(raw)
+        return {int(key): int(value) for key, value in decoded.items()}
+    except (ValueError, AttributeError, TypeError):
+        return {}
+
+
+def _fetch_titles(
+    conn: sqlite3.Connection, ids: list[int]
+) -> dict[int, str | None]:
+    """Return a doc-id -> title map for the given ids from the documents table.
+
+    Ids with no ``documents`` row are simply absent from the returned map;
+    the caller treats a missing id as a ``None`` title.
+    """
+    if not ids:
+        return {}
+    # rationale: ids is a list of ints built from JSON-parsed keys — no value
+    # is ever interpolated into the SQL string, only the placeholder count.
+    rows = conn.execute(
+        f"SELECT id, title FROM documents "
+        f"WHERE id IN ({placeholders(len(ids))})",
+        ids,
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
 
 
 def quick_check(conn: sqlite3.Connection, query_lock: threading.Lock) -> bool:

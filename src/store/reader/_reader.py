@@ -23,6 +23,7 @@ from store.models import (
     ChunkHit,
     DocumentBrowseQuery,
     DocumentPage,
+    FailedDocument,
     FacetSet,
     IndexedDocument,
     IndexStats,
@@ -125,6 +126,13 @@ class StoreReader:
         See :func:`store.reader._lookups.get_stats`.
         """
         return _lookups.get_stats(self._conn, self._query_lock)
+
+    def get_failed_documents(self) -> list[FailedDocument]:
+        """Return the documents the indexer has failed to index.
+
+        See :func:`store.reader._lookups.get_failed_documents`.
+        """
+        return _lookups.get_failed_documents(self._conn, self._query_lock)
 
     def quick_check(self) -> bool:
         """Run ``PRAGMA quick_check`` on the database.
