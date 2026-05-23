@@ -180,10 +180,29 @@ def _index_rebuild(settings: Settings) -> RebuildResponse:
     Security: writes ONLY the sentinel file — never the index database. The
     indexer holds the exclusive writer flock and is the sole process that
     mutates ``index.db``; it consumes the sentinel and performs the wipe.
+
+    Raises :class:`fastapi.HTTPException` (503) when the sentinel directory
+    does not exist or is not writable — which indicates a misconfigured
+    ``INDEX_DB_PATH`` rather than a transient error, so the admin needs a
+    useful message rather than a generic 500.
     """
+    from fastapi import HTTPException
+
     db_dir = Path(settings.INDEX_DB_PATH).parent
     sentinel = db_dir / _REBUILD_SENTINEL_NAME
-    sentinel.touch()
+    try:
+        sentinel.touch()
+    except OSError as exc:
+        log.error(
+            "api.index_rebuild_sentinel_write_failed",
+            sentinel=str(sentinel),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="cannot write sentinel: index data directory not writable",
+        ) from exc
     log.warning("api.index_rebuild_triggered", sentinel=str(sentinel))
     return RebuildResponse(
         accepted=True,

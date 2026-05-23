@@ -71,7 +71,7 @@ def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) ->
     settings = _make_settings()
     wait_count = 0
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         nonlocal wait_count
         wait_count += 1
         # Signal shutdown so the loop exits after the first cycle.
@@ -129,7 +129,7 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
     settings = _make_settings()
     cycles: list[int] = []
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         cycles.append(1)
         shutdown_mod.request_shutdown()
         return False
@@ -177,7 +177,7 @@ def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
 
     wait_count = 0
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         nonlocal wait_count
         wait_count += 1
         # Let two cycles run, then stop the loop.
@@ -224,7 +224,7 @@ def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
 
     wait_count = 0
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         nonlocal wait_count
         wait_count += 1
         if wait_count >= 2:
@@ -258,7 +258,7 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
 
     wait_count = 0
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         nonlocal wait_count
         wait_count += 1
         shutdown_mod.request_shutdown()
@@ -295,7 +295,7 @@ def test_sentinel_present_is_deleted_and_forces_deletion_sweep(tmp_path: Path) -
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -334,7 +334,7 @@ def test_deletion_sweep_skipped_when_interval_not_elapsed(tmp_path: Path) -> Non
     store_writer = MagicMock()
     settings = _make_settings()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -364,7 +364,7 @@ def test_deletion_sweep_runs_when_interval_elapsed(tmp_path: Path) -> None:
     store_writer = MagicMock()
     settings = _make_settings()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -398,7 +398,7 @@ def test_deletion_sweep_runs_on_manual_trigger_regardless_of_interval(
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()  # sentinel present at cycle start
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -485,7 +485,7 @@ def test_run_loop_records_each_cycle_through_the_recorder() -> None:
         except StopIteration:
             return 200.0
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -528,7 +528,7 @@ def test_run_loop_works_without_a_recorder() -> None:
     )
     settings = _make_settings()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -611,7 +611,7 @@ def test_run_loop_rebuilds_when_the_rebuild_sentinel_is_present(
     rebuild_sentinel = tmp_path / "rebuild.request"
     rebuild_sentinel.touch()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
@@ -640,7 +640,7 @@ def test_run_loop_does_not_rebuild_without_the_sentinel(tmp_path: Path) -> None:
     store_writer = MagicMock()
     settings = _make_settings()
 
-    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
