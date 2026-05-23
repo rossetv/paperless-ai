@@ -437,7 +437,7 @@ export async function testConnection(
 /**
  * Build the `?…` query string for GET /api/documents.
  *
- * `page`, `page_size`, `sort` and `order` are always present. Optional
+ * `page`, `page_size`, `sort` and `descending` are always present. Optional
  * filters are appended only when non-nullish and (for strings) non-empty.
  * `tag_ids` becomes one repeated `tag_ids=` parameter per id, matching the
  * FastAPI list-query convention the backend half declared.
@@ -447,7 +447,7 @@ function buildDocumentsQuery(q: DocumentsQuery): string {
   params.set('page', String(q.page));
   params.set('page_size', String(q.page_size));
   params.set('sort', q.sort);
-  params.set('order', q.order);
+  params.set('descending', String(q.descending));
   if (q.query != null && q.query.trim() !== '') {
     params.set('query', q.query.trim());
   }

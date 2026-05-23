@@ -234,7 +234,14 @@ export interface SourceDocument {
   document_type: string | null;
   created: string | null;
   snippet: string;
-  paperless_url: string;
+  /**
+   * The deep-link URL to the document in the Paperless web UI.
+   *
+   * Null when the URL is not available — e.g. when the document was opened
+   * from the Library, which does not carry deep-link URLs.  The
+   * `DocumentViewerChrome` omits the "Open in Paperless" action when null.
+   */
+  paperless_url: string | null;
   score: number;
 }
 
@@ -390,11 +397,14 @@ export interface TestConnectionResponse {
 // Library — GET /api/documents (Wave 5)
 // ---------------------------------------------------------------------------
 
-/** Sort field for the library document list. Mirrors the backend `sort` enum. */
-export type DocumentSortField = 'created' | 'title' | 'correspondent';
-
-/** Sort direction for the library document list. */
-export type SortOrder = 'asc' | 'desc';
+/**
+ * Sort field for the library document list.
+ *
+ * Mirrors the backend ``Literal["created", "title", "added"]`` on
+ * ``GET /api/documents``.  ``added`` is the date the document was indexed
+ * (``indexed_at``); ``created`` is the document's own creation date.
+ */
+export type DocumentSortField = 'created' | 'title' | 'added';
 
 /**
  * Query parameters for GET /api/documents.
@@ -402,6 +412,9 @@ export type SortOrder = 'asc' | 'desc';
  * `page` is 1-based. All filter fields are optional and omitted from the
  * query string when nullish. `tag_ids` is serialised as one repeated
  * `tag_ids=` parameter per id.
+ *
+ * `descending` maps directly to the backend's boolean query parameter —
+ * `true` for newest/largest first, `false` for oldest/smallest first.
  */
 export interface DocumentsQuery {
   /** 1-based page number. */
@@ -410,8 +423,8 @@ export interface DocumentsQuery {
   page_size: number;
   /** Field to order by. */
   sort: DocumentSortField;
-  /** Order direction. */
-  order: SortOrder;
+  /** True for descending order (newest/largest first); false for ascending. */
+  descending: boolean;
   /** Free-text filter over title / correspondent / type. */
   query?: string | null;
   /** Restrict to a single correspondent by id. */
@@ -440,8 +453,8 @@ export interface LibraryDocument {
   created: string | null;
   /** Tag names attached to the document. */
   tags: string[];
-  /** Number of pages in the document. */
-  page_count: number;
+  /** Number of pages in the document; null when the page count is unknown. */
+  page_count: number | null;
 }
 
 /** Response body for GET /api/documents. */
