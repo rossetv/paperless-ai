@@ -6,8 +6,14 @@ import styles from './DocumentViewerChrome.module.css';
 export interface DocumentViewerChromeProps {
   /** The document title — shown in the breadcrumb. */
   title: string;
-  /** The Paperless document URL — the "Open in Paperless" link target. */
-  paperlessUrl: string;
+  /**
+   * The Paperless document URL — the "Open in Paperless" link target.
+   *
+   * When absent, null, or an empty string, the "Open in Paperless" action is
+   * not rendered.  The Library preview does not carry a deep-link URL; the
+   * prop is optional so the chrome handles both contexts cleanly.
+   */
+  paperlessUrl?: string | null;
   /**
    * The PDF download URL — the "Download" link target. When omitted, the
    * Download action is not rendered.
@@ -83,15 +89,17 @@ export function DocumentViewerChrome({
               Download
             </a>
           )}
-          <a
-            className={styles['action']}
-            href={paperlessUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Open in Paperless
-            <Icon name="external-link" size="small" />
-          </a>
+          {paperlessUrl != null && paperlessUrl !== '' && (
+            <a
+              className={styles['action']}
+              href={paperlessUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open in Paperless
+              <Icon name="external-link" size="small" />
+            </a>
+          )}
         </span>
       </div>
 
