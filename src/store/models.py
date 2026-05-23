@@ -189,3 +189,92 @@ class IndexStats:
     chunk_count: int
     last_reconcile_at: str | None
     embedding_model: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentSummary:
+    """One document row for the Library browse list (web-redesign §5).
+
+    A documents-table row joined to taxonomy display names, like
+    :class:`IndexedDocument`, but additionally carrying ``page_count`` —
+    the Library list shows a page count per document and ``IndexedDocument``
+    (the search-result shape) deliberately omits it.  A distinct shape keeps
+    each read's projection honest rather than overloading one dataclass.
+
+    Attributes:
+        id: The Paperless document id.
+        title: Document title, or None.
+        correspondent: Resolved correspondent name, or None.
+        document_type: Resolved document-type name, or None.
+        tags: Tuple of tag names resolved from taxonomy.
+        created: Document date in normalised UTC ISO-8601, or None.
+        page_count: Number of pages, or None when unknown.
+    """
+
+    id: int
+    title: str | None
+    correspondent: str | None
+    document_type: str | None
+    tags: tuple[str, ...]
+    created: str | None
+    page_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentBrowseQuery:
+    """Parameters for :meth:`~store.reader.StoreReader.list_documents`.
+
+    A store-boundary input shape (like :class:`SearchFilters`): the search
+    server constructs it from validated HTTP query parameters and hands it to
+    the reader.  Every filter field defaults to "no restriction" semantics;
+    the caller is responsible for supplying sane pagination and sort values.
+
+    Attributes:
+        text: Optional case-insensitive substring matched against the
+            document title, correspondent name, and document-type name.
+            None or empty means no text restriction.
+        date_from: Inclusive lower bound on ``documents.created`` (ISO-8601
+            string, lexicographic comparison).  None means no lower bound.
+        date_to: Inclusive upper bound on ``documents.created``.  None means
+            no upper bound.
+        correspondent_id: Exact match on ``documents.correspondent_id``.
+            None means no restriction.
+        document_type_id: Exact match on ``documents.document_type_id``.
+            None means no restriction.
+        tag_ids: Every id in the tuple must appear in ``documents.tag_ids``.
+            An empty tuple means no restriction.
+        sort: The sort column — one of ``'created'``, ``'title'``, or
+            ``'indexed_at'`` (date added).  Validated by the reader.
+        descending: When True the sort is descending; when False, ascending.
+        offset: Number of rows to skip (pagination); must be >= 0.
+        limit: Maximum number of rows to return; must be > 0.
+    """
+
+    text: str | None
+    date_from: str | None
+    date_to: str | None
+    correspondent_id: int | None
+    document_type_id: int | None
+    tag_ids: tuple[int, ...]
+    sort: str
+    descending: bool
+    offset: int
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentPage:
+    """One page of Library browse results (web-redesign §5).
+
+    Attributes:
+        documents: The document summaries for this page, in sort order.
+        total: The total number of documents matching the query's filters,
+            ignoring pagination — the count the UI's pager needs.
+        offset: The offset that produced this page (echoed back).
+        limit: The limit that produced this page (echoed back).
+    """
+
+    documents: tuple[DocumentSummary, ...]
+    total: int
+    offset: int
+    limit: int
