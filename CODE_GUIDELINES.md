@@ -586,7 +586,7 @@ root cause) or wrongly classified (lower it).
 ### 7.4 Never log secrets
 
 Forbidden as log values or substrings: the Paperless API token, the OpenAI API key,
-the `SEARCH_API_KEY`, and full document content bodies. Document *titles* and
+and full document content bodies. Document *titles* and
 *metadata* are not secrets in this project's threat model — the operator owns the
 archive — and may be logged for triage. When forensic correlation needs a token,
 log a length-bounded irreversible prefix, never the whole value.
@@ -763,18 +763,32 @@ MCP server are network-facing** — a threat surface the original daemons never 
 Every change to a search endpoint, a tool, or the answer prompt is a security
 change.
 
-### 10.1 API authentication — fail closed
+### 10.1 API authentication — fail closed (spec §4.6)
 
-The search API and MCP server require `SEARCH_API_KEY`. It is **mandatory**: an
-unset or empty key is a fatal preflight error — the search and MCP servers refuse
-to start, with a `CRITICAL` log line. They never run in an unauthenticated state.
-The index holds the operator's personal documents; a search surface that is open
-"by default" is a data breach one misconfiguration away. When the key is set, every
-`/api/*` request and every MCP call requires authentication — a matching bearer token, or, for the browser, a signed `HttpOnly` session cookie issued by the `POST /api/auth/login` handshake against that key. A new
-endpoint is gated by the same check; opting one out requires a written
-justification. Network restriction — a reverse-proxy IP allowlist, a VPN — is
-defence in depth on top of the key ([§1.11](#111-fail-closed-fail-loud)), never a
-substitute for it.
+The search server starts with **no users** and enters setup mode immediately: it is
+reachable only at `GET /api/setup/status` and `POST /api/setup` until the first
+admin account is created via the setup-token flow (the token is printed to the
+container logs at startup and cleared once used). There is no `SEARCH_API_KEY`
+environment variable; an unauthenticated "open by default" state is impossible by
+design — setup mode is not an open state, it is a locked one.
+
+Once set up, every `/api/*` request requires one of two credentials:
+
+- **Cookie session** — the human path. `POST /api/auth/login` validates the
+  username and password and issues a signed `HttpOnly` session cookie. The browser
+  attaches it on every subsequent request.
+- **Bearer API key** — the programmatic path. Admins and members may mint
+  `sk-pls-...` API keys via `POST /api/api-keys`. Each key carries one or both
+  scopes (`api`, `mcp`). The `api` scope gates the REST data endpoints; the `mcp`
+  scope gates the MCP server. Presenting an `api`-only key to the MCP server is a
+  403; presenting an `mcp`-only key to a scope-enforced REST endpoint is equally a
+  403.
+
+A new endpoint is gated by `require_api_scope` (read-only+) or
+`require_api_scope_member` (member+) or `require_admin` (admin-only). Opting an
+endpoint out of scope enforcement requires a written justification. Network
+restriction — a reverse-proxy IP allowlist, a VPN — is defence in depth
+([§1.11](#111-fail-closed-fail-loud)), never a substitute for authentication.
 
 ### 10.2 Prompt injection is a real attack class
 
@@ -785,12 +799,19 @@ instructs the model to treat everything below as data, never as instructions —
 reusing the pattern already in the OCR transcription prompt. A new prompt that
 interpolates document content without that guard is a security finding.
 
-### 10.3 Secrets live in the environment
+### 10.3 Secrets
 
-The Paperless token, the OpenAI key, and the `SEARCH_API_KEY` are supplied via
-environment variables, loaded once into `Settings`, and never written to disk,
-never logged ([§7.4](#74-never-log-secrets)), never returned in an API response or
-an error body.
+The Paperless token and the OpenAI key are stored in `app.db`'s `config` table
+(Wave 4) and admin-editable via the Settings screen. They are no longer
+environment-only: environment variables seeded them at first install; subsequent
+changes go through the UI. Neither value is ever written to disk outside `app.db`,
+logged ([§7.4](#74-never-log-secrets)), or returned in an API response or an error
+body.
+
+Environment variables (`PAPERLESS_URL`, `OPENAI_MODEL`, etc.) that are not secrets
+are still loaded from the environment into `Settings` on startup and used to
+bootstrap the DB config if no value exists. See `common/config.py` for the
+precedence rules.
 
 ### 10.4 Validate at the boundary, once
 
@@ -1022,10 +1043,9 @@ CSS Modules live beside their component (`Button.tsx` ↔ `Button.module.css`).
 `web/src/api/` is the only place the frontend talks to the backend:
 
 - `client.ts` — a typed `fetch` wrapper owning the base URL, `credentials: 'include'`
-  (a signed `HttpOnly` session cookie carries authentication — the `SEARCH_API_KEY`
-  is never stored in, nor shipped with, the frontend bundle), and error
-  normalisation; a `401` surfaces as a distinct `Unauthenticated` error the app
-  routes to the login screen.
+  (a signed `HttpOnly` session cookie carries authentication — the JS bundle never
+  sees or stores any credential), and error normalisation; a `401` surfaces as a
+  distinct `Unauthenticated` error the app routes to the login screen.
 - `types.ts` — TypeScript types mirroring the FastAPI Pydantic schema
   (`SearchResult`, `SourceDocument`, `QueryPlan`, facets). Frontend and backend
   shapes are kept in deliberate correspondence; a divergence is a bug.
@@ -1343,7 +1363,7 @@ useful. Run it against every PR before approving.
 
 - [ ] No hardcoded colour, size, radius, or shadow outside `web/src/styles/tokens.css`
       ([§12.4](#124-design-tokens-are-the-only-source-of-design-values)).
-- [ ] No `.module.css` outside `components/`.
+- [ ] No `.module.css` outside `components/` (and the §12.5 `features/` exception for screen-level layout tokens — see [§12.5](#125-css-modules-and-the-forbidden-zone)).
 - [ ] No layer-boundary violation — a `pages/` import of a primitive, a `fetch`
       call outside `api/` ([§12.3](#123-the-layer-stack-and-its-one-rule),
       [§12.6](#126-the-typed-api-layer)).
