@@ -64,8 +64,8 @@ function FieldControl({
           label={field.label}
           value={typeof value === 'number' ? value : 0}
           min={control.min}
-          max={control.max}
-          suffix={control.suffix}
+          {...(control.max !== undefined ? { max: control.max } : {})}
+          {...(control.suffix !== undefined ? { suffix: control.suffix } : {})}
           onChange={(next) => onChange(next)}
         />
       );
@@ -116,17 +116,20 @@ function FieldControl({
         />
       );
     case 'text':
-    default:
+    default: {
+      const textMono = control.kind === 'text' ? (control.mono ?? false) : false;
+      const textPlaceholder = control.kind === 'text' ? control.placeholder : undefined;
       return (
         <SettingsTextField
           id={id}
           label={field.label}
-          mono={control.kind === 'text' ? control.mono : false}
-          placeholder={control.kind === 'text' ? control.placeholder : undefined}
+          {...(textMono ? { mono: true } : {})}
+          {...(textPlaceholder !== undefined ? { placeholder: textPlaceholder } : {})}
           value={typeof value === 'string' ? value : ''}
           onChange={(next) => onChange(next)}
         />
       );
+    }
   }
 }
 
@@ -161,7 +164,7 @@ export function SettingsSection({
         const hint = needsReindex ? (
           <>
             {field.hint}
-            <span className={styles['reindexNote']}>
+            <span className={styles['reindex-note']!}>
               {' '}
               Changing this requires re-indexing all documents — run a full
               rebuild from the Index page.
@@ -170,13 +173,14 @@ export function SettingsSection({
         ) : (
           field.hint
         );
+        const controlId = labellable ? `setting-${field.key}` : undefined;
         return (
           <Row
             key={field.key}
             label={field.label}
             hint={hint}
             env={field.key}
-            controlId={labellable ? `setting-${field.key}` : undefined}
+            {...(controlId !== undefined ? { controlId } : {})}
             last={index === section.fields.length - 1 && children === undefined}
           >
             <FieldControl

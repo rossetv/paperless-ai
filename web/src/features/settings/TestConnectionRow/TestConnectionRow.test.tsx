@@ -45,7 +45,8 @@ describe('TestConnectionRow', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: /run test/i }));
     await waitFor(() => {
-      const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      // Non-null: the mock will have been called at least once at this point.
+      const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const body = JSON.parse((call[1] as RequestInit).body as string);
       expect(body).toEqual({
         paperless_url: 'http://paperless.lan',
@@ -62,7 +63,8 @@ describe('TestConnectionRow', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: /run test/i }));
     await waitFor(() => {
-      const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      // Non-null: the mock will have been called at least once at this point.
+      const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const body = JSON.parse((call[1] as RequestInit).body as string);
       expect(body.paperless_token).toBe('');
     });

@@ -59,17 +59,17 @@ export function TestConnectionRow({
           {probe.isPending ? 'Testing…' : 'Run test'}
         </Button>
         {probe.isError && (
-          <span className={`${styles['result']} ${styles['resultError']}`}>
+          <span className={`${styles['result']!} ${styles['result-error']!}`}>
             Could not reach the server — check the URL.
           </span>
         )}
         {probe.isSuccess && probe.data.ok && (
-          <span className={`${styles['result']} ${styles['resultOk']}`}>
+          <span className={`${styles['result']!} ${styles['result-ok']!}`}>
             ✓ Connected · {probe.data.document_count?.toLocaleString() ?? '0'} documents
           </span>
         )}
         {probe.isSuccess && !probe.data.ok && (
-          <span className={`${styles['result']} ${styles['resultError']}`}>
+          <span className={`${styles['result']!} ${styles['result-error']!}`}>
             {probe.data.detail ?? 'The server rejected the connection.'}
           </span>
         )}
