@@ -344,3 +344,368 @@ content grid (loading, results, no-results).
 6. Products always appear on solid color fields — never on gradients, textures, or lifestyle backgrounds in hero modules
 7. Shadow is rare and always soft: `3px 5px 30px 0.22 opacity` or nothing at all
 8. Pill CTAs use 980px radius — this creates the signature Apple rounded-rectangle-that-looks-like-a-capsule shape
+
+---
+
+## 10. Implementation — Token System
+
+Sections 1-9 above document the design inspiration. Sections 10-14 document the
+**actual implementation** in `web/src/` — the components, tokens, patterns, and
+architectural decisions that exist in code. This is the live, authoritative
+reference for implementers.
+
+### 10.1 Token file locations
+
+| File | Purpose |
+|------|---------|
+| `web/src/styles/tokens.css` | All design tokens (CSS custom properties on `:root`) |
+| `web/src/styles/themes.css` | Light and dark theme overrides of token values |
+| `web/src/styles/global.css` | Resets, `@font-face`, base element styles |
+
+**Rule:** No component may contain a hardcoded colour, size, radius, or shadow.
+Every design value is a `var(--…)` reference. Stylelint enforces this — a literal
+`px` size or hex colour outside `tokens.css` fails CI.
+
+### 10.2 Token naming conventions
+
+- British spelling: `--colour-*`, never `--color-*`.
+- Semantic tokens (role-based) are preferred over literal tokens. Example:
+  `--colour-text-primary` not `--colour-near-black`.
+- Theme-independent tokens (forced-dark island, status colours, avatar palette,
+  accent-wash) are defined once on `:root` and **not** overridden in `themes.css`.
+- Theme-aware tokens are declared in `tokens.css` with light-theme fallback
+  values, and overridden for dark mode in `themes.css`.
+
+### 10.3 Token groups
+
+| Group | Prefix | Description |
+|-------|--------|-------------|
+| Colour roles | `--colour-*` | Backgrounds, text, accent, borders, overlays |
+| Forced-dark island | `--colour-dark-*` | Login/Setup screens — same in both themes |
+| Status colours | `--colour-status-*` | Badge/pill semantic colours |
+| Avatar palette | `--colour-avatar-0…5` | Deterministic per-user avatar backgrounds |
+| Accent variants | `--colour-accent-wash`, `--colour-accent-ring` | Translucent accent for highlights |
+| Font families | `--font-display`, `--font-text`, `--font-mono` | SF Pro stack |
+| Type scale | `--font-size-*`, `--font-weight-*`, etc. | Per-role size/weight/leading/tracking |
+| Spacing | `--spacing-1` … `--spacing-14` | 8px-base dense scale |
+| Radii | `--radius-micro` … `--radius-pill` | The six-rung border-radius ladder |
+| Shadows | `--shadow-card`, `--shadow-answer`, etc. | Soft, diffused — sparingly used |
+| Motion | `--duration-*`, `--easing-*` | Transition durations and curves |
+| Z-index | `--z-base` … `--z-modal` | Five-rung stacking ladder |
+| Breakpoints | `--bp-*` | Reference values (use raw values in `@media` queries) |
+| Dimensions | `--size-*`, `--width-*`, `--height-*` | Fixed component sizes |
+| Opacities | `--opacity-disabled` | Interaction state modifiers |
+| Settings controls | `--colour-toggle-*`, `--size-toggle-*`, etc. | Toggle/Segmented/NumberStepper |
+| Gradients | `--gradient-avatar-default` | Default avatar background |
+
+---
+
+## 11. Implementation — Component Library
+
+The component library lives under `web/src/components/` and is structured into
+three sub-layers: `primitives/` (atomic), `layout/` (structural), and
+`patterns/` (composed). All import directions obey CODE_GUIDELINES §12.3.
+
+### 11.1 Layer rules
+
+```
+pages/       → features/, components/layout/, api/, hooks/
+features/    → components/*, api/, hooks/
+components/  → lower components/, styles/
+styles/      → (nothing)
+api/, hooks/ → (nothing above)
+```
+
+**Crucial:** `features/` components may import from `components/` but never
+from `pages/`. A `pages/` component composes `features/` and `layout/` only —
+it never writes CSS or reaches into primitives directly.
+
+### 11.2 CSS module policy — the `features/.module.css` exception
+
+CODE_GUIDELINES §12.5 states "only `components/` carries styling". In practice,
+every `features/` sub-screen (IndexScreen, LibraryScreen, LoginScreen, etc.) ships
+its own `.module.css` for layout and spacing concerns that are specific to that
+screen and cannot be expressed purely by composing layout primitives.
+
+**Decision (Wave 7):** This pattern is codified as intentional, not a bug.
+The rule is refined as:
+
+- `components/` CSS modules: component identity, visual chrome, all tokens.
+- `features/` CSS modules: screen-level layout, spacing overrides, structural
+  grid/flex containers. **No hardcoded design values** — every value must still
+  reference a token.
+- `pages/` CSS modules: **prohibited.** Pages compose; they do not style.
+
+The boundary is: if a `features/` module is copy-pasting a component's visual
+chrome (colours, radii, shadows), it should extract a new `components/` primitive
+instead. Screen-level layout grids are fine to keep in `features/`.
+
+### 11.3 Primitives catalogue
+
+| Component | Tier | Props/Variants | Notes |
+|-----------|------|----------------|-------|
+| `Button` | primitives | `variant` (primary/secondary/destructive/ghost), `size` (default/small), `type`, `disabled` | Focus ring, hover, active states |
+| `IconButton` | primitives | `icon`, `label` (a11y), `size`, `variant` | Circular icon-only button |
+| `Input` | primitives | `label`, `type`, `surface` (light/dark), `error`, `disabled` | Dark surface for Login/Setup island |
+| `TextArea` | primitives | `label`, `surface`, `error`, `disabled` | Multi-line companion to Input |
+| `Link` | primitives | `href`, `variant` (default/pill), `external` | External links open in new tab, `rel="noopener"` |
+| `Badge` | primitives | `variant` (neutral/accent) | Inline label chip |
+| `RoleBadge` | primitives | `role` (admin/member/readonly) | Maps role to semantic colour token |
+| `StatusBadge` | primitives | `tone` (ok/warn/danger/info/neutral/violet) | Leading status dot + label |
+| `ScopePill` | primitives | `scope` (read/write/mcp) | API-key scope pill |
+| `Chip` | primitives | `selected`, `onRemove`, `removeLabel` | Filter chip with remove × |
+| `Card` | primitives | `children`, `className` | Surface container, one shadow level |
+| `Icon` | primitives | `name` (closed union), `size` (small/medium/large/xlarge) | SVG icon set |
+| `Spinner` | primitives | `size` (small/medium/large), `label` (a11y) | WCAG accessible; `role="status"` |
+| `Skeleton` | primitives | `kind` (line/control/block/media), `width` | Loading placeholder shimmer |
+| `Text` | primitives | `as` (span/p/strong/etc.), `variant` (body/caption/micro/card-title/…), `tone` (primary/secondary/tertiary) | Applies type-scale tokens |
+| `Avatar` | primitives | `initials`, `colour`, `size` | Coloured initials circle |
+| `Brand` | primitives | `size` | SVG paperless-ai logo mark |
+| `Tooltip` | primitives | `content`, `placement` | Hover label via a positioned overlay |
+| `Toggle` | primitives | `checked`, `onChange`, `label`, `disabled` | iOS-style on/off switch |
+| `Segmented` | primitives | `options`, `value`, `onChange` | Multi-option tab selector |
+| `NumberStepper` | primitives | `value`, `min`, `max`, `step`, `onChange`, `label` | ± stepper for numeric settings |
+| `StatTile` | primitives | `value`, `label`, `accent` | Single-stat display; `accent` applies the accent colour |
+| `Row` | primitives | `label`, `children`, `action`, `description`, `divider` | Settings row — two-column label/control layout |
+| `SectionCard` | primitives | `icon`, `title`, `description`, `children` | Settings section card with an icon header |
+| `FormField` | primitives | `label`, `id`, `error`, `hint`, `children` | Label + error wrapper for form controls |
+| `SettingsTextField` | primitives | `label`, `value`, `onChange`, `disabled`, `error` | Settings-specific text input row |
+| `SettingsSelectField` | primitives | `label`, `options`, `value`, `onChange`, `disabled` | Settings-specific select row |
+| `Table` | primitives | `columns` (Column[]), `data`, `keyField` | Data table with typed columns |
+| `SnippetText` | primitives | `text` | Renders `**bold**` runs as `<mark>` highlight chips |
+| `DocThumb` | primitives | `kind` (invoice/letter/statement), `matched` (row indices) | SVG document thumbnail |
+| `SourceCardSurface` | primitives | `index`, `thumbKind`, `matched`, `highlighted` | Two-column card shell (content + DocThumb + citation badge) |
+| `AnswerSurface` | primitives | `answer`, `sourceCount`, `latencyMs`, `refined`, `children` | Synthesised-answer card |
+| `CitationMark` | primitives | `index`, `onClick` | Inline citation chip `[n]` button |
+| `PipelineStages` | primitives | `stages` (StageStatus[]) | Search progress rail |
+| `Disclosure` | primitives | `summary`, `children`, `open` | `<details>` collapsible panel |
+| `RecentSearchStrip` | primitives | `searches`, `onSelect`, `onClear` | Idle-screen recent-search list |
+| `IndexStatusFooter` | primitives | `documentCount`, `ready` | Idle-screen index-status summary |
+| `DocumentViewerChrome` | primitives | `title`, `paperlessUrl`, `downloadUrl`, `onClose`, `children` | Forced-dark viewer frame |
+| `PdfFrame` | primitives | `src`, `title` | `<iframe>` PDF embed |
+
+### 11.4 Layout catalogue
+
+| Component | Props | Notes |
+|-----------|-------|-------|
+| `Page` | `children`, `className` | Root page wrapper: `--colour-bg`, `100dvh` min-height |
+| `Container` | `children`, `className` | Max-width (`--width-content-max`) + centring |
+| `Section` | `children`, `variant` (light/dark) | Alternating background section |
+| `Stack` | `direction`, `gap`, `align`, `wrap`, `children` | Flex column/row with gap token |
+| `Grid` | `columns`, `gap`, `children` | CSS grid wrapper |
+| `Divider` | `orientation` | Hairline separator |
+| `NavBar` | `brand`, `links`, `actions` | Glass navigation bar (`--colour-nav-bg`, `--backdrop-nav`, `--z-nav`) |
+| `SearchScreenLayout` | `variant` (centred/rail), `rail`, `children` | Search/Library page layout: centred single-column or filter-rail + content |
+| `SettingsLayout` | `children` | Settings page layout: left sidenav + right content pane |
+| `SettingsSideNav` | `items`, `activePath` | Settings left nav (vertical tabs) |
+| `ViewerSplit` | `sidebar`, `children` | Document-preview two-pane split |
+| `FullPageLoading` | `label` | Full-viewport spinner placeholder |
+
+### 11.5 Patterns catalogue
+
+| Component | Props | Notes |
+|-----------|-------|-------|
+| `SearchField` | `id`, `placeholder`, `onSubmit`, `defaultValue` | Pill-shaped search input |
+| `Select` | `id`, `label`, `options`, `value`, `onChange` | Custom listbox select (keyboard-navigable) |
+| `FilterPanel` | `title`, `children`, `open`, `onToggle` | Collapsible filter section |
+| `EmptyState` | `icon`, `message`, `description`, `action`, `className` | Empty/error placeholder with icon |
+| `Modal` | `open`, `title`, `onClose`, `children` | Centred dialog with focus trap |
+| `Toast` | `message`, `tone`, `onDismiss` | Transient notification |
+| `Tabs` | `items`, `activeId`, `onChange` | Horizontal tab bar |
+| `UserMenu` | `initials`, `displayName`, `username`, `email`, `onSignOut` | Avatar + dropdown menu |
+| `SortControl` | `id`, `label`, `options`, `value`, `onChange` | Sort-by select |
+| `ViewToggle` | `value` (grid/list), `onChange` | Icon-button pair for grid/list view |
+
+---
+
+## 12. Implementation — Screen Patterns
+
+### 12.1 Page structure
+
+Every authenticated page composes:
+
+```
+<Page>           ← min-height 100dvh, --colour-bg background
+  <AppNavBar />  ← glass nav (AppNavBar in features/shell/)
+  <ScreenComponent />
+</Page>
+```
+
+Login and Setup are unauthenticated dark-island pages — they compose their own
+layout and do not use `<Page>` or `<AppNavBar>`. Their screens are full-bleed
+dark (`--colour-dark-bg`).
+
+### 12.2 AppNavBar — canonical link set
+
+The authoritative nav link list is the `NAV_LINKS` constant in
+`web/src/features/shell/AppNavBar/AppNavBar.tsx`. The final link set is:
+
+| Link | Path | Condition |
+|------|------|-----------|
+| Search | `/` | All authenticated users (`end` match) |
+| Library | `/library` | All authenticated users |
+| Index | `/index` | All authenticated users |
+| Settings | `/settings` | Admin role only |
+
+Adding, removing, or renaming a nav link requires editing only `NAV_LINKS`.
+
+### 12.3 Document-preview pattern
+
+Documents are opened in-app via `DocumentPreviewScreen` exclusively — not via
+an external `paperless_url` deep-link. The three screens that open documents:
+
+| Screen | How it opens a document |
+|--------|------------------------|
+| `SearchPage` / `ResultsScreen` | "Preview" button on `SourceCard` calls `onPreview(id)` |
+| `LibraryScreen` | `LibraryCard` click calls `setPreviewDocumentId(id)` |
+| `IndexScreen` / `FailedDocumentsPanel` | "Preview" button calls `onOpen(id)` |
+
+All three set a `previewDocumentId` state, then render `DocumentPreviewScreen`
+as a full-bleed overlay in place of the normal screen content. The "Open in
+Paperless" external link in `SourceCard` and inside `DocumentViewerChrome` is a
+**supplementary** affordance, not the primary document-open mechanism.
+
+### 12.4 Loading / empty / error state consistency
+
+| State | Component | Notes |
+|-------|-----------|-------|
+| Loading | `<Spinner size="large" label="…" />` | `role="status"` for a11y |
+| Empty / no results | `<EmptyState icon="search" message="…" />` | Always with an icon and message |
+| Error | `<EmptyState icon="warning" message="…" />` wrapped in `role="alert"` div | Consistent across Search, Library, Index |
+| Loading placeholder | `<Skeleton kind="…" />` | Specific to layout-sensitive placeholders |
+
+### 12.5 Dark-island treatment
+
+`LoginScreen` and `FirstRunSetupScreen` use the forced-dark token group
+(`--colour-dark-*`). These tokens are theme-independent — identical in light and
+dark mode. Other screens use the standard theme-aware tokens and adapt via
+`themes.css` dark-mode overrides.
+
+---
+
+## 13. Implementation — Feature Components
+
+The `features/` layer contains domain-aware components that compose library
+primitives. Key feature groups:
+
+### 13.1 `features/shell`
+
+- `AppNavBar` — the authenticated application navigation bar. Composes `NavBar`,
+  `Brand`, `UserMenu`. Uses the `NAV_LINKS` data-driven definition (§12.2).
+
+### 13.2 `features/auth`
+
+- `LoginScreen` — dark-island two-column sign-in screen.
+- `FirstRunSetupScreen` — dark-island first-admin creation screen.
+- `credentials.ts` — shared username/password validation rules.
+
+### 13.3 `features/search`
+
+- `IdleScreen` — hero with `RecentSearchStrip` and `IndexStatusFooter`.
+- `LoadingScreen` — `PipelineStages` progress rail during a search.
+- `ResultsScreen` — `AnswerCard` + `FilterControls` + `SourceList`.
+- `NoResultsScreen`, `SearchErrorScreen`, `IndexNotReadyScreen` — error/empty states.
+- `AnswerCard` — wraps `AnswerSurface` with citation-mark interaction.
+- `SourceCard` — a single search result; "Preview" opens `DocumentPreviewScreen`.
+- `SourceList` — ordered list of `SourceCard`s.
+- `FilterControls` — filter rail (reused in Library).
+- `CitationLink` — inline `[n]` citation chip that highlights the corresponding source.
+- `QueryPlanSummary` — `Disclosure` wrapping the agentic query plan.
+- `DocumentPreviewScreen` — the in-app PDF viewer overlay (see §12.3).
+
+### 13.4 `features/library`
+
+- `LibraryScreen` — browse grid/list with search, filters, sort and pager.
+- `LibraryCard` — a single document card; click opens `DocumentPreviewScreen`.
+
+### 13.5 `features/index`
+
+- `IndexScreen` — ops dashboard: health hero, stat tiles, daemon cards, activity, failed docs.
+- `IndexHealthHero` — coloured health verdict banner.
+- `StatTile` — single-stat display (reuses `StatTile` primitive).
+- `DaemonCard` — per-daemon status card.
+- `ActivityRow` — one reconcile-cycle row in the activity list.
+- `FailedDocumentsPanel` — failed-document list; "Preview" opens `DocumentPreviewScreen`.
+- `RebuildIndexCard` — admin-only destructive rebuild section.
+
+### 13.6 `features/settings`
+
+- `SettingsScreen` — settings form with sections; uses `SettingsLayout`.
+- `SettingsSection` — one section card (uses `SectionCard` primitive).
+- `SecretField` — masked secret input with reveal toggle.
+- `TestConnectionRow` — Paperless API connection test action row.
+- `fieldModel.ts` — typed field definitions for every settings key.
+- `useUnsavedSettings.ts` — dirty-tracking hook for the settings form.
+
+### 13.7 `features/access`
+
+- `UsersScreen` — user table with stat tiles and invite/edit/disable actions.
+- `UserEditDrawer` — drawer modal for editing a user's role and status.
+- `APIKeysScreen` — API key list with create/edit/revoke actions.
+- `APIKeyCreatePanel`, `APIKeyEditPanel` — slide-in panels for key management.
+
+### 13.8 `features/document`
+
+- `DocumentMeta` — single-line correspondent · type · date meta row.
+- `DocumentSnippet` — matched snippet text with highlight marks.
+
+---
+
+## 14. Implementation — Architecture Decisions
+
+### 14.1 `features/.module.css` policy
+
+See §11.2 for the full decision. The short version: `features/` CSS modules are
+permitted for screen-level layout, but must reference tokens exclusively —
+no hardcoded values.
+
+### 14.2 No `pages/` CSS
+
+Pages compose; they never style. A `pages/` file has no `.module.css`. If a page
+needs visual treatment, the treatment belongs in a `features/` or `components/`
+component.
+
+### 14.3 Settings controls are primitives, not wrappers
+
+`SettingsTextField` and `SettingsSelectField` are primitives in `components/`.
+They are not wrappers around `Input`/`Select` — they implement the Apple-style
+settings row control (label column + control column) defined in the Settings
+handoff. The decision not to merge them with `Input`/`Select` is intentional:
+the settings layout is structurally different from a standard form input, and
+merging them via a `surface` variant would add complexity with no consumer benefit
+until a third use-case appears (§1.9 — three call sites before extraction).
+
+### 14.4 `StatTile` is the sole stat-display primitive
+
+Prior to Wave 7, `StatCard` (features) and `StatTile` (primitives) co-existed.
+Wave 7 consolidation removed `StatCard`; all stat displays use `StatTile`.
+
+### 14.5 Badge family
+
+Three badge components serve distinct semantic roles:
+
+| Component | Role |
+|-----------|------|
+| `Badge` | Generic neutral or accent label chip |
+| `RoleBadge` | Admin/member/readonly role indicator |
+| `StatusBadge` | Account status, health state, count indicator |
+| `ScopePill` | API key scope (read/write/mcp) |
+
+This is a documented family, not duplication — each carries distinct semantic
+colour tokens and renders different information shapes.
+
+### 14.6 Authentication model
+
+The frontend uses a signed `HttpOnly` session cookie (set by `POST /api/auth/login`).
+The `SEARCH_API_KEY` never appears in the bundle. A `401` response from any
+protected endpoint triggers `me`-query invalidation → `ProtectedRoute` redirect
+to `/login`. API keys (REST/MCP) are a separate credential and cannot authenticate
+the browser session.
+
+### 14.7 `DocumentPreviewScreen` interface
+
+The `source: SourceDocument` prop carries some search-specific fields (`snippet`,
+`score`) that Library and Index do not have. These are passed as harmless defaults
+(empty string / 0). The `paperless_url` field is `null` from Library (which has no
+deep-link URL) and `''` from Index — `DocumentViewerChrome` omits the
+"Open in Paperless" action for both falsy values.
