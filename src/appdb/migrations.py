@@ -140,6 +140,28 @@ def _migrate_v4(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_v5(conn: sqlite3.Connection) -> None:
+    """Apply the v5 schema: daemon_status and reconcile_activity (Wave 6).
+
+    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V5`
+    individually via ``conn.execute`` so every statement stays inside the
+    single explicit transaction :func:`run_migrations` opens —
+    ``conn.executescript`` is avoided because it issues an implicit
+    ``COMMIT``.
+
+    The import of ``SCHEMA_V5`` is deferred to the function body to break the
+    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
+    :func:`_migrate_v1` does.
+    """
+    # Deferred import breaks the schema <-> migrations circular dependency.
+    from appdb.schema import SCHEMA_V5  # noqa: PLC0415
+
+    for statement in SCHEMA_V5.split(";"):
+        stmt = statement.strip()
+        if stmt:
+            conn.execute(stmt)
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
@@ -148,6 +170,7 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (2, _migrate_v2),
     (3, _migrate_v3),
     (4, _migrate_v4),
+    (5, _migrate_v5),
 ]
 
 

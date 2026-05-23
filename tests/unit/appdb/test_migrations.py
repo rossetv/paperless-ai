@@ -129,18 +129,19 @@ def test_failing_migration_rolls_back_atomically(conn, monkeypatch) -> None:
     assert _schema_version(conn) is None
 
 
-def test_migration_v4_brings_schema_version_to_4(tmp_path) -> None:
-    """A fresh database migrates all the way to v4."""
+def test_migration_v4_creates_the_config_table_during_full_migration(tmp_path) -> None:
+    """The config table is present after a full migration chain."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
     conn = connect(str(tmp_path / "app.db"))
     try:
         ensure_schema(conn)
-        version = conn.execute(
-            "SELECT value FROM meta WHERE key = 'schema_version'"
-        ).fetchone()[0]
-        assert int(version) == 4
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(config)").fetchall()
+        }
+        assert "key" in columns
+        assert "value" in columns
     finally:
         conn.close()
 
@@ -217,5 +218,122 @@ def test_migration_v4_seeds_config_version_zero(tmp_path) -> None:
         ).fetchone()
         assert row is not None, "config_version row was not seeded"
         assert int(row[0]) == 0
+    finally:
+        conn.close()
+
+
+def test_migration_v5_brings_schema_version_to_5(tmp_path) -> None:
+    """A fresh database migrates all the way to v5."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        version = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0]
+        assert int(version) == 5
+    finally:
+        conn.close()
+
+
+def test_migration_v5_creates_the_daemon_status_table(tmp_path) -> None:
+    """Migration v5 creates daemon_status with the expected columns."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        columns = {
+            row[1]
+            for row in conn.execute(
+                "PRAGMA table_info(daemon_status)"
+            ).fetchall()
+        }
+        assert columns == {
+            "name",
+            "detail",
+            "processed_count",
+            "last_heartbeat",
+            "updated_at",
+        }
+    finally:
+        conn.close()
+
+
+def test_migration_v5_creates_the_reconcile_activity_table(tmp_path) -> None:
+    """Migration v5 creates reconcile_activity with the expected columns."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        columns = {
+            row[1]
+            for row in conn.execute(
+                "PRAGMA table_info(reconcile_activity)"
+            ).fetchall()
+        }
+        assert columns == {
+            "id",
+            "kind",
+            "started_at",
+            "finished_at",
+            "ok",
+            "summary",
+            "detail",
+        }
+    finally:
+        conn.close()
+
+
+def test_daemon_status_name_is_the_primary_key(tmp_path) -> None:
+    """daemon_status rejects a duplicate name — name is the primary key."""
+    import sqlite3
+
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO daemon_status "
+            "(name, detail, processed_count, last_heartbeat, updated_at) "
+            "VALUES ('ocr', 'idle', 0, ?, ?)",
+            ("2026-05-22T00:00:00+00:00", "2026-05-22T00:00:00+00:00"),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO daemon_status "
+                "(name, detail, processed_count, last_heartbeat, "
+                "updated_at) VALUES ('ocr', 'busy', 1, ?, ?)",
+                ("2026-05-22T00:01:00+00:00", "2026-05-22T00:01:00+00:00"),
+            )
+    finally:
+        conn.close()
+
+
+def test_reconcile_activity_kind_check_rejects_a_bad_kind(tmp_path) -> None:
+    """reconcile_activity.kind is CHECK-constrained to sync/sweep."""
+    import sqlite3
+
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO reconcile_activity "
+                "(kind, started_at, finished_at, ok, summary, detail) "
+                "VALUES ('explode', ?, ?, 1, '{}', 'x')",
+                ("2026-05-22T00:00:00+00:00", "2026-05-22T00:00:01+00:00"),
+            )
     finally:
         conn.close()

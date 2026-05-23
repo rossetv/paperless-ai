@@ -22,7 +22,7 @@ from appdb.migrations import run_migrations
 
 # The highest schema version the current code knows. Recorded in
 # meta.schema_version by the migration runner after the last migration.
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 5
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
@@ -152,6 +152,46 @@ CREATE TABLE IF NOT EXISTS config (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+"""
+
+
+# Migration v5 DDL — the Index dashboard's cross-process state (web-redesign
+# spec §5, Wave 6).
+#
+# daemon_status: one heartbeat row per daemon. Each of the four daemons
+# (ocr, classifier, indexer, search) upserts its row on every work cycle.
+# The dashboard's running/idle/stopped state is NOT stored — it is derived
+# at read time from last_heartbeat recency, so a crashed daemon that writes
+# nothing is correctly reported "stopped" without anyone having to write
+# that. processed_count is a monotonic throughput counter the daemon owns.
+#
+# reconcile_activity: an append-only log of the indexer's reconcile/sweep
+# cycles, so the dashboard can show "Recent activity". index.db keeps only
+# the latest reconcile timestamp (one value, overwritten) and is destroyed
+# by the destructive "Rebuild" action — this history lives in app.db
+# precisely so a rebuild does not erase it. kind is CHECK-constrained to the
+# two cycle kinds; summary is a JSON object of the SyncReport/SweepReport
+# counts.
+SCHEMA_V5: str = """
+CREATE TABLE IF NOT EXISTS daemon_status (
+    name            TEXT PRIMARY KEY
+                        CHECK (name IN ('ocr', 'classifier',
+                                        'indexer', 'search')),
+    detail          TEXT NOT NULL,
+    processed_count INTEGER NOT NULL DEFAULT 0,
+    last_heartbeat  TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reconcile_activity (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL CHECK (kind IN ('sync', 'sweep')),
+    started_at  TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    ok          INTEGER NOT NULL CHECK (ok IN (0, 1)),
+    summary     TEXT NOT NULL,
+    detail      TEXT NOT NULL
 );
 """
 
