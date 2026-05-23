@@ -1,0 +1,56 @@
+/*
+ * StatTile primitive — CSS Module.
+ *
+ * A small surface card: an uppercase micro label, a large display-scale
+ * figure, and an optional caption sub-line. Used in the Index dashboard
+ * stat row. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-13) var(--spacing-14);
+}
+
+/* ── Uppercase micro label. ── */
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Large headline figure. ── */
+.value {
+  font-family: var(--font-display);
+  font-size: var(--font-size-tile);
+  font-weight: var(--font-weight-heading);
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-tile);
+  color: var(--colour-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* ── Accent variant — the headline figure in the accent colour. ── */
+.accent {
+  color: var(--colour-accent);
+}
+
+/* ── Optional caption sub-line. ── */
+.sub {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
