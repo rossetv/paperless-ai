@@ -14,12 +14,11 @@ type Story = StoryObj<typeof meta>;
 export const Running: Story = {
   args: {
     daemon: {
-      key: 'ocr',
-      name: 'OCR',
-      role: 'Vision-model transcription of scanned pages',
+      name: 'ocr',
       state: 'running',
       detail: '3 documents in flight',
-      throughput: '412 pages / hr',
+      processed_count: 412,
+      last_heartbeat: '2026-05-22T08:59:50Z',
     },
   },
 };
@@ -27,12 +26,11 @@ export const Running: Story = {
 export const Idle: Story = {
   args: {
     daemon: {
-      key: 'indexer',
-      name: 'Indexer',
-      role: 'Reconciles Paperless into the SQLite index',
+      name: 'indexer',
       state: 'idle',
-      detail: 'Next cycle in 4m 21s',
-      throughput: 'incremental',
+      detail: 'idle',
+      processed_count: 14238,
+      last_heartbeat: '2026-05-22T08:58:00Z',
     },
   },
 };
@@ -40,12 +38,11 @@ export const Idle: Story = {
 export const Stopped: Story = {
   args: {
     daemon: {
-      key: 'classifier',
-      name: 'Classifier',
-      role: 'Title, correspondent, type, tags',
+      name: 'classifier',
       state: 'stopped',
-      detail: 'Process not running',
-      throughput: '—',
+      detail: 'idle',
+      processed_count: 0,
+      last_heartbeat: '2026-05-21T22:00:00Z',
     },
   },
 };
@@ -63,23 +60,21 @@ export const Row: StoryObj = {
       <DaemonCard daemon={Running.args!.daemon} />
       <DaemonCard
         daemon={{
-          key: 'classifier',
-          name: 'Classifier',
-          role: 'Title, correspondent, type, tags',
+          name: 'classifier',
           state: 'running',
           detail: '1 document in flight',
-          throughput: '62 docs / hr',
+          processed_count: 62,
+          last_heartbeat: '2026-05-22T08:59:48Z',
         }}
       />
       <DaemonCard daemon={Idle.args!.daemon} />
       <DaemonCard
         daemon={{
-          key: 'search',
-          name: 'Search',
-          role: 'HTTP + MCP server',
+          name: 'search',
           state: 'running',
-          detail: '0 in-flight / 4 concurrent cap',
-          throughput: '0 RPS',
+          detail: 'serving',
+          processed_count: 0,
+          last_heartbeat: '2026-05-22T08:59:55Z',
         }}
       />
     </div>

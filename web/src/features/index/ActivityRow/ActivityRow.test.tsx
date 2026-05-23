@@ -1,13 +1,19 @@
 import { render, screen } from '@testing-library/react';
 import { ActivityRow, relativeTime } from './ActivityRow';
-import type { ActivityEntry } from '../../../api/types';
+import type { ReconcileCycle } from '../../../api/types';
 
-const OK_ENTRY: ActivityEntry = {
-  id: 'r1',
-  status: 'ok',
-  label: 'Reconcile cycle complete',
-  detail: '+12 new · 3 updated · 312 chunks embedded · 1.8s',
-  at: '2026-05-22T08:56:00Z',
+/**
+ * Fixture mirrors `ReconcileCycleResponse` in `wire.py` exactly.
+ * Fields: id, kind, started_at, finished_at, ok, summary, detail.
+ */
+const OK_CYCLE: ReconcileCycle = {
+  id: 1,
+  kind: 'sync',
+  started_at: '2026-05-22T08:56:00Z',
+  finished_at: '2026-05-22T08:56:02Z',
+  ok: true,
+  summary: { indexed: 12, failed: 0, skipped: 3 },
+  detail: 'incremental sync complete',
 };
 
 describe('relativeTime', () => {
@@ -40,52 +46,51 @@ describe('relativeTime', () => {
 });
 
 describe('ActivityRow', () => {
-  it('renders the label', () => {
-    render(<ActivityRow entry={OK_ENTRY} />);
-    expect(screen.getByText('Reconcile cycle complete')).toBeInTheDocument();
+  it('renders the cycle kind label', () => {
+    render(<ActivityRow cycle={OK_CYCLE} />);
+    expect(screen.getByText(/reconcile cycle/i)).toBeInTheDocument();
   });
 
   it('renders the detail string', () => {
-    render(<ActivityRow entry={OK_ENTRY} />);
-    expect(
-      screen.getByText('+12 new · 3 updated · 312 chunks embedded · 1.8s'),
-    ).toBeInTheDocument();
+    render(<ActivityRow cycle={OK_CYCLE} />);
+    expect(screen.getByText(/incremental sync complete/)).toBeInTheDocument();
   });
 
-  it('renders a relative time derived from the timestamp', () => {
-    render(<ActivityRow entry={OK_ENTRY} />);
-    // The exact phrase depends on the real clock; assert the row renders a
-    // <time> element carrying the machine-readable timestamp.
-    const time = screen.getByText(/ago|now/i);
-    expect(time).toBeInTheDocument();
+  it('renders summary counts in the detail area', () => {
+    render(<ActivityRow cycle={OK_CYCLE} />);
+    // summary { indexed: 12, failed: 0, skipped: 3 } — zero counts are omitted
+    expect(screen.getByText(/12 indexed/)).toBeInTheDocument();
+    expect(screen.getByText(/3 skipped/)).toBeInTheDocument();
   });
 
   it('renders a <time> element with the ISO datetime attribute', () => {
-    const { container } = render(<ActivityRow entry={OK_ENTRY} />);
+    const { container } = render(<ActivityRow cycle={OK_CYCLE} />);
     const time = container.querySelector('time');
     expect(time).toHaveAttribute('dateTime', '2026-05-22T08:56:00Z');
   });
 
-  it('renders "now" for an entry with a null timestamp', () => {
-    render(
-      <ActivityRow
-        entry={{ ...OK_ENTRY, at: null, status: 'idle', label: 'Next cycle in 4m 21s' }}
-      />,
-    );
-    expect(screen.getByText('now')).toBeInTheDocument();
+  it('applies an ok dot class for a successful cycle', () => {
+    const { container } = render(<ActivityRow cycle={OK_CYCLE} />);
+    const dot = container.querySelector('[data-testid="activity-dot"]');
+    expect(dot?.className).toMatch(/ok/);
   });
 
-  it('applies a status-specific dot class', () => {
+  it('applies an error dot class for a failed cycle', () => {
     const { container } = render(
-      <ActivityRow entry={{ ...OK_ENTRY, status: 'error' }} />,
+      <ActivityRow cycle={{ ...OK_CYCLE, ok: false }} />,
     );
     const dot = container.querySelector('[data-testid="activity-dot"]');
     expect(dot?.className).toMatch(/error/);
   });
 
+  it('renders "sweep" kind as "Deletion sweep"', () => {
+    render(<ActivityRow cycle={{ ...OK_CYCLE, kind: 'sweep' }} />);
+    expect(screen.getByText(/deletion sweep/i)).toBeInTheDocument();
+  });
+
   it('forwards a custom className onto the root', () => {
     const { container } = render(
-      <ActivityRow entry={OK_ENTRY} className="extra" />,
+      <ActivityRow cycle={OK_CYCLE} className="extra" />,
     );
     expect(container.firstElementChild?.className).toContain('extra');
   });

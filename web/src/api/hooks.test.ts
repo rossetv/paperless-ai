@@ -35,7 +35,6 @@ import {
   useIndexStatus,
   useIndexActivity,
   useFailedDocuments,
-  useRetryFailedDocument,
   useRebuildIndex,
   useReconcile,
 } from './hooks';
@@ -599,53 +598,76 @@ describe('useDocuments', () => {
 // ---------------------------------------------------------------------------
 
 describe('index-operations hooks', () => {
+  /**
+   * STATUS_BODY mirrors `IndexStatusResponse` from `wire.py` exactly:
+   *   health: "ok" | "degraded" | "down"  (NOT an object)
+   *   daemons[].fields: name, state, detail, processed_count, last_heartbeat
+   */
   const STATUS_BODY = {
-    health: {
-      healthy: true,
-      headline: 'Healthy · ready to serve',
-      detail: 'Schema present.',
-      uptime: '14d 6h',
-      since: '2026-05-07T00:00:00Z',
-    },
-    daemons: [],
-    document_count: 14238,
-    chunk_count: 187612,
-    embedding_model: 'text-embedding-3-small',
-    index_size_bytes: 882900992,
+    health: 'ok',
+    daemons: [
+      {
+        name: 'ocr',
+        state: 'running',
+        detail: '3 in flight',
+        processed_count: 412,
+        last_heartbeat: '2026-05-22T08:59:50Z',
+      },
+    ],
   };
 
-  it('useIndexStatus resolves with the status payload', async () => {
+  it('useIndexStatus resolves with the status payload — health is a string', async () => {
     mockFetch(200, STATUS_BODY);
     const { result } = renderHook(() => useIndexStatus(), {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.document_count).toBe(14238);
-    expect(result.current.data?.health.healthy).toBe(true);
+    // health is the wire.py string verdict, not an object
+    expect(result.current.data?.health).toBe('ok');
+    expect(result.current.data?.daemons[0]?.name).toBe('ocr');
+    expect(result.current.data?.daemons[0]?.processed_count).toBe(412);
   });
 
-  it('useIndexActivity resolves with the activity entries', async () => {
+  it('useIndexActivity resolves with cycles (not entries)', async () => {
+    /**
+     * Body mirrors `IndexActivityResponse` from `wire.py`:
+     *   cycles: list[ReconcileCycleResponse]
+     *   (id, kind, started_at, finished_at, ok, summary, detail)
+     */
     mockFetch(200, {
-      entries: [
-        { id: 'r1', status: 'ok', label: 'Reconcile complete', detail: '+12', at: '2026-05-22T09:00:00Z' },
+      cycles: [
+        {
+          id: 1,
+          kind: 'sync',
+          started_at: '2026-05-22T09:00:00Z',
+          finished_at: '2026-05-22T09:00:02Z',
+          ok: true,
+          summary: { indexed: 12, failed: 0 },
+          detail: 'incremental sync complete',
+        },
       ],
     });
     const { result } = renderHook(() => useIndexActivity(), {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.entries).toHaveLength(1);
-    expect(result.current.data?.entries[0]?.id).toBe('r1');
+    expect(result.current.data?.cycles).toHaveLength(1);
+    expect(result.current.data?.cycles[0]?.id).toBe(1);
+    expect(result.current.data?.cycles[0]?.ok).toBe(true);
   });
 
-  it('useFailedDocuments resolves with the failed-document list', async () => {
+  it('useFailedDocuments resolves with the failed-document list — title nullable', async () => {
+    /**
+     * Body mirrors `IndexFailedResponse` from `wire.py`:
+     *   documents: list[FailedDocumentResponse]
+     *   (document_id, title: str|None, failure_count)
+     */
     mockFetch(200, {
       documents: [
         {
           document_id: 8421,
-          title: 'Scanned receipt',
-          reason: 'OCR refused',
-          failed_at: '2026-05-22T08:48:00Z',
+          title: null, // backend sends null when no indexed row exists
+          failure_count: 3,
         },
       ],
     });
@@ -654,24 +676,28 @@ describe('index-operations hooks', () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.documents[0]?.document_id).toBe(8421);
+    expect(result.current.data?.documents[0]?.failure_count).toBe(3);
+    expect(result.current.data?.documents[0]?.title).toBeNull();
   });
 
-  it('useRetryFailedDocument resolves on a successful POST', async () => {
-    mockFetch(202, null);
-    const { result } = renderHook(() => useRetryFailedDocument(), {
-      wrapper: makeWrapper(),
+  it('useRebuildIndex resolves with the RebuildResponse body', async () => {
+    /**
+     * Body mirrors `RebuildResponse` from `wire.py`:
+     *   accepted: bool
+     *   detail: str
+     */
+    mockFetch(200, {
+      accepted: true,
+      detail: 'Index rebuild triggered.',
     });
-    await result.current.mutateAsync(8421);
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-  });
-
-  it('useRebuildIndex resolves on a successful POST', async () => {
-    mockFetch(202, null);
     const { result } = renderHook(() => useRebuildIndex(), {
       wrapper: makeWrapper(),
     });
-    await result.current.mutateAsync();
+    const response = await result.current.mutateAsync();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // result is NOT void — carries accepted + detail
+    expect(response.accepted).toBe(true);
+    expect(typeof response.detail).toBe('string');
   });
 
   it('useReconcile resolves on a successful POST', async () => {

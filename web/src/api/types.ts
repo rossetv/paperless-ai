@@ -485,84 +485,97 @@ export type DaemonState = 'running' | 'idle' | 'stopped';
 /**
  * One worker daemon's status, as published to the Index dashboard.
  *
- * `key` identifies the daemon (`ocr` | `classifier` | `indexer` | `search`).
- * `detail` is a short human sentence ("3 documents in flight", "Next cycle
- * in 4m 21s"); `throughput` is a short metric string ("412 pages / hr").
+ * Matches `DaemonStatusResponse` in `wire.py` exactly.
+ *
+ * `name` is the daemon identifier (ocr / classifier / indexer / search).
+ * `detail` is a short human sentence describing the last activity.
+ * `processed_count` is the daemon's monotonic throughput counter.
+ * `last_heartbeat` is an ISO-8601 UTC timestamp.
  */
 export interface DaemonStatus {
-  key: 'ocr' | 'classifier' | 'indexer' | 'search';
   name: string;
-  role: string;
   state: DaemonState;
   detail: string;
-  throughput: string;
+  processed_count: number;
+  last_heartbeat: string;
 }
 
 /**
- * Overall index health, shown in the dashboard hero.
+ * The overall index health verdict.
  *
- * `healthy` is the single boolean the hero keys its tone on. `headline` and
- * `detail` are server-rendered human strings. `uptime` is a short string
- * ("14d 6h"); `since` is an ISO-8601 timestamp or `null`.
+ * Matches the `health` field of `IndexStatusResponse` in `wire.py`.
+ * `"ok"` — all daemons healthy; `"degraded"` — some daemons stopped;
+ * `"down"` — all daemons stopped or index unreadable.
  */
-export interface IndexHealth {
-  healthy: boolean;
-  headline: string;
-  detail: string;
-  uptime: string;
-  since: string | null;
-}
+export type IndexHealthStatus = 'ok' | 'degraded' | 'down';
 
-/** Response body for GET /api/index/status. */
+/**
+ * Response body for GET /api/index/status.
+ *
+ * Matches `IndexStatusResponse` in `wire.py` exactly.
+ */
 export interface IndexStatusResponse {
-  health: IndexHealth;
+  health: IndexHealthStatus;
   daemons: DaemonStatus[];
-  /** Headline figures for the stat-tile row. */
-  document_count: number;
-  chunk_count: number;
-  embedding_model: string | null;
-  index_size_bytes: number;
 }
-
-/** The outcome class of a single reconcile-activity entry. */
-export type ActivityStatus = 'ok' | 'warn' | 'idle' | 'error';
 
 /**
- * One entry in the reconcile-activity history.
+ * One recorded reconcile or sweep cycle in the activity history.
  *
- * `id` is a stable key for React lists. `status` drives the leading dot
- * colour. `label`/`detail` are server-rendered human strings. `at` is an
- * ISO-8601 timestamp; for the synthetic "next cycle" row the server sends
- * `at: null` and `status: 'idle'`.
+ * Matches `ReconcileCycleResponse` in `wire.py` exactly.
+ *
+ * `id` is a stable integer key for React lists. `kind` is `"sync"` or
+ * `"sweep"`. `ok` drives the leading dot colour. `summary` is the cycle's
+ * count map (e.g. `{"indexed": 3, "failed": 0}`). `started_at` /
+ * `finished_at` are ISO-8601 UTC timestamps.
  */
-export interface ActivityEntry {
-  id: string;
-  status: ActivityStatus;
-  label: string;
+export interface ReconcileCycle {
+  id: number;
+  kind: string;
+  started_at: string;
+  finished_at: string;
+  ok: boolean;
+  summary: Record<string, number>;
   detail: string;
-  at: string | null;
 }
 
-/** Response body for GET /api/index/activity. */
-export interface ActivityResponse {
-  entries: ActivityEntry[];
+/**
+ * Response body for GET /api/index/activity.
+ *
+ * Matches `IndexActivityResponse` in `wire.py` exactly.
+ */
+export interface IndexActivityResponse {
+  cycles: ReconcileCycle[];
 }
 
 /**
  * One document that failed OCR, classification or indexing.
  *
- * `document_id` is the Paperless document id. `reason` is the server's
- * human explanation; `failed_at` is an ISO-8601 timestamp. Documents are
- * opened via the in-app DocumentPreviewScreen, not by an external link.
+ * Matches `FailedDocumentResponse` in `wire.py` exactly.
+ *
+ * `title` is `null` when the document has no indexed row.
+ * `failure_count` is the number of consecutive cycles it has failed.
  */
 export interface FailedDocument {
   document_id: number;
-  title: string;
-  reason: string;
-  failed_at: string;
+  title: string | null;
+  failure_count: number;
 }
 
 /** Response body for GET /api/index/failed. */
-export interface FailedResponse {
+export interface IndexFailedResponse {
   documents: FailedDocument[];
+}
+
+/**
+ * Response body for POST /api/index/rebuild.
+ *
+ * Matches `RebuildResponse` in `wire.py` exactly.
+ *
+ * `accepted` is true when the sentinel was written successfully.
+ * `detail` is a human-readable note describing what happens next.
+ */
+export interface RebuildResponse {
+  accepted: boolean;
+  detail: string;
 }

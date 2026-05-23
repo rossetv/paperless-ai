@@ -1,14 +1,7 @@
+import React from 'react';
 import { cn } from '../../../lib/cn';
-import type { ActivityEntry, ActivityStatus } from '../../../api/types';
+import type { ReconcileCycle } from '../../../api/types';
 import styles from './ActivityRow.module.css';
-
-/** Maps an activity status to its dot CSS-module class name. */
-const STATUS_DOT_CLASS: Record<ActivityStatus, string> = {
-  ok: 'ok',
-  warn: 'warn',
-  idle: 'info',
-  error: 'error',
-};
 
 /**
  * Render an ISO-8601 timestamp as a short relative phrase.
@@ -37,9 +30,17 @@ export function relativeTime(at: string | null, now: Date = new Date()): string 
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Format a summary count map as a compact human string — "+3 indexed · 1 failed". */
+function formatSummary(summary: Record<string, number>): string {
+  const parts = Object.entries(summary)
+    .filter(([, count]) => count > 0)
+    .map(([key, count]) => `${count} ${key}`);
+  return parts.length > 0 ? parts.join(' · ') : '';
+}
+
 export interface ActivityRowProps {
-  /** The activity entry, from GET /api/index/activity. */
-  entry: ActivityEntry;
+  /** One reconcile cycle, from GET /api/index/activity. */
+  cycle: ReconcileCycle;
   /** When true the bottom divider is dropped (the last row in a list). */
   last?: boolean;
   /** Additional class names to merge onto the root. */
@@ -49,18 +50,19 @@ export interface ActivityRowProps {
 /**
  * One entry in the reconcile-activity history.
  *
- * A leading status dot, a relative time, and a label + detail pair. The
- * status drives the dot colour; the timestamp is rendered as a relative
- * phrase inside a `<time>` element carrying the machine-readable value.
+ * A leading status dot (ok/error tone), a relative `started_at` time, the
+ * cycle `kind` + `detail` label, and a compact summary of counts. The `ok`
+ * flag drives the dot colour.
  *
  * Tier: features/index (CODE_GUIDELINES §12.3) — takes a domain wire type.
  */
 export function ActivityRow({
-  entry,
+  cycle,
   last = false,
   className,
 }: ActivityRowProps): React.ReactElement {
-  const dotClass = styles[STATUS_DOT_CLASS[entry.status]];
+  const dotClass = styles[cycle.ok ? 'ok' : 'error'];
+  const summaryText = formatSummary(cycle.summary);
 
   return (
     <div className={cn(styles['row'], last && styles['last'], className)}>
@@ -69,16 +71,18 @@ export function ActivityRow({
         data-testid="activity-dot"
         aria-hidden="true"
       />
-      {entry.at !== null ? (
-        <time className={styles['time']} dateTime={entry.at}>
-          {relativeTime(entry.at)}
-        </time>
-      ) : (
-        <span className={styles['time']}>now</span>
-      )}
+      <time className={styles['time']} dateTime={cycle.started_at}>
+        {relativeTime(cycle.started_at)}
+      </time>
       <div>
-        <div className={styles['label']}>{entry.label}</div>
-        <div className={styles['detail']}>{entry.detail}</div>
+        <div className={styles['label']}>
+          {cycle.kind === 'sweep' ? 'Deletion sweep' : 'Reconcile cycle'}{' '}
+          {cycle.ok ? 'complete' : 'failed'}
+        </div>
+        <div className={styles['detail']}>
+          {cycle.detail}
+          {summaryText !== '' && ` · ${summaryText}`}
+        </div>
       </div>
     </div>
   );

@@ -1,27 +1,29 @@
+import React from 'react';
 import { cn } from '../../../lib/cn';
-import type { IndexHealth } from '../../../api/types';
+import type { IndexHealthStatus } from '../../../api/types';
 import styles from './IndexHealthHero.module.css';
 
-/**
- * Format an ISO-8601 timestamp as a UK long date — "7 May 2026".
- *
- * Returns `null` for a `null` input so the caller can omit the line. Uses
- * `en-GB` locale formatting (day · month name · year).
- */
-function formatSince(iso: string | null): string | null {
-  if (iso === null) {
-    return null;
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
+/** Human-readable label and tone for each health verdict. */
+const HEALTH_PRESENTATION: Record<
+  IndexHealthStatus,
+  { headline: string; detail: string; healthy: boolean }
+> = {
+  ok: {
+    headline: 'Healthy · ready to serve',
+    detail: 'All daemons running and heartbeating within the stale window.',
+    healthy: true,
+  },
+  degraded: {
+    headline: 'Degraded · some daemons stopped',
+    detail: 'One or more daemons have missed their heartbeat window.',
+    healthy: false,
+  },
+  down: {
+    headline: 'Down · no daemons running',
+    detail: 'All daemons have missed their heartbeat window or the index is unreadable.',
+    healthy: false,
+  },
+};
 
 /** Tick glyph for the healthy state. */
 function TickIcon(): React.ReactElement {
@@ -64,8 +66,8 @@ function WarningIcon(): React.ReactElement {
 }
 
 export interface IndexHealthHeroProps {
-  /** The overall index health, from GET /api/index/status. */
-  health: IndexHealth;
+  /** The overall index health verdict, from GET /api/index/status. */
+  health: IndexHealthStatus;
   /** Additional class names to merge onto the root. */
   className?: string;
 }
@@ -73,9 +75,9 @@ export interface IndexHealthHeroProps {
 /**
  * The Index dashboard health hero.
  *
- * A circular status icon (tick when healthy, warning triangle otherwise), a
- * "Status" eyebrow + headline + detail, and a right-aligned uptime block.
- * The icon tint and glyph flip on `health.healthy`.
+ * A circular status icon (tick when ok, warning triangle otherwise), a
+ * "Status" eyebrow + headline + detail. The icon tint and glyph flip on the
+ * `"ok"` verdict; `"degraded"` and `"down"` both use the unhealthy tone.
  *
  * Tier: features/index (CODE_GUIDELINES §12.3) — takes a domain wire type.
  */
@@ -83,30 +85,23 @@ export function IndexHealthHero({
   health,
   className,
 }: IndexHealthHeroProps): React.ReactElement {
-  const since = formatSince(health.since);
+  const { headline, detail, healthy } = HEALTH_PRESENTATION[health];
 
   return (
     <section className={cn(styles['hero'], className)}>
       <span
         className={cn(
           styles['icon'],
-          health.healthy ? styles['healthy'] : styles['unhealthy'],
+          healthy ? styles['healthy'] : styles['unhealthy'],
         )}
         data-testid="health-icon"
       >
-        {health.healthy ? <TickIcon /> : <WarningIcon />}
+        {healthy ? <TickIcon /> : <WarningIcon />}
       </span>
       <div>
         <div className={styles['eyebrow']}>Status</div>
-        <h2 className={styles['headline']}>{health.headline}</h2>
-        <p className={styles['detail']}>{health.detail}</p>
-      </div>
-      <div className={styles['uptime']}>
-        <span className={styles['eyebrow']}>Uptime</span>
-        <span className={styles['uptime-value']}>{health.uptime}</span>
-        {since !== null && (
-          <span className={styles['uptime-since']}>since {since}</span>
-        )}
+        <h2 className={styles['headline']}>{headline}</h2>
+        <p className={styles['detail']}>{detail}</p>
       </div>
     </section>
   );

@@ -37,7 +37,6 @@ import {
   getIndexStatus,
   getIndexActivity,
   getFailedDocuments,
-  retryFailedDocument,
   rebuildIndex,
   postReconcile,
 } from './client';
@@ -70,8 +69,9 @@ import type {
   DocumentsQuery,
   DocumentsResponse,
   IndexStatusResponse,
-  ActivityResponse,
-  FailedResponse,
+  IndexActivityResponse,
+  IndexFailedResponse,
+  RebuildResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -475,16 +475,17 @@ const INDEX_ACTIVITY_POLL_MS = 10_000;
 /**
  * The live index status — daemon statuses and index health.
  *
- * Polls every 5 s (`refetchInterval`) so the dashboard hero, stat tiles and
- * daemon cards stay current without a manual refresh. `refetchOnWindowFocus`
- * is left at its default (true) so switching back to the tab refreshes
- * immediately.
+ * Polls every 5 s (`refetchInterval`) so the dashboard hero and daemon cards
+ * stay current without a manual refresh. `retry: false` prevents
+ * TanStack Query from hammering the server with retries when the session has
+ * expired — a 401 should surface immediately to `ProtectedRoute`.
  */
 export function useIndexStatus(): UseQueryResult<IndexStatusResponse, Error> {
   return useQuery({
     queryKey: queryKeys.indexStatus(),
     queryFn: getIndexStatus,
     refetchInterval: INDEX_STATUS_POLL_MS,
+    retry: false,
   });
 }
 
@@ -492,44 +493,29 @@ export function useIndexStatus(): UseQueryResult<IndexStatusResponse, Error> {
  * The recent reconcile-activity history.
  *
  * Polls every 10 s — activity changes per reconcile cycle, which is coarser
- * than the second-to-second status.
+ * than the second-to-second status. `retry: false` for the same reason as
+ * `useIndexStatus`.
  */
-export function useIndexActivity(): UseQueryResult<ActivityResponse, Error> {
+export function useIndexActivity(): UseQueryResult<IndexActivityResponse, Error> {
   return useQuery({
     queryKey: queryKeys.indexActivity(),
     queryFn: getIndexActivity,
     refetchInterval: INDEX_ACTIVITY_POLL_MS,
+    retry: false,
   });
 }
 
 /**
  * The list of documents that failed OCR / classification / indexing.
  *
- * Not polled — the list only changes when a retry succeeds or a new failure
- * is recorded; the retry mutations invalidate this query, and the status
- * poll surfaces fresh failures on the next dashboard visit.
+ * Not polled — the list only changes when the indexer records a new failure.
+ * `retry: false` prevents hammering on a 401.
  */
-export function useFailedDocuments(): UseQueryResult<FailedResponse, Error> {
+export function useFailedDocuments(): UseQueryResult<IndexFailedResponse, Error> {
   return useQuery({
     queryKey: queryKeys.failedDocuments(),
     queryFn: getFailedDocuments,
-  });
-}
-
-/**
- * Retry one failed document — POST /api/index/failed/{id}/retry.
- *
- * On success the failed-documents list and the index status are invalidated
- * so the row disappears and the health hero reflects the re-queued work.
- */
-export function useRetryFailedDocument(): UseMutationResult<void, Error, number> {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: retryFailedDocument,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.failedDocuments() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
-    },
+    retry: false,
   });
 }
 
@@ -538,9 +524,10 @@ export function useRetryFailedDocument(): UseMutationResult<void, Error, number>
  *
  * DESTRUCTIVE and admin-only. On success the status and activity queries are
  * invalidated so the dashboard immediately reflects the index going into its
- * rebuilding state.
+ * rebuilding state. Resolves with a `RebuildResponse` so the success toast
+ * can surface the server's `detail` message.
  */
-export function useRebuildIndex(): UseMutationResult<void, Error, void> {
+export function useRebuildIndex(): UseMutationResult<RebuildResponse, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: rebuildIndex,

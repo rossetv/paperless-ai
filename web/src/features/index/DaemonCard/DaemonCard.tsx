@@ -1,6 +1,8 @@
+import React from 'react';
 import { cn } from '../../../lib/cn';
 import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBadge';
 import type { StatusTone } from '../../../components/primitives/StatusBadge/StatusBadge';
+import { relativeTime } from '../ActivityRow/ActivityRow';
 import type { DaemonStatus, DaemonState } from '../../../api/types';
 import styles from './DaemonCard.module.css';
 
@@ -21,12 +23,14 @@ export interface DaemonCardProps {
 /**
  * A status card for one worker daemon.
  *
- * Shows the daemon name, a `StatusBadge` for its run-state, a role sub-line,
- * and an inset row pairing a `detail` sentence with a `throughput` figure.
- * The run-state drives the badge tone via `STATE_PRESENTATION`.
+ * Shows the daemon name, a `StatusBadge` for its run-state, the daemon's
+ * `detail` sentence, its cumulative `processed_count`, and a relative
+ * "last seen" time derived from `last_heartbeat`. The run-state drives the
+ * badge tone via `STATE_PRESENTATION`.
  *
  * Tier: features/index (CODE_GUIDELINES §12.3) — composes the StatusBadge
- * primitive and takes a domain wire type.
+ * primitive, reuses `relativeTime` from ActivityRow, and takes a domain
+ * wire type.
  */
 export function DaemonCard({ daemon, className }: DaemonCardProps): React.ReactElement {
   const { tone, label } = STATE_PRESENTATION[daemon.state];
@@ -38,11 +42,15 @@ export function DaemonCard({ daemon, className }: DaemonCardProps): React.ReactE
         <span className={styles['spacer']} />
         <StatusBadge tone={tone}>{label}</StatusBadge>
       </div>
-      <p className={styles['role']}>{daemon.role}</p>
       <div className={styles['metrics']}>
         <span className={styles['detail']}>{daemon.detail}</span>
-        <span className={styles['throughput']}>{daemon.throughput}</span>
+        <span className={styles['throughput']}>
+          {daemon.processed_count.toLocaleString('en-GB')} processed
+        </span>
       </div>
+      <p className={styles['role']}>
+        Last seen {relativeTime(daemon.last_heartbeat)}
+      </p>
     </article>
   );
 }

@@ -6,7 +6,7 @@ import {
   useIndexStatus,
   useIndexActivity,
   useFailedDocuments,
-  useRetryFailedDocument,
+  useStats,
   useReconcile,
 } from '../../../api/hooks';
 import { IndexHealthHero } from '../IndexHealthHero/IndexHealthHero';
@@ -19,36 +19,13 @@ import { DocumentPreviewScreen } from '../../search/DocumentPreviewScreen/Docume
 import styles from './IndexScreen.module.css';
 
 /**
- * Format a byte count as a human-readable size — "842 MB", "1.4 GB".
- *
- * Uses 1024-based units and one decimal place above the MB threshold; bytes
- * and KB are shown whole. A non-finite or negative input falls back to "—".
- */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) {
-    return '—';
-  }
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const kb = bytes / 1024;
-  if (kb < 1024) {
-    return `${Math.round(kb)} KB`;
-  }
-  const mb = kb / 1024;
-  if (mb < 1024) {
-    return `${Math.round(mb)} MB`;
-  }
-  return `${(mb / 1024).toFixed(1)} GB`;
-}
-
-/**
  * The Index operations dashboard.
  *
- * Composes the health hero, a stat-tile row, the daemon-status cards, the
- * reconcile-activity list, the failed-documents panel and — for an admin —
- * the destructive rebuild card. Owns the status / activity / failed-document
- * queries (the first two poll) and the reconcile + retry mutations.
+ * Composes the health hero, a stat-tile row (from GET /api/stats), the
+ * daemon-status cards, the reconcile-activity list, the failed-documents
+ * panel and — for an admin — the destructive rebuild card. Owns the status /
+ * activity / failed-document / stats queries (the first two poll) and the
+ * reconcile mutation.
  *
  * Holds `previewDocumentId` state: when a failed-document's "Preview" button
  * is clicked, `FailedDocumentsPanel` calls `onOpen(id)`, which sets this
@@ -58,6 +35,10 @@ function formatBytes(bytes: number): string {
  * shows; if it errors an error message shows; otherwise the dashboard
  * renders. The activity and failed-document panels degrade independently —
  * each renders an empty list rather than blocking the page.
+ *
+ * The "Reconcile now" button is hidden for read-only callers — the backend
+ * gates that endpoint on Member+ role, so showing it to readonly users would
+ * produce a silent 403.
  *
  * Renders no `AppNavBar`: the `IndexPage` host wraps it, matching the Wave 1
  * page pattern.
@@ -70,18 +51,13 @@ export function IndexScreen(): React.ReactElement {
   const statusQuery = useIndexStatus();
   const activityQuery = useIndexActivity();
   const failedQuery = useFailedDocuments();
+  const statsQuery = useStats();
   const reconcile = useReconcile();
-  const retry = useRetryFailedDocument();
 
   const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
 
   const failedDocuments = failedQuery.data?.documents ?? [];
-
-  function handleRetryAll(): void {
-    for (const doc of failedDocuments) {
-      retry.mutate(doc.document_id);
-    }
-  }
+  const stats = statsQuery.data;
 
   return (
     <div className={styles['screen']}>
@@ -93,13 +69,15 @@ export function IndexScreen(): React.ReactElement {
             four daemons that keep it warm.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          disabled={reconcile.isPending}
-          onClick={() => reconcile.mutate()}
-        >
-          {reconcile.isPending ? 'Reconciling…' : 'Reconcile now'}
-        </Button>
+        {role !== 'readonly' && (
+          <Button
+            variant="secondary"
+            disabled={reconcile.isPending}
+            onClick={() => reconcile.mutate()}
+          >
+            {reconcile.isPending ? 'Reconciling…' : 'Reconcile now'}
+          </Button>
+        )}
       </header>
 
       {statusQuery.isLoading && (
@@ -121,26 +99,31 @@ export function IndexScreen(): React.ReactElement {
         <div className={styles['body']}>
           <IndexHealthHero health={statusQuery.data.health} />
 
-          <div className={styles['quad-row']}>
-            <StatTile
-              value={statusQuery.data.document_count.toLocaleString('en-GB')}
-              label="Documents indexed"
-              accent
-            />
-            <StatTile
-              value={statusQuery.data.chunk_count.toLocaleString('en-GB')}
-              label="Semantic chunks"
-            />
-            <StatTile
-              value={statusQuery.data.embedding_model ?? '—'}
-              label="Embedding model"
-            />
-            <StatTile
-              value={formatBytes(statusQuery.data.index_size_bytes)}
-              label="Index size on disk"
-              sub="/data/index.db"
-            />
-          </div>
+          {stats !== undefined && (
+            <div className={styles['quad-row']}>
+              <StatTile
+                value={(stats.document_count ?? 0).toLocaleString('en-GB')}
+                label="Documents indexed"
+                accent
+              />
+              <StatTile
+                value={(stats.chunk_count ?? 0).toLocaleString('en-GB')}
+                label="Semantic chunks"
+              />
+              <StatTile
+                value={stats.embedding_model ?? '—'}
+                label="Embedding model"
+              />
+              <StatTile
+                value={
+                  stats.last_reconcile_at !== null
+                    ? new Date(stats.last_reconcile_at).toLocaleDateString('en-GB')
+                    : '—'
+                }
+                label="Last reconcile"
+              />
+            </div>
+          )}
 
           <section>
             <div className={styles['section-head']}>
@@ -151,7 +134,7 @@ export function IndexScreen(): React.ReactElement {
             </div>
             <div className={styles['quad-row']}>
               {statusQuery.data.daemons.map((daemon) => (
-                <DaemonCard key={daemon.key} daemon={daemon} />
+                <DaemonCard key={daemon.name} daemon={daemon} />
               ))}
             </div>
           </section>
@@ -160,10 +143,10 @@ export function IndexScreen(): React.ReactElement {
             <section className={styles['activity-panel']}>
               <h3 className={styles['activity-head']}>Recent activity</h3>
               <div>
-                {(activityQuery.data?.entries ?? []).map((entry, i, all) => (
+                {(activityQuery.data?.cycles ?? []).map((cycle, i, all) => (
                   <ActivityRow
-                    key={entry.id}
-                    entry={entry}
+                    key={cycle.id}
+                    cycle={cycle}
                     last={i === all.length - 1}
                   />
                 ))}
@@ -172,10 +155,7 @@ export function IndexScreen(): React.ReactElement {
 
             <FailedDocumentsPanel
               documents={failedDocuments}
-              onRetry={(id) => retry.mutate(id)}
-              onRetryAll={handleRetryAll}
               onOpen={setPreviewDocumentId}
-              retrying={retry.isPending}
             />
           </div>
 
@@ -197,7 +177,7 @@ export function IndexScreen(): React.ReactElement {
         // failed-document row can open it without fabricating these.
         const source = {
           document_id: previewDoc.document_id,
-          title: previewDoc.title,
+          title: previewDoc.title ?? '',
           correspondent: null,
           document_type: null,
           created: null,

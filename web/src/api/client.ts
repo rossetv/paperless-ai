@@ -47,8 +47,9 @@ import type {
   DocumentsQuery,
   DocumentsResponse,
   IndexStatusResponse,
-  ActivityResponse,
-  FailedResponse,
+  IndexActivityResponse,
+  IndexFailedResponse,
+  RebuildResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -509,8 +510,8 @@ export async function getIndexStatus(): Promise<IndexStatusResponse> {
  * Drives the "Recent activity" panel. Polled on an interval by
  * `useIndexActivity`.
  */
-export async function getIndexActivity(): Promise<ActivityResponse> {
-  return request<ActivityResponse>(`${BASE_URL}/api/index/activity`, {
+export async function getIndexActivity(): Promise<IndexActivityResponse> {
+  return request<IndexActivityResponse>(`${BASE_URL}/api/index/activity`, {
     method: 'GET',
   });
 }
@@ -521,35 +522,21 @@ export async function getIndexActivity(): Promise<ActivityResponse> {
  *
  * Drives the "Failed documents" panel.
  */
-export async function getFailedDocuments(): Promise<FailedResponse> {
-  return request<FailedResponse>(`${BASE_URL}/api/index/failed`, {
+export async function getFailedDocuments(): Promise<IndexFailedResponse> {
+  return request<IndexFailedResponse>(`${BASE_URL}/api/index/failed`, {
     method: 'GET',
   });
 }
 
 /**
- * POST /api/index/failed/{id}/retry — re-queue one failed document.
- *
- * Resolves on 202 Accepted; throws `Unauthenticated` on 401 and `ApiError`
- * on any other non-2xx (notably 403 for a reader-role caller). `documentId`
- * is interpolated into the path; it is always a server-supplied integer so
- * no escaping is required.
- */
-export async function retryFailedDocument(documentId: number): Promise<void> {
-  return request<void>(
-    `${BASE_URL}/api/index/failed/${documentId}/retry`,
-    { method: 'POST' },
-  );
-}
-
-/**
  * POST /api/index/rebuild — destroy `index.db` and re-embed every document.
  *
- * DESTRUCTIVE and admin-only. Resolves on 202 Accepted; throws
- * `Unauthenticated` on 401 and `ApiError` on any other non-2xx (notably 403
- * for a non-admin caller). The caller (`RebuildIndexCard`) gates this behind
- * an explicit typed confirmation — `client.ts` itself adds no guard.
+ * DESTRUCTIVE and admin-only. Resolves on 200 OK with a `RebuildResponse`
+ * body; throws `Unauthenticated` on 401 and `ApiError` on any other non-2xx
+ * (notably 403 for a non-admin caller, 503 if the sentinel directory is not
+ * writable). The caller (`RebuildIndexCard`) gates this behind an explicit
+ * typed confirmation — `client.ts` itself adds no guard.
  */
-export async function rebuildIndex(): Promise<void> {
-  return request<void>(`${BASE_URL}/api/index/rebuild`, { method: 'POST' });
+export async function rebuildIndex(): Promise<RebuildResponse> {
+  return request<RebuildResponse>(`${BASE_URL}/api/index/rebuild`, { method: 'POST' });
 }

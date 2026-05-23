@@ -5,10 +5,7 @@ const meta = {
   title: 'Features/Index/FailedDocumentsPanel',
   component: FailedDocumentsPanel,
   parameters: { layout: 'padded' },
-  tags: ['autodocs'],
   args: {
-    onRetry: () => {},
-    onRetryAll: () => {},
     onOpen: () => {},
   },
 } satisfies Meta<typeof FailedDocumentsPanel>;
@@ -22,23 +19,14 @@ export const WithFailures: Story = {
       {
         document_id: 8421,
         title: 'Scanned receipt #2891 — illegible',
-        reason: 'OCR refused on all 3 model fallback attempts',
-        failed_at: '2026-05-22T08:48:00Z',
+        failure_count: 3,
       },
       {
         document_id: 7188,
-        title: 'Encrypted PDF · password protected',
-        reason: 'Page conversion failed: PDF requires password',
-        failed_at: '2026-05-22T07:00:00Z',
+        title: null, // backend sends null when no indexed row exists
+        failure_count: 1,
       },
     ],
-  },
-};
-
-export const Retrying: Story = {
-  args: {
-    ...WithFailures.args,
-    retrying: true,
   },
 };
 

@@ -36,7 +36,6 @@ import {
   getIndexStatus,
   getIndexActivity,
   getFailedDocuments,
-  retryFailedDocument,
   rebuildIndex,
 } from './client';
 import type {
@@ -45,8 +44,9 @@ import type {
   StatsResponse,
   SearchResponse,
   IndexStatusResponse,
-  ActivityResponse,
-  FailedResponse,
+  IndexActivityResponse,
+  IndexFailedResponse,
+  RebuildResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -840,28 +840,22 @@ describe('getDocuments', () => {
 // ---------------------------------------------------------------------------
 
 describe('index-operations endpoints', () => {
+  /**
+   * STATUS_BODY mirrors `IndexStatusResponse` from `wire.py` exactly.
+   * health: "ok" | "degraded" | "down"  (NOT an object)
+   * daemons[].fields: name, state, detail, processed_count, last_heartbeat
+   */
   const STATUS_BODY: IndexStatusResponse = {
-    health: {
-      healthy: true,
-      headline: 'Healthy · ready to serve',
-      detail: 'Schema present · integrity check passed.',
-      uptime: '14d 6h',
-      since: '2026-05-07T00:00:00Z',
-    },
+    health: 'ok',
     daemons: [
       {
-        key: 'ocr',
-        name: 'OCR',
-        role: 'Vision-model transcription',
-        state: 'running',
+        name: 'ocr',
+        state: 'running' as const,
         detail: '3 documents in flight',
-        throughput: '412 pages / hr',
+        processed_count: 412,
+        last_heartbeat: '2026-05-22T08:59:50Z',
       },
     ],
-    document_count: 14238,
-    chunk_count: 187612,
-    embedding_model: 'text-embedding-3-small',
-    index_size_bytes: 882900992,
   };
 
   it('getIndexStatus GETs /api/index/status with credentials', async () => {
@@ -871,9 +865,11 @@ describe('index-operations endpoints', () => {
     expect(url).toMatch(/\/api\/index\/status$/);
     expect(init.method).toBe('GET');
     expect(init.credentials).toBe('include');
-    expect(result.health.healthy).toBe(true);
-    expect(result.daemons[0]?.key).toBe('ocr');
-    expect(result.document_count).toBe(14238);
+    // health is a string verdict, not an object
+    expect(result.health).toBe('ok');
+    // daemon shape: name, state, detail, processed_count, last_heartbeat
+    expect(result.daemons[0]?.name).toBe('ocr');
+    expect(result.daemons[0]?.processed_count).toBe(412);
   });
 
   it('getIndexStatus throws Unauthenticated on 401', async () => {
@@ -881,10 +877,23 @@ describe('index-operations endpoints', () => {
     await expect(getIndexStatus()).rejects.toBeInstanceOf(Unauthenticated);
   });
 
-  it('getIndexActivity GETs /api/index/activity', async () => {
-    const body: ActivityResponse = {
-      entries: [
-        { id: 'r1', status: 'ok', label: 'Reconcile complete', detail: '+12 new', at: '2026-05-22T09:00:00Z' },
+  it('getIndexActivity GETs /api/index/activity — cycles not entries', async () => {
+    /**
+     * Body mirrors `IndexActivityResponse` from `wire.py`:
+     *   cycles: list[ReconcileCycleResponse]
+     *   (id, kind, started_at, finished_at, ok, summary, detail)
+     */
+    const body: IndexActivityResponse = {
+      cycles: [
+        {
+          id: 1,
+          kind: 'sync',
+          started_at: '2026-05-22T09:00:00Z',
+          finished_at: '2026-05-22T09:00:02Z',
+          ok: true,
+          summary: { indexed: 12, failed: 0 },
+          detail: 'incremental sync complete',
+        },
       ],
     };
     mockFetch(200, body);
@@ -892,17 +901,29 @@ describe('index-operations endpoints', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/index\/activity$/);
     expect(init.method).toBe('GET');
-    expect(result.entries[0]?.id).toBe('r1');
+    // The field is "cycles" not "entries"
+    expect(result.cycles[0]?.id).toBe(1);
+    expect(result.cycles[0]?.ok).toBe(true);
+    expect(result.cycles[0]?.summary).toEqual({ indexed: 12, failed: 0 });
   });
 
-  it('getFailedDocuments GETs /api/index/failed', async () => {
-    const body: FailedResponse = {
+  it('getFailedDocuments GETs /api/index/failed — title nullable, failure_count present', async () => {
+    /**
+     * Body mirrors `IndexFailedResponse` from `wire.py`:
+     *   documents: list[FailedDocumentResponse]
+     *   (document_id, title: str|None, failure_count)
+     */
+    const body: IndexFailedResponse = {
       documents: [
         {
           document_id: 8421,
           title: 'Scanned receipt #2891',
-          reason: 'OCR refused on all attempts',
-          failed_at: '2026-05-22T08:48:00Z',
+          failure_count: 3,
+        },
+        {
+          document_id: 7188,
+          title: null, // backend sends null when no indexed row exists
+          failure_count: 1,
         },
       ],
     };
@@ -912,33 +933,39 @@ describe('index-operations endpoints', () => {
     expect(url).toMatch(/\/api\/index\/failed$/);
     expect(init.method).toBe('GET');
     expect(result.documents[0]?.document_id).toBe(8421);
+    expect(result.documents[0]?.failure_count).toBe(3);
+    // title may be null
+    expect(result.documents[1]?.title).toBeNull();
   });
 
-  it('retryFailedDocument POSTs to /api/index/failed/{id}/retry', async () => {
-    mockFetch(202, null);
-    await expect(retryFailedDocument(8421)).resolves.toBeUndefined();
-    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/api\/index\/failed\/8421\/retry$/);
-    expect(init.method).toBe('POST');
-    expect(init.credentials).toBe('include');
-  });
-
-  it('retryFailedDocument throws ApiError on 403', async () => {
-    mockFetch(403, { detail: 'Forbidden' });
-    await expect(retryFailedDocument(8421)).rejects.toBeInstanceOf(ApiError);
-  });
-
-  it('rebuildIndex POSTs to /api/index/rebuild', async () => {
-    mockFetch(202, null);
-    await expect(rebuildIndex()).resolves.toBeUndefined();
+  it('rebuildIndex POSTs to /api/index/rebuild and resolves with RebuildResponse', async () => {
+    /**
+     * Body mirrors `RebuildResponse` from `wire.py`:
+     *   accepted: bool
+     *   detail: str
+     */
+    const body: RebuildResponse = {
+      accepted: true,
+      detail: 'Index rebuild triggered. The indexer will wipe and re-index the whole archive on its next cycle.',
+    };
+    mockFetch(200, body);
+    const result = await rebuildIndex();
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/index\/rebuild$/);
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
+    // result is NOT void — it carries accepted + detail
+    expect(result.accepted).toBe(true);
+    expect(typeof result.detail).toBe('string');
   });
 
   it('rebuildIndex throws ApiError on 403', async () => {
     mockFetch(403, { detail: 'Forbidden' });
+    await expect(rebuildIndex()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('rebuildIndex throws ApiError on 503 (sentinel directory not writable)', async () => {
+    mockFetch(503, { detail: 'cannot write sentinel: index data directory not writable' });
     await expect(rebuildIndex()).rejects.toBeInstanceOf(ApiError);
   });
 });
