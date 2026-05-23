@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ocr.daemon import _DaemonState, _iter_docs_to_ocr, _process_document, _reload_if_changed, main
+from ocr.daemon import (
+    _DaemonState,
+    _iter_docs_to_ocr,
+    _process_document,
+    _reload_if_changed,
+    main,
+)
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 

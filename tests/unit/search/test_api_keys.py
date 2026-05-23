@@ -45,10 +45,8 @@ def test_generated_key_has_substantial_entropy() -> None:
 
 
 def test_generated_key_is_url_safe_after_the_prefix() -> None:
-    body = generate_raw_key()[len(RAW_KEY_PREFIX):]
-    allowed = set(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-    )
+    body = generate_raw_key()[len(RAW_KEY_PREFIX) :]
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
     assert set(body) <= allowed
 
 

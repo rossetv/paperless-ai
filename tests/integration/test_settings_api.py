@@ -10,9 +10,6 @@ covered in test_settings_api_rbac.py.
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
-import httpx
 import pytest
 
 from appdb import config as config_store
@@ -23,7 +20,6 @@ from tests.integration.accounts_helpers import (
     open_app_db,
     seed_admin,
     seed_store,
-    seed_user,
 )
 
 
@@ -66,9 +62,7 @@ def test_get_settings_masks_secret_values(admin_client) -> None:
     client, app_db = admin_client
     config_store.set_value(app_db, "OPENAI_API_KEY", "sk-real-secret")
     response = client.get("/api/settings")
-    item = next(
-        i for i in response.json()["settings"] if i["key"] == "OPENAI_API_KEY"
-    )
+    item = next(i for i in response.json()["settings"] if i["key"] == "OPENAI_API_KEY")
     assert item["is_secret"] is True
     assert item["value"] == "********"
     assert "sk-real-secret" not in response.text
@@ -79,9 +73,7 @@ def test_get_settings_reveals_secret_with_reveal_flag(admin_client) -> None:
     client, app_db = admin_client
     config_store.set_value(app_db, "OPENAI_API_KEY", "sk-real-secret")
     response = client.get("/api/settings", params={"reveal": "true"})
-    item = next(
-        i for i in response.json()["settings"] if i["key"] == "OPENAI_API_KEY"
-    )
+    item = next(i for i in response.json()["settings"] if i["key"] == "OPENAI_API_KEY")
     assert item["value"] == "sk-real-secret"
 
 
@@ -90,9 +82,7 @@ def test_get_settings_reports_the_value_source(admin_client) -> None:
     client, app_db = admin_client
     config_store.set_value(app_db, "OCR_DPI", "275")
     response = client.get("/api/settings")
-    item = next(
-        i for i in response.json()["settings"] if i["key"] == "OCR_DPI"
-    )
+    item = next(i for i in response.json()["settings"] if i["key"] == "OCR_DPI")
     assert item["value"] == "275"
     assert item["source"] == "database"
 
@@ -100,9 +90,7 @@ def test_get_settings_reports_the_value_source(admin_client) -> None:
 def test_put_settings_persists_a_change(admin_client) -> None:
     """PUT /api/settings writes the change to the config table."""
     client, app_db = admin_client
-    response = client.put(
-        "/api/settings", json={"changes": {"OCR_DPI": "200"}}
-    )
+    response = client.put("/api/settings", json={"changes": {"OCR_DPI": "200"}})
     assert response.status_code == 200
     assert config_store.get(app_db, "OCR_DPI") == "200"
 
@@ -111,9 +99,7 @@ def test_put_settings_returns_the_full_reread_list(admin_client) -> None:
     """PUT responds with the whole re-read settings list, with the change
     reflected — the UI refreshes from this one response."""
     client, _ = admin_client
-    response = client.put(
-        "/api/settings", json={"changes": {"OCR_DPI": "200"}}
-    )
+    response = client.put("/api/settings", json={"changes": {"OCR_DPI": "200"}})
     body = response.json()
     from common.config import CONFIG_KEYS
 
@@ -148,9 +134,7 @@ def test_put_settings_bumps_the_config_version(admin_client) -> None:
 def test_put_settings_rejects_an_unknown_key(admin_client) -> None:
     """An unknown config key is a 400; the table is untouched."""
     client, app_db = admin_client
-    response = client.put(
-        "/api/settings", json={"changes": {"BOGUS_KEY": "x"}}
-    )
+    response = client.put("/api/settings", json={"changes": {"BOGUS_KEY": "x"}})
     assert response.status_code == 400
     assert config_store.get(app_db, "BOGUS_KEY") is None
 

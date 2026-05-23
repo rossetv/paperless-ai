@@ -124,9 +124,7 @@ def validate_change_set(
     """
     unknown = set(changes) - set(CONFIG_KEYS)
     if unknown:
-        raise ValueError(
-            f"unknown configuration key(s): {', '.join(sorted(unknown))}"
-        )
+        raise ValueError(f"unknown configuration key(s): {', '.join(sorted(unknown))}")
 
     # Build the would-be merged mapping and run the real Settings builder; it
     # raises ValueError naming the offending key on any invalid value.

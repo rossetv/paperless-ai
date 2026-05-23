@@ -47,8 +47,11 @@ def test_settings_response_wraps_a_list_of_items() -> None:
     response = SettingsResponse(
         settings=[
             SettingItemResponse(
-                key="OCR_DPI", value="300", source="default",
-                is_secret=False, requires_reindex=False,
+                key="OCR_DPI",
+                value="300",
+                source="default",
+                is_secret=False,
+                requires_reindex=False,
             )
         ]
     )
@@ -87,12 +90,8 @@ def test_test_connection_request_accepts_an_empty_token() -> None:
 
 
 def test_test_connection_response_carries_outcome() -> None:
-    ok = TestConnectionResponse(
-        ok=True, document_count=14238, detail="Connected."
-    )
-    bad = TestConnectionResponse(
-        ok=False, document_count=0, detail="401 Unauthorized"
-    )
+    ok = TestConnectionResponse(ok=True, document_count=14238, detail="Connected.")
+    bad = TestConnectionResponse(ok=False, document_count=0, detail="401 Unauthorized")
     assert ok.ok is True
     assert ok.document_count == 14238
     assert bad.ok is False

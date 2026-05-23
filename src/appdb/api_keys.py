@@ -165,9 +165,7 @@ def create(
     except sqlite3.IntegrityError as exc:
         conn.rollback()
         # The only UNIQUE constraint on api_keys is key_hash.
-        raise DuplicateKeyHashError(
-            "an API key with this hash already exists"
-        ) from exc
+        raise DuplicateKeyHashError("an API key with this hash already exists") from exc
     # A successful single-row INSERT always sets lastrowid; the assert narrows
     # the int | None the sqlite3 stub declares so the type checker is satisfied.
     new_api_key_id = cursor.lastrowid
@@ -234,9 +232,7 @@ def list_all(conn: sqlite3.Connection) -> list[ApiKey]:
     return [_row_to_api_key(row) for row in rows]
 
 
-def list_for_user(
-    conn: sqlite3.Connection, owner_user_id: int
-) -> list[ApiKey]:
+def list_for_user(conn: sqlite3.Connection, owner_user_id: int) -> list[ApiKey]:
     """Return every API key owned by *owner_user_id*, ordered by id.
 
     Backs ``GET /api/api-keys`` for a non-admin caller, who sees only their
@@ -250,16 +246,13 @@ def list_for_user(
         The owner's :class:`ApiKey` list; empty when they have none.
     """
     rows = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys "
-        "WHERE owner_user_id = ? ORDER BY id",
+        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE owner_user_id = ? ORDER BY id",
         (owner_user_id,),
     ).fetchall()
     return [_row_to_api_key(row) for row in rows]
 
 
-def revoke(
-    conn: sqlite3.Connection, api_key_id: int, *, revoked_at: str
-) -> None:
+def revoke(conn: sqlite3.Connection, api_key_id: int, *, revoked_at: str) -> None:
     """Mark the key with *api_key_id* revoked; a no-op when it is absent.
 
     Sets ``revoked_at`` to *revoked_at*. Revocation is a soft delete: the row
@@ -296,9 +289,7 @@ def delete(conn: sqlite3.Connection, api_key_id: int) -> None:
     log.info("appdb.api_key_deleted", api_key_id=api_key_id)
 
 
-def touch(
-    conn: sqlite3.Connection, api_key_id: int, *, used_at: str
-) -> None:
+def touch(conn: sqlite3.Connection, api_key_id: int, *, used_at: str) -> None:
     """Record a use of the key: stamp ``last_used_at`` and bump the count.
 
     Sets ``last_used_at`` to *used_at* and increments ``request_count`` by

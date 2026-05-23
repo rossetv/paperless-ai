@@ -19,9 +19,7 @@ from search.settings_service import (
 
 
 def test_view_reports_a_database_value_as_database_sourced() -> None:
-    views = view_settings(
-        config_table={"OCR_DPI": "175"}, environ={"OCR_DPI": "150"}
-    )
+    views = view_settings(config_table={"OCR_DPI": "175"}, environ={"OCR_DPI": "150"})
     by_key = {v.key: v for v in views}
     assert by_key["OCR_DPI"].effective_value == "175"
     assert by_key["OCR_DPI"].source == "database"
@@ -64,7 +62,8 @@ def test_validate_rejects_an_unknown_key() -> None:
             changes={"NOT_A_REAL_KEY": "x"},
             config_table={},
             environ={
-                "PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k",
+                "PAPERLESS_TOKEN": "t",
+                "OPENAI_API_KEY": "k",
             },
         )
 

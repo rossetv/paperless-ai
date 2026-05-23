@@ -204,7 +204,9 @@ def test_search_returns_correctly_mapped_response() -> None:
     raw_key = _seed_api_key(settings)
 
     response = client.post(
-        "/api/search", json={"query": "boiler warranty"}, headers=_bearer_headers(raw_key)
+        "/api/search",
+        json={"query": "boiler warranty"},
+        headers=_bearer_headers(raw_key),
     )
     assert response.status_code == 200
     body = response.json()

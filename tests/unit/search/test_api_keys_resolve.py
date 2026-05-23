@@ -29,9 +29,7 @@ from search.api_keys import (
 
 def _iso(delta_seconds: int) -> str:
     """An ISO-8601 UTC timestamp offset from now by delta_seconds."""
-    return (
-        datetime.now(timezone.utc) + timedelta(seconds=delta_seconds)
-    ).isoformat()
+    return (datetime.now(timezone.utc) + timedelta(seconds=delta_seconds)).isoformat()
 
 
 @pytest.fixture()

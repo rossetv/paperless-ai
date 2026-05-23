@@ -82,9 +82,7 @@ def extract_bearer(authorization_header: str | None) -> str | None:
     return authorization_header[len(_BEARER_PREFIX) :]
 
 
-def api_key_caller(
-    conn: sqlite3.Connection, bearer: str | None
-) -> CurrentUser | None:
+def api_key_caller(conn: sqlite3.Connection, bearer: str | None) -> CurrentUser | None:
     """Resolve an ``Authorization: Bearer`` API key to a :class:`CurrentUser`.
 
     Delegates to :func:`search.api_keys.resolve_api_key`, which hashes the

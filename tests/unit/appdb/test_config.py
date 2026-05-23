@@ -161,7 +161,8 @@ def test_seed_from_env_is_a_noop_when_the_table_is_not_empty(conn) -> None:
     """seed_from_env never overwrites an already-populated config table."""
     config_store.set_value(conn, "CHUNK_SIZE", "8000")
     seeded = config_store.seed_from_env(
-        conn, environ={"CHUNK_SIZE": "2000", "LOG_LEVEL": "DEBUG"},
+        conn,
+        environ={"CHUNK_SIZE": "2000", "LOG_LEVEL": "DEBUG"},
         keys={"CHUNK_SIZE", "LOG_LEVEL"},
     )
     assert seeded == 0

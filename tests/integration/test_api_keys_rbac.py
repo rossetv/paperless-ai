@@ -37,9 +37,7 @@ def env(tmp_path):
     seed_store(settings)
     app_db = open_app_db(tmp_path)
     admin = seed_admin(app_db, username="admin", password="admin-pw")
-    member = seed_user(
-        app_db, username="member", password="member-pw", role="member"
-    )
+    member = seed_user(app_db, username="member", password="member-pw", role="member")
     readonly = seed_user(
         app_db, username="reader", password="ro-password", role="readonly"
     )
@@ -80,6 +78,7 @@ def _bearer(raw):
 
 # --- scope enforcement on the data routes ------------------------------
 
+
 def test_api_scoped_key_reaches_the_data_routes(env) -> None:
     client, app_db, ids = env
     raw = _mint(app_db, owner_user_id=ids["member"], scopes="api")
@@ -116,6 +115,7 @@ def test_mcp_scoped_key_passes_the_mcp_auth_gate(env) -> None:
 
 # --- key management RBAC (spec §4.3) -----------------------------------
 
+
 def test_readonly_user_cannot_list_keys(env) -> None:
     client, _, _ = env
     assert login(client, username="reader", password="ro-password").status_code == 200
@@ -125,9 +125,7 @@ def test_readonly_user_cannot_list_keys(env) -> None:
 def test_readonly_user_cannot_create_a_key(env) -> None:
     client, _, _ = env
     login(client, username="reader", password="ro-password")
-    response = client.post(
-        "/api/api-keys", json={"name": "x", "scopes": ["api"]}
-    )
+    response = client.post("/api/api-keys", json={"name": "x", "scopes": ["api"]})
     assert response.status_code == 403
 
 
@@ -142,9 +140,7 @@ def test_readonly_user_cannot_edit_a_key(env) -> None:
     assert member_key is not None
 
     login(client, username="reader", password="ro-password")
-    response = client.patch(
-        f"/api/api-keys/{member_key.id}", json={"name": "x"}
-    )
+    response = client.patch(f"/api/api-keys/{member_key.id}", json={"name": "x"})
     # A read-only user is blocked at the management gate (403) regardless of
     # ownership — it never reaches the owner-only check.
     assert response.status_code == 403
@@ -156,9 +152,7 @@ def test_member_creates_and_lists_only_their_own_keys(env) -> None:
     _mint(app_db, owner_user_id=ids["admin"], scopes="api")
 
     login(client, username="member", password="member-pw")
-    created = client.post(
-        "/api/api-keys", json={"name": "mine", "scopes": ["api"]}
-    )
+    created = client.post("/api/api-keys", json={"name": "mine", "scopes": ["api"]})
     assert created.status_code == 201
     listing = client.get("/api/api-keys").json()["keys"]
     # The member sees ONLY their own key, not the admin's.
@@ -222,6 +216,7 @@ def test_admin_can_revoke_any_users_key(env) -> None:
 
 # --- key editing is owner-only (stricter than revoke) ------------------
 
+
 def test_member_can_edit_their_own_key(env) -> None:
     client, app_db, ids = env
     login(client, username="member", password="member-pw")
@@ -246,9 +241,7 @@ def test_member_cannot_edit_another_users_key(env) -> None:
     assert admin_key is not None
 
     login(client, username="member", password="member-pw")
-    response = client.patch(
-        f"/api/api-keys/{admin_key.id}", json={"name": "hijacked"}
-    )
+    response = client.patch(f"/api/api-keys/{admin_key.id}", json={"name": "hijacked"})
     # A member may not edit a key they do not own — 404 rather than 403
     # so the existence of the key is not revealed (MINOR-1).
     assert response.status_code == 404
@@ -283,15 +276,11 @@ def test_admin_scope_key_owned_by_a_member_cannot_manage_keys(env) -> None:
     But it must not see every key the way a true admin does."""
     client, app_db, ids = env
     # An Admin-scoped key owned by the MEMBER user.
-    member_admin_key = _mint(
-        app_db, owner_user_id=ids["member"], scopes="admin"
-    )
+    member_admin_key = _mint(app_db, owner_user_id=ids["member"], scopes="admin")
     # Another user's key exists.
     _mint(app_db, owner_user_id=ids["admin"], scopes="api")
 
-    listing = client.get(
-        "/api/api-keys", headers=_bearer(member_admin_key)
-    )
+    listing = client.get("/api/api-keys", headers=_bearer(member_admin_key))
     assert listing.status_code == 200
     keys = listing.json()["keys"]
     # The member-owned key lists only the member's keys (the Admin scope

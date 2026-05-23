@@ -462,7 +462,5 @@ def test_reindex_keys_are_the_chunking_and_embedding_keys() -> None:
     every one is a real config key."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS
 
-    assert REINDEX_KEYS == frozenset(
-        {"EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
-    )
+    assert REINDEX_KEYS == frozenset({"EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"})
     assert REINDEX_KEYS <= CONFIG_KEYS

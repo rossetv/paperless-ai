@@ -107,9 +107,7 @@ def build_settings_router() -> APIRouter:
     return router
 
 
-def _read_settings(
-    app_db: sqlite3.Connection, *, reveal: bool
-) -> SettingsResponse:
+def _read_settings(app_db: sqlite3.Connection, *, reveal: bool) -> SettingsResponse:
     """Build the settings list from the config table and the environment.
 
     Shared by GET /api/settings and the PUT response — the same list shape
@@ -156,9 +154,7 @@ def _put_settings(
 
     # Persist only the keys that genuinely changed. set_many bumps
     # config_version in the same transaction, so the change hot-loads.
-    config_store.set_many(
-        app_db, {k: body.changes[k] for k in changed}
-    )
+    config_store.set_many(app_db, {k: body.changes[k] for k in changed})
     log.info(
         "search.settings_updated",
         changed_count=len(changed),

@@ -155,5 +155,3 @@ class TestSearchSettingsBounds:
     def test_search_max_concurrent_clamped_to_zero(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_CONCURRENT": value})
         assert s.SEARCH_MAX_CONCURRENT == 0
-
-

@@ -110,17 +110,13 @@ def _client(conn) -> TestClient:
 
 def _cookie_login(conn, *, role: str, username: str = "u") -> str:
     """Create a user of *role* and return a live session token."""
-    user = create_user(
-        conn, username=username, password_hash="h", role=role
-    )
+    user = create_user(conn, username=username, password_hash="h", role=role)
     return begin_session(conn, user_id=user.id, ttl_seconds=3600).token
 
 
 def _mint_key(conn, *, role: str, scopes: str, username: str) -> str:
     """Create a user of *role* and an API key with *scopes*; return the key."""
-    user = create_user(
-        conn, username=username, password_hash="h", role=role
-    )
+    user = create_user(conn, username=username, password_hash="h", role=role)
     raw = generate_raw_key()
     create_key(
         conn,
@@ -138,6 +134,7 @@ def _bearer(raw_key: str) -> dict[str, str]:
 
 
 # --- get_current_user --------------------------------------------------
+
 
 def test_get_current_user_resolves_a_session_cookie(conn) -> None:
     token = _cookie_login(conn, role="member", username="alice")
@@ -171,9 +168,7 @@ def test_get_current_user_401_for_an_unknown_bearer(conn) -> None:
 
 
 def test_get_current_user_401_for_a_suspended_user(conn) -> None:
-    user = create_user(
-        conn, username="susie", password_hash="h", role="member"
-    )
+    user = create_user(conn, username="susie", password_hash="h", role="member")
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
     update_user(conn, user.id, status="suspended")
     client = _client(conn)
@@ -182,6 +177,7 @@ def test_get_current_user_401_for_a_suspended_user(conn) -> None:
 
 
 # --- require_role ------------------------------------------------------
+
 
 def test_require_role_allows_a_sufficient_role(conn) -> None:
     token = _cookie_login(conn, role="member")
@@ -203,6 +199,7 @@ def test_require_role_401s_when_unauthenticated(conn) -> None:
 
 # --- require_admin -----------------------------------------------------
 
+
 def test_require_admin_allows_an_admin_cookie(conn) -> None:
     token = _cookie_login(conn, role="admin")
     client = _client(conn)
@@ -218,33 +215,24 @@ def test_require_admin_403s_a_member_cookie(conn) -> None:
 
 
 def test_require_admin_allows_an_admin_key_with_admin_scope(conn) -> None:
-    raw = _mint_key(
-        conn, role="admin", scopes="admin", username="adminkey"
-    )
-    assert _client(conn).get(
-        "/admin-area", headers=_bearer(raw)
-    ).status_code == 200
+    raw = _mint_key(conn, role="admin", scopes="admin", username="adminkey")
+    assert _client(conn).get("/admin-area", headers=_bearer(raw)).status_code == 200
 
 
 def test_require_admin_403s_an_admin_key_without_admin_scope(conn) -> None:
     """An admin owner is not enough — the key itself needs the Admin scope."""
     raw = _mint_key(conn, role="admin", scopes="api", username="apikey")
-    assert _client(conn).get(
-        "/admin-area", headers=_bearer(raw)
-    ).status_code == 403
+    assert _client(conn).get("/admin-area", headers=_bearer(raw)).status_code == 403
 
 
 def test_require_admin_403s_an_admin_scope_key_owned_by_a_member(conn) -> None:
     """A key never exceeds its owner's role, scope or no scope."""
-    raw = _mint_key(
-        conn, role="member", scopes="admin", username="memberkey"
-    )
-    assert _client(conn).get(
-        "/admin-area", headers=_bearer(raw)
-    ).status_code == 403
+    raw = _mint_key(conn, role="member", scopes="admin", username="memberkey")
+    assert _client(conn).get("/admin-area", headers=_bearer(raw)).status_code == 403
 
 
 # --- require_api_scope -------------------------------------------------
+
 
 def test_api_scope_allows_a_cookie_user_without_any_scope(conn) -> None:
     """A logged-in human is never scope-limited."""
@@ -256,19 +244,16 @@ def test_api_scope_allows_a_cookie_user_without_any_scope(conn) -> None:
 
 def test_api_scope_allows_a_key_with_the_api_scope(conn) -> None:
     raw = _mint_key(conn, role="member", scopes="api", username="k1")
-    assert _client(conn).get(
-        "/api-area", headers=_bearer(raw)
-    ).status_code == 200
+    assert _client(conn).get("/api-area", headers=_bearer(raw)).status_code == 200
 
 
 def test_api_scope_403s_a_key_without_the_api_scope(conn) -> None:
     raw = _mint_key(conn, role="member", scopes="mcp", username="k2")
-    assert _client(conn).get(
-        "/api-area", headers=_bearer(raw)
-    ).status_code == 403
+    assert _client(conn).get("/api-area", headers=_bearer(raw)).status_code == 403
 
 
 # --- require_api_scope_member -----------------------------------------
+
 
 def test_api_member_scope_403s_a_readonly_cookie(conn) -> None:
     token = _cookie_login(conn, role="readonly")
@@ -279,22 +264,19 @@ def test_api_member_scope_403s_a_readonly_cookie(conn) -> None:
 
 def test_api_member_scope_allows_a_member_key_with_api_scope(conn) -> None:
     raw = _mint_key(conn, role="member", scopes="api", username="k3")
-    assert _client(conn).get(
-        "/api-member-area", headers=_bearer(raw)
-    ).status_code == 200
+    assert (
+        _client(conn).get("/api-member-area", headers=_bearer(raw)).status_code == 200
+    )
 
 
 # --- require_mcp_scope -------------------------------------------------
 
+
 def test_mcp_scope_allows_a_key_with_the_mcp_scope(conn) -> None:
     raw = _mint_key(conn, role="readonly", scopes="mcp", username="k4")
-    assert _client(conn).get(
-        "/mcp-area", headers=_bearer(raw)
-    ).status_code == 200
+    assert _client(conn).get("/mcp-area", headers=_bearer(raw)).status_code == 200
 
 
 def test_mcp_scope_403s_a_key_without_the_mcp_scope(conn) -> None:
     raw = _mint_key(conn, role="readonly", scopes="api", username="k5")
-    assert _client(conn).get(
-        "/mcp-area", headers=_bearer(raw)
-    ).status_code == 403
+    assert _client(conn).get("/mcp-area", headers=_bearer(raw)).status_code == 403

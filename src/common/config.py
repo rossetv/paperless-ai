@@ -72,23 +72,57 @@ SECRET_KEYS: frozenset[str] = frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 # — Wave 3 retired the legacy bearer-token path, so no process reads it.
 CONFIG_KEYS: frozenset[str] = frozenset(
     {
-        "PAPERLESS_URL", "PAPERLESS_PUBLIC_URL", "PAPERLESS_TOKEN",
-        "LLM_PROVIDER", "OLLAMA_BASE_URL", "OPENAI_API_KEY", "AI_MODELS",
-        "OCR_REFUSAL_MARKERS", "OCR_INCLUDE_PAGE_MODELS", "PRE_TAG_ID",
-        "POST_TAG_ID", "OCR_PROCESSING_TAG_ID", "CLASSIFY_PRE_TAG_ID",
-        "CLASSIFY_POST_TAG_ID", "CLASSIFY_PROCESSING_TAG_ID", "ERROR_TAG_ID",
-        "POLL_INTERVAL", "MAX_RETRIES", "MAX_RETRY_BACKOFF_SECONDS",
-        "REQUEST_TIMEOUT", "LLM_MAX_CONCURRENT", "OCR_DPI", "OCR_MAX_SIDE",
-        "PAGE_WORKERS", "DOCUMENT_WORKERS", "LOG_LEVEL", "LOG_FORMAT",
-        "CLASSIFY_PERSON_FIELD_ID", "CLASSIFY_DEFAULT_COUNTRY_TAG",
-        "CLASSIFY_MAX_CHARS", "CLASSIFY_MAX_TOKENS", "CLASSIFY_TAG_LIMIT",
-        "CLASSIFY_TAXONOMY_LIMIT", "CLASSIFY_MAX_PAGES",
-        "CLASSIFY_TAIL_PAGES", "CLASSIFY_HEADERLESS_CHAR_LIMIT",
-        "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS", "EMBEDDING_MAX_CONCURRENT",
-        "RECONCILE_INTERVAL", "DELETION_SWEEP_INTERVAL", "CHUNK_SIZE",
-        "CHUNK_OVERLAP", "SEARCH_TOP_K", "SEARCH_MAX_REFINEMENTS",
-        "SEARCH_PLANNER_MODEL", "SEARCH_ANSWER_MODEL", "SEARCH_SERVER_HOST",
-        "SEARCH_SERVER_PORT", "SEARCH_SESSION_TTL", "SEARCH_MAX_CONCURRENT",
+        "PAPERLESS_URL",
+        "PAPERLESS_PUBLIC_URL",
+        "PAPERLESS_TOKEN",
+        "LLM_PROVIDER",
+        "OLLAMA_BASE_URL",
+        "OPENAI_API_KEY",
+        "AI_MODELS",
+        "OCR_REFUSAL_MARKERS",
+        "OCR_INCLUDE_PAGE_MODELS",
+        "PRE_TAG_ID",
+        "POST_TAG_ID",
+        "OCR_PROCESSING_TAG_ID",
+        "CLASSIFY_PRE_TAG_ID",
+        "CLASSIFY_POST_TAG_ID",
+        "CLASSIFY_PROCESSING_TAG_ID",
+        "ERROR_TAG_ID",
+        "POLL_INTERVAL",
+        "MAX_RETRIES",
+        "MAX_RETRY_BACKOFF_SECONDS",
+        "REQUEST_TIMEOUT",
+        "LLM_MAX_CONCURRENT",
+        "OCR_DPI",
+        "OCR_MAX_SIDE",
+        "PAGE_WORKERS",
+        "DOCUMENT_WORKERS",
+        "LOG_LEVEL",
+        "LOG_FORMAT",
+        "CLASSIFY_PERSON_FIELD_ID",
+        "CLASSIFY_DEFAULT_COUNTRY_TAG",
+        "CLASSIFY_MAX_CHARS",
+        "CLASSIFY_MAX_TOKENS",
+        "CLASSIFY_TAG_LIMIT",
+        "CLASSIFY_TAXONOMY_LIMIT",
+        "CLASSIFY_MAX_PAGES",
+        "CLASSIFY_TAIL_PAGES",
+        "CLASSIFY_HEADERLESS_CHAR_LIMIT",
+        "EMBEDDING_MODEL",
+        "EMBEDDING_DIMENSIONS",
+        "EMBEDDING_MAX_CONCURRENT",
+        "RECONCILE_INTERVAL",
+        "DELETION_SWEEP_INTERVAL",
+        "CHUNK_SIZE",
+        "CHUNK_OVERLAP",
+        "SEARCH_TOP_K",
+        "SEARCH_MAX_REFINEMENTS",
+        "SEARCH_PLANNER_MODEL",
+        "SEARCH_ANSWER_MODEL",
+        "SEARCH_SERVER_HOST",
+        "SEARCH_SERVER_PORT",
+        "SEARCH_SESSION_TTL",
+        "SEARCH_MAX_CONCURRENT",
     }
 )
 
@@ -250,9 +284,7 @@ def _resolve_server_port(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_SERVER_PORT`` to the valid TCP port range."""
     port = _get_int_env(source, "SEARCH_SERVER_PORT", 8080)
     if not 1 <= port <= 65535:
-        raise ValueError(
-            f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}."
-        )
+        raise ValueError(f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}.")
     return port
 
 
@@ -407,9 +439,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     # single-URL deployments are unaffected. Both are stored stripped of
     # any trailing slash so callers can append paths cleanly.
     paperless_url = source.get("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
-    paperless_public_url = source.get(
-        "PAPERLESS_PUBLIC_URL", paperless_url
-    ).rstrip("/")
+    paperless_public_url = source.get("PAPERLESS_PUBLIC_URL", paperless_url).rstrip("/")
 
     return Settings(
         PAPERLESS_URL=paperless_url,
@@ -425,13 +455,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         OCR_REFUSAL_MARKERS=[
             marker.lower()
             for marker in _get_csv_env(
-                source, "OCR_REFUSAL_MARKERS",
+                source,
+                "OCR_REFUSAL_MARKERS",
                 [*REFUSAL_PHRASES, _REFUSAL_MARK],
             )
         ],
-        OCR_INCLUDE_PAGE_MODELS=_get_bool_env(
-            source, "OCR_INCLUDE_PAGE_MODELS", False
-        ),
+        OCR_INCLUDE_PAGE_MODELS=_get_bool_env(source, "OCR_INCLUDE_PAGE_MODELS", False),
         PRE_TAG_ID=_get_int_env(source, "PRE_TAG_ID", 443),
         POST_TAG_ID=post_tag_id,
         OCR_PROCESSING_TAG_ID=_get_optional_positive_int_env(
@@ -444,9 +473,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_PROCESSING_TAG_ID=_get_optional_positive_int_env(
             source, "CLASSIFY_PROCESSING_TAG_ID"
         ),
-        ERROR_TAG_ID=_get_optional_positive_int_env(
-            source, "ERROR_TAG_ID", 552
-        ),
+        ERROR_TAG_ID=_get_optional_positive_int_env(source, "ERROR_TAG_ID", 552),
         POLL_INTERVAL=_get_int_env(source, "POLL_INTERVAL", 15),
         MAX_RETRIES=_require_at_least_one(
             "MAX_RETRIES", _get_int_env(source, "MAX_RETRIES", 20)
@@ -471,21 +498,13 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
         ).strip(),
         CLASSIFY_MAX_CHARS=_get_int_env(source, "CLASSIFY_MAX_CHARS", 0),
-        CLASSIFY_MAX_TOKENS=max(
-            0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)
-        ),
-        CLASSIFY_TAG_LIMIT=max(
-            0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)
-        ),
+        CLASSIFY_MAX_TOKENS=max(0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)),
+        CLASSIFY_TAG_LIMIT=max(0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)),
         CLASSIFY_TAXONOMY_LIMIT=max(
             0, _get_int_env(source, "CLASSIFY_TAXONOMY_LIMIT", 100)
         ),
-        CLASSIFY_MAX_PAGES=max(
-            0, _get_int_env(source, "CLASSIFY_MAX_PAGES", 3)
-        ),
-        CLASSIFY_TAIL_PAGES=max(
-            0, _get_int_env(source, "CLASSIFY_TAIL_PAGES", 2)
-        ),
+        CLASSIFY_MAX_PAGES=max(0, _get_int_env(source, "CLASSIFY_MAX_PAGES", 3)),
+        CLASSIFY_TAIL_PAGES=max(0, _get_int_env(source, "CLASSIFY_TAIL_PAGES", 2)),
         CLASSIFY_HEADERLESS_CHAR_LIMIT=max(
             0, _get_int_env(source, "CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
         ),
@@ -513,12 +532,8 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
         ),
         SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(source),
-        SEARCH_PLANNER_MODEL=source.get(
-            "SEARCH_PLANNER_MODEL", default_planner_model
-        ),
-        SEARCH_ANSWER_MODEL=source.get(
-            "SEARCH_ANSWER_MODEL", default_answer_model
-        ),
+        SEARCH_PLANNER_MODEL=source.get("SEARCH_PLANNER_MODEL", default_planner_model),
+        SEARCH_ANSWER_MODEL=source.get("SEARCH_ANSWER_MODEL", default_answer_model),
         # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
         # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
         # operator restrict exposure at the reverse proxy / port map.
@@ -528,9 +543,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
         ),
         # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
-        SEARCH_MAX_CONCURRENT=max(
-            0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)
-        ),
+        SEARCH_MAX_CONCURRENT=max(0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)),
     )
 
 
@@ -582,9 +595,7 @@ def load_settings(app_db_path: str) -> Settings:
     conn = connect(app_db_path)
     try:
         ensure_schema(conn)
-        config_store.seed_from_env(
-            conn, environ=os.environ, keys=set(CONFIG_KEYS)
-        )
+        config_store.seed_from_env(conn, environ=os.environ, keys=set(CONFIG_KEYS))
         stored = config_store.get_all(conn)
     finally:
         conn.close()
