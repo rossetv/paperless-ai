@@ -282,7 +282,7 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
     from appdb import config as config_store  # noqa: PLC0415
     from appdb.connection import connect  # noqa: PLC0415
     from appdb.schema import ensure_schema  # noqa: PLC0415
-    from common.config import current_settings  # noqa: PLC0415
+    from common.config import current_settings_with_version  # noqa: PLC0415
 
     conn = connect(app_db_path)
     try:
@@ -297,34 +297,21 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
 
     with _CORE_CACHE_LOCK:
         # Re-check inside the lock: another caller may have rebuilt while we
-        # were waiting. Re-read config_version too, so we never cache against
-        # a version that has moved on since we measured it outside the lock.
-        conn = connect(app_db_path)
-        try:
-            version = config_store.get_config_version(conn)
-        finally:
-            conn.close()
+        # were waiting.
         cached = _CORE_CACHE.get(app_db_path)
         if cached is not None and cached[0] == version:
             return cached[1]
 
-        # current_settings opens its own snapshot transaction; it returns a
-        # Settings keyed at whatever version was current inside that
-        # transaction. We then re-read config_version once more after the
-        # build so the cache entry is keyed against the version of the data
-        # the rebuilt core actually saw — if a write landed between
-        # current_settings() and now, the cached pair (newer_version, core)
-        # is stale on its face and a subsequent request will rebuild rather
-        # than serve the stale core.
-        settings = current_settings(app_db_path)
+        # current_settings_with_version takes a single BEGIN DEFERRED snapshot
+        # so the version and the settings it returns are consistent — the
+        # cache is keyed against exactly the version the settings describe.
+        # This eliminates the triple-read race where a write landing between
+        # the settings build and a post-build re-read could stamp a later
+        # version onto an earlier core (self-locking stale cache).
+        cache_version, settings = current_settings_with_version(app_db_path)
         setup_libraries(settings)
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
         core, _store_reader = _resolve_components(settings, None, None)
-        conn = connect(app_db_path)
-        try:
-            cache_version = config_store.get_config_version(conn)
-        finally:
-            conn.close()
         _CORE_CACHE[app_db_path] = (cache_version, core)
         return core
 

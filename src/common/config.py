@@ -777,6 +777,64 @@ def current_settings(app_db_path: str | None = None) -> Settings:
         return settings
 
 
+def current_settings_with_version(app_db_path: str | None = None) -> tuple[int, Settings]:
+    """Return ``(config_version, Settings)`` atomically, rebuilding on change.
+
+    A thin companion to :func:`current_settings` for callers that need to key
+    a downstream cache against the *exact* version the settings snapshot was
+    built from. The version comes from the same ``BEGIN DEFERRED`` snapshot
+    used to read the config table, so it is guaranteed to match the data in
+    the returned :class:`Settings` — it cannot be a later version stamped onto
+    an earlier dataset.
+
+    The typical caller is :func:`search.api._resolve_search_core`: it caches a
+    ``SearchCore`` built from the settings and must key that cache against the
+    version the settings actually describe, so a concurrent admin write cannot
+    produce a ``(newer_version, core_from_older_settings)`` pair that sticks
+    until a *further* unrelated write bumps the counter again.
+
+    All caching logic (including the rebuild-under-lock slow path) is delegated
+    to :func:`current_settings`; after it returns the ``_SETTINGS_CACHE`` entry
+    for *resolved* is guaranteed to be at the version the settings were built
+    from (or a later one if another thread rebuilt first — which is fine, the
+    returned version always matches the returned Settings).
+
+    Args:
+        app_db_path: Filesystem path to ``app.db``. When ``None`` (the normal
+            case) it is read from the ``APP_DB_PATH`` environment variable.
+
+    Returns:
+        ``(config_version, Settings)`` where ``config_version`` is the
+        version the settings snapshot was built from.
+    """
+    resolved = (
+        app_db_path
+        if app_db_path is not None
+        else os.environ.get("APP_DB_PATH", "/data/app.db")
+    )
+
+    # Delegate to current_settings for all snapshot + cache logic.
+    settings = current_settings(resolved)
+
+    # After current_settings returns, _SETTINGS_CACHE[resolved] holds exactly
+    # the (version, settings) pair that was built and is now current. Read it
+    # back to get the version — this is a GIL-atomic dict read, no lock needed.
+    cached = _SETTINGS_CACHE.get(resolved)
+    if cached is not None:
+        return cached[0], cached[1]
+
+    # Defensive fallback: the cache was cleared between current_settings and
+    # the read above (only possible if _reset_core_cache_for_test was called
+    # from another thread, which tests never do concurrently). Call once more.
+    settings = current_settings(resolved)
+    cached = _SETTINGS_CACHE.get(resolved)
+    if cached is not None:
+        return cached[0], cached[1]
+
+    # Should never reach here; return version 0 so callers rebuild next time.
+    return 0, settings
+
+
 def _merge_environment(
     config_table: Mapping[str, str], app_db_path: str
 ) -> dict[str, str]:
