@@ -476,4 +476,7 @@
 
   /* SectionCard — width/height of the accent-tinted header icon tile. */
   --size-section-icon:       36px;
+
+  /* Row — fixed width of the left label column on the Settings screen. */
+  --width-row-label:         280px;
 }
