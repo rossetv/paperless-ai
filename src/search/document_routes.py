@@ -25,9 +25,7 @@ than forwarding Paperless's upstream type, so a malicious ``.html``/``.svg``
 in the library cannot be served as active content into the same-origin
 viewer iframe (CODE_GUIDELINES §10 — stored-XSS defence in depth).
 
-Recent searches are stored per real user. The legacy ``SEARCH_API_KEY``
-bearer resolves to a synthetic admin with no user row, so its history is
-always empty — correct, as the legacy key carries no user identity.
+Recent searches are stored per authenticated user.
 
 Allowed deps: fastapi, starlette, httpx, structlog, appdb (recent_searches),
     search (deps, wire), common (paperless, config).

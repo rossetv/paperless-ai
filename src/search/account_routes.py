@@ -283,24 +283,8 @@ def _auth_me(user: CurrentUser, app_db: sqlite3.Connection) -> UserEnvelope:
     """auth/me-handler body: re-read the full user for the response.
 
     ``get_current_user`` yields the slim :class:`CurrentUser`; the response
-    contract is the full user object, so the row is re-read here. The legacy
-    API-key caller has no user row (id 0) — it is reported as a synthetic
-    admin so the frontend has a consistent shape.
+    contract is the full user object, so the row is re-read here.
     """
-    if user.id == 0:
-        # The legacy SEARCH_API_KEY caller — no user row exists.
-        return UserEnvelope(
-            user=UserResponse(
-                id=0,
-                username=user.username,
-                display_name="Legacy API key",
-                email=None,
-                role=user.role,
-                status="active",
-                created_at="",
-                last_login_at=None,
-            )
-        )
     row = user_store.get_by_id(app_db, user.id)
     if row is None:
         # The session resolved a moment ago but the row is gone — treat it

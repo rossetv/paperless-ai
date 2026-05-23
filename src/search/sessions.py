@@ -51,11 +51,9 @@ class CurrentUser:
     logging and display), and the role (for RBAC) — and nothing else.
 
     Attributes:
-        id: The user's id, or ``0`` for the legacy ``SEARCH_API_KEY`` caller
-            which has no user row.
-        username: The user's login name, or a fixed sentinel for the legacy
-            API-key caller.
-        role: The role driving RBAC; always ``admin`` for the legacy caller.
+        id: The user's ``users`` row id.
+        username: The user's login name.
+        role: The role driving RBAC.
     """
 
     id: int

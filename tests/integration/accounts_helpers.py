@@ -44,10 +44,6 @@ from tests.helpers.factories import (
     make_source_document,
 )
 
-# The legacy SEARCH_API_KEY used by the integration suite. The legacy-bearer
-# tests assert a request carrying this key as a Bearer token is authorised.
-LEGACY_API_KEY = "integration-accounts-legacy-key"
-
 # Embedding width — four keeps the seeded vector tiny; the integration tests
 # never exercise real retrieval geometry, only routing and auth.
 _DIMENSIONS = 4
@@ -66,7 +62,6 @@ def make_settings(tmp_path: Path, **overrides: Any) -> MagicMock:
         **overrides: Any further ``Settings`` field overrides.
     """
     return make_search_settings(
-        SEARCH_API_KEY=LEGACY_API_KEY,
         INDEX_DB_PATH=str(tmp_path / "index.db"),
         APP_DB_PATH=str(tmp_path / "app.db"),
         EMBEDDING_DIMENSIONS=_DIMENSIONS,

@@ -366,7 +366,6 @@ def test_main_runs_the_shared_process_bootstrap() -> None:
     from search.api import main
 
     valid_settings = MagicMock()
-    valid_settings.SEARCH_API_KEY = "a-real-api-key"
 
     with (
         patch(

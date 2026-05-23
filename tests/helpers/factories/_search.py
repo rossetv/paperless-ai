@@ -355,7 +355,6 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_PLANNER_MODEL": "gpt-5.4-mini",
         "SEARCH_ANSWER_MODEL": "gpt-5.4",
         "AI_MODELS": ["gpt-5.4-mini", "gpt-5.4"],
-        "SEARCH_API_KEY": "test-search-api-key",
         "SEARCH_SESSION_TTL": 3600,
         "MAX_RETRIES": 3,
         "MAX_RETRY_BACKOFF_SECONDS": 30,

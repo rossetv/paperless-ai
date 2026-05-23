@@ -70,9 +70,9 @@ def _answer_result() -> SearchResult:
 def _make_settings() -> MagicMock:
     """Create a Settings-like mock for the MCP server.
 
-    ``settings`` is still a ``build_mcp_app`` parameter, but the retired
-    ``SEARCH_API_KEY`` is no longer read by the auth middleware (web-redesign
-    §5) — authentication is by session cookie or ``mcp``-scoped API key.
+    ``settings`` is passed to ``build_mcp_app`` but the auth middleware does
+    not read any setting directly — authentication is by session cookie or
+    ``mcp``-scoped API key (web-redesign §5).
     """
     return make_search_settings()
 

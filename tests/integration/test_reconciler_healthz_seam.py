@@ -37,7 +37,6 @@ from tests.helpers.factories import make_search_settings
 # ---------------------------------------------------------------------------
 
 _DIMENSIONS = 4
-_API_KEY = "reconciler-healthz-integration-key"
 
 
 def _make_settings(tmp_path: Path) -> MagicMock:
@@ -49,7 +48,6 @@ def _make_settings(tmp_path: Path) -> MagicMock:
     return make_search_settings(
         INDEX_DB_PATH=str(tmp_path / "index.db"),
         EMBEDDING_DIMENSIONS=_DIMENSIONS,
-        SEARCH_API_KEY=_API_KEY,
         PAPERLESS_URL="http://paperless.test",
         DOCUMENT_WORKERS=1,
     )

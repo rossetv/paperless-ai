@@ -342,19 +342,12 @@ def _reconcile(settings: Settings) -> Response:
     return Response(status_code=202)
 
 
-# The sentinel user id for an identity with no backing ``users`` row. id 0
-# is never a real users row, so a recent_searches insert for it would
-# violate the foreign key — a caller with this id therefore records nothing.
-_NO_USER_ROW_ID = 0
-
-
 def _record_recent_search(
     app_db: sqlite3.Connection, user: CurrentUser, query: str
 ) -> None:
     """Record a successful search in the caller's recent-search history.
 
-    A no-op for an identity with no backing ``users`` row (sentinel ``id``
-    0). Best-effort: a database error while writing the history row is logged
+    Best-effort: a database error while writing the history row is logged
     and swallowed — it must never turn an otherwise-successful search into a
     failed request.
 
@@ -363,9 +356,6 @@ def _record_recent_search(
         user: The authenticated user who ran the search.
         query: The verbatim search query to record.
     """
-    if user.id == _NO_USER_ROW_ID:
-        # No backing users row — there is no foreign-key target to attribute.
-        return
     try:
         recent_search_store.record(app_db, user_id=user.id, query=query)
     except Exception:

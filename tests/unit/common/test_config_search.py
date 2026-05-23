@@ -2,9 +2,8 @@
 
 Split from test_config.py to stay within the §3.1 500-line ceiling.
 Covers: SEARCH_TOP_K, SEARCH_MAX_REFINEMENTS, SEARCH_PLANNER_MODEL,
-SEARCH_ANSWER_MODEL, SEARCH_SERVER_HOST/PORT, SEARCH_API_KEY,
-SEARCH_SESSION_TTL, SEARCH_MAX_CONCURRENT — for both openai and ollama
-providers.
+SEARCH_ANSWER_MODEL, SEARCH_SERVER_HOST/PORT, SEARCH_SESSION_TTL,
+SEARCH_MAX_CONCURRENT — for both openai and ollama providers.
 """
 
 from __future__ import annotations
@@ -40,7 +39,6 @@ _SEARCH_DEFAULTS_OPENAI = [
     ("SEARCH_ANSWER_MODEL", "gpt-5.4"),
     ("SEARCH_SERVER_HOST", "0.0.0.0"),
     ("SEARCH_SERVER_PORT", 8080),
-    ("SEARCH_API_KEY", ""),
     ("SEARCH_SESSION_TTL", 604800),
     ("SEARCH_MAX_CONCURRENT", 4),
 ]
@@ -78,7 +76,6 @@ _SEARCH_CUSTOM = [
     ("SEARCH_ANSWER_MODEL", "gpt-4o", "SEARCH_ANSWER_MODEL", "gpt-4o"),
     ("SEARCH_SERVER_HOST", "127.0.0.1", "SEARCH_SERVER_HOST", "127.0.0.1"),
     ("SEARCH_SERVER_PORT", "9090", "SEARCH_SERVER_PORT", 9090),
-    ("SEARCH_API_KEY", "supersecret", "SEARCH_API_KEY", "supersecret"),
     ("SEARCH_SESSION_TTL", "86400", "SEARCH_SESSION_TTL", 86400),
     ("SEARCH_MAX_CONCURRENT", "8", "SEARCH_MAX_CONCURRENT", 8),
 ]
@@ -160,13 +157,3 @@ class TestSearchSettingsBounds:
         assert s.SEARCH_MAX_CONCURRENT == 0
 
 
-class TestSearchApiKeyDefault:
-    """SEARCH_API_KEY defaults to empty string; validation deferred to search-server preflight."""
-
-    def test_unset_defaults_to_empty_string(self, mocker):
-        s = _build(mocker, _MINIMAL_ENV)
-        assert s.SEARCH_API_KEY == ""
-
-    def test_set_value_is_stored(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_API_KEY": "my-key"})
-        assert s.SEARCH_API_KEY == "my-key"

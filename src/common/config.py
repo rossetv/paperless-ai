@@ -269,9 +269,6 @@ class Settings:
     SEARCH_ANSWER_MODEL: str
     SEARCH_SERVER_HOST: str
     SEARCH_SERVER_PORT: int
-    # Default is empty string; emptiness validated at search-server preflight,
-    # not here — the indexer daemon does not require this key.
-    SEARCH_API_KEY: str
     SEARCH_SESSION_TTL: int
     SEARCH_MAX_CONCURRENT: int
 
@@ -419,14 +416,11 @@ class Settings:
                 "SEARCH_PLANNER_MODEL", default_planner_model
             ),
             SEARCH_ANSWER_MODEL=os.getenv("SEARCH_ANSWER_MODEL", default_answer_model),
-            # 0.0.0.0 is deliberate: the server is auth-gated (SEARCH_API_KEY
-            # is mandatory, CODE_GUIDELINES §10.1); binding all interfaces lets
-            # the operator restrict exposure at the reverse proxy / port map.
+            # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
+            # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
+            # operator restrict exposure at the reverse proxy / port map.
             SEARCH_SERVER_HOST=os.getenv("SEARCH_SERVER_HOST", "0.0.0.0"),
             SEARCH_SERVER_PORT=_resolve_server_port(),
-            # Empty default is intentional — the search server validates
-            # non-empty at preflight; the indexer does not need this key.
-            SEARCH_API_KEY=os.getenv("SEARCH_API_KEY", ""),
             SEARCH_SESSION_TTL=_require_at_least_one(
                 "SEARCH_SESSION_TTL", _get_int_env("SEARCH_SESSION_TTL", 604800)
             ),
