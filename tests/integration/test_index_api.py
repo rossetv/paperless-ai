@@ -167,6 +167,23 @@ def test_rebuild_writes_the_sentinel(index_env) -> None:
     assert sentinel.exists()
 
 
+def test_rebuild_also_touches_the_reconcile_sentinel(index_env) -> None:
+    """Rebuild writes reconcile.request alongside rebuild.request.
+
+    The indexer's ``_interruptible_wait`` watches ``reconcile.request`` to
+    wake early — without it the rebuild would wait up to RECONCILE_INTERVAL
+    (default 5 min) before being applied.  Both sentinels must be written in
+    the same handler call.
+    """
+    settings, _app_db, _reader = index_env
+    client = _admin_client(index_env)
+    response = client.post("/api/index/rebuild")
+    assert response.status_code == 200
+    db_dir = Path(settings.INDEX_DB_PATH).parent
+    assert (db_dir / "rebuild.request").exists(), "rebuild.request not written"
+    assert (db_dir / "reconcile.request").exists(), "reconcile.request not written"
+
+
 # --- RBAC ------------------------------------------------------------------
 
 
