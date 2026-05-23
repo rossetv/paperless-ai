@@ -36,6 +36,7 @@ import graph — common imports it, not the reverse).
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from datetime import datetime, timezone
 
 import structlog
@@ -166,3 +167,51 @@ def set_many(conn: sqlite3.Connection, values: dict[str, str]) -> None:
         )
         _bump_config_version(conn)
     log.info("appdb.config_set_many", key_count=len(values))
+
+
+def seed_from_env(
+    conn: sqlite3.Connection,
+    *,
+    environ: Mapping[str, str],
+    keys: set[str],
+) -> int:
+    """Populate an empty ``config`` table from the process environment.
+
+    First-run import (web-redesign spec §5): when a deployment that was
+    configured with environment variables is upgraded to config-in-database,
+    the ``config`` table is empty. This function copies every catalogue key
+    that is actually set in *environ* into the table, so the deployment keeps
+    its existing configuration without the admin re-entering it.
+
+    It seeds **only when the table is empty**. On a database that already has
+    any configuration row it is a no-op and returns 0 — so it can never
+    overwrite a value an administrator has since edited through the Settings
+    screen. The check and the writes are not wrapped in one transaction
+    because seeding runs once at startup before the server accepts requests;
+    no concurrent writer exists.
+
+    Args:
+        conn: An open, migrated ``app.db`` connection.
+        environ: The environment mapping to seed from — normally
+            ``os.environ``; tests pass a plain dict.
+        keys: The set of canonical configuration keys to consider. Keys in
+            *environ* that are not in this set (``PATH``, ``HOME``, the
+            bootstrap variables) are ignored.
+
+    Returns:
+        The number of keys seeded — 0 when the table was already populated or
+        when no catalogue key was present in *environ*.
+    """
+    already_populated = conn.execute(
+        "SELECT 1 FROM config LIMIT 1"
+    ).fetchone()
+    if already_populated is not None:
+        return 0
+
+    to_seed = {
+        key: environ[key] for key in keys if key in environ
+    }
+    set_many(conn, to_seed)
+    if to_seed:
+        log.info("appdb.config_seeded_from_env", key_count=len(to_seed))
+    return len(to_seed)

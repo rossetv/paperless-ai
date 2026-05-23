@@ -123,3 +123,57 @@ def test_config_version_is_visible_with_the_written_value(conn) -> None:
     config_store.set_value(conn, "CHUNK_SIZE", "2000")
     assert config_store.get(conn, "CHUNK_SIZE") == "2000"
     assert config_store.get_config_version(conn) == 1
+
+
+def test_seed_from_env_populates_an_empty_table(conn) -> None:
+    """seed_from_env copies present env keys into an empty config table."""
+    env = {"CHUNK_SIZE": "2000", "LOG_LEVEL": "DEBUG", "IRRELEVANT": "x"}
+    seeded = config_store.seed_from_env(
+        conn, environ=env, keys={"CHUNK_SIZE", "LOG_LEVEL", "OCR_DPI"}
+    )
+    assert seeded == 2
+    assert config_store.get_all(conn) == {
+        "CHUNK_SIZE": "2000",
+        "LOG_LEVEL": "DEBUG",
+    }
+
+
+def test_seed_from_env_ignores_keys_absent_from_the_env(conn) -> None:
+    """A catalogue key not present in the environment is not seeded."""
+    seeded = config_store.seed_from_env(
+        conn, environ={"CHUNK_SIZE": "2000"}, keys={"CHUNK_SIZE", "OCR_DPI"}
+    )
+    assert seeded == 1
+    assert config_store.get(conn, "OCR_DPI") is None
+
+
+def test_seed_from_env_ignores_env_keys_not_in_the_catalogue(conn) -> None:
+    """An env var that is not a known config key is never seeded."""
+    config_store.seed_from_env(
+        conn,
+        environ={"CHUNK_SIZE": "2000", "PATH": "/usr/bin", "HOME": "/root"},
+        keys={"CHUNK_SIZE"},
+    )
+    assert set(config_store.get_all(conn)) == {"CHUNK_SIZE"}
+
+
+def test_seed_from_env_is_a_noop_when_the_table_is_not_empty(conn) -> None:
+    """seed_from_env never overwrites an already-populated config table."""
+    config_store.set_value(conn, "CHUNK_SIZE", "8000")
+    seeded = config_store.seed_from_env(
+        conn, environ={"CHUNK_SIZE": "2000", "LOG_LEVEL": "DEBUG"},
+        keys={"CHUNK_SIZE", "LOG_LEVEL"},
+    )
+    assert seeded == 0
+    # The admin-edited value is untouched; the env value did not leak in.
+    assert config_store.get(conn, "CHUNK_SIZE") == "8000"
+    assert config_store.get(conn, "LOG_LEVEL") is None
+
+
+def test_seed_from_env_returns_zero_for_an_empty_environment(conn) -> None:
+    """An empty environment seeds nothing and reports zero."""
+    seeded = config_store.seed_from_env(
+        conn, environ={}, keys={"CHUNK_SIZE", "OCR_DPI"}
+    )
+    assert seeded == 0
+    assert config_store.get_all(conn) == {}
