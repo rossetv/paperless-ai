@@ -43,6 +43,31 @@ def test_setting_item_response_accepts_a_null_value() -> None:
     assert item.value is None
 
 
+def test_setting_item_response_carries_default_value() -> None:
+    """default_value surfaces the coded default for a key on its default."""
+    item = SettingItemResponse(
+        key="OCR_DPI",
+        value=None,
+        source="default",
+        is_secret=False,
+        requires_reindex=False,
+        default_value="300",
+    )
+    assert item.default_value == "300"
+
+
+def test_setting_item_response_default_value_is_none_when_absent() -> None:
+    """default_value defaults to None when not supplied (secrets, env-only keys)."""
+    item = SettingItemResponse(
+        key="CHUNK_SIZE",
+        value="2000",
+        source="database",
+        is_secret=False,
+        requires_reindex=True,
+    )
+    assert item.default_value is None
+
+
 def test_settings_response_wraps_a_list_of_items() -> None:
     response = SettingsResponse(
         settings=[

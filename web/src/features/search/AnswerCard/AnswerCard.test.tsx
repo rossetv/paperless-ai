@@ -40,10 +40,24 @@ describe('AnswerCard', () => {
       />,
     );
     expect(
-      screen.getByRole('button', { name: /citation 1/i }),
+      screen.getByRole('button', { name: /view source 1/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /citation 2/i }),
+      screen.getByRole('button', { name: /view source 2/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('enriches the citation accessible name with the source title', () => {
+    render(
+      <AnswerCard
+        answer="The boiler [1] was fitted in 2021."
+        sources={[makeSource(1)]}
+        stats={stats}
+      />,
+    );
+    // makeSource(1) yields title "Document 1"
+    expect(
+      screen.getByRole('button', { name: /view source 1: document 1/i }),
     ).toBeInTheDocument();
   });
 
@@ -57,7 +71,7 @@ describe('AnswerCard', () => {
         onCitationActivate={handler}
       />,
     );
-    await userEvent.click(screen.getByRole('button', { name: /citation 1/i }));
+    await userEvent.click(screen.getByRole('button', { name: /view source 1/i }));
     expect(handler).toHaveBeenCalledWith(1);
   });
 
@@ -71,7 +85,7 @@ describe('AnswerCard', () => {
     );
     expect(screen.getByText(/\[9\]/)).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: /citation 9/i }),
+      screen.queryByRole('button', { name: /view source 9/i }),
     ).not.toBeInTheDocument();
   });
 

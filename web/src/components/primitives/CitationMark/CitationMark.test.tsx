@@ -13,10 +13,19 @@ describe('CitationMark', () => {
     expect(screen.getByRole('button')).toBeInTheDocument();
   });
 
-  it('has an accessible name naming the citation', () => {
+  it('has an accessible name "View source N" by default', () => {
     render(<CitationMark index={2} onActivate={() => {}} />);
     expect(
-      screen.getByRole('button', { name: /citation 2/i }),
+      screen.getByRole('button', { name: /view source 2/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('enriches the accessible name with the source title when provided', () => {
+    render(
+      <CitationMark index={2} onActivate={() => {}} sourceTitle="AIB Bank Statement" />,
+    );
+    expect(
+      screen.getByRole('button', { name: /view source 2: aib bank statement/i }),
     ).toBeInTheDocument();
   });
 

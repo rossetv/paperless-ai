@@ -374,6 +374,13 @@ export interface SettingItem {
   is_secret: boolean;
   /** True when changing this key requires a full document re-index. */
   requires_reindex: boolean;
+  /**
+   * The coded default for this key as a string, or null for secrets and
+   * optional keys that have no meaningful coded default. Used by the Settings
+   * screen to display the default value when `source` is `'default'` and
+   * `value` is null.
+   */
+  default_value: string | null;
 }
 
 /**

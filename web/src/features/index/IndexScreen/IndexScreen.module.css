@@ -11,7 +11,7 @@
 
 /* Centres the dashboard within the page and constrains its width. */
 .screen {
-  max-width: var(--bp-desktop-large);
+  max-width: var(--width-app-content);
   margin: 0 auto;
   padding: var(--spacing-14) var(--spacing-14) var(--spacing-section);
 }

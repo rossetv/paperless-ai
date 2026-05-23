@@ -117,9 +117,30 @@ describe('ResultsScreen', () => {
     const onCitationActivate = vi.fn();
     renderResults({ onCitationActivate });
     await userEvent.click(
-      screen.getByRole('button', { name: /citation 1/i }),
+      screen.getByRole('button', { name: /view source 1/i }),
     );
     expect(onCitationActivate).toHaveBeenCalledWith(1);
+  });
+
+  it('fires onPreview with the source document_id when a citation is clicked', async () => {
+    const onPreview = vi.fn();
+    renderResults({ onPreview });
+    await userEvent.click(
+      screen.getByRole('button', { name: /view source 1/i }),
+    );
+    // RESPONSE.sources[0].document_id === 9823
+    expect(onPreview).toHaveBeenCalledWith(9823);
+  });
+
+  it('fires both onCitationActivate and onPreview when a citation is clicked', async () => {
+    const onCitationActivate = vi.fn();
+    const onPreview = vi.fn();
+    renderResults({ onCitationActivate, onPreview });
+    await userEvent.click(
+      screen.getByRole('button', { name: /view source 1/i }),
+    );
+    expect(onCitationActivate).toHaveBeenCalledWith(1);
+    expect(onPreview).toHaveBeenCalledWith(9823);
   });
 
   it('fires onPreview when a source preview is clicked', async () => {

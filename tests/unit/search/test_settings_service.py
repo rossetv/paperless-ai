@@ -39,6 +39,26 @@ def test_view_reports_a_default_when_neither_set() -> None:
     assert by_key["OCR_DPI"].source == "default"
 
 
+def test_view_carries_coded_default_for_default_sourced_keys() -> None:
+    """A key on its coded default gets a non-None default_value string."""
+    views = view_settings(config_table={}, environ={})
+    by_key = {v.key: v for v in views}
+    # OCR_DPI coded default is 300.
+    assert by_key["OCR_DPI"].default_value == "300"
+    # CHUNK_SIZE coded default is 2000.
+    assert by_key["CHUNK_SIZE"].default_value == "2000"
+    # EMBEDDING_MODEL coded default is text-embedding-3-small.
+    assert by_key["EMBEDDING_MODEL"].default_value == "text-embedding-3-small"
+
+
+def test_view_carries_none_default_value_for_secret_keys() -> None:
+    """Secret keys never expose a coded default — default_value is None."""
+    views = view_settings(config_table={}, environ={})
+    by_key = {v.key: v for v in views}
+    assert by_key["OPENAI_API_KEY"].default_value is None
+    assert by_key["PAPERLESS_TOKEN"].default_value is None
+
+
 def test_view_flags_secret_keys() -> None:
     views = view_settings(config_table={}, environ={})
     by_key = {v.key: v for v in views}

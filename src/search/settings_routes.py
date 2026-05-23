@@ -150,6 +150,10 @@ def _read_settings(
                 source=view.source,
                 is_secret=view.is_secret,
                 requires_reindex=view.key in REINDEX_KEYS,
+                # Secrets never expose a default_value — their coded default
+                # is either absent or a placeholder. Only non-secret keys
+                # surface their coded default so the UI can display it.
+                default_value=view.default_value if not view.is_secret else None,
             )
         )
     if reveal and admin is not None and revealed_keys:

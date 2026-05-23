@@ -47,6 +47,12 @@ export interface SettingsSectionProps {
    */
   reindexKeys?: ReadonlySet<string>;
   /**
+   * The config keys whose value is currently on the coded default. A field in
+   * this set shows a subtle "default" badge so the operator can tell a
+   * coded default from an explicit override.
+   */
+  defaultKeys?: ReadonlySet<string>;
+  /**
    * Called when any field changes. For a secret key the value is the new
    * secret string, or `null` when the user is not replacing it.
    */
@@ -168,6 +174,7 @@ export function SettingsSection({
   section,
   values,
   reindexKeys,
+  defaultKeys,
   onChange,
   children,
 }: SettingsSectionProps): React.ReactElement {
@@ -188,6 +195,7 @@ export function SettingsSection({
         const labellable =
           field.control.kind !== 'segmented' && field.control.kind !== 'secret';
         const needsReindex = reindexKeys?.has(field.key) ?? false;
+        const isDefault = defaultKeys?.has(field.key) ?? false;
         const hint = needsReindex ? (
           <>
             {field.hint}
@@ -209,6 +217,7 @@ export function SettingsSection({
             env={field.key}
             {...(controlId !== undefined ? { controlId } : {})}
             last={index === section.fields.length - 1 && children === undefined}
+            isDefault={isDefault}
           >
             <FieldControl
               field={field}

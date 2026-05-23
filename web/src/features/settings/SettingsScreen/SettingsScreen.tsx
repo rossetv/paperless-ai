@@ -19,14 +19,23 @@ import styles from './SettingsScreen.module.css';
  * Parse the server's `SettingItem[]` into the typed draft the screen edits.
  *
  * Each item's string `value` is parsed per its field's control kind
- * (`parseValue`). An item with no matching field model entry is skipped —
- * the model is the source of truth for what is editable.
+ * (`parseValue`). When `value` is null (key on its coded default) and a
+ * `default_value` is present, the coded default is used as the raw string so
+ * the control shows a meaningful value rather than its empty state. An item
+ * with no matching field model entry is skipped — the model is the source of
+ * truth for what is editable.
  */
 function toDraft(items: SettingItem[]): SettingsDraft {
   const draft: SettingsDraft = {};
   for (const item of items) {
     const field = fieldByKey(item.key);
-    if (field) draft[item.key] = parseValue(field, item.value);
+    if (field) {
+      // When the effective value is null (source=default), fall back to the
+      // coded default string so the control renders the actual default rather
+      // than the empty/zero state.
+      const raw = item.value ?? item.default_value ?? null;
+      draft[item.key] = parseValue(field, raw);
+    }
   }
   return draft;
 }
@@ -34,6 +43,11 @@ function toDraft(items: SettingItem[]): SettingsDraft {
 /** The set of keys the server flags as needing a re-index when changed. */
 function reindexKeySet(items: SettingItem[]): Set<string> {
   return new Set(items.filter((i) => i.requires_reindex).map((i) => i.key));
+}
+
+/** The set of keys whose value is currently on the coded default (source=default). */
+function defaultKeySet(items: SettingItem[]): Set<string> {
+  return new Set(items.filter((i) => i.source === 'default').map((i) => i.key));
 }
 
 /**
@@ -53,6 +67,7 @@ function SettingsContent({
   // server list actually changes (after a save), not on every render.
   const baseline = React.useMemo(() => toDraft(items), [items]);
   const reindexKeys = React.useMemo(() => reindexKeySet(items), [items]);
+  const defaultKeys = React.useMemo(() => defaultKeySet(items), [items]);
   const { draft, setValue, changedKeys, isDirty, changedValues, discard } =
     useUnsavedSettings(baseline);
   const save = useUpdateSettings();
@@ -121,6 +136,7 @@ function SettingsContent({
           section={section}
           values={draft}
           reindexKeys={reindexKeys}
+          defaultKeys={defaultKeys}
           onChange={handleChange}
         >
           {section.id === 'paperless' && (

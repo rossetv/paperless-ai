@@ -18,6 +18,11 @@ export interface RowProps {
   controlId?: string;
   /** Drop the bottom divider — set on the final row of a card. */
   last?: boolean;
+  /**
+   * When true, renders a subtle "default" badge in the control column to
+   * signal that this key is on its coded default, not an explicit override.
+   */
+  isDefault?: boolean;
   /** The control element(s) for the right column. */
   children: React.ReactNode;
   /** Additional class names to merge onto the row. */
@@ -41,6 +46,7 @@ export function Row({
   env,
   controlId,
   last = false,
+  isDefault = false,
   children,
   className,
 }: RowProps): React.ReactElement {
@@ -57,7 +63,10 @@ export function Row({
         {hint !== undefined && <p className={styles['hint']}>{hint}</p>}
         {env !== undefined && <span className={styles['env']}>{env}</span>}
       </div>
-      <div className={styles['control']}>{children}</div>
+      <div className={styles['control']}>
+        {children}
+        {isDefault && <span className={styles['default-badge']}>default</span>}
+      </div>
     </div>
   );
 }

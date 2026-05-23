@@ -37,8 +37,10 @@
 .input {
   composes: control from '../../primitives/FormField/FormField.module.css';
 
-  /* Pad left for the leading icon, right for the trailing button */
-  padding: var(--spacing-6) var(--spacing-14) var(--spacing-6) var(--spacing-13);
+  /* Pad left for the leading icon, right for the trailing button.
+     --padding-search-input-leading (40 px) clears the 16 px icon at left:14 px.
+     --padding-search-input-trailing (52 px) clears the 44 px button at right:4 px. */
+  padding: var(--spacing-6) var(--padding-search-input-trailing) var(--spacing-6) var(--padding-search-input-leading);
 
   /* Remove the browser's default search-cancel button — the submit icon serves
      this interaction; a second cancel affordance clutters the field. */

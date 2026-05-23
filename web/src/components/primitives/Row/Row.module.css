@@ -57,3 +57,16 @@
   gap: var(--spacing-6);
   min-width: 0;
 }
+
+/* ── "default" badge shown when a key is on its coded default. ── */
+.default-badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 0 var(--spacing-4);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-neutral-bg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-style: italic;
+  color: var(--colour-text-tertiary);
+}

@@ -35,6 +35,21 @@
 /* The thumbnail column — relatively positioned so the badge can overlap. */
 .thumb {
   position: relative;
+  width: var(--size-doc-thumb-width);
+  height: var(--size-doc-thumb-height);
+}
+
+/* Real document thumbnail — fills the column, page top first. */
+.thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius-micro);
+  border: var(--spacing-1) solid var(--colour-border);
+  box-shadow: var(--shadow-card);
+  background-color: var(--colour-surface);
 }
 
 /* Circular citation badge — overlaps the thumbnail's top-left corner. */

@@ -285,3 +285,33 @@ def test_get_settings_without_reveal_does_not_audit(admin_client) -> None:
         call.args and call.args[0] == "search.settings_revealed"
         for call in mock_log.warning.call_args_list
     )
+
+
+def test_get_settings_carries_coded_default_for_default_sourced_key(admin_client) -> None:
+    """A key on its coded default has a non-null default_value in the response.
+
+    When `source` is ``"default"`` and `value` is ``None``, ``default_value``
+    must carry the coded default string — this is what the Settings screen uses
+    to display a meaningful value rather than the empty/zero state.
+    """
+    client, _ = admin_client
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    items = {i["key"]: i for i in response.json()["settings"]}
+    # OCR_DPI is not set anywhere — it sits on the coded default of 300.
+    dpi = items["OCR_DPI"]
+    assert dpi["source"] == "default"
+    assert dpi["value"] is None
+    assert dpi["default_value"] == "300"
+    # CHUNK_SIZE coded default is 2000.
+    cs = items["CHUNK_SIZE"]
+    assert cs["default_value"] == "2000"
+
+
+def test_get_settings_secret_keys_have_null_default_value(admin_client) -> None:
+    """Secret keys never expose a default_value — it must be null."""
+    client, _ = admin_client
+    response = client.get("/api/settings")
+    items = {i["key"]: i for i in response.json()["settings"]}
+    assert items["OPENAI_API_KEY"]["default_value"] is None
+    assert items["PAPERLESS_TOKEN"]["default_value"] is None

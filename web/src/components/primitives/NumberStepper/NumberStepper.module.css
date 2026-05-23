@@ -13,6 +13,11 @@
 .stepper {
   display: inline-flex;
   align-items: center;
+
+  /* Fit tightly around − / value / +; do not stretch to the full column
+     width when a parent flex or grid column is wider than the control. */
+  width: max-content;
+  align-self: flex-end;
   border: var(--spacing-1) solid var(--colour-border-button);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);

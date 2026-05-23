@@ -17,14 +17,14 @@
 
 /* Centred single column. */
 .centred {
-  max-width: var(--width-content-max);
+  max-width: var(--width-app-content);
   display: flex;
   flex-direction: column;
 }
 
 /* Filter-rail + content grid. */
 .rail {
-  max-width: var(--bp-desktop-large);
+  max-width: var(--width-app-content);
   display: grid;
   grid-template-columns: var(--width-empty-state) 1fr;
   gap: var(--spacing-section);

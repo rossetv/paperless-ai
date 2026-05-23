@@ -88,11 +88,13 @@ export function AnswerCard({
           return <React.Fragment key={i}>[{segment.index}]</React.Fragment>;
         }
 
+        const source = sources[segment.index - 1];
         return (
           <CitationLink
             key={i}
             index={segment.index}
             onActivate={handleCitationActivate}
+            sourceTitle={source?.title ?? null}
           />
         );
       })}

@@ -7,6 +7,11 @@ export interface CitationMarkProps {
   index: number;
   /** Called with the index when the mark is activated (click or keyboard). */
   onActivate: (index: number) => void;
+  /**
+   * Optional document title for the cited source. When provided, the
+   * accessible name becomes "View source N: <title>" instead of "View source N".
+   */
+  sourceTitle?: string | null;
   /** Additional class names to merge. */
   className?: string;
 }
@@ -14,26 +19,33 @@ export interface CitationMarkProps {
 /**
  * Inline citation chip — a small accent circle carrying a numeral.
  *
- * A real `<button>` so it is keyboard-operable and tab-reachable. A
- * visually-hidden suffix gives screen readers "Citation n" rather than a bare
- * number. Rendered inline in the synthesised-answer prose; the parent wires
- * `onActivate` to scroll/highlight the matching source.
+ * A real `<button>` so it is keyboard-operable and tab-reachable. The
+ * accessible name is "View source N" (with an optional title suffix when the
+ * source title is known). Rendered inline in the synthesised-answer prose; the
+ * parent wires `onActivate` to open the document preview and highlight the
+ * corresponding source card.
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
  */
 export function CitationMark({
   index,
   onActivate,
+  sourceTitle,
   className,
 }: CitationMarkProps): React.ReactElement {
+  const accessibleName =
+    sourceTitle != null
+      ? `View source ${index}: ${sourceTitle}`
+      : `View source ${index}`;
+
   return (
     <button
       type="button"
+      aria-label={accessibleName}
       className={cn(styles['citation-mark'], className)}
       onClick={() => onActivate(index)}
     >
       <span aria-hidden="true">{index}</span>
-      <span className="visually-hidden">Citation {index}</span>
     </button>
   );
 }

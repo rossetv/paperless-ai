@@ -14,9 +14,11 @@
   width: 100%;
 }
 
+/* --padding-settings-field-trailing (64 px) clears the 16 px chevron at right:11 px.
+   --spacing-section (96 px) was a semantic misuse of the vertical-rhythm token. */
 .select {
   width: 100%;
-  padding: var(--spacing-7) var(--spacing-section) var(--spacing-7) var(--spacing-9);
+  padding: var(--spacing-7) var(--padding-settings-field-trailing) var(--spacing-7) var(--spacing-9);
   border: var(--spacing-1) solid var(--colour-border-button);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);

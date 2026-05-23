@@ -780,6 +780,10 @@ class SettingItemResponse(BaseModel):
             (:data:`common.config.REINDEX_KEYS`). The UI shows a re-index
             warning for exactly these keys. There is no restart concept:
             Wave 4 hot-loads every config change.
+        default_value: The coded default as a string, or ``None`` for secrets
+            and optional keys that have no meaningful coded default. The
+            frontend uses this to display the default when ``source`` is
+            ``"default"`` and ``value`` is ``None``.
     """
 
     key: str
@@ -787,6 +791,7 @@ class SettingItemResponse(BaseModel):
     source: str
     is_secret: bool
     requires_reindex: bool
+    default_value: str | None = None
 
 
 class SettingsResponse(BaseModel):

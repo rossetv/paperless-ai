@@ -20,6 +20,7 @@ Forbidden: fastapi, sqlite3, appdb (the routes layer owns the DB connection).
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -33,6 +34,64 @@ from common.config import (
 
 # Where a key's effective value came from, in precedence order.
 ValueSource = Literal["database", "environment", "default"]
+
+# ---------------------------------------------------------------------------
+# Coded-default map — built once at module load.
+#
+# Call build_settings with sentinel placeholders for the two required secret
+# keys so the builder can parse every other key's default without failing on
+# missing credentials. The resulting Settings instance is converted field-by-
+# field to a string map: that is _CODED_DEFAULTS.
+#
+# Keys absent from CONFIG_KEYS (BOOTSTRAP_KEYS, REFUSAL_MARK) are not in the
+# map. Secret keys get None rather than their sentinel-built value — a secret
+# has no meaningful coded default to show.
+# ---------------------------------------------------------------------------
+_SENTINEL = "__defaults_probe__"
+
+_defaults_instance = build_settings(
+    {
+        "PAPERLESS_TOKEN": _SENTINEL,
+        "OPENAI_API_KEY": _SENTINEL,
+    }
+)
+
+
+def _settings_to_str_map() -> dict[str, str | None]:
+    """Convert the coded-default Settings instance to a key→string-or-None map.
+
+    Iterates every field on the dataclass, converts the value to the
+    wire-string form the config table would store, and returns the map. Secret
+    keys are mapped to ``None`` — their sentinel values are not meaningful
+    defaults to surface in the UI.
+    """
+    result: dict[str, str | None] = {}
+    for f in dataclasses.fields(_defaults_instance):
+        key = f.name
+        if key not in CONFIG_KEYS:
+            # BOOTSTRAP_KEYS (APP_DB_PATH, INDEX_DB_PATH) and REFUSAL_MARK
+            # are on Settings but not in CONFIG_KEYS — skip them.
+            continue
+        if key in SECRET_KEYS:
+            result[key] = None
+            continue
+        raw = getattr(_defaults_instance, key)
+        if isinstance(raw, bool):
+            result[key] = "true" if raw else "false"
+        elif isinstance(raw, list):
+            result[key] = ", ".join(str(item) for item in raw)
+        elif raw is None:
+            # Optional keys that default to None (e.g. OLLAMA_BASE_URL when
+            # provider is openai) have no coded default to show.
+            result[key] = None
+        else:
+            result[key] = str(raw)
+    return result
+
+
+#: Single source of truth for coded defaults, keyed by config-key name.
+#: ``None`` for secret keys and optional keys whose default is ``None``.
+_CODED_DEFAULTS: dict[str, str | None] = _settings_to_str_map()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +108,18 @@ class SettingView:
             *effective_value* came from.
         is_secret: Whether this key holds a secret and must be masked in API
             responses.
+        default_value: The coded default as a string, or ``None`` when the key
+            has no coded default (secrets, optional keys that default to
+            ``None``). Surfaced so the Settings screen can display the default
+            even when ``source`` is ``"default"`` and ``effective_value`` is
+            ``None``.
     """
 
     key: str
     effective_value: str | None
     source: ValueSource
     is_secret: bool
+    default_value: str | None
 
 
 def view_settings(
@@ -89,6 +154,7 @@ def view_settings(
                 effective_value=value,
                 source=source,
                 is_secret=key in SECRET_KEYS,
+                default_value=_CODED_DEFAULTS.get(key),
             )
         )
     return views
@@ -136,9 +202,9 @@ def validate_change_set(
     # unrelated key on a fresh instance that has not yet been configured. Inject
     # sentinel values so the builder can validate the type/range of the changed
     # keys without failing on an unrelated missing required key.
-    _SENTINEL = "__validation_placeholder__"
+    _VALIDATION_SENTINEL = "__validation_placeholder__"
     for req in SECRET_KEYS:
-        merged.setdefault(req, _SENTINEL)
+        merged.setdefault(req, _VALIDATION_SENTINEL)
     build_settings(merged)  # raises ValueError on a bad value
 
     # Determine which keys genuinely change. The current effective value is

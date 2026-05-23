@@ -26,6 +26,11 @@
   border: none;
 }
 
+.citation-mark:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
 .citation-mark:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);

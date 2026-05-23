@@ -276,8 +276,13 @@
   --bp-desktop:         1070px;
   --bp-desktop-large:   1440px;
 
-  /* Content container max-width — echoed in 980 px pill radius */
-  --width-content-max:  980px;
+  /* Application content container max-width — matches the 1320 px design artboard
+   * inner container (1440 px viewport minus equal side gutters). Every authenticated
+   * page's outermost content wrapper must reference this token so all screens share
+   * an identical visible width. --width-content-max is kept as an alias for any
+   * third-party or legacy references. */
+  --width-app-content:  1320px;
+  --width-content-max:  var(--width-app-content);
 
   /* Navigation height */
   --height-nav:         48px;
@@ -312,6 +317,18 @@
   /* Search input in page headers — narrower than the empty-state cap so the
    * search + action buttons do not crush the title block on the same row */
   --width-search-narrow: 240px;
+
+  /* SearchField internal padding — leading clears the 16 px icon at left:14 px
+   * (icon right edge = 30 px); trailing clears the 44 px touch-target button
+   * at right:4 px (button left edge = 4 px, button right edge = 48 px + 4 px gap). */
+  --padding-search-input-leading:   40px;
+  --padding-search-input-trailing:  52px;
+
+  /* Settings-field trailing-icon padding — reserves space for an absolutely
+   * positioned chevron (SettingsSelectField) or suffix slot (SettingsTextField).
+   * 64 px comfortably clears a ~50 px "Reveal" button at right:8 px or a
+   * 16 px chevron icon at right:11 px. */
+  --padding-settings-field-trailing: 64px;
 
   /* Select listbox — max height before the option list scrolls */
   --height-listbox:     240px;

@@ -68,27 +68,36 @@ const REINDEX = new Set(['EMBEDDING_MODEL', 'CHUNK_SIZE', 'CHUNK_OVERLAP']);
  * The backend returns one item per key with a STRING `value` — a list joins
  * with `, `, a boolean becomes `'true'`/`'false'`, a number is stringified.
  */
-function toSettingsBody(map: Record<string, unknown>): {
+function toSettingsBody(
+  map: Record<string, unknown>,
+  opts: { defaultKeys?: Set<string>; defaultValues?: Record<string, string> } = {},
+): {
   settings: {
     key: string;
-    value: string;
+    value: string | null;
     source: string;
     is_secret: boolean;
     requires_reindex: boolean;
+    default_value: string | null;
   }[];
 } {
   return {
-    settings: Object.entries(map).map(([key, v]) => ({
-      key,
-      value: Array.isArray(v)
+    settings: Object.entries(map).map(([key, v]) => {
+      const isDefault = opts.defaultKeys?.has(key) ?? false;
+      const rawValue = Array.isArray(v)
         ? v.join(', ')
         : typeof v === 'boolean'
           ? String(v)
-          : String(v),
-      source: 'database',
-      is_secret: SECRET.has(key),
-      requires_reindex: REINDEX.has(key),
-    })),
+          : String(v);
+      return {
+        key,
+        value: isDefault ? null : rawValue,
+        source: isDefault ? 'default' : 'database',
+        is_secret: SECRET.has(key),
+        requires_reindex: REINDEX.has(key),
+        default_value: isDefault ? (opts.defaultValues?.[key] ?? rawValue) : null,
+      };
+    }),
   };
 }
 
@@ -259,5 +268,37 @@ describe('SettingsScreen', () => {
     // one exists.
     const notes = await screen.findAllByText(/requires re-indexing all documents/i);
     expect(notes.length).toBeGreaterThan(0);
+  });
+
+  it('shows the coded default value in the control when source is default', async () => {
+    // SEARCH_TOP_K is on its coded default — value: null, default_value: 10.
+    mockFetchSequence([
+      {
+        status: 200,
+        body: toSettingsBody(SETTINGS, {
+          defaultKeys: new Set(['SEARCH_TOP_K']),
+          defaultValues: { SEARCH_TOP_K: '10' },
+        }),
+      },
+    ]);
+    renderScreen();
+    // The stepper should show 10 (the coded default), not 0 (the fallback for
+    // a null/missing value).
+    expect(await screen.findByRole('spinbutton', { name: 'Top K' })).toHaveValue(10);
+  });
+
+  it('shows a default badge on a key whose source is default', async () => {
+    mockFetchSequence([
+      {
+        status: 200,
+        body: toSettingsBody(SETTINGS, {
+          defaultKeys: new Set(['SEARCH_TOP_K']),
+          defaultValues: { SEARCH_TOP_K: '10' },
+        }),
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('heading', { level: 2, name: 'Search Server' });
+    expect(screen.getByText('default')).toBeInTheDocument();
   });
 });

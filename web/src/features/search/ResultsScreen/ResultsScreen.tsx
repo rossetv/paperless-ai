@@ -69,6 +69,18 @@ export function ResultsScreen({
 }: ResultsScreenProps): React.ReactElement {
   const { answer, sources, plan, stats } = result;
 
+  /**
+   * Handles a citation activation: highlights the source card AND opens its
+   * document preview. The 1-based index maps to `sources[index - 1]`.
+   */
+  function handleCitationActivate(index: number): void {
+    onCitationActivate(index);
+    const source = sources[index - 1];
+    if (source !== undefined) {
+      onPreview(source.document_id);
+    }
+  }
+
   return (
     <SearchScreenLayout
       variant="rail"
@@ -100,7 +112,7 @@ export function ResultsScreen({
           answer={answer}
           sources={sources}
           stats={stats}
-          onCitationActivate={onCitationActivate}
+          onCitationActivate={handleCitationActivate}
         />
 
         {/* Sources — a real heading carries the role; sub-heading is the

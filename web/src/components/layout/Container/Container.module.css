@@ -5,14 +5,14 @@
  * Stylelint enforces this.
  *
  * DESIGN.md §5 Grid & Container:
- *   - Max content width: --width-content-max (980px)
+ *   - Max content width: --width-app-content (1320px)
  *   - Horizontal centering via auto margins
  *   - Horizontal padding ensures content never touches the viewport edge on mobile
  */
 
 .container {
   width: 100%;
-  max-width: var(--width-content-max);
+  max-width: var(--width-app-content);
   margin-inline: auto;
   padding-inline: var(--spacing-14);
 }

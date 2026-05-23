@@ -45,9 +45,12 @@
   font-family: var(--font-mono);
 }
 
-/* Reserve room on the right so text never slides under the suffix slot. */
+/* Reserve room on the right so text never slides under the suffix slot.
+   --padding-settings-field-trailing (64 px) comfortably clears a ~50 px
+   "Reveal" button positioned at right:8 px. --spacing-section (96 px) was
+   a semantic misuse of the vertical-rhythm token. */
 .input-with-suffix {
-  padding-right: var(--spacing-section);
+  padding-right: var(--padding-settings-field-trailing);
 }
 
 /* ── The inline suffix slot — pinned to the right edge. ── */

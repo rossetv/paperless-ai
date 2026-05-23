@@ -8,10 +8,19 @@ describe('CitationLink', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('exposes an accessible "Citation n" name', () => {
+  it('exposes an accessible "View source N" name', () => {
     render(<CitationLink index={3} onActivate={() => {}} />);
     expect(
-      screen.getByRole('button', { name: /citation 3/i }),
+      screen.getByRole('button', { name: /view source 3/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('enriches the accessible name with the source title when provided', () => {
+    render(
+      <CitationLink index={3} onActivate={() => {}} sourceTitle="AIB Bank Statement" />,
+    );
+    expect(
+      screen.getByRole('button', { name: /view source 3: aib bank statement/i }),
     ).toBeInTheDocument();
   });
 
