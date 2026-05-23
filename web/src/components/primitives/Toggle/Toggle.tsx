@@ -40,11 +40,11 @@ export function Toggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={cn(styles['toggle'], checked && styles['toggleOn'], className)}
+      className={cn(styles['toggle'], checked && styles['toggle-on'], className)}
     >
       <span
         aria-hidden="true"
-        className={cn(styles['knob'], checked && styles['knobOn'])}
+        className={cn(styles['knob'], checked && styles['knob-on'])}
       />
     </button>
   );

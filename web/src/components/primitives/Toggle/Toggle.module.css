@@ -21,7 +21,7 @@
   transition: background-color var(--duration-fast) var(--easing-standard);
 }
 
-.toggleOn {
+.toggle-on {
   background-color: var(--colour-toggle-on);
 }
 
@@ -49,7 +49,7 @@
 }
 
 /* On: slide the knob to the right end (track − knob − 2×inset). */
-.knobOn {
+.knob-on {
   transform: translateX(calc(
     var(--size-toggle-width) - var(--size-toggle-knob) - var(--spacing-1) - var(--spacing-1)
   ));

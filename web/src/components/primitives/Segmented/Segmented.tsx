@@ -47,7 +47,7 @@ export function Segmented({
     <div
       role="radiogroup"
       aria-label={label}
-      className={cn(styles['group'], disabled && styles['groupDisabled'], className)}
+      className={cn(styles['group'], disabled && styles['group-disabled'], className)}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -65,7 +65,7 @@ export function Segmented({
             }}
             className={cn(
               styles['segment'],
-              selected && styles['segmentSelected'],
+              selected && styles['segment-selected'],
             )}
           >
             {option.label}

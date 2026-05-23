@@ -41,12 +41,12 @@
 }
 
 /* Monospace face — for URLs, tokens, model identifiers. */
-.inputMono {
+.input-mono {
   font-family: var(--font-mono);
 }
 
 /* Reserve room on the right so text never slides under the suffix slot. */
-.inputWithSuffix {
+.input-with-suffix {
   padding-right: var(--spacing-section);
 }
 
