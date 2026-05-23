@@ -60,7 +60,6 @@ from search.wire import (
     UpdateUserRequest,
     UserEnvelope,
     UserListResponse,
-    UserResponse,
     to_user_response,
 )
 from store import StoreError
