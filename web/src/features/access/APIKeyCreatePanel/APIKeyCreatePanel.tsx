@@ -73,6 +73,8 @@ export function APIKeyCreatePanel({
   // Once set, the form is replaced by the reveal panel.
   const [secret, setSecret] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
+  // Set when the clipboard write fails — prompts the user to copy manually.
+  const [copyError, setCopyError] = React.useState(false);
 
   /** Toggle a scope on or off. */
   function toggleScope(scope: ApiScope): void {
@@ -117,9 +119,13 @@ export function APIKeyCreatePanel({
     try {
       await navigator.clipboard.writeText(secret);
       setCopied(true);
+      setCopyError(false);
     } catch {
-      // Clipboard denied — leave the value visible for a manual copy.
+      // Clipboard access was denied — the user must copy the key manually.
+      // Surface an error so they know the one-time secret was not captured
+      // and the key text above is still selectable.
       setCopied(false);
+      setCopyError(true);
     }
   }
 
@@ -139,6 +145,12 @@ export function APIKeyCreatePanel({
               {copied ? 'Copied' : 'Copy'}
             </Button>
           </div>
+          {copyError && (
+            <p className={styles['error']} role="alert">
+              Copy failed — your browser blocked clipboard access. Select the
+              key text above and copy it manually before closing this panel.
+            </p>
+          )}
           <div className={styles['footer']}>
             <Button variant="primary" type="button" onClick={onClose}>
               Done
