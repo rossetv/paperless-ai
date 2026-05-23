@@ -1,0 +1,55 @@
+/*
+ * ViewToggle pattern — CSS Module.
+ *
+ * A two-segment switch: a rounded track holding two pill buttons. The active
+ * pill lifts onto the surface colour with the card shadow; the inactive pill
+ * is transparent with muted text.
+ *
+ * All values are design tokens (var(--…)) — Stylelint forbids raw literals.
+ */
+
+.toggle {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1);
+  background-color: var(--colour-button-active-bg);
+  border-radius: var(--radius-standard);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-8);
+  border: none;
+  background: none;
+  border-radius: var(--radius-micro);
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+  transition:
+    background-color var(--duration-standard) var(--easing-standard),
+    color var(--duration-standard) var(--easing-standard);
+}
+
+.segment:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Active segment — lifted onto the surface with the card shadow ── */
+.active {
+  background-color: var(--colour-surface);
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-micro-bold);
+  box-shadow: var(--shadow-card);
+}
+
+/* Decorative leading glyph inside a segment. */
+.icon {
+  display: inline-flex;
+}
