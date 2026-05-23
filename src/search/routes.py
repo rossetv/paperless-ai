@@ -1,6 +1,6 @@
 """HTTP route handlers for the search server (spec §7.1).
 
-This module owns the six ``/api/*`` route handlers, factored out of
+This module owns the seven ``/api/*`` route handlers, factored out of
 ``search/api.py`` so the app factory there is component wiring only
 (``CODE_GUIDELINES.md`` §3.1).  :func:`build_api_router` returns a configured
 :class:`~fastapi.APIRouter` the app factory mounts; the handlers close over the
@@ -28,17 +28,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
 import structlog
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from appdb import recent_searches as recent_search_store
 from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
 from search.sessions import CurrentUser
 from search.wire import (
+    DocumentListResponse,
     FacetsResponse,
+    MAX_PAGE_SIZE,
+    MAX_QUERY_LENGTH,
     SearchRequest,
     SearchResponse,
     StatsResponse,
+    to_document_browse_query,
+    to_document_list_response,
     to_facets_response,
     to_search_filters,
     to_search_response,
@@ -232,7 +237,7 @@ def build_api_router(
     require_member: Callable[..., CurrentUser],
     get_current_user: Callable[..., CurrentUser],
 ) -> APIRouter:
-    """Build the ``/api`` router with all six route handlers (spec §7.1).
+    """Build the ``/api`` router with all seven route handlers (spec §7.1).
 
     The handlers close over the injected dependencies; the app factory in
     ``search/api.py`` mounts the returned router.  ``/api/healthz`` is
@@ -330,6 +335,41 @@ def build_api_router(
         index_stats = await _run_blocking(store_reader.get_stats)
         return to_stats_response(index_stats)
 
+    @router.get("/api/documents", dependencies=[reader_auth])
+    async def documents(  # noqa: PLR0913 — one param per browse filter
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
+        sort: Literal["created", "title", "added"] = Query(default="added"),
+        descending: bool = Query(default=True),
+        query: str | None = Query(default=None, max_length=MAX_QUERY_LENGTH),
+        correspondent_id: int | None = Query(default=None),
+        document_type_id: int | None = Query(default=None),
+        tag_ids: list[int] = Query(default_factory=list),
+        date_from: str | None = Query(default=None),
+        date_to: str | None = Query(default=None),
+    ) -> DocumentListResponse:
+        """List indexed documents for the Library, paginated (web-redesign §5).
+
+        Read-only role or above.  ``sort`` is one of ``created`` / ``title``
+        / ``added`` (date indexed); ``query`` is an optional case-insensitive
+        text match over title, correspondent and document type.  Returns a
+        paginated envelope with the total match count for the UI pager.
+        """
+        return await _documents(
+            settings,
+            store_reader,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            descending=descending,
+            text=query,
+            correspondent_id=correspondent_id,
+            document_type_id=document_type_id,
+            tag_ids=tag_ids,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
     @router.post("/api/reconcile", dependencies=[member_auth])
     async def reconcile() -> Response:
         """Touch the reconciliation sentinel file and return 202 Accepted.
@@ -393,6 +433,67 @@ def _reconcile(settings: Settings) -> Response:
     sentinel.touch()
     log.info("api.reconcile_triggered", sentinel=str(sentinel))
     return Response(status_code=202)
+
+
+async def _documents(
+    settings: Settings,
+    store_reader: StoreReader,
+    *,
+    page: int,
+    page_size: int,
+    sort: str,
+    descending: bool,
+    text: str | None,
+    correspondent_id: int | None,
+    document_type_id: int | None,
+    tag_ids: list[int],
+    date_from: str | None,
+    date_to: str | None,
+) -> DocumentListResponse:
+    """Library browse handler body: validate, query the store, convert.
+
+    The query parameters are already bound and range-checked by FastAPI's
+    ``Query`` constraints on the route.  This body maps them to the store
+    browse shape, runs the (blocking) ``list_documents`` query off the event
+    loop, and converts the page to the wire envelope.
+
+    A ``sort`` value outside the allowed set is rejected by FastAPI before
+    this body runs; the explicit :class:`ValueError` catch is defence in
+    depth.  An index with no schema yet surfaces as a 503, consistent with
+    the index-not-ready contract; any other store fault propagates as a 500.
+    """
+    try:
+        browse_query = to_document_browse_query(
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            descending=descending,
+            text=text,
+            date_from=date_from,
+            date_to=date_to,
+            correspondent_id=correspondent_id,
+            document_type_id=document_type_id,
+            tag_ids=tag_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        document_page = await _run_blocking(
+            lambda: store_reader.list_documents(browse_query)
+        )
+    except SchemaNotReadyError as exc:
+        # The index has not been built yet — the same contract as healthz.
+        log.info("api.documents_index_not_ready")
+        raise HTTPException(
+            status_code=503, detail="The search index is not ready"
+        ) from exc
+
+    return to_document_list_response(
+        document_page,
+        page_number=page,
+        page_size=page_size,
+    )
 
 
 def _record_recent_search(
