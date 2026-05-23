@@ -1,0 +1,147 @@
+/*
+ * IndexScreen feature component — CSS Module.
+ *
+ * The Index operations dashboard layout: a header row, then a vertically
+ * stacked body — health hero, stat-tile row, daemon-card row, and a
+ * two-column activity/failed region, then the danger zone. Theme-aware via
+ * tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* Centres the dashboard within the page and constrains its width. */
+.screen {
+  max-width: var(--bp-desktop-large);
+  margin: 0 auto;
+  padding: var(--spacing-14) var(--spacing-14) var(--spacing-section);
+}
+
+/* ── Header row — title block on the left, actions on the right. ── */
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-14);
+  margin-bottom: var(--spacing-14);
+}
+
+.title-block {
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--colour-text-primary);
+}
+
+.subtitle {
+  margin: var(--spacing-4) 0 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-link);
+  font-weight: var(--font-weight-link);
+  letter-spacing: var(--letter-spacing-link);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Stacked dashboard body. ── */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-14);
+}
+
+/* Four-column rows for the stat tiles and the daemon cards. */
+.quad-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-10);
+}
+
+/* ── A titled section (the Daemons block). ── */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-8);
+  margin-bottom: var(--spacing-8);
+}
+
+.section-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+.section-hint {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Two-column activity/failed region — activity wider than failed. ── */
+.split-row {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: var(--spacing-10);
+  align-items: start;
+}
+
+/* ── Recent-activity panel. ── */
+.activity-panel {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-14);
+}
+
+.activity-head {
+  margin: 0 0 var(--spacing-4);
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+/* ── State containers — loading and error. ── */
+.state-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--height-skeleton-media);
+  padding: var(--spacing-section) var(--spacing-14);
+}
+
+.error-text {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-body);
+  color: var(--colour-status-danger-fg);
+  text-align: center;
+}
+
+/* ── Responsive collapse — single column on narrow viewports. ── */
+@media (width <= 834px) {
+  .quad-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .split-row {
+    grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
