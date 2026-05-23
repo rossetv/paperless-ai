@@ -652,3 +652,92 @@ def to_api_key_response(api_key: ApiKey, owner_name: str) -> ApiKeyResponse:
         revoked_at=api_key.revoked_at,
         request_count=api_key.request_count,
     )
+
+
+# ---------------------------------------------------------------------------
+# Settings API models (web-redesign spec §5, Wave 4)
+# ---------------------------------------------------------------------------
+
+
+class SettingItemResponse(BaseModel):
+    """One configuration key as returned by ``GET``/``PUT /api/settings``.
+
+    A secret key's *value* is masked by the route handler before this model
+    is built — this model never does the masking itself.
+
+    Attributes:
+        key: The canonical config key (an env-var name).
+        value: The effective string value, or ``None`` when the key is on its
+            coded default. For a secret key this is the masked placeholder.
+            Always a string on the wire — the frontend parses it per the
+            field's type (number / bool / CSV list).
+        source: ``database`` / ``environment`` / ``default``.
+        is_secret: Whether the key holds a secret (the UI offers a reveal).
+        requires_reindex: Whether changing this key requires re-indexing every
+            document — true for the chunking / embedding-model keys
+            (:data:`common.config.REINDEX_KEYS`). The UI shows a re-index
+            warning for exactly these keys. There is no restart concept:
+            Wave 4 hot-loads every config change.
+    """
+
+    key: str
+    value: str | None
+    source: str
+    is_secret: bool
+    requires_reindex: bool
+
+
+class SettingsResponse(BaseModel):
+    """Body of ``GET /api/settings`` and ``PUT /api/settings``.
+
+    The full list of config keys and their state. ``PUT`` returns this same
+    shape — the re-read configuration — so the Settings screen refreshes
+    itself from the one response with no second fetch.
+    """
+
+    settings: list[SettingItemResponse]
+
+
+class UpdateSettingsRequest(BaseModel):
+    """Body of ``PUT /api/settings`` — the configuration changes to apply.
+
+    Every value is a string: the ``config`` table stores raw strings and
+    ``common.config`` parses them. ``changes`` may be empty (a no-op save).
+    """
+
+    changes: dict[str, str]
+
+
+class TestConnectionRequest(BaseModel):
+    """Body of ``POST /api/settings/test-connection``.
+
+    The Settings screen sends the *live form values* so an admin can verify a
+    Paperless connection before saving it.
+
+    Attributes:
+        paperless_url: The Paperless base URL to probe. An empty string means
+            "use the stored URL".
+        paperless_token: The Paperless API token to probe with. An empty
+            string means "use the stored token" — the Settings screen sends
+            an empty token when the user has not replaced the masked one.
+    """
+
+    paperless_url: str
+    paperless_token: str
+
+
+class TestConnectionResponse(BaseModel):
+    """Body of ``POST /api/settings/test-connection`` — the round-trip result.
+
+    Attributes:
+        ok: Whether the Paperless API responded successfully to an
+            authenticated request.
+        document_count: The document count Paperless reported on success; 0
+            when the probe failed.
+        detail: A human-readable outcome — a success note or the failure
+            reason (an HTTP status, a connection error).
+    """
+
+    ok: bool
+    document_count: int
+    detail: str
