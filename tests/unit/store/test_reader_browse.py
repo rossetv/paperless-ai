@@ -13,9 +13,12 @@ Coverage:
 - the optional text query matches title, correspondent and type names
 - page_count and resolved taxonomy names are present on each summary
 - an empty index yields an empty page with total 0
+- a corrupted tag_ids column falls back to an empty tag list (no 500)
 """
 
 from __future__ import annotations
+
+import sqlite3
 
 import pytest
 
@@ -273,3 +276,35 @@ def test_empty_index_yields_empty_page(db_path: str) -> None:
     reader.close()
     assert page.documents == ()
     assert page.total == 0
+
+
+# ---------------------------------------------------------------------------
+# Fault tolerance
+# ---------------------------------------------------------------------------
+
+
+def test_corrupted_tag_ids_falls_back_to_empty_tags(populated_db: str) -> None:
+    """A corrupted tag_ids column does not raise — it falls back to no tags.
+
+    Defence-in-depth: if a hand-edited DB stores a non-JSON value in
+    tag_ids, the browse query must not 500.  The document is returned with an
+    empty tag list and a structured warning is emitted (not tested here — the
+    behaviour under test is that no exception is raised and the document is
+    still present in the page).
+    """
+    conn = sqlite3.connect(populated_db)
+    try:
+        conn.execute("UPDATE documents SET tag_ids = 'not-json' WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    reader = open_reader(populated_db)
+    try:
+        page = reader.list_documents(_query())
+    finally:
+        reader.close()
+
+    assert page.total == 2
+    corrupted_doc = next(d for d in page.documents if d.id == 1)
+    assert corrupted_doc.tags == ()  # graceful fallback — no 500

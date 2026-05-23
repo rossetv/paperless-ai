@@ -40,7 +40,7 @@ describe('DocumentViewerChrome', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('renders an "Open in Paperless" external link', () => {
+  it('renders an "Open in Paperless" external link when a URL is supplied', () => {
     renderChrome();
     const link = screen.getByRole('link', { name: /open in paperless/i });
     expect(link).toHaveAttribute(
@@ -48,6 +48,30 @@ describe('DocumentViewerChrome', () => {
       'https://paperless.example.com/documents/9823/',
     );
     expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('hides the "Open in Paperless" link when paperlessUrl is null', () => {
+    // The Library preview passes null because LibraryDocument carries no deep
+    // link; the chrome must not render an <a href=""> that opens the current
+    // page in a new tab.
+    renderChrome({ paperlessUrl: null });
+    expect(
+      screen.queryByRole('link', { name: /open in paperless/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the "Open in Paperless" link when paperlessUrl is an empty string', () => {
+    renderChrome({ paperlessUrl: '' });
+    expect(
+      screen.queryByRole('link', { name: /open in paperless/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the "Open in Paperless" link when paperlessUrl is omitted', () => {
+    renderChrome({ paperlessUrl: undefined });
+    expect(
+      screen.queryByRole('link', { name: /open in paperless/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders a Download link pointing at the supplied url', () => {

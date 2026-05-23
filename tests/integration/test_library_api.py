@@ -479,3 +479,102 @@ class TestLibraryDocumentPayload:
         finally:
             store_reader.close()
             app_db.close()
+
+    def test_page_count_none_is_serialised_as_null(self, tmp_path: Path) -> None:
+        """A document with no page count serialises ``page_count`` as null."""
+        from store.models import ChunkInput, DocumentMeta
+        from store.writer import StoreWriter
+
+        settings = make_settings(tmp_path)
+        seed_library_store(settings)
+        # Add a sixth document whose page_count is None.
+        writer = StoreWriter(settings)
+        try:
+            meta = DocumentMeta(
+                id=6,
+                title="No Page Count",
+                correspondent_id=None,
+                document_type_id=None,
+                tag_ids=(),
+                created="2025-01-01T00:00:00Z",
+                modified="2025-01-01T00:00:00Z",
+                content_hash="hash-6",
+                page_count=None,
+            )
+            chunk = ChunkInput(
+                chunk_index=0,
+                text="No page count document.",
+                page_hint=1,
+                embedding=(1.0, 0.0, 0.0, 0.0),
+            )
+            writer.upsert_document(meta, [chunk])
+        finally:
+            writer.close()
+
+        app_db = open_app_db(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            seed_admin(app_db, username="boss", password="boss-pw")
+            client = build_account_client(settings, app_db, store_reader)
+            raw_key = mint_bearer(app_db)
+            response = client.get(
+                "/api/documents",
+                params={"query": "no page count"},
+                headers=_bearer(raw_key),
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["total"] == 1
+            assert body["documents"][0]["page_count"] is None
+        finally:
+            store_reader.close()
+            app_db.close()
+
+
+# ---------------------------------------------------------------------------
+# Input-bounds validation
+# ---------------------------------------------------------------------------
+
+
+class TestLibraryInputBounds:
+    """FastAPI rejects out-of-bound query parameters with 422."""
+
+    def test_page_over_the_maximum_is_rejected(self, tmp_path: Path) -> None:
+        """A page value above MAX_PAGE_NUMBER (10 000) is rejected 422."""
+        settings = make_settings(tmp_path)
+        seed_library_store(settings)
+        app_db = open_app_db(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            seed_admin(app_db, username="boss", password="boss-pw")
+            client = build_account_client(settings, app_db, store_reader)
+            raw_key = mint_bearer(app_db)
+            response = client.get(
+                "/api/documents",
+                params={"page": 99_999},
+                headers=_bearer(raw_key),
+            )
+            assert response.status_code == 422
+        finally:
+            store_reader.close()
+            app_db.close()
+
+    def test_too_many_tag_ids_is_rejected(self, tmp_path: Path) -> None:
+        """More than 64 tag_ids in a single request is rejected 422."""
+        settings = make_settings(tmp_path)
+        seed_library_store(settings)
+        app_db = open_app_db(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            seed_admin(app_db, username="boss", password="boss-pw")
+            client = build_account_client(settings, app_db, store_reader)
+            raw_key = mint_bearer(app_db)
+            response = client.get(
+                "/api/documents",
+                params={"tag_ids": list(range(1, 66))},  # 65 ids — over the limit
+                headers=_bearer(raw_key),
+            )
+            assert response.status_code == 422
+        finally:
+            store_reader.close()
+            app_db.close()

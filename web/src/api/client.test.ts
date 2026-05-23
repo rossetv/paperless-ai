@@ -713,6 +713,11 @@ describe('Wave 4 settings endpoints', () => {
 
 describe('getDocuments', () => {
   it('GETs /api/documents with the encoded query string', async () => {
+    // This test is the contract guard: it asserts the URL shape that the
+    // FastAPI backend ACTUALLY accepts.  The backend expects `descending=true`
+    // (a boolean query param) and sort values in `created|title|added` — NOT
+    // `order=asc` and NOT `sort=correspondent`.  If either side drifts, this
+    // test is the first thing that should turn red.
     const body = { documents: [], total: 0, page: 1, page_size: 24 };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(body), { status: 200 }),
@@ -723,7 +728,7 @@ describe('getDocuments', () => {
       page: 2,
       page_size: 24,
       sort: 'title',
-      order: 'asc',
+      descending: false,
       query: 'energy',
       correspondent_id: 7,
       document_type_id: null,
@@ -737,7 +742,9 @@ describe('getDocuments', () => {
     expect(url).toContain('page=2');
     expect(url).toContain('page_size=24');
     expect(url).toContain('sort=title');
-    expect(url).toContain('order=asc');
+    // The backend parameter is `descending` (boolean), not `order` (string).
+    expect(url).toContain('descending=false');
+    expect(url).not.toContain('order=');
     expect(url).toContain('query=energy');
     expect(url).toContain('correspondent_id=7');
     expect(url).toContain('tag_ids=3');
@@ -748,7 +755,31 @@ describe('getDocuments', () => {
     expect(url).not.toContain('date_to');
   });
 
-  it('returns the parsed DocumentsResponse', async () => {
+  it('sends descending=true when descending is true', async () => {
+    // Regression guard: ensures the direction toggle reaches the backend.
+    // Before the fix, the `order` param was silently ignored by FastAPI and
+    // the list always used the backend default (descending=true).
+    const body = { documents: [], total: 0, page: 1, page_size: 24 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await getDocuments({
+      page: 1,
+      page_size: 24,
+      sort: 'added',
+      descending: true,
+      tag_ids: [],
+    });
+
+    const url = (fetchMock.mock.calls[0]![0] as string);
+    expect(url).toContain('descending=true');
+    expect(url).not.toContain('order=');
+  });
+
+  it('returns the parsed DocumentsResponse including nullable page_count', async () => {
+    // page_count is int|None on the backend; the frontend must accept null.
     const body = {
       documents: [
         {
@@ -758,7 +789,7 @@ describe('getDocuments', () => {
           document_type: 'Letter',
           created: '2025-01-01',
           tags: ['x'],
-          page_count: 3,
+          page_count: null,
         },
       ],
       total: 1,
@@ -773,11 +804,12 @@ describe('getDocuments', () => {
       page: 1,
       page_size: 24,
       sort: 'created',
-      order: 'desc',
+      descending: true,
       tag_ids: [],
     });
     expect(result.total).toBe(1);
     expect(result.documents[0]!.title).toBe('A');
+    expect(result.documents[0]!.page_count).toBeNull();
   });
 
   it('throws Unauthenticated on a 401', async () => {
@@ -785,7 +817,7 @@ describe('getDocuments', () => {
       new Response('', { status: 401 }),
     ) as unknown as typeof fetch;
     await expect(
-      getDocuments({ page: 1, page_size: 24, sort: 'created', order: 'desc', tag_ids: [] }),
+      getDocuments({ page: 1, page_size: 24, sort: 'created', descending: true, tag_ids: [] }),
     ).rejects.toBeInstanceOf(Unauthenticated);
   });
 });

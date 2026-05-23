@@ -577,7 +577,7 @@ describe('useDocuments', () => {
           page: 1,
           page_size: 24,
           sort: 'created',
-          order: 'desc',
+          descending: true,
           tag_ids: [],
         }),
       { wrapper: makeWrapper() },
