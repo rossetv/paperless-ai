@@ -1,0 +1,56 @@
+/*
+ * Toggle primitive — CSS Module.
+ *
+ * An iOS-style switch: a pill track with a sliding circular knob. The track
+ * is green when on, neutral grey when off; the knob slides between the two
+ * ends. Rendered as a <button role="switch"> for full keyboard support.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.toggle {
+  position: relative;
+  width: var(--size-toggle-width);
+  height: var(--size-toggle-height);
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background-color: var(--colour-toggle-off);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--easing-standard);
+}
+
+.toggleOn {
+  background-color: var(--colour-toggle-on);
+}
+
+.toggle:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.toggle:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+/* ── The sliding knob. ── */
+.knob {
+  position: absolute;
+  top: var(--spacing-1);
+  left: var(--spacing-1);
+  width: var(--size-toggle-knob);
+  height: var(--size-toggle-knob);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-surface);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+/* On: slide the knob to the right end (track − knob − 2×inset). */
+.knobOn {
+  transform: translateX(calc(
+    var(--size-toggle-width) - var(--size-toggle-knob) - var(--spacing-1) - var(--spacing-1)
+  ));
+}
