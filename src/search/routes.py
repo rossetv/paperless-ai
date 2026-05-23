@@ -31,6 +31,7 @@ import structlog
 from fastapi import APIRouter, Depends, Response
 
 from appdb import recent_searches as recent_search_store
+from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
 from search.sessions import CurrentUser
 from search.wire import (
@@ -190,7 +191,7 @@ class _LazySemaphore:
 
 def build_api_router(
     settings: Settings,
-    core: SearchCore,
+    resolve_core: Callable[[str], SearchCore],
     store_reader: StoreReader,
     *,
     require_reader: Callable[..., CurrentUser],
@@ -206,7 +207,13 @@ def build_api_router(
 
     Args:
         settings: Application settings.
-        core: The search pipeline entry point, backing ``/api/search``.
+        resolve_core: A callable that returns the live :class:`SearchCore` for
+            the request's ``app.db`` path. Called per request so the search
+            handler picks up a hot-loaded configuration change without a
+            restart (web-redesign §5, Wave 4); in production this is
+            :func:`search.api._resolve_search_core`. The callable owns its
+            own caching — a steady-state request pays one cheap one-row
+            ``SELECT``.
         store_reader: The read-side store, backing healthz, facets, and stats.
         require_reader: A FastAPI dependency requiring an authenticated
             caller of role Read-only or above; an API-key caller must also
@@ -251,6 +258,7 @@ def build_api_router(
     @router.post("/api/search")
     async def search(
         body: SearchRequest,
+        state: AppState = Depends(get_app_state),
         _role: object = Depends(require_reader),
         user: CurrentUser = Depends(get_current_user),
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -259,8 +267,11 @@ def build_api_router(
 
         Bounded by ``SEARCH_MAX_CONCURRENT`` to limit simultaneous LLM spend.
         A successful search by an authenticated caller is recorded in that
-        caller's recent-search history.
+        caller's recent-search history. The :class:`SearchCore` is resolved
+        per request through *resolve_core* so a saved configuration change
+        takes effect on the next query — web-redesign §5, Wave 4.
         """
+        core = resolve_core(state.app_db_path)
         result = await _search(body, core, search_semaphore)
         _record_recent_search(app_db, user, body.query)
         return result
