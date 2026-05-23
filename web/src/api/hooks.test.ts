@@ -28,6 +28,9 @@ import {
   useCreateApiKey,
   useUpdateApiKey,
   useDeleteApiKey,
+  useSettings,
+  useUpdateSettings,
+  useTestConnection,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated, ApiError } from './client';
@@ -487,5 +490,72 @@ describe('useDeleteApiKey', () => {
     const { result } = renderHook(() => useDeleteApiKey(), { wrapper: makeWrapper() });
     result.current.mutate(3);
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 4 — settings hooks
+// ---------------------------------------------------------------------------
+
+const SETTINGS_RESPONSE = {
+  settings: [
+    {
+      key: 'SEARCH_TOP_K',
+      value: '10',
+      source: 'default',
+      is_secret: false,
+      requires_reindex: false,
+    },
+    {
+      key: 'PAPERLESS_URL',
+      value: 'http://x',
+      source: 'database',
+      is_secret: false,
+      requires_reindex: false,
+    },
+  ],
+};
+
+describe('useSettings', () => {
+  it('returns the settings item list on success', async () => {
+    mockFetch(200, SETTINGS_RESPONSE);
+    const { result } = renderHook(() => useSettings(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const topK = result.current.data?.settings.find((s) => s.key === 'SEARCH_TOP_K');
+    expect(topK?.value).toBe('10');
+  });
+});
+
+describe('useUpdateSettings', () => {
+  it('mutation starts idle', () => {
+    const { result } = renderHook(() => useUpdateSettings(), { wrapper: makeWrapper() });
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('resolves with the re-read settings on success', async () => {
+    mockFetch(200, SETTINGS_RESPONSE);
+    const { result } = renderHook(() => useUpdateSettings(), { wrapper: makeWrapper() });
+    result.current.mutate({ changes: { SEARCH_TOP_K: '20' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const topK = result.current.data?.settings.find((s) => s.key === 'SEARCH_TOP_K');
+    expect(topK?.value).toBe('10');
+  });
+
+  it('surfaces ApiError on a 400 validation failure', async () => {
+    mockFetch(400, { detail: 'invalid' });
+    const { result } = renderHook(() => useUpdateSettings(), { wrapper: makeWrapper() });
+    result.current.mutate({ changes: { CHUNK_OVERLAP: '99999' } });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+  });
+});
+
+describe('useTestConnection', () => {
+  it('resolves with the probe result', async () => {
+    mockFetch(200, { ok: true, document_count: 14238, detail: 'Connected.' });
+    const { result } = renderHook(() => useTestConnection(), { wrapper: makeWrapper() });
+    result.current.mutate({ paperless_url: 'http://x', paperless_token: 'tok' });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.document_count).toBe(14238);
   });
 });

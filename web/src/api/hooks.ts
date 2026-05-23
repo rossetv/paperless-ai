@@ -30,6 +30,9 @@ import {
   createApiKey,
   updateApiKey,
   deleteApiKey,
+  getSettings,
+  updateSettings,
+  testConnection,
 } from './client';
 import type {
   SearchRequest,
@@ -53,6 +56,10 @@ import type {
   ApiKeysResponse,
   CreateApiKeyResponse,
   ApiKeyEnvelope,
+  SettingsResponse,
+  UpdateSettingsRequest,
+  TestConnectionRequest,
+  TestConnectionResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -69,6 +76,7 @@ const queryKeys = {
   recentSearches: () => ['recent-searches'] as const,
   users: () => ['users'] as const,
   apiKeys: () => ['api-keys'] as const,
+  settings: () => ['settings'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -370,5 +378,52 @@ export function useDeleteApiKey(): UseMutationResult<void, Error, number> {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys() });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Settings hooks (Wave 4 — Settings)
+//
+// `useUpdateSettings` invalidates the settings query so the screen re-reads
+// the persisted state after a save — the PUT response is also the new state,
+// but invalidation keeps any other settings reader consistent.
+// ---------------------------------------------------------------------------
+
+/** Fetch the current configuration — GET /api/settings. */
+export function useSettings(): UseQueryResult<SettingsResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.settings(),
+    queryFn: getSettings,
+  });
+}
+
+/** Save changed configuration — PUT /api/settings. Invalidates the settings query. */
+export function useUpdateSettings(): UseMutationResult<
+  SettingsResponse,
+  Error,
+  UpdateSettingsRequest
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateSettings,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings() });
+    },
+  });
+}
+
+/**
+ * Probe the Paperless connection — POST /api/settings/test-connection.
+ *
+ * A one-shot mutation: it touches no query cache. The caller reads
+ * `isPending` / `data` / `error` to drive the inline test-result UI.
+ */
+export function useTestConnection(): UseMutationResult<
+  TestConnectionResponse,
+  Error,
+  TestConnectionRequest
+> {
+  return useMutation({
+    mutationFn: testConnection,
   });
 }
