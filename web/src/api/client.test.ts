@@ -33,8 +33,21 @@ import {
   updateSettings,
   testConnection,
   getDocuments,
+  getIndexStatus,
+  getIndexActivity,
+  getFailedDocuments,
+  retryFailedDocument,
+  rebuildIndex,
 } from './client';
-import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
+import type {
+  SearchRequest,
+  FacetsResponse,
+  StatsResponse,
+  SearchResponse,
+  IndexStatusResponse,
+  ActivityResponse,
+  FailedResponse,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -819,5 +832,113 @@ describe('getDocuments', () => {
     await expect(
       getDocuments({ page: 1, page_size: 24, sort: 'created', descending: true, tag_ids: [] }),
     ).rejects.toBeInstanceOf(Unauthenticated);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 6 — index-operations endpoints
+// ---------------------------------------------------------------------------
+
+describe('index-operations endpoints', () => {
+  const STATUS_BODY: IndexStatusResponse = {
+    health: {
+      healthy: true,
+      headline: 'Healthy · ready to serve',
+      detail: 'Schema present · integrity check passed.',
+      uptime: '14d 6h',
+      since: '2026-05-07T00:00:00Z',
+    },
+    daemons: [
+      {
+        key: 'ocr',
+        name: 'OCR',
+        role: 'Vision-model transcription',
+        state: 'running',
+        detail: '3 documents in flight',
+        throughput: '412 pages / hr',
+      },
+    ],
+    document_count: 14238,
+    chunk_count: 187612,
+    embedding_model: 'text-embedding-3-small',
+    index_size_bytes: 882900992,
+  };
+
+  it('getIndexStatus GETs /api/index/status with credentials', async () => {
+    mockFetch(200, STATUS_BODY);
+    const result = await getIndexStatus();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/index\/status$/);
+    expect(init.method).toBe('GET');
+    expect(init.credentials).toBe('include');
+    expect(result.health.healthy).toBe(true);
+    expect(result.daemons[0]?.key).toBe('ocr');
+    expect(result.document_count).toBe(14238);
+  });
+
+  it('getIndexStatus throws Unauthenticated on 401', async () => {
+    mockFetch(401, { detail: 'Unauthorised' });
+    await expect(getIndexStatus()).rejects.toBeInstanceOf(Unauthenticated);
+  });
+
+  it('getIndexActivity GETs /api/index/activity', async () => {
+    const body: ActivityResponse = {
+      entries: [
+        { id: 'r1', status: 'ok', label: 'Reconcile complete', detail: '+12 new', at: '2026-05-22T09:00:00Z' },
+      ],
+    };
+    mockFetch(200, body);
+    const result = await getIndexActivity();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/index\/activity$/);
+    expect(init.method).toBe('GET');
+    expect(result.entries[0]?.id).toBe('r1');
+  });
+
+  it('getFailedDocuments GETs /api/index/failed', async () => {
+    const body: FailedResponse = {
+      documents: [
+        {
+          document_id: 8421,
+          title: 'Scanned receipt #2891',
+          reason: 'OCR refused on all attempts',
+          failed_at: '2026-05-22T08:48:00Z',
+        },
+      ],
+    };
+    mockFetch(200, body);
+    const result = await getFailedDocuments();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/index\/failed$/);
+    expect(init.method).toBe('GET');
+    expect(result.documents[0]?.document_id).toBe(8421);
+  });
+
+  it('retryFailedDocument POSTs to /api/index/failed/{id}/retry', async () => {
+    mockFetch(202, null);
+    await expect(retryFailedDocument(8421)).resolves.toBeUndefined();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/index\/failed\/8421\/retry$/);
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+  });
+
+  it('retryFailedDocument throws ApiError on 403', async () => {
+    mockFetch(403, { detail: 'Forbidden' });
+    await expect(retryFailedDocument(8421)).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('rebuildIndex POSTs to /api/index/rebuild', async () => {
+    mockFetch(202, null);
+    await expect(rebuildIndex()).resolves.toBeUndefined();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/index\/rebuild$/);
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+  });
+
+  it('rebuildIndex throws ApiError on 403', async () => {
+    mockFetch(403, { detail: 'Forbidden' });
+    await expect(rebuildIndex()).rejects.toBeInstanceOf(ApiError);
   });
 });
