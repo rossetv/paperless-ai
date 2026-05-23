@@ -1,0 +1,94 @@
+/*
+ * RebuildIndexCard feature component — CSS Module.
+ *
+ * The Index dashboard "danger zone": a warning icon, a title + consequences
+ * sentence, and a destructive rebuild button. The danger-tinted border marks
+ * it as a destructive zone. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-13);
+  align-items: center;
+  background-color: transparent;
+  border: var(--spacing-1) solid var(--colour-status-danger-fg);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-14);
+}
+
+/* ── Warning icon disc. ── */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-section);
+  max-width: var(--size-icon-xlarge);
+  height: var(--size-icon-xlarge);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0 0 var(--spacing-1);
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+.body {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* Inline monospace for the index.db filename. */
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-primary);
+}
+
+/* ── Modal contents. ── */
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.modal-text {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* The danger-tinted error region inside the modal. */
+.error {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-status-danger-fg);
+}
+
+/* ── Modal action row. ── */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+}
