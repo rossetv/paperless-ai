@@ -161,9 +161,9 @@ def main() -> None:
         app_db_path=app_db_path,
     )
 
-    # The Index dashboard heartbeat (web-redesign spec §5). app.db is located
-    # by APP_DB_PATH — the same bootstrap variable the config loader uses.
-    app_db = connect_app_db(os.environ.get("APP_DB_PATH", "/data/app.db"))
+    # The Index dashboard heartbeat (web-redesign spec §5). Reuse the
+    # already-resolved app_db_path rather than re-reading the env var.
+    app_db = connect_app_db(app_db_path)
     ensure_schema(app_db)
     heartbeat = Heartbeat(name="classifier", conn=app_db)
 

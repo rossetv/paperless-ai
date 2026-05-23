@@ -98,18 +98,18 @@ def record_heartbeat(
         processed_count: The daemon's monotonic throughput counter.
     """
     now = _utc_now_iso()
-    conn.execute(
-        "INSERT INTO daemon_status "
-        "(name, detail, processed_count, last_heartbeat, updated_at) "
-        "VALUES (?, ?, ?, ?, ?) "
-        "ON CONFLICT(name) DO UPDATE SET "
-        "detail = excluded.detail, "
-        "processed_count = excluded.processed_count, "
-        "last_heartbeat = excluded.last_heartbeat, "
-        "updated_at = excluded.updated_at",
-        (name, detail, processed_count, now, now),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "INSERT INTO daemon_status "
+            "(name, detail, processed_count, last_heartbeat, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET "
+            "detail = excluded.detail, "
+            "processed_count = excluded.processed_count, "
+            "last_heartbeat = excluded.last_heartbeat, "
+            "updated_at = excluded.updated_at",
+            (name, detail, processed_count, now, now),
+        )
 
 
 def _derive_state(
@@ -129,7 +129,7 @@ def _derive_state(
     age_seconds = (now - beat).total_seconds()
     if age_seconds > stale_after:
         return "stopped"
-    if detail.strip().lower() == IDLE_DETAIL:
+    if detail.strip() == IDLE_DETAIL:
         return "idle"
     return "running"
 

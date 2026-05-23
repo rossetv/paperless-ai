@@ -79,28 +79,29 @@ def record_cycle(
         summary: The cycle's count map; stored as a JSON object.
         detail: A short human one-liner.
     """
-    conn.execute(
-        "INSERT INTO reconcile_activity "
-        "(kind, started_at, finished_at, ok, summary, detail) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            kind,
-            started_at,
-            finished_at,
-            1 if ok else 0,
-            json.dumps(summary),
-            detail,
-        ),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "INSERT INTO reconcile_activity "
+            "(kind, started_at, finished_at, ok, summary, detail) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                kind,
+                started_at,
+                finished_at,
+                1 if ok else 0,
+                json.dumps(summary),
+                detail,
+            ),
+        )
 
 
 def _parse_summary(raw: str) -> dict[str, int]:
     """Decode a stored summary JSON string into a count map.
 
-    A row whose summary is somehow not a JSON object decodes to an empty
-    map rather than raising — a malformed history entry must not break the
-    whole dashboard read.
+    A row whose summary is somehow not a JSON object or contains non-integer
+    values decodes to a partial or empty map rather than raising — a malformed
+    history entry must never break the whole dashboard read.  Individual keys
+    with un-coercible values (e.g. lists, nested objects) are silently skipped.
     """
     try:
         decoded = json.loads(raw)
@@ -108,7 +109,13 @@ def _parse_summary(raw: str) -> dict[str, int]:
         return {}
     if not isinstance(decoded, dict):
         return {}
-    return {str(k): int(v) for k, v in decoded.items()}
+    result: dict[str, int] = {}
+    for k, v in decoded.items():
+        try:
+            result[str(k)] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return result
 
 
 def read_recent(conn: sqlite3.Connection, *, limit: int) -> list[ReconcileCycle]:

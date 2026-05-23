@@ -103,3 +103,34 @@ def test_summary_round_trips_an_empty_dict(conn) -> None:
         detail="no-op cycle",
     )
     assert reconcile_activity.read_recent(conn, limit=10)[0].summary == {}
+
+
+def test_parse_summary_skips_non_int_values_without_raising(conn) -> None:
+    """A summary with a non-integer value must not crash read_recent.
+
+    This is the MAJOR 2 regression guard: _parse_summary's int() coercion was
+    outside the try block, so a malformed stored value (e.g. a list) would
+    raise TypeError and propagate through read_recent → 500 on the dashboard.
+    """
+    # Write a manually crafted row with a non-integer summary value.
+    conn.execute(
+        "INSERT INTO reconcile_activity "
+        "(kind, started_at, finished_at, ok, summary, detail) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "sync",
+            "2026-05-22T12:00:00+00:00",
+            "2026-05-22T12:00:01+00:00",
+            1,
+            '{"indexed": [1, 2], "failed": 0}',  # "indexed" is a list, not int
+            "malformed summary row",
+        ),
+    )
+    conn.commit()
+
+    # read_recent must not raise; the bad key is silently skipped.
+    rows = reconcile_activity.read_recent(conn, limit=10)
+    assert len(rows) == 1
+    # "failed" is valid and must be present; "indexed" is skipped.
+    assert rows[0].summary == {"failed": 0}
+    assert "indexed" not in rows[0].summary

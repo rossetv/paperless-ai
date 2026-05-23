@@ -409,8 +409,7 @@ def _run_loop(
         # (web-redesign spec §5, Wave 6). The rebuild sentinel lives beside
         # index.db, the same directory as the reconcile sentinel.
         rebuild_sentinel = sentinel_path.parent / _REBUILD_SENTINEL_NAME
-        if _consume_sentinel(rebuild_sentinel):
-            _run_rebuild(store_writer, cycle_recorder)
+        needs_rebuild = _consume_sentinel(rebuild_sentinel)
 
         # Determine whether a deletion sweep is due this cycle. The interval
         # is read live from settings so a hot-loaded change takes effect now.
@@ -418,6 +417,8 @@ def _run_loop(
         run_sweep = manual_trigger or elapsed >= settings.DELETION_SWEEP_INTERVAL
 
         try:
+            if needs_rebuild:
+                _run_rebuild(store_writer, cycle_recorder)
             # Run incremental sync every cycle.
             sync_started = utc_now_iso()
             sync_report = reconciler.incremental_sync()
