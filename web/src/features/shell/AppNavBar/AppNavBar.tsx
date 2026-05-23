@@ -72,7 +72,7 @@ export function AppNavBar(): React.ReactElement | null {
           </Link>
           {role === 'admin' && (
             <Link
-              to="/settings/users"
+              to="/settings"
               className={cn(
                 styles['link'],
                 pathname.startsWith('/settings') && styles['link-active'],
