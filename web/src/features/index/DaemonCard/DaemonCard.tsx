@@ -1,0 +1,48 @@
+import { cn } from '../../../lib/cn';
+import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBadge';
+import type { StatusTone } from '../../../components/primitives/StatusBadge/StatusBadge';
+import type { DaemonStatus, DaemonState } from '../../../api/types';
+import styles from './DaemonCard.module.css';
+
+/** Maps a daemon run-state to a StatusBadge tone and label. */
+const STATE_PRESENTATION: Record<DaemonState, { tone: StatusTone; label: string }> = {
+  running: { tone: 'ok', label: 'Running' },
+  idle: { tone: 'warn', label: 'Idle' },
+  stopped: { tone: 'danger', label: 'Stopped' },
+};
+
+export interface DaemonCardProps {
+  /** The daemon's status, from GET /api/index/status. */
+  daemon: DaemonStatus;
+  /** Additional class names to merge onto the root. */
+  className?: string;
+}
+
+/**
+ * A status card for one worker daemon.
+ *
+ * Shows the daemon name, a `StatusBadge` for its run-state, a role sub-line,
+ * and an inset row pairing a `detail` sentence with a `throughput` figure.
+ * The run-state drives the badge tone via `STATE_PRESENTATION`.
+ *
+ * Tier: features/index (CODE_GUIDELINES §12.3) — composes the StatusBadge
+ * primitive and takes a domain wire type.
+ */
+export function DaemonCard({ daemon, className }: DaemonCardProps): React.ReactElement {
+  const { tone, label } = STATE_PRESENTATION[daemon.state];
+
+  return (
+    <article className={cn(styles['card'], className)}>
+      <div className={styles['header']}>
+        <span className={styles['name']}>{daemon.name}</span>
+        <span className={styles['spacer']} />
+        <StatusBadge tone={tone}>{label}</StatusBadge>
+      </div>
+      <p className={styles['role']}>{daemon.role}</p>
+      <div className={styles['metrics']}>
+        <span className={styles['detail']}>{daemon.detail}</span>
+        <span className={styles['throughput']}>{daemon.throughput}</span>
+      </div>
+    </article>
+  );
+}

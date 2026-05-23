@@ -1,0 +1,76 @@
+/*
+ * DaemonCard feature component — CSS Module.
+ *
+ * A card for one worker daemon: a header row (name + status badge), a role
+ * sub-line, and an inset detail/throughput row. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.card {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-13) var(--spacing-14);
+}
+
+/* ── Header row — name on the left, status badge pushed right. ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+/* Pushes the status badge to the trailing edge. */
+.spacer {
+  flex: 1;
+}
+
+/* ── Role sub-line. ── */
+.role {
+  margin-top: var(--spacing-2);
+  margin-bottom: var(--spacing-10);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Inset detail/throughput row. ── */
+.metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  padding: var(--spacing-8) var(--spacing-9);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+}
+
+.detail {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+.throughput {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+  white-space: nowrap;
+}
