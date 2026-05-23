@@ -11,6 +11,9 @@ Behavioural promises tested:
    retries, and a failed cycle never advances the deletion-sweep clock.
 5. The deletion sweep runs only when DELETION_SWEEP_INTERVAL has elapsed since
    the last sweep — or a manual trigger forced a full cycle.
+6. _run_loop re-checks current_settings() at the top of every cycle and, when
+   config_version has moved, rebuilds the Reconciler exactly once (web-redesign
+   spec §5 hot-load contract).
 
 The sweep cadence is driven by an injected ``clock`` (CODE_GUIDELINES §11.4):
 a test passes a deterministic clock so the loop reaches a chosen elapsed time
@@ -21,6 +24,7 @@ files for the 500-line ceiling (CODE_GUIDELINES §3.1).
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -45,6 +49,16 @@ def _make_reconciler() -> MagicMock:
     return reconciler
 
 
+def _make_settings(
+    reconcile_interval: int = 300, deletion_sweep_interval: int = 3600
+) -> MagicMock:
+    """Return a MagicMock standing in for Settings with the loop intervals."""
+    settings = MagicMock()
+    settings.RECONCILE_INTERVAL = reconcile_interval
+    settings.DELETION_SWEEP_INTERVAL = deletion_sweep_interval
+    return settings
+
+
 # ---------------------------------------------------------------------------
 # 1. Loop runs one cycle (incremental_sync + checkpoint), then waits
 # ---------------------------------------------------------------------------
@@ -54,6 +68,7 @@ def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) ->
     """One cycle: incremental_sync called, then checkpoint, then the wait begins."""
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
     wait_count = 0
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
@@ -63,12 +78,15 @@ def test_loop_runs_incremental_sync_and_checkpoint_each_cycle(tmp_path: Path) ->
         shutdown_mod.request_shutdown()
         return False  # no manual trigger pending
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
         )
 
@@ -86,16 +104,18 @@ def test_shutdown_ends_loop_promptly(tmp_path: Path) -> None:
     """Requesting shutdown before the loop runs causes it to exit immediately."""
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
 
     shutdown_mod.request_shutdown()
 
-    _run_loop(
-        reconciler=reconciler,
-        store_writer=store_writer,
-        reconcile_interval=300,
-        deletion_sweep_interval=3600,
-        sentinel_path=tmp_path / "reconcile.request",
-    )
+    with patch("indexer.daemon.current_settings", return_value=settings):
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
+            sentinel_path=tmp_path / "reconcile.request",
+        )
 
     # The loop must have checked the flag at entry and exited without doing work.
     reconciler.incremental_sync.assert_not_called()
@@ -106,6 +126,7 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
     """Shutdown requested during the wait does not run another full cycle."""
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
     cycles: list[int] = []
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
@@ -113,12 +134,15 @@ def test_shutdown_during_wait_exits_after_current_cycle(tmp_path: Path) -> None:
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
         )
 
@@ -143,6 +167,7 @@ def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
     """
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
 
     # First call raises (transient failure); second call succeeds.
     reconciler.incremental_sync.side_effect = [
@@ -160,13 +185,16 @@ def test_cycle_failure_does_not_crash_loop_and_proceeds_to_next_cycle(
             shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         # Must NOT raise — the failing first cycle is caught and isolated.
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
         )
 
@@ -187,6 +215,7 @@ def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
     """
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings(deletion_sweep_interval=1)
 
     reconciler.incremental_sync.side_effect = [
         RuntimeError("cycle 1 failed before the sweep"),
@@ -202,12 +231,15 @@ def test_cycle_failure_does_not_advance_the_deletion_sweep_clock(
             shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=1,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
         )
 
@@ -220,6 +252,7 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
     """A deletion_sweep that raises is isolated by the same cycle boundary."""
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings(deletion_sweep_interval=1)
 
     reconciler.deletion_sweep.side_effect = ConnectionError("sweep enumeration died")
 
@@ -231,13 +264,16 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         # Must NOT raise — the sweep failure is caught by the cycle boundary.
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=1,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
         )
 
@@ -255,6 +291,7 @@ def test_sentinel_present_is_deleted_and_forces_deletion_sweep(tmp_path: Path) -
     """A reconcile.request sentinel is deleted and the next cycle runs deletion_sweep."""
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()
 
@@ -262,12 +299,15 @@ def test_sentinel_present_is_deleted_and_forces_deletion_sweep(tmp_path: Path) -
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=sentinel_path,
         )
 
@@ -292,17 +332,21 @@ def test_deletion_sweep_skipped_when_interval_not_elapsed(tmp_path: Path) -> Non
     """
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
             clock=lambda: 1.0,
         )
@@ -318,17 +362,21 @@ def test_deletion_sweep_runs_when_interval_elapsed(tmp_path: Path) -> None:
     """
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
 
     def fake_wait(seconds: float, sentinel_path: Path) -> bool:
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=tmp_path / "reconcile.request",
             clock=lambda: 3601.0,
         )
@@ -346,6 +394,7 @@ def test_deletion_sweep_runs_on_manual_trigger_regardless_of_interval(
     """
     reconciler = _make_reconciler()
     store_writer = MagicMock()
+    settings = _make_settings()
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()  # sentinel present at cycle start
 
@@ -353,14 +402,97 @@ def test_deletion_sweep_runs_on_manual_trigger_regardless_of_interval(
         shutdown_mod.request_shutdown()
         return False
 
-    with patch("indexer.daemon._interruptible_wait", side_effect=fake_wait):
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=300,
-            deletion_sweep_interval=3600,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
             sentinel_path=sentinel_path,
             clock=lambda: 1.0,
         )
 
     reconciler.deletion_sweep.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# 6. Hot-load: config changes between cycles trigger a Reconciler rebuild
+# ---------------------------------------------------------------------------
+
+
+def test_indexer_loads_settings_from_app_db(tmp_path: Path) -> None:
+    """The indexer builds Settings via the hot-load accessor, so the config
+    table overrides the environment — the indexer is on config-in-database."""
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import current_settings
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    config_store.set_value(conn, "RECONCILE_INTERVAL", "777")
+    conn.close()
+
+    env = {
+        "APP_DB_PATH": app_db,
+        "PAPERLESS_TOKEN": "env-token",
+        "OPENAI_API_KEY": "env-api-key",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        settings = current_settings()
+
+    # This is exactly the call indexer.daemon.main() now makes.
+    assert settings.RECONCILE_INTERVAL == 777
+    assert settings.APP_DB_PATH == app_db
+
+
+def test_indexer_run_loop_rebuilds_on_a_config_change(tmp_path: Path) -> None:
+    """_run_loop re-checks config_version each cycle and, when it moves,
+    rebuilds the reconciler — the indexer hot-reloads with no restart."""
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import current_settings
+    from indexer import daemon as indexer_daemon
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    conn.close()
+
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_TOKEN": "env-token",
+        "OPENAI_API_KEY": "env-api-key",
+    }
+    rebuilds: list[int] = []
+
+    def _record_rebuild(settings, old):
+        rebuilds.append(1)
+        return old
+
+    with patch.dict(os.environ, env, clear=True):
+        current_settings(app_db)  # prime the cache so the first cycle sees no change
+        with patch.object(
+            indexer_daemon,
+            "_rebuild_reconciler",
+            side_effect=_record_rebuild,
+        ):
+            # Drive two cycles: a config write between them must trigger
+            # exactly one rebuild.
+            def _bump_config() -> None:
+                bump_conn = connect(app_db)
+                config_store.set_value(bump_conn, "RECONCILE_INTERVAL", "999")
+                bump_conn.close()
+
+            indexer_daemon._run_loop_for_test(
+                app_db_path=app_db,
+                cycles=2,
+                on_cycle_1=_bump_config,
+            )
+    assert sum(rebuilds) == 1
