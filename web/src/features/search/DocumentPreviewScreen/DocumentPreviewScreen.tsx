@@ -8,11 +8,11 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { documentPdfUrl } from '../../../api/client';
-import type { SourceDocument } from '../../../api/types';
+import type { PreviewableDocument } from '../../../api/types';
 
 export interface DocumentPreviewScreenProps {
-  /** The source document to preview. */
-  source: SourceDocument;
+  /** The document to preview. Accepts wire SourceDocuments and locally-fabricated objects. */
+  source: PreviewableDocument;
   /** Called when the viewer is closed — the page returns to the results. */
   onClose: () => void;
 }
