@@ -417,3 +417,52 @@ class TestAppDbPath:
         """APP_DB_PATH is taken verbatim from the environment when set."""
         s = _build(mocker, {**_MINIMAL_ENV, "APP_DB_PATH": "/custom/accounts.db"})
         assert s.APP_DB_PATH == "/custom/accounts.db"
+
+
+def test_bootstrap_keys_are_the_two_database_paths() -> None:
+    """BOOTSTRAP_KEYS is exactly the two env-only database-path variables."""
+    from common.config import BOOTSTRAP_KEYS
+
+    assert BOOTSTRAP_KEYS == frozenset({"APP_DB_PATH", "INDEX_DB_PATH"})
+
+
+def test_secret_keys_cover_the_two_secrets() -> None:
+    """SECRET_KEYS names every secret-bearing config key — SEARCH_API_KEY is
+    retired by Wave 3 and is not one of them."""
+    from common.config import SECRET_KEYS
+
+    assert SECRET_KEYS == frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
+
+
+def test_config_keys_has_fifty_one_entries() -> None:
+    """CONFIG_KEYS is the 51-key config-table universe (post-Wave-3:
+    SEARCH_API_KEY is gone)."""
+    from common.config import CONFIG_KEYS
+
+    assert len(CONFIG_KEYS) == 51
+    assert "SEARCH_API_KEY" not in CONFIG_KEYS
+
+
+def test_config_keys_excludes_the_bootstrap_keys() -> None:
+    """The bootstrap keys are not config-table keys."""
+    from common.config import BOOTSTRAP_KEYS, CONFIG_KEYS
+
+    assert not (BOOTSTRAP_KEYS & CONFIG_KEYS)
+
+
+def test_secret_keys_are_all_config_keys() -> None:
+    """Every secret key is a real config-table key."""
+    from common.config import CONFIG_KEYS, SECRET_KEYS
+
+    assert SECRET_KEYS <= CONFIG_KEYS
+
+
+def test_reindex_keys_are_the_chunking_and_embedding_keys() -> None:
+    """REINDEX_KEYS is exactly the keys whose change needs a full re-index;
+    every one is a real config key."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS
+
+    assert REINDEX_KEYS == frozenset(
+        {"EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
+    )
+    assert REINDEX_KEYS <= CONFIG_KEYS
