@@ -110,6 +110,43 @@ def get_config_version(conn: sqlite3.Connection) -> int:
     return int(row["value"]) if row is not None else 0
 
 
+def snapshot_config_with_version(
+    conn: sqlite3.Connection,
+) -> tuple[int, dict[str, str]]:
+    """Atomically read ``config_version`` and ``config`` rows in one snapshot.
+
+    A hot-load reader needs the version *and* the data the version describes,
+    consistently — otherwise a concurrent writer landing between the two reads
+    can stamp the new version onto the old data (or the new data onto the old
+    version) and the reader caches that mismatch indefinitely.
+
+    The two reads are wrapped in one ``BEGIN DEFERRED`` transaction, which
+    pins SQLite's WAL snapshot for the duration. ``BEGIN DEFERRED`` does not
+    take the write lock; concurrent writers continue to commit, but this
+    reader sees the snapshot it opened with for both statements. The commit
+    closes the snapshot cleanly without taking any lock.
+
+    Args:
+        conn: An open, migrated ``app.db`` connection.
+
+    Returns:
+        ``(version, config_table)`` — the configuration version and the
+        ``key → value`` mapping captured at the same point in time.
+    """
+    # rationale: SQLite's "deferred" mode is the snapshot-isolation knob a
+    # read-only transaction needs (CODE_GUIDELINES §9). The connection's
+    # autocommit default would otherwise issue each SELECT in its own
+    # transaction, opening the race window the hot-load path closes here.
+    conn.execute("BEGIN DEFERRED")
+    try:
+        version = get_config_version(conn)
+        config_table = get_all(conn)
+    finally:
+        if conn.in_transaction:
+            conn.commit()
+    return version, config_table
+
+
 def set_value(conn: sqlite3.Connection, key: str, value: str) -> None:
     """Insert or update one configuration key inside a ``BEGIN IMMEDIATE``.
 
@@ -153,15 +190,43 @@ def set_many(conn: sqlite3.Connection, values: dict[str, str]) -> None:
     """
     if not values:
         return
-    now = _utc_now_iso()
     with transaction(conn):
-        conn.executemany(
-            "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-            "updated_at = excluded.updated_at",
-            [(key, value, now) for key, value in values.items()],
-        )
-        _bump_config_version(conn)
+        set_many_in_transaction(conn, values)
+
+
+def set_many_in_transaction(
+    conn: sqlite3.Connection, values: dict[str, str]
+) -> None:
+    """Write *values* and bump ``config_version`` inside the caller's transaction.
+
+    Callers that need a wider atomic boundary (e.g. the Settings PUT, which
+    must validate against the same snapshot it writes against) open one
+    ``BEGIN IMMEDIATE`` themselves and route the inner write through this
+    function rather than :func:`set_many`. SQLite forbids nested
+    ``BEGIN IMMEDIATE`` calls on one connection, so calling :func:`set_many`
+    from inside an existing :func:`~appdb.connection.transaction` would raise
+    "cannot start a transaction within a transaction".
+
+    The caller is responsible for the surrounding ``BEGIN IMMEDIATE`` — this
+    function takes no lock and emits no commit; it only stages the writes
+    and the version bump on the connection's active transaction. An empty
+    *values* mapping is a no-op (no write, no bump).
+
+    Args:
+        conn: An open ``app.db`` connection currently inside a
+            ``BEGIN IMMEDIATE`` transaction the caller manages.
+        values: A mapping of configuration key to raw string value.
+    """
+    if not values:
+        return
+    now = _utc_now_iso()
+    conn.executemany(
+        "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+        "updated_at = excluded.updated_at",
+        [(key, value, now) for key, value in values.items()],
+    )
+    _bump_config_version(conn)
     log.info("appdb.config_set_many", key_count=len(values))
 
 

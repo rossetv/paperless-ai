@@ -21,6 +21,7 @@ clamping is applied to whichever string mapping is presented as the source.
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
@@ -144,9 +145,16 @@ REINDEX_KEYS: frozenset[str] = frozenset(
 
 
 def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
-    """Return *var_name* from *source*, raising ``ValueError`` if it is unset."""
+    """Return *var_name* from *source*, raising ``ValueError`` if it is unset.
+
+    An absent key, an empty string and a whitespace-only string are all
+    treated as "unset" — a required secret that round-trips ``""`` through
+    the Settings API (e.g. an admin saved ``PAPERLESS_TOKEN=""``) must be
+    rejected at this boundary rather than discovered when a daemon
+    authenticates with an empty token and Paperless answers 401.
+    """
     value = source.get(var_name)
-    if value is None:
+    if value is None or not value.strip():
         raise ValueError(f"Required environment variable '{var_name}' is not set.")
     return value
 
@@ -386,6 +394,39 @@ class Settings:
         """
         return _build_settings(os.environ)
 
+    def __repr__(self) -> str:
+        """Return a repr with every secret value masked.
+
+        The default dataclass repr serialises every field, so dropping a
+        Settings into a log line (``log.info("startup", settings=settings)``)
+        would leak ``OPENAI_API_KEY`` and ``PAPERLESS_TOKEN`` — never log a
+        secret (CODE_GUIDELINES §7.4, §10). The mask is the same sentinel the
+        Settings API uses, so the two surfaces present the same redaction.
+        """
+        parts = []
+        for field_name in self.__dataclass_fields__:  # type: ignore[attr-defined]
+            value = getattr(self, field_name)
+            if field_name in SECRET_KEYS and value:
+                value_repr = "'********'"
+            else:
+                value_repr = repr(value)
+            parts.append(f"{field_name}={value_repr}")
+        return f"Settings({', '.join(parts)})"
+
+    __str__ = __repr__
+
+
+def build_settings(source: Mapping[str, str]) -> Settings:
+    """Build a validated :class:`Settings` from a string mapping.
+
+    The public validation entry point: callers outside :mod:`common.config`
+    (the Settings route layer, the test-connection probe) use this to run the
+    same parsing/validation the daemon startup path uses on a candidate
+    configuration mapping. The underscore-prefixed :func:`_build_settings` is
+    preserved as a thin private alias for in-module call sites.
+    """
+    return _build_settings(source)
+
 
 def _build_settings(source: Mapping[str, str]) -> Settings:
     """Build a validated :class:`Settings` from a string mapping.
@@ -620,6 +661,15 @@ def load_settings(app_db_path: str) -> Settings:
 _SETTINGS_CACHE: dict[str, tuple[int, Settings]] = {}
 
 
+# Lock serialising rebuilds of ``_SETTINGS_CACHE``. The dict ops themselves are
+# GIL-atomic, but two concurrent first-callers (or two callers landing on a
+# fresh ``config_version``) would otherwise both build a Settings and both
+# write — the loser's expensive build is wasted. The lock collapses that into
+# one builder per version. The lookup path stays lock-free; only the rebuild
+# is serialised.
+_SETTINGS_CACHE_LOCK = threading.Lock()
+
+
 def current_settings(app_db_path: str | None = None) -> Settings:
     """Return the up-to-date :class:`Settings`, rebuilding it on a config change.
 
@@ -635,11 +685,15 @@ def current_settings(app_db_path: str | None = None) -> Settings:
     can simply ``from common.config import current_settings`` and call it.
     The explicit parameter exists for tests, which point it at a temp file.
 
-    It is cheap to call repeatedly. It opens ``app.db`` and reads the one-row
-    ``config_version`` integer; when that integer is unchanged since the last
+    It is cheap to call repeatedly. It opens ``app.db`` and takes a single
+    snapshot of ``(config_version, config_table)`` via
+    :func:`appdb.config.snapshot_config_with_version` — one connection, one
+    ``BEGIN DEFERRED`` transaction — so the version and the data it describes
+    are always consistent. When that integer is unchanged since the last
     call for this *app_db_path*, it returns the **cached** :class:`Settings`
     untouched. Only when ``config_version`` has advanced (or on the first
-    call) does it rebuild via :func:`load_settings` and re-cache.
+    call) does it rebuild from the snapshot and re-cache under the very
+    version the snapshot reported.
 
     The cache is process-local module state. Cross-process coordination is the
     shared ``config_version`` row alone — when one process writes config
@@ -669,10 +723,15 @@ def current_settings(app_db_path: str | None = None) -> Settings:
         if app_db_path is not None
         else os.environ.get("APP_DB_PATH", "/data/app.db")
     )
+
+    # Fast path: read the version under a snapshot, take the cache value if
+    # it matches. The snapshot also captures the config_table we will need
+    # if the version has moved, so we never re-open the DB on the rebuild
+    # path — the version and the data are consistent by construction.
     conn = connect(resolved)
     try:
         ensure_schema(conn)
-        version = config_store.get_config_version(conn)
+        version, config_table = config_store.snapshot_config_with_version(conn)
     finally:
         conn.close()
 
@@ -680,15 +739,47 @@ def current_settings(app_db_path: str | None = None) -> Settings:
     if cached is not None and cached[0] == version:
         return cached[1]
 
-    settings = load_settings(resolved)
-    # Re-read config_version after load_settings, because load_settings may
-    # have seeded an empty config table (which bumps the version counter).
-    # Caching the post-seed version means the next call finds an exact match
-    # and returns the cached Settings instead of rebuilding.
-    conn = connect(resolved)
-    try:
-        current_version = config_store.get_config_version(conn)
-    finally:
-        conn.close()
-    _SETTINGS_CACHE[resolved] = (current_version, settings)
-    return settings
+    # Slow path under a lock: re-check the cache (another caller may have
+    # rebuilt while we waited), then build a Settings from the snapshot we
+    # took above and cache it under the version that snapshot reported. If
+    # the config table is empty we first seed it from the environment — that
+    # bumps config_version, so we re-snapshot and rebuild from the seeded
+    # data — and the cached pair is always (version, Settings-built-from-it).
+    with _SETTINGS_CACHE_LOCK:
+        cached = _SETTINGS_CACHE.get(resolved)
+        if cached is not None and cached[0] == version:
+            return cached[1]
+
+        if not config_table:
+            # First-run seed (web-redesign §5). The seed runs inside its own
+            # ``BEGIN IMMEDIATE`` and bumps config_version; re-snapshot so the
+            # cache key matches the post-seed version.
+            conn = connect(resolved)
+            try:
+                config_store.seed_from_env(
+                    conn, environ=os.environ, keys=set(CONFIG_KEYS)
+                )
+                version, config_table = config_store.snapshot_config_with_version(conn)
+            finally:
+                conn.close()
+
+        settings = _build_settings(_merge_environment(config_table, resolved))
+        _SETTINGS_CACHE[resolved] = (version, settings)
+        return settings
+
+
+def _merge_environment(
+    config_table: Mapping[str, str], app_db_path: str
+) -> dict[str, str]:
+    """Layer *config_table* over ``os.environ`` for :func:`_build_settings`.
+
+    Mirrors the merge :func:`load_settings` performs, factored out so the
+    hot-load fast path can reuse it without re-opening ``app.db``: the table
+    value wins over an environment value, the bootstrap variables stay
+    environment-only, and ``APP_DB_PATH`` is forced to the *app_db_path* the
+    caller resolved (it is never in the table).
+    """
+    merged: dict[str, str] = dict(os.environ)
+    merged.update(config_table)
+    merged["APP_DB_PATH"] = app_db_path
+    return merged
