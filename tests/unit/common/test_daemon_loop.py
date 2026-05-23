@@ -327,3 +327,78 @@ def test_before_each_poll_runs_at_the_top_of_every_iteration() -> None:
 
     # The hook precedes fetch on every iteration.
     assert calls[:4] == ["hook", "fetch", "hook", "fetch"]
+
+
+def test_on_cycle_is_called_after_each_poll_with_the_outcome() -> None:
+    """run_polling_threadpool invokes on_cycle once per poll, passing the
+    processed-item count and the idle flag for that iteration."""
+    from common.daemon_loop import CycleOutcome, run_polling_threadpool
+    from common.shutdown import reset_shutdown
+
+    outcomes: list[CycleOutcome] = []
+    # Two work items the first poll, none the second, then stop.
+    batches = [[{"id": 1}, {"id": 2}], []]
+    polls = iter(batches)
+
+    def fetch_work() -> list[dict]:
+        try:
+            return next(polls)
+        except StopIteration:
+            from common.shutdown import request_shutdown
+
+            request_shutdown()
+            return []
+
+    try:
+        run_polling_threadpool(
+            daemon_name="test",
+            fetch_work=fetch_work,
+            process_item=lambda _item: None,
+            poll_interval_seconds=1,
+            max_workers=1,
+            on_cycle=outcomes.append,
+            sleep=lambda _s: None,
+        )
+    finally:
+        reset_shutdown()
+
+    # At least the two real polls were observed.
+    assert len(outcomes) >= 2
+    assert outcomes[0].processed == 2
+    assert outcomes[0].idle is False
+    assert outcomes[1].processed == 0
+    assert outcomes[1].idle is True
+
+
+def test_a_failing_on_cycle_callback_does_not_crash_the_loop() -> None:
+    """A buggy on_cycle hook is isolated — the loop keeps running."""
+    from common.daemon_loop import run_polling_threadpool
+    from common.shutdown import reset_shutdown
+
+    polls = iter([[], []])
+
+    def fetch_work() -> list[dict]:
+        try:
+            return next(polls)
+        except StopIteration:
+            from common.shutdown import request_shutdown
+
+            request_shutdown()
+            return []
+
+    def boom(_outcome) -> None:
+        raise RuntimeError("buggy hook")
+
+    try:
+        # Must complete without propagating the RuntimeError.
+        run_polling_threadpool(
+            daemon_name="test",
+            fetch_work=fetch_work,
+            process_item=lambda _item: None,
+            poll_interval_seconds=1,
+            max_workers=1,
+            on_cycle=boom,
+            sleep=lambda _s: None,
+        )
+    finally:
+        reset_shutdown()

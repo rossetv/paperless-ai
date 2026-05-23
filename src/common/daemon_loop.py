@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, TypeVar
+from dataclasses import dataclass
+from typing import TypeVar
 
 import structlog
 
@@ -18,6 +20,20 @@ log = structlog.get_logger(__name__)
 _DAEMON_LOOP_EXCEPTIONS = PAPERLESS_CALL_EXCEPTIONS
 
 T = TypeVar("T")
+
+
+@dataclass(frozen=True, slots=True)
+class CycleOutcome:
+    """The outcome of one poll iteration, passed to an ``on_cycle`` hook.
+
+    Attributes:
+        processed: How many work items the iteration dispatched to the
+            thread pool. Zero on an idle poll.
+        idle: True when the poll found no work.
+    """
+
+    processed: int
+    idle: bool
 
 
 def _process_batch(
@@ -60,13 +76,13 @@ def _poll_once(
     max_workers: int,
     before_each_batch: Callable[[list[T]], None] | None,
     was_idle: bool,
-) -> bool:
-    """Execute a single poll iteration. Returns the new ``was_idle`` state."""
+) -> CycleOutcome:
+    """Execute a single poll iteration. Returns the iteration's outcome."""
     items = fetch_work()
     if not items:
         if not was_idle:
             log.info("No work found; waiting", daemon=daemon_name)
-        return True
+        return CycleOutcome(processed=0, idle=True)
 
     if before_each_batch is not None:
         before_each_batch(items)
@@ -79,7 +95,7 @@ def _poll_once(
     )
 
     _process_batch(items, process_item, max_workers, daemon_name)
-    return False
+    return CycleOutcome(processed=len(items), idle=False)
 
 
 def run_polling_threadpool(
@@ -91,10 +107,10 @@ def run_polling_threadpool(
     max_workers: int,
     before_each_batch: Callable[[list[T]], None] | None = None,
     before_each_poll: Callable[[], None] | None = None,
+    on_cycle: Callable[[CycleOutcome], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """
-    Run an infinite polling loop and process items concurrently in a thread pool.
+    """Run an infinite polling loop and process items concurrently in a thread pool.
 
     This function intentionally keeps behaviour conservative and predictable.
 
@@ -107,6 +123,9 @@ def run_polling_threadpool(
             raise on the recoverable path; ``current_settings()`` only raises
             on a genuinely invalid stored config, which is a fatal condition
             the daemon should not survive silently.
+        on_cycle: Invoked once after every poll iteration with that iteration's
+            CycleOutcome — the daemons use it to write a heartbeat. A callback
+            exception is isolated and logged; it never crashes the loop.
     """
     poll_interval_seconds = max(1, int(poll_interval_seconds))
     max_workers = max(1, int(max_workers))
@@ -116,7 +135,7 @@ def run_polling_threadpool(
         if before_each_poll is not None:
             before_each_poll()
         try:
-            was_idle = _poll_once(
+            outcome = _poll_once(
                 daemon_name=daemon_name,
                 fetch_work=fetch_work,
                 process_item=process_item,
@@ -124,6 +143,8 @@ def run_polling_threadpool(
                 before_each_batch=before_each_batch,
                 was_idle=was_idle,
             )
+            was_idle = outcome.idle
+            _run_on_cycle(on_cycle, outcome, daemon_name)
             sleep(poll_interval_seconds)
         except _DAEMON_LOOP_EXCEPTIONS as exc:
             # An expected, recoverable anomaly: a transient Paperless network
@@ -141,6 +162,28 @@ def run_polling_threadpool(
             sleep(poll_interval_seconds)
 
     log.info("Shutdown requested; exiting gracefully", daemon=daemon_name)
+
+
+def _run_on_cycle(
+    on_cycle: Callable[[CycleOutcome], None] | None,
+    outcome: CycleOutcome,
+    daemon_name: str,
+) -> None:
+    """Invoke the optional per-cycle hook, isolating any failure.
+
+    The hook is observability (a heartbeat write); a bug in it must never
+    crash the polling loop. Any exception is logged with its traceback and
+    swallowed — exactly the fault-isolation rule the loop applies to a work
+    item (CODE_GUIDELINES §6.4).
+    """
+    if on_cycle is None:
+        return
+    try:
+        on_cycle(outcome)
+    except Exception:
+        # rationale: per-cycle hook boundary — a heartbeat-callback bug is
+        # isolated so the daemon's real polling loop survives it.
+        log.exception("on_cycle hook failed", daemon=daemon_name)
 
 
 def _safe_item_summary(item: object) -> str:
