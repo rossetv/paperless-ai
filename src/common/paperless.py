@@ -322,6 +322,57 @@ class PaperlessClient:
 
         return content_type, _iter_body()
 
+    def thumb_stream(self, doc_id: int) -> tuple[str, Iterator[bytes]]:
+        """Stream a document's first-page thumbnail straight from Paperless-ngx.
+
+        Mirrors :meth:`download_stream` but hits the thumbnail endpoint
+        (``/api/documents/{doc_id}/thumb/``) instead of the download endpoint.
+        Paperless-ngx returns a WebP or JPEG image; the content type is
+        forwarded to the caller unchanged.
+
+        The same connection-management contract as :meth:`download_stream`
+        applies: a single streaming response is opened, ``raise_for_status``
+        is checked eagerly, and the returned iterator owns the open response —
+        it must be fully drained (or closed) so the underlying connection is
+        released.
+
+        Args:
+            doc_id: The Paperless-ngx document id.
+
+        Returns:
+            A two-tuple of the response ``Content-Type`` (defaulting to
+            ``image/jpeg`` when Paperless omits the header) and an iterator
+            yielding the thumbnail body in byte chunks.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response — the open stream
+                is closed before the exception propagates.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/thumb/"
+
+        request = self._client.build_request("GET", url)
+        response = self._client.send(request, stream=True)
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError:
+            response.close()
+            raise
+        content_type = response.headers.get("Content-Type", "image/jpeg")
+
+        def _iter_body() -> Iterator[bytes]:
+            """Yield the body of the already-open streaming response.
+
+            The ``finally`` closes the response — releasing the connection —
+            whether the caller drained every chunk, stopped early, or the
+            transfer raised mid-body.
+            """
+            try:
+                yield from response.iter_bytes()
+            finally:
+                response.close()
+
+        return content_type, _iter_body()
+
     def update_document(
         self, doc_id: int, content: str, new_tags: Iterable[int]
     ) -> None:

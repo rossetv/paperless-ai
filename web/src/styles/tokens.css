@@ -422,6 +422,15 @@
   /* Search hero field — the large idle-screen search input */
   --height-search-hero:         64px;
 
+  /* Library card preview area — sized to contain a scaled DocThumb without
+   * overflowing into the meta block below. */
+  --height-library-preview:     220px;
+
+  /* Library card thumbnail — portrait width for the real first-page image.
+   * A 5:7 portrait aspect ratio at 220 px height gives ≈ 157 px; 140 px
+   * keeps a small margin and looks balanced inside the preview area. */
+  --width-library-thumb:        140px;
+
   /* Document-preview viewer — the page-navigation thumbnail rail width */
   --width-preview-rail:         56px;
 

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LibraryCard } from './LibraryCard';
 import type { LibraryDocument } from '../../../api/types';
@@ -75,10 +75,22 @@ describe('LibraryCard', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders a decorative document thumbnail', () => {
+  it('renders a real thumbnail <img> by default', () => {
     const { container } = render(<LibraryCard document={makeDoc()} onOpen={vi.fn()} />);
-    // DocThumb renders an aria-hidden <svg>.
+    // alt="" gives the image role="presentation"; query by tag name.
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect((img as HTMLImageElement).src).toContain('/api/documents/42/thumb');
+  });
+
+  it('falls back to the DocThumb SVG when the image errors', () => {
+    const { container } = render(<LibraryCard document={makeDoc()} onOpen={vi.fn()} />);
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    fireEvent.error(img!);
+    // After error the SVG fallback is rendered and the broken <img> is gone.
     expect(container.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(container.querySelector('img')).toBeNull();
   });
 
   it('merges a caller className onto the button root', () => {

@@ -34,18 +34,41 @@
   outline-offset: var(--spacing-1);
 }
 
-/* ── Preview area — soft surface, the DocThumb centred and scaled up ── */
+/* ── Preview area — soft surface with the real thumbnail or DocThumb fallback ── */
 .preview {
   position: relative;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
   padding: var(--spacing-13) var(--spacing-13) var(--spacing-11);
   background: linear-gradient(180deg, var(--colour-bg) 0%, var(--colour-button-light-bg) 100%);
+  overflow: hidden;
+  height: var(--height-library-preview);
 }
 
 .thumb {
-  /* The DocThumb is authored small; scale it up for the card hero. */
-  transform: scale(1.6);
+  /* Fills the preview area; the real thumbnail <img> sits inside it.
+   * When falling back to DocThumb, it is centred and scaled up as before. */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Real thumbnail image — portrait page sitting at the top of the preview. */
+.thumb-img {
+  width: var(--width-library-thumb);
+  max-height: 100%;
+  object-fit: cover;
+  object-position: top;
+  border-radius: var(--radius-micro);
+  box-shadow: var(--shadow-card);
+}
+
+/* DocThumb fallback — when the real image fails, scale the placeholder up. */
+.thumb-fallback {
+  transform: scale(1.5);
   transform-origin: top center;
   margin-block-start: var(--spacing-9);
 }

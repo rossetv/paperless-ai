@@ -284,6 +284,19 @@ export function documentPdfUrl(documentId: number): string {
   return `${BASE_URL}/api/documents/${documentId}/pdf`;
 }
 
+/**
+ * Build the URL of the first-page thumbnail proxy for a document.
+ *
+ * `GET /api/documents/{id}/thumb` streams the document's first-page thumbnail
+ * (proxied from Paperless-ngx by the search server). LibraryCard points an
+ * `<img src>` at this URL; the session cookie is sent automatically because it
+ * is a same-origin request — no `credentials` flag is needed (and a binary
+ * stream must not be funnelled through the JSON `request` helper).
+ */
+export function documentThumbUrl(documentId: number): string {
+  return `${BASE_URL}/api/documents/${documentId}/thumb`;
+}
+
 // ---------------------------------------------------------------------------
 // User-management endpoints (Wave 3 — Access Control)
 //

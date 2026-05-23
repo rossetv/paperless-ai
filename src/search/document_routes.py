@@ -7,6 +7,8 @@ UI (web-redesign §5):
 - ``GET /api/documents/{id}/pdf`` — stream a document's original PDF out of
   Paperless-ngx, so the in-app DocumentPreview viewer renders it without the
   browser leaving the app.
+- ``GET /api/documents/{id}/thumb`` — stream a document's first-page thumbnail
+  out of Paperless-ngx, for use as the LibraryCard preview image.
 - ``GET /api/recent-searches`` — the current user's recent searches, newest
   first, for the search UI's recent-searches strip.
 
@@ -101,6 +103,25 @@ def build_document_router(
         """
         return await _stream_document_pdf(document_id, settings, paperless_factory)
 
+    @router.get(
+        "/api/documents/{document_id}/thumb",
+        dependencies=[reader_auth],
+        response_class=StreamingResponse,
+    )
+    async def document_thumb(document_id: int) -> StreamingResponse:
+        """Stream a document's first-page thumbnail from Paperless-ngx.
+
+        Auth: Read-only or above, plus the ``api`` scope for an API-key
+        caller. A 404 is returned for an unknown document id; a 502 when
+        Paperless is unreachable or returns a server error.
+
+        The response content type is forwarded from Paperless (usually
+        ``image/jpeg`` or ``image/webp``), but only image/* types are
+        permitted — anything else is rejected as 502 to prevent a malicious
+        document from serving active content through this endpoint.
+        """
+        return await _stream_document_thumb(document_id, settings, paperless_factory)
+
     @router.get("/api/recent-searches")
     def recent_searches(
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -127,6 +148,19 @@ _PDF_RESPONSE_HEADERS = {
     "Content-Disposition": "inline",
 }
 _PDF_MEDIA_TYPE = "application/pdf"
+
+
+# The thumbnail proxy forwards the image content-type from Paperless, but only
+# if it is a known image type. This prevents a malicious .html/.svg stored in
+# Paperless from being served as active content through the thumbnail endpoint.
+_ALLOWED_THUMB_CONTENT_TYPES: frozenset[str] = frozenset(
+    {"image/jpeg", "image/png", "image/webp", "image/gif"}
+)
+_THUMB_FALLBACK_CONTENT_TYPE = "image/jpeg"
+_THUMB_RESPONSE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, max-age=3600",
+}
 
 
 async def _stream_document_pdf(
@@ -204,6 +238,111 @@ async def _stream_document_pdf(
         media_type=_PDF_MEDIA_TYPE,
         headers=_PDF_RESPONSE_HEADERS,
     )
+
+
+async def _stream_document_thumb(
+    document_id: int,
+    settings: Settings,
+    paperless_factory: Callable[[Settings], PaperlessClient],
+) -> StreamingResponse:
+    """Thumbnail-proxy handler body: open the stream, map errors, wrap the body.
+
+    Mirrors :func:`_stream_document_pdf` but uses
+    :meth:`~common.paperless.PaperlessClient.thumb_stream` and validates that
+    the upstream content type is an image — not active content — before
+    forwarding it. Any non-image type is treated as a 502 upstream error.
+
+    Args:
+        document_id: The Paperless-ngx document id.
+        settings: Application settings.
+        paperless_factory: Builds the per-request Paperless client.
+
+    Returns:
+        A :class:`StreamingResponse` over the thumbnail body, with
+        ``Cache-Control: private, max-age=3600`` and ``nosniff``.
+
+    Raises:
+        HTTPException: ``404`` for an unknown document; ``502`` when
+            Paperless is unreachable, returns a server error, or delivers
+            a non-image content type.
+    """
+    client = paperless_factory(settings)
+    loop = asyncio.get_event_loop()
+    try:
+        content_type, chunks = await loop.run_in_executor(
+            None, client.thumb_stream, document_id
+        )
+    except httpx.HTTPStatusError as exc:
+        client.close()
+        status = exc.response.status_code
+        if status == 404:
+            log.info("api.document_thumb_not_found", document_id=document_id)
+            raise HTTPException(status_code=404, detail="Document not found") from exc
+        log.warning(
+            "api.document_thumb_upstream_error",
+            document_id=document_id,
+            upstream_status=status,
+        )
+        raise HTTPException(
+            status_code=502, detail="Document store unavailable"
+        ) from exc
+    except httpx.HTTPError as exc:
+        client.close()
+        log.warning(
+            "api.document_thumb_unreachable",
+            document_id=document_id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502, detail="Document store unavailable"
+        ) from exc
+
+    # Normalise content-type: strip parameters (e.g. "; charset=utf-8") before
+    # the allowlist check, but forward only the base type.
+    base_content_type = content_type.split(";")[0].strip().lower()
+    if base_content_type not in _ALLOWED_THUMB_CONTENT_TYPES:
+        client.close()
+        log.warning(
+            "api.document_thumb_unexpected_content_type",
+            document_id=document_id,
+            content_type=content_type,
+        )
+        raise HTTPException(
+            status_code=502, detail="Document store unavailable"
+        )
+
+    return StreamingResponse(
+        _safe_thumb_chunks(chunks, client, document_id),
+        media_type=base_content_type,
+        headers=_THUMB_RESPONSE_HEADERS,
+    )
+
+
+def _safe_thumb_chunks(
+    chunks: Iterator[bytes], client: PaperlessClient, document_id: int
+) -> Iterator[bytes]:
+    """Yield thumbnail body chunks, logging mid-stream errors and closing the client.
+
+    The thumbnail-proxy counterpart of :func:`_safe_chunks`. Shares the same
+    connection-lifetime contract: the ``finally`` closes the
+    :class:`PaperlessClient` on every exit path.
+
+    Args:
+        chunks: The thumbnail body chunk iterator.
+        client: The per-request Paperless client to close once the body is
+            done streaming.
+        document_id: The document id, for the log line.
+
+    Yields:
+        Each body chunk in turn.
+    """
+    try:
+        yield from chunks
+    except httpx.HTTPError:
+        log.warning("api.document_thumb_stream_aborted", document_id=document_id)
+        raise
+    finally:
+        client.close()
 
 
 def _safe_chunks(

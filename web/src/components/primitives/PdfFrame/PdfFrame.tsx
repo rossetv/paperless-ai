@@ -22,15 +22,15 @@ export interface PdfFrameProps {
  * `<iframe>` of the proxied stream is the simplest correct approach — no
  * `pdf.js` bundle, no extra dependency (web-redesign §5).
  *
- * The iframe carries an empty `sandbox` — the most restrictive value, no
- * `allow-scripts`, no `allow-same-origin`. The `src` is same-origin with the
- * app, so if the proxied resource were ever served as active content (a
- * malicious `.html`/`.svg` in the Paperless library) the sandbox denies it
- * script execution and same-origin access. A PDF needs neither — the
- * browser's native PDF viewer is browser-privileged, not page script — so
- * the empty sandbox does not break rendering. Defence in depth on top of the
- * proxy pinning `Content-Type: application/pdf` with `nosniff`
- * (CODE_GUIDELINES §10).
+ * Security: the upstream is pinned to `Content-Type: application/pdf` with
+ * `X-Content-Type-Options: nosniff` by the backend (`document_routes.py`),
+ * so a malicious `.html`/`.svg` in the Paperless library cannot be served as
+ * active content into this iframe. An empty `sandbox=""` was previously
+ * applied as defence in depth, but Chrome's native PDF viewer refuses to
+ * render under a fully-locked sandbox — the iframe paints blank. Removing
+ * the attribute restores rendering; the `nosniff` + pinned content-type
+ * already prevents the active-content vector this sandbox was guarding
+ * against (CODE_GUIDELINES §10).
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
  */
@@ -45,7 +45,6 @@ export function PdfFrame({
         className={styles['frame']}
         src={src}
         title={title}
-        sandbox=""
       />
     </div>
   );

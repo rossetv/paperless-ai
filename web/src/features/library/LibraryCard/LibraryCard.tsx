@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DocThumb } from '../../../components/primitives/DocThumb/DocThumb';
 import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Icon } from '../../../components/primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
 import type { LibraryDocument } from '../../../api/types';
+import { documentThumbUrl } from '../../../api/client';
 import styles from './LibraryCard.module.css';
 
 export interface LibraryCardProps {
@@ -71,13 +72,13 @@ function formatDate(iso: string | null): string {
  * The whole card is a button that calls onOpen(document.id); the parent
  * LibraryScreen uses this to set previewDocumentId state, rendering the
  * in-app DocumentPreviewScreen as a full-bleed overlay — the same pattern
- * SearchPage uses for search results. Shows a soft preview area carrying a
- * scaled DocThumb, a hover "Preview" affordance, and a meta block:
- * correspondent · date, a two-line-clamped title, and a row of the document
- * type plus tag chips.
+ * SearchPage uses for search results. Shows a soft preview area carrying the
+ * real first-page thumbnail (proxied from Paperless-ngx), falling back to a
+ * stylised DocThumb on error or while loading. Below the preview: a meta
+ * block with correspondent · date, a two-line-clamped title, and a row of the
+ * document type plus tag chips.
  *
- * Wave 5 is a plain browse — no search-match highlighting — so DocThumb
- * is rendered with no matched rows.
+ * Wave 5 is a plain browse — no search-match highlighting.
  *
  * Tier: features/library (CODE_GUIDELINES 12.3) — composes the DocThumb and
  * Chip primitives, the api types, and lib/.
@@ -89,6 +90,7 @@ export function LibraryCard({
 }: LibraryCardProps): React.ReactElement {
   const title = document.title ?? 'Untitled document';
   const correspondent = document.correspondent ?? 'Unknown sender';
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <button
@@ -99,7 +101,19 @@ export function LibraryCard({
     >
       <div className={styles['preview']}>
         <div className={styles['thumb']}>
-          <DocThumb kind={thumbKindFor(document.document_type)} />
+          {imageFailed ? (
+            <DocThumb
+              kind={thumbKindFor(document.document_type)}
+              className={styles['thumb-fallback'] ?? ''}
+            />
+          ) : (
+            <img
+              src={documentThumbUrl(document.id)}
+              alt=""
+              className={styles['thumb-img']}
+              onError={() => setImageFailed(true)}
+            />
+          )}
         </div>
         <span className={styles['open-affordance']} aria-hidden="true">
           <Icon name="eye" size="small" />

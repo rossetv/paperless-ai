@@ -40,3 +40,17 @@ export const SparseMetadata: Story = {
     document: { ...DOC, title: null, correspondent: null, document_type: null, created: null, tags: [] },
   },
 };
+
+/**
+ * Simulates the state when the real thumbnail could not be loaded — the
+ * DocThumb SVG fallback is displayed instead.
+ *
+ * To trigger the fallback in the real app, the proxy returns a 404 or 502 and
+ * the <img> onError handler flips `imageFailed` to true. In Storybook there is
+ * no backend, so the image always errors; this story deliberately documents
+ * that the fallback renders correctly.
+ */
+export const ThumbFallback: Story = {
+  args: { document: { ...DOC, document_type: 'Invoice' } },
+  name: 'Thumbnail fallback (DocThumb)',
+};

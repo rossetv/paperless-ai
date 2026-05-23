@@ -21,12 +21,14 @@ describe('PdfFrame', () => {
     expect((container.firstChild as Element).className).toContain('extra');
   });
 
-  it('sandboxes the iframe with no script or same-origin grant', () => {
-    // The src is same-origin with the app; an empty sandbox denies any
-    // active content script execution and same-origin access — the
-    // stored-XSS defence-in-depth layer. allow-scripts must not appear.
+  it('does not lock the iframe with sandbox=""', () => {
+    // Chrome's native PDF viewer refuses to render under a fully-locked
+    // sandbox — the iframe paints blank. The active-content vector is
+    // already neutralised by the backend pinning Content-Type:
+    // application/pdf with X-Content-Type-Options: nosniff
+    // (document_routes.py), so the sandbox layer is dropped.
     render(<PdfFrame src="/api/documents/9823/pdf" title="t" />);
     const frame = screen.getByTitle('t');
-    expect(frame).toHaveAttribute('sandbox', '');
+    expect(frame).not.toHaveAttribute('sandbox');
   });
 });

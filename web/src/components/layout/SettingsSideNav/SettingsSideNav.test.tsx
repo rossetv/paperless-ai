@@ -87,4 +87,50 @@ describe('SettingsSideNav', () => {
     );
     expect(container.firstElementChild?.className).toContain('extra');
   });
+
+  it('matches exactly one anchor link as active on a hashed Settings page', () => {
+    const CONFIG_GROUP: SettingsNavGroup = {
+      title: 'Configuration',
+      items: [
+        { id: 'paperless', label: 'Paperless Connection', to: '/settings#paperless' },
+        { id: 'llm', label: 'LLM Provider', to: '/settings#llm' },
+        { id: 'search', label: 'Search Server', to: '/settings#search' },
+      ],
+    };
+    render(
+      <MemoryRouter initialEntries={['/settings#llm']}>
+        <SettingsSideNav groups={[CONFIG_GROUP]} />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByRole('link', { name: 'LLM Provider' }),
+    ).toHaveAttribute('aria-current', 'page');
+    expect(
+      screen.getByRole('link', { name: 'Paperless Connection' }),
+    ).not.toHaveAttribute('aria-current');
+    expect(
+      screen.getByRole('link', { name: 'Search Server' }),
+    ).not.toHaveAttribute('aria-current');
+  });
+
+  it('falls back to the first anchor as active when no hash is present', () => {
+    const CONFIG_GROUP: SettingsNavGroup = {
+      title: 'Configuration',
+      items: [
+        { id: 'paperless', label: 'Paperless Connection', to: '/settings#paperless' },
+        { id: 'llm', label: 'LLM Provider', to: '/settings#llm' },
+      ],
+    };
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <SettingsSideNav groups={[CONFIG_GROUP]} />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByRole('link', { name: 'Paperless Connection' }),
+    ).toHaveAttribute('aria-current', 'page');
+    expect(
+      screen.getByRole('link', { name: 'LLM Provider' }),
+    ).not.toHaveAttribute('aria-current');
+  });
 });
