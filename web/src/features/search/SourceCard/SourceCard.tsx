@@ -6,6 +6,7 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
+import { documentThumbUrl } from '../../../api/client';
 import type { SourceDocument } from '../../../api/types';
 
 export interface SourceCardProps {
@@ -72,6 +73,7 @@ export function SourceCard({
     <SourceCardSurface
       index={index}
       thumbKind={thumbKindFor(source.document_type)}
+      thumbImageUrl={documentThumbUrl(source.document_id)}
       matched={highlighted ? [3, 4, 7] : [5, 6]}
       highlighted={highlighted}
     >
