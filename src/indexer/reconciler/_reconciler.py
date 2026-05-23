@@ -55,6 +55,17 @@ class Reconciler:
         # across the pool for the reconciler's lifetime (SPEC §5.3).
         self._indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
+    @property
+    def store_writer(self) -> StoreWriter:
+        """The store writer this reconciler reads and writes.
+
+        Exposed so the indexer daemon can re-use the same writer when it
+        rebuilds the reconciler on a hot-load config change (web-redesign §5):
+        the index database is bootstrap-only and never replaced mid-run, so a
+        rebuilt reconciler always inherits the original writer.
+        """
+        return self._store_writer
+
     def incremental_sync(self) -> SyncReport:
         """Index every document modified since the watermark, plus retries.
 

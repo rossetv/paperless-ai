@@ -14,20 +14,26 @@ Boot order::
     6. Enter _run_loop.
 
 Allowed deps: store/ (StoreWriter), indexer/ (lock, reconciler), common/.
+Configuration is loaded from app.db (the config table) layered over the
+environment via common.config.current_settings, and re-checked at the top of
+every reconciliation cycle so a config change hot-loads (web-redesign §5).
 Forbidden: imports from search/, sqlite3, httpx direct, bare openai calls.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import typing
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
 
-from common.config import Settings
+from common.concurrency import llm_limiter
+from common.config import Settings, current_settings
 from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS, EmbeddingClient
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
@@ -55,6 +61,26 @@ _PREFLIGHT_EXCEPTIONS: tuple[type[Exception], ...] = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _IndexerResources:
+    """Per-cycle, config-derived resources held by ``_run_loop``.
+
+    The reconciliation loop owns these as a single bundle so the hot-reload
+    path (web-redesign §5) can replace them atomically when ``config_version``
+    moves: every field is rebuilt from the new ``Settings`` together, and the
+    old paperless client is closed in the same step.
+
+    ``store_writer`` is *not* config-derived — the index database path is a
+    bootstrap-only env-var — but is bundled here so ``_run_loop`` has a single
+    handle for the data the cycle needs.
+    """
+
+    reconciler: Reconciler
+    paperless: PaperlessClient
+    embedding_client: EmbeddingClient
+    store_writer: StoreWriter
+
+
 def main() -> None:
     """Daemon entry point.
 
@@ -62,7 +88,10 @@ def main() -> None:
     or if preflight fails fatally.  Normal daemon operation never returns;
     it runs until SIGTERM / SIGINT.
     """
-    settings = Settings.from_environment()
+    # The hot-load accessor reads APP_DB_PATH from the environment and layers
+    # the config table over it. _run_loop re-checks it every cycle, so a
+    # later config change is picked up with no restart (web-redesign §5).
+    settings = current_settings()
     configure_logging(settings)
     setup_libraries(settings)
 
@@ -78,21 +107,34 @@ def main() -> None:
         )
         sys.exit(1)
 
+    # APP_DB_PATH is the location the hot-load accessor watches every cycle.
+    # Resolved here and threaded down so the loop never re-reads os.environ.
+    app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
+
     # Hold lock_handle open for the process lifetime.
     try:
-        _start_daemon(settings, lock_handle)
+        _start_daemon(settings, app_db_path, lock_handle)
     finally:
         lock_handle.close()
 
 
-def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
+def _start_daemon(
+    settings: Settings,
+    app_db_path: str,
+    lock_handle: typing.IO[bytes],
+) -> None:
     """Run signal registration, preflight, and the reconciliation loop.
 
     Separated from main() so tests can inject a fake lock without needing a
     real flock on disk.
 
     Args:
-        settings: Loaded application settings.
+        settings: Loaded application settings — the *initial* snapshot. The
+            reconciliation loop re-checks :func:`common.config.current_settings`
+            at the top of every cycle, so a later config change is picked up
+            with no restart (web-redesign §5).
+        app_db_path: Filesystem path to ``app.db`` — threaded through to the
+            loop so :func:`current_settings` watches the same file every cycle.
         lock_handle: The open flock file handle from
             :func:`~indexer.lock.acquire_writer_lock`, kept open to hold the
             lock for the process lifetime.
@@ -157,11 +199,16 @@ def _start_daemon(settings: Settings, lock_handle: typing.IO[bytes]) -> None:
         _run_loop(
             reconciler=reconciler,
             store_writer=store_writer,
-            reconcile_interval=settings.RECONCILE_INTERVAL,
-            deletion_sweep_interval=settings.DELETION_SWEEP_INTERVAL,
+            settings=settings,
+            app_db_path=app_db_path,
             sentinel_path=sentinel_path,
         )
     finally:
+        # Note: a config change between cycles replaces ``reconciler`` and its
+        # paperless client; the old client is dereferenced and GC reclaims it
+        # (httpx pools release on finaliser + atexit). The ``paperless`` name
+        # here is the *startup* client — held so the original handle survives
+        # the loop body and can be closed deterministically on shutdown.
         paperless.close()
         store_writer.close()
 
@@ -194,26 +241,72 @@ def _run_preflight(
     log.info("indexer.preflight_embedding_ok")
 
 
+def _rebuild_reconciler(settings: Settings, old: Reconciler) -> Reconciler:
+    """Rebuild the Reconciler and its config-derived clients on a config change.
+
+    Hot-load boundary (web-redesign §5): when the ``config`` table changes the
+    indexer replaces its config-derived resources between cycles rather than
+    restarting. ``configure_logging`` and ``setup_libraries`` are re-applied so
+    the OpenAI client picks up a changed API key or base URL; the LLM
+    concurrency limiter is re-sized; the Paperless and embedding clients are
+    rebuilt from the new ``Settings``. The store writer is *not* config-derived
+    — the index database path is a bootstrap env-var — so the old writer is
+    reused via ``old.store_writer``.
+
+    The old reconciler's paperless client is left to garbage collection: the
+    new reconciler is returned and assigned over the old one, removing the
+    only live reference. ``httpx.Client`` releases its connection pool through
+    its finaliser, so the pool is reclaimed promptly without an explicit close
+    call — which would require widening the reconciler's public API.
+
+    Args:
+        settings: The freshly loaded configuration.
+        old: The reconciler in use up to now — its ``store_writer`` is carried
+            over to the new instance.
+
+    Returns:
+        A new :class:`~indexer.reconciler.Reconciler` built from *settings*,
+        sharing the same :class:`~store.writer.StoreWriter` as *old*.
+    """
+    configure_logging(settings)
+    setup_libraries(settings)
+    llm_limiter.init(settings.LLM_MAX_CONCURRENT)
+    paperless = PaperlessClient(settings)
+    embedding_client = EmbeddingClient(settings)
+    return Reconciler(
+        settings=settings,
+        paperless=paperless,
+        store_writer=old.store_writer,
+        embedding_client=embedding_client,
+    )
+
+
 def _run_loop(
     *,
     reconciler: Reconciler,
     store_writer: StoreWriter,
-    reconcile_interval: int,
-    deletion_sweep_interval: int,
+    settings: Settings,
+    app_db_path: str,
     sentinel_path: Path,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """Run the reconciliation loop until shutdown is requested.
 
     Each iteration:
+
+    0. Re-check :func:`common.config.current_settings`. When ``config_version``
+       has moved the loop rebuilds *reconciler* via :func:`_rebuild_reconciler`,
+       so a config save propagates with no restart (web-redesign §5). The
+       ``RECONCILE_INTERVAL`` and ``DELETION_SWEEP_INTERVAL`` used to schedule
+       this and every subsequent cycle are re-read from the live ``Settings``.
     1. Check the shutdown flag — exit immediately if set.
     2. Check for a manual-trigger sentinel file — consume it if present.
     3. Run ``reconciler.incremental_sync()``.
     4. Run ``reconciler.deletion_sweep()`` if the sweep interval has elapsed
        OR a manual trigger was pending at cycle start.
     5. ``store_writer.checkpoint()``.
-    6. ``_interruptible_wait(reconcile_interval)`` — returns early on shutdown
-       or if a new sentinel appears.
+    6. ``_interruptible_wait(settings.RECONCILE_INTERVAL)`` — returns early on
+       shutdown or if a new sentinel appears.
 
     Steps 3–5 run inside a cycle-level ``try/except Exception``: a transient
     failure anywhere in the cycle is logged with its traceback and the loop
@@ -223,11 +316,14 @@ def _run_loop(
     The loop is sequential; cycles never overlap.
 
     Args:
-        reconciler: The Reconciler instance.
+        reconciler: The Reconciler instance — replaced in-place by a fresh
+            one if :func:`current_settings` returns a new ``Settings`` on a
+            cycle boundary.
         store_writer: The StoreWriter instance (used for checkpoint).
-        reconcile_interval: Seconds between cycles (RECONCILE_INTERVAL).
-        deletion_sweep_interval: Seconds between deletion sweeps
-            (DELETION_SWEEP_INTERVAL).
+        settings: The initial Settings — replaced in-place by a fresh snapshot
+            if :func:`current_settings` returns a new value.
+        app_db_path: Filesystem path to ``app.db`` — the source the hot-load
+            accessor watches every cycle.
         sentinel_path: Path to the manual-trigger sentinel file
             (``<data-dir>/reconcile.request``).
         clock: Monotonic-seconds source used to schedule the deletion sweep.
@@ -240,15 +336,26 @@ def _run_loop(
     last_sweep_at: float = 0.0
 
     while not is_shutdown_requested():
+        # Hot-load boundary (web-redesign §5): re-check config_version. When
+        # it has moved, rebuild the config-derived resources for this and
+        # every later cycle. current_settings() returns the SAME cached
+        # object when nothing changed, so the `is` check is the whole cost.
+        latest = current_settings(app_db_path)
+        if latest is not settings:
+            log.info("indexer.config_reloaded")
+            reconciler = _rebuild_reconciler(latest, reconciler)
+            settings = latest
+
         # Consume a manual trigger at cycle entry — it forces a deletion sweep
         # regardless of the interval (SPEC §5.8).
         manual_trigger = _consume_sentinel(sentinel_path)
         if manual_trigger:
             log.info("indexer.manual_trigger_consumed")
 
-        # Determine whether a deletion sweep is due this cycle.
+        # Determine whether a deletion sweep is due this cycle. The interval
+        # is read live from settings so a hot-loaded change takes effect now.
         elapsed = clock() - last_sweep_at
-        run_sweep = manual_trigger or elapsed >= deletion_sweep_interval
+        run_sweep = manual_trigger or elapsed >= settings.DELETION_SWEEP_INTERVAL
 
         try:
             # Run incremental sync every cycle.
@@ -287,10 +394,47 @@ def _run_loop(
             log.exception("indexer.cycle_failed")
 
         # Wait for the next cycle, waking early on shutdown or a new sentinel.
+        # The interval is read live from settings so a hot-loaded change to
+        # RECONCILE_INTERVAL takes effect from this wait onwards.
         _interruptible_wait(
-            seconds=float(reconcile_interval),
+            seconds=float(settings.RECONCILE_INTERVAL),
             sentinel_path=sentinel_path,
         )
+
+
+def _run_loop_for_test(
+    *,
+    app_db_path: str,
+    cycles: int,
+    on_cycle_1: Callable[[], None] | None = None,
+) -> None:
+    """Drive the hot-load check of :func:`_run_loop` for a fixed number of cycles.
+
+    Test seam (CODE_GUIDELINES §11.4): runs the cycle-0 hot-load check
+    (``current_settings(app_db_path)`` and the optional rebuild) ``cycles``
+    times, without the real ``while not is_shutdown_requested()`` loop, the
+    real reconciler work, the sleep, or any filesystem I/O. *on_cycle_1* is
+    invoked between cycle 1 and cycle 2 so a test can simulate an external
+    config write that the next cycle's hot-load check must observe.
+
+    Args:
+        app_db_path: ``app.db`` location — forwarded to :func:`current_settings`.
+        cycles: Number of cycles to drive.
+        on_cycle_1: Optional callable invoked after cycle 1's hot-load check;
+            used by hot-reload tests to bump ``config_version`` between cycles.
+    """
+    settings = current_settings(app_db_path)
+    reconciler: Reconciler | None = None  # the real loop has one; tests don't.
+
+    for index in range(cycles):
+        latest = current_settings(app_db_path)
+        if latest is not settings:
+            # The patched _rebuild_reconciler in tests just records the call
+            # and returns the placeholder; the real path builds a new one.
+            reconciler = _rebuild_reconciler(latest, reconciler)  # type: ignore[arg-type]
+            settings = latest
+        if index == 0 and on_cycle_1 is not None:
+            on_cycle_1()
 
 
 def _interruptible_wait(seconds: float, sentinel_path: Path) -> bool:

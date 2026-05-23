@@ -16,7 +16,6 @@ across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -54,13 +53,11 @@ def test_main_exits_nonzero_when_lock_contended(
         "indexer.daemon.acquire_writer_lock",
         lambda path: (_ for _ in ()).throw(IndexerLockError("lock held")),
     )
-    # daemon.main() calls Settings.from_environment(), so the stand-in must
-    # expose that classmethod.
+    # daemon.main() now calls current_settings() (the hot-load accessor), so
+    # the stand-in is patched directly on the daemon module — Wave 4 switched
+    # the entry point off Settings.from_environment().
     settings = make_settings_obj(INDEX_DB_PATH=str(tmp_path / "index.db"))
-    monkeypatch.setattr(
-        "indexer.daemon.Settings",
-        SimpleNamespace(from_environment=lambda: settings),
-    )
+    monkeypatch.setattr("indexer.daemon.current_settings", lambda *a, **kw: settings)
     monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
     monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
 
@@ -87,8 +84,7 @@ def test_main_proceeds_when_lock_acquired(
             DOCUMENT_WORKERS=1,
         )
         monkeypatch.setattr(
-            "indexer.daemon.Settings",
-            SimpleNamespace(from_environment=lambda: settings),
+            "indexer.daemon.current_settings", lambda *a, **kw: settings
         )
         monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
         monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
