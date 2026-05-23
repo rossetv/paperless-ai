@@ -394,6 +394,39 @@ class StoreWriter:
 
         return True
 
+    def rebuild_index(self) -> None:
+        """Wipe the entire index so the next reconcile rebuilds it from scratch.
+
+        The destructive "Rebuild index" operation (web-redesign spec §5, Wave 6).
+        Deletes every chunk, document, and taxonomy row and clears the
+        ``modified_watermark`` meta key — all in one transaction, so a crash
+        mid-wipe leaves the index either wholly intact or wholly empty, never
+        half-wiped. The embedding-model meta is deliberately preserved: the model
+        has not changed, only the data is being rebuilt, so the next reconcile
+        re-embeds with the same model.
+
+        After this returns the index has no documents; the indexer's next
+        incremental sync (watermark cleared → no server-side filter) re-indexes
+        the whole Paperless archive.
+
+        Raises:
+            StoreError: On SQLite error — the transaction is rolled back.
+        """
+        log.warning("store.index_rebuild_started")
+        try:
+            with self._write_lock:
+                with self._conn:
+                    self._conn.execute("DELETE FROM chunks_fts")
+                    self._conn.execute("DELETE FROM chunks")
+                    self._conn.execute("DELETE FROM documents")
+                    self._conn.execute("DELETE FROM taxonomy")
+                    self._conn.execute(
+                        "DELETE FROM meta WHERE key = 'modified_watermark'"
+                    )
+        except sqlite3.Error as exc:
+            raise StoreError("failed to rebuild the index") from exc
+        log.warning("store.index_rebuild_completed")
+
     def checkpoint(self) -> None:
         """Issue a WAL checkpoint (TRUNCATE mode).
 

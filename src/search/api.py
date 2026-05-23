@@ -48,6 +48,7 @@ from search.appdb_setup import open_app_db
 from search.appstate import AppState, attach_app_state
 from search.deps import get_current_user, require_api_scope, require_api_scope_member
 from search.document_routes import build_document_router
+from search.index_routes import build_index_router
 from search.mcp_server import build_mcp_app
 from search.routes import build_api_router
 from search.settings_routes import build_settings_router
@@ -192,6 +193,7 @@ def create_app(
     app.include_router(build_settings_router())
     app.include_router(build_api_key_router())
     app.include_router(build_document_router(settings))
+    app.include_router(build_index_router(settings, store_reader))
     app.include_router(
         build_api_router(
             settings,
