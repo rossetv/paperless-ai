@@ -44,6 +44,8 @@ import type {
   UpdateSettingsRequest,
   TestConnectionRequest,
   TestConnectionResponse,
+  DocumentsQuery,
+  DocumentsResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -426,4 +428,58 @@ export async function testConnection(
       body: JSON.stringify(body),
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Library — GET /api/documents (Wave 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the `?…` query string for GET /api/documents.
+ *
+ * `page`, `page_size`, `sort` and `order` are always present. Optional
+ * filters are appended only when non-nullish and (for strings) non-empty.
+ * `tag_ids` becomes one repeated `tag_ids=` parameter per id, matching the
+ * FastAPI list-query convention the backend half declared.
+ */
+function buildDocumentsQuery(q: DocumentsQuery): string {
+  const params = new URLSearchParams();
+  params.set('page', String(q.page));
+  params.set('page_size', String(q.page_size));
+  params.set('sort', q.sort);
+  params.set('order', q.order);
+  if (q.query != null && q.query.trim() !== '') {
+    params.set('query', q.query.trim());
+  }
+  if (q.correspondent_id != null) {
+    params.set('correspondent_id', String(q.correspondent_id));
+  }
+  if (q.document_type_id != null) {
+    params.set('document_type_id', String(q.document_type_id));
+  }
+  if (q.date_from != null && q.date_from !== '') {
+    params.set('date_from', q.date_from);
+  }
+  if (q.date_to != null && q.date_to !== '') {
+    params.set('date_to', q.date_to);
+  }
+  for (const tagId of q.tag_ids) {
+    params.append('tag_ids', String(tagId));
+  }
+  return params.toString();
+}
+
+/**
+ * GET /api/documents — the paginated, sortable, filterable library list.
+ *
+ * Throws `Unauthenticated` on 401 and `ApiError` on any other non-2xx, via
+ * the shared `request` wrapper.
+ */
+export async function getDocuments(
+  query: DocumentsQuery,
+): Promise<DocumentsResponse> {
+  const qs = buildDocumentsQuery(query);
+  return request<DocumentsResponse>(`${BASE_URL}/api/documents?${qs}`, {
+    method: 'GET',
+  });
 }

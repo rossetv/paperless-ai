@@ -33,6 +33,7 @@ import {
   getSettings,
   updateSettings,
   testConnection,
+  getDocuments,
 } from './client';
 import type {
   SearchRequest,
@@ -60,6 +61,8 @@ import type {
   UpdateSettingsRequest,
   TestConnectionRequest,
   TestConnectionResponse,
+  DocumentsQuery,
+  DocumentsResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +80,7 @@ const queryKeys = {
   users: () => ['users'] as const,
   apiKeys: () => ['api-keys'] as const,
   settings: () => ['settings'] as const,
+  documents: (query: DocumentsQuery) => ['documents', query] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -115,6 +119,24 @@ export function useStats(): UseQueryResult<StatsResponse, Error> {
   return useQuery({
     queryKey: queryKeys.stats(),
     queryFn: getStats,
+  });
+}
+
+/**
+ * Fetch a page of the library document list.
+ *
+ * `placeholderData` keeps the previous page on screen while the next page
+ * loads — paging through the library does not flash an empty grid. The query
+ * key includes the full `DocumentsQuery`, so changing any filter, the sort,
+ * or the page produces a distinct cache entry.
+ */
+export function useDocuments(
+  query: DocumentsQuery,
+): UseQueryResult<DocumentsResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.documents(query),
+    queryFn: () => getDocuments(query),
+    placeholderData: (previous) => previous,
   });
 }
 

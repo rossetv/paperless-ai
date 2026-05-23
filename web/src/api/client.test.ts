@@ -32,6 +32,7 @@ import {
   getSettings,
   updateSettings,
   testConnection,
+  getDocuments,
 } from './client';
 import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
 
@@ -707,5 +708,84 @@ describe('Wave 4 settings endpoints', () => {
     });
     expect(result.ok).toBe(false);
     expect(result.detail).toMatch(/401/);
+  });
+});
+
+describe('getDocuments', () => {
+  it('GETs /api/documents with the encoded query string', async () => {
+    const body = { documents: [], total: 0, page: 1, page_size: 24 };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await getDocuments({
+      page: 2,
+      page_size: 24,
+      sort: 'title',
+      order: 'asc',
+      query: 'energy',
+      correspondent_id: 7,
+      document_type_id: null,
+      tag_ids: [3, 5],
+      date_from: '2024-01-01',
+      date_to: null,
+    });
+
+    const url = (fetchMock.mock.calls[0]![0] as string);
+    expect(url).toContain('/api/documents?');
+    expect(url).toContain('page=2');
+    expect(url).toContain('page_size=24');
+    expect(url).toContain('sort=title');
+    expect(url).toContain('order=asc');
+    expect(url).toContain('query=energy');
+    expect(url).toContain('correspondent_id=7');
+    expect(url).toContain('tag_ids=3');
+    expect(url).toContain('tag_ids=5');
+    expect(url).toContain('date_from=2024-01-01');
+    // Nullish fields are omitted entirely.
+    expect(url).not.toContain('document_type_id');
+    expect(url).not.toContain('date_to');
+  });
+
+  it('returns the parsed DocumentsResponse', async () => {
+    const body = {
+      documents: [
+        {
+          id: 1,
+          title: 'A',
+          correspondent: 'B',
+          document_type: 'Letter',
+          created: '2025-01-01',
+          tags: ['x'],
+          page_count: 3,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 24,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(body), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const result = await getDocuments({
+      page: 1,
+      page_size: 24,
+      sort: 'created',
+      order: 'desc',
+      tag_ids: [],
+    });
+    expect(result.total).toBe(1);
+    expect(result.documents[0]!.title).toBe('A');
+  });
+
+  it('throws Unauthenticated on a 401', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('', { status: 401 }),
+    ) as unknown as typeof fetch;
+    await expect(
+      getDocuments({ page: 1, page_size: 24, sort: 'created', order: 'desc', tag_ids: [] }),
+    ).rejects.toBeInstanceOf(Unauthenticated);
   });
 });
