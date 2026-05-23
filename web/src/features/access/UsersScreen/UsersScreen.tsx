@@ -9,18 +9,23 @@ import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBa
 import { useUsers } from '../../../api/hooks';
 import { useAuth } from '../../../hooks/useAuth';
 import type { User } from '../../../api/types';
-import { StatCard } from '../StatCard/StatCard';
+import { StatTile } from '../../../components/primitives/StatTile/StatTile';
 import { UserEditDrawer } from '../UserEditDrawer/UserEditDrawer';
 import styles from './UsersScreen.module.css';
 
-/** A fixed avatar palette — a deterministic colour per user id. */
+/**
+ * A fixed avatar palette — a deterministic colour per user id.
+ *
+ * References the --colour-avatar-N tokens from tokens.css so there is one
+ * source of truth for these values (§12.4 — no hardcoded design values).
+ */
 const AVATAR_PALETTE = [
-  '#3a6df0',
-  '#34c759',
-  '#ff9500',
-  '#5856d6',
-  '#ff3b30',
-  '#0071e3',
+  'var(--colour-avatar-0)',
+  'var(--colour-avatar-1)',
+  'var(--colour-avatar-2)',
+  'var(--colour-avatar-3)',
+  'var(--colour-avatar-4)',
+  'var(--colour-avatar-5)',
 ] as const;
 
 /** Pick a stable avatar colour for a user by id. */
@@ -173,10 +178,10 @@ export function UsersScreen(): React.ReactElement {
       ) : (
         <>
           <div className={styles['stat-row']}>
-            <StatCard value={total} label="total accounts" />
-            <StatCard value={active} label="active accounts" />
-            <StatCard value={admins} label="administrators" />
-            <StatCard value={suspended} label="suspended" />
+            <StatTile value={total} label="total accounts" />
+            <StatTile value={active} label="active accounts" />
+            <StatTile value={admins} label="administrators" />
+            <StatTile value={suspended} label="suspended" />
           </div>
           <Table
             columns={columns}

@@ -479,4 +479,21 @@
 
   /* Row — fixed width of the left label column on the Settings screen. */
   --width-row-label:         280px;
+
+  /* ─────────────────────────────────────────────
+   * Avatar palette — deterministic per-user background colours.
+   *
+   * The UsersScreen assigns a stable colour to each user avatar by cycling
+   * through this palette (user_id modulo 6). The six hues are the standard
+   * Apple system colour set — each distinct enough to differentiate users at
+   * a glance. They are theme-INDEPENDENT (same meaning in light and dark) and
+   * therefore defined once on :root, not in themes.css.
+   * ───────────────────────────────────────────── */
+
+  --colour-avatar-0:   #3a6df0;   /* Apple Blue     */
+  --colour-avatar-1:   #34c759;   /* Apple Green    */
+  --colour-avatar-2:   #ff9500;   /* Apple Orange   */
+  --colour-avatar-3:   #5856d6;   /* Apple Purple   */
+  --colour-avatar-4:   #ff3b30;   /* Apple Red      */
+  --colour-avatar-5:   #0071e3;   /* Accent Blue    */
 }
