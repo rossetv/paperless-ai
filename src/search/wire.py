@@ -699,14 +699,51 @@ class SettingsResponse(BaseModel):
     settings: list[SettingItemResponse]
 
 
+# Bounds on the ``PUT /api/settings`` body. These are deliberately generous
+# for legitimate use — an admin save changes a handful of keys, never a 100k
+# blob — and narrow enough that an over-large or buggy payload cannot fill
+# the SQLite write or pin out other writers for the busy-timeout window.
+MAX_SETTINGS_KEYS = 100
+MAX_SETTINGS_VALUE_LENGTH = 8 * 1024
+
+# Bound on the ``POST /api/settings/test-connection`` URL. 2K is long enough
+# for any legitimate Paperless URL (the standard caps URIs at 2048) and short
+# enough that a paste-bombed value is rejected at the boundary.
+MAX_PAPERLESS_URL_LENGTH = 2048
+
+
 class UpdateSettingsRequest(BaseModel):
     """Body of ``PUT /api/settings`` — the configuration changes to apply.
 
     Every value is a string: the ``config`` table stores raw strings and
     ``common.config`` parses them. ``changes`` may be empty (a no-op save).
+
+    The mapping itself is bounded by :data:`MAX_SETTINGS_KEYS`; each value is
+    bounded by :data:`MAX_SETTINGS_VALUE_LENGTH`. An over-large payload is
+    rejected at the boundary rather than reaching the SQLite write — a
+    defence against an accidentally-pasted 10MB blob or a compromised admin
+    session DoS-ing the write lock for the busy-timeout window.
     """
 
-    changes: dict[str, str]
+    changes: dict[str, str] = Field(max_length=MAX_SETTINGS_KEYS)
+
+    @field_validator("changes")
+    @classmethod
+    def _bound_value_lengths(cls, value: dict[str, str]) -> dict[str, str]:
+        """Reject any single value longer than :data:`MAX_SETTINGS_VALUE_LENGTH`.
+
+        Pydantic ``Field(max_length=...)`` on ``dict[str, str]`` bounds the
+        *number of keys*, not the length of each value — that has to be done
+        in a validator. We reject as a 422 rather than truncate; silently
+        truncating a configuration value would be far worse than refusing it.
+        """
+        for key, val in value.items():
+            if len(val) > MAX_SETTINGS_VALUE_LENGTH:
+                raise ValueError(
+                    f"value for {key!r} exceeds the {MAX_SETTINGS_VALUE_LENGTH}-"
+                    "character limit"
+                )
+        return value
 
 
 class TestConnectionRequest(BaseModel):
@@ -717,14 +754,46 @@ class TestConnectionRequest(BaseModel):
 
     Attributes:
         paperless_url: The Paperless base URL to probe. An empty string means
-            "use the stored URL".
+            "use the stored URL". Must be ``http://`` or ``https://`` when
+            non-empty; user-info in the URL (``http://user:pw@host``) is
+            rejected so a probe cannot be tricked into smuggling credentials
+            through the URL.
         paperless_token: The Paperless API token to probe with. An empty
             string means "use the stored token" — the Settings screen sends
             an empty token when the user has not replaced the masked one.
     """
 
-    paperless_url: str
-    paperless_token: str
+    paperless_url: str = Field(max_length=MAX_PAPERLESS_URL_LENGTH)
+    paperless_token: str = Field(max_length=MAX_SETTINGS_VALUE_LENGTH)
+
+    @field_validator("paperless_url")
+    @classmethod
+    def _check_paperless_url(cls, value: str) -> str:
+        """Require ``http(s)://`` and reject userinfo on a non-empty URL.
+
+        An empty string is the documented "use the stored URL" sentinel and
+        passes through untouched. Non-empty values must be an absolute
+        ``http``/``https`` URL — file://, ftp://, gopher:// and similar
+        schemes are not Paperless, and a userinfo segment would otherwise let
+        a compromised admin smuggle a stored credential into a probe target.
+        """
+        if not value:
+            return value
+        # rationale: a deliberately narrow scheme check rather than a full
+        # URL parser; the test-connection probe is admin-only and we only
+        # care that the value targets HTTP(S) and carries no userinfo.
+        if not (value.startswith("http://") or value.startswith("https://")):
+            raise ValueError("paperless_url must start with http:// or https://")
+        # urllib.parse imported here so wire.py keeps a flat top-of-module —
+        # the validator is only hit on a non-empty URL.
+        from urllib.parse import urlparse  # noqa: PLC0415
+
+        parsed = urlparse(value)
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("paperless_url must not contain credentials")
+        if not parsed.hostname:
+            raise ValueError("paperless_url must include a host")
+        return value
 
 
 class TestConnectionResponse(BaseModel):

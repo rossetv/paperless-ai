@@ -160,3 +160,129 @@ def test_put_settings_with_no_changes_is_a_clean_noop(admin_client) -> None:
 
     assert {i["key"] for i in response.json()["settings"]} == set(CONFIG_KEYS)
     assert config_store.get_config_version(app_db) == before
+
+
+def test_put_settings_rejects_the_masked_placeholder_as_a_secret_value(
+    admin_client,
+) -> None:
+    """The mask must never round-trip as a real secret.
+
+    The frontend correctly omits an unchanged secret, but a buggy or
+    compromised client could POST the placeholder and persist it as the
+    actual token. Reject the mask at the boundary; the table stays untouched.
+    """
+    client, app_db = admin_client
+    # Pre-seed a real token so the assertion that nothing is overwritten is
+    # against a known starting state.
+    config_store.set_value(app_db, "PAPERLESS_TOKEN", "real-token")
+    response = client.put(
+        "/api/settings", json={"changes": {"PAPERLESS_TOKEN": "********"}}
+    )
+    assert response.status_code == 400
+    assert config_store.get(app_db, "PAPERLESS_TOKEN") == "real-token"
+
+
+def test_put_settings_rejects_an_empty_secret_value(admin_client) -> None:
+    """An admin saving `PAPERLESS_TOKEN=""` must fail validation.
+
+    Regression for the boundary: an empty required secret used to pass and
+    every daemon then authenticated to Paperless with "" until manually
+    fixed. The build_settings boundary now rejects empty / whitespace-only
+    required secrets.
+    """
+    client, app_db = admin_client
+    config_store.set_value(app_db, "PAPERLESS_TOKEN", "real-token")
+    response = client.put(
+        "/api/settings", json={"changes": {"PAPERLESS_TOKEN": ""}}
+    )
+    assert response.status_code == 400
+    assert config_store.get(app_db, "PAPERLESS_TOKEN") == "real-token"
+
+
+def test_put_settings_rejects_a_changes_mapping_above_the_size_cap(
+    admin_client,
+) -> None:
+    """A change set with more than the documented key cap is rejected.
+
+    Defense against a paste-bomb / DoS payload: the route uses Pydantic's
+    ``Field(max_length=...)`` on the dict to cap key count, and a validator
+    to cap each value's length. Both surface as a 422 from FastAPI.
+    """
+    client, _ = admin_client
+    # 101 keys (the cap is 100). The handler must reject before reaching
+    # validate_change_set / set_many.
+    response = client.put(
+        "/api/settings",
+        json={"changes": {f"BOGUS_{i}": "x" for i in range(101)}},
+    )
+    assert response.status_code == 422
+
+
+def test_put_settings_rejects_an_oversize_value(admin_client) -> None:
+    """A single value above the 8K cap is rejected.
+
+    A 100MB blob in one value would never reach SQLite — the validator on
+    ``UpdateSettingsRequest`` rejects it at the boundary.
+    """
+    client, _ = admin_client
+    response = client.put(
+        "/api/settings",
+        json={"changes": {"OCR_DPI": "x" * 9000}},
+    )
+    assert response.status_code == 422
+
+
+def test_get_settings_audit_logs_a_successful_reveal(admin_client) -> None:
+    """`?reveal=true` writes a `search.settings_revealed` event.
+
+    The event records the actor and the secret keys revealed — never their
+    values. The trail makes an after-the-fact leak attributable to one admin
+    session.
+    """
+    from unittest.mock import patch
+
+    client, app_db = admin_client
+    config_store.set_value(app_db, "OPENAI_API_KEY", "sk-real-secret")
+
+    # The handler uses the module-level structlog binding. Wrapping its
+    # warning() with a spy is the most direct way to assert the audit event
+    # was emitted with the expected payload — caplog cannot reliably catch
+    # structlog's separate logger by default.
+    with patch("search.settings_routes.log") as mock_log:
+        response = client.get("/api/settings", params={"reveal": "true"})
+        assert response.status_code == 200
+
+    # Exactly one search.settings_revealed event, carrying the admin's
+    # username and the *keys* (not values) of the revealed secrets.
+    warning_calls = [
+        call for call in mock_log.warning.call_args_list
+        if call.args and call.args[0] == "search.settings_revealed"
+    ]
+    assert warning_calls, (
+        "a successful ?reveal=true call must emit a search.settings_revealed "
+        "audit event"
+    )
+    kwargs = warning_calls[0].kwargs
+    assert kwargs.get("username") == "admin"
+    assert "OPENAI_API_KEY" in kwargs.get("keys", [])
+    # The value itself is never logged — only the key list.
+    for call in warning_calls:
+        assert "sk-real-secret" not in repr(call)
+
+
+def test_get_settings_without_reveal_does_not_audit(admin_client) -> None:
+    """A normal (masked) GET emits no reveal audit event — the trail tracks
+    only intentional reveals."""
+    from unittest.mock import patch
+
+    client, app_db = admin_client
+    config_store.set_value(app_db, "OPENAI_API_KEY", "sk-real-secret")
+
+    with patch("search.settings_routes.log") as mock_log:
+        response = client.get("/api/settings")
+        assert response.status_code == 200
+
+    assert not any(
+        call.args and call.args[0] == "search.settings_revealed"
+        for call in mock_log.warning.call_args_list
+    )
