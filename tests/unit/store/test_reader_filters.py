@@ -69,9 +69,7 @@ def test_text_predicate_escapes_like_wildcards() -> None:
 
 def test_text_and_filters_combine_with_and() -> None:
     """A text query and a correspondent filter are joined by AND."""
-    where, params = build_browse_where(
-        _query(text="bill", correspondent_id=5)
-    )
+    where, params = build_browse_where(_query(text="bill", correspondent_id=5))
     assert where.startswith("WHERE ")
     assert " AND " in where
     assert params == [5, "%bill%", "%bill%", "%bill%"]

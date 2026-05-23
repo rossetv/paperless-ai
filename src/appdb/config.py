@@ -194,9 +194,7 @@ def set_many(conn: sqlite3.Connection, values: dict[str, str]) -> None:
         set_many_in_transaction(conn, values)
 
 
-def set_many_in_transaction(
-    conn: sqlite3.Connection, values: dict[str, str]
-) -> None:
+def set_many_in_transaction(conn: sqlite3.Connection, values: dict[str, str]) -> None:
     """Write *values* and bump ``config_version`` inside the caller's transaction.
 
     Callers that need a wider atomic boundary (e.g. the Settings PUT, which

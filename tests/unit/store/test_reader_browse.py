@@ -122,6 +122,7 @@ def test_sort_by_indexed_at_is_accepted(populated_db: str) -> None:
     assert page.total == 2
     assert len(page.documents) == 2
 
+
 def test_unknown_sort_column_raises_value_error(populated_db: str) -> None:
     """An unsupported sort column is a programming error → ValueError."""
     reader = open_reader(populated_db)
@@ -140,13 +141,12 @@ def test_unknown_sort_column_raises_value_error(populated_db: str) -> None:
 def test_limit_slices_the_result(populated_db: str) -> None:
     """A limit of 1 returns one row but total still counts every match."""
     reader = open_reader(populated_db)
-    page = reader.list_documents(
-        _query(sort="created", descending=False, limit=1)
-    )
+    page = reader.list_documents(_query(sort="created", descending=False, limit=1))
     reader.close()
     assert len(page.documents) == 1
     assert page.documents[0].id == 1
     assert page.total == 2
+
 
 def test_offset_skips_rows(populated_db: str) -> None:
     """An offset of 1 skips the first sorted row."""
@@ -159,6 +159,7 @@ def test_offset_skips_rows(populated_db: str) -> None:
     assert page.documents[0].id == 2
     assert page.total == 2
     assert page.offset == 1
+
 
 def test_offset_past_the_end_yields_empty_documents(
     populated_db: str,
@@ -184,6 +185,7 @@ def test_filter_by_correspondent(populated_db: str) -> None:
     assert page.total == 1
     assert page.documents[0].id == 1
 
+
 def test_filter_by_document_type(populated_db: str) -> None:
     """A document-type filter restricts the page and the total."""
     reader = open_reader(populated_db)
@@ -191,6 +193,7 @@ def test_filter_by_document_type(populated_db: str) -> None:
     reader.close()
     assert page.total == 1
     assert page.documents[0].id == 1
+
 
 def test_filter_by_tag(populated_db: str) -> None:
     """Tag 101 belongs only to document 1, so the filter isolates it."""
@@ -200,6 +203,7 @@ def test_filter_by_tag(populated_db: str) -> None:
     assert page.total == 1
     assert page.documents[0].id == 1
 
+
 def test_filter_by_tag_shared_by_both(populated_db: str) -> None:
     """Tag 102 belongs to both documents, so the filter keeps both."""
     reader = open_reader(populated_db)
@@ -207,15 +211,15 @@ def test_filter_by_tag_shared_by_both(populated_db: str) -> None:
     reader.close()
     assert page.total == 2
 
+
 def test_filter_by_date_range(populated_db: str) -> None:
     """A 2024 date range keeps only the 2024 document."""
     reader = open_reader(populated_db)
-    page = reader.list_documents(
-        _query(date_from="2024-01-01", date_to="2024-12-31")
-    )
+    page = reader.list_documents(_query(date_from="2024-01-01", date_to="2024-12-31"))
     reader.close()
     assert page.total == 1
     assert page.documents[0].id == 2
+
 
 def test_text_query_matches_title(populated_db: str) -> None:
     """A text query matching a title returns only that document."""
@@ -225,6 +229,7 @@ def test_text_query_matches_title(populated_db: str) -> None:
     assert page.total == 1
     assert page.documents[0].id == 1
 
+
 def test_text_query_matches_correspondent_name(populated_db: str) -> None:
     """A text query matching a correspondent name returns that document."""
     reader = open_reader(populated_db)
@@ -232,6 +237,7 @@ def test_text_query_matches_correspondent_name(populated_db: str) -> None:
     reader.close()
     assert page.total == 1
     assert page.documents[0].id == 2
+
 
 def test_text_query_is_case_insensitive(populated_db: str) -> None:
     """The text query matches regardless of letter case."""
@@ -241,6 +247,7 @@ def test_text_query_is_case_insensitive(populated_db: str) -> None:
     # "Invoice" appears in document 1's title and as its document type.
     assert page.total == 1
     assert page.documents[0].id == 1
+
 
 def test_filters_and_text_combine(populated_db: str) -> None:
     """A text query and a correspondent filter are ANDed together."""

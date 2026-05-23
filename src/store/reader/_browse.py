@@ -60,9 +60,7 @@ def _order_by(sort: str, descending: bool) -> str:
     column = _SORT_COLUMNS.get(sort)
     if column is None:
         allowed = ", ".join(sorted(_SORT_COLUMNS))
-        raise ValueError(
-            f"unknown sort column {sort!r}; expected one of {allowed}"
-        )
+        raise ValueError(f"unknown sort column {sort!r}; expected one of {allowed}")
     direction = "DESC" if descending else "ASC"
     # The tiebreak follows the primary direction so paging stays monotonic.
     return f"{column} {direction}, d.id {direction}"
@@ -146,19 +144,13 @@ def list_documents(
     except sqlite3.Error as exc:
         raise StoreError("list_documents query failed") from exc
 
-    tag_name_by_id: dict[int, str] = {
-        row["id"]: row["name"] for row in tag_rows
-    }
+    tag_name_by_id: dict[int, str] = {row["id"]: row["name"] for row in tag_rows}
 
     documents: list[DocumentSummary] = []
     for row in page_rows:
-        tag_ids: list[int] = (
-            json.loads(row["tag_ids"]) if row["tag_ids"] else []
-        )
+        tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
         tag_names = tuple(
-            tag_name_by_id[tag_id]
-            for tag_id in tag_ids
-            if tag_id in tag_name_by_id
+            tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
         )
         documents.append(
             DocumentSummary(

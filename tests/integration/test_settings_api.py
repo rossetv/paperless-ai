@@ -192,9 +192,7 @@ def test_put_settings_rejects_an_empty_secret_value(admin_client) -> None:
     """
     client, app_db = admin_client
     config_store.set_value(app_db, "PAPERLESS_TOKEN", "real-token")
-    response = client.put(
-        "/api/settings", json={"changes": {"PAPERLESS_TOKEN": ""}}
-    )
+    response = client.put("/api/settings", json={"changes": {"PAPERLESS_TOKEN": ""}})
     assert response.status_code == 400
     assert config_store.get(app_db, "PAPERLESS_TOKEN") == "real-token"
 
@@ -255,7 +253,8 @@ def test_get_settings_audit_logs_a_successful_reveal(admin_client) -> None:
     # Exactly one search.settings_revealed event, carrying the admin's
     # username and the *keys* (not values) of the revealed secrets.
     warning_calls = [
-        call for call in mock_log.warning.call_args_list
+        call
+        for call in mock_log.warning.call_args_list
         if call.args and call.args[0] == "search.settings_revealed"
     ]
     assert warning_calls, (

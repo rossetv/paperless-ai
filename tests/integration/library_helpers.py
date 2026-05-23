@@ -93,16 +93,51 @@ def seed_library_store(settings: MagicMock) -> None:
             ]
         )
         documents = [
-            (1, "Annual Report", CORRESPONDENT_GAS, DOC_TYPE_LETTER,
-             (TAG_2024,), "2024-11-02T00:00:00Z", 12),
-            (2, "Boiler Invoice", CORRESPONDENT_GAS, DOC_TYPE_INVOICE,
-             (TAG_UTILITIES, TAG_2024), "2024-03-15T00:00:00Z", 1),
-            (3, "Census Letter", CORRESPONDENT_WATER, DOC_TYPE_LETTER,
-             (), "2023-07-01T00:00:00Z", 3),
-            (4, "Direct Debit Form", CORRESPONDENT_WATER, DOC_TYPE_INVOICE,
-             (TAG_UTILITIES,), "2022-01-09T00:00:00Z", 2),
-            (5, "Energy Statement", CORRESPONDENT_GAS, DOC_TYPE_INVOICE,
-             (TAG_UTILITIES, TAG_2024), "2024-08-20T00:00:00Z", 4),
+            (
+                1,
+                "Annual Report",
+                CORRESPONDENT_GAS,
+                DOC_TYPE_LETTER,
+                (TAG_2024,),
+                "2024-11-02T00:00:00Z",
+                12,
+            ),
+            (
+                2,
+                "Boiler Invoice",
+                CORRESPONDENT_GAS,
+                DOC_TYPE_INVOICE,
+                (TAG_UTILITIES, TAG_2024),
+                "2024-03-15T00:00:00Z",
+                1,
+            ),
+            (
+                3,
+                "Census Letter",
+                CORRESPONDENT_WATER,
+                DOC_TYPE_LETTER,
+                (),
+                "2023-07-01T00:00:00Z",
+                3,
+            ),
+            (
+                4,
+                "Direct Debit Form",
+                CORRESPONDENT_WATER,
+                DOC_TYPE_INVOICE,
+                (TAG_UTILITIES,),
+                "2022-01-09T00:00:00Z",
+                2,
+            ),
+            (
+                5,
+                "Energy Statement",
+                CORRESPONDENT_GAS,
+                DOC_TYPE_INVOICE,
+                (TAG_UTILITIES, TAG_2024),
+                "2024-08-20T00:00:00Z",
+                4,
+            ),
         ]
         for doc_id, title, corr, dtype, tags, created, pages in documents:
             meta = DocumentMeta(
