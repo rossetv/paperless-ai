@@ -55,6 +55,11 @@ log = structlog.get_logger(__name__)
 # to shutdown and manual triggers promptly; long enough to avoid busy-looping.
 _WAKE_CHECK_INTERVAL: float = 5.0
 
+# How often to beat the idle heartbeat during the inter-cycle wait.  Must be
+# well below the stale-after threshold (90 s by default) so the dashboard
+# never reads the indexer as "stopped" while it is simply waiting.
+_IDLE_BEAT_INTERVAL: float = 30.0
+
 # The rebuild-sentinel file name. Written beside index.db by the search
 # server's POST /api/index/rebuild; consumed here at cycle entry to wipe and
 # re-index the whole archive (web-redesign spec §5, Wave 6).
@@ -464,10 +469,14 @@ def _run_loop(
 
         # Wait for the next cycle, waking early on shutdown or a new sentinel.
         # The interval is read live from settings so a hot-loaded change to
-        # RECONCILE_INTERVAL takes effect from this wait onwards.
+        # RECONCILE_INTERVAL takes effect from this wait onwards.  The
+        # cycle_recorder is passed so the wait can beat idle periodically and
+        # prevent the dashboard from reporting the indexer as "stopped" while
+        # it is simply sleeping between cycles.
         _interruptible_wait(
             seconds=float(settings.RECONCILE_INTERVAL),
             sentinel_path=sentinel_path,
+            cycle_recorder=cycle_recorder,
         )
 
 
@@ -506,7 +515,11 @@ def _run_loop_for_test(
             on_cycle_1()
 
 
-def _interruptible_wait(seconds: float, sentinel_path: Path) -> bool:
+def _interruptible_wait(
+    seconds: float,
+    sentinel_path: Path,
+    cycle_recorder: IndexerActivityRecorder | None = None,
+) -> bool:
     """Sleep for *seconds*, waking early on shutdown or a sentinel file.
 
     Sleeps in slices of ``_WAKE_CHECK_INTERVAL`` seconds.  On each slice:
@@ -515,11 +528,26 @@ def _interruptible_wait(seconds: float, sentinel_path: Path) -> bool:
     - If *sentinel_path* exists → delete it and return ``True`` (manual trigger
       detected; the next cycle should include a deletion sweep).
 
+    When *cycle_recorder* is provided the function beats an idle heartbeat
+    every ``_IDLE_BEAT_INTERVAL`` seconds so the Index dashboard does not
+    report the indexer as ``stopped`` during long inter-cycle waits.  The
+    default reconcile interval (300 s) exceeds the stale-after threshold (90 s)
+    by more than three times, so without this beat the dashboard routinely
+    shows the indexer as stopped while it is healthy.
+
+    Args:
+        seconds: How long to wait in total.
+        sentinel_path: Path to the manual-trigger sentinel file.
+        cycle_recorder: Optional activity recorder — ``beat_idle`` is called
+            periodically when provided.  ``None`` in tests that do not need
+            heartbeat coverage.
+
     Returns:
         ``True`` if a manual-trigger sentinel was detected and consumed;
         ``False`` if the full duration elapsed or shutdown was requested.
     """
     deadline = time.monotonic() + seconds
+    last_beat_at = time.monotonic()
 
     # Check sentinel immediately at entry — a sentinel written just before the
     # wait begins is detected without sleeping first.
@@ -531,6 +559,13 @@ def _interruptible_wait(seconds: float, sentinel_path: Path) -> bool:
     while time.monotonic() < deadline:
         if is_shutdown_requested():
             return False
+
+        # Beat idle if enough time has elapsed since the last beat.
+        if cycle_recorder is not None:
+            now = time.monotonic()
+            if now - last_beat_at >= _IDLE_BEAT_INTERVAL:
+                cycle_recorder.beat_idle()
+                last_beat_at = now
 
         remaining = deadline - time.monotonic()
         slice_duration = min(_WAKE_CHECK_INTERVAL, remaining)

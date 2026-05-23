@@ -7,6 +7,8 @@ Behavioural promises tested:
 - _interruptible_wait returns False on shutdown or after the full duration,
   and returns True (deleting the sentinel) when a manual-trigger sentinel is
   present.
+- _interruptible_wait calls beat_idle on the cycle_recorder at _IDLE_BEAT_INTERVAL
+  intervals so the daemon heartbeat stays fresh during a 300 s reconcile wait.
 
 The _run_loop behaviours live in test_daemon.py — the daemon's tests are split
 across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
@@ -16,12 +18,12 @@ across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import common.shutdown as shutdown_mod
-from indexer.daemon import _WAKE_CHECK_INTERVAL, _interruptible_wait
+from indexer.daemon import _IDLE_BEAT_INTERVAL, _WAKE_CHECK_INTERVAL, _interruptible_wait
 from tests.helpers.factories import make_settings_obj
 
 
@@ -160,3 +162,58 @@ def test_interruptible_wait_deletes_sentinel_and_returns_true(
 
     assert triggered is True
     assert not sentinel_path.exists()
+
+
+def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
+    tmp_path: Path,
+) -> None:
+    """A 300 s reconcile interval must keep the indexer's heartbeat fresh.
+
+    This is the BLOCKER 2 regression guard.  The default stale-after window is
+    90 s; with RECONCILE_INTERVAL = 300 s the indexer's heartbeat would expire
+    between cycles.  _interruptible_wait must call beat_idle on the recorder at
+    least once per _IDLE_BEAT_INTERVAL seconds so the dashboard reads "idle"
+    continuously rather than "stopped".
+
+    The test advances a fake monotonic clock in slices of _IDLE_BEAT_INTERVAL
+    and verifies that beat_idle is called at each interval boundary inside a
+    300 s wait — without the 300 s actually elapsing.
+    """
+    sentinel_path = tmp_path / "reconcile.request"
+    recorder = MagicMock()
+
+    # We simulate 300 s worth of monotonic time via time.monotonic patches so
+    # the test returns immediately.  Each call to time.monotonic() advances the
+    # fake clock by _WAKE_CHECK_INTERVAL to drive the loop forward, while
+    # time.sleep is a no-op.
+    TOTAL_WAIT = 300.0
+    start = 1000.0  # arbitrary epoch offset
+
+    # Produce enough fake-clock readings for the loop plus a sentinel check.
+    # The loop ticks in _WAKE_CHECK_INTERVAL increments; we need enough values
+    # to simulate the full 300 s wait.  Add a few extras so the generator does
+    # not run dry.
+    ticks = int(TOTAL_WAIT / _WAKE_CHECK_INTERVAL) + 10
+    # Two calls per iteration (once for the beat check, once for remaining calc)
+    # plus the initial deadline call and a few guards.
+    clock_readings = [start + i * _WAKE_CHECK_INTERVAL for i in range(ticks * 3 + 20)]
+    clock_iter = iter(clock_readings)
+
+    with patch("indexer.daemon.time.monotonic", side_effect=lambda: next(clock_iter)):
+        with patch("indexer.daemon.time.sleep"):
+            _interruptible_wait(
+                seconds=TOTAL_WAIT,
+                sentinel_path=sentinel_path,
+                cycle_recorder=recorder,
+            )
+
+    # beat_idle must have been called roughly once per _IDLE_BEAT_INTERVAL.
+    # The final slice may end at the deadline before the last beat fires, so
+    # we allow one fewer call than the exact quotient.
+    minimum_beats = int(TOTAL_WAIT / _IDLE_BEAT_INTERVAL) - 1
+    assert recorder.beat_idle.call_count >= minimum_beats, (
+        f"Expected at least {minimum_beats} beat_idle calls for a "
+        f"{TOTAL_WAIT}s wait with _IDLE_BEAT_INTERVAL={_IDLE_BEAT_INTERVAL}s; "
+        f"got {recorder.beat_idle.call_count}"
+    )
+    assert recorder.beat_idle.call_count > 0, "beat_idle was never called"
