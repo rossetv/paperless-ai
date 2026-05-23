@@ -448,4 +448,29 @@
 
   /* Status dot diameter — the leading dot inside a StatusBadge */
   --size-status-dot:            6px;
+
+  /* ─────────────────────────────────────────────
+   * Settings form controls — Toggle, Segmented, NumberStepper, fields.
+   *
+   * The Settings screen recreates the handoff's Apple-style form controls.
+   * These tokens cover the values the existing palette does not: the green
+   * "on" colour of a Toggle, the neutral track behind an "off" Toggle, and
+   * the control-segment dimensions. The colours are theme-stable (a toggle
+   * is green-on in either theme), so they live on :root, not in themes.css.
+   * ───────────────────────────────────────────── */
+
+  /* Toggle — the "on" track is iOS green; the "off" track is a neutral grey. */
+  --colour-toggle-on:        #34c759;
+  --colour-toggle-off:       rgb(0 0 0 / 16%);
+
+  /* Toggle geometry. */
+  --size-toggle-width:       42px;
+  --size-toggle-height:      26px;
+  --size-toggle-knob:        22px;
+
+  /* Segmented control — the selected segment sits on a raised white chip. */
+  --colour-segmented-track:  rgb(0 0 0 / 5%);
+
+  /* NumberStepper — width of the central editable value field. */
+  --width-stepper-input:     56px;
 }
