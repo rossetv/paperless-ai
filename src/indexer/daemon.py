@@ -309,11 +309,12 @@ def _rebuild_reconciler(settings: Settings, old: Reconciler) -> Reconciler:
     — the index database path is a bootstrap env-var — so the old writer is
     reused via ``old.store_writer``.
 
-    The old reconciler's paperless client is left to garbage collection: the
-    new reconciler is returned and assigned over the old one, removing the
-    only live reference. ``httpx.Client`` releases its connection pool through
-    its finaliser, so the pool is reclaimed promptly without an explicit close
-    call — which would require widening the reconciler's public API.
+    The old reconciler's Paperless client is explicitly closed before the new
+    one is built, matching the pattern in the OCR and classifier daemons
+    (``ocr/daemon.py``, ``classifier/daemon.py``). Explicit close is the
+    project convention: it releases the ``httpx`` connection pool
+    deterministically and avoids assumptions about CPython finaliser timing
+    for any cycle the OpenAI SDK may introduce.
 
     Args:
         settings: The freshly loaded configuration.
@@ -324,6 +325,7 @@ def _rebuild_reconciler(settings: Settings, old: Reconciler) -> Reconciler:
         A new :class:`~indexer.reconciler.Reconciler` built from *settings*,
         sharing the same :class:`~store.writer.StoreWriter` as *old*.
     """
+    old.paperless.close()
     configure_logging(settings)
     setup_libraries(settings)
     llm_limiter.init(settings.LLM_MAX_CONCURRENT)

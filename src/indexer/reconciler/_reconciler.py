@@ -56,6 +56,16 @@ class Reconciler:
         self._indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
     @property
+    def paperless(self) -> PaperlessClient:
+        """The Paperless API client.
+
+        Exposed so the indexer daemon can explicitly close it when the
+        reconciler is replaced on a hot-load config change, matching the
+        explicit-close convention used by the OCR and classifier daemons.
+        """
+        return self._paperless
+
+    @property
     def store_writer(self) -> StoreWriter:
         """The store writer this reconciler reads and writes.
 
