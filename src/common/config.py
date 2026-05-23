@@ -4,16 +4,24 @@ The :class:`Settings` dataclass is the single, immutable description of a
 process's configuration. It is **frozen** (CODE_GUIDELINES §5.2): once built it
 cannot be mutated, so no code path can change configuration mid-run.
 
-Construct it with :meth:`Settings.from_environment` — never ``Settings()``
-directly. ``from_environment`` reads, parses, validates, and clamps every
-environment variable, then builds the instance in a single ``cls(...)`` call.
-A missing required variable or an invalid value raises ``ValueError`` with a
-message naming the offending variable (CODE_GUIDELINES §1.11, §6.6).
+Two construction paths exist:
+
+* :func:`load_settings` — the production entry point. Layers the ``config``
+  table (in ``app.db``) over the process environment, so a value in the table
+  wins, then an environment variable, then the coded default.
+* :meth:`Settings.from_environment` — the environment-only path, preserved
+  for tests and any caller that has no ``app.db``. Parses, validates, and
+  clamps every environment variable, raising ``ValueError`` with a message
+  naming the offending variable (CODE_GUIDELINES §1.11, §6.6).
+
+Both paths share :func:`_build_settings`: the same parsing, validation and
+clamping is applied to whichever string mapping is presented as the source.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -97,26 +105,25 @@ REINDEX_KEYS: frozenset[str] = frozenset(
 
 
 # ---------------------------------------------------------------------------
-# Environment-variable parsing helpers (pure functions)
+# String-mapping parsing helpers (pure functions)
 # ---------------------------------------------------------------------------
 
 
-def _get_required_env(var_name: str) -> str:
-    """Return the value of *var_name*, raising ``ValueError`` if it is unset."""
-    value = os.getenv(var_name)
+def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
+    """Return *var_name* from *source*, raising ``ValueError`` if it is unset."""
+    value = source.get(var_name)
     if value is None:
         raise ValueError(f"Required environment variable '{var_name}' is not set.")
     return value
 
 
-def _get_int_env(var_name: str, default: int) -> int:
-    """Parse *var_name* as an integer, falling back to *default* when unset.
+def _get_int_env(source: Mapping[str, str], var_name: str, default: int) -> int:
+    """Parse *var_name* from *source* as an integer, falling back to *default*.
 
     Raises a ``ValueError`` naming *var_name* when the value is set but is not
-    a valid integer — the opaque stdlib ``invalid literal for int()`` message
-    does not say which variable was at fault (CODE_GUIDELINES §6.6).
+    a valid integer.
     """
-    raw = os.getenv(var_name)
+    raw = source.get(var_name)
     if raw is None:
         return default
     try:
@@ -125,9 +132,12 @@ def _get_int_env(var_name: str, default: int) -> int:
         raise ValueError(f"{var_name} must be an integer, got {raw!r}.") from exc
 
 
-def _get_optional_int_env(var_name: str, default: int | None = None) -> int | None:
-    """Parse *var_name* as an integer, returning *default* when unset or blank."""
-    raw = os.getenv(var_name)
+def _get_optional_int_env(
+    source: Mapping[str, str], var_name: str, default: int | None = None
+) -> int | None:
+    """Parse *var_name* from *source* as an integer, returning *default* when
+    unset or blank."""
+    raw = source.get(var_name)
     if raw is None:
         return default
     raw = raw.strip()
@@ -140,27 +150,28 @@ def _get_optional_int_env(var_name: str, default: int | None = None) -> int | No
 
 
 def _get_optional_positive_int_env(
-    var_name: str, default: int | None = None
+    source: Mapping[str, str], var_name: str, default: int | None = None
 ) -> int | None:
     """Like :func:`_get_optional_int_env`, but maps a non-positive value to None."""
-    value = _get_optional_int_env(var_name, default)
+    value = _get_optional_int_env(source, var_name, default)
     if value is not None and value <= 0:
         return None
     return value
 
 
 def _get_csv_env(
+    source: Mapping[str, str],
     var_name: str,
     default: list[str],
     *,
     require_non_empty: bool = False,
 ) -> list[str]:
-    """Parse a comma-separated env var, falling back to *default*.
+    """Parse a comma-separated value from *source*, falling back to *default*.
 
-    When *require_non_empty* is ``True``, raises ``ValueError`` if the env
-    var is set but yields no items (used for model lists).
+    When *require_non_empty* is ``True``, raises ``ValueError`` if the value
+    is set but yields no items (used for model lists).
     """
-    value = os.getenv(var_name)
+    value = source.get(var_name)
     if value is None:
         return [item for item in default if item]
     parts = [part.strip() for part in value.split(",") if part.strip()]
@@ -169,9 +180,9 @@ def _get_csv_env(
     return parts
 
 
-def _get_bool_env(var_name: str, default: bool) -> bool:
-    """Parse *var_name* as a boolean, falling back to *default* when unset."""
-    value = os.getenv(var_name)
+def _get_bool_env(source: Mapping[str, str], var_name: str, default: bool) -> bool:
+    """Parse *var_name* from *source* as a boolean, falling back to *default*."""
+    value = source.get(var_name)
     if value is None:
         return default
     value = value.strip().lower()
@@ -189,31 +200,31 @@ def _require_at_least_one(var_name: str, value: int, minimum: int = 1) -> int:
     return value
 
 
-def _resolve_llm_provider() -> Literal["openai", "ollama"]:
+def _resolve_llm_provider(source: Mapping[str, str]) -> Literal["openai", "ollama"]:
     """Resolve and validate ``LLM_PROVIDER`` (defaults to ``openai``)."""
-    provider = os.getenv("LLM_PROVIDER", "openai")
+    provider = source.get("LLM_PROVIDER", "openai")
     if provider not in ("openai", "ollama"):
         raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal["openai","ollama"]`.
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
     return provider  # type: ignore[return-value]
 
 
-def _resolve_log_format() -> Literal["json", "console"]:
+def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]:
     """Resolve and validate ``LOG_FORMAT`` (defaults to ``console``)."""
-    log_format = os.getenv("LOG_FORMAT", "console")
+    log_format = source.get("LOG_FORMAT", "console")
     if log_format not in ("json", "console"):
         raise ValueError("LOG_FORMAT must be 'json' or 'console'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal["json","console"]`.
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
     return log_format  # type: ignore[return-value]
 
 
-def _resolve_chunk_overlap(chunk_size: int) -> int:
+def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
     """Resolve and validate ``CHUNK_OVERLAP`` against *chunk_size*.
 
     The overlap must be non-negative and strictly less than the chunk size,
     otherwise a chunk could never advance past its own overlap.
     """
-    chunk_overlap = _get_int_env("CHUNK_OVERLAP", 256)
+    chunk_overlap = _get_int_env(source, "CHUNK_OVERLAP", 256)
     if not 0 <= chunk_overlap < chunk_size:
         raise ValueError(
             f"CHUNK_OVERLAP must be >= 0 and < CHUNK_SIZE ({chunk_size}), "
@@ -222,9 +233,9 @@ def _resolve_chunk_overlap(chunk_size: int) -> int:
     return chunk_overlap
 
 
-def _resolve_search_max_refinements() -> int:
+def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` against the §14.3 ceiling."""
-    value = _get_int_env("SEARCH_MAX_REFINEMENTS", 1)
+    value = _get_int_env(source, "SEARCH_MAX_REFINEMENTS", 1)
     if not 0 <= value <= _SEARCH_MAX_REFINEMENTS_CEILING:
         # The three-LLM-call budget is a hard correctness property, not a knob.
         raise ValueError(
@@ -235,11 +246,13 @@ def _resolve_search_max_refinements() -> int:
     return value
 
 
-def _resolve_server_port() -> int:
+def _resolve_server_port(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_SERVER_PORT`` to the valid TCP port range."""
-    port = _get_int_env("SEARCH_SERVER_PORT", 8080)
+    port = _get_int_env(source, "SEARCH_SERVER_PORT", 8080)
     if not 1 <= port <= 65535:
-        raise ValueError(f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}.")
+        raise ValueError(
+            f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}."
+        )
     return port
 
 
@@ -247,9 +260,9 @@ def _resolve_server_port() -> int:
 class Settings:
     """Immutable, fully-validated configuration for one process.
 
-    Built once via :meth:`from_environment`; never mutated thereafter. Every
-    field is set in a single constructor call, so the type checker and the
-    reader both see the complete shape in one place.
+    Built once via :meth:`from_environment` or :func:`load_settings`; never
+    mutated thereafter. Every field is set in a single constructor call, so
+    the type checker and the reader both see the complete shape in one place.
     """
 
     PAPERLESS_URL: str
@@ -329,156 +342,342 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> Settings:
-        """Build a :class:`Settings` from the process environment.
+        """Build a :class:`Settings` from the process environment alone.
 
-        Reads, parses, validates, and clamps every environment variable, then
-        constructs the frozen instance in one ``cls(...)`` call. Each value is
-        produced by a typed parsing helper above, so the constructor arguments
-        type-check field by field.
+        The environment-only path, preserved for tests and for any caller
+        that has no ``app.db``. Production processes use :func:`load_settings`
+        instead, which layers the ``config`` table over the environment.
 
         Raises:
-            ValueError: When a required variable is unset, or a value fails
+            ValueError: A required variable is unset, or a value fails
                 validation. The message names the offending variable.
-
-        rationale: this function exceeds the 60-line body ceiling because it is
-        an irreducibly flat enumeration of every environment variable — one
-        keyword per setting. Splitting it would only scatter that single list
-        across helpers without lowering the real complexity (CODE_GUIDELINES
-        §3.1).
         """
-        # Resolved first: these drive the provider-dependent defaults below.
-        llm_provider = _resolve_llm_provider()
-        post_tag_id = _get_int_env("POST_TAG_ID", 444)
-        chunk_size = _require_at_least_one(
-            "CHUNK_SIZE", _get_int_env("CHUNK_SIZE", 2000)
-        )
+        return _build_settings(os.environ)
 
-        if llm_provider == "ollama":
-            ollama_base_url: str | None = os.getenv(
-                "OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL
+
+def _build_settings(source: Mapping[str, str]) -> Settings:
+    """Build a validated :class:`Settings` from a string mapping.
+
+    *source* is the merged configuration: for :func:`load_settings` it is the
+    ``config`` table layered over the process environment; for
+    :meth:`Settings.from_environment` it is ``os.environ`` alone. Parsing,
+    validation and clamping are identical either way — only the source of the
+    raw strings differs.
+
+    Raises:
+        ValueError: A required key is missing, or a value fails validation.
+            The message names the offending key.
+
+    rationale: this function exceeds the 60-line body ceiling because it is an
+    irreducibly flat enumeration of every configuration key — one keyword per
+    setting. Splitting it would only scatter that single list across helpers
+    without lowering the real complexity (CODE_GUIDELINES §3.1).
+    """
+    # Resolved first: these drive the provider-dependent defaults below.
+    llm_provider = _resolve_llm_provider(source)
+    post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
+    chunk_size = _require_at_least_one(
+        "CHUNK_SIZE", _get_int_env(source, "CHUNK_SIZE", 2000)
+    )
+
+    if llm_provider == "ollama":
+        ollama_base_url: str | None = source.get(
+            "OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL
+        )
+        default_ai_models = ["gemma3:27b", "gemma3:12b"]
+        default_planner_model = "gemma3:12b"
+        default_answer_model = "gemma3:27b"
+    else:
+        ollama_base_url = None
+        default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "o4-mini"]
+        default_planner_model = "gpt-5.4-mini"
+        default_answer_model = "gpt-5.4"
+
+    # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int), so it is never
+    # None here; _get_optional_int_env returns int | None only because it
+    # cannot express "None only when the default is None".
+    classify_pre_tag_id = _get_optional_int_env(
+        source, "CLASSIFY_PRE_TAG_ID", post_tag_id
+    )
+    assert classify_pre_tag_id is not None  # default is an int → never None
+
+    # PAPERLESS_URL is the API base (often an internal address);
+    # PAPERLESS_PUBLIC_URL is the browser-facing base for document
+    # deep-links and falls back to PAPERLESS_URL when unset, so existing
+    # single-URL deployments are unaffected. Both are stored stripped of
+    # any trailing slash so callers can append paths cleanly.
+    paperless_url = source.get("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
+    paperless_public_url = source.get(
+        "PAPERLESS_PUBLIC_URL", paperless_url
+    ).rstrip("/")
+
+    return Settings(
+        PAPERLESS_URL=paperless_url,
+        PAPERLESS_PUBLIC_URL=paperless_public_url,
+        PAPERLESS_TOKEN=_get_required_env(source, "PAPERLESS_TOKEN"),
+        LLM_PROVIDER=llm_provider,
+        OLLAMA_BASE_URL=ollama_base_url,
+        # Required unconditionally — embeddings always use OpenAI.
+        OPENAI_API_KEY=_get_required_env(source, "OPENAI_API_KEY"),
+        AI_MODELS=_get_csv_env(
+            source, "AI_MODELS", default_ai_models, require_non_empty=True
+        ),
+        OCR_REFUSAL_MARKERS=[
+            marker.lower()
+            for marker in _get_csv_env(
+                source, "OCR_REFUSAL_MARKERS",
+                [*REFUSAL_PHRASES, _REFUSAL_MARK],
             )
-            default_ai_models = ["gemma3:27b", "gemma3:12b"]
-            default_planner_model = "gemma3:12b"
-            default_answer_model = "gemma3:27b"
-        else:
-            ollama_base_url = None
-            default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "o4-mini"]
-            default_planner_model = "gpt-5.4-mini"
-            default_answer_model = "gpt-5.4"
+        ],
+        OCR_INCLUDE_PAGE_MODELS=_get_bool_env(
+            source, "OCR_INCLUDE_PAGE_MODELS", False
+        ),
+        PRE_TAG_ID=_get_int_env(source, "PRE_TAG_ID", 443),
+        POST_TAG_ID=post_tag_id,
+        OCR_PROCESSING_TAG_ID=_get_optional_positive_int_env(
+            source, "OCR_PROCESSING_TAG_ID"
+        ),
+        CLASSIFY_PRE_TAG_ID=classify_pre_tag_id,
+        CLASSIFY_POST_TAG_ID=_get_optional_positive_int_env(
+            source, "CLASSIFY_POST_TAG_ID"
+        ),
+        CLASSIFY_PROCESSING_TAG_ID=_get_optional_positive_int_env(
+            source, "CLASSIFY_PROCESSING_TAG_ID"
+        ),
+        ERROR_TAG_ID=_get_optional_positive_int_env(
+            source, "ERROR_TAG_ID", 552
+        ),
+        POLL_INTERVAL=_get_int_env(source, "POLL_INTERVAL", 15),
+        MAX_RETRIES=_require_at_least_one(
+            "MAX_RETRIES", _get_int_env(source, "MAX_RETRIES", 20)
+        ),
+        MAX_RETRY_BACKOFF_SECONDS=_require_at_least_one(
+            "MAX_RETRY_BACKOFF_SECONDS",
+            _get_int_env(source, "MAX_RETRY_BACKOFF_SECONDS", 30),
+        ),
+        REQUEST_TIMEOUT=_get_int_env(source, "REQUEST_TIMEOUT", 180),
+        LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 0)),
+        OCR_DPI=_get_int_env(source, "OCR_DPI", 300),
+        OCR_MAX_SIDE=_get_int_env(source, "OCR_MAX_SIDE", 1600),
+        PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),
+        DOCUMENT_WORKERS=max(1, _get_int_env(source, "DOCUMENT_WORKERS", 4)),
+        LOG_LEVEL=source.get("LOG_LEVEL", "INFO").upper(),
+        LOG_FORMAT=_resolve_log_format(source),
+        REFUSAL_MARK=_REFUSAL_MARK,
+        CLASSIFY_PERSON_FIELD_ID=_get_optional_int_env(
+            source, "CLASSIFY_PERSON_FIELD_ID"
+        ),
+        CLASSIFY_DEFAULT_COUNTRY_TAG=source.get(
+            "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
+        ).strip(),
+        CLASSIFY_MAX_CHARS=_get_int_env(source, "CLASSIFY_MAX_CHARS", 0),
+        CLASSIFY_MAX_TOKENS=max(
+            0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)
+        ),
+        CLASSIFY_TAG_LIMIT=max(
+            0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)
+        ),
+        CLASSIFY_TAXONOMY_LIMIT=max(
+            0, _get_int_env(source, "CLASSIFY_TAXONOMY_LIMIT", 100)
+        ),
+        CLASSIFY_MAX_PAGES=max(
+            0, _get_int_env(source, "CLASSIFY_MAX_PAGES", 3)
+        ),
+        CLASSIFY_TAIL_PAGES=max(
+            0, _get_int_env(source, "CLASSIFY_TAIL_PAGES", 2)
+        ),
+        CLASSIFY_HEADERLESS_CHAR_LIMIT=max(
+            0, _get_int_env(source, "CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
+        ),
+        INDEX_DB_PATH=source.get("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
+        APP_DB_PATH=source.get("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
+        EMBEDDING_MODEL=source.get("EMBEDDING_MODEL", "text-embedding-3-small"),
+        EMBEDDING_DIMENSIONS=_require_at_least_one(
+            "EMBEDDING_DIMENSIONS",
+            _get_int_env(source, "EMBEDDING_DIMENSIONS", 1536),
+        ),
+        # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
+        EMBEDDING_MAX_CONCURRENT=max(
+            0, _get_int_env(source, "EMBEDDING_MAX_CONCURRENT", 4)
+        ),
+        RECONCILE_INTERVAL=_require_at_least_one(
+            "RECONCILE_INTERVAL", _get_int_env(source, "RECONCILE_INTERVAL", 300)
+        ),
+        DELETION_SWEEP_INTERVAL=_require_at_least_one(
+            "DELETION_SWEEP_INTERVAL",
+            _get_int_env(source, "DELETION_SWEEP_INTERVAL", 3600),
+        ),
+        CHUNK_SIZE=chunk_size,
+        CHUNK_OVERLAP=_resolve_chunk_overlap(source, chunk_size),
+        SEARCH_TOP_K=_require_at_least_one(
+            "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
+        ),
+        SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(source),
+        SEARCH_PLANNER_MODEL=source.get(
+            "SEARCH_PLANNER_MODEL", default_planner_model
+        ),
+        SEARCH_ANSWER_MODEL=source.get(
+            "SEARCH_ANSWER_MODEL", default_answer_model
+        ),
+        # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
+        # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
+        # operator restrict exposure at the reverse proxy / port map.
+        SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),
+        SEARCH_SERVER_PORT=_resolve_server_port(source),
+        SEARCH_SESSION_TTL=_require_at_least_one(
+            "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
+        ),
+        # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
+        SEARCH_MAX_CONCURRENT=max(
+            0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)
+        ),
+    )
 
-        # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int), so it is never
-        # None here; _get_optional_int_env returns int | None only because it
-        # cannot express "None only when the default is None".
-        classify_pre_tag_id = _get_optional_int_env("CLASSIFY_PRE_TAG_ID", post_tag_id)
-        assert classify_pre_tag_id is not None  # default is an int → never None
 
-        # PAPERLESS_URL is the API base (often an internal address);
-        # PAPERLESS_PUBLIC_URL is the browser-facing base for document
-        # deep-links and falls back to PAPERLESS_URL when unset, so existing
-        # single-URL deployments are unaffected. Both are stored stripped of
-        # any trailing slash so callers can append paths cleanly.
-        paperless_url = os.getenv("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
-        paperless_public_url = os.getenv("PAPERLESS_PUBLIC_URL", paperless_url).rstrip(
-            "/"
+def load_settings(app_db_path: str) -> Settings:
+    """Build a validated :class:`Settings` from ``app.db`` and the environment.
+
+    The production configuration entry point (web-redesign spec §5). It layers
+    the ``config`` table over the process environment so that, for every key,
+    a value in the table wins, then an environment variable, then the coded
+    default.
+
+    On first run — when the ``config`` table is empty — it seeds the table
+    from the current environment (:func:`appdb.config.seed_from_env`), so a
+    deployment previously configured with environment variables keeps working
+    with no change and its settings become editable in the Settings screen.
+
+    The two bootstrap variables ``APP_DB_PATH`` and ``INDEX_DB_PATH`` are
+    never read from the table — they tell the process where its databases
+    live, so they stay environment-only.
+
+    Args:
+        app_db_path: Filesystem path to ``app.db``. Comes from the
+            ``APP_DB_PATH`` bootstrap environment variable (resolved by the
+            caller, normally :func:`common.bootstrap.bootstrap_process`).
+
+    Returns:
+        The validated :class:`Settings`.
+
+    Raises:
+        ValueError: A required key is missing from both the table and the
+            environment, or a stored value fails validation. The message
+            names the offending key.
+        appdb.migrations.AppDbError: ``app.db`` was written by newer code.
+
+    rationale: ``app.db`` is opened and closed within this function — the
+    loader needs only a transient connection. The search server opens its own
+    long-lived ``app.db`` connection for the Settings API; the daemons only
+    ever read config once, at startup, so a per-call connection is correct
+    and avoids leaking a handle a daemon would never use again.
+    """
+    # Deferred imports: common is the leaf package, and importing appdb at
+    # module scope would run on every `import common.config`. A function-body
+    # import keeps the dependency where it is actually used and matches the
+    # relaxed import boundary (appdb is permitted; store is not).
+    from appdb import config as config_store  # noqa: PLC0415
+    from appdb.connection import connect  # noqa: PLC0415
+    from appdb.schema import ensure_schema  # noqa: PLC0415
+
+    conn = connect(app_db_path)
+    try:
+        ensure_schema(conn)
+        config_store.seed_from_env(
+            conn, environ=os.environ, keys=set(CONFIG_KEYS)
         )
+        stored = config_store.get_all(conn)
+    finally:
+        conn.close()
 
-        return cls(
-            PAPERLESS_URL=paperless_url,
-            PAPERLESS_PUBLIC_URL=paperless_public_url,
-            PAPERLESS_TOKEN=_get_required_env("PAPERLESS_TOKEN"),
-            LLM_PROVIDER=llm_provider,
-            OLLAMA_BASE_URL=ollama_base_url,
-            # Required unconditionally — embeddings always use OpenAI.
-            OPENAI_API_KEY=_get_required_env("OPENAI_API_KEY"),
-            AI_MODELS=_get_csv_env(
-                "AI_MODELS", default_ai_models, require_non_empty=True
-            ),
-            OCR_REFUSAL_MARKERS=[
-                marker.lower()
-                for marker in _get_csv_env(
-                    "OCR_REFUSAL_MARKERS",
-                    [*REFUSAL_PHRASES, _REFUSAL_MARK],
-                )
-            ],
-            OCR_INCLUDE_PAGE_MODELS=_get_bool_env("OCR_INCLUDE_PAGE_MODELS", False),
-            PRE_TAG_ID=_get_int_env("PRE_TAG_ID", 443),
-            POST_TAG_ID=post_tag_id,
-            OCR_PROCESSING_TAG_ID=_get_optional_positive_int_env(
-                "OCR_PROCESSING_TAG_ID"
-            ),
-            CLASSIFY_PRE_TAG_ID=classify_pre_tag_id,
-            CLASSIFY_POST_TAG_ID=_get_optional_positive_int_env("CLASSIFY_POST_TAG_ID"),
-            CLASSIFY_PROCESSING_TAG_ID=_get_optional_positive_int_env(
-                "CLASSIFY_PROCESSING_TAG_ID"
-            ),
-            ERROR_TAG_ID=_get_optional_positive_int_env("ERROR_TAG_ID", 552),
-            POLL_INTERVAL=_get_int_env("POLL_INTERVAL", 15),
-            MAX_RETRIES=_require_at_least_one(
-                "MAX_RETRIES", _get_int_env("MAX_RETRIES", 20)
-            ),
-            MAX_RETRY_BACKOFF_SECONDS=_require_at_least_one(
-                "MAX_RETRY_BACKOFF_SECONDS",
-                _get_int_env("MAX_RETRY_BACKOFF_SECONDS", 30),
-            ),
-            REQUEST_TIMEOUT=_get_int_env("REQUEST_TIMEOUT", 180),
-            LLM_MAX_CONCURRENT=max(0, _get_int_env("LLM_MAX_CONCURRENT", 0)),
-            OCR_DPI=_get_int_env("OCR_DPI", 300),
-            OCR_MAX_SIDE=_get_int_env("OCR_MAX_SIDE", 1600),
-            PAGE_WORKERS=max(1, _get_int_env("PAGE_WORKERS", 8)),
-            DOCUMENT_WORKERS=max(1, _get_int_env("DOCUMENT_WORKERS", 4)),
-            LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO").upper(),
-            LOG_FORMAT=_resolve_log_format(),
-            REFUSAL_MARK=_REFUSAL_MARK,
-            CLASSIFY_PERSON_FIELD_ID=_get_optional_int_env("CLASSIFY_PERSON_FIELD_ID"),
-            CLASSIFY_DEFAULT_COUNTRY_TAG=os.getenv(
-                "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
-            ).strip(),
-            CLASSIFY_MAX_CHARS=_get_int_env("CLASSIFY_MAX_CHARS", 0),
-            CLASSIFY_MAX_TOKENS=max(0, _get_int_env("CLASSIFY_MAX_TOKENS", 0)),
-            CLASSIFY_TAG_LIMIT=max(0, _get_int_env("CLASSIFY_TAG_LIMIT", 5)),
-            CLASSIFY_TAXONOMY_LIMIT=max(
-                0, _get_int_env("CLASSIFY_TAXONOMY_LIMIT", 100)
-            ),
-            CLASSIFY_MAX_PAGES=max(0, _get_int_env("CLASSIFY_MAX_PAGES", 3)),
-            CLASSIFY_TAIL_PAGES=max(0, _get_int_env("CLASSIFY_TAIL_PAGES", 2)),
-            CLASSIFY_HEADERLESS_CHAR_LIMIT=max(
-                0, _get_int_env("CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
-            ),
-            INDEX_DB_PATH=os.getenv("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
-            APP_DB_PATH=os.getenv("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
-            EMBEDDING_MODEL=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
-            EMBEDDING_DIMENSIONS=_require_at_least_one(
-                "EMBEDDING_DIMENSIONS", _get_int_env("EMBEDDING_DIMENSIONS", 1536)
-            ),
-            # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
-            EMBEDDING_MAX_CONCURRENT=max(
-                0, _get_int_env("EMBEDDING_MAX_CONCURRENT", 4)
-            ),
-            RECONCILE_INTERVAL=_require_at_least_one(
-                "RECONCILE_INTERVAL", _get_int_env("RECONCILE_INTERVAL", 300)
-            ),
-            DELETION_SWEEP_INTERVAL=_require_at_least_one(
-                "DELETION_SWEEP_INTERVAL",
-                _get_int_env("DELETION_SWEEP_INTERVAL", 3600),
-            ),
-            CHUNK_SIZE=chunk_size,
-            CHUNK_OVERLAP=_resolve_chunk_overlap(chunk_size),
-            SEARCH_TOP_K=_require_at_least_one(
-                "SEARCH_TOP_K", _get_int_env("SEARCH_TOP_K", 10)
-            ),
-            SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(),
-            SEARCH_PLANNER_MODEL=os.getenv(
-                "SEARCH_PLANNER_MODEL", default_planner_model
-            ),
-            SEARCH_ANSWER_MODEL=os.getenv("SEARCH_ANSWER_MODEL", default_answer_model),
-            # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
-            # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
-            # operator restrict exposure at the reverse proxy / port map.
-            SEARCH_SERVER_HOST=os.getenv("SEARCH_SERVER_HOST", "0.0.0.0"),
-            SEARCH_SERVER_PORT=_resolve_server_port(),
-            SEARCH_SESSION_TTL=_require_at_least_one(
-                "SEARCH_SESSION_TTL", _get_int_env("SEARCH_SESSION_TTL", 604800)
-            ),
-            # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
-            SEARCH_MAX_CONCURRENT=max(0, _get_int_env("SEARCH_MAX_CONCURRENT", 4)),
-        )
+    # Merge: the environment first, the config table layered on top — so a
+    # config-table value overrides an environment value. The bootstrap
+    # variables are environment-only, so they survive from os.environ; they
+    # are never in `stored` because seed_from_env only seeds CONFIG_KEYS.
+    merged: dict[str, str] = dict(os.environ)
+    merged.update(stored)
+    # The bootstrap variables are never in the config table, but app_db_path
+    # is known explicitly here — inject it so _build_settings resolves
+    # Settings.APP_DB_PATH to the path the caller actually used, regardless
+    # of whether APP_DB_PATH is set in the environment.
+    merged["APP_DB_PATH"] = app_db_path
+    return _build_settings(merged)
+
+
+# Process-local hot-load cache: app.db path -> (config_version, Settings).
+# current_settings() rebuilds Settings only when the stored config_version
+# has advanced, so a polling daemon pays one cheap SELECT per check.
+_SETTINGS_CACHE: dict[str, tuple[int, Settings]] = {}
+
+
+def current_settings(app_db_path: str | None = None) -> Settings:
+    """Return the up-to-date :class:`Settings`, rebuilding it on a config change.
+
+    The hot-load accessor (web-redesign §5, Wave 4). Saving configuration does
+    not restart any process; instead every process calls this at a safe
+    boundary — a daemon at the top of its poll loop, the search server per
+    request — and gets a :class:`Settings` that reflects the latest saved
+    configuration.
+
+    It takes no argument in normal use: *app_db_path* defaults to the
+    ``APP_DB_PATH`` bootstrap environment variable (the same value
+    :func:`common.bootstrap.bootstrap_process` resolves), so every process
+    can simply ``from common.config import current_settings`` and call it.
+    The explicit parameter exists for tests, which point it at a temp file.
+
+    It is cheap to call repeatedly. It opens ``app.db`` and reads the one-row
+    ``config_version`` integer; when that integer is unchanged since the last
+    call for this *app_db_path*, it returns the **cached** :class:`Settings`
+    untouched. Only when ``config_version`` has advanced (or on the first
+    call) does it rebuild via :func:`load_settings` and re-cache.
+
+    The cache is process-local module state. Cross-process coordination is the
+    shared ``config_version`` row alone — when one process writes config
+    through the Settings API, every other process sees the bumped version on
+    its next check and rebuilds. No signal, no IPC, no restart.
+
+    Args:
+        app_db_path: Filesystem path to ``app.db``. When ``None`` (the normal
+            case) it is read from the ``APP_DB_PATH`` environment variable,
+            with the same ``/data/app.db`` default the other entry points use.
+
+    Returns:
+        The current validated :class:`Settings`.
+
+    Raises:
+        ValueError: A stored value fails validation (same as
+            :func:`load_settings`).
+        appdb.migrations.AppDbError: ``app.db`` was written by newer code.
+    """
+    # Deferred import — see load_settings for the rationale.
+    from appdb import config as config_store  # noqa: PLC0415
+    from appdb.connection import connect  # noqa: PLC0415
+    from appdb.schema import ensure_schema  # noqa: PLC0415
+
+    resolved = (
+        app_db_path
+        if app_db_path is not None
+        else os.environ.get("APP_DB_PATH", "/data/app.db")
+    )
+    conn = connect(resolved)
+    try:
+        ensure_schema(conn)
+        version = config_store.get_config_version(conn)
+    finally:
+        conn.close()
+
+    cached = _SETTINGS_CACHE.get(resolved)
+    if cached is not None and cached[0] == version:
+        return cached[1]
+
+    settings = load_settings(resolved)
+    # Re-read config_version after load_settings, because load_settings may
+    # have seeded an empty config table (which bumps the version counter).
+    # Caching the post-seed version means the next call finds an exact match
+    # and returns the cached Settings instead of rebuilding.
+    conn = connect(resolved)
+    try:
+        current_version = config_store.get_config_version(conn)
+    finally:
+        conn.close()
+    _SETTINGS_CACHE[resolved] = (current_version, settings)
+    return settings
