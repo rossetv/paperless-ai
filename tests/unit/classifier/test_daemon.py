@@ -246,6 +246,8 @@ class TestProcessDocument:
 class TestTaxonomyRefreshAsBatchHook:
     """TaxonomyCache.refresh is passed as before_each_batch."""
 
+    @patch("classifier.daemon.ensure_schema")
+    @patch("classifier.daemon.connect_app_db")
     @patch("classifier.daemon.bootstrap_daemon")
     @patch("classifier.daemon.run_polling_threadpool")
     @patch("classifier.daemon.PaperlessClient")
@@ -256,10 +258,13 @@ class TestTaxonomyRefreshAsBatchHook:
         mock_client_cls,
         mock_loop,
         mock_bootstrap,
+        mock_connect,
+        mock_schema,
     ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
 
         taxonomy_instance = MagicMock()
         mock_taxonomy_cls.return_value = taxonomy_instance
@@ -285,6 +290,8 @@ class TestTaxonomyRefreshAsBatchHook:
 class TestMainCleanup:
     """Clients are closed on exit."""
 
+    @patch("classifier.daemon.ensure_schema")
+    @patch("classifier.daemon.connect_app_db")
     @patch("classifier.daemon.bootstrap_daemon")
     @patch("classifier.daemon.run_polling_threadpool", side_effect=KeyboardInterrupt)
     @patch("classifier.daemon.PaperlessClient")
@@ -295,10 +302,13 @@ class TestMainCleanup:
         mock_client_cls,
         mock_loop,
         mock_bootstrap,
+        mock_connect,
+        mock_schema,
     ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
         taxonomy_client = MagicMock()
         mock_client_cls.return_value = taxonomy_client
 

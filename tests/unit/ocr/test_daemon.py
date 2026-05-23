@@ -58,12 +58,17 @@ class TestMain:
         assert call_kwargs["get_processing_tag_id"](settings) == 777
         assert call_kwargs["get_pre_tag_id"](settings) == 888
 
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
-    def test_happy_path_enters_polling_loop(self, mock_bootstrap, mock_poll):
+    def test_happy_path_enters_polling_loop(
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema
+    ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
 
         main()
 
@@ -73,12 +78,17 @@ class TestMain:
         assert call_kwargs["poll_interval_seconds"] == settings.POLL_INTERVAL
         assert call_kwargs["max_workers"] == settings.DOCUMENT_WORKERS
 
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
-    def test_list_client_closed_in_finally(self, mock_bootstrap, mock_poll):
+    def test_list_client_closed_in_finally(
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema
+    ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
         mock_poll.side_effect = KeyboardInterrupt()
 
         with pytest.raises(KeyboardInterrupt):
@@ -87,14 +97,17 @@ class TestMain:
         list_client.close.assert_called_once()
 
     @patch("ocr.daemon._iter_docs_to_ocr")
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
     def test_fetch_work_delegates_to_iter_docs_to_ocr(
-        self, mock_bootstrap, mock_poll, mock_iter
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema, mock_iter
     ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
         mock_iter.return_value = iter([_doc(1), _doc(2)])
 
         captured_fetch = None
@@ -113,14 +126,17 @@ class TestMain:
         assert len(result) == 2
 
     @patch("ocr.daemon._process_document")
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
     def test_process_item_delegates_to_process_document(
-        self, mock_bootstrap, mock_poll, mock_process
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema, mock_process
     ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
 
         captured_process = None
 
@@ -137,12 +153,17 @@ class TestMain:
         captured_process(doc)
         mock_process.assert_called_once_with(doc, settings)
 
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
     @patch("ocr.daemon.bootstrap_daemon")
-    def test_list_client_closed_on_normal_exit(self, mock_bootstrap, mock_poll):
+    def test_list_client_closed_on_normal_exit(
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema
+    ):
         settings = _settings()
         list_client = make_mock_paperless()
         mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
 
         main()
 

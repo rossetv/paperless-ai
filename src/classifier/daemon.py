@@ -17,10 +17,13 @@ from typing import Iterable
 
 import structlog
 
+from appdb.connection import connect as connect_app_db
+from appdb.schema import ensure_schema
 from common.bootstrap import bootstrap_daemon
 from common.concurrency import llm_limiter
 from common.config import Settings, current_settings
-from common.daemon_loop import run_polling_threadpool
+from common.daemon_loop import CycleOutcome, run_polling_threadpool
+from common.heartbeat import Heartbeat
 from common.document_iter import iter_documents_by_pipeline_tag
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
@@ -158,6 +161,22 @@ def main() -> None:
         app_db_path=app_db_path,
     )
 
+    # The Index dashboard heartbeat (web-redesign spec §5). app.db is located
+    # by APP_DB_PATH — the same bootstrap variable the config loader uses.
+    app_db = connect_app_db(os.environ.get("APP_DB_PATH", "/data/app.db"))
+    ensure_schema(app_db)
+    heartbeat = Heartbeat(name="classifier", conn=app_db)
+
+    def _on_cycle(outcome: CycleOutcome) -> None:
+        """Write the classifier daemon's heartbeat after every poll cycle."""
+        if outcome.idle:
+            heartbeat.beat_idle()
+        else:
+            heartbeat.beat(
+                detail=f"classifying {outcome.processed} document(s)",
+                processed_delta=outcome.processed,
+            )
+
     try:
         run_polling_threadpool(
             daemon_name="classifier",
@@ -171,10 +190,12 @@ def main() -> None:
             before_each_poll=lambda: _reload_if_changed(state),
             poll_interval_seconds=state.settings.POLL_INTERVAL,
             max_workers=state.settings.DOCUMENT_WORKERS,
+            on_cycle=_on_cycle,
         )
     finally:
         state.list_client.close()
         state.taxonomy_client.close()
+        app_db.close()
 
 
 if __name__ == "__main__":
