@@ -18,9 +18,16 @@ from .paperless_types import (
 )
 from .retry import retry
 
-# Re-exported so callers keep importing the Paperless wire shapes from
-# ``common.paperless``; the definitions live in ``common.paperless_types`` only
-# to keep this module under the file-size ceiling (CODE_GUIDELINES §3.1).
+# rationale: this module exceeds CODE_GUIDELINES §3.1's 500-line ceiling
+# (currently ~531 lines) because the `PaperlessClient` is one cohesive REST
+# client: every Paperless operation (documents, tags, custom fields, the
+# streaming download for the in-app PDF viewer, the count for the
+# test-connection probe) is a method on the same client instance with shared
+# retry, timeout, and auth state. The wire-shape TypedDicts were already split
+# out to `common.paperless_types` to keep this file as small as it is.
+#
+# Re-exported below so callers keep importing the Paperless wire shapes from
+# ``common.paperless``; the definitions live in ``common.paperless_types``.
 __all__ = [
     "DocumentMetadataUpdate",
     "PAPERLESS_CALL_EXCEPTIONS",

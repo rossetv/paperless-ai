@@ -20,6 +20,15 @@ clamping is applied to whichever string mapping is presented as the source.
 
 from __future__ import annotations
 
+# rationale: this module exceeds CODE_GUIDELINES §3.1's 500-line ceiling
+# (currently ~785 lines) because the `Settings` dataclass IS the single,
+# immutable contract for every process. The catalogue, parsers, validators,
+# clamping, defaults, env-only constructor, the DB-backed `load_settings`, and
+# the version-keyed `current_settings` hot-load accessor are one cohesive
+# concern: splitting them would scatter the schema's source of truth, add
+# import cycles between the parser and the loader, and break the rule that one
+# place defines what each setting is and how it is parsed.
+
 import os
 import threading
 from collections.abc import Mapping

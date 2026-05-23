@@ -22,6 +22,15 @@ Forbidden: imports from search/, sqlite3, httpx direct, bare openai calls.
 
 from __future__ import annotations
 
+# rationale: this module exceeds CODE_GUIDELINES §3.1's 500-line ceiling
+# (currently ~634 lines) because the indexer daemon is one orchestration unit:
+# the boot sequence (flock, preflight, embedding-model check), signal-driven
+# shutdown, the reconciliation run-loop, the per-cycle `current_settings`
+# hot-reload + `_rebuild_reconciler`, the rebuild-sentinel consumer, and the
+# activity-recording wiring all share state (`store_writer`, `settings`,
+# `cycle_recorder`) and any split would leak that state across module
+# boundaries with no compensating clarity gain.
+
 import os
 import sqlite3
 import sys
