@@ -4,9 +4,9 @@
  * Security invariant (spec §7.3, §9.2):
  *   - Every request sends `credentials: 'include'` so the signed `HttpOnly`
  *     session cookie is attached automatically by the browser.
- *   - The API key is NEVER stored in or shipped with the frontend bundle.
+ *   - No credential is ever stored in or shipped with the frontend bundle.
  *     Authentication is done via the login handshake → cookie; the JS bundle
- *     never sees the raw `SEARCH_API_KEY`.
+ *     never sees or forwards any raw secret.
  *
  * Error model:
  *   - `Unauthenticated` — thrown on any 401 response; the app detects this
