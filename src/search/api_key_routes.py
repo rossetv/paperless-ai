@@ -245,21 +245,19 @@ def _update_api_key(
     from the parsed value alone.
     """
     record: ApiKey | None = key_store.get_by_id(app_db, api_key_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="API key not found.")
-
     # Owner-only — an admin cannot edit someone else's key (they may only
     # view and revoke it). This is stricter than the DELETE handler.
-    if record.owner_user_id != caller.id:
-        log.warning(
-            "search.api_key_update_forbidden",
-            api_key_id=api_key_id,
-            actor_user_id=caller.id,
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="You may only edit your own API keys.",
-        )
+    # Return 404 to a non-owner even when the key exists — a non-owner must
+    # not be able to distinguish "key not found" from "key found but not yours"
+    # (MINOR-1 id-enumeration defence).
+    if record is None or record.owner_user_id != caller.id:
+        if record is not None and record.owner_user_id != caller.id:
+            log.warning(
+                "search.api_key_update_forbidden",
+                api_key_id=api_key_id,
+                actor_user_id=caller.id,
+            )
+        raise HTTPException(status_code=404, detail="API key not found.")
 
     # Build the partial update from only the fields the client sent.
     sent = body.model_fields_set
@@ -303,22 +301,17 @@ def _delete_api_key(
     UI keeps the key's history. A non-admin may only revoke a key they own.
     """
     record: ApiKey | None = key_store.get_by_id(app_db, api_key_id)
-    if record is None:
+    # A non-admin who does not own the key gets 404 regardless of whether
+    # the key exists, so they cannot enumerate key ids by observing the
+    # difference between 404 and 403 (MINOR-1 id-enumeration defence).
+    if record is None or (not _is_admin(caller) and record.owner_user_id != caller.id):
+        if record is not None and not _is_admin(caller) and record.owner_user_id != caller.id:
+            log.warning(
+                "search.api_key_delete_forbidden",
+                api_key_id=api_key_id,
+                actor_user_id=caller.id,
+            )
         raise HTTPException(status_code=404, detail="API key not found.")
-
-    if not _is_admin(caller) and record.owner_user_id != caller.id:
-        # Do not leak whether the key exists to a non-owner — but it is
-        # already past the existence check, so 403 is the honest answer and
-        # the UI never shows a non-owner another user's key id anyway.
-        log.warning(
-            "search.api_key_delete_forbidden",
-            api_key_id=api_key_id,
-            actor_user_id=caller.id,
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="You may only revoke your own API keys.",
-        )
 
     key_store.revoke(
         app_db,

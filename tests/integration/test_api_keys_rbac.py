@@ -190,8 +190,9 @@ def test_member_cannot_revoke_another_users_key(env) -> None:
 
     login(client, username="member", password="member-pw")
     response = client.delete(f"/api/api-keys/{admin_key.id}")
-    # A member may not revoke a key they do not own.
-    assert response.status_code == 403
+    # A member may not revoke a key they do not own — 404 rather than 403
+    # so the existence of the key is not revealed (MINOR-1).
+    assert response.status_code == 404
 
 
 def test_member_can_revoke_their_own_key(env) -> None:
@@ -248,8 +249,9 @@ def test_member_cannot_edit_another_users_key(env) -> None:
     response = client.patch(
         f"/api/api-keys/{admin_key.id}", json={"name": "hijacked"}
     )
-    # A member may not edit a key they do not own.
-    assert response.status_code == 403
+    # A member may not edit a key they do not own — 404 rather than 403
+    # so the existence of the key is not revealed (MINOR-1).
+    assert response.status_code == 404
 
 
 def test_admin_cannot_edit_another_users_key(env) -> None:
@@ -269,8 +271,9 @@ def test_admin_cannot_edit_another_users_key(env) -> None:
         f"/api/api-keys/{member_key.id}",
         json={"scopes": ["api", "mcp", "admin"]},
     )
-    # Even an admin cannot edit someone else's key — owner-only.
-    assert response.status_code == 403
+    # Even an admin cannot edit someone else's key — owner-only. Returns 404
+    # rather than 403 so that key existence is not revealed (MINOR-1).
+    assert response.status_code == 404
 
 
 def test_admin_scope_key_owned_by_a_member_cannot_manage_keys(env) -> None:
