@@ -46,6 +46,9 @@ import type {
   TestConnectionResponse,
   DocumentsQuery,
   DocumentsResponse,
+  IndexStatusResponse,
+  ActivityResponse,
+  FailedResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -482,4 +485,71 @@ export async function getDocuments(
   return request<DocumentsResponse>(`${BASE_URL}/api/documents?${qs}`, {
     method: 'GET',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Index-operations endpoints (Wave 6 — Index)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/index/status — daemon statuses and index health.
+ *
+ * Drives the Index dashboard hero, the stat-tile row and the daemon cards.
+ * Polled on an interval by `useIndexStatus`.
+ */
+export async function getIndexStatus(): Promise<IndexStatusResponse> {
+  return request<IndexStatusResponse>(`${BASE_URL}/api/index/status`, {
+    method: 'GET',
+  });
+}
+
+/**
+ * GET /api/index/activity — the recent reconcile-cycle history.
+ *
+ * Drives the "Recent activity" panel. Polled on an interval by
+ * `useIndexActivity`.
+ */
+export async function getIndexActivity(): Promise<ActivityResponse> {
+  return request<ActivityResponse>(`${BASE_URL}/api/index/activity`, {
+    method: 'GET',
+  });
+}
+
+/**
+ * GET /api/index/failed — documents that failed OCR / classification /
+ * indexing.
+ *
+ * Drives the "Failed documents" panel.
+ */
+export async function getFailedDocuments(): Promise<FailedResponse> {
+  return request<FailedResponse>(`${BASE_URL}/api/index/failed`, {
+    method: 'GET',
+  });
+}
+
+/**
+ * POST /api/index/failed/{id}/retry — re-queue one failed document.
+ *
+ * Resolves on 202 Accepted; throws `Unauthenticated` on 401 and `ApiError`
+ * on any other non-2xx (notably 403 for a reader-role caller). `documentId`
+ * is interpolated into the path; it is always a server-supplied integer so
+ * no escaping is required.
+ */
+export async function retryFailedDocument(documentId: number): Promise<void> {
+  return request<void>(
+    `${BASE_URL}/api/index/failed/${documentId}/retry`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * POST /api/index/rebuild — destroy `index.db` and re-embed every document.
+ *
+ * DESTRUCTIVE and admin-only. Resolves on 202 Accepted; throws
+ * `Unauthenticated` on 401 and `ApiError` on any other non-2xx (notably 403
+ * for a non-admin caller). The caller (`RebuildIndexCard`) gates this behind
+ * an explicit typed confirmation — `client.ts` itself adds no guard.
+ */
+export async function rebuildIndex(): Promise<void> {
+  return request<void>(`${BASE_URL}/api/index/rebuild`, { method: 'POST' });
 }
