@@ -23,7 +23,8 @@ Constants:
     :data:`MAX_QUERY_LENGTH` — the documented maximum query length, applied at
     every search boundary (HTTP and MCP).
 
-Allowed deps: pydantic, search.models, store (SearchFilters), store.models.
+Allowed deps: pydantic, search.models, store (SearchFilters), store.models,
+    search.api_keys (scope constants only).
 Forbidden: FastAPI, sqlite3, any I/O.
 """
 
@@ -33,6 +34,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
+from search.api_keys import _VALID_SCOPES as _VALID_API_KEY_SCOPES_SET
 from search.validation import (
     validate_display_name,
     validate_email,
@@ -493,21 +495,14 @@ def to_user_response(user: User) -> UserResponse:
 # API-key wire models (web-redesign §5; Wave 3)
 # ---------------------------------------------------------------------------
 
-# The valid API-key scopes. Duplicated from search.api_keys deliberately:
-# wire.py is the HTTP-boundary module and must not import the auth layer, so
-# the literal set lives here too. search.api_keys.serialise_scopes re-checks.
-# Lowercase is the canonical wire form — the frontend `ApiScope` type uses
-# the same values, so no case transform is needed at the boundary.
-_VALID_API_KEY_SCOPES: frozenset[str] = frozenset({"api", "mcp", "admin"})
-
-
 def _validate_scope_list(value: list[str]) -> list[str]:
     """Reject any scope outside the documented three.
 
-    Shared by :class:`CreateApiKeyRequest` and :class:`UpdateApiKeyRequest`
-    so the scope-validation rule lives in one place.
+    Delegates to :data:`search.api_keys._VALID_SCOPES` — the single source of
+    truth — so a future scope addition only needs to be made in one place.
+    Shared by :class:`CreateApiKeyRequest` and :class:`UpdateApiKeyRequest`.
     """
-    unknown = set(value) - _VALID_API_KEY_SCOPES
+    unknown = set(value) - _VALID_API_KEY_SCOPES_SET
     if unknown:
         raise ValueError(f"unknown scope(s): {sorted(unknown)}")
     return value
