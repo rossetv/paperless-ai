@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,8 @@ import structlog
 import uvicorn
 from fastapi import FastAPI
 
+from common.concurrency import llm_limiter
+from common.library_setup import setup_libraries
 from search.account_routes import build_account_router
 from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
@@ -192,15 +195,30 @@ def _resolve_components(
 # Wave 4); a steady-state request pays one cheap one-row SELECT.
 _CORE_CACHE: dict[str, tuple[int, "SearchCore"]] = {}
 
+# Serialises the rebuild path so two concurrent first-callers (or two callers
+# landing on a fresh config_version) do not both build a core. The cache
+# lookup itself stays lock-free; only the rebuild is gated.
+_CORE_CACHE_LOCK = threading.Lock()
+
 
 def _resolve_search_core(app_db_path: str) -> SearchCore:
     """Return the search core for the current configuration, rebuilt on change.
 
-    Called per request. Reads the one-row ``config_version``; when it is
+    Called per request. Reads ``config_version`` under a snapshot; when it is
     unchanged since the last call for this *app_db_path*, returns the cached
     core. When it has moved, rebuilds the core (and its :class:`Settings`,
     via :func:`common.config.current_settings`) from the new configuration so
     the next query uses the edited values — no restart.
+
+    The shared process singletons that LLM calls go through —
+    :func:`common.library_setup.setup_libraries` (the ``_openai_holder``) and
+    :func:`common.concurrency.llm_limiter.init` (the concurrency limiter) —
+    are re-initialised here whenever a new :class:`Settings` is built. The
+    planner and synthesiser read the OpenAI client through ``_openai_holder``,
+    so a saved ``OPENAI_API_KEY`` / ``LLM_PROVIDER`` / ``OLLAMA_BASE_URL`` /
+    ``LLM_MAX_CONCURRENT`` change propagates to every LLM call on the very
+    next request — the daemons do the same in their ``_reload_if_changed``
+    hooks.
 
     Args:
         app_db_path: Filesystem path to ``app.db``. The search server passes
@@ -225,20 +243,38 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
     if cached is not None and cached[0] == version:
         return cached[1]
 
-    settings = current_settings(app_db_path)
-    core, _store_reader = _resolve_components(settings, None, None)
-    # Re-read config_version after current_settings(), because the first call
-    # for a deployment may have seeded the config table from the environment
-    # (bumping the version). Caching the post-seed version means the next
-    # call hits the cache instead of rebuilding spuriously — mirroring the
-    # same trick in common.config.current_settings.
-    conn = connect(app_db_path)
-    try:
-        current_version = config_store.get_config_version(conn)
-    finally:
-        conn.close()
-    _CORE_CACHE[app_db_path] = (current_version, core)
-    return core
+    with _CORE_CACHE_LOCK:
+        # Re-check inside the lock: another caller may have rebuilt while we
+        # were waiting. Re-read config_version too, so we never cache against
+        # a version that has moved on since we measured it outside the lock.
+        conn = connect(app_db_path)
+        try:
+            version = config_store.get_config_version(conn)
+        finally:
+            conn.close()
+        cached = _CORE_CACHE.get(app_db_path)
+        if cached is not None and cached[0] == version:
+            return cached[1]
+
+        # current_settings opens its own snapshot transaction; it returns a
+        # Settings keyed at whatever version was current inside that
+        # transaction. We then re-read config_version once more after the
+        # build so the cache entry is keyed against the version of the data
+        # the rebuilt core actually saw — if a write landed between
+        # current_settings() and now, the cached pair (newer_version, core)
+        # is stale on its face and a subsequent request will rebuild rather
+        # than serve the stale core.
+        settings = current_settings(app_db_path)
+        setup_libraries(settings)
+        llm_limiter.init(settings.LLM_MAX_CONCURRENT)
+        core, _store_reader = _resolve_components(settings, None, None)
+        conn = connect(app_db_path)
+        try:
+            cache_version = config_store.get_config_version(conn)
+        finally:
+            conn.close()
+        _CORE_CACHE[app_db_path] = (cache_version, core)
+        return core
 
 
 def _reset_core_cache_for_test() -> None:
