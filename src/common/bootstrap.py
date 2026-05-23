@@ -28,7 +28,7 @@ from collections.abc import Callable
 import structlog
 
 from .concurrency import llm_limiter
-from .config import Settings
+from .config import Settings, current_settings
 from .library_setup import setup_libraries
 from .logging_config import configure_logging
 from .paperless import PaperlessClient
@@ -42,11 +42,14 @@ log = structlog.get_logger(__name__)
 def bootstrap_process() -> Settings:
     """Run the per-process startup shared by every entry point.
 
-    Parses and validates :class:`~common.config.Settings`, configures logging,
-    initialises the shared library singletons (the OpenAI client and the LLM
-    concurrency limiter), and registers the SIGTERM / SIGINT handlers — the
-    five steps every daemon and the search server must perform identically, in
-    this order, before any consumer code runs.
+    Builds and validates :class:`~common.config.Settings` via
+    :func:`~common.config.current_settings` — the ``config`` table in ``app.db``
+    layered over the process environment, hot-loaded so a later config change
+    is picked up with no restart. Then configures logging, initialises the
+    shared library singletons (the OpenAI client and the LLM concurrency
+    limiter), and registers the SIGTERM / SIGINT handlers — the five steps
+    every daemon and the search server must perform identically, in this
+    order, before any consumer code runs.
 
     This function is the single source of truth for that sequence.  An entry
     point that re-implemented it inline would drift silently: a dropped
@@ -54,14 +57,24 @@ def bootstrap_process() -> Settings:
     ``RuntimeError`` at request time.
 
     Returns:
-        The validated :class:`~common.config.Settings`.
+        The validated :class:`~common.config.Settings`. The returned value is
+        the *initial* snapshot for the one-time startup steps; consumers that
+        must see later changes call :func:`~common.config.current_settings`
+        again at a safe boundary.
 
     Raises:
-        ValueError: A required environment variable is unset or invalid.
+        ValueError: A required configuration key is missing from both ``app.db``
+            and the environment, or a value is invalid.
             :func:`bootstrap_daemon` catches this and returns ``None``; the
             search server lets it abort startup loudly.
     """
-    settings = Settings.from_environment()
+    # The hot-load accessor: it reads APP_DB_PATH from the environment, layers
+    # the config table over the environment, and caches the result keyed by
+    # config_version. This first call primes that cache; every later read —
+    # a daemon between documents, the search server per request — calls
+    # current_settings() again and gets a rebuild only when config changed
+    # (web-redesign spec §5). No restart is ever needed.
+    settings = current_settings()
     configure_logging(settings)
     setup_libraries(settings)
     register_signal_handlers()
