@@ -1001,12 +1001,21 @@ token, and every component updates — that is the point.
 Token identifiers use British spelling: `--colour-accent`, `--colour-bg-alt`, never
 `--color-*`.
 
-### 12.5 Only `components/` carries styling
+### 12.5 CSS module ownership
 
-CSS Modules live beside their component (`Button.tsx` ↔ `Button.module.css`). A CSS
-Module exists only in `components/`. `features/` and `pages/` compose styled
-components; they do not ship `.module.css` files. A feature that "just needs a bit
-of CSS" needs a library component instead.
+CSS Modules live beside their component (`Button.tsx` ↔ `Button.module.css`).
+
+- **`components/`** — all component identity, visual chrome, and design tokens.
+  The primary home for `.module.css`.
+- **`features/`** — may ship `.module.css` files for *screen-level layout* that
+  cannot be expressed by composing layout primitives (grid containers, screen-
+  specific spacing overrides, structural flex wrappers). Every value in a
+  `features/` module must reference a token — no hardcoded design values
+  ([§12.4](#124-design-tokens-are-the-only-source-of-design-values)). If a
+  `features/` module is reproducing a component's visual chrome (colours,
+  radii, shadows) it must extract a `components/` primitive instead.
+- **`pages/`** — `.module.css` files are **prohibited**. Pages compose; they
+  do not style.
 
 ### 12.6 The typed API layer
 
