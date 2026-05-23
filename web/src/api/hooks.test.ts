@@ -32,6 +32,12 @@ import {
   useUpdateSettings,
   useTestConnection,
   useDocuments,
+  useIndexStatus,
+  useIndexActivity,
+  useFailedDocuments,
+  useRetryFailedDocument,
+  useRebuildIndex,
+  useReconcile,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated, ApiError } from './client';
@@ -585,5 +591,95 @@ describe('useDocuments', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(response);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 6 — index-operations hooks
+// ---------------------------------------------------------------------------
+
+describe('index-operations hooks', () => {
+  const STATUS_BODY = {
+    health: {
+      healthy: true,
+      headline: 'Healthy · ready to serve',
+      detail: 'Schema present.',
+      uptime: '14d 6h',
+      since: '2026-05-07T00:00:00Z',
+    },
+    daemons: [],
+    document_count: 14238,
+    chunk_count: 187612,
+    embedding_model: 'text-embedding-3-small',
+    index_size_bytes: 882900992,
+  };
+
+  it('useIndexStatus resolves with the status payload', async () => {
+    mockFetch(200, STATUS_BODY);
+    const { result } = renderHook(() => useIndexStatus(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.document_count).toBe(14238);
+    expect(result.current.data?.health.healthy).toBe(true);
+  });
+
+  it('useIndexActivity resolves with the activity entries', async () => {
+    mockFetch(200, {
+      entries: [
+        { id: 'r1', status: 'ok', label: 'Reconcile complete', detail: '+12', at: '2026-05-22T09:00:00Z' },
+      ],
+    });
+    const { result } = renderHook(() => useIndexActivity(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.entries).toHaveLength(1);
+    expect(result.current.data?.entries[0]?.id).toBe('r1');
+  });
+
+  it('useFailedDocuments resolves with the failed-document list', async () => {
+    mockFetch(200, {
+      documents: [
+        {
+          document_id: 8421,
+          title: 'Scanned receipt',
+          reason: 'OCR refused',
+          failed_at: '2026-05-22T08:48:00Z',
+        },
+      ],
+    });
+    const { result } = renderHook(() => useFailedDocuments(), {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.documents[0]?.document_id).toBe(8421);
+  });
+
+  it('useRetryFailedDocument resolves on a successful POST', async () => {
+    mockFetch(202, null);
+    const { result } = renderHook(() => useRetryFailedDocument(), {
+      wrapper: makeWrapper(),
+    });
+    await result.current.mutateAsync(8421);
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('useRebuildIndex resolves on a successful POST', async () => {
+    mockFetch(202, null);
+    const { result } = renderHook(() => useRebuildIndex(), {
+      wrapper: makeWrapper(),
+    });
+    await result.current.mutateAsync();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it('useReconcile resolves on a successful POST', async () => {
+    mockFetch(202, null);
+    const { result } = renderHook(() => useReconcile(), {
+      wrapper: makeWrapper(),
+    });
+    await result.current.mutateAsync();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });

@@ -34,6 +34,12 @@ import {
   updateSettings,
   testConnection,
   getDocuments,
+  getIndexStatus,
+  getIndexActivity,
+  getFailedDocuments,
+  retryFailedDocument,
+  rebuildIndex,
+  postReconcile,
 } from './client';
 import type {
   SearchRequest,
@@ -63,6 +69,9 @@ import type {
   TestConnectionResponse,
   DocumentsQuery,
   DocumentsResponse,
+  IndexStatusResponse,
+  ActivityResponse,
+  FailedResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -81,6 +90,9 @@ const queryKeys = {
   apiKeys: () => ['api-keys'] as const,
   settings: () => ['settings'] as const,
   documents: (query: DocumentsQuery) => ['documents', query] as const,
+  indexStatus: () => ['index', 'status'] as const,
+  indexActivity: () => ['index', 'activity'] as const,
+  failedDocuments: () => ['index', 'failed'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -447,5 +459,111 @@ export function useTestConnection(): UseMutationResult<
 > {
   return useMutation({
     mutationFn: testConnection,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Index-operations hooks (Wave 6 — Index)
+// ---------------------------------------------------------------------------
+
+/** Poll interval for the live index status — 5 seconds. */
+const INDEX_STATUS_POLL_MS = 5_000;
+
+/** Poll interval for the reconcile-activity history — 10 seconds. */
+const INDEX_ACTIVITY_POLL_MS = 10_000;
+
+/**
+ * The live index status — daemon statuses and index health.
+ *
+ * Polls every 5 s (`refetchInterval`) so the dashboard hero, stat tiles and
+ * daemon cards stay current without a manual refresh. `refetchOnWindowFocus`
+ * is left at its default (true) so switching back to the tab refreshes
+ * immediately.
+ */
+export function useIndexStatus(): UseQueryResult<IndexStatusResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.indexStatus(),
+    queryFn: getIndexStatus,
+    refetchInterval: INDEX_STATUS_POLL_MS,
+  });
+}
+
+/**
+ * The recent reconcile-activity history.
+ *
+ * Polls every 10 s — activity changes per reconcile cycle, which is coarser
+ * than the second-to-second status.
+ */
+export function useIndexActivity(): UseQueryResult<ActivityResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.indexActivity(),
+    queryFn: getIndexActivity,
+    refetchInterval: INDEX_ACTIVITY_POLL_MS,
+  });
+}
+
+/**
+ * The list of documents that failed OCR / classification / indexing.
+ *
+ * Not polled — the list only changes when a retry succeeds or a new failure
+ * is recorded; the retry mutations invalidate this query, and the status
+ * poll surfaces fresh failures on the next dashboard visit.
+ */
+export function useFailedDocuments(): UseQueryResult<FailedResponse, Error> {
+  return useQuery({
+    queryKey: queryKeys.failedDocuments(),
+    queryFn: getFailedDocuments,
+  });
+}
+
+/**
+ * Retry one failed document — POST /api/index/failed/{id}/retry.
+ *
+ * On success the failed-documents list and the index status are invalidated
+ * so the row disappears and the health hero reflects the re-queued work.
+ */
+export function useRetryFailedDocument(): UseMutationResult<void, Error, number> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: retryFailedDocument,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.failedDocuments() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
+    },
+  });
+}
+
+/**
+ * Rebuild the index from scratch — POST /api/index/rebuild.
+ *
+ * DESTRUCTIVE and admin-only. On success the status and activity queries are
+ * invalidated so the dashboard immediately reflects the index going into its
+ * rebuilding state.
+ */
+export function useRebuildIndex(): UseMutationResult<void, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: rebuildIndex,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.indexActivity() });
+    },
+  });
+}
+
+/**
+ * Trigger an immediate reconcile cycle — POST /api/reconcile.
+ *
+ * On success the status and activity queries are invalidated so the new
+ * cycle appears in the dashboard without waiting for the next poll tick.
+ */
+export function useReconcile(): UseMutationResult<void, Error, void> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: postReconcile,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.indexActivity() });
+    },
   });
 }
