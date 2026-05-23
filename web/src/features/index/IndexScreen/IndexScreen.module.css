@@ -116,7 +116,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--height-skeleton-media);
+  min-height: var(--height-state-box);
   padding: var(--spacing-section) var(--spacing-14);
 }
 

@@ -315,6 +315,9 @@
   --height-skeleton-block:   80px;   /* a small content block */
   --height-skeleton-media:  160px;   /* an image / thumbnail placeholder */
 
+  /* Loading / error / empty state containers (IndexScreen state-box, etc.) */
+  --height-state-box:       160px;
+
   /* ─────────────────────────────────────────────
    * Interaction state opacities
    * ───────────────────────────────────────────── */
@@ -411,6 +414,13 @@
   /* Document-preview viewer — the metadata sidebar width */
   --width-preview-sidebar:      380px;
 
+  /* Table column widths — access screens (UsersScreen, APIKeysScreen) */
+  --width-col-actions-narrow:    90px;  /* single-action column (Users) */
+  --width-col-badge:            120px;  /* role / scope badge column */
+  --width-col-date:             150px;  /* date / last-used column */
+  --width-col-date-wide:        160px;  /* wider date column (last sign-in) */
+  --width-col-expiry:           170px;  /* expiry / revoke-action column */
+
   /* ─────────────────────────────────────────────
    * Semantic status colours — for RoleBadge, StatusBadge, ScopePill.
    *
@@ -459,8 +469,9 @@
    * is green-on in either theme), so they live on :root, not in themes.css.
    * ───────────────────────────────────────────── */
 
-  /* Toggle — the "on" track is iOS green; the "off" track is a neutral grey. */
-  --colour-toggle-on:        #34c759;
+  /* Toggle — the "on" track is iOS green; the "off" track is a neutral grey.
+   * Chains to --colour-status-ready (same Apple Green, different semantic role). */
+  --colour-toggle-on:        var(--colour-status-ready);
   --colour-toggle-off:       rgb(0 0 0 / 16%);
 
   /* Toggle geometry. */

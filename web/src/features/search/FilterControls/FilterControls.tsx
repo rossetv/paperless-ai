@@ -77,11 +77,13 @@ export function FilterControls({
 
   if (isError) {
     return (
-      <EmptyState
-        icon="warning"
-        message="Filters are unavailable"
-        description="Could not load filter options. You can still search without filters."
-      />
+      <div role="alert">
+        <EmptyState
+          icon="warning"
+          message="Filters are unavailable"
+          description="Could not load filter options. You can still search without filters."
+        />
+      </div>
     );
   }
 
