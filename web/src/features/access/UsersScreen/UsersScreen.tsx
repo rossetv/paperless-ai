@@ -117,17 +117,17 @@ export function UsersScreen(): React.ReactElement {
       ),
     },
     { key: 'email', header: 'Email', render: (u) => u.email ?? '—' },
-    { key: 'role', header: 'Role', width: '120px', render: (u) => <RoleBadge role={u.role} /> },
+    { key: 'role', header: 'Role', width: 'var(--width-col-badge)', render: (u) => <RoleBadge role={u.role} /> },
     {
       key: 'last',
       header: 'Last sign-in',
-      width: '160px',
+      width: 'var(--width-col-date-wide)',
       render: (u) => formatDate(u.last_login_at),
     },
     {
       key: 'actions',
       header: '',
-      width: '90px',
+      width: 'var(--width-col-actions-narrow)',
       align: 'end',
       render: (u) => (
         <div className={styles['row-actions']}>

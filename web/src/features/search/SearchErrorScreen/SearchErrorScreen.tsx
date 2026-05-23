@@ -49,16 +49,18 @@ export function SearchErrorScreen({
           defaultValue={query}
           onSubmit={onSearch}
         />
-        <EmptyState
-          icon="warning"
-          message="Search failed."
-          description={message}
-          action={
-            <Button variant="primary" onClick={onRetry}>
-              Try again
-            </Button>
-          }
-        />
+        <div role="alert">
+          <EmptyState
+            icon="warning"
+            message="Search failed."
+            description={message}
+            action={
+              <Button variant="primary" onClick={onRetry}>
+                Try again
+              </Button>
+            }
+          />
+        </div>
       </Stack>
     </SearchScreenLayout>
   );

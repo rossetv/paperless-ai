@@ -205,22 +205,17 @@ describe('AppNavBar', () => {
   });
 
   it('marks the Index link active on the /index route', () => {
-    const { container } = renderNavBarAt('/index');
+    renderNavBarAt('/index');
     const indexLink = screen.getByRole('link', { name: /^index$/i });
-    // The active modifier class is applied — assert via the CSS-module class
-    // list rather than a literal name (CSS-module names are hashed).
-    const activeLink = container.querySelector(
-      'a[href="/index"]',
-    );
-    expect(activeLink).toBe(indexLink);
-    expect(indexLink.className).not.toBe('');
+    expect(indexLink).toHaveAttribute('aria-current', 'page');
   });
 
   it('does not mark the Index link active on the root route', () => {
     renderNavBarAt('/');
     const searchLink = screen.getByRole('link', { name: /^search$/i });
     const indexLink = screen.getByRole('link', { name: /^index$/i });
-    // Search and Index must never both look active. On '/', Search is active.
-    expect(searchLink.className).not.toEqual(indexLink.className);
+    // On '/', Search is the active route — Index must not have aria-current.
+    expect(searchLink).toHaveAttribute('aria-current', 'page');
+    expect(indexLink).not.toHaveAttribute('aria-current');
   });
 });

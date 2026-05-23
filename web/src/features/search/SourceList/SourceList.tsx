@@ -13,7 +13,7 @@ export interface SourceListProps {
    */
   highlightedIndex?: number;
   /**
-   * Called with a document id when a source card's "Preview document" action
+   * Called with a document id when a source card's "Preview" action
    * is activated. Threaded straight through to every `SourceCard`.
    */
   onPreview: (documentId: number) => void;

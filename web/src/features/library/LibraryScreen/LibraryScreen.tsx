@@ -303,7 +303,7 @@ export function LibraryScreen(): React.ReactElement {
             <Spinner size="large" label="Loading documents" />
           </div>
         ) : documents.isError ? (
-          <div className={styles['state']}>
+          <div className={styles['state']} role="alert">
             <EmptyState
               icon="warning"
               message="Could not load documents"

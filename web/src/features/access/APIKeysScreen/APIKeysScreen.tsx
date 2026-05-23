@@ -125,7 +125,7 @@ export function APIKeysScreen(): React.ReactElement {
     {
       key: 'scopes',
       header: 'Scopes',
-      width: '140px',
+      width: 'var(--width-col-badge)',
       render: (k) => (
         <div className={styles['scopes']}>
           {k.scopes.map((s) => (
@@ -137,19 +137,19 @@ export function APIKeysScreen(): React.ReactElement {
     {
       key: 'last',
       header: 'Last used',
-      width: '150px',
+      width: 'var(--width-col-date)',
       render: (k) => formatLastUsed(k.last_used_at),
     },
     {
       key: 'expires',
       header: 'Expires',
-      width: '170px',
+      width: 'var(--width-col-expiry)',
       render: (k) => <ExpiryLabel keyRow={k} />,
     },
     {
       key: 'actions',
       header: '',
-      width: '170px',
+      width: 'var(--width-col-expiry)',
       align: 'end',
       render: (k) => {
         const state = keyStateOf(k);
