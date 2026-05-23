@@ -1,0 +1,42 @@
+/*
+ * SettingsScreen feature — CSS Module.
+ *
+ * The screen body is a vertical stack of section cards; the layout shell
+ * already supplies that gap, so this module only styles the header actions
+ * cluster (the unsaved-count label beside the Discard/Save buttons) and the
+ * full-card loading / error placeholders.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+.unsavedCount {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Loading / error placeholders — fill the content column. ── */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--height-listbox);
+  padding: var(--spacing-14);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  color: var(--colour-text-tertiary);
+}
+
+.placeholderError {
+  color: var(--colour-status-danger-fg);
+}
