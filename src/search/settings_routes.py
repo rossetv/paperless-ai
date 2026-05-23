@@ -32,7 +32,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
 from appdb import config as config_store
-from common.config import REINDEX_KEYS, _build_settings
+from common.config import REINDEX_KEYS, SECRET_KEYS, _build_settings
 from common.paperless import PaperlessClient
 from search.deps import get_app_db, require_admin
 from search.settings_service import (
@@ -188,6 +188,13 @@ def _test_connection(
         merged["PAPERLESS_URL"] = body.paperless_url
     if body.paperless_token:
         merged["PAPERLESS_TOKEN"] = body.paperless_token
+    # _build_settings requires every SECRET_KEY to be non-empty. For the
+    # test-connection probe we only care about the Paperless credentials; inject
+    # sentinels for any other required keys so _build_settings can parse the
+    # mapping without failing on an unrelated missing key.
+    _SENTINEL = "__test_connection_placeholder__"
+    for req in SECRET_KEYS:
+        merged.setdefault(req, _SENTINEL)
 
     try:
         probe_settings = _build_settings(merged)
