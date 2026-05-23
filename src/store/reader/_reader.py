@@ -2,9 +2,10 @@
 
 :class:`StoreReader` owns the index connection and the thread lock that
 serialises queries across the search server's request threads.  The query
-implementations live in the two sibling concept-modules — ranked retrieval in
-:mod:`store.reader._ranked`, look-ups and introspection in
-:mod:`store.reader._lookups` — and this class is a thin facade that holds the
+implementations live in the three sibling concept-modules — ranked retrieval
+in :mod:`store.reader._ranked`, look-ups and introspection in
+:mod:`store.reader._lookups`, and the Library browse in
+:mod:`store.reader._browse` — and this class is a thin facade that holds the
 shared state and delegates each call.
 
 DB reads are fast at this scale (≤10k documents); a single lock serialising
@@ -20,13 +21,15 @@ from collections.abc import Iterable, Sequence
 from common.config import Settings
 from store.models import (
     ChunkHit,
+    DocumentBrowseQuery,
+    DocumentPage,
     FacetSet,
     IndexedDocument,
     IndexStats,
     SearchFilters,
     TaxonomyEntry,
 )
-from store.reader import _lookups, _ranked
+from store.reader import _browse, _lookups, _ranked
 from store.schema import connect
 
 
@@ -129,6 +132,17 @@ class StoreReader:
         See :func:`store.reader._lookups.quick_check`.
         """
         return _lookups.quick_check(self._conn, self._query_lock)
+
+    # ------------------------------------------------------------------
+    # Library browse
+    # ------------------------------------------------------------------
+
+    def list_documents(self, query: DocumentBrowseQuery) -> DocumentPage:
+        """List documents for the Library with pagination, sorting and filters.
+
+        See :func:`store.reader._browse.list_documents`.
+        """
+        return _browse.list_documents(self._conn, self._query_lock, query)
 
     def close(self) -> None:
         """Close the underlying database connection."""

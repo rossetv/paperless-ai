@@ -12,8 +12,10 @@ The package is split by concept (CODE_GUIDELINES §3.2):
 - :mod:`store.reader._lookups` — look-ups and introspection
   (``get_documents``, ``get_chunks``, ``get_taxonomy``, ``list_facets``,
   ``get_stats``, ``quick_check``).
+- :mod:`store.reader._browse` — the Library document-browse query
+  (``list_documents``).
 - :mod:`store.reader._reader` — the :class:`StoreReader` facade that owns the
-  connection and the query lock and delegates to the two concept-modules.
+  connection and the query lock and delegates to the three concept-modules.
 
 No write method exists on :class:`StoreReader`.  Read-only access is enforced
 structurally: the API has no write surface, and the indexer's flock makes it
