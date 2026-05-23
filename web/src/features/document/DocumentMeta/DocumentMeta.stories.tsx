@@ -11,6 +11,7 @@ const fullDocument: SourceDocument = {
   snippet: 'Annual service completed.',
   paperless_url: 'https://paperless.example.com/documents/7/',
   score: 0.9,
+  tags: [],
 };
 
 const correspondentOnlyDocument: SourceDocument = {
@@ -28,6 +29,7 @@ const minimalDocument: SourceDocument = {
   snippet: '',
   paperless_url: 'https://paperless.example.com/documents/8/',
   score: 0.5,
+  tags: [],
 };
 
 const meta = {

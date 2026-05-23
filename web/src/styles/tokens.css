@@ -41,7 +41,7 @@
 
   /* Borders */
   --colour-border:                  rgb(0 0 0 / 4%);
-  --colour-border-button:           #06c;
+  --colour-border-button:           rgb(0 0 0 / 12%);
 
   /* Button states */
   --colour-button-active-bg:        #ededf2;
@@ -95,6 +95,13 @@
   --font-weight-subheading:    400;
   --line-height-subheading:    1.19;
   --letter-spacing-subheading: 0.231px;
+
+  /* sub-heading — 22 px bold display; section title below card level.
+     Used by the Text primitive 'sub-heading' variant (Results sources header). */
+  --font-size-sub-heading:      1.375rem;
+  --font-weight-sub-heading:    700;
+  --line-height-sub-heading:    1.19;
+  --letter-spacing-sub-heading: -0.2px;
 
   /* Nav Heading — 34 px, weight 600, lh 1.47, ls -0.374 px */
   --font-size-nav-heading:     2.125rem;
@@ -302,6 +309,10 @@
   /* EmptyState — caps the description line length for comfortable reading */
   --width-empty-state:  360px;
 
+  /* Search input in page headers — narrower than the empty-state cap so the
+   * search + action buttons do not crush the title block on the same row */
+  --width-search-narrow: 240px;
+
   /* Select listbox — max height before the option list scrolls */
   --height-listbox:     240px;
 
@@ -391,6 +402,9 @@
   /* Success green — the "index ready" status dot */
   --colour-status-ready:        #34c759;
 
+  /* Soft glow halo around the "index ready" status dot in the nav pill */
+  --shadow-status-ready-ring:   0 0 0 3px rgb(52 199 89 / 18%);
+
   /* Results answer-card lift — softer and bluer than --shadow-card */
   --shadow-answer: 0 1px 2px rgb(0 0 0 / 4%), 0 12px 32px -16px rgb(0 0 0 / 10%);
 
@@ -413,6 +427,12 @@
 
   /* Document-preview viewer — the metadata sidebar width */
   --width-preview-sidebar:      380px;
+
+  /* Tag picker — max height of the scrollable expanded tag list region */
+  --max-height-tag-picker:      280px;
+
+  /* Uppercase-label letter-spacing — section sub-labels rendered in ALL CAPS */
+  --letter-spacing-label:       0.4px;
 
   /* Table column widths — access screens (UsersScreen, APIKeysScreen) */
   --width-col-actions-narrow:    90px;  /* single-action column (Users) */

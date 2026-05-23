@@ -4,18 +4,36 @@ import { MemoryRouter } from 'react-router-dom';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { AppNavBar } from './AppNavBar';
 
-// --- Mock auth + logout --------------------------------------------------
+// --- Mock auth + logout + stats ------------------------------------------
 vi.mock('../../../hooks/useAuth', () => ({
   useAuth: vi.fn(),
 }));
 vi.mock('../../../api/hooks', () => ({
   useLogout: vi.fn(),
+  useStats: vi.fn(),
 }));
 
 import { useAuth } from '../../../hooks/useAuth';
-import { useLogout } from '../../../api/hooks';
+import { useLogout, useStats } from '../../../api/hooks';
 const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 const mockUseLogout = useLogout as ReturnType<typeof vi.fn>;
+const mockUseStats = useStats as ReturnType<typeof vi.fn>;
+
+/** Default stats — resolved with a small document set. */
+function makeStats(overrides: Record<string, unknown> = {}) {
+  return {
+    isSuccess: true,
+    data: {
+      document_count: 42,
+      chunk_count: 1000,
+      last_reconcile_at: null,
+      embedding_model: 'text-embedding-3-small',
+      ...overrides,
+    },
+    isError: false,
+    isPending: false,
+  };
+}
 
 const SAMPLE_USER = {
   id: 1,
@@ -60,6 +78,7 @@ function renderNavBar(logout = makeLogout()) {
     isLoading: false,
   });
   mockUseLogout.mockReturnValue(logout);
+  mockUseStats.mockReturnValue(makeStats());
   return render(
     <MemoryRouter>
       <AppNavBar />
@@ -75,6 +94,7 @@ function renderNavBarAt(path: string) {
     isLoading: false,
   });
   mockUseLogout.mockReturnValue(makeLogout());
+  mockUseStats.mockReturnValue(makeStats());
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AppNavBar />
@@ -131,6 +151,7 @@ describe('AppNavBar', () => {
       isLoading: false,
     });
     mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue(makeStats());
     render(
       <MemoryRouter>
         <AppNavBar />
@@ -147,6 +168,7 @@ describe('AppNavBar', () => {
       isLoading: false,
     });
     mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue(makeStats());
     render(
       <MemoryRouter>
         <AppNavBar />
@@ -166,6 +188,7 @@ describe('AppNavBar', () => {
       isLoading: false,
     });
     mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue(makeStats());
     render(
       <MemoryRouter initialEntries={['/library']}>
         <AppNavBar />
@@ -183,6 +206,7 @@ describe('AppNavBar', () => {
       isLoading: false,
     });
     mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue({ isSuccess: false, data: undefined });
     const { container } = render(
       <MemoryRouter>
         <AppNavBar />
@@ -217,5 +241,59 @@ describe('AppNavBar', () => {
     // On '/', Search is the active route — Index must not have aria-current.
     expect(searchLink).toHaveAttribute('aria-current', 'page');
     expect(indexLink).not.toHaveAttribute('aria-current');
+  });
+
+  // ── MAJOR 1: active link underline ────────────────────────────────────────
+
+  it('applies the link-active CSS class to the active nav link', () => {
+    renderNavBarAt('/library');
+    const libraryLink = screen.getByRole('link', { name: 'Library' });
+    // CSS Modules transform class names; check that the active class differs
+    // from the base class — the active link gets an extra class.
+    expect(libraryLink.className).not.toEqual(
+      screen.getByRole('link', { name: /^search$/i }).className,
+    );
+  });
+
+  // ── MAJOR 2: IndexStatusPill ──────────────────────────────────────────────
+
+  it('shows the index-status pill when stats are available', () => {
+    renderNavBar();
+    // "42" formatted with en-GB thousands separators is still "42" here.
+    expect(screen.getByLabelText(/index ready, 42 documents/i)).toBeInTheDocument();
+  });
+
+  it('hides the index-status pill while stats are loading', () => {
+    mockUseAuth.mockReturnValue({
+      user: SAMPLE_USER,
+      role: 'admin',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue({ isSuccess: false, data: undefined });
+    render(
+      <MemoryRouter>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByLabelText(/index ready/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the document count in the status pill', () => {
+    mockUseAuth.mockReturnValue({
+      user: SAMPLE_USER,
+      role: 'admin',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue(makeStats({ document_count: 1234 }));
+    render(
+      <MemoryRouter>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByLabelText(/index ready, 1,234 documents/i)).toBeInTheDocument();
   });
 });

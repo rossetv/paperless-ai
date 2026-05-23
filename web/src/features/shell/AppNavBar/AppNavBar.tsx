@@ -7,6 +7,7 @@ import { UserMenu } from '../../../components/patterns/UserMenu/UserMenu';
 import { useAuth } from '../../../hooks/useAuth';
 import { useLogout } from '../../../api/hooks';
 import { deriveInitials } from '../../../lib/deriveInitials';
+import { IndexStatusPill } from './IndexStatusPill';
 import styles from './AppNavBar.module.css';
 
 /**
@@ -102,13 +103,16 @@ export function AppNavBar(): React.ReactElement | null {
         </>
       }
       actions={
-        <UserMenu
-          initials={initials}
-          displayName={user.display_name}
-          username={user.username}
-          email={user.email}
-          onSignOut={() => { void handleSignOut(); }}
-        />
+        <>
+          <IndexStatusPill />
+          <UserMenu
+            initials={initials}
+            displayName={user.display_name}
+            username={user.username}
+            email={user.email}
+            onSignOut={() => { void handleSignOut(); }}
+          />
+        </>
       }
     />
   );

@@ -82,10 +82,16 @@ export function LoadingScreen({
         {/* Pipeline progress card. */}
         <Card elevated>
           <Stack direction="vertical" gap={10}>
-            <Stack direction="horizontal" gap={6} align="center">
+            {/* Spinner row: icon, heading, spacer, ETA pill (MINOR 2). Gap 9
+                ≈ 11 px — the nearest token to the design's 12 px. */}
+            <Stack direction="horizontal" gap={9} align="center">
               <Spinner size="small" label="Searching" />
               <Text as="span" variant="body-emphasis">
                 Searching your library…
+              </Text>
+              <span style={{ flex: 1 }} />
+              <Text as="span" variant="micro" tone="tertiary">
+                ~2s
               </Text>
             </Stack>
             <PipelineStages stages={[...PIPELINE_STAGES]} />

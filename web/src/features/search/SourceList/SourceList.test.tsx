@@ -12,6 +12,7 @@ const makeSource = (id: number, title: string): SourceDocument => ({
   snippet: `Snippet for document ${id}`,
   paperless_url: `https://paperless.example.com/documents/${id}/`,
   score: 0.9,
+  tags: [],
 });
 
 describe('SourceList', () => {
@@ -70,6 +71,7 @@ describe('SourceList', () => {
         snippet: 'snippet',
         paperless_url: 'https://paperless.example.com/documents/11/',
         score: 0.9,
+        tags: [],
       },
     ];
     render(<SourceList sources={sources} onPreview={onPreview} />);

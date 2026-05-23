@@ -1,0 +1,33 @@
+/*
+ * ActiveFiltersStrip — CSS Module.
+ *
+ * A horizontal strip rendered between the recap SearchField and the AnswerCard
+ * (or EmptyState) whenever one or more filters are active. Shows "Filtered by"
+ * chips, a "Clear all" link, and a trailing document count with sort description.
+ */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  padding-inline: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.label {
+  /* Prevent the "Filtered by" label from wrapping away from the chips. */
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.count {
+  white-space: nowrap;
+}
+
+.count strong {
+  color: var(--colour-text-primary);
+  font-weight: 600;
+}

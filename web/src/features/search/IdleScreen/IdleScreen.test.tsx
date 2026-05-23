@@ -47,9 +47,30 @@ beforeEach(() => {
 });
 
 describe('IdleScreen', () => {
-  it('renders the hero headline', () => {
+  it('renders the hero headline as an h1', () => {
     render(<IdleScreen onSearch={() => {}} />);
-    expect(screen.getByText(/ask your library/i)).toBeInTheDocument();
+    const headline = screen.getByRole('heading', { level: 1, name: /ask your library/i });
+    expect(headline).toBeInTheDocument();
+  });
+
+  it('renders the hero subtitle with the formatted document count', () => {
+    render(<IdleScreen onSearch={() => {}} />);
+    // The subtitle renders when stats resolve. The count (14238) must be
+    // formatted with thousands separators per British locale — "14,238".
+    expect(screen.getByText(/semantic \+ keyword search/i)).toBeInTheDocument();
+    expect(screen.getByText('14,238')).toBeInTheDocument();
+  });
+
+  it('omits the hero subtitle while stats are loading', () => {
+    mockStats.mockReturnValue({
+      data: undefined,
+      isSuccess: false,
+      isLoading: true,
+      isError: false,
+      error: null,
+    });
+    render(<IdleScreen onSearch={() => {}} />);
+    expect(screen.queryByText(/semantic \+ keyword search/i)).not.toBeInTheDocument();
   });
 
   it('renders the large search field', () => {

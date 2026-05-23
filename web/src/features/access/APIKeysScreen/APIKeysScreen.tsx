@@ -223,7 +223,7 @@ export function APIKeysScreen(): React.ReactElement {
           />
           <p className={cn(styles['note'])}>
             The full key is shown once at creation. After that only the prefix
-            is stored. Pass an active key as Authorization: Bearer &lt;key&gt;.
+            is stored. {'Pass an active key as Authorization: Bearer <key>.'}
           </p>
         </>
       )}

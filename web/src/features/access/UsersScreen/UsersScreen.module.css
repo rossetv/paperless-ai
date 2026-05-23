@@ -24,7 +24,11 @@
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-comfortable);
   padding: var(--spacing-5) var(--spacing-9);
-  width: var(--width-empty-state);
+
+  /* max-width rather than a fixed width so the search box never forces the
+   * header-text block to be crushed in the SettingsLayout header row. */
+  max-width: var(--width-search-narrow);
+  min-width: 0;
 }
 
 .search-input {

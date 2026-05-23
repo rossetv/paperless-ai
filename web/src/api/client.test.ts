@@ -251,6 +251,7 @@ describe('successful responses parse into typed shapes', () => {
           snippet: '…warranty expires…',
           paperless_url: 'http://paperless/documents/42/',
           score: 0.91,
+          tags: [],
         },
       ],
       plan: {

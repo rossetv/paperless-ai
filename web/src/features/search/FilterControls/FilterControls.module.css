@@ -1,0 +1,68 @@
+/*
+ * FilterControls layout — feature-layer stylesheet.
+ *
+ * Provides layout for the bounded tag picker region: the search input above,
+ * the chip cluster below, and a max-height scroll container for the expanded
+ * state. All values reference design tokens; no hardcoded px or colours.
+ */
+
+/* Wrapper for the entire Tags subsection (label + search input + chips). */
+.tag-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* Section label (e.g. "Tags") above the search input. */
+.section-label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/*
+ * Scrollable chip container — only used in the expanded state.
+ * Constrained to --max-height-tag-picker so the date range is never
+ * pushed off screen, even when hundreds of tags are revealed.
+ */
+.tag-list-scroll {
+  max-height: var(--max-height-tag-picker);
+  overflow-y: auto;
+}
+
+/* Flex chip cluster — wraps naturally within whatever container is above it. */
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+}
+
+/* "Show all / Show less" toggle button — styled as a link-like affordance. */
+.tag-toggle-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-link);
+  cursor: pointer;
+  align-self: flex-start;
+  transition: opacity var(--duration-fast) var(--easing-standard);
+}
+
+.tag-toggle-button:hover {
+  opacity: 0.7;
+}
+
+.tag-toggle-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-micro);
+}

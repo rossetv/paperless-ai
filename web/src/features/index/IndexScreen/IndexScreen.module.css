@@ -103,12 +103,28 @@
 }
 
 .activity-head {
-  margin: 0 0 var(--spacing-4);
+  margin: 0;
   font-family: var(--font-display);
   font-size: var(--font-size-subheading);
   font-weight: var(--font-weight-heading);
   letter-spacing: var(--letter-spacing-subheading);
   color: var(--colour-text-primary);
+}
+
+/* ── Header action group — holds the two CTA buttons. ── */
+.header-actions {
+  display: flex;
+  gap: var(--spacing-8);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── Activity panel heading row — title left, link right. ── */
+.activity-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-4);
 }
 
 /* ── State containers — loading and error. ── */

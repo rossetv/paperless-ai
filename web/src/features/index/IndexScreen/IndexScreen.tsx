@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Button } from '../../../components/primitives/Button/Button';
+import { Link } from '../../../components/primitives/Link/Link';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { useAuth } from '../../../hooks/useAuth';
@@ -17,7 +18,11 @@ import { ActivityRow } from '../ActivityRow/ActivityRow';
 import { FailedDocumentsPanel } from '../FailedDocumentsPanel/FailedDocumentsPanel';
 import { RebuildIndexCard } from '../RebuildIndexCard/RebuildIndexCard';
 import { DocumentPreviewScreen } from '../../search/DocumentPreviewScreen/DocumentPreviewScreen';
+import { relativeTime } from '../../../lib/relativeTime';
 import styles from './IndexScreen.module.css';
+
+/** Number of activity rows to show before the "View full log" link appears. */
+const ACTIVITY_ROW_LIMIT = 5;
 
 /**
  * The Index operations dashboard.
@@ -56,6 +61,7 @@ export function IndexScreen(): React.ReactElement {
   const reconcile = useReconcile();
 
   const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
+  const [showAllActivity, setShowAllActivity] = useState(false);
 
   const failedDocuments = failedQuery.data?.documents ?? [];
   const stats = statsQuery.data;
@@ -70,15 +76,27 @@ export function IndexScreen(): React.ReactElement {
             four daemons that keep it warm.
           </p>
         </div>
-        {role !== 'readonly' && (
+        <div className={styles['header-actions']}>
+          {role !== 'readonly' && (
+            <Button
+              variant="secondary"
+              disabled={reconcile.isPending}
+              onClick={() => reconcile.mutate()}
+            >
+              {reconcile.isPending ? 'Reconciling…' : 'Reconcile now'}
+            </Button>
+          )}
           <Button
-            variant="secondary"
-            disabled={reconcile.isPending}
-            onClick={() => reconcile.mutate()}
+            variant="primary"
+            onClick={() =>
+              document
+                .getElementById('recent-activity')
+                ?.scrollIntoView({ behavior: 'smooth' })
+            }
           >
-            {reconcile.isPending ? 'Reconciling…' : 'Reconcile now'}
+            View live log
           </Button>
-        )}
+        </div>
       </header>
 
       {statusQuery.isLoading && (
@@ -106,23 +124,42 @@ export function IndexScreen(): React.ReactElement {
               <StatTile
                 value={(stats.document_count ?? 0).toLocaleString('en-GB')}
                 label="Documents indexed"
+                {...(stats.last_reconcile_at !== null
+                  ? { sub: `synced ${relativeTime(stats.last_reconcile_at)}` }
+                  : {})}
                 accent
               />
               <StatTile
                 value={(stats.chunk_count ?? 0).toLocaleString('en-GB')}
                 label="Semantic chunks"
+                {...((stats.document_count ?? 0) > 0
+                  ? {
+                      sub: `≈ ${Math.round(
+                        (stats.chunk_count ?? 0) / (stats.document_count ?? 1),
+                      ).toLocaleString('en-GB')} chunks per document`,
+                    }
+                  : {})}
               />
+              {/* sub hard-coded to the env default; no dim field is exposed by the API yet. */}
               <StatTile
                 value={stats.embedding_model ?? '—'}
                 label="Embedding model"
+                sub="1,536 dimensions"
               />
               <StatTile
                 value={
                   stats.last_reconcile_at !== null
-                    ? new Date(stats.last_reconcile_at).toLocaleDateString('en-GB')
+                    ? relativeTime(stats.last_reconcile_at)
                     : '—'
                 }
                 label="Last reconcile"
+                {...(stats.last_reconcile_at !== null
+                  ? {
+                      sub: new Date(stats.last_reconcile_at).toLocaleDateString(
+                        'en-GB',
+                      ),
+                    }
+                  : {})}
               />
             </div>
           )}
@@ -142,14 +179,30 @@ export function IndexScreen(): React.ReactElement {
           </section>
 
           <div className={styles['split-row']}>
-            <section className={styles['activity-panel']}>
-              <h3 className={styles['activity-head']}>Recent activity</h3>
+            <section className={styles['activity-panel']} id="recent-activity">
+              <div className={styles['activity-panel-head']}>
+                <h3 className={styles['activity-head']}>Recent activity</h3>
+                {(activityQuery.data?.cycles ?? []).length > ACTIVITY_ROW_LIMIT && (
+                  <Link
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowAllActivity((prev) => !prev);
+                    }}
+                  >
+                    {showAllActivity ? 'Show less ›' : 'View full log ›'}
+                  </Link>
+                )}
+              </div>
               <div>
-                {(activityQuery.data?.cycles ?? []).map((cycle, i, all) => (
+                {(showAllActivity
+                  ? (activityQuery.data?.cycles ?? [])
+                  : (activityQuery.data?.cycles ?? []).slice(0, ACTIVITY_ROW_LIMIT)
+                ).map((cycle, i, visible) => (
                   <ActivityRow
                     key={cycle.id}
                     cycle={cycle}
-                    last={i === all.length - 1}
+                    last={i === visible.length - 1}
                   />
                 ))}
               </div>
@@ -191,6 +244,8 @@ export function IndexScreen(): React.ReactElement {
           <DocumentPreviewScreen
             source={source}
             onClose={() => setPreviewDocumentId(null)}
+            sourceIndex={1}
+            sourceCount={1}
           />
         );
       })()}

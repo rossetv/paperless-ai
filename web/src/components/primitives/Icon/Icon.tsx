@@ -17,7 +17,14 @@ export type IconName =
   | 'check'
   | 'warning'
   | 'arrow-left'
-  | 'tag';
+  | 'tag'
+  | 'link'
+  | 'sparkle'
+  | 'waves'
+  | 'eye'
+  | 'paragraph'
+  | 'lightning'
+  | 'list-lines';
 
 /** Size scale — icons inherit currentColor and scale via token-based dimensions. */
 export type IconSize = 'small' | 'medium' | 'large' | 'xlarge';
@@ -174,6 +181,85 @@ const ICON_PATHS: Record<IconName, React.ReactElement> = {
       strokeLinejoin="round"
       fill="none"
     />
+  ),
+  link: (
+    <path
+      d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
+  sparkle: (
+    <>
+      <path
+        d="M12 2l2.4 7.2H22l-6.4 4.8 2.4 7.2L12 17l-6 4.2 2.4-7.2L2 9.2h7.6L12 2z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </>
+  ),
+  waves: (
+    <path
+      d="M2 12c1.5-3 3-4.5 4.5-4.5S9 9 10.5 9s3-1.5 4.5-1.5S18 9 19.5 9 22 7.5 22 6M2 18c1.5-3 3-4.5 4.5-4.5S9 15 10.5 15s3-1.5 4.5-1.5S18 15 19.5 15 22 13.5 22 12"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
+  eye: (
+    <>
+      <path
+        d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" fill="none" />
+    </>
+  ),
+  paragraph: (
+    <path
+      d="M13 4H9.5C7.57 4 6 5.57 6 7.5S7.57 11 9.5 11H13V4zM13 4h3M13 20V11M13 20h-2M13 20h2M16 4v16M16 20h-2M16 20h2"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
+  lightning: (
+    <path
+      d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
+  ),
+  'list-lines': (
+    <>
+      <path
+        d="M8 6h13M8 12h13M8 18h13"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <circle cx="3" cy="6" r="1" fill="currentColor" />
+      <circle cx="3" cy="12" r="1" fill="currentColor" />
+      <circle cx="3" cy="18" r="1" fill="currentColor" />
+    </>
   ),
 };
 

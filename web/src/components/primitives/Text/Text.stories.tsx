@@ -11,7 +11,7 @@ const meta = {
   argTypes: {
     variant: {
       control: 'select',
-      options: ['body', 'body-emphasis', 'card-title', 'caption', 'caption-bold', 'micro'],
+      options: ['hero', 'body-large', 'body', 'body-emphasis', 'card-title', 'caption', 'caption-bold', 'micro'],
     },
     as: {
       control: 'select',
@@ -48,9 +48,26 @@ export const Caption: Story = {
   },
 };
 
+export const Hero: Story = {
+  args: {
+    variant: 'hero',
+    as: 'h1',
+    children: 'Ask your library.',
+  },
+};
+
+export const BodyLarge: Story = {
+  args: {
+    variant: 'body-large',
+    children: 'Semantic + keyword search across your Paperless library.',
+  },
+};
+
 export const AllVariants: StoryObj = {
   render: () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-8)' }}>
+      <Text variant="hero" as="h1">hero — 56px semibold</Text>
+      <Text variant="body-large">body-large — 24px light</Text>
       <Text variant="card-title">card-title — 21px bold</Text>
       <Text variant="body-emphasis">body-emphasis — 17px semibold</Text>
       <Text variant="body">body — 17px regular</Text>

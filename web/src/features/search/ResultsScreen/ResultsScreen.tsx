@@ -7,6 +7,7 @@ import { FilterControls } from '../FilterControls/FilterControls';
 import { AnswerCard } from '../AnswerCard/AnswerCard';
 import { SourceList } from '../SourceList/SourceList';
 import { QueryPlanSummary } from '../QueryPlanSummary/QueryPlanSummary';
+import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import type { FilterRequest, SearchResponse } from '../../../api/types';
 
 export interface ResultsScreenProps {
@@ -16,6 +17,12 @@ export interface ResultsScreenProps {
   filters: FilterRequest;
   /** The resolved search response. */
   result: SearchResponse;
+  /**
+   * Total matched document count — shown in the active-filters strip.
+   * Pass `result.sources.length` when there is no separate total; pass a
+   * server-supplied total when available.
+   */
+  docCount: number;
   /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
   /**
@@ -23,6 +30,8 @@ export interface ResultsScreenProps {
    * the parent re-runs the search, so a second search needs no reload.
    */
   onSearch: (query: string) => void;
+  /** Called when the user activates "Clear all" in the active-filters strip. */
+  onClearFilters: () => void;
   /** Called with a 1-based index when a citation marker is activated. */
   onCitationActivate: (index: number) => void;
   /** Called with a document id when a source's preview action is activated. */
@@ -43,15 +52,17 @@ export interface ResultsScreenProps {
  * and document preview are delegated to the parent via callbacks.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Text, FilterControls,
- * AnswerCard, SourceList, QueryPlanSummary. No own CSS module (§12.5 —
- * features layer is composition-only).
+ * AnswerCard, SourceList, QueryPlanSummary, ActiveFiltersStrip. No own CSS
+ * module (§12.5 — features layer is composition-only).
  */
 export function ResultsScreen({
   query,
   filters,
   result,
+  docCount,
   onFiltersChange,
   onSearch,
+  onClearFilters,
   onCitationActivate,
   onPreview,
   highlightedIndex,
@@ -76,6 +87,14 @@ export function ResultsScreen({
           onSubmit={onSearch}
         />
 
+        {/* Active-filters chip strip — renders nothing when no filters are
+            set, so this is safe to include unconditionally. */}
+        <ActiveFiltersStrip
+          filters={filters}
+          docCount={docCount}
+          onClearAll={onClearFilters}
+        />
+
         {/* Synthesised answer. */}
         <AnswerCard
           answer={answer}
@@ -84,13 +103,20 @@ export function ResultsScreen({
           onCitationActivate={onCitationActivate}
         />
 
-        {/* Sources — a real heading carries the role; Text supplies the
-            type token (no feature-level CSS, §12.5). */}
-        <h2>
-          <Text as="span" variant="card-title">
-            Sources
+        {/* Sources — a real heading carries the role; sub-heading is the
+            22 px display variant matching the design (MAJOR 2). The caption
+            sits alongside as a sibling, not inside the <h2>. */}
+        <Stack direction="horizontal" gap={6} align="baseline">
+          <h2 style={{ margin: 0 }}>
+            <Text as="span" variant="sub-heading">
+              Sources
+            </Text>
+          </h2>
+          <Text as="span" variant="caption" tone="tertiary">
+            the documents that grounded the answer above
           </Text>
-        </h2>
+        </Stack>
+
         <SourceList
           sources={sources}
           onPreview={onPreview}

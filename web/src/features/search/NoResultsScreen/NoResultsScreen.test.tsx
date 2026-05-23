@@ -6,6 +6,11 @@ vi.mock('../FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 
+// ActiveFiltersStrip calls useFacets — mock it so the test has no query client.
+vi.mock('../ActiveFiltersStrip/ActiveFiltersStrip', () => ({
+  ActiveFiltersStrip: () => null,
+}));
+
 const EMPTY_FILTERS = {
   tag_ids: [],
   correspondent_id: null,
@@ -73,5 +78,25 @@ describe('NoResultsScreen', () => {
       screen.getByRole('button', { name: /search without filters/i }),
     );
     expect(onSearchWithoutFilters).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders a "Try instead" heading', () => {
+    renderScreen();
+    expect(screen.getByText(/try instead/i)).toBeInTheDocument();
+  });
+
+  it('renders suggestion rows from QUICK_FILTERS', () => {
+    renderScreen();
+    // The first three QUICK_FILTERS entries are shown as clickable suggestions.
+    expect(screen.getByRole('button', { name: /invoices this month/i })).toBeInTheDocument();
+  });
+
+  it('fires onSearch with the suggestion when a "Try instead" row is clicked', async () => {
+    const onSearch = vi.fn();
+    renderScreen({ onSearch });
+    await userEvent.click(
+      screen.getByRole('button', { name: /invoices this month/i }),
+    );
+    expect(onSearch).toHaveBeenCalledWith('Invoices this month');
   });
 });

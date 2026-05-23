@@ -1,7 +1,10 @@
 import React from 'react';
 import { SectionCard } from '../../../components/primitives/SectionCard/SectionCard';
+import { Icon } from '../../../components/primitives/Icon/Icon';
+import type { IconName } from '../../../components/primitives/Icon/Icon';
 import { Row } from '../../../components/primitives/Row/Row';
 import { SettingsTextField } from '../../../components/primitives/SettingsTextField/SettingsTextField';
+import { SettingsListField } from '../../../components/primitives/SettingsListField/SettingsListField';
 import { SettingsSelectField } from '../../../components/primitives/SettingsSelectField/SettingsSelectField';
 import { NumberStepper } from '../../../components/primitives/NumberStepper/NumberStepper';
 import { Toggle } from '../../../components/primitives/Toggle/Toggle';
@@ -13,8 +16,24 @@ import type {
   SettingsSection as SectionModel,
   SettingsField,
 } from '../fieldModel';
-import { parseValue, serialiseValue } from '../fieldModel';
+// No fieldModel runtime imports needed — SettingsListField owns its own parsing.
 import styles from './SettingsSection.module.css';
+
+/**
+ * Maps every section id to the icon shown in its SectionCard header tile.
+ * Exported so the side-nav or any future caller can reuse the same mapping.
+ */
+export const SETTINGS_SECTION_ICONS: Record<string, IconName> = {
+  paperless: 'link',
+  llm: 'sparkle',
+  search: 'search',
+  embed: 'waves',
+  ocr: 'eye',
+  classify: 'paragraph',
+  tags: 'tag',
+  perf: 'lightning',
+  logs: 'list-lines',
+};
 
 export interface SettingsSectionProps {
   /** The section descriptor from the field model. */
@@ -42,8 +61,8 @@ export interface SettingsSectionProps {
  * Each branch picks the primitive matching `field.control.kind`. The value is
  * read loosely from the draft and coerced to the type the control needs — the
  * field model guarantees the key's real type matches the kind. A `list`
- * control reuses the field model's `parseValue`/`serialiseValue` so the
- * draft holds a `string[]` while the text input shows a comma-joined string.
+ * A `list` control renders a pill-list UI via `SettingsListField`; the draft
+ * holds a `string[]` and the component owns its own add/remove/reorder logic.
  */
 function FieldControl({
   field,
@@ -107,12 +126,11 @@ function FieldControl({
       );
     case 'list':
       return (
-        <SettingsTextField
+        <SettingsListField
           id={id}
           label={field.label}
-          mono
-          value={Array.isArray(value) ? serialiseValue(value) : ''}
-          onChange={(raw) => onChange(parseValue(field, raw))}
+          value={Array.isArray(value) ? value : []}
+          onChange={(next) => onChange(next)}
         />
       );
     case 'text':
@@ -153,8 +171,17 @@ export function SettingsSection({
   onChange,
   children,
 }: SettingsSectionProps): React.ReactElement {
+  const iconName = SETTINGS_SECTION_ICONS[section.id];
+  const iconNode =
+    iconName !== undefined ? <Icon name={iconName} size="large" /> : undefined;
+
   return (
-    <SectionCard id={section.id} title={section.title} subtitle={section.subtitle}>
+    <SectionCard
+      id={section.id}
+      title={section.title}
+      subtitle={section.subtitle}
+      icon={iconNode}
+    >
       {section.fields.map((field, index) => {
         // A single-element control can be focused from its label; a Segmented
         // group or a SecretField (multiple elements) cannot.

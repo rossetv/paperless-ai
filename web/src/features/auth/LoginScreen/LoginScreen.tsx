@@ -7,6 +7,9 @@ import { Unauthenticated, ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../credentials';
 import styles from './LoginScreen.module.css';
 
+/** Maximum number of LLM calls made per search query — a product constant, not API data. */
+const MAX_LLM_CALLS_PER_QUERY = 3;
+
 /** One splash statistic — value plus caption. */
 interface SplashStat {
   value: string;
@@ -67,13 +70,21 @@ export function LoginScreen(): React.ReactElement {
     login.mutate({ username, password, remember }, {});
   }
 
-  // Build the splash stats only when the query has resolved successfully.
-  const splashStats: SplashStat[] | null = stats.isSuccess && stats.data !== undefined
-    ? [
-        { value: formatCount(stats.data.document_count), label: 'documents indexed' },
-        { value: formatCount(stats.data.chunk_count), label: 'semantic chunks' },
-      ]
-    : null;
+  // The third stat is a product constant — always rendered regardless of API state.
+  const constantStat: SplashStat = {
+    value: `≤${MAX_LLM_CALLS_PER_QUERY}`,
+    label: 'LLM calls per query',
+  };
+
+  // The first two stats come from the API; the third is always present.
+  const splashStats: SplashStat[] =
+    stats.isSuccess && stats.data !== undefined
+      ? [
+          { value: formatCount(stats.data.document_count), label: 'documents indexed' },
+          { value: formatCount(stats.data.chunk_count), label: 'semantic chunks' },
+          constantStat,
+        ]
+      : [constantStat];
 
   const errorMessage =
     login.isError && login.error !== null ? loginErrorMessage(login.error) : null;
@@ -93,22 +104,22 @@ export function LoginScreen(): React.ReactElement {
             </span>
           </div>
           <h1 className={styles['headline']}>
-            Search every page you&apos;ve ever filed.
+            <span>Search every page</span>
+            <br />
+            <span className={styles['headline-dim']}>you&apos;ve ever filed.</span>
           </h1>
           <p className={styles['subhead']}>
             Ask anything. Answers come back with citations — grounded in the
             documents already in your library.
           </p>
-          {splashStats !== null && (
-            <div className={styles['stats']}>
-              {splashStats.map((stat) => (
-                <div key={stat.label}>
-                  <div className={styles['stat-value']}>{stat.value}</div>
-                  <div className={styles['stat-label']}>{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className={styles['stats']}>
+            {splashStats.map((stat) => (
+              <div key={stat.label}>
+                <div className={styles['stat-value']}>{stat.value}</div>
+                <div className={styles['stat-label']}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Right — the sign-in card */}

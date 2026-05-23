@@ -39,7 +39,7 @@
 
   /* Borders */
   --colour-border:          rgb(255 255 255 / 8%);
-  --colour-border-button:   #2997ff;
+  --colour-border-button:   rgb(255 255 255 / 12%);
 
   /* Button states */
   --colour-button-active-bg: #1d1d1f;

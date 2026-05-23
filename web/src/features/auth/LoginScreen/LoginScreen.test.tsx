@@ -170,10 +170,22 @@ describe('LoginScreen', () => {
     expect(screen.getByText('14,238')).toBeInTheDocument();
   });
 
-  it('omits the stat numbers gracefully when the public-stats query fails', () => {
+  it('omits the API-derived stat numbers gracefully when the public-stats query fails', () => {
     renderScreen(makeLogin({}), makeStats({ isError: true }));
-    // The stat labels never render without data — querying any number fails.
+    // documents indexed and semantic chunks only render when the API resolves.
     expect(screen.queryByText(/documents indexed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/semantic chunks/i)).not.toBeInTheDocument();
+  });
+
+  it('always renders the LLM-calls-per-query stat regardless of API state', () => {
+    renderScreen(makeLogin({}), makeStats({ isError: true }));
+    expect(screen.getByText(/llm calls per query/i)).toBeInTheDocument();
+    expect(screen.getByText('≤3')).toBeInTheDocument();
+  });
+
+  it('renders the headline second line in the dim variant', () => {
+    renderScreen();
+    expect(screen.getByText(/you've ever filed\./i)).toBeInTheDocument();
   });
 
   it('toggles password visibility with the Show control', async () => {

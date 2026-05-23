@@ -8,8 +8,11 @@ import styles from './Text.module.css';
  * an ad-hoc font size.
  */
 export type TextVariant =
+  | 'hero'
+  | 'body-large'
   | 'body'
   | 'body-emphasis'
+  | 'sub-heading'
   | 'card-title'
   | 'caption'
   | 'caption-bold'
@@ -23,7 +26,7 @@ export type TextTone = 'primary' | 'secondary' | 'tertiary';
  * an inline run is a `span`, an emphasised inline run is `strong`/`em`, and a
  * machine-readable date is a `time`.
  */
-export type TextElement = 'p' | 'span' | 'strong' | 'em' | 'time' | 'div';
+export type TextElement = 'h1' | 'p' | 'span' | 'strong' | 'em' | 'time' | 'div';
 
 export interface TextProps {
   /** Typographic variant — maps to the type scale. Defaults to 'body'. */

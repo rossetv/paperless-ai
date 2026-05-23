@@ -265,12 +265,15 @@ export interface PreviewableDocument {
  * Wire-strict: mirrors `SourceDocumentResponse` in `wire.py` exactly.
  * `paperless_url` is a non-nullable `str` on the backend — the search API
  * always resolves the public Paperless URL before returning results.
+ * `tags` is a flat list of tag name strings returned by the backend.
  *
  * Screens that fabricate a local document object (Library, Index) use
  * `PreviewableDocument` instead and supply `null` for `paperless_url`.
  */
 export interface SourceDocument extends PreviewableDocument {
   paperless_url: string;
+  /** Tag names attached to this document, as returned by the search API. */
+  tags: string[];
 }
 
 /** The query plan for UI transparency (spec §7.1). */

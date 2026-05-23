@@ -29,6 +29,7 @@
 .header {
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   gap: var(--spacing-13);
   margin-bottom: var(--spacing-14);
 }

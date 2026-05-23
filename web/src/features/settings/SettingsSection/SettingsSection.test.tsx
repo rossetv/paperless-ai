@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SettingsSection } from './SettingsSection';
 import type { SettingsSection as SectionModel } from '../fieldModel';
@@ -108,9 +108,10 @@ describe('SettingsSection', () => {
     expect(screen.getByLabelText('Secret field')).toHaveValue('••••mask');
   });
 
-  it('renders a list control joining the array with commas', () => {
+  it('renders a list control showing each item as a pill', () => {
     renderSection();
-    expect(screen.getByLabelText('List field')).toHaveValue('x, y');
+    expect(screen.getByText('x')).toBeInTheDocument();
+    expect(screen.getByText('y')).toBeInTheDocument();
   });
 
   it('reports a text edit via onChange with the key and value', async () => {
@@ -134,15 +135,13 @@ describe('SettingsSection', () => {
     expect(onChange).toHaveBeenCalledWith('BOOL_KEY', true);
   });
 
-  it('parses a list edit back into a trimmed string array', async () => {
+  it('reports a new list item via onChange when Add is clicked', async () => {
     const onChange = vi.fn();
     renderSection({ onChange });
-    const input = screen.getByLabelText('List field');
-    // Use fireEvent.change to set the full value at once — userEvent.clear +
-    // userEvent.type does not work reliably on controlled inputs whose value
-    // is owned by the parent (no internal state to update between events).
-    fireEvent.change(input, { target: { value: 'p, q ,r' } });
-    expect(onChange).toHaveBeenLastCalledWith('LIST_KEY', ['p', 'q', 'r']);
+    await userEvent.type(screen.getByLabelText('List field'), 'z');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    // Existing value is ['x', 'y']; adding 'z' produces ['x', 'y', 'z'].
+    expect(onChange).toHaveBeenLastCalledWith('LIST_KEY', ['x', 'y', 'z']);
   });
 
   it('reports a secret replacement via onChange once Replace is used', async () => {

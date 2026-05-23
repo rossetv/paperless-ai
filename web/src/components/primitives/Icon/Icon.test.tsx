@@ -40,6 +40,13 @@ describe('Icon', () => {
       'warning',
       'arrow-left',
       'tag',
+      'link',
+      'sparkle',
+      'waves',
+      'eye',
+      'paragraph',
+      'lightning',
+      'list-lines',
     ] as const;
 
     for (const name of names) {

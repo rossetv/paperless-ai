@@ -9,6 +9,13 @@ import { Input } from '../../../components/primitives/Input/Input';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
+import styles from './FilterControls.module.css';
+
+/** Maximum number of unselected tags to show before the "Show all" toggle. */
+const TAG_PAGE_SIZE = 12;
+
+/** Debounce delay (ms) for the tag search input. */
+const TAG_SEARCH_DEBOUNCE_MS = 200;
 
 export interface FilterControlsProps {
   /**
@@ -38,14 +45,36 @@ function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
  * Loading state: Skeleton placeholders replace the controls while facets load.
  * Empty state: controls are rendered (with no options) but remain operable.
  *
- * Composed from: FilterPanel, Select, Chip, Skeleton, Stack.
- * No own CSS module (§12.5 — features layer is composition-only).
+ * Tag picker behaviour:
+ *   - Selected tags are always pinned at the top.
+ *   - Up to TAG_PAGE_SIZE unselected tags are shown alphabetically.
+ *   - When the total exceeds selected + TAG_PAGE_SIZE, a "Show all (N)"
+ *     button expands the list into a scrollable region capped by
+ *     --max-height-tag-picker so the date range is never pushed off screen.
+ *   - A debounced text input filters the visible tag list by name.
+ *
+ * Composed from: FilterPanel, Select, Chip, Skeleton, Stack, Input.
  */
 export function FilterControls({
   filters,
   onFiltersChange,
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
+
+  // Tag search input — raw (undbounced) value drives the visible input.
+  const [tagQuery, setTagQuery] = React.useState('');
+  // Debounced query used for actual filtering.
+  const [debouncedQuery, setDebouncedQuery] = React.useState('');
+  // Whether the "Show all" state is active.
+  const [expanded, setExpanded] = React.useState(false);
+
+  // Debounce the tag query.
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(tagQuery);
+    }, TAG_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [tagQuery]);
 
   function updateFilters(partial: Partial<FilterRequest>): void {
     onFiltersChange({ ...filters, ...partial });
@@ -73,6 +102,10 @@ export function FilterControls({
 
   function handleDateToChange(e: React.ChangeEvent<HTMLInputElement>): void {
     updateFilters({ date_to: e.target.value !== '' ? e.target.value : null });
+  }
+
+  function handleTagQueryChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    setTagQuery(e.target.value);
   }
 
   if (isError) {
@@ -104,6 +137,37 @@ export function FilterControls({
   const selectedDocumentTypeValue =
     filters.document_type_id != null ? String(filters.document_type_id) : undefined;
 
+  // ── Tag picker logic ─────────────────────────────────────────────────────
+
+  // All tags sorted alphabetically for consistency.
+  const allTagsSorted = [...facets.tags].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+
+  // Tags the user has selected (always pinned at top, regardless of filter).
+  const selectedTags = allTagsSorted.filter((t) => filters.tag_ids.includes(t.id));
+
+  // Unselected tags that match the current search query.
+  const query = debouncedQuery.trim().toLowerCase();
+  const unselectedFiltered = allTagsSorted.filter(
+    (t) =>
+      !filters.tag_ids.includes(t.id) &&
+      (query === '' || t.name.toLowerCase().includes(query)),
+  );
+
+  // How many unselected tags are hidden behind the toggle.
+  const hiddenCount = Math.max(0, unselectedFiltered.length - TAG_PAGE_SIZE);
+  const needsToggle = hiddenCount > 0;
+
+  // Chips to actually render in the unselected cluster.
+  const visibleUnselected = expanded
+    ? unselectedFiltered
+    : unselectedFiltered.slice(0, TAG_PAGE_SIZE);
+
+  const hasTags = facets.tags.length > 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <FilterPanel title="Filters">
       <Stack direction="vertical" gap={8}>
@@ -128,19 +192,66 @@ export function FilterControls({
           onChange={handleDocumentTypeChange}
         />
 
-        {/* Tag chips — click to toggle; selected chips use the accent state. */}
-        {facets.tags.length > 0 && (
-          <Stack direction="horizontal" gap={3} wrap>
-            {facets.tags.map((tag) => (
-              <Chip
-                key={tag.id}
-                selected={filters.tag_ids.includes(tag.id)}
-                onClick={() => handleTagToggle(tag.id)}
+        {/* Tag picker — bounded chip cluster with search and expand toggle. */}
+        {hasTags && (
+          <div className={styles['tag-section']}>
+            <span className={styles['section-label']} id="filter-tags-label">
+              Tags
+            </span>
+
+            {/* Search input — filters the unselected tag list by name. */}
+            <Input
+              id="filter-tags-search"
+              label="Search tags"
+              type="search"
+              placeholder="Filter tags…"
+              value={tagQuery}
+              onChange={handleTagQueryChange}
+              autoComplete="off"
+            />
+
+            {/* Chip cluster — selected pinned at top, then visible unselected. */}
+            <div
+              className={expanded ? styles['tag-list-scroll'] : undefined}
+              role="group"
+              aria-labelledby="filter-tags-label"
+            >
+              <div className={styles['tag-chips']}>
+                {selectedTags.map((tag) => (
+                  <Chip
+                    key={tag.id}
+                    selected
+                    onClick={() => handleTagToggle(tag.id)}
+                  >
+                    {tag.name}
+                  </Chip>
+                ))}
+                {visibleUnselected.map((tag) => (
+                  <Chip
+                    key={tag.id}
+                    selected={false}
+                    onClick={() => handleTagToggle(tag.id)}
+                  >
+                    {tag.name}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Expand / collapse toggle — only shown when there are hidden tags. */}
+            {needsToggle && (
+              <button
+                type="button"
+                className={styles['tag-toggle-button']}
+                aria-expanded={expanded}
+                onClick={() => setExpanded((prev) => !prev)}
               >
-                {tag.name}
-              </Chip>
-            ))}
-          </Stack>
+                {expanded
+                  ? 'Show less'
+                  : `Show all (${unselectedFiltered.length})`}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Date range — functional inputs for date_from / date_to filters */}
