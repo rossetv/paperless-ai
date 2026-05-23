@@ -19,6 +19,7 @@ Before running the daemons, you need:
 
 ```bash
 docker run -d --name paperless-ocr \
+  -v paperless-index:/data \
   -e PAPERLESS_URL="http://your-paperless:8000" \
   -e PAPERLESS_TOKEN="your_paperless_api_token" \
   -e OPENAI_API_KEY="sk-your-openai-key" \
@@ -31,6 +32,7 @@ docker run -d --name paperless-ocr \
 
 ```bash
 docker run -d --name paperless-ocr \
+  -v paperless-index:/data \
   -e PAPERLESS_URL="http://your-paperless:8000" \
   -e PAPERLESS_TOKEN="your_paperless_api_token" \
   -e LLM_PROVIDER="ollama" \
@@ -48,6 +50,7 @@ The classification daemon runs from the **same Docker image** with a different c
 
 ```bash
 docker run -d --name paperless-classifier \
+  -v paperless-index:/data \
   -e PAPERLESS_URL="http://your-paperless:8000" \
   -e PAPERLESS_TOKEN="your_paperless_api_token" \
   -e OPENAI_API_KEY="sk-your-openai-key" \
@@ -72,6 +75,8 @@ services:
     image: rossetv/paperless-ai:latest
     container_name: paperless-ocr
     restart: unless-stopped
+    volumes:
+      - paperless-index:/data            # required: holds app.db (accounts, sessions, config)
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -88,6 +93,8 @@ services:
     container_name: paperless-classifier
     restart: unless-stopped
     command: ["paperless-classifier-daemon"]
+    volumes:
+      - paperless-index:/data            # required: shared with OCR/indexer/search
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -99,6 +106,10 @@ services:
       DOCUMENT_WORKERS: "4"
       LOG_FORMAT: "json"
 ```
+
+> **All four daemons share the same `/data` volume.** Configuration (`app.db`)
+> is read from there by every process so a settings change made in the web UI
+> hot-loads across the stack with no restart.
 
 Store secrets in a `.env` file next to your `docker-compose.yml` and reference them with `${VARIABLE}` syntax.
 
