@@ -58,6 +58,7 @@ flowchart LR
 
 ```bash
 docker run -d --name paperless-ocr \
+  -v paperless-index:/data \
   -e PAPERLESS_URL="http://your-paperless:8000" \
   -e PAPERLESS_TOKEN="your_paperless_api_token" \
   -e OPENAI_API_KEY="sk-your-openai-key" \
@@ -98,6 +99,8 @@ services:
   paperless-ocr:
     image: rossetv/paperless-ai:latest
     restart: unless-stopped
+    volumes:
+      - paperless-index:/data            # required: holds app.db (accounts, sessions, config)
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -110,6 +113,8 @@ services:
     image: rossetv/paperless-ai:latest
     restart: unless-stopped
     command: ["paperless-classifier-daemon"]
+    volumes:
+      - paperless-index:/data            # required: shared with OCR/indexer/search
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -117,6 +122,11 @@ services:
       CLASSIFY_PRE_TAG_ID: "444"
       ERROR_TAG_ID: "552"
 ```
+
+> **All four daemons share the same `/data` volume.** Configuration (`app.db`)
+> is read from there by every process so a settings change made in the web UI
+> hot-loads across the stack with no restart. The volume is declared once at
+> the bottom of the compose file (see the search-server stack below).
 
 ---
 
@@ -153,7 +163,6 @@ services:
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"      # always required — see note below
       INDEX_DB_PATH: "/data/index.db"
-      SEARCH_API_KEY: "${SEARCH_API_KEY}"      # mandatory; server refuses to start without it
     depends_on:
       paperless-indexer:
         condition: service_healthy
@@ -199,7 +208,6 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.4` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |
-| `SEARCH_API_KEY` | string | **required** | API key for all protected endpoints; server refuses to start without it |
 | `SEARCH_SESSION_TTL` | int | `604800` | Web UI session-cookie lifetime in seconds (default: 7 days) |
 | `SEARCH_MAX_CONCURRENT` | int | `4` | Maximum concurrent `/api/search` requests |
 
