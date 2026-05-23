@@ -450,6 +450,105 @@ def test_indexer_loads_settings_from_app_db(tmp_path: Path) -> None:
     assert settings.APP_DB_PATH == app_db
 
 
+def test_run_loop_records_each_cycle_through_the_recorder() -> None:
+    """_run_loop calls the recorder's record_sync after the sync and
+    record_sweep after the sweep, with the cycle reports."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from indexer.daemon import _run_loop
+    from indexer.reconciler import SyncReport
+    from indexer.reconciler._sweep import SweepReport
+
+    # A reconciler whose two operations return canned reports.
+    reconciler = MagicMock()
+    reconciler.incremental_sync.return_value = SyncReport(
+        indexed=2, metadata_only=0, skipped=0, failed=0, given_up=0
+    )
+    reconciler.deletion_sweep.return_value = SweepReport(
+        pruned=1, aborted=False, candidates=1
+    )
+    store_writer = MagicMock()
+    recorder = MagicMock()
+
+    # A clock that advances so the first cycle runs a sweep, then a
+    # shutdown is requested so the loop exits after one cycle.
+    settings = _make_settings(deletion_sweep_interval=1)
+
+    # Clock returns 100.0 on the elapsed check (>= interval 1), then 100.0
+    # to record last_sweep_at.
+    ticks = iter([100.0, 100.0])
+
+    def clock() -> float:
+        try:
+            return next(ticks)
+        except StopIteration:
+            return 200.0
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        shutdown_mod.request_shutdown()
+        return False
+
+    try:
+        with (
+            patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+            patch("indexer.daemon.current_settings", return_value=settings),
+        ):
+            _run_loop(
+                reconciler=reconciler,
+                store_writer=store_writer,
+                settings=settings,
+                app_db_path="/nonexistent/app.db",
+                sentinel_path=Path("/nonexistent/reconcile.request"),
+                clock=clock,
+                cycle_recorder=recorder,
+            )
+    finally:
+        shutdown_mod.reset_shutdown()
+
+    assert recorder.record_sync.called
+    sync_call = recorder.record_sync.call_args
+    assert sync_call.args[0].indexed == 2
+    assert recorder.record_sweep.called
+    assert recorder.record_sweep.call_args.args[0].pruned == 1
+
+
+def test_run_loop_works_without_a_recorder() -> None:
+    """cycle_recorder is optional — the loop runs unchanged when it is None
+    (the existing behaviour is preserved)."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from indexer.daemon import _run_loop
+    from indexer.reconciler import SyncReport
+
+    reconciler = MagicMock()
+    reconciler.incremental_sync.return_value = SyncReport(
+        indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0
+    )
+    settings = _make_settings()
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        shutdown_mod.request_shutdown()
+        return False
+
+    try:
+        with (
+            patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+            patch("indexer.daemon.current_settings", return_value=settings),
+        ):
+            # Must not raise — cycle_recorder defaults to None.
+            _run_loop(
+                reconciler=reconciler,
+                store_writer=MagicMock(),
+                settings=settings,
+                app_db_path="/nonexistent/app.db",
+                sentinel_path=Path("/nonexistent/reconcile.request"),
+            )
+    finally:
+        shutdown_mod.reset_shutdown()
+
+
 def test_indexer_run_loop_rebuilds_on_a_config_change(tmp_path: Path) -> None:
     """_run_loop re-checks config_version each cycle and, when it moves,
     rebuilds the reconciler — the indexer hot-reloads with no restart."""

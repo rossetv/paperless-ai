@@ -23,17 +23,23 @@ Forbidden: imports from search/, sqlite3, httpx direct, bare openai calls.
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 import time
 import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
+from appdb.connection import connect as connect_app_db
+from appdb.schema import ensure_schema
+from common.clock import utc_now_iso
 from common.concurrency import llm_limiter
 from common.config import Settings, current_settings
+from indexer.activity import IndexerActivityRecorder
 from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS, EmbeddingClient
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
@@ -111,17 +117,26 @@ def main() -> None:
     # Resolved here and threaded down so the loop never re-reads os.environ.
     app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
 
+    # The Index dashboard's app.db connection — for the heartbeat and the
+    # reconcile-activity log (web-redesign spec §5, Wave 6). Opened best-
+    # effort: if app.db is unreachable the indexer still runs; the recorder
+    # is simply None and the dashboard's indexer tile goes stale.
+    app_db = _open_app_db(app_db_path)
+
     # Hold lock_handle open for the process lifetime.
     try:
-        _start_daemon(settings, app_db_path, lock_handle)
+        _start_daemon(settings, app_db_path, lock_handle, app_db)
     finally:
         lock_handle.close()
+        if app_db is not None:
+            app_db.close()
 
 
 def _start_daemon(
     settings: Settings,
     app_db_path: str,
     lock_handle: typing.IO[bytes],
+    app_db: sqlite3.Connection | None = None,
 ) -> None:
     """Run signal registration, preflight, and the reconciliation loop.
 
@@ -138,6 +153,8 @@ def _start_daemon(
         lock_handle: The open flock file handle from
             :func:`~indexer.lock.acquire_writer_lock`, kept open to hold the
             lock for the process lifetime.
+        app_db: The open app.db connection for the dashboard recorder, or None
+            when app.db is unavailable.
     """
     register_signal_handlers()
 
@@ -195,6 +212,11 @@ def _start_daemon(
         embedding_model=settings.EMBEDDING_MODEL,
     )
 
+    # Build the dashboard recorder only when app.db is available.
+    cycle_recorder = (
+        IndexerActivityRecorder(app_db) if app_db is not None else None
+    )
+
     try:
         _run_loop(
             reconciler=reconciler,
@@ -202,6 +224,7 @@ def _start_daemon(
             settings=settings,
             app_db_path=app_db_path,
             sentinel_path=sentinel_path,
+            cycle_recorder=cycle_recorder,
         )
     finally:
         # Note: a config change between cycles replaces ``reconciler`` and its
@@ -213,6 +236,23 @@ def _start_daemon(
         store_writer.close()
 
     log.info("indexer.stopped")
+
+
+def _open_app_db(app_db_path: str) -> sqlite3.Connection | None:
+    """Open the app.db connection for the dashboard, best-effort.
+
+    Returns an open, migrated connection, or ``None`` if app.db cannot be
+    opened — in which case the indexer runs without recording activity or a
+    heartbeat (web-redesign spec §5: the dashboard is never worth crashing a
+    daemon over).
+    """
+    try:
+        conn = connect_app_db(app_db_path)
+        ensure_schema(conn)
+        return conn
+    except (sqlite3.Error, OSError) as exc:
+        log.warning("indexer.app_db_unavailable", error=str(exc))
+        return None
 
 
 def _run_preflight(
@@ -289,6 +329,7 @@ def _run_loop(
     app_db_path: str,
     sentinel_path: Path,
     clock: Callable[[], float] = time.monotonic,
+    cycle_recorder: IndexerActivityRecorder | None = None,
 ) -> None:
     """Run the reconciliation loop until shutdown is requested.
 
@@ -330,6 +371,10 @@ def _run_loop(
             Defaults to :func:`time.monotonic`; tests inject a deterministic
             clock to drive the sweep cadence without real elapsed time
             (CODE_GUIDELINES §11.4).
+        cycle_recorder: Optional recorder that logs each sync/sweep cycle to
+            the reconcile-activity table and beats the indexer's daemon-status
+            heartbeat (web-redesign spec §5, Wave 6). None in tests; the
+            daemon supplies a real one.
     """
     # Start the sweep clock at 0 so the first cycle is always far enough past
     # the (zero) last-sweep time to run a deletion sweep.
@@ -359,6 +404,7 @@ def _run_loop(
 
         try:
             # Run incremental sync every cycle.
+            sync_started = utc_now_iso()
             sync_report = reconciler.incremental_sync()
             log.info(
                 "indexer.cycle_sync",
@@ -368,9 +414,16 @@ def _run_loop(
                 failed=sync_report.failed,
                 given_up=sync_report.given_up,
             )
+            if cycle_recorder is not None:
+                cycle_recorder.record_sync(
+                    sync_report,
+                    started_at=sync_started,
+                    finished_at=utc_now_iso(),
+                )
 
             # Run deletion sweep when due.
             if run_sweep:
+                sweep_started = utc_now_iso()
                 sweep_report = reconciler.deletion_sweep()
                 last_sweep_at = clock()
                 log.info(
@@ -379,6 +432,12 @@ def _run_loop(
                     candidates=sweep_report.candidates,
                     aborted=sweep_report.aborted,
                 )
+                if cycle_recorder is not None:
+                    cycle_recorder.record_sweep(
+                        sweep_report,
+                        started_at=sweep_started,
+                        finished_at=utc_now_iso(),
+                    )
 
             store_writer.checkpoint()
         except Exception:
