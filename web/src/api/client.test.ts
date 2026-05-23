@@ -29,6 +29,9 @@ import {
   createApiKey,
   updateApiKey,
   deleteApiKey,
+  getSettings,
+  updateSettings,
+  testConnection,
 } from './client';
 import type { SearchRequest, FacetsResponse, StatsResponse, SearchResponse } from './types';
 
@@ -604,5 +607,105 @@ describe('Wave 3 API-key endpoints', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/api-keys\/3$/);
     expect(init.method).toBe('DELETE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 4 — settings endpoints
+// ---------------------------------------------------------------------------
+
+const SAMPLE_SETTINGS_RESPONSE = {
+  settings: [
+    {
+      key: 'PAPERLESS_URL',
+      value: 'http://paperless.lan:8000',
+      source: 'database',
+      is_secret: false,
+      requires_reindex: false,
+    },
+    {
+      key: 'PAPERLESS_TOKEN',
+      value: '••••••••••••',
+      source: 'database',
+      is_secret: true,
+      requires_reindex: false,
+    },
+    {
+      key: 'SEARCH_TOP_K',
+      value: '10',
+      source: 'default',
+      is_secret: false,
+      requires_reindex: false,
+    },
+    {
+      key: 'CHUNK_SIZE',
+      value: '2000',
+      source: 'default',
+      is_secret: false,
+      requires_reindex: true,
+    },
+  ],
+};
+
+describe('Wave 4 settings endpoints', () => {
+  it('getSettings GETs /api/settings and returns the item list', async () => {
+    mockFetch(200, SAMPLE_SETTINGS_RESPONSE);
+    const result = await getSettings();
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/settings$/);
+    expect(init.method).toBe('GET');
+    const topK = result.settings.find((s) => s.key === 'SEARCH_TOP_K');
+    expect(topK?.value).toBe('10');
+    const chunk = result.settings.find((s) => s.key === 'CHUNK_SIZE');
+    expect(chunk?.requires_reindex).toBe(true);
+  });
+
+  it('updateSettings PUTs /api/settings with a string changes map', async () => {
+    mockFetch(200, SAMPLE_SETTINGS_RESPONSE);
+    await updateSettings({ changes: { SEARCH_TOP_K: '20' } });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/settings$/);
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({
+      changes: { SEARCH_TOP_K: '20' },
+    });
+  });
+
+  it('updateSettings surfaces ApiError on a 400 validation failure', async () => {
+    mockFetch(400, { detail: 'CHUNK_OVERLAP must be < CHUNK_SIZE' });
+    await expect(
+      updateSettings({ changes: { CHUNK_OVERLAP: '9999' } }),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('testConnection POSTs /api/settings/test-connection with the credentials', async () => {
+    mockFetch(200, { ok: true, document_count: 14238, detail: 'Connected.' });
+    const result = await testConnection({
+      paperless_url: 'http://x',
+      paperless_token: 'tok',
+    });
+    const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/settings\/test-connection$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      paperless_url: 'http://x',
+      paperless_token: 'tok',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.document_count).toBe(14238);
+  });
+
+  it('testConnection resolves a reachable-but-rejected probe as ok:false', async () => {
+    mockFetch(200, {
+      ok: false,
+      document_count: 0,
+      detail: 'Paperless returned 401.',
+    });
+    const result = await testConnection({
+      paperless_url: 'http://x',
+      paperless_token: 'bad',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/401/);
   });
 });
