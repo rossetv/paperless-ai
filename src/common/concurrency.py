@@ -41,9 +41,12 @@ class ConcurrencyGuard:
     """
 
     def __init__(self, max_concurrent: int) -> None:
-        if max_concurrent > 0:
+        # Clamp to a non-negative integer so callers can pass through a
+        # Settings field directly without re-checking the sign.
+        self.max_concurrent = max(0, max_concurrent)
+        if self.max_concurrent > 0:
             self._semaphore: threading.BoundedSemaphore | None = (
-                threading.BoundedSemaphore(max_concurrent)
+                threading.BoundedSemaphore(self.max_concurrent)
             )
         else:
             self._semaphore = None
@@ -84,7 +87,25 @@ class LLMConcurrencyLimiter:
         return self._guard._semaphore if self._guard is not None else None
 
     def init(self, max_concurrent: int) -> None:
-        """Set the concurrency limit. ``0`` (or negative) means unlimited."""
+        """Set the concurrency limit. ``0`` (or negative) means unlimited.
+
+        Idempotent when *max_concurrent* matches the existing limit — the
+        existing guard is kept so the underlying semaphore (and any in-flight
+        permits) is preserved. A change builds a new guard; the previous one
+        is dereferenced from this limiter but stays alive (and continues to
+        bound its in-flight holders) until the last holder of an old permit
+        releases it. During that window the *new* limit is in force for new
+        callers, but the *old* limit is still being honoured by the threads
+        that already acquired against the old guard — so the total
+        simultaneously-active LLM calls may briefly exceed ``max_concurrent``
+        by up to ``old_in_flight``. The window is bounded by the longest
+        in-flight LLM call (typically seconds) and is the trade-off for not
+        blocking a config change on every old caller draining first.
+        """
+        # No-op when nothing changed — preserves the existing semaphore and
+        # avoids the brief over-commit window described above.
+        if self._guard is not None and self._guard.max_concurrent == max_concurrent:
+            return
         self._guard = ConcurrencyGuard(max_concurrent)
         if max_concurrent > 0:
             log.info("LLM concurrency limiter enabled", max_concurrent=max_concurrent)
