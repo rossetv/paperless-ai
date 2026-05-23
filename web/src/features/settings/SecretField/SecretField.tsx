@@ -73,7 +73,7 @@ export function SecretField({
         id={id}
         label={label}
         mono
-        className={styles['input']}
+        className={styles['input']!}
         value={replacing ? draft : maskedValue}
         readOnly={!replacing}
         type={replacing && !revealed ? 'password' : 'text'}

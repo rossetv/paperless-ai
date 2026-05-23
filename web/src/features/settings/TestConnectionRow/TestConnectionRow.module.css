@@ -23,10 +23,10 @@
   letter-spacing: var(--letter-spacing-caption);
 }
 
-.resultOk {
+.result-ok {
   color: var(--colour-status-ok-fg);
 }
 
-.resultError {
+.result-error {
   color: var(--colour-status-danger-fg);
 }

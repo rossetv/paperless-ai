@@ -9,7 +9,7 @@
  * All values come exclusively from design tokens (var(--…)).
  */
 
-.reindexNote {
+.reindex-note {
   color: var(--colour-status-warn-fg);
   font-weight: var(--font-weight-caption-bold);
 }
