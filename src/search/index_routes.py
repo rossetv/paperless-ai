@@ -38,7 +38,7 @@ import structlog
 from fastapi import APIRouter, Depends
 
 from appdb import daemon_status, reconcile_activity
-from search.deps import get_app_db, require_admin, require_role
+from search.deps import get_app_db, require_admin, require_api_scope
 from search.index_service import overall_health, resolve_daemon_statuses
 from search.wire import (
     DaemonStatusResponse,
@@ -63,6 +63,11 @@ _ACTIVITY_LIMIT = 50
 # indexer's polling loop (web-redesign spec §5, Wave 6).
 _REBUILD_SENTINEL_NAME = "rebuild.request"
 
+# The reconcile sentinel file name — touching it wakes the indexer's
+# _interruptible_wait immediately so the rebuild sentinel is acted upon
+# within the wake-check interval rather than waiting a full RECONCILE_INTERVAL.
+_RECONCILE_SENTINEL_NAME = "reconcile.request"
+
 
 def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
     """Build the Index dashboard ``/api`` router (web-redesign spec §5).
@@ -77,7 +82,7 @@ def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRout
         Read-only+, the rebuild POST requires admin.
     """
     router = APIRouter()
-    read_access = Depends(require_role("readonly"))
+    read_access = Depends(require_api_scope)
 
     @router.get("/api/index/status", dependencies=[read_access])
     async def index_status(
@@ -175,11 +180,17 @@ def _index_failed(store_reader: StoreReader) -> IndexFailedResponse:
 
 
 def _index_rebuild(settings: Settings) -> RebuildResponse:
-    """Rebuild handler body: write the rebuild sentinel beside index.db.
+    """Rebuild handler body: write the rebuild + reconcile sentinels beside index.db.
 
-    Security: writes ONLY the sentinel file — never the index database. The
-    indexer holds the exclusive writer flock and is the sole process that
-    mutates ``index.db``; it consumes the sentinel and performs the wipe.
+    Writing ``rebuild.request`` schedules the destructive wipe; writing
+    ``reconcile.request`` at the same time wakes the indexer's
+    ``_interruptible_wait`` early so the rebuild is acted upon within the
+    wake-check interval rather than waiting a full ``RECONCILE_INTERVAL``
+    (up to 5 minutes by default).
+
+    Security: writes ONLY the two sentinel files — never the index database.
+    The indexer holds the exclusive writer flock and is the sole process that
+    mutates ``index.db``; it consumes the sentinels and performs the wipe.
 
     Raises :class:`fastapi.HTTPException` (503) when the sentinel directory
     does not exist or is not writable — which indicates a misconfigured
@@ -190,8 +201,10 @@ def _index_rebuild(settings: Settings) -> RebuildResponse:
 
     db_dir = Path(settings.INDEX_DB_PATH).parent
     sentinel = db_dir / _REBUILD_SENTINEL_NAME
+    reconcile_sentinel = db_dir / _RECONCILE_SENTINEL_NAME
     try:
         sentinel.touch()
+        reconcile_sentinel.touch()
     except OSError as exc:
         log.error(
             "api.index_rebuild_sentinel_write_failed",

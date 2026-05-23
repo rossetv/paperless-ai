@@ -45,7 +45,7 @@ from starlette.responses import StreamingResponse
 
 from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
-from search.deps import get_app_db, get_current_user, require_role
+from search.deps import get_app_db, require_api_scope
 from search.sessions import CurrentUser
 from search.wire import RecentSearchEntry, RecentSearchesResponse
 
@@ -83,7 +83,7 @@ def build_document_router(
         A configured :class:`~fastapi.APIRouter`.
     """
     router = APIRouter()
-    reader_auth = Depends(require_role("readonly"))
+    reader_auth = Depends(require_api_scope)
 
     # response_class=StreamingResponse: the handler returns a hand-built
     # streaming response, so FastAPI must not derive a JSON response model.
@@ -95,21 +95,21 @@ def build_document_router(
     async def document_pdf(document_id: int) -> StreamingResponse:
         """Stream a document's original PDF from Paperless-ngx.
 
-        Auth: any authenticated user (Read-only or above). A 404 is returned
-        for an unknown document id; a 502 when Paperless is unreachable or
-        returns a server error.
+        Auth: Read-only or above, plus the ``api`` scope for an API-key
+        caller. A 404 is returned for an unknown document id; a 502 when
+        Paperless is unreachable or returns a server error.
         """
         return await _stream_document_pdf(document_id, settings, paperless_factory)
 
     @router.get("/api/recent-searches")
     def recent_searches(
         app_db: sqlite3.Connection = Depends(get_app_db),
-        user: CurrentUser = Depends(get_current_user),
+        user: CurrentUser = Depends(require_api_scope),
     ) -> RecentSearchesResponse:
         """Return the current user's recent searches, newest first.
 
-        Auth: any authenticated user. The legacy bearer's synthetic admin
-        has no user row (id=0), so it receives an empty list.
+        Auth: Read-only or above, plus the ``api`` scope for an API-key
+        caller.
         """
         return _recent_searches(app_db, user)
 
