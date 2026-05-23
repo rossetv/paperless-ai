@@ -96,9 +96,11 @@ export function SourceCard({
           >
             Preview document
           </Button>
-          <Link href={source.paperless_url} external variant="default">
-            Open in Paperless
-          </Link>
+          {source.paperless_url != null && source.paperless_url !== '' && (
+            <Link href={source.paperless_url} external variant="default">
+              Open in Paperless
+            </Link>
+          )}
           <Text as="span" variant="micro" tone="tertiary">
             relevance · {source.score.toFixed(2)}
           </Text>
