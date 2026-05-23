@@ -1,0 +1,96 @@
+/*
+ * SortControl pattern — CSS Module.
+ *
+ * An inline labelled dropdown: a bordered surface pill (`Sort: Title ▾`) that
+ * opens a small radio menu beneath it. All values are design tokens.
+ */
+
+.sort-control {
+  position: relative;
+  display: inline-block;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-5) var(--spacing-8);
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+}
+
+.trigger:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* The "Sort" prefix label — muted. */
+.label {
+  color: var(--colour-text-tertiary);
+}
+
+/* The current selection — emphasised. */
+.value {
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-caption-bold);
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--colour-text-tertiary);
+  transition: transform var(--duration-slow) var(--easing-emphasis);
+}
+
+.chevron-open {
+  transform: rotate(180deg);
+}
+
+/* ── The dropdown menu ── */
+.menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  inset-inline-end: 0;
+  margin-block-start: var(--spacing-2);
+  min-width: 100%;
+  padding: var(--spacing-2);
+  list-style: none;
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-card);
+}
+
+.item {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: var(--spacing-4) var(--spacing-8);
+  border: none;
+  background: none;
+  border-radius: var(--radius-micro);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+}
+
+.item:hover,
+.item:focus-visible {
+  background-color: var(--colour-button-light-bg);
+  outline: none;
+}
+
+/* The currently selected menu item. */
+.item-selected {
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-caption-bold);
+}
