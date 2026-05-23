@@ -140,6 +140,31 @@ class IndexerActivityRecorder:
         )
         self._heartbeat.beat(detail=detail)
 
+    def record_rebuild(
+        self, *, started_at: str, finished_at: str
+    ) -> None:
+        """Record an index rebuild and beat the heartbeat.
+
+        The rebuild itself only wipes the index; the full re-index happens in
+        the incremental sync that immediately follows. The recorded row is
+        ``kind="sync"`` (it precedes a sync) and ``ok=True``, with a detail
+        string an operator will recognise in the dashboard's activity list.
+
+        Args:
+            started_at: ISO-8601 UTC timestamp the rebuild began.
+            finished_at: ISO-8601 UTC timestamp the wipe finished.
+        """
+        detail = "index rebuilt — re-indexing the whole archive"
+        self._record(
+            kind="sync",
+            started_at=started_at,
+            finished_at=finished_at,
+            ok=True,
+            summary={"rebuilt": 1},
+            detail=detail,
+        )
+        self._heartbeat.beat(detail=detail)
+
     def beat_idle(self) -> None:
         """Beat an idle indexer heartbeat — the loop is between cycles."""
         self._heartbeat.beat_idle()

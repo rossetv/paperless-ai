@@ -595,3 +595,64 @@ def test_indexer_run_loop_rebuilds_on_a_config_change(tmp_path: Path) -> None:
                 on_cycle_1=_bump_config,
             )
     assert sum(rebuilds) == 1
+
+
+def test_run_loop_rebuilds_when_the_rebuild_sentinel_is_present(
+    tmp_path: Path,
+) -> None:
+    """When a rebuild.request sentinel exists at cycle entry, _run_loop
+    calls store_writer.rebuild_index() before the cycle's sync, then
+    deletes the sentinel."""
+    reconciler = _make_reconciler()
+    store_writer = MagicMock()
+    settings = _make_settings()
+
+    sentinel = tmp_path / "reconcile.request"
+    rebuild_sentinel = tmp_path / "rebuild.request"
+    rebuild_sentinel.touch()
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        shutdown_mod.request_shutdown()
+        return False
+
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
+            sentinel_path=sentinel,
+        )
+
+    # The rebuild ran, and the sentinel was consumed.
+    assert store_writer.rebuild_index.called
+    assert not rebuild_sentinel.exists()
+    # The sync ran after the rebuild.
+    assert reconciler.incremental_sync.called
+
+
+def test_run_loop_does_not_rebuild_without_the_sentinel(tmp_path: Path) -> None:
+    """No rebuild.request sentinel → rebuild_index is never called."""
+    reconciler = _make_reconciler()
+    store_writer = MagicMock()
+    settings = _make_settings()
+
+    def fake_wait(seconds: float, sentinel_path: Path) -> bool:
+        shutdown_mod.request_shutdown()
+        return False
+
+    with (
+        patch("indexer.daemon._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon.current_settings", return_value=settings),
+    ):
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=store_writer,
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
+            sentinel_path=tmp_path / "reconcile.request",
+        )
+    assert not store_writer.rebuild_index.called
