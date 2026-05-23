@@ -11,10 +11,15 @@ the Paperless-ngx API client (:mod:`.paperless`), the LLM and embedding wrappers
 
 Allowed dependencies: the standard library and the project's third-party
 runtime dependencies (``httpx``, ``openai``, ``structlog``, ``Pillow``,
-``pdf2image``). **Forbidden:** any import from ``store``, ``ocr``,
-``classifier``, ``indexer``, or ``search``; any ``sqlite3`` import; FastAPI; and
-business logic specific to a single daemon. ``common`` imports nothing from
-another internal package — every other package depends on it, not the reverse.
+``pdf2image``), plus the ``appdb`` package — :mod:`common.config` reads the
+application database's ``config`` table to build :class:`Settings` (web-redesign
+spec §5, Wave 4). ``appdb`` is a leaf package alongside ``common`` and imports
+nothing from any daemon, so this does not create a cycle. **Forbidden:** any
+import from ``store``, ``ocr``, ``classifier``, ``indexer``, or ``search``;
+FastAPI; and business logic specific to a single daemon. ``store`` in
+particular stays barred — it is the search-index database, not the application
+database. The ``appdb`` imports are the deferred ones inside
+:func:`common.config.load_settings` and :func:`common.config.current_settings`.
 """
 
 from __future__ import annotations
