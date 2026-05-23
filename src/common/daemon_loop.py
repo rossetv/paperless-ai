@@ -90,18 +90,31 @@ def run_polling_threadpool(
     poll_interval_seconds: int,
     max_workers: int,
     before_each_batch: Callable[[list[T]], None] | None = None,
+    before_each_poll: Callable[[], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """
     Run an infinite polling loop and process items concurrently in a thread pool.
 
     This function intentionally keeps behaviour conservative and predictable.
+
+    Args:
+        before_each_poll: Called once at the top of every poll iteration,
+            before ``fetch_work``. The tag daemons use it to re-check the
+            configuration and hot-reload config-derived resources between
+            polls (web-redesign §5). A hook exception is not swallowed by the
+            loop's ``try`` — it runs before the ``try`` — so a hook must not
+            raise on the recoverable path; ``current_settings()`` only raises
+            on a genuinely invalid stored config, which is a fatal condition
+            the daemon should not survive silently.
     """
     poll_interval_seconds = max(1, int(poll_interval_seconds))
     max_workers = max(1, int(max_workers))
 
     was_idle = False
     while not is_shutdown_requested():
+        if before_each_poll is not None:
+            before_each_poll()
         try:
             was_idle = _poll_once(
                 daemon_name=daemon_name,

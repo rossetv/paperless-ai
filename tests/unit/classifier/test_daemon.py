@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from classifier.daemon import _iter_docs_to_classify, _process_document, main
+from classifier.daemon import (
+    _DaemonState,
+    _iter_docs_to_classify,
+    _process_document,
+    _reload_if_changed,
+    main,
+)
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 
@@ -300,3 +307,79 @@ class TestMainCleanup:
 
         list_client.close.assert_called_once()
         taxonomy_client.close.assert_called_once()
+
+
+class _FakeListClient:
+    """Stub for the daemon's list_client whose close() is a no-op."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
+    """_reload_if_changed rebuilds the daemon state when config_version moves,
+    and is a no-op when it has not."""
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import _SETTINGS_CACHE, current_settings
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "PAPERLESS_TOKEN": "t",
+        "OPENAI_API_KEY": "k",
+    }
+    # Clear the process-local hot-load cache so the test's temp app.db is read
+    # fresh and not served by an earlier test's cached entry.
+    _SETTINGS_CACHE.pop(app_db, None)
+    rebuilt_clients = [MagicMock(), MagicMock()]
+    for client in rebuilt_clients:
+        client.close = MagicMock()
+    rebuilt_taxonomy_cache = MagicMock()
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch("classifier.daemon.PaperlessClient", side_effect=rebuilt_clients),
+        patch(
+            "classifier.daemon.TaxonomyCache", return_value=rebuilt_taxonomy_cache
+        ),
+        patch("classifier.daemon.configure_logging"),
+        patch("classifier.daemon.setup_libraries"),
+        patch("classifier.daemon.llm_limiter"),
+    ):
+        settings = current_settings(app_db)
+        list_client = _FakeListClient()
+        taxonomy_client = _FakeListClient()
+        taxonomy_cache = MagicMock()
+        state = _DaemonState(
+            settings=settings,
+            list_client=list_client,
+            taxonomy_client=taxonomy_client,
+            taxonomy_cache=taxonomy_cache,
+            app_db_path=app_db,
+        )
+        # No config change — _reload_if_changed leaves state.settings as-is.
+        _reload_if_changed(state)
+        assert state.settings is settings
+        assert state.list_client is list_client
+        assert list_client.closed is False
+        assert taxonomy_client.closed is False
+        # A config write bumps config_version; the hook swaps state.settings.
+        c = connect(app_db)
+        config_store.set_value(c, "CLASSIFY_MAX_CHARS", "1234")
+        c.close()
+        _reload_if_changed(state)
+    assert state.settings is not settings
+    assert state.settings.CLASSIFY_MAX_CHARS == 1234
+    # The previous clients were closed and replaced with the rebuilt ones.
+    assert list_client.closed is True
+    assert taxonomy_client.closed is True
+    assert state.list_client is rebuilt_clients[0]
+    assert state.taxonomy_client is rebuilt_clients[1]
+    assert state.taxonomy_cache is rebuilt_taxonomy_cache

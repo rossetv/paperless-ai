@@ -294,3 +294,36 @@ class TestSafeItemSummary:
         result = _safe_item_summary(item)
 
         assert result == "<unprintable>"
+
+
+def test_before_each_poll_runs_at_the_top_of_every_iteration() -> None:
+    """run_polling_threadpool calls before_each_poll once per poll, before
+    fetch_work — the hot-load boundary for the tag daemons."""
+    from common.daemon_loop import run_polling_threadpool
+    from common.shutdown import request_shutdown, reset_shutdown
+
+    calls: list[str] = []
+    polls = {"n": 0}
+
+    def fetch_work() -> list[int]:
+        polls["n"] += 1
+        calls.append("fetch")
+        if polls["n"] >= 2:
+            request_shutdown()
+        return []
+
+    try:
+        run_polling_threadpool(
+            daemon_name="test",
+            fetch_work=fetch_work,
+            process_item=lambda _item: None,
+            poll_interval_seconds=1,
+            max_workers=1,
+            before_each_poll=lambda: calls.append("hook"),
+            sleep=lambda _s: None,
+        )
+    finally:
+        reset_shutdown()
+
+    # The hook precedes fetch on every iteration.
+    assert calls[:4] == ["hook", "fetch", "hook", "fetch"]
