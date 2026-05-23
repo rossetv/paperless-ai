@@ -89,6 +89,27 @@ describe('AnswerCard', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('resolves a [document_id] marker to the source 1-based index', async () => {
+    // The synthesiser emits raw paperless document ids in citation markers,
+    // not 1-based positions. The card should resolve [684] against the
+    // sources list and render a citation with the source's 1-based index.
+    const handler = vi.fn();
+    render(
+      <AnswerCard
+        answer="The bill paid [684] for that month."
+        sources={[makeSource(631), makeSource(684), makeSource(652)]}
+        stats={stats}
+        onCitationActivate={handler}
+      />,
+    );
+    // 684 is the second source — 1-based index 2 — so the affordance is
+    // labelled "View source 2".
+    const button = screen.getByRole('button', { name: /view source 2/i });
+    expect(button).toBeInTheDocument();
+    await userEvent.click(button);
+    expect(handler).toHaveBeenCalledWith(2);
+  });
+
   it('shows the provenance footer source count', () => {
     render(
       <AnswerCard
