@@ -38,6 +38,9 @@ vi.mock('./pages/SettingsPage', () => ({
 vi.mock('./pages/LibraryPage', () => ({
   LibraryPage: () => React.createElement('div', { 'data-testid': 'library-page' }, 'Library'),
 }));
+vi.mock('./pages/IndexPage', () => ({
+  IndexPage: () => React.createElement('div', { 'data-testid': 'index-page' }, 'Index'),
+}));
 
 // --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
@@ -213,6 +216,34 @@ describe('AppRoutes', () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/library');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  it('renders the index page for an authenticated user at /index', async () => {
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/index');
+    await waitFor(() => expect(screen.getByTestId('index-page')).toBeInTheDocument());
+  });
+
+  it('renders the index page for a non-admin too', async () => {
+    const member = { ...SAMPLE_USER, role: 'member' as const };
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: member } }));
+    renderAt('/index');
+    await waitFor(() => expect(screen.getByTestId('index-page')).toBeInTheDocument());
+  });
+
+  it('redirects an unauthenticated visitor from /index to /login', async () => {
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    renderAt('/index');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 });

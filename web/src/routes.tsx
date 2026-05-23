@@ -25,6 +25,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
+import { IndexPage } from './pages/IndexPage';
 import { UsersPage } from './pages/UsersPage';
 import { KeysPage } from './pages/KeysPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -169,6 +170,14 @@ export function AppRoutes(): React.ReactElement {
         path="/"
         element={
           <RootRoute />
+        }
+      />
+      <Route
+        path="/index"
+        element={
+          <ProtectedRoute>
+            <IndexPage />
+          </ProtectedRoute>
         }
       />
       <Route
