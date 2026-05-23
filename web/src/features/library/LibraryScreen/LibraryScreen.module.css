@@ -1,0 +1,151 @@
+/*
+ * LibraryScreen feature — CSS Module.
+ *
+ * The browse-screen layout: a header row, an in-library search field, the
+ * active-filter chip strip, and the document grid or list with a pager. The
+ * filter rail is supplied by SearchScreenLayout, not this module.
+ *
+ * All values are design tokens (var(--…)) — Stylelint forbids raw literals.
+ */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-11);
+}
+
+/* ── Header row — title block on the left, controls on the right ── */
+.header {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-10);
+  flex-wrap: wrap;
+}
+
+.heading-block {
+  flex: 1;
+  min-width: var(--width-empty-state);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  color: var(--colour-text-primary);
+}
+
+.subheading {
+  margin-block: var(--spacing-4) 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* The emphasised total / range numbers inside the subheading. */
+.subheading strong {
+  color: var(--colour-text-primary);
+  font-weight: var(--font-weight-caption-bold);
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+/* ── Active-filter chip strip ── */
+.chip-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-6);
+}
+
+.chip-strip-label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* "Clear all" — an accent text button. */
+.clear-all {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-link);
+}
+
+.clear-all:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
+}
+
+/* ── Document grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-10);
+}
+
+/* The list view — one card per row, full width. */
+.list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-8);
+}
+
+/* Responsive collapse — the handoff is a 1440 desktop artboard; step the
+   grid down on smaller viewports so cards never crush. */
+@media (width <= 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (width <= 834px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (width <= 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── States — loading / empty / error centred blocks ── */
+.state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--spacing-section);
+}
+
+/* ── Pager ── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-10);
+  padding-block-start: var(--spacing-8);
+}
+
+.pager-status {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
