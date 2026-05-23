@@ -1,0 +1,90 @@
+/*
+ * NumberStepper primitive — CSS Module.
+ *
+ * A numeric field flanked by − / + stepper buttons, with an optional unit
+ * suffix. The whole control is one bordered pill; the buttons and the input
+ * share the surface, separated by hairline dividers. The native
+ * spin-buttons of <input type="number"> are hidden — the − / + buttons
+ * replace them with a larger hit target.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  overflow: hidden;
+}
+
+.stepperDisabled {
+  opacity: var(--opacity-disabled);
+}
+
+/* ── A − or + button. ── */
+.button {
+  padding: var(--spacing-6) var(--spacing-10);
+  border: none;
+  background-color: transparent;
+  font-family: var(--font-text);
+  font-size: var(--font-size-body);
+  line-height: 1;
+  color: var(--colour-text-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--easing-standard);
+}
+
+.button:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  color: var(--colour-text-tertiary);
+}
+
+.button:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+/* ── The value field — a flat number input. ── */
+.input {
+  width: var(--width-stepper-input);
+  padding: var(--spacing-6) var(--spacing-2);
+  border: none;
+  border-left: var(--spacing-1) solid var(--colour-border-button);
+  border-right: var(--spacing-1) solid var(--colour-border-button);
+  background-color: transparent;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+  text-align: center;
+}
+
+.input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+/* Hide the browser's native number spin-buttons — the − / + buttons replace them. */
+.input::-webkit-outer-spin-button,
+.input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.input {
+  appearance: textfield;
+}
+
+/* ── The unit suffix, sat just after the field. ── */
+.suffix {
+  padding: 0 var(--spacing-8);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
