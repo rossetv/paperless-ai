@@ -107,6 +107,39 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
             conn.execute(stmt)
 
 
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """Apply the v4 schema: the config key/value table (Wave 4).
+
+    Creates the ``config`` table and seeds the ``config_version`` row in the
+    ``meta`` table at ``0`` — the hot-load coordination counter that
+    :mod:`appdb.config` bumps on every config write so every process can
+    detect a change without a restart (web-redesign §5, Wave 4).
+
+    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V4`
+    individually via ``conn.execute`` so every statement stays inside the
+    single explicit transaction :func:`run_migrations` opens —
+    ``conn.executescript`` is avoided because it issues an implicit
+    ``COMMIT``. The ``config_version`` seed is one DML ``INSERT`` in the same
+    transaction; ``meta`` already exists from migration v1.
+
+    The import of ``SCHEMA_V4`` is deferred to the function body to break the
+    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
+    :func:`_migrate_v1` does.
+    """
+    # Deferred import breaks the schema <-> migrations circular dependency.
+    from appdb.schema import SCHEMA_V4  # noqa: PLC0415
+
+    for statement in SCHEMA_V4.split(";"):
+        stmt = statement.strip()
+        if stmt:
+            conn.execute(stmt)
+    # Seed the hot-load counter. INSERT OR IGNORE keeps the migration
+    # idempotent and never clobbers a value a running deployment has bumped.
+    conn.execute(
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('config_version', '0')"
+    )
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
@@ -114,6 +147,7 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate_v1),
     (2, _migrate_v2),
     (3, _migrate_v3),
+    (4, _migrate_v4),
 ]
 
 

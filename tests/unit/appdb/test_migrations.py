@@ -127,3 +127,96 @@ def test_failing_migration_rolls_back_atomically(conn, monkeypatch) -> None:
         run_migrations(conn)
     assert "partial" not in _table_names(conn)
     assert _schema_version(conn) is None
+
+
+def test_migration_v4_brings_schema_version_to_4(tmp_path) -> None:
+    """A fresh database migrates all the way to v4."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        version = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0]
+        assert int(version) == 4
+    finally:
+        conn.close()
+
+
+def test_migration_v4_creates_the_config_table(tmp_path) -> None:
+    """Migration v4 creates a config table with the expected columns."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(config)").fetchall()
+        }
+        assert columns == {"key", "value", "updated_at"}
+    finally:
+        conn.close()
+
+
+def test_config_key_is_the_primary_key(tmp_path) -> None:
+    """The config table rejects a duplicate key — key is the primary key."""
+    import sqlite3
+
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+            ("CHUNK_SIZE", "2000", "2026-05-22T00:00:00+00:00"),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+                ("CHUNK_SIZE", "4000", "2026-05-22T00:00:00+00:00"),
+            )
+    finally:
+        conn.close()
+
+
+def test_config_value_is_not_null(tmp_path) -> None:
+    """The config.value column is NOT NULL."""
+    import sqlite3
+
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+                ("CHUNK_SIZE", None, "2026-05-22T00:00:00+00:00"),
+            )
+    finally:
+        conn.close()
+
+
+def test_migration_v4_seeds_config_version_zero(tmp_path) -> None:
+    """Migration v4 seeds a config_version row in meta, starting at 0."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    conn = connect(str(tmp_path / "app.db"))
+    try:
+        ensure_schema(conn)
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'config_version'"
+        ).fetchone()
+        assert row is not None, "config_version row was not seeded"
+        assert int(row[0]) == 0
+    finally:
+        conn.close()
