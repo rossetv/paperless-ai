@@ -8,8 +8,6 @@ a usable connection.
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 from appdb import daemon_status
