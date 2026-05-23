@@ -116,6 +116,23 @@ Tests are auto-marked by directory:
 - **Factories**: Use `make_settings_obj()`, `make_document()`, `make_classification_result()` from `tests/helpers/factories.py`.
 - **Mocks**: Use `make_mock_paperless()`, `make_mock_ocr_provider()` from `tests/helpers/mocks.py`.
 
+### Known gap — no real-frontend → real-backend e2e test
+
+There is currently no test that wires a real React build against a real running
+FastAPI server. Each side is tested independently: the backend via FastAPI's
+`TestClient` (integration tests), and the frontend against MSW mock handlers (Vitest
+component and hook tests). The wire contract between them is policed by static
+contract sweeps — TypeScript types in `web/src/api/types.ts` are kept in deliberate
+correspondence with the Pydantic models in `src/search/wire.py`, and divergences
+are caught by manual per-wave reviews.
+
+This is an intentional, tracked limitation. The cost of a real e2e harness
+(Playwright or Cypress, real `app.db` seeding, frontend build orchestration, CI
+fixture management) is high relative to the classes of bug it would catch beyond
+what the static sweeps and per-side tests already find. The most valuable initial
+Playwright scenario — login → search → preview — is tracked as a follow-up but is
+not required to unblock the current release.
+
 ---
 
 ## CI/CD Pipeline
