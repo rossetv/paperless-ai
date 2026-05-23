@@ -24,19 +24,27 @@ import styles from './LibraryScreen.module.css';
 /** Page size for the library list — matches the backend default. */
 const PAGE_SIZE = 24;
 
-/** The sort options offered by the SortControl. */
+/**
+ * The sort options offered by the SortControl.
+ *
+ * ``added`` sorts by ``indexed_at`` (date the document was added to the
+ * index); ``created`` sorts by the document's own creation date.
+ * ``correspondent`` is absent — the backend does not support it; if it is
+ * needed in future, add it to ``_SORT_COLUMNS`` and the ``Literal`` in
+ * ``routes.py`` first.
+ */
 const SORT_OPTIONS: ReadonlyArray<{ value: DocumentSortField; label: string }> = [
-  { value: 'created', label: 'Date added' },
+  { value: 'added', label: 'Date added' },
+  { value: 'created', label: 'Document date' },
   { value: 'title', label: 'Title' },
-  { value: 'correspondent', label: 'Correspondent' },
 ];
 
 /** The query a fresh Library screen starts from. */
 const INITIAL_QUERY: DocumentsQuery = {
   page: 1,
   page_size: PAGE_SIZE,
-  sort: 'created',
-  order: 'desc',
+  sort: 'added',
+  descending: true,
   query: null,
   correspondent_id: null,
   document_type_id: null,
@@ -61,16 +69,6 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
   return entries.find((e) => e.id === id)?.name ?? `#${id}`;
 }
 
-/** True when any taxonomy/date filter is active (the free-text query aside). */
-function hasActiveFilters(query: DocumentsQuery): boolean {
-  return (
-    query.correspondent_id != null ||
-    query.document_type_id != null ||
-    query.tag_ids.length > 0 ||
-    (query.date_from != null && query.date_from !== '') ||
-    (query.date_to != null && query.date_to !== '')
-  );
-}
 
 /**
  * The Library browse screen.
@@ -188,11 +186,14 @@ export function LibraryScreen(): React.ReactElement {
   }, [facetData, query]);
 
   // ── Derived paging values. ──
+  // Use the server-echoed page_size when available so the pager is always
+  // consistent with what was actually returned, not the locally-held constant.
   const total = documents.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rangeStart = total === 0 ? 0 : (query.page - 1) * PAGE_SIZE + 1;
+  const effectivePageSize = documents.data?.page_size ?? query.page_size;
+  const pageCount = Math.max(1, Math.ceil(total / effectivePageSize));
+  const rangeStart = total === 0 ? 0 : (query.page - 1) * effectivePageSize + 1;
   const rangeEnd =
-    total === 0 ? 0 : Math.min(query.page * PAGE_SIZE, total);
+    total === 0 ? 0 : Math.min(query.page * effectivePageSize, total);
   const isFirstPage = query.page <= 1;
   const isLastPage = query.page >= pageCount;
 
@@ -215,9 +216,9 @@ export function LibraryScreen(): React.ReactElement {
       created: previewDoc.created,
       snippet: '',
       score: 0,
-      // paperless_url is not present on LibraryDocument; supply a placeholder.
-      // Wave 7 will give DocumentPreviewScreen an optional url prop.
-      paperless_url: '',
+      // LibraryDocument does not carry a deep-link URL; null tells the
+      // DocumentViewerChrome to omit the "Open in Paperless" action.
+      paperless_url: null,
     };
     return (
       <DocumentPreviewScreen
@@ -233,11 +234,6 @@ export function LibraryScreen(): React.ReactElement {
       onFiltersChange={applyFilters}
     />
   );
-
-  // Suppress the unused-variable warning for hasActiveFilters — it is used in
-  // the chip strip conditional but TypeScript may not detect the dependency
-  // from inside useMemo. The function is a named predicate for readability.
-  void hasActiveFilters;
 
   return (
     <SearchScreenLayout variant="rail" rail={rail}>
