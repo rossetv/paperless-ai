@@ -1,0 +1,61 @@
+/*
+ * SettingsTextField primitive — CSS Module.
+ *
+ * The Apple-form text field used on the Settings screen: a soft-bordered
+ * white pill with an optional monospace face and an optional inline suffix
+ * slot (the suffix overlaps the right padding — used for a "Reveal" button).
+ * Carries no <label> — the settings Row supplies the label.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  padding: var(--spacing-7) var(--spacing-9);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.input::placeholder {
+  color: var(--colour-text-tertiary);
+}
+
+.input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+.input:read-only {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-secondary);
+}
+
+/* Monospace face — for URLs, tokens, model identifiers. */
+.inputMono {
+  font-family: var(--font-mono);
+}
+
+/* Reserve room on the right so text never slides under the suffix slot. */
+.inputWithSuffix {
+  padding-right: var(--spacing-section);
+}
+
+/* ── The inline suffix slot — pinned to the right edge. ── */
+.suffix {
+  position: absolute;
+  top: 50%;
+  right: var(--spacing-6);
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
