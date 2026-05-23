@@ -1,6 +1,53 @@
 # Configuration Reference
 
-All configuration is via environment variables. No config files are needed. Settings are loaded and validated at startup by `src/common/config.py`.
+Configuration lives in the **application database** (`app.db`), in a `config`
+table, and is edited from the **Settings** screen in the web UI — no `.env`
+file and no restart is needed to change a value. All four daemons (OCR,
+classifier, indexer, search) read this table and hot-load any change.
+
+Two settings are the exception: `APP_DB_PATH` and `INDEX_DB_PATH` are
+*bootstrap* variables. They tell each process where its databases live, so
+they cannot themselves be stored in a database — they remain environment
+variables. See "Application & Index Databases" below.
+
+---
+
+## How configuration works
+
+**Precedence.** For every setting, the value is resolved in this order:
+
+1. the `config` table in `app.db` — set from the Settings screen;
+2. the matching environment variable, if set;
+3. the coded default shown in the tables below.
+
+A value in the database always wins over an environment variable.
+
+**First run.** When `app.db` has no configuration yet — a fresh install, or
+the first start after upgrading from an environment-only deployment — the
+`config` table is seeded from the current environment. An existing deployment
+therefore keeps its `.env` configuration unchanged through the upgrade, and
+every value then becomes editable in the Settings screen.
+
+**Secrets.** `OPENAI_API_KEY` and `PAPERLESS_TOKEN` are stored in `app.db`,
+which sits on the protected `/data` volume. They are masked in the Settings
+screen until explicitly revealed.
+
+**Applying changes — hot-load.** Saving configuration takes effect with **no
+restart**. Each save bumps a `config_version` counter; every daemon re-checks
+it between documents and the search server re-checks it per request, then
+rebuilds its settings (and config-derived clients) only when the counter
+moved. A change is live within one poll cycle on the daemons and on the next
+request on the search server.
+
+**Re-indexing.** A few settings — the embedding model and the chunk size /
+overlap — change *how documents are indexed*. Saving one hot-loads like any
+other setting, but the existing index stays on the old chunking until you run
+a full re-index from the **Index** page. The Settings screen flags exactly
+these settings with a re-index note.
+
+The variable names in the tables below are the keys used in the `config`
+table and as environment-variable names; the descriptions and defaults are
+the reference for every setting.
 
 ---
 
