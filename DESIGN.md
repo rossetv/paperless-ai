@@ -445,7 +445,7 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | Component | Tier | Props/Variants | Notes |
 |-----------|------|----------------|-------|
 | `Button` | primitives | `variant` (primary/secondary/destructive/ghost), `size` (default/small), `type`, `disabled` | Focus ring, hover, active states |
-| `IconButton` | primitives | `icon`, `label` (a11y), `size`, `variant` | Circular icon-only button |
+| `IconButton` | primitives | `label` (a11y, required), `children` (icon element), `disabled`, `type`, `onClick`, `className` | Circular icon-only button; icon is supplied as `children` |
 | `Input` | primitives | `label`, `type`, `surface` (light/dark), `error`, `disabled` | Dark surface for Login/Setup island |
 | `TextArea` | primitives | `label`, `surface`, `error`, `disabled` | Multi-line companion to Input |
 | `Link` | primitives | `href`, `variant` (default/pill), `external` | External links open in new tab, `rel="noopener"` |
@@ -454,10 +454,10 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `StatusBadge` | primitives | `tone` (ok/warn/danger/info/neutral/violet) | Leading status dot + label |
 | `ScopePill` | primitives | `scope` (read/write/mcp) | API-key scope pill |
 | `Chip` | primitives | `selected`, `onRemove`, `removeLabel` | Filter chip with remove × |
-| `Card` | primitives | `children`, `className` | Surface container, one shadow level |
+| `Card` | primitives | `as` (div/article/section/aside), `surface` (default/dark), `elevated` (boolean), `children`, `className` | Surface container; `elevated` applies `--shadow-card`; `surface="dark"` uses `--colour-surface-dark` |
 | `Icon` | primitives | `name` (closed union), `size` (small/medium/large/xlarge) | SVG icon set |
 | `Spinner` | primitives | `size` (small/medium/large), `label` (a11y) | WCAG accessible; `role="status"` |
-| `Skeleton` | primitives | `kind` (line/control/block/media), `width` | Loading placeholder shimmer |
+| `Skeleton` | primitives | `variant` (text/rectangular/circular), `width` (full/wide/half/narrow), `height` (line/control/block/media), `lines` | Loading placeholder shimmer; `lines` only meaningful for `variant="text"` |
 | `Text` | primitives | `as` (span/p/strong/etc.), `variant` (body/caption/micro/card-title/…), `tone` (primary/secondary/tertiary) | Applies type-scale tokens |
 | `Avatar` | primitives | `initials`, `colour`, `size` | Coloured initials circle |
 | `Brand` | primitives | `size` | SVG paperless-ai logo mark |
@@ -465,7 +465,7 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `Toggle` | primitives | `checked`, `onChange`, `label`, `disabled` | iOS-style on/off switch |
 | `Segmented` | primitives | `options`, `value`, `onChange` | Multi-option tab selector |
 | `NumberStepper` | primitives | `value`, `min`, `max`, `step`, `onChange`, `label` | ± stepper for numeric settings |
-| `StatTile` | primitives | `value`, `label`, `accent` | Single-stat display; `accent` applies the accent colour |
+| `StatTile` | primitives | `value`, `label`, `sub` (optional caption), `accent` (boolean), `className` | Single-stat display; `accent` applies the accent colour; `sub` renders a caption sub-line |
 | `Row` | primitives | `label`, `children`, `action`, `description`, `divider` | Settings row — two-column label/control layout |
 | `SectionCard` | primitives | `icon`, `title`, `description`, `children` | Settings section card with an icon header |
 | `FormField` | primitives | `label`, `id`, `error`, `hint`, `children` | Label + error wrapper for form controls |
@@ -572,7 +572,7 @@ Paperless" external link in `SourceCard` and inside `DocumentViewerChrome` is a
 | Loading | `<Spinner size="large" label="…" />` | `role="status"` for a11y |
 | Empty / no results | `<EmptyState icon="search" message="…" />` | Always with an icon and message |
 | Error | `<EmptyState icon="warning" message="…" />` wrapped in `role="alert"` div | Consistent across Search, Library, Index |
-| Loading placeholder | `<Skeleton kind="…" />` | Specific to layout-sensitive placeholders |
+| Loading placeholder | `<Skeleton variant="…" height="…" />` | Specific to layout-sensitive placeholders |
 
 ### 12.5 Dark-island treatment
 
@@ -622,7 +622,6 @@ primitives. Key feature groups:
 
 - `IndexScreen` — ops dashboard: health hero, stat tiles, daemon cards, activity, failed docs.
 - `IndexHealthHero` — coloured health verdict banner.
-- `StatTile` — single-stat display (reuses `StatTile` primitive).
 - `DaemonCard` — per-daemon status card.
 - `ActivityRow` — one reconcile-cycle row in the activity list.
 - `FailedDocumentsPanel` — failed-document list; "Preview" opens `DocumentPreviewScreen`.
