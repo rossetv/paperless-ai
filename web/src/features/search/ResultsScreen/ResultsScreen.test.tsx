@@ -111,7 +111,7 @@ describe('ResultsScreen', () => {
     const onPreview = vi.fn();
     renderResults({ onPreview });
     await userEvent.click(
-      screen.getByRole('button', { name: /preview document/i }),
+      screen.getByRole('button', { name: /^preview$/i }),
     );
     expect(onPreview).toHaveBeenCalledWith(9823);
   });

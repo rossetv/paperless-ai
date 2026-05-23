@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
+import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { useAuth } from '../../../hooks/useAuth';
 import {
   useIndexStatus,
@@ -31,9 +32,9 @@ import styles from './IndexScreen.module.css';
  * is clicked, `FailedDocumentsPanel` calls `onOpen(id)`, which sets this
  * state and renders the in-app `DocumentPreviewScreen` overlay.
  *
- * The status query gates the whole dashboard: while it is loading a spinner
- * shows; if it errors an error message shows; otherwise the dashboard
- * renders. The activity and failed-document panels degrade independently —
+ * The status query gates the whole dashboard: while it is loading a `Spinner`
+ * shows; if it errors an `EmptyState` with a warning icon shows (consistent
+ * with the Library and Search error patterns); otherwise the dashboard renders. The activity and failed-document panels degrade independently —
  * each renders an empty list rather than blocking the page.
  *
  * The "Reconcile now" button is hidden for read-only callers — the backend
@@ -87,11 +88,12 @@ export function IndexScreen(): React.ReactElement {
       )}
 
       {statusQuery.isError && (
-        <div className={styles['state-box']}>
-          <p className={styles['error-text']} role="alert">
-            Could not load the index status. The search server may be
-            unreachable — retrying automatically.
-          </p>
+        <div className={styles['state-box']} role="alert">
+          <EmptyState
+            icon="warning"
+            message="Could not load the index status"
+            description="The search server may be unreachable — retrying automatically."
+          />
         </div>
       )}
 

@@ -120,16 +120,6 @@
   padding: var(--spacing-section) var(--spacing-14);
 }
 
-.error-text {
-  margin: 0;
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
-  letter-spacing: var(--letter-spacing-body);
-  color: var(--colour-status-danger-fg);
-  text-align: center;
-}
-
 /* ── Responsive collapse — single column on narrow viewports. ── */
 @media (width <= 834px) {
   .quad-row {

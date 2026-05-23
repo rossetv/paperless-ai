@@ -40,11 +40,11 @@ describe('SourceCard', () => {
     expect(container.querySelectorAll('mark')).toHaveLength(1);
   });
 
-  it('calls onPreview with the document id when "Preview document" is clicked', async () => {
+  it('calls onPreview with the document id when "Preview" is clicked', async () => {
     const onPreview = vi.fn();
     render(<SourceCard source={makeSource()} index={1} onPreview={onPreview} />);
     await userEvent.click(
-      screen.getByRole('button', { name: /preview document/i }),
+      screen.getByRole('button', { name: /^preview$/i }),
     );
     expect(onPreview).toHaveBeenCalledWith(9823);
   });

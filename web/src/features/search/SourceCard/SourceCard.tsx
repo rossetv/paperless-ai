@@ -23,8 +23,8 @@ export interface SourceCardProps {
    */
   highlighted?: boolean;
   /**
-   * Called with the document id when "Preview document" is activated. The
-   * page opens the in-app document-preview viewer for that id.
+   * Called with the document id when "Preview" is activated. The page opens
+   * the in-app document-preview viewer for that id.
    */
   onPreview: (documentId: number) => void;
 }
@@ -51,9 +51,9 @@ function thumbKindFor(documentType: string | null): DocThumbKind {
  *
  * Composes the `SourceCardSurface` shell (the two-column grid with the
  * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
- * display-font title, the highlighted `DocumentSnippet`, a "Preview document"
- * action that opens the in-app viewer, an "Open in Paperless" external link,
- * and the relevance score. The metadata and snippet are the shared `document`
+ * display-font title, the highlighted `DocumentSnippet`, a "Preview" button
+ * that opens the in-app viewer, an "Open in Paperless" external link, and the
+ * relevance score. The metadata and snippet are the shared `document`
  * features — not re-implemented here.
  *
  * Composed from: SourceCardSurface, Text, Button, Link, Stack, DocumentMeta,
@@ -94,7 +94,7 @@ export function SourceCard({
             size="small"
             onClick={() => onPreview(source.document_id)}
           >
-            Preview document
+            Preview
           </Button>
           {source.paperless_url != null && source.paperless_url !== '' && (
             <Link href={source.paperless_url} external variant="default">
