@@ -319,9 +319,7 @@ def get_failed_documents(
                 "SELECT value FROM meta WHERE key = ?",
                 (_FAILED_DOCUMENTS_META_KEY,),
             ).fetchone()
-            failure_counts = _parse_failed_documents(
-                meta_row[0] if meta_row else None
-            )
+            failure_counts = _parse_failed_documents(meta_row[0] if meta_row else None)
             if not failure_counts:
                 return []
             titles = _fetch_titles(conn, list(failure_counts))
@@ -357,9 +355,7 @@ def _parse_failed_documents(raw: str | None) -> dict[int, int]:
         return {}
 
 
-def _fetch_titles(
-    conn: sqlite3.Connection, ids: list[int]
-) -> dict[int, str | None]:
+def _fetch_titles(conn: sqlite3.Connection, ids: list[int]) -> dict[int, str | None]:
     """Return a doc-id -> title map for the given ids from the documents table.
 
     Ids with no ``documents`` row are simply absent from the returned map;
@@ -370,8 +366,7 @@ def _fetch_titles(
     # rationale: ids is a list of ints built from JSON-parsed keys — no value
     # is ever interpolated into the SQL string, only the placeholder count.
     rows = conn.execute(
-        f"SELECT id, title FROM documents "
-        f"WHERE id IN ({placeholders(len(ids))})",
+        f"SELECT id, title FROM documents WHERE id IN ({placeholders(len(ids))})",
         ids,
     ).fetchall()
     return {row[0]: row[1] for row in rows}

@@ -81,9 +81,7 @@ def test_index_activity_response_wraps_a_list() -> None:
 
 
 def test_failed_document_response_accepts_a_null_title() -> None:
-    doc = FailedDocumentResponse(
-        document_id=42, title=None, failure_count=3
-    )
+    doc = FailedDocumentResponse(document_id=42, title=None, failure_count=3)
     assert doc.document_id == 42
     assert doc.title is None
 
@@ -91,9 +89,7 @@ def test_failed_document_response_accepts_a_null_title() -> None:
 def test_index_failed_response_wraps_a_list() -> None:
     response = IndexFailedResponse(
         documents=[
-            FailedDocumentResponse(
-                document_id=7, title="Invoice", failure_count=2
-            )
+            FailedDocumentResponse(document_id=7, title="Invoice", failure_count=2)
         ]
     )
     assert response.documents[0].title == "Invoice"

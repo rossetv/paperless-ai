@@ -47,12 +47,8 @@ def test_record_heartbeat_then_read_round_trips(conn) -> None:
 
 
 def test_record_heartbeat_upserts_one_row(conn) -> None:
-    daemon_status.record_heartbeat(
-        conn, name="ocr", detail="idle", processed_count=0
-    )
-    daemon_status.record_heartbeat(
-        conn, name="ocr", detail="busy", processed_count=5
-    )
+    daemon_status.record_heartbeat(conn, name="ocr", detail="idle", processed_count=0)
+    daemon_status.record_heartbeat(conn, name="ocr", detail="busy", processed_count=5)
     rows = daemon_status.read_statuses(conn)
     assert len(rows) == 1
     assert rows[0].detail == "busy"

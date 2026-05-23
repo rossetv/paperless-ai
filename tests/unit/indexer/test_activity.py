@@ -30,9 +30,7 @@ def conn(tmp_path):
 
 def test_record_sync_writes_a_sync_row(conn) -> None:
     recorder = IndexerActivityRecorder(conn)
-    report = SyncReport(
-        indexed=4, metadata_only=1, skipped=0, failed=0, given_up=0
-    )
+    report = SyncReport(indexed=4, metadata_only=1, skipped=0, failed=0, given_up=0)
     recorder.record_sync(
         report,
         started_at="2026-05-22T12:00:00+00:00",

@@ -56,9 +56,7 @@ def _admin_client(index_env):
     """A TestClient logged in as the seeded admin."""
     settings, app_db, store_reader = index_env
     client = build_account_client(settings, app_db, store_reader)
-    assert login(
-        client, username="admin", password="admin-password"
-    ).status_code == 200
+    assert login(client, username="admin", password="admin-password").status_code == 200
     return client
 
 
@@ -66,13 +64,14 @@ def _viewer_client(index_env):
     """A TestClient logged in as the seeded Read-only user."""
     settings, app_db, store_reader = index_env
     client = build_account_client(settings, app_db, store_reader)
-    assert login(
-        client, username="viewer", password="viewer-password"
-    ).status_code == 200
+    assert (
+        login(client, username="viewer", password="viewer-password").status_code == 200
+    )
     return client
 
 
 # --- GET /api/index/status -------------------------------------------------
+
 
 def test_status_returns_four_daemon_tiles(index_env) -> None:
     """Even with no heartbeats, the dashboard shows all four daemons."""
@@ -110,6 +109,7 @@ def test_status_reflects_a_recorded_heartbeat(index_env) -> None:
 
 # --- GET /api/index/activity ----------------------------------------------
 
+
 def test_activity_is_empty_before_any_cycle(index_env) -> None:
     client = _admin_client(index_env)
     response = client.get("/api/index/activity")
@@ -145,6 +145,7 @@ def test_activity_returns_recorded_cycles_newest_first(index_env) -> None:
 
 # --- GET /api/index/failed -------------------------------------------------
 
+
 def test_failed_is_empty_for_a_clean_index(index_env) -> None:
     client = _admin_client(index_env)
     response = client.get("/api/index/failed")
@@ -153,6 +154,7 @@ def test_failed_is_empty_for_a_clean_index(index_env) -> None:
 
 
 # --- POST /api/index/rebuild ----------------------------------------------
+
 
 def test_rebuild_writes_the_sentinel(index_env) -> None:
     """An admin's rebuild request writes the rebuild.request sentinel."""
@@ -166,6 +168,7 @@ def test_rebuild_writes_the_sentinel(index_env) -> None:
 
 
 # --- RBAC ------------------------------------------------------------------
+
 
 def test_readonly_user_can_view_the_status(index_env) -> None:
     """A Read-only user may view operational state."""
@@ -189,14 +192,12 @@ def test_readonly_user_cannot_rebuild(index_env) -> None:
 def test_member_user_cannot_rebuild(index_env) -> None:
     """A Member is also denied the rebuild — only admin may."""
     _settings, app_db, _reader = index_env
-    seed_user(
-        app_db, username="member", password="member-password", role="member"
-    )
+    seed_user(app_db, username="member", password="member-password", role="member")
     settings, _app_db, store_reader = index_env
     client = build_account_client(settings, app_db, store_reader)
-    assert login(
-        client, username="member", password="member-password"
-    ).status_code == 200
+    assert (
+        login(client, username="member", password="member-password").status_code == 200
+    )
     assert client.post("/api/index/rebuild").status_code == 403
 
 

@@ -140,9 +140,7 @@ class IndexerActivityRecorder:
         )
         self._heartbeat.beat(detail=detail)
 
-    def record_rebuild(
-        self, *, started_at: str, finished_at: str
-    ) -> None:
+    def record_rebuild(self, *, started_at: str, finished_at: str) -> None:
         """Record an index rebuild and beat the heartbeat.
 
         The rebuild itself only wipes the index; the full re-index happens in

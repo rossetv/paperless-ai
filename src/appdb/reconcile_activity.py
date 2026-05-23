@@ -111,9 +111,7 @@ def _parse_summary(raw: str) -> dict[str, int]:
     return {str(k): int(v) for k, v in decoded.items()}
 
 
-def read_recent(
-    conn: sqlite3.Connection, *, limit: int
-) -> list[ReconcileCycle]:
+def read_recent(conn: sqlite3.Connection, *, limit: int) -> list[ReconcileCycle]:
     """Return the most recent reconcile/sweep cycles, newest first.
 
     Args:

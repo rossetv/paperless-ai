@@ -217,9 +217,7 @@ def _start_daemon(
     )
 
     # Build the dashboard recorder only when app.db is available.
-    cycle_recorder = (
-        IndexerActivityRecorder(app_db) if app_db is not None else None
-    )
+    cycle_recorder = IndexerActivityRecorder(app_db) if app_db is not None else None
 
     try:
         _run_loop(

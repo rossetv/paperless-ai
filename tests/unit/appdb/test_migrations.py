@@ -248,9 +248,7 @@ def test_migration_v5_creates_the_daemon_status_table(tmp_path) -> None:
         ensure_schema(conn)
         columns = {
             row[1]
-            for row in conn.execute(
-                "PRAGMA table_info(daemon_status)"
-            ).fetchall()
+            for row in conn.execute("PRAGMA table_info(daemon_status)").fetchall()
         }
         assert columns == {
             "name",
@@ -273,9 +271,7 @@ def test_migration_v5_creates_the_reconcile_activity_table(tmp_path) -> None:
         ensure_schema(conn)
         columns = {
             row[1]
-            for row in conn.execute(
-                "PRAGMA table_info(reconcile_activity)"
-            ).fetchall()
+            for row in conn.execute("PRAGMA table_info(reconcile_activity)").fetchall()
         }
         assert columns == {
             "id",

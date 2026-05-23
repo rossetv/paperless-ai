@@ -64,9 +64,7 @@ _ACTIVITY_LIMIT = 50
 _REBUILD_SENTINEL_NAME = "rebuild.request"
 
 
-def build_index_router(
-    settings: Settings, store_reader: StoreReader
-) -> APIRouter:
+def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
     """Build the Index dashboard ``/api`` router (web-redesign spec §5).
 
     Args:
@@ -100,9 +98,7 @@ def build_index_router(
         """Return the documents the indexer has failed to index."""
         return _index_failed(store_reader)
 
-    @router.post(
-        "/api/index/rebuild", dependencies=[Depends(require_admin)]
-    )
+    @router.post("/api/index/rebuild", dependencies=[Depends(require_admin)])
     async def index_rebuild() -> RebuildResponse:
         """Trigger the destructive index rebuild (admin-only).
 
