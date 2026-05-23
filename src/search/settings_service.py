@@ -133,6 +133,14 @@ def validate_change_set(
     merged: dict[str, str] = dict(environ)
     merged.update(config_table)
     merged.update(changes)
+    # _build_settings requires PAPERLESS_TOKEN and OPENAI_API_KEY — the same
+    # two keys as SECRET_KEYS. They may be absent when the caller changes an
+    # unrelated key on a fresh instance that has not yet been configured. Inject
+    # sentinel values so the builder can validate the type/range of the changed
+    # keys without failing on an unrelated missing required key.
+    _SENTINEL = "__validation_placeholder__"
+    for req in SECRET_KEYS:
+        merged.setdefault(req, _SENTINEL)
     _build_settings(merged)  # raises ValueError on a bad value
 
     # Determine which keys genuinely change. The current effective value is
