@@ -473,4 +473,7 @@
 
   /* NumberStepper — width of the central editable value field. */
   --width-stepper-input:     56px;
+
+  /* SectionCard — width/height of the accent-tinted header icon tile. */
+  --size-section-icon:       36px;
 }
