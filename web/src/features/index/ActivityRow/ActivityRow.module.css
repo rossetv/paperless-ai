@@ -1,0 +1,83 @@
+/*
+ * ActivityRow feature component — CSS Module.
+ *
+ * One reconcile-activity entry: a leading status dot, a relative time, and a
+ * label + detail pair. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.row {
+  display: grid;
+  grid-template-columns: var(--spacing-10) auto 1fr;
+  gap: var(--spacing-10);
+  align-items: start;
+  padding: var(--spacing-10) 0;
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+/* The last row in a list drops its divider — applied by the consumer. */
+.last {
+  border-bottom: none;
+}
+
+/* ── Leading status dot. ── */
+.dot {
+  width: var(--size-status-dot);
+  height: var(--size-status-dot);
+  margin-top: var(--spacing-5);
+  border-radius: var(--radius-circle);
+  flex-shrink: 0;
+}
+
+.ok {
+  background-color: var(--colour-status-ok-fg);
+}
+
+.warn {
+  background-color: var(--colour-status-warn-fg);
+}
+
+.info {
+  background-color: var(--colour-status-info-fg);
+}
+
+.danger {
+  background-color: var(--colour-status-danger-fg);
+}
+
+/* Alias for ActivityStatus 'error' — same colour as danger. */
+.error {
+  background-color: var(--colour-status-danger-fg);
+}
+
+/* ── Relative time. ── */
+.time {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  line-height: var(--line-height-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+  white-space: nowrap;
+  padding-top: var(--spacing-1);
+}
+
+/* ── Label + detail. ── */
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-link);
+  font-weight: var(--font-weight-body-emphasis);
+  letter-spacing: var(--letter-spacing-link);
+  color: var(--colour-text-primary);
+}
+
+.detail {
+  margin-top: var(--spacing-1);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
