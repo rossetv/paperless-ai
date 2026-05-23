@@ -77,6 +77,14 @@ export function AppNavBar(): React.ReactElement | null {
           >
             Library
           </NavLink>
+          <NavLink
+            to="/index"
+            className={({ isActive }) =>
+              cn(styles['link'], isActive && styles['link-active'])
+            }
+          >
+            Index
+          </NavLink>
           {role === 'admin' && (
             <NavLink
               to="/settings"
