@@ -22,7 +22,7 @@ from appdb.migrations import run_migrations
 
 # The highest schema version the current code knows. Recorded in
 # meta.schema_version by the migration runner after the last migration.
-SCHEMA_VERSION: int = 3
+SCHEMA_VERSION: int = 4
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
@@ -133,6 +133,26 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_owner_user_id
     ON api_keys (owner_user_id);
+"""
+
+
+# Migration v4 DDL — the config table (web-redesign spec §5, Wave 4). It holds
+# the application's runtime configuration as raw string values keyed by the
+# canonical environment-variable name. Wave 4 moves all 51 config settings out
+# of environment variables and into this table; the two bootstrap variables
+# APP_DB_PATH and INDEX_DB_PATH stay in the environment because they tell the
+# process where this database lives.
+#
+# value is stored as TEXT and is the exact string form the env-var would have
+# had — common.config parses and validates it, so the database stays a dumb
+# store. updated_at is an ISO-8601 UTC timestamp of the last write, surfaced
+# by the Settings screen.
+SCHEMA_V4: str = """
+CREATE TABLE IF NOT EXISTS config (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
