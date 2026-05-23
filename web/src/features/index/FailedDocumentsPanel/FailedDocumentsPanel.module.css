@@ -1,0 +1,156 @@
+/*
+ * FailedDocumentsPanel feature component — CSS Module.
+ *
+ * The Index dashboard failed-documents panel: a header with a count badge, a
+ * card per failed document, and a Retry-all footer. Theme-aware via tokens.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.panel {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  padding: var(--spacing-14);
+}
+
+/* ── Header. ── */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-10);
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-subheading);
+  color: var(--colour-text-primary);
+}
+
+/* ── Document list. ── */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-9);
+}
+
+.item {
+  padding: var(--spacing-9) var(--spacing-10);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-comfortable);
+}
+
+.item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin-bottom: var(--spacing-2);
+}
+
+/* The document-id chip — monospace, danger-tinted. */
+.id-chip {
+  padding: var(--spacing-1) var(--spacing-4);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  letter-spacing: var(--letter-spacing-micro);
+}
+
+.item-title {
+  flex: 1;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.reason {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Per-item action row. ── */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  margin-top: var(--spacing-6);
+}
+
+.when {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* Pushes the action buttons to the trailing edge. */
+.actions-spacer {
+  flex: 1;
+}
+
+/* A text-style action button — links visually but is a real <button>. */
+.action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro);
+  letter-spacing: var(--letter-spacing-micro);
+  color: var(--colour-link);
+}
+
+.action:hover {
+  text-decoration: underline;
+}
+
+.action:disabled {
+  cursor: default;
+  opacity: var(--opacity-disabled);
+  text-decoration: none;
+}
+
+.action:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
+}
+
+/* The "Open" link styled to match the text actions. */
+.open-link {
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
+}
+
+/* ── Footer. ── */
+.footer {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacing-9);
+}
+
+/* ── Empty all-clear message. ── */
+.empty {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-tertiary);
+}
