@@ -385,3 +385,73 @@ export interface TestConnectionResponse {
   document_count: number;
   detail: string;
 }
+
+// ---------------------------------------------------------------------------
+// Library — GET /api/documents (Wave 5)
+// ---------------------------------------------------------------------------
+
+/** Sort field for the library document list. Mirrors the backend `sort` enum. */
+export type DocumentSortField = 'created' | 'title' | 'correspondent';
+
+/** Sort direction for the library document list. */
+export type SortOrder = 'asc' | 'desc';
+
+/**
+ * Query parameters for GET /api/documents.
+ *
+ * `page` is 1-based. All filter fields are optional and omitted from the
+ * query string when nullish. `tag_ids` is serialised as one repeated
+ * `tag_ids=` parameter per id.
+ */
+export interface DocumentsQuery {
+  /** 1-based page number. */
+  page: number;
+  /** Rows per page. */
+  page_size: number;
+  /** Field to order by. */
+  sort: DocumentSortField;
+  /** Order direction. */
+  order: SortOrder;
+  /** Free-text filter over title / correspondent / type. */
+  query?: string | null;
+  /** Restrict to a single correspondent by id. */
+  correspondent_id?: number | null;
+  /** Restrict to a single document type by id. */
+  document_type_id?: number | null;
+  /** Restrict to documents carrying every listed tag id. */
+  tag_ids: number[];
+  /** Inclusive lower bound on the document `created` date (ISO-8601). */
+  date_from?: string | null;
+  /** Inclusive upper bound on the document `created` date (ISO-8601). */
+  date_to?: string | null;
+}
+
+/** One document row in the library list response. */
+export interface LibraryDocument {
+  /** Paperless document id. */
+  id: number;
+  /** Document title; null when Paperless has none. */
+  title: string | null;
+  /** Correspondent name; null when unset. */
+  correspondent: string | null;
+  /** Document-type name; null when unset. */
+  document_type: string | null;
+  /** Creation date as ISO-8601; null when unknown. */
+  created: string | null;
+  /** Tag names attached to the document. */
+  tags: string[];
+  /** Number of pages in the document. */
+  page_count: number;
+}
+
+/** Response body for GET /api/documents. */
+export interface DocumentsResponse {
+  /** The page of documents. */
+  documents: LibraryDocument[];
+  /** Total documents matching the filters across all pages. */
+  total: number;
+  /** The 1-based page number echoed back. */
+  page: number;
+  /** The page size echoed back. */
+  page_size: number;
+}

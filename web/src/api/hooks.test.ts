@@ -31,6 +31,7 @@ import {
   useSettings,
   useUpdateSettings,
   useTestConnection,
+  useDocuments,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { Unauthenticated, ApiError } from './client';
@@ -557,5 +558,32 @@ describe('useTestConnection', () => {
     result.current.mutate({ paperless_url: 'http://x', paperless_token: 'tok' });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.document_count).toBe(14238);
+  });
+});
+
+describe('useDocuments', () => {
+  it('calls getDocuments with the supplied query and returns data', async () => {
+    const response = {
+      documents: [],
+      total: 0,
+      page: 1,
+      page_size: 24,
+    };
+    mockFetch(200, response);
+
+    const { result } = renderHook(
+      () =>
+        useDocuments({
+          page: 1,
+          page_size: 24,
+          sort: 'created',
+          order: 'desc',
+          tag_ids: [],
+        }),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(response);
   });
 });
