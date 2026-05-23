@@ -1,0 +1,50 @@
+/*
+ * SettingsSelectField primitive — CSS Module.
+ *
+ * A native <select> styled to match SettingsTextField: a soft-bordered white
+ * pill. The browser's default select chevron is hidden and replaced with a
+ * tokenised SVG via the background image, so the control looks identical to
+ * the other settings fields.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.select {
+  width: 100%;
+  padding: var(--spacing-7) var(--spacing-section) var(--spacing-7) var(--spacing-9);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-large);
+  background-color: var(--colour-surface);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+  cursor: pointer;
+  appearance: none;
+}
+
+.select:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+.select:disabled {
+  cursor: not-allowed;
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-secondary);
+}
+
+/* ── The chevron — a static decorative glyph pinned to the right edge. ── */
+.chevron {
+  position: absolute;
+  top: 50%;
+  right: var(--spacing-9);
+  transform: translateY(-50%);
+  color: var(--colour-text-tertiary);
+  pointer-events: none;
+}
