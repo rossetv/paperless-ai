@@ -28,9 +28,19 @@ export interface SettingsTextFieldProps {
 /**
  * The Apple-form text field used across the Settings screen.
  *
- * A controlled primitive. Distinct from the Wave 1 `Input`: it carries no
- * `<label>` (the settings `Row` owns the label), supports a monospace face
- * and an inline suffix slot, and uses the smaller settings-form sizing.
+ * A controlled primitive. Intentionally distinct from the generic `Input`:
+ *   - No `<label>` element — the settings `Row` owns the visible label and
+ *     the `htmlFor` association; this component exposes `aria-label` only.
+ *   - Supports a monospace face (`mono` prop) for URLs, tokens, identifiers.
+ *   - Supports an inline suffix slot for "Reveal" buttons.
+ *   - Uses the smaller settings-form sizing (see CSS module).
+ *   - No `error` prop — settings validation is handled at the Row level.
+ *
+ * The split from `Input` is justified (W7 audit decision): merging would
+ * either add rarely-used props to `Input` or require a `variant` that
+ * changes its fundamental label-ownership contract. Keeping them separate
+ * keeps both APIs honest.
+ *
  * `readOnly` renders bootstrap config keys that exist but cannot be edited.
  *
  * Tier: components/primitives. Allowed deps: lib/, styles/.
