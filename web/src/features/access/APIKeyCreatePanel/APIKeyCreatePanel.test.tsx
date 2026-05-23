@@ -141,6 +141,24 @@ describe('APIKeyCreatePanel — one-time reveal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('shows an inline error when clipboard access is denied', async () => {
+    // Stub writeText to reject — simulates a browser that denies clipboard.
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    render(<APIKeyCreatePanel onClose={vi.fn()} />);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    await userEvent.type(screen.getByLabelText(/key name/i), 'n8n');
+    await userEvent.click(screen.getByRole('button', { name: /generate key/i }));
+    await waitFor(() => screen.getByRole('button', { name: /copy/i }));
+    await userEvent.click(screen.getByRole('button', { name: /copy/i }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/copy failed/i),
+    );
+    // The key text must still be visible so the user can copy manually.
+    expect(screen.getByText('sk-pls-bQ94XfullSECRETvalue1234567890')).toBeInTheDocument();
+  });
+
   it('surfaces an error when the mint fails', async () => {
     mockCreate.mockReturnValue(stub(() => Promise.reject(new Error('boom'))));
     render(<APIKeyCreatePanel onClose={vi.fn()} />);
