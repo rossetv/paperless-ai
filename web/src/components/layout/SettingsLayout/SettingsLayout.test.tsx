@@ -49,4 +49,31 @@ describe('SettingsLayout', () => {
     const { container } = renderLayout({ className: 'extra' });
     expect(container.firstElementChild?.className).toContain('extra');
   });
+
+  it('renders the Configuration nav group with all nine section links', () => {
+    renderLayout();
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
+    const sections = [
+      'Paperless Connection',
+      'LLM Provider',
+      'Search Server',
+      'Embeddings & Index',
+      'OCR',
+      'Classification',
+      'Pipeline Tags',
+      'Performance',
+      'Logging',
+    ];
+    for (const name of sections) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('points the LLM Provider link at the settings route', () => {
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'LLM Provider' })).toHaveAttribute(
+      'href',
+      '/settings#llm',
+    );
+  });
 });
