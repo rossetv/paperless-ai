@@ -10,17 +10,40 @@ import { deriveInitials } from '../../../lib/deriveInitials';
 import styles from './AppNavBar.module.css';
 
 /**
+ * The canonical navigation link definitions.
+ *
+ * This is the single authoritative list — add, remove, or rename links here
+ * only. The `adminOnly` flag controls visibility: `true` means the link is
+ * hidden unless the authenticated user holds the `admin` role.
+ *
+ * Final set (Wave 7): Search · Library · Index · Settings (admin-only).
+ */
+const NAV_LINKS: ReadonlyArray<{
+  /** React Router `to` path. */
+  to: string;
+  /** Link label shown in the nav bar. */
+  label: string;
+  /** When `true`, the link renders only for `admin` users. */
+  adminOnly?: true;
+  /** When `true`, matches the route exactly (prevents `/` matching `/library`). */
+  end?: true;
+}> = [
+  { to: '/',        label: 'Search',   end: true },
+  { to: '/library', label: 'Library' },
+  { to: '/index',   label: 'Index' },
+  { to: '/settings', label: 'Settings', adminOnly: true },
+] as const;
+
+/**
  * The authenticated application navigation bar.
  *
  * Composes the layout `NavBar` with the `Brand` mark + wordmark, the centre
- * nav links, and a `UserMenu` whose "Sign out" runs the `useLogout` mutation
- * and routes to `/login`.
+ * nav links (driven by the `NAV_LINKS` constant — the single authoritative
+ * definition of the link set), and a `UserMenu` whose "Sign out" runs the
+ * `useLogout` mutation and routes to `/login`.
  *
  * Renders nothing when there is no authenticated user — the protected routes
  * never mount it without a user, but this keeps it safe to drop anywhere.
- *
- * Wave 1 ships only the "Search" link; later waves add Library / Index /
- * Settings to the `links` slot.
  *
  * Tier: features/shell (CODE_GUIDELINES §12.3) — composes layout, patterns,
  * primitives, api and hooks.
@@ -48,6 +71,10 @@ export function AppNavBar(): React.ReactElement | null {
 
   const initials = deriveInitials(user.display_name, user.username);
 
+  const visibleLinks = NAV_LINKS.filter(
+    (link) => link.adminOnly !== true || role === 'admin',
+  );
+
   return (
     <NavBar
       brand={
@@ -60,41 +87,18 @@ export function AppNavBar(): React.ReactElement | null {
       }
       links={
         <>
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              cn(styles['link'], isActive && styles['link-active'])
-            }
-          >
-            Search
-          </NavLink>
-          <NavLink
-            to="/library"
-            className={({ isActive }) =>
-              cn(styles['link'], isActive && styles['link-active'])
-            }
-          >
-            Library
-          </NavLink>
-          <NavLink
-            to="/index"
-            className={({ isActive }) =>
-              cn(styles['link'], isActive && styles['link-active'])
-            }
-          >
-            Index
-          </NavLink>
-          {role === 'admin' && (
+          {visibleLinks.map((link) => (
             <NavLink
-              to="/settings"
+              key={link.to}
+              to={link.to}
+              end={link.end === true}
               className={({ isActive }) =>
                 cn(styles['link'], isActive && styles['link-active'])
               }
             >
-              Settings
+              {link.label}
             </NavLink>
-          )}
+          ))}
         </>
       }
       actions={
