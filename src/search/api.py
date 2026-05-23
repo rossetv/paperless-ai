@@ -43,6 +43,7 @@ from search.deps import get_current_user, require_api_scope, require_api_scope_m
 from search.document_routes import build_document_router
 from search.mcp_server import build_mcp_app
 from search.routes import build_api_router
+from search.settings_routes import build_settings_router
 from search.setup import SetupState, generate_setup_token, is_setup_needed
 from search.spa import register_spa
 
@@ -132,6 +133,7 @@ def create_app(
     # precedence over static serving.
     app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
     app.include_router(build_account_router(store_reader))
+    app.include_router(build_settings_router())
     app.include_router(build_api_key_router())
     app.include_router(build_document_router(settings))
     app.include_router(

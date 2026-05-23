@@ -540,6 +540,36 @@ class TestPing:
         client.close()
 
 
+class TestCountDocuments:
+    def test_count_documents_returns_the_paperless_count(self):
+        """count_documents reads the `count` field of the documents list page."""
+        url = f"{BASE}/api/documents/?page_size=1"
+        with respx.mock:
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"count": 14238, "results": []},
+                )
+            )
+            client = _make_client()
+            count = client.count_documents()
+
+        assert count == 14238
+        client.close()
+
+    def test_count_documents_raises_on_http_error(self):
+        """A non-2xx from Paperless raises HTTPStatusError."""
+        url = f"{BASE}/api/documents/?page_size=1"
+        with respx.mock:
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(401),
+            )
+            client = _make_client()
+            with pytest.raises(httpx.HTTPStatusError):
+                client.count_documents()
+        client.close()
+
+
 class TestClose:
     def test_closes_underlying_httpx_client(self):
         client = _make_client()

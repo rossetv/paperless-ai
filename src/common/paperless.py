@@ -502,6 +502,25 @@ class PaperlessClient:
         response.raise_for_status()
         return True
 
+    def count_documents(self, timeout: float = 10) -> int:
+        """Return the total document count Paperless reports.
+
+        Requests a single-item page of the documents list and reads its
+        ``count`` field — Paperless returns the full collection size there.
+        Used by the Settings "Test connection" action to confirm an
+        authenticated round-trip and show the operator the library size.
+
+        Raises:
+            httpx.HTTPStatusError: A non-2xx response — notably 401/403 when
+                the token is rejected.
+            httpx.RequestError: A network-level failure.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/?page_size=1"
+        response = self._client.get(url, timeout=timeout)
+        response.raise_for_status()
+        count = response.json().get("count", 0)
+        return int(count)
+
     def ping(self, timeout: float = 10) -> None:
         """Single fast request to verify the API is reachable (no retry)."""
         url = f"{self.settings.PAPERLESS_URL}/api/"
