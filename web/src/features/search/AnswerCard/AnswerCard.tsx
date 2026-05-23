@@ -4,25 +4,33 @@ import type { SourceDocument, SearchStats } from '../../../api/types';
 import { CitationLink } from '../CitationLink/CitationLink';
 
 export interface AnswerCardProps {
-  /** The synthesised answer text, with `[n]` inline citation markers. */
+  /** The synthesised answer text, with `[document_id]` inline citation markers
+   *  pointing at concrete source documents in the results. */
   answer: string;
-  /** The ranked sources — used to validate citation indices. */
+  /** The ranked sources — citation markers are resolved against this list by
+   *  matching `document_id`; the source's 1-based position in the list
+   *  becomes the user-facing citation index. */
   sources: SourceDocument[];
   /** Execution statistics — drives the provenance footer. */
   stats: SearchStats;
-  /** Called with a 1-based index when a citation marker is activated. */
+  /** Called with a 1-based source index when a citation marker is activated. */
   onCitationActivate?: (index: number) => void;
 }
 
 type TextSegment = { type: 'text'; value: string };
-type CitationSegment = { type: 'citation'; index: number };
+/** A parsed `[N]` marker — `docId` is the raw number from the answer text;
+ *  callers resolve it to a 1-based source index against the `sources` array. */
+type CitationSegment = { type: 'citation'; docId: number };
 type Segment = TextSegment | CitationSegment;
 
 /**
  * Split an answer string into plain-text and citation segments.
  *
- * `[n]` runs become citation segments; everything else is plain text. The
- * caller renders citation segments as `CitationLink`s and text verbatim.
+ * `[N]` runs become citation segments carrying the raw N (a document id, as
+ * emitted by the synthesiser prompt); everything else is plain text. The
+ * caller resolves each citation against the sources list — when an id has a
+ * matching source the marker renders as a `CitationLink`, otherwise it is
+ * shown verbatim so a stale id never becomes a dead control.
  */
 function parseAnswer(answer: string): Segment[] {
   const segments: Segment[] = [];
@@ -37,7 +45,7 @@ function parseAnswer(answer: string): Segment[] {
         value: answer.slice(lastIndex, match.index),
       });
     }
-    segments.push({ type: 'citation', index: parseInt(match[1] ?? '0', 10) });
+    segments.push({ type: 'citation', docId: parseInt(match[1] ?? '0', 10) });
     lastIndex = pattern.lastIndex;
   }
 
@@ -82,17 +90,22 @@ export function AnswerCard({
           return <React.Fragment key={i}>{segment.value}</React.Fragment>;
         }
 
-        const inRange =
-          segment.index >= 1 && segment.index <= sources.length;
-        if (!inRange) {
-          return <React.Fragment key={i}>[{segment.index}]</React.Fragment>;
+        // Resolve the raw `[N]` document id to its 1-based position in the
+        // sources list. A reference to a document that didn't make the result
+        // set renders verbatim — never a dead control.
+        const sourceIndex = sources.findIndex(
+          (s) => s.document_id === segment.docId,
+        );
+        if (sourceIndex === -1) {
+          return <React.Fragment key={i}>[{segment.docId}]</React.Fragment>;
         }
 
-        const source = sources[segment.index - 1];
+        const oneBasedIndex = sourceIndex + 1;
+        const source = sources[sourceIndex];
         return (
           <CitationLink
             key={i}
-            index={segment.index}
+            index={oneBasedIndex}
             onActivate={handleCitationActivate}
             sourceTitle={source?.title ?? null}
           />

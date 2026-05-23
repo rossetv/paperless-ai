@@ -21,7 +21,10 @@ const EMPTY_FILTERS = {
 };
 
 const RESPONSE: SearchResponse = {
-  answer: 'You paid £1,847.32 to Npower in 2024 [1].',
+  // Citation marker uses the document_id of the source, matching the
+  // synthesiser's real output format. The AnswerCard resolves [9823] to the
+  // source's 1-based position (1) for display.
+  answer: 'You paid £1,847.32 to Npower in 2024 [9823].',
   sources: [
     {
       document_id: 9823,
