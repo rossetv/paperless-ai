@@ -168,15 +168,49 @@ class _LazySemaphore:
     A semaphore must be bound to the event loop that awaits it.  The router is
     built before the serving loop exists, so the semaphore is created lazily on
     the first :meth:`acquire`.  asyncio's single-threaded contract means only
-    one coroutine touches ``_semaphore`` at a time — no lock is needed.
+    one coroutine touches the internal state at a time — no lock is needed.
+
+    Hot-reloadable: :meth:`set_limit` swaps in a new semaphore when
+    ``SEARCH_MAX_CONCURRENT`` changes via the Settings API (web-redesign §5,
+    Wave 4). In-flight acquisitions on the *old* semaphore complete on the
+    old limit and release into the old object (it is reachable via the
+    awaiting coroutines' local frames); new acquisitions hit the new
+    semaphore. The brief window where both are alive is bounded by the
+    longest in-flight search, with the new cap fully in force for every new
+    request — no restart.
 
     Args:
-        max_concurrent: The simultaneous-holder ceiling.
+        max_concurrent: The initial simultaneous-holder ceiling.
     """
 
     def __init__(self, max_concurrent: int) -> None:
         self._max_concurrent = max_concurrent
         self._semaphore: asyncio.Semaphore | None = None
+
+    def set_limit(self, max_concurrent: object) -> None:
+        """Replace the ceiling. Idempotent when *max_concurrent* is unchanged.
+
+        Called per request before :meth:`acquire`; the cheap equality check
+        keeps the steady-state cost at one ``int`` compare. A change builds a
+        fresh semaphore on the next acquire — see the class docstring for the
+        old/new overlap window discussion.
+
+        A value that does not coerce to ``int`` is ignored — keeps stub
+        cores in unit tests from crashing the handler with a ``TypeError``
+        out of :class:`asyncio.Semaphore`.
+        """
+        try:
+            new_limit = int(max_concurrent)  # type: ignore[call-overload]
+        except (TypeError, ValueError):
+            return
+        if new_limit == self._max_concurrent:
+            return
+        self._max_concurrent = new_limit
+        # Drop the existing semaphore so the next acquire builds a new one
+        # at the new limit. In-flight holders of the old object complete as
+        # they were (they captured the old reference); only new requests
+        # touch the replacement.
+        self._semaphore = None
 
     def acquire(self) -> asyncio.Semaphore:
         """Return the semaphore, creating it on first use.
@@ -266,12 +300,20 @@ def build_api_router(
         """Run the full agentic search pipeline and return a SearchResponse.
 
         Bounded by ``SEARCH_MAX_CONCURRENT`` to limit simultaneous LLM spend.
-        A successful search by an authenticated caller is recorded in that
-        caller's recent-search history. The :class:`SearchCore` is resolved
-        per request through *resolve_core* so a saved configuration change
-        takes effect on the next query — web-redesign §5, Wave 4.
+        The limit is resolved per request through *resolve_core* (which
+        reads the live :class:`Settings`), so saving a new value via the
+        Settings API takes effect immediately — no restart. A successful
+        search by an authenticated caller is recorded in that caller's
+        recent-search history. The :class:`SearchCore` is resolved per
+        request so a saved configuration change takes effect on the next
+        query — web-redesign §5, Wave 4.
         """
         core = resolve_core(state.app_db_path)
+        # core carries the Settings it was built from (see SearchCore.settings);
+        # pick the SEARCH_MAX_CONCURRENT off that and apply it to the lazy
+        # semaphore. set_limit is a no-op when nothing changed, and ignores
+        # non-int values so a stub core in tests does not crash the handler.
+        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         result = await _search(body, core, search_semaphore)
         _record_recent_search(app_db, user, body.query)
         return result

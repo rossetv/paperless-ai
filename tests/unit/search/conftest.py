@@ -111,6 +111,12 @@ def build_test_client(
     if core is None:
         core = MagicMock()
         core.answer.return_value = make_search_result()
+    # The /api/search handler reads ``SEARCH_MAX_CONCURRENT`` off the live
+    # core's settings to keep the semaphore in step with hot-loaded config
+    # (web-redesign §5, Wave 4). Point the stub core's ``settings`` at the
+    # test settings so it looks the shape of a real core; a test that wants
+    # a different concurrency cap overrides ``core.settings`` itself.
+    core.settings = settings
     if store_reader is None:
         store_reader = MagicMock()
         store_reader.list_facets.return_value = make_facet_set()

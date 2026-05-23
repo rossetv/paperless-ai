@@ -154,6 +154,18 @@ class SearchCore:
         self._retriever = retriever
         self._synthesizer = synthesizer
 
+    @property
+    def settings(self) -> Settings:
+        """Return the :class:`Settings` this core was built from.
+
+        Exposed for the per-request hot-reload path in :mod:`search.routes`,
+        which reads ``SEARCH_MAX_CONCURRENT`` off the live core to keep the
+        ``/api/search`` semaphore in step with the latest configuration
+        (web-redesign §5, Wave 4). The attribute is read-only — internal
+        consumers continue to use ``self._settings`` directly.
+        """
+        return self._settings
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
