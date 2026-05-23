@@ -11,7 +11,6 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import httpx
-import pytest
 
 from tests.integration.accounts_helpers import (
     build_account_client,
@@ -34,9 +33,7 @@ def _admin_client(tmp_path):
     seed_admin(app_db, username="admin", password="admin-password")
     store_reader = StoreReader(settings)
     client = build_account_client(settings, app_db, store_reader)
-    assert login(
-        client, username="admin", password="admin-password"
-    ).status_code == 200
+    assert login(client, username="admin", password="admin-password").status_code == 200
     return client, app_db, store_reader
 
 
@@ -119,9 +116,7 @@ def test_get_settings_403_for_a_member(tmp_path) -> None:
     store_reader = StoreReader(settings)
     try:
         client = build_account_client(settings, app_db, store_reader)
-        assert login(
-            client, username="bob", password="bob-password"
-        ).status_code == 200
+        assert login(client, username="bob", password="bob-password").status_code == 200
         assert client.get("/api/settings").status_code == 403
     finally:
         store_reader.close()
@@ -139,12 +134,8 @@ def test_put_settings_403_for_a_member(tmp_path) -> None:
     store_reader = StoreReader(settings)
     try:
         client = build_account_client(settings, app_db, store_reader)
-        assert login(
-            client, username="bob", password="bob-password"
-        ).status_code == 200
-        response = client.put(
-            "/api/settings", json={"changes": {"OCR_DPI": "200"}}
-        )
+        assert login(client, username="bob", password="bob-password").status_code == 200
+        response = client.put("/api/settings", json={"changes": {"OCR_DPI": "200"}})
         assert response.status_code == 403
     finally:
         store_reader.close()
@@ -164,13 +155,14 @@ def test_settings_endpoints_401_when_unauthenticated(tmp_path) -> None:
         client = build_account_client(settings, app_db, store_reader)
         # No login — the cookie jar is empty.
         assert client.get("/api/settings").status_code == 401
-        assert client.put(
-            "/api/settings", json={"changes": {}}
-        ).status_code == 401
-        assert client.post(
-            "/api/settings/test-connection",
-            json={"paperless_url": "http://x", "paperless_token": "t"},
-        ).status_code == 401
+        assert client.put("/api/settings", json={"changes": {}}).status_code == 401
+        assert (
+            client.post(
+                "/api/settings/test-connection",
+                json={"paperless_url": "http://x", "paperless_token": "t"},
+            ).status_code
+            == 401
+        )
     finally:
         store_reader.close()
         app_db.close()

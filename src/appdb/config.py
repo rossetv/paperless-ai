@@ -73,9 +73,7 @@ def get(conn: sqlite3.Connection, key: str) -> str | None:
         conn: An open ``app.db`` connection.
         key: The configuration key (a canonical env-var name).
     """
-    row = conn.execute(
-        "SELECT value FROM config WHERE key = ?", (key,)
-    ).fetchone()
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
     return row["value"] if row is not None else None
 
 
@@ -108,9 +106,7 @@ def get_config_version(conn: sqlite3.Connection) -> int:
     Returns:
         The monotonically-increasing configuration version.
     """
-    row = conn.execute(
-        "SELECT value FROM meta WHERE key = 'config_version'"
-    ).fetchone()
+    row = conn.execute("SELECT value FROM meta WHERE key = 'config_version'").fetchone()
     return int(row["value"]) if row is not None else 0
 
 
@@ -202,15 +198,11 @@ def seed_from_env(
         The number of keys seeded — 0 when the table was already populated or
         when no catalogue key was present in *environ*.
     """
-    already_populated = conn.execute(
-        "SELECT 1 FROM config LIMIT 1"
-    ).fetchone()
+    already_populated = conn.execute("SELECT 1 FROM config LIMIT 1").fetchone()
     if already_populated is not None:
         return 0
 
-    to_seed = {
-        key: environ[key] for key in keys if key in environ
-    }
+    to_seed = {key: environ[key] for key in keys if key in environ}
     set_many(conn, to_seed)
     if to_seed:
         log.info("appdb.config_seeded_from_env", key_count=len(to_seed))

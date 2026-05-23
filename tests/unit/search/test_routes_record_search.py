@@ -33,6 +33,7 @@ from search.sessions import begin_session
 from search.setup import SetupState
 from tests.helpers.factories import make_search_result, make_source_document
 
+
 def _mock_core(*, fail: bool = False) -> MagicMock:
     """A stub SearchCore returning a fixed result, or raising when *fail*."""
     core = MagicMock()

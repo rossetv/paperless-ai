@@ -495,6 +495,7 @@ def to_user_response(user: User) -> UserResponse:
 # API-key wire models (web-redesign §5; Wave 3)
 # ---------------------------------------------------------------------------
 
+
 def _validate_scope_list(value: list[str]) -> list[str]:
     """Reject any scope outside the documented three.
 

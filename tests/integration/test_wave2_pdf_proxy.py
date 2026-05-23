@@ -170,5 +170,3 @@ def test_pdf_proxy_401_when_unauthenticated(
     finally:
         store_reader.close()
         app_db.close()
-
-

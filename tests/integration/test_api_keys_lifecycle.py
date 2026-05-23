@@ -52,9 +52,7 @@ def _as_admin(client):
 def test_create_key_returns_the_full_key_once(setup) -> None:
     client, _ = setup
     _as_admin(client)
-    response = client.post(
-        "/api/api-keys", json={"name": "CI", "scopes": ["api"]}
-    )
+    response = client.post("/api/api-keys", json={"name": "CI", "scopes": ["api"]})
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["secret"].startswith("sk-pls-")
@@ -93,9 +91,7 @@ def test_a_minted_key_authenticates_an_api_request(setup) -> None:
     client.cookies.clear()
     assert client.get("/api/stats").status_code == 401  # no cookie, no key
 
-    response = client.get(
-        "/api/stats", headers={"Authorization": f"Bearer {raw_key}"}
-    )
+    response = client.get("/api/stats", headers={"Authorization": f"Bearer {raw_key}"})
     assert response.status_code == 200, response.text
 
 
@@ -114,9 +110,7 @@ def test_revoked_key_is_rejected(setup) -> None:
     client.cookies.clear()
 
     # The key works before revocation.
-    before = client.get(
-        "/api/stats", headers={"Authorization": f"Bearer {raw_key}"}
-    )
+    before = client.get("/api/stats", headers={"Authorization": f"Bearer {raw_key}"})
     assert before.status_code == 200
 
     # Revoke it (re-authenticate via the key itself, then immediately drop auth
@@ -130,9 +124,7 @@ def test_revoked_key_is_rejected(setup) -> None:
     client.cookies.clear()
 
     # The same key is now rejected.
-    after = client.get(
-        "/api/stats", headers={"Authorization": f"Bearer {raw_key}"}
-    )
+    after = client.get("/api/stats", headers={"Authorization": f"Bearer {raw_key}"})
     assert after.status_code == 401
 
 
@@ -188,9 +180,7 @@ def test_edit_can_set_and_clear_the_expiry(setup) -> None:
     assert set_resp.json()["api_key"]["expires_at"] == "2027-01-01T00:00:00+00:00"
 
     # Clear it again — an explicit null means "never expires".
-    clear_resp = client.patch(
-        f"/api/api-keys/{key_id}", json={"expires_at": None}
-    )
+    clear_resp = client.patch(f"/api/api-keys/{key_id}", json={"expires_at": None})
     assert clear_resp.status_code == 200
     assert clear_resp.json()["api_key"]["expires_at"] is None
 
@@ -211,9 +201,7 @@ def test_edit_is_reflected_in_the_listing(setup) -> None:
 def test_edit_an_unknown_key_is_404(setup) -> None:
     client, _ = setup
     _as_admin(client)
-    response = client.patch(
-        "/api/api-keys/999999", json={"name": "ghost"}
-    )
+    response = client.patch("/api/api-keys/999999", json={"name": "ghost"})
     assert response.status_code == 404
 
 
@@ -250,9 +238,7 @@ def test_create_rejects_an_unknown_scope(setup) -> None:
 def test_create_rejects_an_empty_scope_list(setup) -> None:
     client, _ = setup
     _as_admin(client)
-    response = client.post(
-        "/api/api-keys", json={"name": "CI", "scopes": []}
-    )
+    response = client.post("/api/api-keys", json={"name": "CI", "scopes": []})
     assert response.status_code == 422
 
 
@@ -260,10 +246,9 @@ def test_api_key_management_requires_authentication(setup) -> None:
     client, _ = setup
     # No sign-in, no key — the management endpoints reject with 401.
     assert client.get("/api/api-keys").status_code == 401
-    assert client.post(
-        "/api/api-keys", json={"name": "x", "scopes": ["api"]}
-    ).status_code == 401
-    assert client.patch(
-        "/api/api-keys/1", json={"name": "x"}
-    ).status_code == 401
+    assert (
+        client.post("/api/api-keys", json={"name": "x", "scopes": ["api"]}).status_code
+        == 401
+    )
+    assert client.patch("/api/api-keys/1", json={"name": "x"}).status_code == 401
     assert client.delete("/api/api-keys/1").status_code == 401

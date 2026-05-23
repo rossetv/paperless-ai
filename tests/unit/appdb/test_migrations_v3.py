@@ -42,9 +42,7 @@ def _index_names(c: sqlite3.Connection) -> set[str]:
 
 
 def _schema_version(c: sqlite3.Connection) -> int:
-    row = c.execute(
-        "SELECT value FROM meta WHERE key = 'schema_version'"
-    ).fetchone()
+    row = c.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
     return int(row[0])
 
 
@@ -66,9 +64,7 @@ def test_fresh_database_has_the_api_keys_table(conn) -> None:
 
 def test_api_keys_table_has_the_expected_columns(conn) -> None:
     run_migrations(conn)
-    cols = {
-        row[1] for row in conn.execute("PRAGMA table_info(api_keys)")
-    }
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(api_keys)")}
     assert cols == {
         "id",
         "key_hash",
@@ -147,9 +143,9 @@ def test_request_count_defaults_to_zero(conn) -> None:
         "VALUES ('h1', 'sk-pls-aaaa', 'k', 1, 'api', 'now')"
     )
     conn.commit()
-    count = conn.execute(
-        "SELECT request_count FROM api_keys WHERE id = 1"
-    ).fetchone()[0]
+    count = conn.execute("SELECT request_count FROM api_keys WHERE id = 1").fetchone()[
+        0
+    ]
     assert count == 0
 
 

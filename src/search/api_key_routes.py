@@ -167,8 +167,7 @@ def _list_api_keys(
         keys = key_store.list_for_user(app_db, caller.id)
     return ApiKeyListResponse(
         keys=[
-            to_api_key_response(k, _owner_name(app_db, k.owner_user_id))
-            for k in keys
+            to_api_key_response(k, _owner_name(app_db, k.owner_user_id)) for k in keys
         ]
     )
 
@@ -286,9 +285,7 @@ def _update_api_key(
         fields=sorted(changes),
     )
     return ApiKeyEnvelope(
-        api_key=to_api_key_response(
-            updated, _owner_name(app_db, updated.owner_user_id)
-        )
+        api_key=to_api_key_response(updated, _owner_name(app_db, updated.owner_user_id))
     )
 
 
@@ -305,7 +302,11 @@ def _delete_api_key(
     # the key exists, so they cannot enumerate key ids by observing the
     # difference between 404 and 403 (MINOR-1 id-enumeration defence).
     if record is None or (not _is_admin(caller) and record.owner_user_id != caller.id):
-        if record is not None and not _is_admin(caller) and record.owner_user_id != caller.id:
+        if (
+            record is not None
+            and not _is_admin(caller)
+            and record.owner_user_id != caller.id
+        ):
             log.warning(
                 "search.api_key_delete_forbidden",
                 api_key_id=api_key_id,

@@ -154,8 +154,7 @@ def test_migration_v4_creates_the_config_table(tmp_path) -> None:
     try:
         ensure_schema(conn)
         columns = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(config)").fetchall()
+            row[1] for row in conn.execute("PRAGMA table_info(config)").fetchall()
         }
         assert columns == {"key", "value", "updated_at"}
     finally:

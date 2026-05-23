@@ -384,9 +384,7 @@ def require_key_management(
     return caller.user
 
 
-def refresh_last_seen(
-    app_db: sqlite3.Connection, cookie_token: str | None
-) -> None:
+def refresh_last_seen(app_db: sqlite3.Connection, cookie_token: str | None) -> None:
     """Refresh the session's ``last_seen_at`` when it is stale.
 
     A no-op when *cookie_token* is absent or the stored timestamp is recent,

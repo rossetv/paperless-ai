@@ -346,9 +346,7 @@ def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
     with (
         patch.dict(os.environ, env, clear=True),
         patch("classifier.daemon.PaperlessClient", side_effect=rebuilt_clients),
-        patch(
-            "classifier.daemon.TaxonomyCache", return_value=rebuilt_taxonomy_cache
-        ),
+        patch("classifier.daemon.TaxonomyCache", return_value=rebuilt_taxonomy_cache),
         patch("classifier.daemon.configure_logging"),
         patch("classifier.daemon.setup_libraries"),
         patch("classifier.daemon.llm_limiter"),
