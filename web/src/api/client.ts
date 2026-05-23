@@ -395,7 +395,7 @@ export async function getSettings(): Promise<SettingsResponse> {
  * PUT /api/settings — persist changed configuration values.
  *
  * The body carries ONLY the keys the user changed. The server validates the
- * whole resulting config; a validation failure surfaces as `ApiError` (422).
+ * whole resulting config; a validation failure surfaces as `ApiError` (400).
  * The response is the re-read state — the source of truth after the save.
  */
 export async function updateSettings(

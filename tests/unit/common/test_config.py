@@ -154,6 +154,45 @@ class TestMissingRequired:
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
 
+    def test_empty_paperless_token_is_treated_as_missing(self, mocker):
+        """An empty PAPERLESS_TOKEN must fail at validation, not at runtime.
+
+        Regression for the Wave 4 boundary: an admin saving an empty secret
+        through the Settings PUT used to round-trip the empty string into the
+        config table, and every daemon then authenticated to Paperless with
+        ``""`` until an admin manually fixed it.
+        """
+        with pytest.raises(ValueError, match="PAPERLESS_TOKEN"):
+            _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_TOKEN": ""})
+
+    def test_whitespace_only_openai_api_key_is_treated_as_missing(self, mocker):
+        """A whitespace-only required secret is rejected — same as empty."""
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            _build(mocker, {**_MINIMAL_ENV, "OPENAI_API_KEY": "   "})
+
+
+class TestSettingsRepr:
+    """`Settings.__repr__` masks every secret value (CODE_GUIDELINES §7.4)."""
+
+    def test_repr_masks_secret_keys(self, mocker):
+        s = _build(mocker, _MINIMAL_ENV)
+        text = repr(s)
+        assert "tok-123" not in text
+        assert "sk-test" not in text
+        # The mask is the same sentinel the Settings API uses.
+        assert "PAPERLESS_TOKEN='********'" in text
+        assert "OPENAI_API_KEY='********'" in text
+
+    def test_str_masks_secret_keys(self, mocker):
+        """`str(Settings)` masks too — both surfaces share the redaction."""
+        s = _build(mocker, _MINIMAL_ENV)
+        assert "tok-123" not in str(s)
+        assert "sk-test" not in str(s)
+
+    def test_repr_keeps_non_secret_values(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_DPI": "275"})
+        assert "275" in repr(s)
+
 
 class TestOllamaConfig:
     def test_ollama_default_models(self, mocker):
