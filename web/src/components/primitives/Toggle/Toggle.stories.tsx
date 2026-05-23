@@ -26,7 +26,7 @@ export const Disabled: Story = {
 /** Interactive — flips its own state. */
 export const Interactive: Story = {
   args: { checked: false, label: 'Verbose logging', onChange: () => {} },
-  render: (args) => {
+  render: function InteractiveToggle(args) {
     const [on, setOn] = useState(args.checked);
     return <Toggle {...args} checked={on} onChange={setOn} />;
   },

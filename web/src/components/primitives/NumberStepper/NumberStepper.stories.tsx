@@ -26,7 +26,7 @@ export const Disabled: Story = {
 /** Interactive — clamped to 0–3, demonstrating the min/max guard. */
 export const Clamped: Story = {
   args: { value: 1, label: 'Max refinements', min: 0, max: 3, onChange: () => {} },
-  render: (args) => {
+  render: function ClampedNumberStepper(args) {
     const [value, setValue] = useState(args.value);
     return <NumberStepper {...args} value={value} onChange={setValue} />;
   },

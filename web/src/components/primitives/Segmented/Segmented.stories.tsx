@@ -40,7 +40,7 @@ export const LogLevel: Story = {
 /** Interactive — flips its own state. */
 export const Interactive: Story = {
   args: { ...Provider.args },
-  render: (args) => {
+  render: function InteractiveSegmented(args) {
     const [value, setValue] = useState(args.value);
     return <Segmented {...args} value={value} onChange={setValue} />;
   },

@@ -72,7 +72,7 @@ export function NumberStepper({
 
   return (
     <div
-      className={cn(styles['stepper'], disabled && styles['stepperDisabled'], className)}
+      className={cn(styles['stepper'], disabled && styles['stepper-disabled'], className)}
     >
       <button
         type="button"

@@ -60,8 +60,8 @@ export function SettingsTextField({
         onChange={(event) => onChange(event.target.value)}
         className={cn(
           styles['input'],
-          mono && styles['inputMono'],
-          suffix !== undefined && styles['inputWithSuffix'],
+          mono && styles['input-mono'],
+          suffix !== undefined && styles['input-with-suffix'],
         )}
       />
       {suffix !== undefined && <span className={styles['suffix']}>{suffix}</span>}

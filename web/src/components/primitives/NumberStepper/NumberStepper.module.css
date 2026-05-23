@@ -19,7 +19,7 @@
   overflow: hidden;
 }
 
-.stepperDisabled {
+.stepper-disabled {
   opacity: var(--opacity-disabled);
 }
 
@@ -36,8 +36,9 @@
   transition: background-color var(--duration-fast) var(--easing-standard);
 }
 
-.button:hover:not(:disabled) {
-  background-color: var(--colour-button-light-bg);
+.button:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
 }
 
 .button:disabled {
@@ -45,13 +46,14 @@
   color: var(--colour-text-tertiary);
 }
 
-.button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: calc(-1 * var(--spacing-1));
+.button:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
 }
 
 /* ── The value field — a flat number input. ── */
 .input {
+  /* Hide the browser's native number spin-buttons — the − / + buttons replace them. */
+  appearance: textfield;
   width: var(--width-stepper-input);
   padding: var(--spacing-6) var(--spacing-2);
   border: none;
@@ -65,20 +67,15 @@
   text-align: center;
 }
 
-.input:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: calc(-1 * var(--spacing-1));
-}
-
-/* Hide the browser's native number spin-buttons — the − / + buttons replace them. */
 .input::-webkit-outer-spin-button,
 .input::-webkit-inner-spin-button {
   appearance: none;
   margin: 0;
 }
 
-.input {
-  appearance: textfield;
+.input:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
 }
 
 /* ── The unit suffix, sat just after the field. ── */

@@ -17,7 +17,7 @@
   background-color: var(--colour-segmented-track);
 }
 
-.groupDisabled {
+.group-disabled {
   opacity: var(--opacity-disabled);
 }
 
@@ -48,7 +48,7 @@
 }
 
 /* ── The selected segment — raised white chip, primary text. ── */
-.segmentSelected {
+.segment-selected {
   background-color: var(--colour-surface);
   color: var(--colour-text-primary);
   font-weight: var(--font-weight-caption-bold);
