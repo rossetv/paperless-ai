@@ -27,6 +27,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { UsersPage } from './pages/UsersPage';
 import { KeysPage } from './pages/KeysPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
 
@@ -167,6 +168,14 @@ export function AppRoutes(): React.ReactElement {
         path="/"
         element={
           <RootRoute />
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAdmin>
+            <SettingsPage />
+          </RequireAdmin>
         }
       />
       <Route

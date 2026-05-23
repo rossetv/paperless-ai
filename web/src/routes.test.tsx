@@ -32,6 +32,9 @@ vi.mock('./pages/UsersPage', () => ({
 vi.mock('./pages/KeysPage', () => ({
   KeysPage: () => React.createElement('div', { 'data-testid': 'keys-page' }, 'Keys'),
 }));
+vi.mock('./pages/SettingsPage', () => ({
+  SettingsPage: () => React.createElement('div', { 'data-testid': 'settings-page' }, 'Settings'),
+}));
 
 // --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
@@ -171,6 +174,28 @@ describe('AppRoutes', () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/settings/keys');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  it('renders the settings page for an admin at /settings', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/settings');
+    await waitFor(() => expect(screen.getByTestId('settings-page')).toBeInTheDocument());
+  });
+
+  it('redirects a non-admin away from /settings to the app', async () => {
+    const member = { ...SAMPLE_USER, role: 'member' as const };
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: member } }));
+    renderAt('/settings');
+    await waitFor(() => expect(screen.getByTestId('search-page')).toBeInTheDocument());
+  });
+
+  it('redirects an unauthenticated visitor from /settings to /login', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    renderAt('/settings');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 });
