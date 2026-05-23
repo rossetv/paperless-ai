@@ -139,5 +139,6 @@ web/storybook-static/
 web/coverage/
 
 # The `lib/` pattern above targets Python build artifacts; the frontend's
-# `web/src/lib/` is hand-written source and must be tracked.
+# `web/src/**/lib/` directories are hand-written source and must be tracked.
 !web/src/lib/
+!web/src/**/lib/
