@@ -957,9 +957,7 @@ def to_document_browse_query(
     store_sort = _BROWSE_SORT_ALIASES.get(sort)
     if store_sort is None:
         allowed = ", ".join(sorted(_BROWSE_SORT_ALIASES))
-        raise ValueError(
-            f"unknown sort {sort!r}; expected one of {allowed}"
-        )
+        raise ValueError(f"unknown sort {sort!r}; expected one of {allowed}")
     return DocumentBrowseQuery(
         text=text,
         date_from=date_from,

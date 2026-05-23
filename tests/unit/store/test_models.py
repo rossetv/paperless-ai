@@ -28,6 +28,7 @@ def test_document_summary_carries_page_count() -> None:
     assert summary.page_count == 3
     assert summary.correspondent == "Alpha Corp"
 
+
 def test_document_summary_is_frozen() -> None:
     """DocumentSummary is immutable — a store-boundary shape."""
     summary = DocumentSummary(
@@ -41,6 +42,7 @@ def test_document_summary_is_frozen() -> None:
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         summary.title = "mutated"  # type: ignore[misc]
+
 
 def test_document_browse_query_holds_browse_parameters() -> None:
     """DocumentBrowseQuery carries filters, sort, pagination and the text query."""
@@ -60,6 +62,7 @@ def test_document_browse_query_holds_browse_parameters() -> None:
     assert query.tag_ids == (101, 102)
     assert query.sort == "created"
     assert query.offset == 20
+
 
 def test_document_page_carries_rows_and_total() -> None:
     """DocumentPage pairs the page rows with the full match count."""

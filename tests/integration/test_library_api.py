@@ -65,9 +65,10 @@ class TestLibraryAuth:
                 role="readonly",
             )
             client = build_account_client(settings, app_db, store_reader)
-            assert login(
-                client, username="reader", password="reader-pw"
-            ).status_code == 200
+            assert (
+                login(client, username="reader", password="reader-pw").status_code
+                == 200
+            )
             response = client.get("/api/documents")
             assert response.status_code == 200
             body = response.json()
@@ -79,9 +80,7 @@ class TestLibraryAuth:
             store_reader.close()
             app_db.close()
 
-    def test_unauthenticated_request_is_rejected(
-        self, tmp_path: Path
-    ) -> None:
+    def test_unauthenticated_request_is_rejected(self, tmp_path: Path) -> None:
         """No session and no Bearer → 401."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
@@ -122,9 +121,7 @@ class TestLibraryAuth:
 class TestLibraryPagination:
     """page and page_size slice the result; total is the full count."""
 
-    def test_page_size_limits_the_documents_returned(
-        self, tmp_path: Path
-    ) -> None:
+    def test_page_size_limits_the_documents_returned(self, tmp_path: Path) -> None:
         """A page_size of 2 returns two documents but total stays 5."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
@@ -149,9 +146,7 @@ class TestLibraryPagination:
             store_reader.close()
             app_db.close()
 
-    def test_second_page_returns_the_next_slice(
-        self, tmp_path: Path
-    ) -> None:
+    def test_second_page_returns_the_next_slice(self, tmp_path: Path) -> None:
         """Page 2 with size 2 returns documents 3 and 4 in title order."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
@@ -179,9 +174,7 @@ class TestLibraryPagination:
             store_reader.close()
             app_db.close()
 
-    def test_page_size_over_the_maximum_is_rejected(
-        self, tmp_path: Path
-    ) -> None:
+    def test_page_size_over_the_maximum_is_rejected(self, tmp_path: Path) -> None:
         """A page_size above MAX_PAGE_SIZE (100) is rejected 422 by FastAPI."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
@@ -427,9 +420,7 @@ class TestLibraryFiltering:
             store_reader.close()
             app_db.close()
 
-    def test_text_query_matches_correspondent_name(
-        self, tmp_path: Path
-    ) -> None:
+    def test_text_query_matches_correspondent_name(self, tmp_path: Path) -> None:
         """The text query matches against the correspondent name too."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
@@ -460,9 +451,7 @@ class TestLibraryFiltering:
 class TestLibraryDocumentPayload:
     """Each document carries the full Library-card payload."""
 
-    def test_document_carries_metadata_and_page_count(
-        self, tmp_path: Path
-    ) -> None:
+    def test_document_carries_metadata_and_page_count(self, tmp_path: Path) -> None:
         """A document exposes names, tags, and page count — no deep-link URL."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
