@@ -1,0 +1,15 @@
+/*
+ * SettingsSection feature — CSS Module.
+ *
+ * The section card itself comes fully styled from SectionCard. This module
+ * only styles the re-index note appended to a re-index key's hint — a small
+ * emphasised inline span so the operator notices that changing this setting
+ * needs a full document rebuild.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.reindexNote {
+  color: var(--colour-status-warn-fg);
+  font-weight: var(--font-weight-caption-bold);
+}
