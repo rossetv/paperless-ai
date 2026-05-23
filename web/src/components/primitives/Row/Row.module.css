@@ -1,0 +1,59 @@
+/*
+ * Row primitive — CSS Module.
+ *
+ * One labelled setting: a fixed-width left column (label, optional hint,
+ * optional monospace env tag) beside a flexible right column holding the
+ * control. A hairline bottom border separates rows; the `last` row drops it.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.row {
+  display: grid;
+  grid-template-columns: var(--width-row-label) 1fr;
+  gap: var(--spacing-14);
+  align-items: start;
+  padding: var(--spacing-13) 0;
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+.row-last {
+  border-bottom: none;
+}
+
+/* ── Left column — label + hint + env tag. ── */
+.label {
+  display: block;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.hint {
+  margin: var(--spacing-2) 0 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.env {
+  display: inline-block;
+  margin-top: var(--spacing-6);
+  padding: 0 var(--spacing-4);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-neutral-bg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-secondary);
+}
+
+/* ── Right column — the control. ── */
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  min-width: 0;
+}
