@@ -36,8 +36,12 @@ import structlog
 import uvicorn
 from fastapi import FastAPI
 
+from appdb.connection import connect as connect_app_db
+from appdb.schema import ensure_schema as ensure_app_db_schema
 from common.concurrency import llm_limiter
+from common.heartbeat import Heartbeat, run_heartbeat_ticker
 from common.library_setup import setup_libraries
+from common.shutdown import is_shutdown_requested
 from search.account_routes import build_account_router
 from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
@@ -67,6 +71,55 @@ if _env_frontend:
 else:
     _REPO_ROOT = Path(__file__).parent.parent.parent
     _FRONTEND_DIST = _REPO_ROOT / "web" / "dist"
+
+# How often the search server writes its daemon-status heartbeat, in
+# seconds. Comfortably inside appdb.daemon_status.DEFAULT_STALE_AFTER_SECONDS
+# so the dashboard never flickers the server to "stopped" between beats.
+_SEARCH_HEARTBEAT_INTERVAL_SECONDS = 30
+
+
+def _start_search_heartbeat(settings: Settings) -> None:
+    """Start the background thread that writes the search server's heartbeat.
+
+    The search server has no polling loop, so it heartbeats from a daemon
+    thread: it beats every ``_SEARCH_HEARTBEAT_INTERVAL_SECONDS`` until the
+    shared shutdown flag is set. The thread is a ``daemon=True`` thread, so
+    it never blocks process exit. A failure opening ``app.db`` is logged and
+    the heartbeat is simply skipped — the search server still serves
+    requests; only the dashboard's "search" tile goes stale (web-redesign
+    spec §5, Wave 6: heartbeats are best-effort).
+
+    Args:
+        settings: Application settings — only ``APP_DB_PATH`` is read here.
+    """
+
+    def _run() -> None:
+        try:
+            conn = connect_app_db(
+                os.environ.get("APP_DB_PATH", "/data/app.db")
+            )
+            ensure_app_db_schema(conn)
+        except Exception as exc:  # noqa: BLE001
+            # rationale: best-effort heartbeat — if app.db cannot be opened
+            # the search server still works; only the dashboard tile is lost.
+            log.warning("api.heartbeat_disabled", error=str(exc))
+            return
+        heartbeat = Heartbeat(name="search", conn=conn)
+        try:
+            run_heartbeat_ticker(
+                heartbeat,
+                detail_fn=lambda: "serving search requests",
+                interval_seconds=_SEARCH_HEARTBEAT_INTERVAL_SECONDS,
+                should_stop=is_shutdown_requested,
+            )
+        finally:
+            conn.close()
+
+    thread = threading.Thread(
+        target=_run, name="search-heartbeat", daemon=True
+    )
+    thread.start()
+    log.info("api.heartbeat_started")
 
 
 def create_app(
@@ -151,6 +204,7 @@ def create_app(
     )
 
     register_spa(app, _FRONTEND_DIST)
+    _start_search_heartbeat(settings)
     return app
 
 

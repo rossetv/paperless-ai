@@ -25,6 +25,8 @@ this module and :mod:`common.config` are its only two importers.
 from __future__ import annotations
 
 import sqlite3
+import time
+from collections.abc import Callable
 
 import structlog
 
@@ -112,3 +114,47 @@ class Heartbeat:
         state. Best-effort, exactly like :meth:`beat`.
         """
         self.beat(detail=daemon_status.IDLE_DETAIL)
+
+
+def run_heartbeat_ticker(
+    heartbeat: Heartbeat,
+    *,
+    detail_fn: Callable[[], str],
+    interval_seconds: int,
+    should_stop: Callable[[], bool],
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """Beat on a fixed interval until *should_stop* is True, then return.
+
+    For a process with no natural work cycle — the search server — this is
+    the heartbeat driver: it writes a beat, sleeps, and repeats, exiting when
+    *should_stop* (the shared shutdown flag) goes True. It writes one beat
+    before the first sleep so a freshly-started process shows up on the
+    dashboard immediately.
+
+    Best-effort throughout: :meth:`Heartbeat.beat` already swallows write
+    errors, and a *detail_fn* that raises is isolated here — the ticker is
+    observability and must never bring the process down.
+
+    Args:
+        heartbeat: The :class:`Heartbeat` to beat through.
+        detail_fn: Called each tick to produce the ``detail`` string — a
+            callable, not a fixed string, so the detail can reflect live
+            state (e.g. the current index document count).
+        interval_seconds: Seconds to sleep between beats.
+        should_stop: Polled each tick; the ticker returns when it is True.
+        sleep: The sleep function — injectable so tests run instantly.
+    """
+    interval = max(1, int(interval_seconds))
+    while True:
+        try:
+            detail = detail_fn()
+        except Exception:
+            # rationale: observability boundary — a detail_fn bug must not
+            # crash the heartbeat ticker. Fall back to a generic detail.
+            log.exception("heartbeat.detail_fn_failed", daemon=heartbeat._name)
+            detail = "alive"
+        heartbeat.beat(detail=detail)
+        if should_stop():
+            return
+        sleep(interval)
