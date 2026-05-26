@@ -198,7 +198,7 @@ export function APIKeysScreen(): React.ReactElement {
       title="API Keys"
       subtitle="Bearer tokens for the REST API, the MCP server, and external integrations."
       actions={
-        <Button variant="primary" onClick={() => setPanelOpen(true)}>
+        <Button variant="primary" size="small" onClick={() => setPanelOpen(true)}>
           + New API key
         </Button>
       }

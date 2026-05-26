@@ -132,10 +132,18 @@
   --line-height-button-large:  1.00;
   --letter-spacing-button-large: normal;
 
-  /* Button — 17 px, weight 400, lh 2.41 */
+  /*
+   * Button — 17 px, weight 400.
+   *
+   * Line-height is 1.2 (not the 2.41 typography reference in DESIGN.md §3):
+   * the 2.41 figure is for inline buttons sitting in body copy, where the
+   * relaxed baseline matters. Padding-based UI buttons take their height
+   * from §4's `padding: 8px 15px` spec — a 2.41 line-height inflates the
+   * box well past intent and made every CTA visibly oversized.
+   */
   --font-size-button:          1.0625rem;
   --font-weight-button:        400;
-  --line-height-button:        2.41;
+  --line-height-button:        1.2;
   --letter-spacing-button:     normal;
 
   /* Link — 14 px, weight 400, lh 1.43, ls -0.224 px */
