@@ -148,7 +148,7 @@ export function UsersScreen(): React.ReactElement {
       title="Users"
       subtitle="Anyone with a username and password who can sign in to the web UI."
       actions={
-        <Button variant="primary" onClick={() => setDrawerUser(null)}>
+        <Button variant="primary" size="small" onClick={() => setDrawerUser(null)}>
           + Add user
         </Button>
       }
