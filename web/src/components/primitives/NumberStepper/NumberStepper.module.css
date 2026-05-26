@@ -1,37 +1,36 @@
 /*
  * NumberStepper primitive — CSS Module.
  *
- * A numeric field flanked by − / + stepper buttons, with an optional unit
- * suffix label rendered to the right of the bordered control. Pulling the
- * suffix outside the stepper keeps every stepper the same visual width
- * regardless of suffix length (chars vs s vs px) — the suffix is a plain
- * trailing label, not part of the control chrome.
+ * A numeric input flanked by − / + stepper buttons, with an optional unit
+ * suffix rendered as a divided cell INSIDE the bordered control (between
+ * the value and the + button). The native spin-buttons of <input
+ * type="number"> are hidden — the − / + buttons replace them with a
+ * larger hit target.
+ *
+ * Keeping the suffix inside the bordered control means the stepper's right
+ * edge — the + button — is always at column-right whether the row carries a
+ * unit (chars/s/px) or no unit at all. That way every row's control
+ * primitive (stepper, text input, select) right-aligns at the same x.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
-/* ── Outer wrapper — bordered stepper + trailing suffix label. ── */
-.wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-6);
-  align-self: flex-end;
-}
-
-.wrap-disabled {
-  opacity: var(--opacity-disabled);
-}
-
-/* ── The bordered stepper — − / value / +. Fixed total width so all
- *    steppers (with or without a suffix) line up consistently. ── */
 .stepper {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
+
+  /* Fit tightly around − / value / [suffix] / +; do not stretch to the full
+     column width when a parent flex or grid column is wider than the control. */
   width: max-content;
+  align-self: flex-end;
   border: var(--spacing-1) solid var(--colour-border-button);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);
   overflow: hidden;
+}
+
+.stepper-disabled {
+  opacity: var(--opacity-disabled);
 }
 
 /* ── A − or + button. ── */
@@ -89,13 +88,16 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Trailing unit suffix slot — always rendered (even when empty) so the
- *    bordered stepper's right edge aligns across rows that mix units with
- *    rows that carry no unit at all. Sized via --width-stepper-suffix. ── */
+/* ── Inline unit suffix — sits between the value field and the + button,
+ *    divided from the + button by a hairline border so it reads as part
+ *    of the bordered control rather than a trailing label. ── */
 .suffix {
-  display: inline-block;
-  width: var(--width-stepper-suffix);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--spacing-7);
+  border-right: var(--spacing-1) solid var(--colour-border-button);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
+  white-space: nowrap;
 }
