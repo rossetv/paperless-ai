@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { UseMutationResult } from '@tanstack/react-query';
@@ -102,6 +102,24 @@ function renderNavBarAt(path: string) {
   );
 }
 
+/**
+ * Return the desktop NavBar `<nav>` element (the first `nav` in the DOM).
+ *
+ * `AppNavBar` renders three navigation elements:
+ *   1. The desktop NavBar glass bar (`<nav aria-label="Main navigation">`)
+ *   2. The MobileTopBar (`<div role="banner">`)
+ *   3. The BottomTabBar (`<nav aria-label="Mobile navigation">`)
+ *
+ * Tests that query by link name must scope to one surface to avoid
+ * `getMultipleElementsFoundError`. `desktopNav` scopes to the first nav
+ * (the desktop bar) — every link appears there at least once.
+ */
+function desktopNav(container: HTMLElement): HTMLElement {
+  const nav = container.querySelector('nav[aria-label="Main navigation"]');
+  if (nav === null) throw new Error('Desktop NavBar not found');
+  return nav as HTMLElement;
+}
+
 describe('AppNavBar', () => {
   it('renders a navigation landmark', () => {
     const { container } = renderNavBar();
@@ -110,37 +128,48 @@ describe('AppNavBar', () => {
 
   it('renders the Paperless AI wordmark', () => {
     renderNavBar();
-    expect(screen.getByText(/paperless/i)).toBeInTheDocument();
+    // Wordmark appears in both desktop and mobile — first match is fine.
+    expect(screen.getAllByText(/paperless/i)[0]).toBeInTheDocument();
   });
 
   it('renders the Search nav link', () => {
-    renderNavBar();
-    expect(screen.getByRole('link', { name: /search/i })).toBeInTheDocument();
+    const { container } = renderNavBar();
+    // Both desktop and mobile surfaces render a Search link — scope to desktop.
+    expect(
+      within(desktopNav(container)).getByRole('link', { name: /search/i }),
+    ).toBeInTheDocument();
   });
 
   it('renders the user-menu trigger with the user initials', () => {
     renderNavBar();
-    // "Alex Morgan" → initials "AM"
-    expect(screen.getByText('AM')).toBeInTheDocument();
+    // "Alex Morgan" → initials "AM". Appears in both surfaces; first match suffices.
+    expect(screen.getAllByText('AM')[0]).toBeInTheDocument();
   });
 
   it('opens the user menu and shows the display name', async () => {
     renderNavBar();
-    await userEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    // First account-menu button is in the desktop bar.
+    // getAllByRole always returns at least one element (throws if empty).
+    const firstMenuBtn = screen.getAllByRole('button', { name: /account menu/i }).at(0) as HTMLElement;
+    await userEvent.click(firstMenuBtn);
     expect(screen.getByText('Alex Morgan')).toBeInTheDocument();
   });
 
   it('runs the logout mutation when Sign out is chosen', async () => {
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
     renderNavBar(makeLogout({ mutateAsync }));
-    await userEvent.click(screen.getByRole('button', { name: /account menu/i }));
+    // getAllByRole always returns at least one element (throws if empty).
+    const firstMenuBtn = screen.getAllByRole('button', { name: /account menu/i }).at(0) as HTMLElement;
+    await userEvent.click(firstMenuBtn);
     await userEvent.click(screen.getByRole('menuitem', { name: /sign out/i }));
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it('shows a Settings link for an admin user', () => {
-    renderNavBar();
-    expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+    const { container } = renderNavBar();
+    expect(
+      within(desktopNav(container)).getByRole('link', { name: /settings/i }),
+    ).toBeInTheDocument();
   });
 
   it('hides the Settings link for a non-admin user', () => {
@@ -169,15 +198,14 @@ describe('AppNavBar', () => {
     });
     mockUseLogout.mockReturnValue(makeLogout());
     mockUseStats.mockReturnValue(makeStats());
-    render(
+    const { container } = render(
       <MemoryRouter>
         <AppNavBar />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute(
-      'href',
-      '/library',
-    );
+    expect(
+      within(desktopNav(container)).getByRole('link', { name: 'Library' }),
+    ).toHaveAttribute('href', '/library');
   });
 
   it('marks the Library link active when on /library', () => {
@@ -189,12 +217,12 @@ describe('AppNavBar', () => {
     });
     mockUseLogout.mockReturnValue(makeLogout());
     mockUseStats.mockReturnValue(makeStats());
-    render(
+    const { container } = render(
       <MemoryRouter initialEntries={['/library']}>
         <AppNavBar />
       </MemoryRouter>,
     );
-    const link = screen.getByRole('link', { name: 'Library' });
+    const link = within(desktopNav(container)).getByRole('link', { name: 'Library' });
     expect(link).toHaveAttribute('aria-current', 'page');
   });
 
@@ -216,28 +244,30 @@ describe('AppNavBar', () => {
   });
 
   it('renders an Index nav link', () => {
-    renderNavBar();
-    expect(screen.getByRole('link', { name: /^index$/i })).toBeInTheDocument();
+    const { container } = renderNavBar();
+    expect(
+      within(desktopNav(container)).getByRole('link', { name: /^index$/i }),
+    ).toBeInTheDocument();
   });
 
   it('points the Index link at /index', () => {
-    renderNavBar();
-    expect(screen.getByRole('link', { name: /^index$/i })).toHaveAttribute(
-      'href',
-      '/index',
-    );
+    const { container } = renderNavBar();
+    expect(
+      within(desktopNav(container)).getByRole('link', { name: /^index$/i }),
+    ).toHaveAttribute('href', '/index');
   });
 
   it('marks the Index link active on the /index route', () => {
-    renderNavBarAt('/index');
-    const indexLink = screen.getByRole('link', { name: /^index$/i });
+    const { container } = renderNavBarAt('/index');
+    const indexLink = within(desktopNav(container)).getByRole('link', { name: /^index$/i });
     expect(indexLink).toHaveAttribute('aria-current', 'page');
   });
 
   it('does not mark the Index link active on the root route', () => {
-    renderNavBarAt('/');
-    const searchLink = screen.getByRole('link', { name: /^search$/i });
-    const indexLink = screen.getByRole('link', { name: /^index$/i });
+    const { container } = renderNavBarAt('/');
+    const nav = desktopNav(container);
+    const searchLink = within(nav).getByRole('link', { name: /^search$/i });
+    const indexLink = within(nav).getByRole('link', { name: /^index$/i });
     // On '/', Search is the active route — Index must not have aria-current.
     expect(searchLink).toHaveAttribute('aria-current', 'page');
     expect(indexLink).not.toHaveAttribute('aria-current');
@@ -246,21 +276,21 @@ describe('AppNavBar', () => {
   // ── MAJOR 1: active link underline ────────────────────────────────────────
 
   it('applies the link-active CSS class to the active nav link', () => {
-    renderNavBarAt('/library');
-    const libraryLink = screen.getByRole('link', { name: 'Library' });
+    const { container } = renderNavBarAt('/library');
+    const nav = desktopNav(container);
+    const libraryLink = within(nav).getByRole('link', { name: 'Library' });
+    const searchLink = within(nav).getByRole('link', { name: /^search$/i });
     // CSS Modules transform class names; check that the active class differs
     // from the base class — the active link gets an extra class.
-    expect(libraryLink.className).not.toEqual(
-      screen.getByRole('link', { name: /^search$/i }).className,
-    );
+    expect(libraryLink.className).not.toEqual(searchLink.className);
   });
 
   // ── MAJOR 2: IndexStatusPill ──────────────────────────────────────────────
 
   it('shows the index-status pill when stats are available', () => {
     renderNavBar();
-    // "42" formatted with en-GB thousands separators is still "42" here.
-    expect(screen.getByLabelText(/index ready, 42 documents/i)).toBeInTheDocument();
+    // Pill is rendered in both desktop and mobile surfaces — first match suffices.
+    expect(screen.getAllByLabelText(/index ready, 42 documents/i)[0]).toBeInTheDocument();
   });
 
   it('hides the index-status pill while stats are loading', () => {
@@ -294,6 +324,46 @@ describe('AppNavBar', () => {
         <AppNavBar />
       </MemoryRouter>,
     );
-    expect(screen.getByLabelText(/index ready, 1,234 documents/i)).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/index ready, 1,234 documents/i)[0]).toBeInTheDocument();
+  });
+
+  // ── MAJOR 3: Mobile surfaces ──────────────────────────────────────────────
+
+  it('renders the mobile navigation landmark', () => {
+    const { container } = renderNavBar();
+    expect(
+      container.querySelector('nav[aria-label="Mobile navigation"]'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the mobile top bar banner', () => {
+    const { container } = renderNavBar();
+    expect(container.querySelector('[role="banner"]')).toBeInTheDocument();
+  });
+
+  it('renders four tabs in the bottom tab bar for an admin', () => {
+    const { container } = renderNavBar();
+    const mobileNav = container.querySelector('nav[aria-label="Mobile navigation"]');
+    expect(mobileNav).not.toBeNull();
+    expect(within(mobileNav as HTMLElement).getAllByRole('link')).toHaveLength(4);
+  });
+
+  it('renders three tabs in the bottom tab bar for a non-admin', () => {
+    mockUseAuth.mockReturnValue({
+      user: { ...SAMPLE_USER, role: 'member' },
+      role: 'member',
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    mockUseLogout.mockReturnValue(makeLogout());
+    mockUseStats.mockReturnValue(makeStats());
+    const { container } = render(
+      <MemoryRouter>
+        <AppNavBar />
+      </MemoryRouter>,
+    );
+    const mobileNav = container.querySelector('nav[aria-label="Mobile navigation"]');
+    expect(mobileNav).not.toBeNull();
+    expect(within(mobileNav as HTMLElement).getAllByRole('link')).toHaveLength(3);
   });
 });

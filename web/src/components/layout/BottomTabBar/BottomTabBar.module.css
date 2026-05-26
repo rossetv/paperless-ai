@@ -1,0 +1,91 @@
+/*
+ * BottomTabBar layout component — CSS Module.
+ *
+ * The fixed bottom navigation bar for mobile viewports (< 700 px).
+ * Implements the mediaman nav-tabs pattern:
+ *   - Fixed, full-width, glass background (--colour-nav-bg + --backdrop-nav)
+ *   - --height-mobile-tab-bar (64 px) + safe-area-inset-bottom for iOS notch
+ *   - Tabs: icon (20 px via --spacing-13) above nano label (10 px via --font-size-nano)
+ *   - Active tab uses --colour-accent; inactive uses --colour-text-on-dark at reduced opacity
+ *   - Hidden at >= 700 px via @media context notation
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this; literal px values in @media queries are permitted.
+ */
+
+/* ── Root bar ── */
+.bar {
+  display: none; /* hidden on desktop — surface swap happens at 699.98 px */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-nav);
+
+  /* Height token + iOS safe-area inset for the notch / home indicator.
+   * These env() expressions live here because they reference a device API, not
+   * a design value — the token provides the 64 px design height; the env() adds
+   * the OS-supplied inset on top. Both values are defined in tokens.css. */
+  height: calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0%));
+  padding-bottom: env(safe-area-inset-bottom, 0%);
+  background-color: var(--colour-nav-bg);
+  backdrop-filter: var(--backdrop-nav);
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-backdrop-filter: var(--backdrop-nav);
+  border-top: var(--spacing-1) solid var(--colour-border);
+  align-items: stretch;
+  justify-content: space-around;
+}
+
+/* ── Each tab — a NavLink with stacked icon + label ── */
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-4) var(--spacing-1);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-caption);
+  letter-spacing: var(--letter-spacing-nano);
+  color: var(--colour-text-on-dark);
+  opacity: var(--opacity-disabled);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--duration-standard) var(--easing-standard),
+              opacity var(--duration-standard) var(--easing-standard);
+
+  /* Minimum touch target height — DESIGN.md §"Media controls": 44 × 44 px */
+  min-height: var(--size-touch-target);
+}
+
+.tab:hover {
+  opacity: 1;
+}
+
+/* ── Active tab — full opacity + accent colour ── */
+.tab-active {
+  color: var(--colour-accent);
+  opacity: 1;
+}
+
+/* ── Icon — inherits currentColor from .tab / .tab-active ── */
+.tab-icon {
+  width: var(--spacing-13);  /* 20 px */
+  height: var(--spacing-13);
+}
+
+/* ── Label ── */
+.tab-label {
+  font-size: var(--font-size-nano);
+  line-height: var(--line-height-nano);
+}
+
+/* ── Surface swap — show on mobile, hide on desktop ── */
+@media (width <= 699.98px) {
+  .bar {
+    display: flex;
+  }
+}

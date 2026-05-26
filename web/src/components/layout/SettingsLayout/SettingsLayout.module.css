@@ -20,6 +20,23 @@
   align-items: start;
 }
 
+/* ── Below the settings-rail breakpoint (960 px) the grid collapses to a
+   single column. The rail itself becomes a sticky horizontal chip strip
+   (handled in SettingsSideNav.module.css). ── */
+@media (width <= 959.98px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-13);
+    padding: 0; /* SettingsSideNav uses negative margins for full-bleed fade */
+  }
+
+  /* Re-apply inline padding on the content column only, so the chip strip
+     can break out to full viewport width but the content stays inset. */
+  .content {
+    padding-inline: var(--spacing-14);
+  }
+}
+
 /* ── The content column — header + scrollable body. ── */
 .content {
   min-width: 0;
