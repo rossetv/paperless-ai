@@ -89,8 +89,12 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── The unit suffix — a plain trailing label outside the bordered stepper. ── */
+/* ── Trailing unit suffix slot — always rendered (even when empty) so the
+ *    bordered stepper's right edge aligns across rows that mix units with
+ *    rows that carry no unit at all. Sized via --width-stepper-suffix. ── */
 .suffix {
+  display: inline-block;
+  width: var(--width-stepper-suffix);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);

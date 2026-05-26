@@ -575,6 +575,16 @@
   /* NumberStepper — width of the central editable value field. */
   --width-stepper-input:     56px;
 
+  /*
+   * NumberStepper — fixed width of the trailing unit suffix slot.
+   *
+   * The slot is always reserved (even when no suffix is given) so the
+   * stepper control's right edge lands at the same x for every row in a
+   * card, whether the row carries `chars` / `s` / `px` or no unit at all.
+   * Sized for the longest unit (`chars`) plus comfortable breathing room.
+   */
+  --width-stepper-suffix:    40px;
+
   /* Settings icon tile — width/height of the accent-tinted header icon tile. */
   --size-section-icon:       36px;
 

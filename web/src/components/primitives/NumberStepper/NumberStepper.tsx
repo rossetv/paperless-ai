@@ -103,7 +103,15 @@ export function NumberStepper({
           +
         </button>
       </div>
-      {suffix !== undefined && <span className={styles['suffix']}>{suffix}</span>}
+      {/*
+       * Suffix slot is rendered even without a unit so the bordered stepper's
+       * right edge lines up across rows that mix `chars` / `s` / `px` with
+       * rows that carry no unit at all. The slot width is fixed via the
+       * --width-stepper-suffix token.
+       */}
+      <span className={styles['suffix']} aria-hidden={suffix === undefined}>
+        {suffix ?? ''}
+      </span>
     </div>
   );
 }
