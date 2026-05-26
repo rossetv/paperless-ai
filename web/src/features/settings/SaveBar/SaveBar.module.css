@@ -1,0 +1,61 @@
+/*
+ * SaveBar feature — CSS Module.
+ *
+ * Fixed-bottom glass bar. Slides up via transform when dirty; transform is
+ * applied inline in the component so the transition still fires. Backdrop blur
+ * gives the frosted-glass effect matching the mock savebar.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-nav);
+  padding: var(--spacing-10) var(--spacing-14);
+  background: var(--colour-savebar-bg);
+  backdrop-filter: var(--backdrop-nav);
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-backdrop-filter: var(--backdrop-nav);
+  border-top: var(--spacing-1) solid var(--colour-hairline-strong);
+  transition: transform var(--duration-panel) var(--easing-decelerate);
+}
+
+/* ── Inner — max-width centred row. ── */
+.inner {
+  max-width: var(--width-settings-content-max);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+}
+
+/* ── Warning dot — yellow pulsing indicator. ── */
+.dot {
+  flex-shrink: 0;
+  width: var(--size-conn-dot);
+  height: var(--size-conn-dot);
+  border-radius: var(--radius-circle);
+  background: var(--colour-status-warn-fg);
+  box-shadow: var(--shadow-savebar-dot);
+}
+
+/* ── Message — unsaved count. ── */
+.message {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+/* ── Caption — pushed to the right via margin-left: auto. ── */
+.caption {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+  margin-left: auto;
+  margin-right: var(--spacing-6);
+}

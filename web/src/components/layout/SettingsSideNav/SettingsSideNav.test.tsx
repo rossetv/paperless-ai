@@ -133,4 +133,23 @@ describe('SettingsSideNav', () => {
       screen.getByRole('link', { name: 'LLM Provider' }),
     ).not.toHaveAttribute('aria-current');
   });
+
+  it('renders the eyebrow label when given', () => {
+    render(
+      <MemoryRouter initialEntries={['/settings/users']}>
+        <SettingsSideNav groups={GROUPS} eyebrow="Settings" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+  });
+
+  it('does not render an eyebrow element when none is given', () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/settings/users']}>
+        <SettingsSideNav groups={GROUPS} />
+      </MemoryRouter>,
+    );
+    // No element with the eyebrow class should exist.
+    expect(container.querySelector('[class*="eyebrow"]')).toBeNull();
+  });
 });

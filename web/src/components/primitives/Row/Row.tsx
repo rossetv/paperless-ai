@@ -30,7 +30,7 @@ export interface RowProps {
 }
 
 /**
- * One labelled setting inside a {@link SectionCard}.
+ * One labelled setting inside a {@link SettingsCard}.
  *
  * A two-column grid: a fixed-width label column (label, optional hint,
  * optional `env` config-key tag) and a flexible control column. The label is

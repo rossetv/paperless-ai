@@ -1,0 +1,57 @@
+/*
+ * SettingsBlock primitive — CSS Module.
+ *
+ * A section divider rendered as a big h2 + right-aligned subtitle + bottom
+ * hairline, followed by the body (a stack of SettingsCards).
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.block {
+  padding-top: var(--padding-block-top);
+  scroll-margin-top: calc(var(--height-nav) + var(--spacing-14));
+}
+
+.block:first-of-type {
+  padding-top: var(--padding-block-top-first);
+}
+
+/* ── Section header — big h2 on the left, subtitle on the right. ── */
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-14);
+  margin-bottom: var(--spacing-14);
+  padding-bottom: var(--spacing-10);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-block-title);
+  font-weight: var(--font-weight-heading);
+  letter-spacing: var(--letter-spacing-block-title);
+  line-height: 1.14;
+  white-space: nowrap;
+  color: var(--colour-text-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-tertiary);
+  text-align: right;
+  max-width: 56ch;
+}
+
+/* ── Block body — a stack of SettingsCards with 18 px gap. ── */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-13);
+}

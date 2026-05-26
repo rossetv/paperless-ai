@@ -1,0 +1,60 @@
+/*
+ * SettingsCard primitive — CSS Module.
+ *
+ * A sub-card surface used inside a SettingsBlock section. Has a padded header
+ * (title + subtitle + optional actions slot) divided from the body by a
+ * hairline border. Multiple cards in a block stack with 18 px gap between
+ * them.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.card {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  overflow: hidden;
+}
+
+/* ── Card header — title block left, actions right. ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  padding: var(--spacing-13) var(--spacing-14);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+.header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+}
+
+.subtitle {
+  margin: var(--spacing-2) 0 0;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  flex-shrink: 0;
+}
+
+/* ── Card body — holds Row primitives. ── */
+.body {
+  padding: 0 var(--spacing-14);
+}

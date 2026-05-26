@@ -1,6 +1,5 @@
 import React from 'react';
 import { SettingsLayout } from '../../../components/layout/SettingsLayout/SettingsLayout';
-import { Button } from '../../../components/primitives/Button/Button';
 import { useSettings, useUpdateSettings } from '../../../api/hooks';
 import type { SettingItem } from '../../../api/types';
 import type { ConfigValue, SettingsDraft } from '../fieldModel';
@@ -12,7 +11,8 @@ import {
 } from '../fieldModel';
 import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
-import { TestConnectionRow } from '../TestConnectionRow/TestConnectionRow';
+import { TestConnectionAction } from '../TestConnectionAction/TestConnectionAction';
+import { SaveBar } from '../SaveBar/SaveBar';
 import styles from './SettingsScreen.module.css';
 
 /**
@@ -30,9 +30,6 @@ function toDraft(items: SettingItem[]): SettingsDraft {
   for (const item of items) {
     const field = fieldByKey(item.key);
     if (field) {
-      // When the effective value is null (source=default), fall back to the
-      // coded default string so the control renders the actual default rather
-      // than the empty/zero state.
       const raw = item.value ?? item.default_value ?? null;
       draft[item.key] = parseValue(field, raw);
     }
@@ -63,8 +60,6 @@ function SettingsContent({
 }: {
   items: SettingItem[];
 }): React.ReactElement {
-  // The parsed baseline. useMemo so the draft hook re-bases only when the
-  // server list actually changes (after a save), not on every render.
   const baseline = React.useMemo(() => toDraft(items), [items]);
   const reindexKeys = React.useMemo(() => reindexKeySet(items), [items]);
   const defaultKeys = React.useMemo(() => defaultKeySet(items), [items]);
@@ -84,8 +79,6 @@ function SettingsContent({
 
   const handleSave = (): void => {
     if (!isDirty) return;
-    // Serialise each changed typed value to the wire string the backend
-    // stores — the config table is string-only.
     const changes: Record<string, string> = {};
     for (const [key, value] of Object.entries(changedValues())) {
       changes[key] = serialiseValue(value);
@@ -93,70 +86,47 @@ function SettingsContent({
     save.mutate({ changes });
   };
 
-  const actions = (
-    <div className={styles['header-actions']}>
-      {changedKeys.length > 0 && (
-        <span className={styles['unsaved-count']}>
-          {changedKeys.length} unsaved{' '}
-          {changedKeys.length === 1 ? 'change' : 'changes'}
-        </span>
-      )}
-      <Button
-        variant="secondary"
-        size="small"
-        disabled={!isDirty || save.isPending}
-        onClick={discard}
-      >
-        Discard
-      </Button>
-      <Button
-        variant="primary"
-        size="small"
-        disabled={!isDirty || save.isPending}
-        onClick={handleSave}
-      >
-        {save.isPending ? 'Saving…' : 'Save changes'}
-      </Button>
-    </div>
-  );
-
-  // The masked-token flag for the test-connection row: the token is still
-  // the server mask while the draft value equals the baseline value.
+  // The masked-token flag: the token is still the server mask while the draft
+  // value equals the baseline value.
   const tokenIsMasked = draft['PAPERLESS_TOKEN'] === baseline['PAPERLESS_TOKEN'];
 
+  // The group-actions map wires the TestConnectionAction into the Paperless
+  // Endpoint card's headerActions slot.
+  const paperlessGroupActions: Record<string, React.ReactNode> = {
+    endpoint: (
+      <TestConnectionAction
+        url={typeof draft['PAPERLESS_URL'] === 'string' ? draft['PAPERLESS_URL'] : ''}
+        token={typeof draft['PAPERLESS_TOKEN'] === 'string' ? draft['PAPERLESS_TOKEN'] : ''}
+        tokenIsMasked={tokenIsMasked}
+      />
+    ),
+  };
+
   return (
-    <SettingsLayout
-      title="Settings"
-      subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
-      actions={actions}
-    >
-      {SETTINGS_SECTIONS.map((section) => (
-        <SettingsSection
-          key={section.id}
-          section={section}
-          values={draft}
-          reindexKeys={reindexKeys}
-          defaultKeys={defaultKeys}
-          onChange={handleChange}
-        >
-          {section.id === 'paperless' && (
-            <TestConnectionRow
-              url={
-                typeof draft['PAPERLESS_URL'] === 'string'
-                  ? draft['PAPERLESS_URL']
-                  : ''
-              }
-              token={
-                typeof draft['PAPERLESS_TOKEN'] === 'string'
-                  ? draft['PAPERLESS_TOKEN']
-                  : ''
-              }
-              tokenIsMasked={tokenIsMasked}
-            />
-          )}
-        </SettingsSection>
-      ))}
-    </SettingsLayout>
+    <>
+      <SettingsLayout
+        title="Settings"
+        subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
+      >
+        {SETTINGS_SECTIONS.map((section) => (
+          <SettingsSection
+            key={section.id}
+            section={section}
+            values={draft}
+            reindexKeys={reindexKeys}
+            defaultKeys={defaultKeys}
+            onChange={handleChange}
+            {...(section.id === 'paperless' ? { groupActions: paperlessGroupActions } : {})}
+          />
+        ))}
+      </SettingsLayout>
+      <SaveBar
+        dirtyCount={changedKeys.length}
+        isPending={save.isPending}
+        onDiscard={discard}
+        onSave={handleSave}
+      />
+    </>
   );
 }
 
@@ -165,9 +135,9 @@ function SettingsContent({
  *
  * Fetches the configuration, then renders the nine config sections inside
  * the shared `SettingsLayout`. The server's `SettingItem[]` is parsed into a
- * typed draft; unsaved edits are tracked against it, the header shows an
- * unsaved-changes count with Discard and Save actions, and Save sends only
- * the changed keys, each serialised back to a string.
+ * typed draft; unsaved edits are tracked against it, the sticky `SaveBar`
+ * slides up when dirty, and Save sends only the changed keys each serialised
+ * back to a string.
  *
  * Tier: features/ — composes layout + primitives + settings sub-features and
  * wires the settings hooks.

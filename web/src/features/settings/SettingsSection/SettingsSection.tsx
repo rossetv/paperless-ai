@@ -1,7 +1,6 @@
 import React from 'react';
-import { SectionCard } from '../../../components/primitives/SectionCard/SectionCard';
-import { Icon } from '../../../components/primitives/Icon/Icon';
-import type { IconName } from '../../../components/primitives/Icon/Icon';
+import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
+import { SettingsCard } from '../../../components/primitives/SettingsCard/SettingsCard';
 import { Row } from '../../../components/primitives/Row/Row';
 import { SettingsTextField } from '../../../components/primitives/SettingsTextField/SettingsTextField';
 import { SettingsListField } from '../../../components/primitives/SettingsListField/SettingsListField';
@@ -16,24 +15,7 @@ import type {
   SettingsSection as SectionModel,
   SettingsField,
 } from '../fieldModel';
-// No fieldModel runtime imports needed — SettingsListField owns its own parsing.
 import styles from './SettingsSection.module.css';
-
-/**
- * Maps every section id to the icon shown in its SectionCard header tile.
- * Exported so the side-nav or any future caller can reuse the same mapping.
- */
-export const SETTINGS_SECTION_ICONS: Record<string, IconName> = {
-  paperless: 'link',
-  llm: 'sparkle',
-  search: 'search',
-  embed: 'waves',
-  ocr: 'eye',
-  classify: 'paragraph',
-  tags: 'tag',
-  perf: 'lightning',
-  logs: 'list-lines',
-};
 
 export interface SettingsSectionProps {
   /** The section descriptor from the field model. */
@@ -48,8 +30,8 @@ export interface SettingsSectionProps {
   reindexKeys?: ReadonlySet<string>;
   /**
    * The config keys whose value is currently on the coded default. A field in
-   * this set shows a subtle "default" badge so the operator can tell a
-   * coded default from an explicit override.
+   * this set shows a subtle "default" badge so the operator can tell a coded
+   * default from an explicit override.
    */
   defaultKeys?: ReadonlySet<string>;
   /**
@@ -57,18 +39,18 @@ export interface SettingsSectionProps {
    * secret string, or `null` when the user is not replacing it.
    */
   onChange: (key: string, value: ConfigValue | null) => void;
-  /** Optional extra content rendered inside the card, after the last row. */
-  children?: React.ReactNode;
+  /**
+   * Map from group id to a React node to render in that group's card header
+   * actions slot. Used by the `paperless/endpoint` group for the
+   * `TestConnectionAction`.
+   */
+  groupActions?: Record<string, React.ReactNode>;
 }
 
 /**
  * Render the right-column control for one field, bound to its draft value.
  *
- * Each branch picks the primitive matching `field.control.kind`. The value is
- * read loosely from the draft and coerced to the type the control needs — the
- * field model guarantees the key's real type matches the kind. A `list`
- * A `list` control renders a pill-list UI via `SettingsListField`; the draft
- * holds a `string[]` and the component owns its own add/remove/reorder logic.
+ * Each branch picks the primitive matching `field.control.kind`.
  */
 function FieldControl({
   field,
@@ -158,15 +140,12 @@ function FieldControl({
 }
 
 /**
- * One settings section — a `SectionCard` of model-driven field rows.
+ * One settings section — a `SettingsBlock` of model-driven `SettingsCard`s.
  *
- * Renders every field of the given `section`, dispatching on the field's
- * control kind to the matching primitive and binding it to the draft value.
- * The `Row.controlId` is set for single-element controls so the label
- * focuses the control; Segmented and SecretField rows omit it (they are not
- * a single labellable element). A field whose key is in `reindexKeys` gets a
- * re-index note appended to its hint — there is no restart concept; the only
- * operator-facing consequence of a change is whether a re-index is needed.
+ * Renders a `SettingsBlock` for the section, then a `SettingsCard` for each
+ * group. Fields within each card are rendered as `Row`s. The `groupActions`
+ * map lets callers inject actions into specific card headers — used by the
+ * `paperless/endpoint` group for `TestConnectionAction`.
  *
  * Tier: features/ — knows the field model, composes primitives + SecretField.
  */
@@ -176,58 +155,61 @@ export function SettingsSection({
   reindexKeys,
   defaultKeys,
   onChange,
-  children,
+  groupActions,
 }: SettingsSectionProps): React.ReactElement {
-  const iconName = SETTINGS_SECTION_ICONS[section.id];
-  const iconNode =
-    iconName !== undefined ? <Icon name={iconName} size="large" /> : undefined;
-
   return (
-    <SectionCard
+    <SettingsBlock
       id={section.id}
       title={section.title}
       subtitle={section.subtitle}
-      icon={iconNode}
     >
-      {section.fields.map((field, index) => {
-        // A single-element control can be focused from its label; a Segmented
-        // group or a SecretField (multiple elements) cannot.
-        const labellable =
-          field.control.kind !== 'segmented' && field.control.kind !== 'secret';
-        const needsReindex = reindexKeys?.has(field.key) ?? false;
-        const isDefault = defaultKeys?.has(field.key) ?? false;
-        const hint = needsReindex ? (
-          <>
-            {field.hint}
-            <span className={styles['reindex-note']!}>
-              {' '}
-              Changing this requires re-indexing all documents — run a full
-              rebuild from the Index page.
-            </span>
-          </>
-        ) : (
-          field.hint
-        );
-        const controlId = labellable ? `setting-${field.key}` : undefined;
-        return (
-          <Row
-            key={field.key}
-            label={field.label}
-            hint={hint}
-            env={field.key}
-            {...(controlId !== undefined ? { controlId } : {})}
-            last={index === section.fields.length - 1 && children === undefined}
-            isDefault={isDefault}
-          >
-            <FieldControl
-              field={field}
-              value={values[field.key]}
-              onChange={(next) => onChange(field.key, next)}
-            />
-          </Row>
-        );
-      })}
-      {children}
-    </SectionCard>
+      {section.groups.map((group) => (
+        <SettingsCard
+          key={group.id}
+          title={group.title}
+          {...(group.subtitle !== undefined ? { subtitle: group.subtitle } : {})}
+          {...(groupActions?.[group.id] !== undefined ? { headerActions: groupActions[group.id] } : {})}
+        >
+          {group.fields.map((field, index) => {
+            // A single-element control can be focused from its label; a Segmented
+            // group or a SecretField (multiple elements) cannot.
+            const labellable =
+              field.control.kind !== 'segmented' && field.control.kind !== 'secret';
+            const needsReindex = reindexKeys?.has(field.key) ?? false;
+            const isDefault = defaultKeys?.has(field.key) ?? false;
+            const hint = needsReindex ? (
+              <>
+                {field.hint}
+                <span className={styles['reindex-note']!}>
+                  {' '}
+                  Changing this requires re-indexing all documents — run a full
+                  rebuild from the Index page.
+                </span>
+              </>
+            ) : (
+              field.hint
+            );
+            const controlId = labellable ? `setting-${field.key}` : undefined;
+            return (
+              <Row
+                key={field.key}
+                label={field.label}
+                hint={hint}
+                env={field.key}
+                {...(controlId !== undefined ? { controlId } : {})}
+                last={index === group.fields.length - 1}
+                isDefault={isDefault}
+              >
+                <FieldControl
+                  field={field}
+                  value={values[field.key]}
+                  onChange={(next) => onChange(field.key, next)}
+                />
+              </Row>
+            );
+          })}
+        </SettingsCard>
+      ))}
+    </SettingsBlock>
   );
 }

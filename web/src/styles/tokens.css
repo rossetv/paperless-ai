@@ -190,6 +190,8 @@
   --spacing-12:  17px;
   --spacing-13:  20px;
   --spacing-14:  24px;
+  --spacing-15:  28px;
+  --spacing-16:  32px;
 
   /* ─────────────────────────────────────────────
    * Border radius ladder (DESIGN.md §5)
@@ -241,6 +243,10 @@
   --easing-standard:      ease;            /* default for interaction transitions */
   --easing-linear:        linear;          /* constant-rate looping animation */
   --easing-emphasis:      ease-in-out;     /* symmetric pulse / chevron motion */
+  --easing-decelerate:    cubic-bezier(0.2, 0.8, 0.2, 1); /* large panel slide-in: swift in, eases to rest */
+
+  /* Panel transition duration — larger affordances: savebar slide, drawer open */
+  --duration-panel:       0.25s;
 
   /* ─────────────────────────────────────────────
    * Z-index ladder
@@ -288,7 +294,37 @@
   --height-nav:         48px;
 
   /* Settings / access-control left rail width */
-  --width-settings-nav: 240px;
+  --width-settings-nav: 236px;
+
+  /* Settings content column max-width — tighter than --width-app-content. */
+  --width-settings-content-max: 1180px;
+
+  /* Settings savebar glass background — light value; dark overridden in themes.css. */
+  --colour-savebar-bg: rgb(255 255 255 / 92%);
+
+  /* Strong hairline — used by the savebar top border and ghost-button border. */
+  --colour-hairline-strong: rgb(0 0 0 / 12%);
+
+  /* Settings page structural spacing — not in the 8 px scale. */
+  --gap-settings-layout:     56px;   /* grid column gap between sidenav and content */
+  --padding-settings-bottom: 140px;  /* content column bottom padding (space for SaveBar) */
+
+  /* Settings section-block (SettingsBlock) — section-level vertical rhythm. */
+  --padding-block-top:       56px;   /* SettingsBlock top padding (not first-of-type) */
+  --padding-block-top-first: 32px;   /* SettingsBlock first-of-type top padding */
+
+  /* Settings section title — 26 px display heading (between Tile and Subheading). */
+  --font-size-block-title:         1.625rem;
+  --letter-spacing-block-title:    -0.02em;
+
+  /* Settings sidenav eyebrow — uppercase label above the nav groups. */
+  --letter-spacing-eyebrow:        0.12em;
+
+  /* Connection status dot — the 8 px indicator in TestConnectionAction. */
+  --size-conn-dot:            8px;
+  --shadow-conn-ok:           0 0 var(--spacing-8) var(--colour-status-ok-bg);
+  --shadow-conn-err:          0 0 var(--spacing-6) var(--colour-status-danger-bg);
+  --shadow-savebar-dot:       0 0 var(--spacing-8) var(--colour-status-warn-bg);
 
   /* ─────────────────────────────────────────────
    * Component dimensions
@@ -531,7 +567,7 @@
   /* NumberStepper — width of the central editable value field. */
   --width-stepper-input:     56px;
 
-  /* SectionCard — width/height of the accent-tinted header icon tile. */
+  /* Settings icon tile — width/height of the accent-tinted header icon tile. */
   --size-section-icon:       36px;
 
   /* Row — fixed width of the left label column on the Settings screen. */

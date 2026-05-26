@@ -21,12 +21,13 @@ type Story = StoryObj<typeof meta>;
 
 export const AccessControl: Story = {
   args: {
+    eyebrow: 'Settings',
     groups: [
       {
         title: 'Access Control',
         items: [
-          { id: 'users', label: 'Users', to: '/settings/users' },
-          { id: 'keys', label: 'API Keys', to: '/settings/keys' },
+          { id: 'users', label: 'Users', to: '/settings/users', icon: 'users' },
+          { id: 'keys', label: 'API Keys', to: '/settings/keys', icon: 'key' },
         ],
       },
     ],
@@ -35,19 +36,20 @@ export const AccessControl: Story = {
 
 export const WithConfigurationGroup: Story = {
   args: {
+    eyebrow: 'Settings',
     groups: [
       {
         title: 'Configuration',
         items: [
-          { id: 'llm', label: 'LLM Provider', to: '/settings/llm' },
-          { id: 'search', label: 'Search Server', to: '/settings/search' },
+          { id: 'llm', label: 'LLM Provider', to: '/settings#llm', icon: 'sparkle' },
+          { id: 'search', label: 'Search Server', to: '/settings#search', icon: 'search' },
         ],
       },
       {
         title: 'Access Control',
         items: [
-          { id: 'users', label: 'Users', to: '/settings/users' },
-          { id: 'keys', label: 'API Keys', to: '/settings/keys' },
+          { id: 'users', label: 'Users', to: '/settings/users', icon: 'users' },
+          { id: 'keys', label: 'API Keys', to: '/settings/keys', icon: 'key' },
         ],
       },
     ],

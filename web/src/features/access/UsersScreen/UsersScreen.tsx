@@ -143,30 +143,26 @@ export function UsersScreen(): React.ReactElement {
     },
   ];
 
-  const actions = (
-    <>
-      <div className={styles['search']}>
-        <input
-          type="search"
-          className={styles['search-input']}
-          placeholder="Search users…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search users"
-        />
-      </div>
-      <Button variant="primary" onClick={() => setDrawerUser(null)}>
-        + Add user
-      </Button>
-    </>
-  );
-
   return (
     <SettingsLayout
       title="Users"
       subtitle="Anyone with a username and password who can sign in to the web UI."
-      actions={actions}
     >
+      <div className={styles['toolbar']}>
+        <div className={styles['search']}>
+          <input
+            type="search"
+            className={styles['search-input']}
+            placeholder="Search users…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Search users"
+          />
+        </div>
+        <Button variant="primary" onClick={() => setDrawerUser(null)}>
+          + Add user
+        </Button>
+      </div>
       {usersQuery.isLoading ? (
         <div className={styles['state']} role="status" aria-live="polite">
           Loading users…
