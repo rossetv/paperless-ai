@@ -2,30 +2,36 @@
  * NumberStepper primitive — CSS Module.
  *
  * A numeric field flanked by − / + stepper buttons, with an optional unit
- * suffix. The whole control is one bordered pill; the buttons and the input
- * share the surface, separated by hairline dividers. The native
- * spin-buttons of <input type="number"> are hidden — the − / + buttons
- * replace them with a larger hit target.
+ * suffix label rendered to the right of the bordered control. Pulling the
+ * suffix outside the stepper keeps every stepper the same visual width
+ * regardless of suffix length (chars vs s vs px) — the suffix is a plain
+ * trailing label, not part of the control chrome.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
+/* ── Outer wrapper — bordered stepper + trailing suffix label. ── */
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  align-self: flex-end;
+}
+
+.wrap-disabled {
+  opacity: var(--opacity-disabled);
+}
+
+/* ── The bordered stepper — − / value / +. Fixed total width so all
+ *    steppers (with or without a suffix) line up consistently. ── */
 .stepper {
   display: inline-flex;
   align-items: center;
-
-  /* Fit tightly around − / value / +; do not stretch to the full column
-     width when a parent flex or grid column is wider than the control. */
   width: max-content;
-  align-self: flex-end;
   border: var(--spacing-1) solid var(--colour-border-button);
   border-radius: var(--radius-large);
   background-color: var(--colour-surface);
   overflow: hidden;
-}
-
-.stepper-disabled {
-  opacity: var(--opacity-disabled);
 }
 
 /* ── A − or + button. ── */
@@ -83,9 +89,8 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── The unit suffix, sat just after the field. ── */
+/* ── The unit suffix — a plain trailing label outside the bordered stepper. ── */
 .suffix {
-  padding: 0 var(--spacing-8);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);

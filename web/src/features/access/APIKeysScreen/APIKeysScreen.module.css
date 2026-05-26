@@ -9,13 +9,6 @@
  * All values come exclusively from design tokens (var(--…)).
  */
 
-/* ── Toolbar — top-right action row. ── */
-.toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--spacing-14);
-}
-
 /* ── Name + key cell. ── */
 .key-cell {
   min-width: 0;

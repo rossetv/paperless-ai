@@ -71,39 +71,39 @@ export function NumberStepper({
   };
 
   return (
-    <div
-      className={cn(styles['stepper'], disabled && styles['stepper-disabled'], className)}
-    >
-      <button
-        type="button"
-        aria-label={`Decrease ${label}`}
-        disabled={disabled || value <= min}
-        onClick={() => emit(value - step)}
-        className={styles['button']}
-      >
-        −
-      </button>
-      <input
-        type="number"
-        aria-label={label}
-        value={draft}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        onChange={handleChange}
-        className={styles['input']}
-      />
+    <div className={cn(styles['wrap'], disabled && styles['wrap-disabled'], className)}>
+      <div className={styles['stepper']}>
+        <button
+          type="button"
+          aria-label={`Decrease ${label}`}
+          disabled={disabled || value <= min}
+          onClick={() => emit(value - step)}
+          className={styles['button']}
+        >
+          −
+        </button>
+        <input
+          type="number"
+          aria-label={label}
+          value={draft}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          onChange={handleChange}
+          className={styles['input']}
+        />
+        <button
+          type="button"
+          aria-label={`Increase ${label}`}
+          disabled={disabled || value >= max}
+          onClick={() => emit(value + step)}
+          className={styles['button']}
+        >
+          +
+        </button>
+      </div>
       {suffix !== undefined && <span className={styles['suffix']}>{suffix}</span>}
-      <button
-        type="button"
-        aria-label={`Increase ${label}`}
-        disabled={disabled || value >= max}
-        onClick={() => emit(value + step)}
-        className={styles['button']}
-      >
-        +
-      </button>
     </div>
   );
 }

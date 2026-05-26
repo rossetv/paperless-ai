@@ -25,9 +25,25 @@
   min-width: 0;
 }
 
-/* ── Page header — title block, no actions slot. ── */
+/* ── Page header — title block on the left, optional actions on the right. ── */
 .header {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--spacing-13);
   padding: var(--spacing-15) 0 var(--spacing-6);
+}
+
+.header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  flex-shrink: 0;
 }
 
 .title {

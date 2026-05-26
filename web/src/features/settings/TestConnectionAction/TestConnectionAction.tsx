@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '../../../components/primitives/Button/Button';
+import { cn } from '../../../lib/cn';
 import { useTestConnection } from '../../../api/hooks';
 import styles from './TestConnectionAction.module.css';
 
@@ -17,12 +17,12 @@ export interface TestConnectionActionProps {
 }
 
 /**
- * The Paperless "Test connection" action — a ghost button + status dot
+ * The Paperless "Test connection" action — a status pill + ghost button
  * designed for use in a `SettingsCard` `headerActions` slot.
  *
- * Probes `POST /api/settings/test-connection` with the live draft URL/token
- * so the user can verify a connection before saving. The result is shown
- * inline as a status dot + short label.
+ * Visually matches mediaman's `.conn` + `.btn-test` pair: a coloured dot with
+ * a glow shadow, a short status label, and a pill-shaped ghost button with a
+ * hairline border.
  *
  * Tier: features/ — calls a hook and composes primitives.
  */
@@ -40,10 +40,11 @@ export function TestConnectionAction({
     });
   };
 
-  const statusClass = (() => {
-    if (!probe.isSuccess && !probe.isError) return styles['conn-untested'];
-    if (probe.isError) return styles['conn-err'];
-    return probe.data.ok ? styles['conn-ok'] : styles['conn-err'];
+  const tone: 'ok' | 'err' | 'untested' = (() => {
+    if (probe.isPending) return 'untested';
+    if (probe.isError) return 'err';
+    if (probe.isSuccess) return probe.data.ok ? 'ok' : 'err';
+    return 'untested';
   })();
 
   const statusLabel = (() => {
@@ -56,25 +57,34 @@ export function TestConnectionAction({
           ? `${count.toLocaleString()} docs`
           : 'Connected';
       }
-      return probe.data.detail ?? 'Rejected';
+      return 'Rejected';
     }
     return 'Untested';
   })();
 
   return (
     <div className={styles['action']}>
-      <span className={styles['conn']}>
-        <span className={`${styles['conn-dot']!} ${statusClass}`} />
+      <span
+        className={cn(
+          styles['conn'],
+          tone === 'ok' && styles['conn-ok'],
+          tone === 'err' && styles['conn-err'],
+          tone === 'untested' && styles['conn-untested'],
+        )}
+        title={probe.isError ? 'Could not reach the server — check the URL.' :
+          probe.isSuccess && !probe.data.ok ? probe.data.detail ?? '' : undefined}
+      >
+        <span className={styles['conn-dot']} />
         <span className={styles['conn-label']}>{statusLabel}</span>
       </span>
-      <Button
-        variant="secondary"
-        size="small"
+      <button
+        type="button"
+        className={styles['btn-test']}
         disabled={probe.isPending}
         onClick={runTest}
       >
-        {probe.isPending ? 'Testing…' : 'Run test'}
-      </Button>
+        {probe.isPending ? 'Testing…' : 'Test'}
+      </button>
     </div>
   );
 }

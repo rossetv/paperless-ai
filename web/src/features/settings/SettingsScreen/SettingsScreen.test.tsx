@@ -251,7 +251,7 @@ describe('SettingsScreen', () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     expect(
-      await screen.findByRole('button', { name: /run test/i }),
+      await screen.findByRole('button', { name: /^test$/i }),
     ).toBeInTheDocument();
   });
 

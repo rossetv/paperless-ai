@@ -1,56 +1,94 @@
 /*
  * TestConnectionAction feature — CSS Module.
  *
- * Lays out the status dot + label beside the ghost "Run test" button. Matches
- * the mock's `.conn` + `.conn-dot` shape — suitable for a SettingsCard
- * headerActions slot.
+ * Matches mediaman's `.conn` (status dot + label) + `.btn-test` (ghost pill)
+ * pair, suitable for use in a SettingsCard headerActions slot. The dot
+ * carries a coloured box-shadow glow when ok / err; the button is
+ * transparent with a hairline-strong border that darkens on hover.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
-/* ── Outer row — dot+label on the left, button on the right. ── */
 .action {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-6);
+  gap: var(--spacing-9);
 }
 
-/* ── Status indicator — dot + short label. ── */
+/* ── Status pill — dot + short label. ── */
 .conn {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-4);
+  gap: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
 }
 
 .conn-label {
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  color: var(--colour-text-secondary);
-  max-width: 18ch;
+  max-width: 22ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ── Status dot — 8 px circle, colour-coded. ── */
 .conn-dot {
   flex-shrink: 0;
   width: var(--size-conn-dot);
   height: var(--size-conn-dot);
   border-radius: var(--radius-circle);
+  background: var(--colour-text-tertiary);
+  transition: background var(--duration-fast) var(--easing-standard),
+              box-shadow var(--duration-fast) var(--easing-standard);
 }
 
-.conn-ok {
+.conn-ok .conn-dot {
   background: var(--colour-status-ok-fg);
   box-shadow: var(--shadow-conn-ok);
 }
 
-.conn-err {
+.conn-err .conn-dot {
   background: var(--colour-status-danger-fg);
   box-shadow: var(--shadow-conn-err);
 }
 
-.conn-untested {
+.conn-untested .conn-dot {
   background: var(--colour-text-tertiary);
   opacity: 0.6;
+}
+
+/* ── Ghost test button — mediaman's `.btn-test`: transparent pill with a
+ *    hairline-strong border that darkens on hover. ── */
+.btn-test {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--colour-text-primary);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-standard),
+              border-color var(--duration-fast) var(--easing-standard);
+}
+
+.btn-test:hover:not(:disabled) {
+  background: var(--colour-button-light-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+.btn-test:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.btn-test:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
 }
