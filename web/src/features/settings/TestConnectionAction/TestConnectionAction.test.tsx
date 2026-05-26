@@ -29,12 +29,12 @@ function mockFetch(status: number, body: unknown): void {
 describe('TestConnectionAction', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('renders a Run test button', () => {
+  it('renders a Test button', () => {
     render(
       <TestConnectionAction url="http://x" token="tok" tokenIsMasked={false} />,
       { wrapper: makeWrapper() },
     );
-    expect(screen.getByRole('button', { name: /run test/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^test$/i })).toBeInTheDocument();
   });
 
   it('probes with the draft url and token on click', async () => {
@@ -43,7 +43,7 @@ describe('TestConnectionAction', () => {
       <TestConnectionAction url="http://paperless.lan" token="real-tok" tokenIsMasked={false} />,
       { wrapper: makeWrapper() },
     );
-    await userEvent.click(screen.getByRole('button', { name: /run test/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^test$/i }));
     await waitFor(() => {
       const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const body = JSON.parse((call[1] as RequestInit).body as string);
@@ -60,7 +60,7 @@ describe('TestConnectionAction', () => {
       <TestConnectionAction url="http://x" token="••••mask" tokenIsMasked />,
       { wrapper: makeWrapper() },
     );
-    await userEvent.click(screen.getByRole('button', { name: /run test/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^test$/i }));
     await waitFor(() => {
       const call = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
       const body = JSON.parse((call[1] as RequestInit).body as string);
@@ -74,7 +74,7 @@ describe('TestConnectionAction', () => {
       <TestConnectionAction url="http://x" token="tok" tokenIsMasked={false} />,
       { wrapper: makeWrapper() },
     );
-    await userEvent.click(screen.getByRole('button', { name: /run test/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^test$/i }));
     expect(await screen.findByText(/14,?238 docs/)).toBeInTheDocument();
   });
 
@@ -84,7 +84,7 @@ describe('TestConnectionAction', () => {
       <TestConnectionAction url="http://x" token="bad" tokenIsMasked={false} />,
       { wrapper: makeWrapper() },
     );
-    await userEvent.click(screen.getByRole('button', { name: /run test/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^test$/i }));
     // Short label visible in the conn-label span (truncated to 18ch)
     await waitFor(() => {
       expect(screen.queryByText(/untested/i)).not.toBeInTheDocument();
@@ -97,7 +97,7 @@ describe('TestConnectionAction', () => {
       <TestConnectionAction url="http://x" token="tok" tokenIsMasked={false} />,
       { wrapper: makeWrapper() },
     );
-    await userEvent.click(screen.getByRole('button', { name: /run test/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^test$/i }));
     expect(await screen.findByText(/error/i)).toBeInTheDocument();
   });
 });

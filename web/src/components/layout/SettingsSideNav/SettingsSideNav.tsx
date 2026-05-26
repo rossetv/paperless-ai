@@ -44,12 +44,71 @@ export interface SettingsSideNavProps {
 }
 
 /**
+ * Watch the in-page anchor blocks (the ids on the right of every Configuration
+ * link's `#…`) and report the one currently in view as the user scrolls.
+ *
+ * Mirrors mediaman's rail scroll-spy: we pick the block whose top has just
+ * passed an offset from the viewport top, so the active item flips as the
+ * user reaches each section heading. Falls back to `null` when no anchor
+ * blocks are present on the page (e.g. /settings/users routed pages).
+ */
+function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
+  const [active, setActive] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (anchorIds.length === 0) {
+      setActive(null);
+      return undefined;
+    }
+
+    const findActive = (): void => {
+      // Mirror mediaman: y + ~140px finds the block whose heading has
+      // crossed the top of the viewport. Walking the list in document
+      // order lets the last-matched block win.
+      const pos = window.scrollY + 140;
+      let current: string | null = null;
+      for (const id of anchorIds) {
+        const el = document.getElementById(id);
+        if (el !== null && el.offsetTop <= pos) {
+          current = id;
+        }
+      }
+      // Snap to the last anchor when the page is scrolled to the bottom —
+      // the final block may be too short to ever cross the 140px threshold.
+      const atBottom =
+        window.innerHeight + window.scrollY >= document.body.scrollHeight - 4;
+      if (atBottom) {
+        const lastVisible = [...anchorIds]
+          .reverse()
+          .find((id) => document.getElementById(id) !== null);
+        if (lastVisible !== undefined) current = lastVisible;
+      }
+      setActive(current);
+    };
+
+    findActive();
+    window.addEventListener('scroll', findActive, { passive: true });
+    window.addEventListener('resize', findActive);
+    return () => {
+      window.removeEventListener('scroll', findActive);
+      window.removeEventListener('resize', findActive);
+    };
+  }, [anchorIds]);
+
+  return active;
+}
+
+/**
  * The left navigation rail of the settings / access-control area.
  *
  * Fully data-driven: it renders whatever `groups` it is given. Each item is
  * a `NavLink` (routed pages) or a plain `<a>` (in-page anchors). An optional
  * `eyebrow` string appears at the top of the rail as a small uppercase label.
  * Items can carry an optional `icon` name for the icon column.
+ *
+ * Anchor items participate in a scroll-spy: as the user scrolls the
+ * /settings page, the rail flips its active state to mirror whichever block
+ * heading has crossed the top of the viewport.
  *
  * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/,
  * components/primitives, react-router-dom.
@@ -59,12 +118,25 @@ export function SettingsSideNav({
   eyebrow,
   className,
 }: SettingsSideNavProps): React.ReactElement {
-  // `NavLink isActive` compares pathnames only, so every Configuration
-  // anchor link (`/settings#paperless`, `/settings#llm`, …) would resolve
-  // active simultaneously on the `/settings` page. For anchor links we
-  // therefore compare against the live URL hash; pure routed links keep
-  // NavLink's built-in matching.
   const location = useLocation();
+
+  // The anchor ids the page exposes — derived from every item.to with a `#`.
+  // Stable across renders by serialising; useMemo keeps the array identity
+  // steady so the scroll-spy effect does not re-run on every render.
+  const anchorIds = React.useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      for (const item of group.items) {
+        const hashIdx = item.to.indexOf('#');
+        if (hashIdx >= 0) {
+          ids.push(item.to.slice(hashIdx + 1));
+        }
+      }
+    }
+    return ids;
+  }, [groups]);
+
+  const scrolledActiveId = useAnchorScrollSpy(anchorIds);
 
   return (
     <nav className={cn(styles['nav'], className)} aria-label="Settings">
@@ -84,20 +156,22 @@ export function SettingsSideNav({
             const hashIndex = item.to.indexOf('#');
             const isAnchor = hashIndex >= 0;
             const anchor = isAnchor ? item.to.slice(hashIndex) : '';
+            const anchorId = isAnchor ? item.to.slice(hashIndex + 1) : '';
             const targetPath = isAnchor ? item.to.slice(0, hashIndex) : item.to;
 
             if (isAnchor) {
-              // The first anchor in the group is treated as active when the
-              // page is loaded without any fragment, so the user always sees
-              // a highlighted section.
-              const firstAnchorId = group.items.find(
-                (i) => i.to.startsWith(targetPath + '#'),
-              )?.id;
               const isOnTargetPath = location.pathname === targetPath;
+              // Scroll-spy takes precedence over the URL hash so the active
+              // state mirrors what the user is actually looking at, not what
+              // they last clicked.
               const isActive =
                 isOnTargetPath &&
-                (location.hash === anchor ||
-                  (location.hash === '' && firstAnchorId === item.id));
+                (scrolledActiveId !== null
+                  ? scrolledActiveId === anchorId
+                  : location.hash === anchor ||
+                    (location.hash === '' &&
+                      anchorIds[0] !== undefined &&
+                      anchorIds[0] === anchorId));
               return (
                 <a
                   key={item.id}

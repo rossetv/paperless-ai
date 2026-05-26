@@ -45,6 +45,13 @@ export interface SettingsLayoutProps {
   title: string;
   /** Optional one-line description shown under the title. */
   subtitle?: string;
+  /**
+   * Optional top-right header slot — a primary CTA used by the access-control
+   * screens (Users, API Keys) where the page has a single dominant action.
+   * The settings screen does NOT use this slot — the sticky SaveBar carries
+   * Discard / Save instead.
+   */
+  actions?: React.ReactNode;
   /** The page body, rendered in the scrollable content region. */
   children: React.ReactNode;
   /** Additional class names to merge onto the layout root. */
@@ -55,9 +62,8 @@ export interface SettingsLayoutProps {
  * The shared shell of the settings / access-control area.
  *
  * Renders the {@link SettingsSideNav} rail beside a content column. The
- * content column has a page header (title, optional subtitle) above a
- * scrollable body that holds `children`. The old `actions` header slot is
- * gone — the sticky SaveBar takes that responsibility in the settings screen.
+ * content column has a page header (title, optional subtitle, optional
+ * top-right actions slot) above a body that holds `children`.
  *
  * It deliberately does NOT render the app nav bar — the hosting page wraps
  * `SettingsLayout` in `AppNavBar`, exactly as every other authenticated page
@@ -69,6 +75,7 @@ export interface SettingsLayoutProps {
 export function SettingsLayout({
   title,
   subtitle,
+  actions,
   children,
   className,
 }: SettingsLayoutProps): React.ReactElement {
@@ -77,9 +84,14 @@ export function SettingsLayout({
       <SettingsSideNav groups={SETTINGS_NAV_GROUPS} eyebrow="Settings" />
       <div className={styles['content']}>
         <header className={styles['header']}>
-          <h1 className={styles['title']}>{title}</h1>
-          {subtitle !== undefined && (
-            <p className={styles['subtitle']}>{subtitle}</p>
+          <div className={styles['header-text']}>
+            <h1 className={styles['title']}>{title}</h1>
+            {subtitle !== undefined && (
+              <p className={styles['subtitle']}>{subtitle}</p>
+            )}
+          </div>
+          {actions !== undefined && (
+            <div className={styles['actions']}>{actions}</div>
           )}
         </header>
         <div className={styles['body']}>{children}</div>
