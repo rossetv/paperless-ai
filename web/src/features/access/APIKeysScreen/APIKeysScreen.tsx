@@ -192,18 +192,16 @@ export function APIKeysScreen(): React.ReactElement {
     },
   ];
 
-  const actions = (
-    <Button variant="primary" onClick={() => setPanelOpen(true)}>
-      + New API key
-    </Button>
-  );
-
   return (
     <SettingsLayout
       title="API Keys"
       subtitle="Bearer tokens for the REST API, the MCP server, and external integrations."
-      actions={actions}
     >
+      <div className={styles['toolbar']}>
+        <Button variant="primary" onClick={() => setPanelOpen(true)}>
+          + New API key
+        </Button>
+      </div>
       {keysQuery.isLoading ? (
         <div className={styles['state']} role="status" aria-live="polite">
           Loading API keys…

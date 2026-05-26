@@ -33,11 +33,6 @@ describe('SettingsLayout', () => {
     expect(screen.getByText('Body content')).toBeInTheDocument();
   });
 
-  it('renders the header actions slot', () => {
-    renderLayout({ actions: <button type="button">Add user</button> });
-    expect(screen.getByRole('button', { name: 'Add user' })).toBeInTheDocument();
-  });
-
   it('renders the settings side-nav with the Access Control group', () => {
     renderLayout();
     expect(screen.getByText('Access Control')).toBeInTheDocument();

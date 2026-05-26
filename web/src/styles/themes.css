@@ -52,4 +52,10 @@
 
   /* Navigation — unchanged (already dark glass) */
   --colour-nav-bg:          rgb(0 0 0 / 80%);
+
+  /* Settings savebar — dark glass background. */
+  --colour-savebar-bg:      rgb(20 20 22 / 92%);
+
+  /* Strong hairline — slightly brighter on dark. */
+  --colour-hairline-strong: rgb(255 255 255 / 12%);
 }

@@ -29,31 +29,11 @@ export const Default: Story = {
           padding: 'var(--spacing-14)',
           background: 'var(--colour-surface)',
           borderRadius: 'var(--radius-large)',
-          border: 'var(--spacing-1) solid var(--colour-border)',
+          border: '1px solid var(--colour-border)',
         }}
       >
         Page body goes here.
       </div>
-    ),
-  },
-};
-
-export const WithActions: Story = {
-  args: {
-    ...Default.args,
-    actions: (
-      <button
-        type="button"
-        style={{
-          background: 'var(--colour-accent)',
-          color: 'var(--colour-text-on-dark)',
-          border: 'none',
-          borderRadius: 'var(--radius-pill)',
-          padding: 'var(--spacing-6) var(--spacing-13)',
-        }}
-      >
-        + Add user
-      </button>
     ),
   },
 };

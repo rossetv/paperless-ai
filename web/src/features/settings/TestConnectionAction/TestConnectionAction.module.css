@@ -1,0 +1,56 @@
+/*
+ * TestConnectionAction feature — CSS Module.
+ *
+ * Lays out the status dot + label beside the ghost "Run test" button. Matches
+ * the mock's `.conn` + `.conn-dot` shape — suitable for a SettingsCard
+ * headerActions slot.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Outer row — dot+label on the left, button on the right. ── */
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+/* ── Status indicator — dot + short label. ── */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.conn-label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-secondary);
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Status dot — 8 px circle, colour-coded. ── */
+.conn-dot {
+  flex-shrink: 0;
+  width: var(--size-conn-dot);
+  height: var(--size-conn-dot);
+  border-radius: var(--radius-circle);
+}
+
+.conn-ok {
+  background: var(--colour-status-ok-fg);
+  box-shadow: var(--shadow-conn-ok);
+}
+
+.conn-err {
+  background: var(--colour-status-danger-fg);
+  box-shadow: var(--shadow-conn-err);
+}
+
+.conn-untested {
+  background: var(--colour-text-tertiary);
+  opacity: 0.6;
+}

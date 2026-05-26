@@ -24,7 +24,9 @@ export type IconName =
   | 'eye'
   | 'paragraph'
   | 'lightning'
-  | 'list-lines';
+  | 'list-lines'
+  | 'users'
+  | 'key';
 
 /** Size scale — icons inherit currentColor and scale via token-based dimensions. */
 export type IconSize = 'small' | 'medium' | 'large' | 'xlarge';
@@ -259,6 +261,47 @@ const ICON_PATHS: Record<IconName, React.ReactElement> = {
       <circle cx="3" cy="6" r="1" fill="currentColor" />
       <circle cx="3" cy="12" r="1" fill="currentColor" />
       <circle cx="3" cy="18" r="1" fill="currentColor" />
+    </>
+  ),
+  users: (
+    <>
+      <path
+        d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2" fill="none" />
+      <path
+        d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </>
+  ),
+  key: (
+    <>
+      <circle
+        cx="7.5"
+        cy="15.5"
+        r="4.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        fill="none"
+      />
+      <path
+        d="M10.6 12.4L20 3M20 3l2 2-2 2M20 3l-2 2 2 2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
     </>
   ),
 };

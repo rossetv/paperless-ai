@@ -3,73 +3,54 @@
  *
  * The shared shell of the settings / access-control area: a fixed-width
  * left rail beside a content column. The content column has a page header
- * (title + subtitle + actions) above a scrollable region. Centred within a
- * max-width container.
+ * (title + subtitle) above a scrollable region. Centred within a max-width
+ * container. Bottom padding leaves room for the sticky SaveBar.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
 .layout {
-  display: flex;
-  gap: var(--spacing-section);
-  max-width: var(--width-app-content);
+  display: grid;
+  grid-template-columns: var(--width-settings-nav) 1fr;
+  gap: var(--gap-settings-layout);
+  max-width: var(--width-settings-content-max);
   margin: 0 auto;
   padding: 0 var(--spacing-14);
-  align-items: flex-start;
+  padding-bottom: var(--padding-settings-bottom);
+  align-items: start;
 }
 
 /* ── The content column — header + scrollable body. ── */
 .content {
-  flex: 1;
   min-width: 0;
-  padding: var(--spacing-14) 0;
 }
 
-/* ── Page header — title block on the left, actions on the right. ── */
+/* ── Page header — title block, no actions slot. ── */
 .header {
-  display: flex;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: var(--spacing-13);
-  margin-bottom: var(--spacing-14);
-}
-
-.header-text {
-  flex: 1;
-  min-width: 0;
+  padding: var(--spacing-15) 0 var(--spacing-6);
 }
 
 .title {
-  margin: 0;
+  margin: 0 0 var(--spacing-6);
   font-family: var(--font-display);
   font-size: var(--font-size-heading);
   font-weight: var(--font-weight-heading);
   line-height: var(--line-height-heading);
-  letter-spacing: var(--letter-spacing-heading);
+  letter-spacing: var(--letter-spacing-block-title);
   color: var(--colour-text-primary);
 }
 
 .subtitle {
-  margin: var(--spacing-4) 0 0;
+  margin: 0;
   font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  font-weight: var(--font-weight-body);
+  font-size: var(--font-size-caption);
   line-height: var(--line-height-body);
-  letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-tertiary);
-}
-
-/* ── Header actions — buttons / search, right-aligned. ── */
-.actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-8);
-  flex-shrink: 0;
+  max-width: 62ch;
 }
 
 /* ── The scrollable content region. ── */
 .body {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-14);
 }

@@ -1,9 +1,9 @@
 /*
  * SettingsSideNav layout component — CSS Module.
  *
- * The left navigation rail of the settings / access-control area: stacked
- * groups, each an uppercase title above a column of NavLinks. The active
- * link gets a tinted pill background. Fixed rail width.
+ * The left navigation rail of the settings / access-control area: an optional
+ * eyebrow label, then stacked groups (each an uppercase title above icon-led
+ * NavLinks). The active link gets an accent icon and tinted pill background.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -14,11 +14,9 @@
   padding: var(--spacing-14) 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-14);
+  gap: var(--spacing-1);
 
-  /* Sticky rail — keep the nav visible while the long settings page scrolls.
-   * align-self: flex-start lets the flex parent give it its natural height
-   * so position: sticky is honoured (a stretched item never sticks). */
+  /* Sticky rail — keep the nav visible while the long settings page scrolls. */
   position: sticky;
   top: var(--spacing-14);
   align-self: flex-start;
@@ -26,20 +24,39 @@
   overflow-y: auto;
 }
 
-/* ── One group — title + its links. ── */
+/* ── Eyebrow — "SETTINGS" label above the first group. ── */
+.eyebrow {
+  display: block;
+  padding: 0 var(--spacing-10);
+  margin-bottom: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-micro-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-eyebrow);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── One group — title + its links, with hairline separator when not last. ── */
 .group {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-3);
+  gap: var(--spacing-1);
+  padding-bottom: var(--spacing-10);
+  margin-bottom: var(--spacing-10);
+}
+
+.group-bordered {
+  border-bottom: var(--spacing-1) solid var(--colour-border);
 }
 
 .group-title {
-  padding: 0 var(--spacing-10);
+  padding: var(--spacing-4) var(--spacing-10);
   font-family: var(--font-text);
-  font-size: var(--font-size-micro);
+  font-size: var(--font-size-nano);
   font-weight: var(--font-weight-micro-bold);
   text-transform: uppercase;
-  letter-spacing: var(--letter-spacing-caption);
+  letter-spacing: var(--letter-spacing-eyebrow);
   color: var(--colour-text-tertiary);
 }
 
@@ -47,18 +64,22 @@
 .link {
   display: flex;
   align-items: center;
-  padding: var(--spacing-6) var(--spacing-10);
-  border-radius: var(--radius-large);
+  gap: var(--spacing-9);
+  padding: var(--spacing-7) var(--spacing-10);
+  border-radius: var(--radius-comfortable);
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption);
   letter-spacing: var(--letter-spacing-caption);
   color: var(--colour-text-secondary);
   text-decoration: none;
-  transition: background-color var(--duration-standard) var(--easing-standard);
+  white-space: nowrap;
+  transition: background-color var(--duration-standard) var(--easing-standard),
+              color var(--duration-standard) var(--easing-standard);
 }
 
 .link:hover {
+  color: var(--colour-text-primary);
   background-color: var(--colour-button-light-bg);
 }
 
@@ -67,13 +88,27 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Active link — tinted pill, accent text, heavier weight. ── */
+/* ── Icon within a link. ── */
+.link-icon {
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: color var(--duration-standard) var(--easing-standard),
+              opacity var(--duration-standard) var(--easing-standard);
+}
+
+/* ── Active link — tinted background, primary text. ── */
 .link-active {
-  background-color: var(--colour-status-info-bg);
-  color: var(--colour-status-info-fg);
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-primary);
   font-weight: var(--font-weight-caption-bold);
 }
 
 .link-active:hover {
-  background-color: var(--colour-status-info-bg);
+  background-color: var(--colour-button-light-bg);
+}
+
+/* ── Active link icon — accent-coloured, full opacity. ── */
+.link-icon-active {
+  color: var(--colour-accent);
+  opacity: 1;
 }

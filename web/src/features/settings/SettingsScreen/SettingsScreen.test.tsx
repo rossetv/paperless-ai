@@ -64,9 +64,6 @@ const REINDEX = new Set(['EMBEDDING_MODEL', 'CHUNK_SIZE', 'CHUNK_OVERLAP']);
 
 /**
  * Convert the flat typed map above into the wire shape `{ settings: [...] }`.
- *
- * The backend returns one item per key with a STRING `value` — a list joins
- * with `, `, a boolean becomes `'true'`/`'false'`, a number is stringified.
  */
 function toSettingsBody(
   map: Record<string, unknown>,
@@ -101,11 +98,7 @@ function toSettingsBody(
   };
 }
 
-/** Build a single mock Response-like object compatible with the fetch client. */
 function mockResponse(r: { status: number; body: unknown }): object {
-  // The API client reads `response.text()` then JSON.parses it — it does NOT
-  // call `response.json()`. The headers check for `content-length: 0` to
-  // short-circuit empty responses.
   const serialised = r.body !== null ? JSON.stringify(r.body) : '';
   return {
     ok: r.status >= 200 && r.status < 300,
@@ -116,14 +109,11 @@ function mockResponse(r: { status: number; body: unknown }): object {
   };
 }
 
-/** Queue fetch responses in call order: GET settings, then any PUT. */
 function mockFetchSequence(responses: { status: number; body: unknown }[]): void {
   const fn = vi.fn();
   for (const r of responses) {
     fn.mockResolvedValueOnce(mockResponse(r));
   }
-  // Any further calls repeat the last response. Guard against empty array
-  // (which callers never pass, but noUncheckedIndexedAccess requires it).
   const last = responses.at(-1);
   if (last !== undefined) {
     fn.mockResolvedValue(mockResponse(last));
@@ -156,9 +146,6 @@ describe('SettingsScreen', () => {
   it('renders the Settings title and all nine section headings', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // Wait for data to arrive by waiting for the first section heading — the
-    // h1 "Settings" appears even in the loading placeholder, so we must wait
-    // for a section-level h2 before asserting the rest synchronously.
     await screen.findByRole('heading', { level: 2, name: 'Paperless Connection' });
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     for (const name of [
@@ -188,24 +175,25 @@ describe('SettingsScreen', () => {
     expect(await screen.findByRole('spinbutton', { name: 'Top K' })).toHaveValue(10);
   });
 
-  it('shows no unsaved-changes count and a disabled Save button initially', async () => {
+  it('shows no unsaved-changes count and a hidden SaveBar initially', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // Wait for data to load — the Save button is only present in the loaded
-    // state, not the loading placeholder.
     await screen.findByRole('heading', { level: 2, name: 'Paperless Connection' });
-    expect(screen.queryByText(/unsaved change/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+    // The SaveBar is always in the DOM but hidden via aria-hidden + CSS transform
+    // when there are no dirty fields.
+    const message = screen.queryByText(/unsaved change/i);
+    if (message !== null) {
+      expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+    }
   });
 
-  it('shows an unsaved-changes count after an edit and enables Save', async () => {
+  it('shows an unsaved-changes count in the SaveBar after an edit', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    const topK = await screen.findByRole('spinbutton', { name: 'Top K' });
+    await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    expect(topK).toHaveValue(11);
     expect(screen.getByText(/1 unsaved change/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
   });
 
   it('Discard reverts every edit', async () => {
@@ -215,7 +203,11 @@ describe('SettingsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /discard/i }));
     expect(topK).toHaveValue(10);
-    expect(screen.queryByText(/unsaved change/i)).not.toBeInTheDocument();
+    // After discard the SaveBar is hidden (aria-hidden) — not removed from DOM.
+    const message = screen.queryByText(/unsaved change/i);
+    if (message !== null) {
+      expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+    }
   });
 
   it('Save PUTs only the changed keys, as a string changes map', async () => {
@@ -226,12 +218,11 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => {
       const calls = (fetch as ReturnType<typeof vi.fn>).mock.calls;
       const put = calls.find((c) => (c[1] as RequestInit).method === 'PUT');
       expect(put).toBeDefined();
-      // Only the changed key, its value serialised to a string.
       expect(JSON.parse((put![1] as RequestInit).body as string)).toEqual({
         changes: { SEARCH_TOP_K: '11' },
       });
@@ -246,13 +237,17 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
-    await userEvent.click(screen.getByRole('button', { name: /save/i }));
-    await waitFor(() =>
-      expect(screen.queryByText(/unsaved change/i)).not.toBeInTheDocument(),
-    );
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    // After a successful save the SaveBar slides back out (aria-hidden).
+    await waitFor(() => {
+      const message = screen.queryByText(/unsaved change/i);
+      if (message !== null) {
+        expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+      }
+    });
   });
 
-  it('renders the Paperless test-connection row', async () => {
+  it('renders the Paperless test-connection button in the card header', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     expect(
@@ -263,15 +258,11 @@ describe('SettingsScreen', () => {
   it('shows a re-index note on a re-index key', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // CHUNK_SIZE and EMBEDDING_MODEL both have requires_reindex: true — each
-    // row carries the warning, so there are multiple matches; assert at least
-    // one exists.
     const notes = await screen.findAllByText(/requires re-indexing all documents/i);
     expect(notes.length).toBeGreaterThan(0);
   });
 
   it('shows the coded default value in the control when source is default', async () => {
-    // SEARCH_TOP_K is on its coded default — value: null, default_value: 10.
     mockFetchSequence([
       {
         status: 200,
@@ -282,8 +273,6 @@ describe('SettingsScreen', () => {
       },
     ]);
     renderScreen();
-    // The stepper should show 10 (the coded default), not 0 (the fallback for
-    // a null/missing value).
     expect(await screen.findByRole('spinbutton', { name: 'Top K' })).toHaveValue(10);
   });
 

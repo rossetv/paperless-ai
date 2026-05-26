@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TestConnectionRow } from './TestConnectionRow';
+import { TestConnectionAction } from './TestConnectionAction';
 
 const meta = {
-  title: 'Features/Settings/TestConnectionRow',
-  component: TestConnectionRow,
+  title: 'Features/Settings/TestConnectionAction',
+  component: TestConnectionAction,
   tags: ['autodocs'],
   decorators: [
     (Story) => (
@@ -13,7 +13,7 @@ const meta = {
       </QueryClientProvider>
     ),
   ],
-} satisfies Meta<typeof TestConnectionRow>;
+} satisfies Meta<typeof TestConnectionAction>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
