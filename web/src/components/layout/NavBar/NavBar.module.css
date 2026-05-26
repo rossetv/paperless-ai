@@ -35,6 +35,14 @@
   font-weight: var(--font-weight-nav);
 }
 
+/* ── Surface swap — hide the desktop glass bar on mobile.
+   MobileTopBar + BottomTabBar take over below 700 px. ── */
+@media (width <= 699.98px) {
+  .navbar {
+    display: none;
+  }
+}
+
 .inner {
   display: flex;
   align-items: center;

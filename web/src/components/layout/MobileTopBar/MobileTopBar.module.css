@@ -1,0 +1,60 @@
+/*
+ * MobileTopBar layout component — CSS Module.
+ *
+ * The sticky top bar for mobile viewports (< 700 px). Implements the mediaman
+ * `nav-topbar` pattern:
+ *   - Sticky top, 48 px height
+ *   - Glass background: --colour-nav-bg + --backdrop-nav
+ *   - Brand on the leading edge, optional actions on the trailing edge
+ *   - Hidden at >= 700 px — the desktop NavBar takes over
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ * Stylelint enforces this; literal px values in @media queries are permitted.
+ */
+
+/* ── Root — hidden by default (desktop first). ── */
+.topbar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  height: var(--height-nav); /* 48 px */
+  background-color: var(--colour-nav-bg);
+  backdrop-filter: var(--backdrop-nav);
+  /* stylelint-disable-next-line property-no-vendor-prefix */
+  -webkit-backdrop-filter: var(--backdrop-nav);
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+  color: var(--colour-text-on-dark);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nav);
+}
+
+/* ── Inner flex row ── */
+.inner {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-inline: var(--spacing-14);
+}
+
+/* ── Brand — leading edge ── */
+.brand {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── Actions — trailing edge; margin-inline-start:auto pushes it right ── */
+.actions {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+/* ── Surface swap — show on mobile, hide on desktop ── */
+@media (width <= 699.98px) {
+  .topbar {
+    display: block;
+  }
+}

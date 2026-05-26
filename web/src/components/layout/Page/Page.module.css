@@ -13,3 +13,14 @@
   background-color: var(--colour-bg);
   min-height: 100dvh;
 }
+
+/* ── Reserve space for the fixed bottom tab bar on mobile.
+   Without this, the last content block scrolls under the bar at 700 px and
+   below. The token is defined in tokens.css:
+     --padding-bottom-mobile-tab-bar: calc(80px + env(safe-area-inset-bottom, 0px))
+   ── */
+@media (width <= 699.98px) {
+  .page {
+    padding-bottom: var(--padding-bottom-mobile-tab-bar);
+  }
+}

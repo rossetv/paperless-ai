@@ -290,6 +290,26 @@
   --bp-desktop:         1070px;
   --bp-desktop-large:   1440px;
 
+  /* Surface-swap breakpoint — below this the desktop nav-glass hides and the
+   * mobile top bar + bottom tab bar appear instead. Matches mediaman's 700 px
+   * reference. Actual @media queries use the raw value 699.98px (max-width). */
+  --bp-mobile:          700px;
+
+  /* Settings-rail chip-strip breakpoint — below this the left rail collapses
+   * into a sticky horizontal scroll strip. Matches mediaman's 960 px reference.
+   * Actual @media queries use the raw value 959.98px (max-width). */
+  --bp-settings-rail:   960px;
+
+  /* Mobile bottom tab bar — the visible bar height (excluding safe-area inset).
+   * The total height of the fixed element including iOS notch padding is:
+   *   calc(var(--height-mobile-tab-bar) + env(safe-area-inset-bottom, 0px)) */
+  --height-mobile-tab-bar: 64px;
+
+  /* Total height reserved at the bottom of each page on mobile so content is
+   * never hidden behind the fixed tab bar. Includes safe-area-inset-bottom so
+   * the last content block is always above the iOS home indicator. */
+  --padding-bottom-mobile-tab-bar: calc(80px + env(safe-area-inset-bottom, 0px));
+
   /* Application content container max-width — matches the 1320 px design artboard
    * inner container (1440 px viewport minus equal side gutters). Every authenticated
    * page's outermost content wrapper must reference this token so all screens share
