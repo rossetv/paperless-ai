@@ -3,6 +3,7 @@ import { SettingsLayout } from '../../../components/layout/SettingsLayout/Settin
 import { Table } from '../../../components/primitives/Table/Table';
 import type { Column } from '../../../components/primitives/Table/Table';
 import { Button } from '../../../components/primitives/Button/Button';
+import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
 import { cn } from '../../../lib/cn';
 import { useApiKeys, useDeleteApiKey } from '../../../api/hooks';
@@ -210,6 +211,17 @@ export function APIKeysScreen(): React.ReactElement {
         <div className={styles['state']}>
           Could not load the API keys. Refresh to try again.
         </div>
+      ) : keys.length === 0 ? (
+        <EmptyState
+          icon="key"
+          message="No API keys yet"
+          description="Create the first one to authenticate REST or MCP clients. The full key is shown once at creation — copy it then."
+          action={
+            <Button variant="primary" onClick={() => setPanelOpen(true)}>
+              + New API key
+            </Button>
+          }
+        />
       ) : (
         <>
           <Table
@@ -217,7 +229,7 @@ export function APIKeysScreen(): React.ReactElement {
             rows={keys}
             getRowKey={(k) => k.id}
             isRowMuted={(k) => keyStateOf(k) !== 'active'}
-            emptyMessage="No API keys yet — create the first one."
+            emptyMessage="No API keys match the current filter."
           />
           <p className={cn(styles['note'])}>
             The full key is shown once at creation. After that only the prefix

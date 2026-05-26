@@ -142,7 +142,7 @@ a {
 }
 
 a:hover {
-  text-decoration: underline;
+  color: var(--colour-accent);
 }
 
 a:focus-visible {

@@ -60,7 +60,8 @@
 }
 
 .secondary:hover:not(:disabled) {
-  text-decoration: underline;
+  background-color: var(--colour-button-light-bg);
+  border-color: var(--colour-text-tertiary);
 }
 
 /* ── Size modifiers ── */

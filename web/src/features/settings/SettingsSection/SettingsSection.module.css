@@ -1,15 +1,20 @@
 /*
  * SettingsSection feature — CSS Module.
  *
- * The section card itself comes fully styled from SectionCard. This module
- * only styles the re-index note appended to a re-index key's hint — a small
- * emphasised inline span so the operator notices that changing this setting
- * needs a full document rebuild.
+ * The block + sub-cards come fully styled from SettingsBlock / SettingsCard.
+ * This module only styles the small "needs re-index" note appended to a
+ * re-index key's hint — a subdued inline label, sitting on its own line via
+ * `display: block`, so it never visually competes with the field hint.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
 .reindex-note {
+  display: block;
+  margin-top: var(--spacing-3);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
   color: var(--colour-status-warn-fg);
-  font-weight: var(--font-weight-caption-bold);
+  opacity: 0.85;
 }

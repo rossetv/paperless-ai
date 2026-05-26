@@ -153,16 +153,6 @@ export function UsersScreen(): React.ReactElement {
         </Button>
       }
     >
-      <div className={styles['search']}>
-        <input
-          type="search"
-          className={styles['search-input']}
-          placeholder="Search users…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Search users"
-        />
-      </div>
       {usersQuery.isLoading ? (
         <div className={styles['state']} role="status" aria-live="polite">
           Loading users…
@@ -178,6 +168,18 @@ export function UsersScreen(): React.ReactElement {
             <StatTile value={active} label="active accounts" />
             <StatTile value={admins} label="administrators" />
             <StatTile value={suspended} label="suspended" />
+          </div>
+          <div className={styles['toolbar']}>
+            <div className={styles['search']}>
+              <input
+                type="search"
+                className={styles['search-input']}
+                placeholder="Search users…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search users"
+              />
+            </div>
           </div>
           <Table
             columns={columns}

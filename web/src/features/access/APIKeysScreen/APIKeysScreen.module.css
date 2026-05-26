@@ -2,9 +2,9 @@
  * APIKeysScreen feature component — CSS Module.
  *
  * Layout-only styling for the API-key management screen: the name + prefix
- * cell, the scope cluster, the row-action buttons, the footer note, the
- * loading / error states. The page chrome comes from SettingsLayout; the
- * table from the Table primitive.
+ * cell, the scope cluster, ghost-pill row-action buttons, the footer note,
+ * the loading / error states. The page chrome comes from SettingsLayout;
+ * the table from the Table primitive; the empty state from EmptyState.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -55,49 +55,31 @@
   color: var(--colour-status-danger-fg);
 }
 
-/* ── Row actions. ── */
+/* ── Row action cluster — right-aligned ghost pills. ── */
 .row-actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-2);
+  gap: var(--spacing-4);
 }
 
-.danger-button {
-  background: none;
-  border: none;
-  padding: var(--spacing-4) var(--spacing-8);
-  border-radius: var(--radius-micro);
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-status-danger-fg);
-  cursor: pointer;
-}
-
-.danger-button:hover {
-  background-color: var(--colour-status-danger-bg);
-}
-
-.danger-button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-/* ── Neutral row action — the "Edit" link-button. ── */
+/* ── Neutral ghost pill action (Edit). ── */
 .action-button {
-  background: none;
-  border: none;
-  padding: var(--spacing-4) var(--spacing-8);
-  border-radius: var(--radius-micro);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--colour-text-primary);
   font-family: var(--font-text);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-caption-bold);
   letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-link);
+  white-space: nowrap;
   cursor: pointer;
-}
-
-.action-button:hover {
-  background-color: var(--colour-button-light-bg);
+  transition: background var(--duration-fast) var(--easing-standard),
+              border-color var(--duration-fast) var(--easing-standard);
 }
 
 .action-button:focus-visible {
@@ -105,17 +87,51 @@
   outline-offset: var(--spacing-1);
 }
 
-/* ── Footer note. ── */
+.action-button:hover {
+  background: var(--colour-button-light-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+/* ── Danger ghost pill (Revoke / Delete) — same shape, danger tint. ── */
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--colour-status-danger-fg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-standard),
+              border-color var(--duration-fast) var(--easing-standard);
+}
+
+.danger-button:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.danger-button:hover {
+  background: var(--colour-status-danger-bg);
+  border-color: var(--colour-status-danger-fg);
+}
+
+/* ── Footer note — small, low-key reminder under the table. ── */
 .note {
-  display: flex;
-  gap: var(--spacing-9);
-  padding: var(--spacing-10) var(--spacing-13);
+  margin-top: var(--spacing-10);
+  padding: var(--spacing-9) var(--spacing-13);
   border-radius: var(--radius-large);
   background-color: var(--colour-button-light-bg);
   font-family: var(--font-text);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-micro);
   line-height: var(--line-height-caption);
-  color: var(--colour-text-secondary);
+  color: var(--colour-text-tertiary);
 }
 
 /* ── Loading / error state. ── */

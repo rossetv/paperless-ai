@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { cn } from '../../../lib/cn';
-import { Button } from '../../../components/primitives/Button/Button';
 import { SettingsTextField } from '../../../components/primitives/SettingsTextField/SettingsTextField';
 import styles from './SecretField.module.css';
 
@@ -91,13 +90,21 @@ export function SecretField({
         }
       />
       {replacing ? (
-        <Button variant="secondary" size="small" onClick={cancelReplace}>
+        <button
+          type="button"
+          className={styles['btn-ghost']}
+          onClick={cancelReplace}
+        >
           Cancel
-        </Button>
+        </button>
       ) : (
-        <Button variant="secondary" size="small" onClick={startReplace}>
+        <button
+          type="button"
+          className={styles['btn-ghost']}
+          onClick={startReplace}
+        >
           Replace
-        </Button>
+        </button>
       )}
     </div>
   );

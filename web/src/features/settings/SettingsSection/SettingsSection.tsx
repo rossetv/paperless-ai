@@ -181,9 +181,7 @@ export function SettingsSection({
               <>
                 {field.hint}
                 <span className={styles['reindex-note']!}>
-                  {' '}
-                  Changing this requires re-indexing all documents — run a full
-                  rebuild from the Index page.
+                  Changing this requires re-indexing all documents.
                 </span>
               </>
             ) : (

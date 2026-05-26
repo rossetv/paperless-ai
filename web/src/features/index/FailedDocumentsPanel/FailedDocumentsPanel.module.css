@@ -118,13 +118,12 @@
 }
 
 .action:hover {
-  text-decoration: underline;
+  color: var(--colour-accent);
 }
 
 .action:disabled {
   cursor: default;
   opacity: var(--opacity-disabled);
-  text-decoration: none;
 }
 
 .action:focus-visible {
