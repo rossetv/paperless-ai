@@ -71,47 +71,46 @@ export function NumberStepper({
   };
 
   return (
-    <div className={cn(styles['wrap'], disabled && styles['wrap-disabled'], className)}>
-      <div className={styles['stepper']}>
-        <button
-          type="button"
-          aria-label={`Decrease ${label}`}
-          disabled={disabled || value <= min}
-          onClick={() => emit(value - step)}
-          className={styles['button']}
-        >
-          −
-        </button>
-        <input
-          type="number"
-          aria-label={label}
-          value={draft}
-          min={min}
-          max={max}
-          step={step}
-          disabled={disabled}
-          onChange={handleChange}
-          className={styles['input']}
-        />
-        <button
-          type="button"
-          aria-label={`Increase ${label}`}
-          disabled={disabled || value >= max}
-          onClick={() => emit(value + step)}
-          className={styles['button']}
-        >
-          +
-        </button>
-      </div>
+    <div className={cn(styles['stepper'], disabled && styles['stepper-disabled'], className)}>
+      <button
+        type="button"
+        aria-label={`Decrease ${label}`}
+        disabled={disabled || value <= min}
+        onClick={() => emit(value - step)}
+        className={styles['button']}
+      >
+        −
+      </button>
+      <input
+        type="number"
+        aria-label={label}
+        value={draft}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        onChange={handleChange}
+        className={styles['input']}
+      />
       {/*
-       * Suffix slot is rendered even without a unit so the bordered stepper's
-       * right edge lines up across rows that mix `chars` / `s` / `px` with
-       * rows that carry no unit at all. The slot width is fixed via the
-       * --width-stepper-suffix token.
+       * Unit suffix sits INSIDE the bordered control, between the value and
+       * the + button. Keeping it inside the border means the stepper's right
+       * edge (the + button) is always at column-right regardless of whether
+       * the row carries a unit — so steppers visually right-align with text
+       * inputs and selects in the same Settings card.
        */}
-      <span className={styles['suffix']} aria-hidden={suffix === undefined}>
-        {suffix ?? ''}
-      </span>
+      {suffix !== undefined && (
+        <span className={styles['suffix']}>{suffix}</span>
+      )}
+      <button
+        type="button"
+        aria-label={`Increase ${label}`}
+        disabled={disabled || value >= max}
+        onClick={() => emit(value + step)}
+        className={styles['button']}
+      >
+        +
+      </button>
     </div>
   );
 }
