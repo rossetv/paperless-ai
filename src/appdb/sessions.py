@@ -117,7 +117,7 @@ def create(
     conn.commit()
     log.info("appdb.session_created", session_id=cursor.lastrowid, user_id=user_id)
     row = conn.execute(
-        f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE id = ?",
+        f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE id = ?",  # nosec B608 - _SESSION_COLUMNS is a module constant; lastrowid bound via ?
         (cursor.lastrowid,),
     ).fetchone()
     # The row was just inserted in this connection — it must be present.
@@ -136,7 +136,7 @@ def get_by_token_hash(conn: sqlite3.Connection, token_hash: str) -> Session | No
         token_hash: The SHA-256 hex digest to look up.
     """
     row = conn.execute(
-        f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE token_hash = ?",
+        f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE token_hash = ?",  # nosec B608 - _SESSION_COLUMNS is a module constant; token_hash bound via ?
         (token_hash,),
     ).fetchone()
     return _row_to_session(row) if row is not None else None

@@ -108,33 +108,31 @@ def list_documents(
     # caller value is ever spliced into either string.  Every filter value
     # and the offset/limit travel in the parameter lists and are bound by
     # substitution (CODE_GUIDELINES §9.5).
-    count_sql = f"""
-        SELECT COUNT(*)
-        FROM documents d
-        LEFT JOIN taxonomy corr
-            ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id
-        LEFT JOIN taxonomy dtype
-            ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id
-        {where_clause}
-    """
-    page_sql = f"""
-        SELECT
-            d.id,
-            d.title,
-            d.tag_ids,
-            d.created,
-            d.page_count,
-            corr.name  AS correspondent_name,
-            dtype.name AS document_type_name
-        FROM documents d
-        LEFT JOIN taxonomy corr
-            ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id
-        LEFT JOIN taxonomy dtype
-            ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id
-        {where_clause}
-        ORDER BY {order_by}
-        LIMIT ? OFFSET ?
-    """
+    count_sql = (
+        "SELECT COUNT(*) "
+        "FROM documents d "
+        "LEFT JOIN taxonomy corr "
+        "    ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id "
+        "LEFT JOIN taxonomy dtype "
+        "    ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id "
+        f"{where_clause}"  # nosec B608 - where_clause is built from a fixed whitelist of SQL keywords + ? placeholders by build_browse_where()
+    )
+    page_sql = (
+        "SELECT "
+        "    d.id, "
+        "    d.title, "
+        "    d.tag_ids, "
+        "    d.created, "
+        "    d.page_count, "
+        "    corr.name  AS correspondent_name, "
+        "    dtype.name AS document_type_name "
+        "FROM documents d "
+        "LEFT JOIN taxonomy corr "
+        "    ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id "
+        "LEFT JOIN taxonomy dtype "
+        "    ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id "
+        f"{where_clause} ORDER BY {order_by} LIMIT ? OFFSET ?"  # nosec B608 - where_clause/order_by are built from whitelists by build_browse_where()/_order_by(); values via ?
+    )
     try:
         with query_lock:
             total_row = conn.execute(count_sql, params).fetchone()

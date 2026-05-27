@@ -174,7 +174,7 @@ def get_by_username(conn: sqlite3.Connection, username: str) -> User | None:
         username: The login name to look up.
     """
     row = conn.execute(
-        f"SELECT {_USER_COLUMNS} FROM users WHERE username = ?",
+        f"SELECT {_USER_COLUMNS} FROM users WHERE username = ?",  # nosec B608 - _USER_COLUMNS is a module constant; username bound via ?
         (username,),
     ).fetchone()
     return _row_to_user(row) if row is not None else None
@@ -188,7 +188,7 @@ def get_by_id(conn: sqlite3.Connection, user_id: int) -> User | None:
         user_id: The integer primary key to look up.
     """
     row = conn.execute(
-        f"SELECT {_USER_COLUMNS} FROM users WHERE id = ?",
+        f"SELECT {_USER_COLUMNS} FROM users WHERE id = ?",  # nosec B608 - _USER_COLUMNS is a module constant; user_id bound via ?
         (user_id,),
     ).fetchone()
     return _row_to_user(row) if row is not None else None
@@ -258,7 +258,9 @@ def list_all(conn: sqlite3.Connection) -> list[User]:
     Returns:
         A list of every :class:`User`; empty when no users exist.
     """
-    rows = conn.execute(f"SELECT {_USER_COLUMNS} FROM users ORDER BY id").fetchall()
+    rows = conn.execute(
+        f"SELECT {_USER_COLUMNS} FROM users ORDER BY id"  # nosec B608 - _USER_COLUMNS is a module constant; no caller input in SQL
+    ).fetchall()
     return [_row_to_user(row) for row in rows]
 
 
@@ -327,7 +329,7 @@ def update(
 
     values.append(user_id)
     cursor = conn.execute(
-        f"UPDATE users SET {', '.join(assignments)} WHERE id = ?",
+        f"UPDATE users SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
         values,
     )
     conn.commit()

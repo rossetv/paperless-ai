@@ -6,6 +6,15 @@ on:
   push:
     branches: [main]
 
+# Cancel any in-flight run for the same branch/PR when a new one is triggered.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default: jobs opt in to the permissions they need.
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: Tests
@@ -14,6 +23,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,8 +47,82 @@ jobs:
       - name: Type-check store, indexer, search
         run: mypy src/store src/indexer src/search
 
-      - name: Lint
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: ruff check
         run: ruff check src tests
+
+      - name: ruff format
+        run: ruff format --check src tests
+
+  security-scan:
+    name: Security scan (bandit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install bandit
+        run: pip install "bandit[toml]"
+
+      - name: bandit
+        # `-ll` reports MEDIUM severity and above (LOW noise filtered out).
+        run: bandit -r src/ -ll -f txt
+
+  dependency-audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install project + pip-audit
+        # No lockfile in this repo, so audit the actual installed environment
+        # (resolved from pyproject) rather than a hashed requirements file.
+        # Upgrade pip first — pip itself ships in the env pip-audit scans and
+        # the GHA-bundled pip has known CVEs the latest release has fixed.
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pip-audit
+
+      - name: pip-audit
+        run: pip-audit
 
   frontend:
     name: Frontend
@@ -50,6 +135,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -75,12 +162,16 @@ jobs:
 
   docker:
     name: Docker
-    needs: [tests, frontend]
+    # Gate the image push on every check-job, not just tests. A lint, bandit
+    # or pip-audit regression is not an excuse to ship.
+    needs: [tests, lint, security-scan, dependency-audit, frontend]
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -115,3 +206,50 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  cloudflare-refresh:
+    name: Cloudflare cache purge
+    needs: docker
+    # Guard: only run on the canonical repository so forks do not attempt
+    # to contact the maintainer's Cloudflare zone.
+    if: github.event_name == 'push' && github.repository == 'rossetv/paperless-ai'
+    runs-on: ubuntu-latest
+
+    env:
+      CF_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      # Transient 5xx from the Cloudflare API shouldn't tank the run. Each
+      # step retries up to 3 times with a short backoff. curl --fail-with-body
+      # exits non-zero on 4xx/5xx so the retry loop sees real failures.
+      - name: Enable Cloudflare Development Mode
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            if curl --fail-with-body -sS -X PATCH \
+                "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/settings/development_mode" \
+                -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data '{"value":"on"}'; then
+              exit 0
+            fi
+            echo "Attempt ${attempt} failed; retrying in $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Purge Cloudflare cache
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            if curl --fail-with-body -sS -X POST \
+                "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
+                -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data '{"purge_everything":true}'; then
+              exit 0
+            fi
+            echo "Attempt ${attempt} failed; retrying in $((attempt * 5))s..."
+            sleep $((attempt * 5))
+          done
+          exit 1

@@ -192,7 +192,7 @@ def get_by_hash(conn: sqlite3.Connection, key_hash: str) -> ApiKey | None:
         key_hash: The SHA-256 hex to look up.
     """
     row = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE key_hash = ?",
+        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE key_hash = ?",  # nosec B608 - _API_KEY_COLUMNS is a module constant; key_hash bound via ?
         (key_hash,),
     ).fetchone()
     return _row_to_api_key(row) if row is not None else None
@@ -209,7 +209,7 @@ def get_by_id(conn: sqlite3.Connection, api_key_id: int) -> ApiKey | None:
         api_key_id: The integer primary key to look up.
     """
     row = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE id = ?",
+        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE id = ?",  # nosec B608 - _API_KEY_COLUMNS is a module constant; api_key_id bound via ?
         (api_key_id,),
     ).fetchone()
     return _row_to_api_key(row) if row is not None else None
@@ -227,7 +227,7 @@ def list_all(conn: sqlite3.Connection) -> list[ApiKey]:
         A list of every :class:`ApiKey`; empty when none exist.
     """
     rows = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys ORDER BY id"
+        f"SELECT {_API_KEY_COLUMNS} FROM api_keys ORDER BY id"  # nosec B608 - _API_KEY_COLUMNS is a module constant; no caller input in SQL
     ).fetchall()
     return [_row_to_api_key(row) for row in rows]
 
@@ -246,7 +246,7 @@ def list_for_user(conn: sqlite3.Connection, owner_user_id: int) -> list[ApiKey]:
         The owner's :class:`ApiKey` list; empty when they have none.
     """
     rows = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE owner_user_id = ? ORDER BY id",
+        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE owner_user_id = ? ORDER BY id",  # nosec B608 - _API_KEY_COLUMNS is a module constant; owner_user_id bound via ?
         (owner_user_id,),
     ).fetchall()
     return [_row_to_api_key(row) for row in rows]
@@ -366,7 +366,7 @@ def update(
     if assignments:
         params.append(api_key_id)  # type: ignore[arg-type]
         conn.execute(
-            f"UPDATE api_keys SET {', '.join(assignments)} WHERE id = ?",
+            f"UPDATE api_keys SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
             tuple(params),
         )
         conn.commit()

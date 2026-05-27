@@ -587,7 +587,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
         # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
         # operator restrict exposure at the reverse proxy / port map.
-        SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),
+        SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),  # nosec B104 - intentional default, auth-gated, exposure restricted by reverse proxy
         SEARCH_SERVER_PORT=_resolve_server_port(source),
         SEARCH_SESSION_TTL=_require_at_least_one(
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
@@ -777,7 +777,9 @@ def current_settings(app_db_path: str | None = None) -> Settings:
         return settings
 
 
-def current_settings_with_version(app_db_path: str | None = None) -> tuple[int, Settings]:
+def current_settings_with_version(
+    app_db_path: str | None = None,
+) -> tuple[int, Settings]:
     """Return ``(config_version, Settings)`` atomically, rebuilding on change.
 
     A thin companion to :func:`current_settings` for callers that need to key

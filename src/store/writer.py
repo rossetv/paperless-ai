@@ -288,7 +288,7 @@ class StoreWriter:
                     chunk_ids = [
                         row[0]
                         for row in self._conn.execute(
-                            f"SELECT id FROM chunks WHERE document_id IN ({document_marks})",
+                            f"SELECT id FROM chunks WHERE document_id IN ({document_marks})",  # nosec B608 - document_marks is `?,?,?` from placeholders(); ids bound via ?
                             document_ids,
                         ).fetchall()
                     ]
@@ -296,12 +296,11 @@ class StoreWriter:
                         # Delete FTS rows explicitly — FK cascade does not cover FTS5
                         # virtual tables (SPEC §4.5 / CODE_GUIDELINES §9.8).
                         self._conn.execute(
-                            "DELETE FROM chunks_fts WHERE rowid IN "
-                            f"({placeholders(len(chunk_ids))})",
+                            f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
                             chunk_ids,
                         )
                     self._conn.execute(
-                        f"DELETE FROM documents WHERE id IN ({document_marks})",
+                        f"DELETE FROM documents WHERE id IN ({document_marks})",  # nosec B608 - document_marks is `?,?,?` from placeholders(); ids bound via ?
                         document_ids,
                     )
         except sqlite3.Error as exc:
@@ -466,7 +465,7 @@ class StoreWriter:
         chunk_ids = [row[0] for row in rows]
         if chunk_ids:
             self._conn.execute(
-                f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",
+                f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
                 chunk_ids,
             )
             self._conn.execute(

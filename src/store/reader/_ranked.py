@@ -69,15 +69,13 @@ def vector_search(
     # ``?`` placeholders by build_filters — no caller value is ever spliced
     # into the string.  Every filter value travels in *params* and is bound by
     # parameter substitution (CODE_GUIDELINES §9.5).
-    sql = f"""
-        SELECT c.id, c.document_id, c.text, c.page_hint,
-               vec_distance_cosine(c.embedding, ?) AS distance
-        FROM chunks c
-        JOIN documents d ON d.id = c.document_id
-        {where_clause}
-        ORDER BY distance
-        LIMIT ?
-    """
+    sql = (
+        "SELECT c.id, c.document_id, c.text, c.page_hint, "
+        "       vec_distance_cosine(c.embedding, ?) AS distance "
+        "FROM chunks c "
+        "JOIN documents d ON d.id = c.document_id "
+        f"{where_clause} ORDER BY distance LIMIT ?"  # nosec B608 - where_clause is built from a fixed whitelist + ? placeholders by build_filters(); values bound via ?
+    )
     try:
         with query_lock:
             rows = conn.execute(sql, [query_blob, *params, k]).fetchall()
@@ -143,16 +141,14 @@ def keyword_search(
     # placeholders (build_filters' output plus the literal MATCH clause) — no
     # caller value is spliced into the string.  The terms and every filter
     # value are bound by parameter substitution (CODE_GUIDELINES §9.5).
-    sql = f"""
-        SELECT c.id, c.document_id, c.text, c.page_hint,
-               bm25(chunks_fts) AS rank
-        FROM chunks_fts AS fts
-        JOIN chunks c ON c.id = fts.rowid
-        JOIN documents d ON d.id = c.document_id
-        {fts_join}
-        ORDER BY rank
-        LIMIT ?
-    """
+    sql = (
+        "SELECT c.id, c.document_id, c.text, c.page_hint, "
+        "       bm25(chunks_fts) AS rank "
+        "FROM chunks_fts AS fts "
+        "JOIN chunks c ON c.id = fts.rowid "
+        "JOIN documents d ON d.id = c.document_id "
+        f"{fts_join} ORDER BY rank LIMIT ?"  # nosec B608 - fts_join is build_filters() output + literal "AND fts.text MATCH ?"; values bound via ?
+    )
     try:
         with query_lock:
             rows = conn.execute(sql, [*params, match_expr, k]).fetchall()

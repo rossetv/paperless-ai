@@ -69,23 +69,23 @@ def get_documents(
     document_ids = list(ids)
     if not document_ids:
         return []
-    sql = f"""
-        SELECT
-            d.id,
-            d.title,
-            d.correspondent_id,
-            d.document_type_id,
-            d.tag_ids,
-            d.created,
-            corr.name  AS correspondent_name,
-            dtype.name AS document_type_name
-        FROM documents d
-        LEFT JOIN taxonomy corr
-            ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id
-        LEFT JOIN taxonomy dtype
-            ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id
-        WHERE d.id IN ({placeholders(len(document_ids))})
-    """
+    sql = (
+        "SELECT "
+        "    d.id, "
+        "    d.title, "
+        "    d.correspondent_id, "
+        "    d.document_type_id, "
+        "    d.tag_ids, "
+        "    d.created, "
+        "    corr.name  AS correspondent_name, "
+        "    dtype.name AS document_type_name "
+        "FROM documents d "
+        "LEFT JOIN taxonomy corr "
+        "    ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id "
+        "LEFT JOIN taxonomy dtype "
+        "    ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id "
+        f"WHERE d.id IN ({placeholders(len(document_ids))})"  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
+    )
     try:
         with query_lock:
             rows = conn.execute(sql, document_ids).fetchall()
@@ -140,11 +140,11 @@ def get_chunks(
     chunk_ids = list(ids)
     if not chunk_ids:
         return []
-    sql = f"""
-        SELECT id, document_id, text, page_hint
-        FROM chunks
-        WHERE id IN ({placeholders(len(chunk_ids))})
-    """
+    sql = (
+        "SELECT id, document_id, text, page_hint "
+        "FROM chunks "
+        f"WHERE id IN ({placeholders(len(chunk_ids))})"  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
+    )
     try:
         with query_lock:
             rows = conn.execute(sql, chunk_ids).fetchall()
@@ -366,7 +366,7 @@ def _fetch_titles(conn: sqlite3.Connection, ids: list[int]) -> dict[int, str | N
     # rationale: ids is a list of ints built from JSON-parsed keys — no value
     # is ever interpolated into the SQL string, only the placeholder count.
     rows = conn.execute(
-        f"SELECT id, title FROM documents WHERE id IN ({placeholders(len(ids))})",
+        f"SELECT id, title FROM documents WHERE id IN ({placeholders(len(ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
         ids,
     ).fetchall()
     return {row[0]: row[1] for row in rows}

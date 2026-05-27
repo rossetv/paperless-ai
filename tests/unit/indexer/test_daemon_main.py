@@ -23,7 +23,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import common.shutdown as shutdown_mod
-from indexer.daemon import _IDLE_BEAT_INTERVAL, _WAKE_CHECK_INTERVAL, _interruptible_wait
+from indexer.daemon import (
+    _IDLE_BEAT_INTERVAL,
+    _WAKE_CHECK_INTERVAL,
+    _interruptible_wait,
+)
 from tests.helpers.factories import make_settings_obj
 
 

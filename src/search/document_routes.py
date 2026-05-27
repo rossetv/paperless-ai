@@ -307,9 +307,7 @@ async def _stream_document_thumb(
             document_id=document_id,
             content_type=content_type,
         )
-        raise HTTPException(
-            status_code=502, detail="Document store unavailable"
-        )
+        raise HTTPException(status_code=502, detail="Document store unavailable")
 
     return StreamingResponse(
         _safe_thumb_chunks(chunks, client, document_id),

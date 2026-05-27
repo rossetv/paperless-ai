@@ -287,7 +287,9 @@ def test_get_settings_without_reveal_does_not_audit(admin_client) -> None:
     )
 
 
-def test_get_settings_carries_coded_default_for_default_sourced_key(admin_client) -> None:
+def test_get_settings_carries_coded_default_for_default_sourced_key(
+    admin_client,
+) -> None:
     """A key on its coded default has a non-null default_value in the response.
 
     When `source` is ``"default"`` and `value` is ``None``, ``default_value``
