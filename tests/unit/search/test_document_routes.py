@@ -404,3 +404,134 @@ def test_get_document_requires_auth(app_db_path) -> None:
 
     assert response.status_code == 401
     store_reader.get_document_summary.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/documents/{id}
+# ---------------------------------------------------------------------------
+
+
+def _min_summary(doc_id: int) -> DocumentSummary:
+    """A minimal :class:`DocumentSummary` factory for PATCH tests."""
+    return DocumentSummary(
+        id=doc_id,
+        title=None,
+        correspondent=None,
+        document_type=None,
+        tags=(),
+        created=None,
+        page_count=None,
+    )
+
+
+class PaperlessStub:
+    """A minimal Paperless stub that records ``update_document_metadata`` calls.
+
+    Replaces ``MagicMock`` for PATCH tests that need to assert on what was
+    sent to Paperless, mirroring the ``download_stream`` mock pattern used
+    above for the PDF proxy tests.
+    """
+
+    def __init__(self) -> None:
+        self._update_calls: list[tuple[int, dict]] = []
+        # Needed by the router; the PATCH handler calls close() in a finally.
+        self.close = MagicMock()
+
+    def update_document_metadata(self, doc_id: int, **kwargs) -> None:
+        """Record the call and return without error."""
+        self._update_calls.append((doc_id, dict(kwargs)))
+
+    def assert_update_document_metadata_called_with(
+        self, doc_id: int, **expected_kwargs
+    ) -> None:
+        """Assert exactly one call was made with the given document id and kwargs."""
+        assert self._update_calls, "update_document_metadata was never called"
+        assert len(self._update_calls) == 1, (
+            f"expected one call, got {len(self._update_calls)}: {self._update_calls}"
+        )
+        actual_id, actual_kwargs = self._update_calls[0]
+        assert actual_id == doc_id, f"expected doc_id={doc_id}, got {actual_id}"
+        assert actual_kwargs == expected_kwargs, (
+            f"expected kwargs {expected_kwargs!r}, got {actual_kwargs!r}"
+        )
+
+
+def test_patch_document_forwards_metadata_to_paperless(app_db_path, conn) -> None:
+    """PATCH /api/documents/{id} proxies the request body to Paperless."""
+    paperless = PaperlessStub()
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = DocumentSummary(
+        id=42,
+        title="Renamed",
+        correspondent=None,
+        document_type=None,
+        tags=(),
+        created=None,
+        page_count=None,
+    )
+    app = _build_app_with_paperless_url(
+        app_db_path, paperless, "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+
+    response = client.patch("/api/documents/42", json={"title": "Renamed", "tags": [1, 2, 3]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == 42
+    assert body["title"] == "Renamed"
+    paperless.assert_update_document_metadata_called_with(42, title="Renamed", tags={1, 2, 3})
+
+
+def test_patch_document_with_notes_field(app_db_path, conn) -> None:
+    """PATCH with only ``notes`` passes the note text through to Paperless."""
+    paperless = PaperlessStub()
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _min_summary(42)
+    app = _build_app_with_paperless_url(
+        app_db_path, paperless, "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+
+    response = client.patch("/api/documents/42", json={"notes": "hello"})
+
+    assert response.status_code == 200
+    paperless.assert_update_document_metadata_called_with(42, notes="hello")
+
+
+def test_patch_document_readonly_forbidden(app_db_path, conn) -> None:
+    """A read-only user is rejected 403 from PATCH /api/documents/{id}."""
+    client = _client(app_db_path, PaperlessStub())
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="readonly"))
+
+    response = client.patch("/api/documents/42", json={"title": "x"})
+
+    assert response.status_code == 403
+
+
+def test_patch_document_unauthenticated(app_db_path) -> None:
+    """An unauthenticated PATCH request is rejected 401."""
+    client = _client(app_db_path, PaperlessStub())
+
+    response = client.patch("/api/documents/42", json={"title": "x"})
+
+    assert response.status_code == 401
+
+
+def test_patch_document_returns_404_when_document_missing(app_db_path, conn) -> None:
+    """When the store has no record for the id, a 404 is returned."""
+    paperless = PaperlessStub()
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = None
+    app = _build_app_with_paperless_url(
+        app_db_path, paperless, "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+
+    response = client.patch("/api/documents/42", json={"title": "x"})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "document not found"

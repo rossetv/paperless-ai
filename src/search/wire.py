@@ -449,6 +449,22 @@ def to_document_list_response(
 # ---------------------------------------------------------------------------
 
 
+class DocumentPatchRequest(BaseModel):
+    """Body for ``PATCH /api/documents/{id}``.
+
+    Every field is optional — only fields present in the request are passed
+    through to Paperless. An empty body is a valid no-op.
+    """
+
+    title: str | None = None
+    correspondent_id: int | None = None
+    document_type_id: int | None = None
+    document_date: str | None = None
+    tags: list[int] | None = None
+    notes: str | None = None
+    archive_serial_number: int | None = None
+
+
 class SetupRequest(BaseModel):
     """Body for ``POST /api/setup`` — the setup token plus the first admin."""
 
