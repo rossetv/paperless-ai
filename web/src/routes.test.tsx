@@ -41,6 +41,14 @@ vi.mock('./pages/LibraryPage', () => ({
 vi.mock('./pages/IndexPage', () => ({
   IndexPage: () => React.createElement('div', { 'data-testid': 'index-page' }, 'Index'),
 }));
+vi.mock('./pages/LibraryDocumentPage', () => ({
+  LibraryDocumentPage: () =>
+    React.createElement('div', { 'data-testid': 'library-document-page' }, 'LibraryDocument'),
+}));
+vi.mock('./pages/DocumentPage', () => ({
+  DocumentPage: () =>
+    React.createElement('div', { 'data-testid': 'document-page' }, 'Document'),
+}));
 
 // --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
@@ -244,6 +252,35 @@ describe('AppRoutes', () => {
     );
     mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
     renderAt('/index');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+  });
+
+  it('renders LibraryDocumentPage for an authenticated user at /library/document/42', async () => {
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/library/document/42');
+    await waitFor(() =>
+      expect(screen.getByTestId('library-document-page')).toBeInTheDocument(),
+    );
+  });
+
+  it('renders DocumentPage for an authenticated user at /document/42', async () => {
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/document/42');
+    await waitFor(() => expect(screen.getByTestId('document-page')).toBeInTheDocument());
+  });
+
+  it('redirects an unauthenticated visitor from /document/42 to /login', async () => {
+    mockUseSetupStatus.mockReturnValue(
+      setupStatusResult({ isSuccess: true, data: { needed: false } }),
+    );
+    mockUseMe.mockReturnValue(meResult({ isError: true, error: new Error('Unauthenticated') }));
+    renderAt('/document/42');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 });
