@@ -54,12 +54,16 @@ def _build_app(
     app_db_path: str,
     paperless_client,
     store_reader=None,
+    settings=None,
 ) -> FastAPI:
     """A FastAPI app mounting the document router with a stubbed client.
 
     The router is built with a *paperless_factory* that returns the supplied
     stub, so no real Paperless call is made. An optional *store_reader* stub
     is forwarded to ``build_document_router`` for the document-summary route.
+    An optional *settings* mock is forwarded to ``build_document_router`` so
+    that tests can configure tag-id attributes on the same object the router
+    sees; when omitted a fresh :class:`~unittest.mock.MagicMock` is created.
     """
     app = FastAPI()
     attach_app_state(
@@ -69,7 +73,8 @@ def _build_app(
             setup_state=SetupState(),
         ),
     )
-    settings = MagicMock()
+    if settings is None:
+        settings = MagicMock()
     app.include_router(
         build_document_router(
             settings,
@@ -98,17 +103,21 @@ def conn(app_db_path):
     c.close()
 
 
-def _client(app_db_path: str, paperless_client, store_reader=None) -> TestClient:
+def _client(
+    app_db_path: str, paperless_client, store_reader=None, settings=None
+) -> TestClient:
     return TestClient(
-        _build_app(app_db_path, paperless_client, store_reader=store_reader),
+        _build_app(
+            app_db_path, paperless_client, store_reader=store_reader, settings=settings
+        ),
         raise_server_exceptions=False,
         base_url="https://testserver",
     )
 
 
-def _login(conn, *, role: str = "readonly") -> str:
+def _login(conn, *, role: str = "readonly", username: str = "u") -> str:
     """Create a user of *role* and return a live session token."""
-    user = create_user(conn, username="u", password_hash="h", role=role)
+    user = create_user(conn, username=username, password_hash="h", role=role)
     return begin_session(conn, user_id=user.id, ttl_seconds=3600).token
 
 
@@ -429,7 +438,8 @@ class PaperlessStub:
 
     Replaces ``MagicMock`` for PATCH tests that need to assert on what was
     sent to Paperless, and for taxonomy GET/POST tests (correspondents,
-    document-types, tags).
+    document-types, tags).  Also supports ``get_document`` (pipeline tag-swap
+    tests) and ``delete_document`` (delete-document tests).
     """
 
     def __init__(self) -> None:
@@ -437,6 +447,8 @@ class PaperlessStub:
         self._list_returns: dict[str, list] = {}
         self._create_returns: dict[str, dict] = {}
         self._create_calls: list[tuple[str, str]] = []
+        self._get_document_return: dict[str, object] | None = None
+        self._delete_calls: list[int] = []
         # Needed by the router; handlers call close() in a finally.
         self.close = MagicMock()
 
@@ -505,6 +517,34 @@ class PaperlessStub:
         """Assert that *method_name* was called with *name*."""
         assert (method_name, name) in self._create_calls, (
             f"expected {method_name}({name!r}); calls were {self._create_calls}"
+        )
+
+    # ------------------------------------------------------------------
+    # Pipeline tag-swap support (reclassify / retranscribe)
+    # ------------------------------------------------------------------
+
+    def set_get_document_return(self, doc: dict) -> None:
+        """Configure the dict returned by :meth:`get_document`."""
+        self._get_document_return = doc
+
+    def get_document(self, doc_id: int) -> dict:
+        """Return the pre-configured document dict, or a minimal default."""
+        if self._get_document_return is None:
+            return {"id": doc_id, "tags": []}
+        return self._get_document_return
+
+    # ------------------------------------------------------------------
+    # Delete support
+    # ------------------------------------------------------------------
+
+    def delete_document(self, doc_id: int) -> None:
+        """Record the delete call."""
+        self._delete_calls.append(doc_id)
+
+    def assert_delete_document_called_with(self, doc_id: int) -> None:
+        """Assert that :meth:`delete_document` was called with *doc_id*."""
+        assert doc_id in self._delete_calls, (
+            f"expected delete({doc_id}); calls were {self._delete_calls}"
         )
 
 
@@ -601,25 +641,57 @@ def paperless_stub() -> PaperlessStub:
 
 
 @pytest.fixture()
-def api_client(app_db_path, conn, paperless_stub) -> TestClient:
+def settings() -> MagicMock:
+    """A :class:`~unittest.mock.MagicMock` wired into the test app as ``settings``.
+
+    Shared between the app under test and the test body, so tests that need
+    to configure ``CLASSIFY_PRE_TAG_ID`` etc. write to the same object the
+    router closure sees.
+    """
+    return MagicMock()
+
+
+@pytest.fixture()
+def api_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
     """A :class:`TestClient` signed in as a ``member`` user."""
-    client = _client(app_db_path, paperless_stub)
+    client = _client(app_db_path, paperless_stub, settings=settings)
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
     return client
 
 
 @pytest.fixture()
-def readonly_client(app_db_path, conn, paperless_stub) -> TestClient:
+def readonly_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
     """A :class:`TestClient` signed in as a ``readonly`` user."""
-    client = _client(app_db_path, paperless_stub)
-    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="readonly"))
+    client = _client(app_db_path, paperless_stub, settings=settings)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="readonly", username="readonly_u"))
     return client
 
 
 @pytest.fixture()
-def unauthenticated_client(app_db_path, paperless_stub) -> TestClient:
+def unauthenticated_client(app_db_path, paperless_stub, settings) -> TestClient:
     """A :class:`TestClient` with no session cookie."""
-    return _client(app_db_path, paperless_stub)
+    return _client(app_db_path, paperless_stub, settings=settings)
+
+
+@pytest.fixture()
+def member_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
+    """A :class:`TestClient` signed in as a ``member`` user.
+
+    Exposed separately from :func:`api_client` so auth-gate tests can name
+    both ``member_client`` and ``readonly_client`` (or ``admin_client``)
+    explicitly without a username collision.
+    """
+    client = _client(app_db_path, paperless_stub, settings=settings)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member", username="member_u"))
+    return client
+
+
+@pytest.fixture()
+def admin_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
+    """A :class:`TestClient` signed in as an ``admin`` user."""
+    client = _client(app_db_path, paperless_stub, settings=settings)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="admin", username="admin_u"))
+    return client
 
 
 @pytest.mark.parametrize(
@@ -695,3 +767,96 @@ def test_taxonomy_get_unauthenticated(unauthenticated_client) -> None:
     """An unauthenticated GET /api/tags is rejected 401."""
     r = unauthenticated_client.get("/api/tags")
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/documents/{id}/reclassify
+# POST /api/documents/{id}/retranscribe
+# DELETE /api/documents/{id}
+# ---------------------------------------------------------------------------
+
+
+def test_reclassify_swaps_post_tag_for_pre_tag(
+    api_client, paperless_stub, settings
+) -> None:
+    """POST /reclassify removes the classify-post tag and adds the classify-pre tag."""
+    paperless_stub.set_get_document_return({"id": 42, "tags": [444, 555]})
+    settings.CLASSIFY_PRE_TAG_ID = 333
+    settings.CLASSIFY_POST_TAG_ID = 444
+    r = api_client.post("/api/documents/42/reclassify")
+    assert r.status_code == 202
+    paperless_stub.assert_update_document_metadata_called_with(42, tags={333, 555})
+
+
+def test_retranscribe_swaps_post_tag_for_pre_tag(
+    api_client, paperless_stub, settings
+) -> None:
+    """POST /retranscribe removes the OCR-post tag and adds the OCR-pre tag."""
+    paperless_stub.set_get_document_return({"id": 42, "tags": [444]})
+    settings.PRE_TAG_ID = 222
+    settings.POST_TAG_ID = 444
+    r = api_client.post("/api/documents/42/retranscribe")
+    assert r.status_code == 202
+    paperless_stub.assert_update_document_metadata_called_with(42, tags={222})
+
+
+def test_reclassify_handles_missing_post_tag(
+    api_client, paperless_stub, settings
+) -> None:
+    """If the document does not carry the post-tag, just add the pre-tag."""
+    paperless_stub.set_get_document_return({"id": 42, "tags": [777]})
+    settings.CLASSIFY_PRE_TAG_ID = 333
+    settings.CLASSIFY_POST_TAG_ID = 444  # not present in tags
+    r = api_client.post("/api/documents/42/reclassify")
+    assert r.status_code == 202
+    paperless_stub.assert_update_document_metadata_called_with(42, tags={333, 777})
+
+
+def test_reclassify_member_only(
+    member_client, readonly_client, paperless_stub, settings
+) -> None:
+    """POST /reclassify is open to members, forbidden for read-only users."""
+    paperless_stub.set_get_document_return({"id": 42, "tags": []})
+    settings.CLASSIFY_PRE_TAG_ID = 333
+    settings.CLASSIFY_POST_TAG_ID = 444
+    assert member_client.post("/api/documents/42/reclassify").status_code == 202
+    assert readonly_client.post("/api/documents/42/reclassify").status_code == 403
+
+
+def test_reclassify_unauthenticated(unauthenticated_client) -> None:
+    """An unauthenticated POST /reclassify is rejected 401."""
+    assert unauthenticated_client.post("/api/documents/42/reclassify").status_code == 401
+
+
+def test_retranscribe_member_only(
+    member_client, readonly_client, paperless_stub, settings
+) -> None:
+    """POST /retranscribe is open to members, forbidden for read-only users."""
+    paperless_stub.set_get_document_return({"id": 42, "tags": []})
+    settings.PRE_TAG_ID = 222
+    settings.POST_TAG_ID = 444
+    assert member_client.post("/api/documents/42/retranscribe").status_code == 202
+    assert readonly_client.post("/api/documents/42/retranscribe").status_code == 403
+
+
+def test_retranscribe_unauthenticated(unauthenticated_client) -> None:
+    """An unauthenticated POST /retranscribe is rejected 401."""
+    assert unauthenticated_client.post("/api/documents/42/retranscribe").status_code == 401
+
+
+def test_delete_document_admin(admin_client, paperless_stub) -> None:
+    """DELETE /api/documents/{id} succeeds for an admin user and returns 204."""
+    r = admin_client.delete("/api/documents/42")
+    assert r.status_code == 204
+    paperless_stub.assert_delete_document_called_with(42)
+
+
+def test_delete_document_member_forbidden(member_client, readonly_client) -> None:
+    """DELETE /api/documents/{id} is forbidden for non-admin callers."""
+    assert member_client.delete("/api/documents/42").status_code == 403
+    assert readonly_client.delete("/api/documents/42").status_code == 403
+
+
+def test_delete_document_unauthenticated(unauthenticated_client) -> None:
+    """An unauthenticated DELETE /api/documents/{id} is rejected 401."""
+    assert unauthenticated_client.delete("/api/documents/42").status_code == 401
