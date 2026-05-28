@@ -1,0 +1,29 @@
+/*
+ * ActionsCard — CSS Module.
+ *
+ * Sidebar card heading (matches MetadataCard / DocumentScreen card-h style)
+ * and a vertical stack of action buttons.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Section heading — uppercase tertiary label (matches MetadataCard) ── */
+.heading {
+  margin: 0;
+  margin-bottom: var(--spacing-10);
+  font-family: var(--font-display);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Action button stack ── */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  align-items: flex-start;
+}

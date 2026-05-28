@@ -597,6 +597,39 @@ export async function patchDocument(
   });
 }
 
+/**
+ * POST /api/documents/{id}/reclassify — trigger AI re-classification for a document.
+ *
+ * Resolves on 202 Accepted. The backend queues the job; actual classification
+ * happens asynchronously. Throws `Unauthenticated` on 401 and `ApiError` on
+ * any other non-2xx (notably 403 for a readonly caller).
+ */
+export async function reclassifyDocument(id: number): Promise<void> {
+  return request<void>(`${BASE_URL}/api/documents/${id}/reclassify`, { method: 'POST' });
+}
+
+/**
+ * POST /api/documents/{id}/retranscribe — trigger AI re-transcription (OCR) for a document.
+ *
+ * Resolves on 202 Accepted. The backend queues the job; actual transcription
+ * happens asynchronously. Throws `Unauthenticated` on 401 and `ApiError` on
+ * any other non-2xx.
+ */
+export async function retranscribeDocument(id: number): Promise<void> {
+  return request<void>(`${BASE_URL}/api/documents/${id}/retranscribe`, { method: 'POST' });
+}
+
+/**
+ * DELETE /api/documents/{id} — permanently delete a document in Paperless-ngx.
+ *
+ * Resolves on 204 No Content. This operation is irreversible — the document is
+ * removed from Paperless-ngx and cannot be restored via the search server.
+ * Admin-only; a non-admin caller receives 403 surfaced as `ApiError`.
+ */
+export async function deleteDocument(id: number): Promise<void> {
+  return request<void>(`${BASE_URL}/api/documents/${id}`, { method: 'DELETE' });
+}
+
 // ---------------------------------------------------------------------------
 // Taxonomy endpoints — correspondents, document types, tags
 // ---------------------------------------------------------------------------

@@ -64,6 +64,35 @@
   border-color: var(--colour-text-tertiary);
 }
 
+/* ── Destructive variant — danger-red fill for irreversible actions ── */
+.destructive {
+  background-color: var(--colour-status-danger-fg);
+  color: var(--colour-text-on-dark);
+  border-color: transparent;
+  padding: var(--spacing-6) var(--spacing-11);
+}
+
+.destructive:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.destructive:active:not(:disabled) {
+  opacity: 0.7;
+}
+
+/* ── Ghost variant — no border or background, low-prominence action ── */
+.ghost {
+  background-color: transparent;
+  color: var(--colour-text-secondary);
+  border-color: transparent;
+  padding: var(--spacing-6) var(--spacing-11);
+}
+
+.ghost:hover:not(:disabled) {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-primary);
+}
+
 /* ── Size modifiers ── */
 .default-size {
   padding: var(--spacing-6) var(--spacing-11);

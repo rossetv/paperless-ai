@@ -26,7 +26,11 @@ export function DocumentPage(): React.ReactElement {
 
   const docQuery = useDocument(documentId);
   const me = useMe();
-  const canEdit = me.data?.user?.role !== 'readonly';
+  // Derive the role for ActionsCard / DocumentScreen. Treat an unresolved me
+  // query (still loading) as 'readonly' so the screen renders immediately
+  // without waiting — editing affordances appear once me resolves.
+  const meRole = me.data?.user?.role;
+  const role = meRole === 'admin' ? 'admin' : meRole === 'member' ? 'member' : 'readonly';
 
   if (docQuery.isLoading) return <FullPageLoading />;
 
@@ -50,7 +54,7 @@ export function DocumentPage(): React.ReactElement {
         document={docQuery.data}
         parent={parent}
         parentSearch={parentSearchString === '' ? '' : `?${parentSearchString}`}
-        canEdit={canEdit}
+        role={role}
       />
     </Page>
   );

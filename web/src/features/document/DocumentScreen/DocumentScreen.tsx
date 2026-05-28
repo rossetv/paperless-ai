@@ -1,11 +1,14 @@
 /**
- * DocumentScreen — full-page document composition (Wave B: editing wired up).
+ * DocumentScreen — full-page document composition (Wave C: actions wired up).
  *
  * Layout: centred container with breadcrumb, title row (DocumentTitle +
  * SaveStatusPill), submeta line, and a two-column grid (PDF viewer | sidebar).
  *
  * Sidebar: MetadataCard (correspondent, document type, document date) +
- * TagEditor card.
+ * TagEditor card + ActionsCard (Re-classify, Re-transcribe; Delete for admin).
+ *
+ * The `role` prop replaces the previous `canEdit: boolean` — a single source of
+ * truth from which canEdit is derived internally (`role !== 'readonly'`).
  *
  * Deferred from v1 (require extending the LibraryDocument wire shape):
  *   - Notes editing: `LibraryDocument.notes` is not yet returned by GET /api/documents.
@@ -13,7 +16,7 @@
  * Both can be added in a follow-up task once the backend query is extended.
  */
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { LibraryDocument } from '../../../api/types';
 import {
   useUpdateDocument,
@@ -23,6 +26,9 @@ import {
   useCreateCorrespondent,
   useCreateDocumentType,
   useCreateTag,
+  useReclassifyDocument,
+  useRetranscribeDocument,
+  useDeleteDocument,
 } from '../../../api/hooks';
 import { Card } from '../../../components/primitives/Card/Card';
 import { DocumentTitle } from '../DocumentTitle/DocumentTitle';
@@ -30,7 +36,10 @@ import { PdfViewerCard } from '../PdfViewerCard/PdfViewerCard';
 import { MetadataCard } from '../MetadataCard/MetadataCard';
 import { TagEditor } from '../TagEditor/TagEditor';
 import { SaveStatusPill, type SaveStatus } from '../SaveStatusPill/SaveStatusPill';
+import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
 import styles from './DocumentScreen.module.css';
+
+export type { Role };
 
 export interface DocumentScreenProps {
   /** The document to display. */
@@ -42,8 +51,16 @@ export interface DocumentScreenProps {
    * verbatim on the breadcrumb link so the parent's state is restorable.
    */
   parentSearch: string;
-  /** Whether the current user may edit the document. */
-  canEdit: boolean;
+  /**
+   * Access role of the signed-in user.
+   *
+   * - 'admin': full edit + delete access.
+   * - 'member': edit access, no delete.
+   * - 'readonly': view only, no editing or actions.
+   *
+   * `canEdit` is derived internally from this: `role !== 'readonly'`.
+   */
+  role: Role;
 }
 
 /**
@@ -54,13 +71,17 @@ export interface DocumentScreenProps {
  * callbacks delegate to `update.mutate`, which writes to the
  * `['document', id]` cache and invalidates the library + search queries on
  * success.
+ *
+ * The `ActionsCard` fires reclassify / retranscribe / delete mutations; on
+ * successful delete the component navigates to the breadcrumb href.
  */
 export function DocumentScreen({
   document,
   parent,
   parentSearch,
-  canEdit,
+  role,
 }: DocumentScreenProps): React.ReactElement {
+  const navigate = useNavigate();
   const update = useUpdateDocument();
   const correspondents = useCorrespondents();
   const documentTypes = useDocumentTypes();
@@ -68,6 +89,11 @@ export function DocumentScreen({
   const createCorrespondent = useCreateCorrespondent();
   const createDocumentType = useCreateDocumentType();
   const createTag = useCreateTag();
+  const reclassify = useReclassifyDocument();
+  const retranscribe = useRetranscribeDocument();
+  const deleteDoc = useDeleteDocument();
+
+  const canEdit = role !== 'readonly';
 
   // Reset the mutation success state after 2 s so the pill cycles back to idle.
   React.useEffect(() => {
@@ -183,6 +209,25 @@ export function DocumentScreen({
               onCreate={createTagThenAdd}
             />
           </Card>
+
+          <ActionsCard
+            documentId={document.id}
+            title={document.title ?? `Document ${document.id}`}
+            role={role}
+            onReclassify={(id) =>
+              reclassify.mutate(id, {
+                onSuccess: () => {
+                  /* TODO: toast — add in a follow-up task */
+                },
+              })
+            }
+            onRetranscribe={(id) => retranscribe.mutate(id)}
+            onDelete={(id) =>
+              deleteDoc.mutate(id, {
+                onSuccess: () => navigate(breadcrumbHref),
+              })
+            }
+          />
         </aside>
       </div>
     </main>

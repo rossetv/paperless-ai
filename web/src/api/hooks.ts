@@ -41,6 +41,9 @@ import {
   rebuildIndex,
   postReconcile,
   patchDocument,
+  reclassifyDocument,
+  retranscribeDocument,
+  deleteDocument,
   getCorrespondents,
   getDocumentTypes,
   getTags,
@@ -660,6 +663,51 @@ export function useUpdateDocument(): UseMutationResult<
     mutationFn: ({ id, patch }) => patchDocument(id, patch),
     onSuccess: (updated, vars) => {
       qc.setQueryData(queryKeys.document(vars.id), updated);
+      void qc.invalidateQueries({ queryKey: ['documents'] });
+      void qc.invalidateQueries({ queryKey: ['search'] });
+    },
+  });
+}
+
+/**
+ * Trigger AI re-classification for a document — POST /api/documents/{id}/reclassify.
+ *
+ * One-shot fire-and-forget: queues a backend job and resolves. Carries no
+ * cache invalidation — the document title/type will update on the next
+ * reconcile cycle. Throws `Unauthenticated` on 401 and `ApiError` on 403+.
+ */
+export function useReclassifyDocument(): UseMutationResult<void, Error, number> {
+  return useMutation({ mutationFn: reclassifyDocument });
+}
+
+/**
+ * Trigger AI re-transcription (OCR) for a document — POST /api/documents/{id}/retranscribe.
+ *
+ * One-shot fire-and-forget: queues a backend job and resolves. No cache
+ * invalidation needed — content updates arrive on the next reconcile cycle.
+ */
+export function useRetranscribeDocument(): UseMutationResult<void, Error, number> {
+  return useMutation({ mutationFn: retranscribeDocument });
+}
+
+/**
+ * Permanently delete a document — DELETE /api/documents/{id}.
+ *
+ * Admin-only. On success:
+ * - Removes the `['document', id]` cache entry so a stale back-navigation
+ *   does not show a ghost document.
+ * - Invalidates `['documents']` so the library list reflects the deletion.
+ * - Invalidates `['search']` so cached search results no longer include the
+ *   deleted document.
+ *
+ * The calling component is responsible for navigating away after onSuccess.
+ */
+export function useDeleteDocument(): UseMutationResult<void, Error, number> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deleteDocument,
+    onSuccess: (_, id) => {
+      qc.removeQueries({ queryKey: ['document', id] });
       void qc.invalidateQueries({ queryKey: ['documents'] });
       void qc.invalidateQueries({ queryKey: ['search'] });
     },
