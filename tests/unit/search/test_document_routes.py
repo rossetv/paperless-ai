@@ -425,17 +425,24 @@ def _min_summary(doc_id: int) -> DocumentSummary:
 
 
 class PaperlessStub:
-    """A minimal Paperless stub that records ``update_document_metadata`` calls.
+    """A minimal Paperless stub recording ``update_document_metadata`` and taxonomy calls.
 
     Replaces ``MagicMock`` for PATCH tests that need to assert on what was
-    sent to Paperless, mirroring the ``download_stream`` mock pattern used
-    above for the PDF proxy tests.
+    sent to Paperless, and for taxonomy GET/POST tests (correspondents,
+    document-types, tags).
     """
 
     def __init__(self) -> None:
         self._update_calls: list[tuple[int, dict]] = []
-        # Needed by the router; the PATCH handler calls close() in a finally.
+        self._list_returns: dict[str, list] = {}
+        self._create_returns: dict[str, dict] = {}
+        self._create_calls: list[tuple[str, str]] = []
+        # Needed by the router; handlers call close() in a finally.
         self.close = MagicMock()
+
+    # ------------------------------------------------------------------
+    # PATCH support
+    # ------------------------------------------------------------------
 
     def update_document_metadata(self, doc_id: int, **kwargs) -> None:
         """Record the call and return without error."""
@@ -453,6 +460,51 @@ class PaperlessStub:
         assert actual_id == doc_id, f"expected doc_id={doc_id}, got {actual_id}"
         assert actual_kwargs == expected_kwargs, (
             f"expected kwargs {expected_kwargs!r}, got {actual_kwargs!r}"
+        )
+
+    # ------------------------------------------------------------------
+    # Taxonomy list/create support
+    # ------------------------------------------------------------------
+
+    def set_list_return(self, method_name: str, items: list) -> None:
+        """Configure what a list_* method returns."""
+        self._list_returns[method_name] = items
+
+    def set_create_return(self, method_name: str, item: dict) -> None:
+        """Configure what a create_* method returns."""
+        self._create_returns[method_name] = item
+
+    def list_correspondents(self) -> list:
+        """Return pre-configured correspondents list."""
+        return self._list_returns.get("list_correspondents", [])
+
+    def list_document_types(self) -> list:
+        """Return pre-configured document types list."""
+        return self._list_returns.get("list_document_types", [])
+
+    def list_tags(self) -> list:
+        """Return pre-configured tags list."""
+        return self._list_returns.get("list_tags", [])
+
+    def create_correspondent(self, name: str) -> dict:
+        """Record the call and return the pre-configured response."""
+        self._create_calls.append(("create_correspondent", name))
+        return self._create_returns.get("create_correspondent", {"id": 0, "name": name})
+
+    def create_document_type(self, name: str) -> dict:
+        """Record the call and return the pre-configured response."""
+        self._create_calls.append(("create_document_type", name))
+        return self._create_returns.get("create_document_type", {"id": 0, "name": name})
+
+    def create_tag(self, name: str) -> dict:
+        """Record the call and return the pre-configured response."""
+        self._create_calls.append(("create_tag", name))
+        return self._create_returns.get("create_tag", {"id": 0, "name": name})
+
+    def assert_create_called_with(self, method_name: str, name: str) -> None:
+        """Assert that *method_name* was called with *name*."""
+        assert (method_name, name) in self._create_calls, (
+            f"expected {method_name}({name!r}); calls were {self._create_calls}"
         )
 
 
@@ -535,3 +587,111 @@ def test_patch_document_returns_404_when_document_missing(app_db_path, conn) -> 
 
     assert response.status_code == 404
     assert response.json()["detail"] == "document not found"
+
+
+# ---------------------------------------------------------------------------
+# Taxonomy GET + POST  (/api/correspondents, /api/document-types, /api/tags)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def paperless_stub() -> PaperlessStub:
+    """A fresh :class:`PaperlessStub` for taxonomy tests."""
+    return PaperlessStub()
+
+
+@pytest.fixture()
+def api_client(app_db_path, conn, paperless_stub) -> TestClient:
+    """A :class:`TestClient` signed in as a ``member`` user."""
+    client = _client(app_db_path, paperless_stub)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+    return client
+
+
+@pytest.fixture()
+def readonly_client(app_db_path, conn, paperless_stub) -> TestClient:
+    """A :class:`TestClient` signed in as a ``readonly`` user."""
+    client = _client(app_db_path, paperless_stub)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="readonly"))
+    return client
+
+
+@pytest.fixture()
+def unauthenticated_client(app_db_path, paperless_stub) -> TestClient:
+    """A :class:`TestClient` with no session cookie."""
+    return _client(app_db_path, paperless_stub)
+
+
+@pytest.mark.parametrize(
+    "path,list_method",
+    [
+        ("/api/correspondents", "list_correspondents"),
+        ("/api/document-types", "list_document_types"),
+        ("/api/tags", "list_tags"),
+    ],
+)
+def test_taxonomy_get_returns_list(api_client, paperless_stub, path, list_method) -> None:
+    """GET on a taxonomy path returns the list from Paperless as JSON."""
+    paperless_stub.set_list_return(list_method, [{"id": 1, "name": "ACME", "document_count": 7}])
+    r = api_client.get(path)
+    assert r.status_code == 200
+    body = r.json()
+    assert body == [{"id": 1, "name": "ACME", "document_count": 7}]
+
+
+def test_taxonomy_get_handles_alternate_count_field(api_client, paperless_stub) -> None:
+    """Older Paperless versions return ``documents_count`` (plural) or ``documents`` (list)."""
+    paperless_stub.set_list_return(
+        "list_tags",
+        [
+            {"id": 1, "name": "with-plural", "documents_count": 5},
+            {"id": 2, "name": "with-list", "documents": [10, 11, 12]},
+            {"id": 3, "name": "with-string-count", "document_count": "9"},
+            {"id": 4, "name": "with-none-count"},
+        ],
+    )
+    body = api_client.get("/api/tags").json()
+    assert {"id": 1, "name": "with-plural", "document_count": 5} in body
+    # ``documents`` is a list — the helper reports 0 (does not infer from the list).
+    assert {"id": 2, "name": "with-list", "document_count": 0} in body
+    # String count must be coerced to int.
+    assert {"id": 3, "name": "with-string-count", "document_count": 9} in body
+    # Missing count defaults to 0.
+    assert {"id": 4, "name": "with-none-count", "document_count": 0} in body
+
+
+@pytest.mark.parametrize(
+    "path,create_method",
+    [
+        ("/api/correspondents", "create_correspondent"),
+        ("/api/document-types", "create_document_type"),
+        ("/api/tags", "create_tag"),
+    ],
+)
+def test_taxonomy_create_member_returns_201(
+    api_client, paperless_stub, path, create_method
+) -> None:
+    """POST on a taxonomy path creates the item and returns 201."""
+    paperless_stub.set_create_return(create_method, {"id": 99, "name": "New", "document_count": 0})
+    r = api_client.post(path, json={"name": "New"})
+    assert r.status_code == 201
+    assert r.json()["id"] == 99
+    paperless_stub.assert_create_called_with(create_method, "New")
+
+
+def test_taxonomy_create_readonly_forbidden(readonly_client) -> None:
+    """A read-only user is rejected 403 from POST /api/tags."""
+    r = readonly_client.post("/api/tags", json={"name": "x"})
+    assert r.status_code == 403
+
+
+def test_taxonomy_create_unauthenticated(unauthenticated_client) -> None:
+    """An unauthenticated POST /api/tags is rejected 401."""
+    r = unauthenticated_client.post("/api/tags", json={"name": "x"})
+    assert r.status_code == 401
+
+
+def test_taxonomy_get_unauthenticated(unauthenticated_client) -> None:
+    """An unauthenticated GET /api/tags is rejected 401."""
+    r = unauthenticated_client.get("/api/tags")
+    assert r.status_code == 401

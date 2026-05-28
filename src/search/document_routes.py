@@ -57,6 +57,9 @@ from search.wire import (
     DocumentSummaryResponse,
     RecentSearchEntry,
     RecentSearchesResponse,
+    TaxonomyCreateRequest,
+    TaxonomyItemResponse,
+    _paperless_item_to_response,
     to_document_summary_response,
 )
 
@@ -228,6 +231,122 @@ def build_document_router(
             summary,
             paperless_url=f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/",
         )
+
+    # ------------------------------------------------------------------
+    # Taxonomy endpoints — correspondents, document-types, tags
+    # Each taxonomy has a GET (list) and a POST (create) endpoint.
+    # ------------------------------------------------------------------
+
+    @router.get(
+        "/api/correspondents",
+        dependencies=[Depends(require_api_scope)],
+    )
+    async def list_correspondents() -> list[TaxonomyItemResponse]:
+        """Return all Paperless correspondents with their document counts.
+
+        Auth: Read-only or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            items = await loop.run_in_executor(None, paperless.list_correspondents)
+        finally:
+            paperless.close()
+        return [_paperless_item_to_response(i) for i in items]
+
+    @router.post(
+        "/api/correspondents",
+        status_code=201,
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def create_correspondent(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
+        """Create a new Paperless correspondent and return it.
+
+        Auth: Member or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            created = await loop.run_in_executor(
+                None, lambda: paperless.create_correspondent(body.name)
+            )
+        finally:
+            paperless.close()
+        return _paperless_item_to_response(created)
+
+    @router.get(
+        "/api/document-types",
+        dependencies=[Depends(require_api_scope)],
+    )
+    async def list_document_types() -> list[TaxonomyItemResponse]:
+        """Return all Paperless document types with their document counts.
+
+        Auth: Read-only or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            items = await loop.run_in_executor(None, paperless.list_document_types)
+        finally:
+            paperless.close()
+        return [_paperless_item_to_response(i) for i in items]
+
+    @router.post(
+        "/api/document-types",
+        status_code=201,
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def create_document_type(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
+        """Create a new Paperless document type and return it.
+
+        Auth: Member or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            created = await loop.run_in_executor(
+                None, lambda: paperless.create_document_type(body.name)
+            )
+        finally:
+            paperless.close()
+        return _paperless_item_to_response(created)
+
+    @router.get(
+        "/api/tags",
+        dependencies=[Depends(require_api_scope)],
+    )
+    async def list_tags() -> list[TaxonomyItemResponse]:
+        """Return all Paperless tags with their document counts.
+
+        Auth: Read-only or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            items = await loop.run_in_executor(None, paperless.list_tags)
+        finally:
+            paperless.close()
+        return [_paperless_item_to_response(i) for i in items]
+
+    @router.post(
+        "/api/tags",
+        status_code=201,
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def create_tag(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
+        """Create a new Paperless tag and return it.
+
+        Auth: Member or above.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            created = await loop.run_in_executor(
+                None, lambda: paperless.create_tag(body.name)
+            )
+        finally:
+            paperless.close()
+        return _paperless_item_to_response(created)
 
     return router
 

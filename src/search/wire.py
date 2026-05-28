@@ -53,6 +53,7 @@ from store.models import DocumentBrowseQuery, DocumentSummary
 if TYPE_CHECKING:
     from appdb.api_keys import ApiKey
     from appdb.users import User
+    from common.paperless_types import PaperlessItem
     from search.models import SearchResult
     from store.models import DocumentPage, FacetSet, IndexStats
 
@@ -442,6 +443,55 @@ def to_document_list_response(
         page=page_number,
         page_size=page_size,
     )
+
+
+# ---------------------------------------------------------------------------
+# Taxonomy wire models (web-redesign, Task 8)
+# ---------------------------------------------------------------------------
+
+
+class TaxonomyItemResponse(BaseModel):
+    """A correspondent, document type, or tag, as exposed to the SPA."""
+
+    id: int
+    name: str
+    document_count: int = 0
+
+
+class TaxonomyCreateRequest(BaseModel):
+    """Body for ``POST /api/correspondents`` | ``/api/document-types`` | ``/api/tags``."""
+
+    name: str
+
+
+def _paperless_item_to_response(item: "PaperlessItem") -> TaxonomyItemResponse:
+    """Convert one Paperless taxonomy item to the wire shape.
+
+    The Paperless API exposes the usage count under one of three field names
+    depending on version — ``document_count`` / ``documents_count`` /
+    ``documents`` (the last being a list of document ids).  We accept all three
+    and coerce strings to int defensively.  When only a ``documents`` list is
+    present we report 0: the list may be truncated on listing endpoints and
+    inferring the count from it would be misleading.
+
+    Args:
+        item: A :class:`~common.paperless_types.PaperlessItem` dict as
+            returned by :meth:`~common.paperless.PaperlessClient.list_correspondents`
+            and its siblings.
+
+    Returns:
+        A :class:`TaxonomyItemResponse` ready to serialise as JSON.
+    """
+    raw: object = item.get("document_count")
+    if raw is None:
+        raw = item.get("documents_count")
+    if raw is None:
+        # ``documents`` is a list of referencing document ids; we intentionally
+        # treat this as an unknown count rather than inferring len(list).
+        raw = 0
+    if isinstance(raw, str):
+        raw = int(raw) if raw.isdigit() else 0
+    return TaxonomyItemResponse(id=item["id"], name=item["name"], document_count=int(raw))
 
 
 # ---------------------------------------------------------------------------
