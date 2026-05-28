@@ -40,6 +40,13 @@ import {
   getFailedDocuments,
   rebuildIndex,
   postReconcile,
+  patchDocument,
+  getCorrespondents,
+  getDocumentTypes,
+  getTags,
+  createCorrespondent,
+  createDocumentType,
+  createTag,
 } from './client';
 import type {
   SearchRequest,
@@ -74,6 +81,8 @@ import type {
   IndexActivityResponse,
   IndexFailedResponse,
   RebuildResponse,
+  TaxonomyItem,
+  DocumentPatch,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -96,6 +105,9 @@ const queryKeys = {
   indexStatus: () => ['index', 'status'] as const,
   indexActivity: () => ['index', 'activity'] as const,
   failedDocuments: () => ['index', 'failed'] as const,
+  correspondents: () => ['correspondents'] as const,
+  documentTypes: () => ['document-types'] as const,
+  tags: () => ['tags'] as const,
 } as const;
 
 /** The `me` query key — exported so `useAuth` and `ProtectedRoute` agree on it. */
@@ -581,5 +593,123 @@ export function useDocument(
     // retrying just doubles the round-trip before the page renders the
     // error state. Matches the convention used by sibling error-prone hooks.
     retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Document editing + taxonomy hooks (Wave 8/9 — Document page)
+// ---------------------------------------------------------------------------
+
+/**
+ * All correspondents in Paperless-ngx — GET /api/correspondents.
+ *
+ * Cached for 60 s. Drives correspondent picker in the document edit panel.
+ */
+export function useCorrespondents(): UseQueryResult<TaxonomyItem[], Error> {
+  return useQuery({
+    queryKey: queryKeys.correspondents(),
+    queryFn: getCorrespondents,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * All document types in Paperless-ngx — GET /api/document-types.
+ *
+ * Cached for 60 s. Drives document-type picker in the document edit panel.
+ */
+export function useDocumentTypes(): UseQueryResult<TaxonomyItem[], Error> {
+  return useQuery({
+    queryKey: queryKeys.documentTypes(),
+    queryFn: getDocumentTypes,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * All tags in Paperless-ngx — GET /api/tags.
+ *
+ * Cached for 60 s. Drives tag picker in the document edit panel.
+ */
+export function useTags(): UseQueryResult<TaxonomyItem[], Error> {
+  return useQuery({
+    queryKey: queryKeys.tags(),
+    queryFn: getTags,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Partially update a document's metadata — PATCH /api/documents/{id}.
+ *
+ * On success:
+ * - Writes the updated document directly into the `['document', id]` cache
+ *   entry to avoid a redundant GET round-trip.
+ * - Invalidates `['documents']` so the library list re-fetches with the
+ *   new title / correspondent / type.
+ * - Invalidates `['search']` so any cached search results that include the
+ *   document are refreshed.
+ */
+export function useUpdateDocument(): UseMutationResult<
+  LibraryDocument,
+  Error,
+  { id: number; patch: DocumentPatch }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }) => patchDocument(id, patch),
+    onSuccess: (updated, vars) => {
+      qc.setQueryData(queryKeys.document(vars.id), updated);
+      void qc.invalidateQueries({ queryKey: ['documents'] });
+      void qc.invalidateQueries({ queryKey: ['search'] });
+    },
+  });
+}
+
+/**
+ * Create a correspondent in Paperless-ngx — POST /api/correspondents.
+ *
+ * Invalidates the correspondents query on success so pickers re-fetch the
+ * updated list (including the newly created entry).
+ */
+export function useCreateCorrespondent(): UseMutationResult<TaxonomyItem, Error, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name) => createCorrespondent(name),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.correspondents() });
+    },
+  });
+}
+
+/**
+ * Create a document type in Paperless-ngx — POST /api/document-types.
+ *
+ * Invalidates the document-types query on success so pickers re-fetch the
+ * updated list (including the newly created entry).
+ */
+export function useCreateDocumentType(): UseMutationResult<TaxonomyItem, Error, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name) => createDocumentType(name),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.documentTypes() });
+    },
+  });
+}
+
+/**
+ * Create a tag in Paperless-ngx — POST /api/tags.
+ *
+ * Invalidates the tags query on success so pickers re-fetch the updated list
+ * (including the newly created entry).
+ */
+export function useCreateTag(): UseMutationResult<TaxonomyItem, Error, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name) => createTag(name),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.tags() });
+    },
   });
 }
