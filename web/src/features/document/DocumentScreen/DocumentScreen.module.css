@@ -1,0 +1,116 @@
+/*
+ * DocumentScreen — CSS Module.
+ *
+ * Full-page document layout: centred container, breadcrumb, title row, submeta
+ * line, and a two-column grid (PDF viewer | details sidebar).
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Page container ── */
+.page {
+  max-width: var(--width-app-content);
+  margin: 0 auto;
+  padding: var(--spacing-14) var(--spacing-14) var(--spacing-section);
+}
+
+/* ── Breadcrumb link ── */
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-14);
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+  text-decoration: none;
+}
+
+.crumb:hover {
+  background-color: var(--colour-button-active-bg);
+  color: var(--colour-text-primary);
+}
+
+/* ── Title row ── */
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-14);
+  margin-bottom: var(--spacing-2);
+}
+
+/* ── Submeta line ── */
+.submeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-10);
+  margin-bottom: var(--spacing-14);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+}
+
+.sep {
+  color: var(--colour-border-button);
+}
+
+/* ── Two-column grid ── */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 360px);
+  gap: var(--spacing-14);
+  align-items: start;
+}
+
+@media (width <= 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Sidebar ── */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-14);
+}
+
+/* ── Details card internals ── */
+.card-h {
+  margin: 0;
+  margin-bottom: var(--spacing-10);
+  font-family: var(--font-display);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--spacing-10);
+  padding: var(--spacing-6) 0;
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+.field:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+  padding-top: var(--spacing-4);
+}
+
+.value {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  border-radius: var(--radius-micro);
+}

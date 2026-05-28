@@ -1,23 +1,20 @@
 import React from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
-import { DocumentPreviewScreen } from '../features/search/DocumentPreviewScreen/DocumentPreviewScreen';
+import { DocumentScreen } from '../features/document/DocumentScreen/DocumentScreen';
 import { DocumentErrorScreen } from '../features/document/DocumentErrorScreen/DocumentErrorScreen';
 import { FullPageLoading } from '../components/layout/FullPageLoading/FullPageLoading';
-import { useDocument } from '../api/hooks';
+import { useDocument, useMe } from '../api/hooks';
 import { ApiError } from '../api/client';
 
 /**
- * The `/library/document/:id` route — the document-preview overlay opened
+ * The `/library/document/:id` route — the full-page document view opened
  * from the library list, but addressable as a shareable URL.
  *
- * Resolves the document by id via `useDocument` (one cheap `GET
- * /api/documents/{id}` round-trip per open — the library-list cache is in
- * a separate key, so this fetch always runs). On close, navigates to
- * `/library?<parent params>` so the parent's filter / sort / page state is
- * restored — the library-list cache *does* hit on that return, so the list
- * re-renders instantly without a refetch.
+ * Resolves the document by id via `useDocument`. Navigation back to the
+ * library is handled by the breadcrumb inside `DocumentScreen`; parent
+ * filter / sort / page state is preserved via `parentSearch`.
  *
  * Tier: pages (CODE_GUIDELINES §12.3) — composes features + layout only.
  */
@@ -26,18 +23,12 @@ export function LibraryDocumentPage(): React.ReactElement {
   const parsed = id !== undefined ? Number.parseInt(id, 10) : NaN;
   const documentId = Number.isFinite(parsed) ? parsed : null;
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const docQuery = useDocument(documentId);
+  const me = useMe();
+  const canEdit = me.data?.user?.role !== 'readonly';
 
-  function close(): void {
-    const search = searchParams.toString();
-    navigate(`/library${search === '' ? '' : `?${search}`}`);
-  }
-
-  if (docQuery.isLoading) {
-    return <FullPageLoading />;
-  }
+  if (docQuery.isLoading) return <FullPageLoading />;
 
   if (docQuery.isError || docQuery.data === undefined) {
     const notFound =
@@ -50,18 +41,16 @@ export function LibraryDocumentPage(): React.ReactElement {
     );
   }
 
-  const doc = docQuery.data;
-  const source = {
-    document_id: doc.id,
-    title: doc.title,
-    correspondent: doc.correspondent,
-    document_type: doc.document_type,
-    created: doc.created,
-    snippet: '',
-    score: 0,
-    paperless_url: null,
-    tags: doc.tags,
-  };
-
-  return <DocumentPreviewScreen source={source} onClose={close} />;
+  const parentSearchString = searchParams.toString();
+  return (
+    <Page>
+      <AppNavBar />
+      <DocumentScreen
+        document={docQuery.data}
+        parent="library"
+        parentSearch={parentSearchString === '' ? '' : `?${parentSearchString}`}
+        canEdit={canEdit}
+      />
+    </Page>
+  );
 }

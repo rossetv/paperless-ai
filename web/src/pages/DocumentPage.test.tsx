@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DocumentPage } from './DocumentPage';
 import { ApiError } from '../api/client';
@@ -9,23 +9,16 @@ import * as client from '../api/client';
 
 function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let location = '';
-  function Probe(): null {
-    const loc = useLocation();
-    location = loc.pathname + loc.search;
-    return null;
-  }
   const utils = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/document/:id" element={<DocumentPage />} />
-          <Route path="*" element={<Probe />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { ...utils, getLocation: () => location };
+  return utils;
 }
 
 function stubDoc(): void {
@@ -44,27 +37,28 @@ function stubDoc(): void {
 describe('DocumentPage', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it('fetches the document by id and renders the preview', async () => {
+  it('fetches the document by id and renders the document title', async () => {
     stubDoc();
     renderAt('/document/42');
     await waitFor(() => expect(screen.getByText('A doc')).toBeInTheDocument());
     expect(client.getDocument).toHaveBeenCalledWith(42);
   });
 
-  it('close navigates to /library when the URL has no q param', async () => {
+  it('breadcrumb links to /library when no q param', async () => {
     stubDoc();
-    const { getLocation } = renderAt('/document/42');
+    renderAt('/document/42');
     await waitFor(() => expect(screen.getByText('A doc')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /close document preview/i }));
-    await waitFor(() => expect(getLocation()).toBe('/library'));
+    expect(screen.getByRole('link', { name: /library/i })).toHaveAttribute('href', '/library');
   });
 
-  it('close navigates to /?<params> when the URL has a q param', async () => {
+  it('breadcrumb links to /?q=… when q param present', async () => {
     stubDoc();
-    const { getLocation } = renderAt('/document/42?q=invoice&tag=5');
+    renderAt('/document/42?q=invoice&tag=5');
     await waitFor(() => expect(screen.getByText('A doc')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /close document preview/i }));
-    await waitFor(() => expect(getLocation()).toBe('/?q=invoice&tag=5'));
+    expect(screen.getByRole('link', { name: /search results/i })).toHaveAttribute(
+      'href',
+      '/?q=invoice&tag=5',
+    );
   });
 
   it('shows a "not found" empty state on 404', async () => {
