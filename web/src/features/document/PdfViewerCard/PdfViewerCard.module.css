@@ -62,13 +62,15 @@
 /* ── PDF frame area ──────────────────────────────────────────────────────── */
 
 /*
- * The frame wrapper produced by PdfFrame takes 100% width; we give it a tall
- * fixed minimum height so the viewer is immediately usable without scrolling.
- * The dark background matches the PDF chrome's own backdrop (#525659-like).
+ * The frame wrapper produced by PdfFrame takes 100% width. We give it a
+ * viewport-relative minimum height so the PDF viewer is immediately usable
+ * — most of the screen — without scrolling. 70dvh matches the pattern used
+ * by the existing Modal primitive. The dark background matches the PDF
+ * chrome's own backdrop.
  */
 .frame {
   flex: 1;
-  min-height: var(--height-library-preview);
+  min-height: 70dvh;
   background-color: var(--colour-surface-dark);
   border-radius: var(--radius-standard);
   overflow: hidden;
