@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ApiError, Unauthenticated } from '../api/client';
 import { SearchPage } from './SearchPage';
 
@@ -80,14 +80,6 @@ vi.mock('../features/search/SearchErrorScreen/SearchErrorScreen', () => ({
       'search-error',
     ),
 }));
-vi.mock('../features/search/DocumentPreviewScreen/DocumentPreviewScreen', () => ({
-  DocumentPreviewScreen: ({ onClose }: { onClose: () => void }) =>
-    React.createElement(
-      'button',
-      { 'data-testid': 'preview', onClick: onClose },
-      'preview',
-    ),
-}));
 
 vi.mock('../api/hooks', () => ({
   useSearch: vi.fn(),
@@ -130,16 +122,38 @@ const SUCCESS_DATA = {
   stats: { llm_calls: 1, latency_ms: 100, refined: false },
 };
 
-function renderPage() {
+/**
+ * Records the current location for assertion — rendered inside the router so
+ * it can access the location context.
+ */
+function LocationProbe({
+  locationRef,
+}: {
+  locationRef: React.MutableRefObject<string>;
+}) {
+  const location = useLocation();
+  locationRef.current = location.pathname + location.search;
+  return null;
+}
+
+function renderPage(initialUrl = '/') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const locationRef = React.createRef() as React.MutableRefObject<string>;
+  locationRef.current = initialUrl;
+
   return {
     queryClient,
+    locationRef,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <SearchPage />
+        <MemoryRouter initialEntries={[initialUrl]}>
+          <LocationProbe locationRef={locationRef} />
+          <Routes>
+            <Route path="/" element={<SearchPage />} />
+            <Route path="/document/:id" element={<div data-testid="document-preview-route" />} />
+          </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -215,27 +229,6 @@ describe('SearchPage', () => {
     });
   });
 
-  it('opens the DocumentPreviewScreen when a source preview is requested', async () => {
-    mockUseSearch.mockReturnValue(
-      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
-    );
-    renderPage();
-    await userEvent.click(screen.getByTestId('idle'));
-    await userEvent.click(screen.getByTestId('results-preview'));
-    expect(screen.getByTestId('preview')).toBeInTheDocument();
-  });
-
-  it('closes the preview and returns to the results', async () => {
-    mockUseSearch.mockReturnValue(
-      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
-    );
-    renderPage();
-    await userEvent.click(screen.getByTestId('idle'));
-    await userEvent.click(screen.getByTestId('results-preview'));
-    await userEvent.click(screen.getByTestId('preview'));
-    expect(screen.getByTestId('results')).toBeInTheDocument();
-  });
-
   it('runs a second, different search from the results view', async () => {
     // Regression: once a search ran, `query` never reset and only the idle
     // screen had an editable field — the user was stranded on the results
@@ -261,5 +254,50 @@ describe('SearchPage', () => {
     expect(mockUseSearch).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'rolling-blackout refunds' }),
     );
+  });
+
+  it('mounting at /?q=invoice triggers the search', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
+    );
+    renderPage('/?q=invoice');
+    // The results screen renders immediately — no interaction needed.
+    await waitFor(() => {
+      expect(screen.getByTestId('results')).toBeInTheDocument();
+    });
+    expect(mockUseSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'invoice' }),
+    );
+  });
+
+  it('mounting at / shows the IdleScreen', () => {
+    mockUseSearch.mockReturnValue(searchResult({ isPending: true }));
+    renderPage('/');
+    expect(screen.getByTestId('idle')).toBeInTheDocument();
+  });
+
+  it('submitting a search from / updates the URL to /?q=…', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isPending: false, isFetching: true }),
+    );
+    const { locationRef } = renderPage('/');
+    await userEvent.click(screen.getByTestId('idle'));
+    await waitFor(() => {
+      expect(locationRef.current).toBe('/?q=npower+bills');
+    });
+  });
+
+  it('opening a preview navigates to /document/<id> with the search context preserved', async () => {
+    mockUseSearch.mockReturnValue(
+      searchResult({ isSuccess: true, data: SUCCESS_DATA }),
+    );
+    const { locationRef } = renderPage('/?q=invoice');
+    await waitFor(() => {
+      expect(screen.getByTestId('results')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByTestId('results-preview'));
+    await waitFor(() => {
+      expect(locationRef.current).toBe('/document/9823?q=invoice');
+    });
   });
 });
