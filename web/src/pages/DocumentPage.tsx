@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
 import { DocumentPreviewScreen } from '../features/search/DocumentPreviewScreen/DocumentPreviewScreen';
-import { DocumentErrorScreen } from '../features/search/DocumentErrorScreen/DocumentErrorScreen';
+import { DocumentErrorScreen } from '../features/document/DocumentErrorScreen/DocumentErrorScreen';
 import { FullPageLoading } from '../components/layout/FullPageLoading/FullPageLoading';
 import { useDocument } from '../api/hooks';
 import { ApiError } from '../api/client';

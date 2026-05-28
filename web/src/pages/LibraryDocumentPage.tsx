@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
 import { DocumentPreviewScreen } from '../features/search/DocumentPreviewScreen/DocumentPreviewScreen';
-import { LibraryDocumentErrorScreen } from '../features/library/LibraryDocumentErrorScreen/LibraryDocumentErrorScreen';
+import { DocumentErrorScreen } from '../features/document/DocumentErrorScreen/DocumentErrorScreen';
 import { FullPageLoading } from '../components/layout/FullPageLoading/FullPageLoading';
 import { useDocument } from '../api/hooks';
 import { ApiError } from '../api/client';
@@ -44,7 +44,7 @@ export function LibraryDocumentPage(): React.ReactElement {
     return (
       <Page>
         <AppNavBar />
-        <LibraryDocumentErrorScreen notFound={notFound} />
+        <DocumentErrorScreen notFound={notFound} />
       </Page>
     );
   }
