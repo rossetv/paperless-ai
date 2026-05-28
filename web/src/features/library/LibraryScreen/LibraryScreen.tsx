@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { ViewToggle } from '../../../components/patterns/ViewToggle/ViewToggle';
-import type { LibraryView } from '../../../components/patterns/ViewToggle/ViewToggle';
 import { SortControl } from '../../../components/patterns/SortControl/SortControl';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Button } from '../../../components/primitives/Button/Button';
@@ -10,8 +10,8 @@ import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { FilterControls } from '../../search/FilterControls/FilterControls';
 import { LibraryCard } from '../LibraryCard/LibraryCard';
-import { DocumentPreviewScreen } from '../../search/DocumentPreviewScreen/DocumentPreviewScreen';
 import { useDocuments, useFacets } from '../../../api/hooks';
+import { useLibraryUrlState } from './useLibraryUrlState';
 import type {
   DocumentsQuery,
   DocumentSortField,
@@ -20,9 +20,6 @@ import type {
 } from '../../../api/types';
 import { cn } from '../../../lib/cn';
 import styles from './LibraryScreen.module.css';
-
-/** Page size for the library list — matches the backend default. */
-const PAGE_SIZE = 24;
 
 /**
  * The sort options offered by the SortControl.
@@ -38,20 +35,6 @@ const SORT_OPTIONS: ReadonlyArray<{ value: DocumentSortField; label: string }> =
   { value: 'created', label: 'Document date' },
   { value: 'title', label: 'Title' },
 ];
-
-/** The query a fresh Library screen starts from. */
-const INITIAL_QUERY: DocumentsQuery = {
-  page: 1,
-  page_size: PAGE_SIZE,
-  sort: 'added',
-  descending: true,
-  query: null,
-  correspondent_id: null,
-  document_type_id: null,
-  tag_ids: [],
-  date_from: null,
-  date_to: null,
-};
 
 /** Project the filter-only fields of a DocumentsQuery into a FilterRequest. */
 function toFilterRequest(query: DocumentsQuery): FilterRequest {
@@ -73,64 +56,65 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
 /**
  * The Library browse screen.
  *
- * Owns a single `DocumentsQuery` and renders the header (title, total count,
- * result range), the in-library `SearchField`, the active-filter chip strip,
- * the `FilterControls` rail, the `ViewToggle` and `SortControl`, the document
- * grid/list of `LibraryCard`s, and a pager. When `previewDocumentId` is set,
- * it renders `DocumentPreviewScreen` as a full-bleed overlay (same pattern as
- * `SearchPage`).
+ * Derives all state from the URL via `useLibraryUrlState` — the URL is the
+ * single source of truth for what the library shows. Renders the header
+ * (title, total count, result range), the in-library `SearchField`, the
+ * active-filter chip strip, the `FilterControls` rail, the `ViewToggle` and
+ * `SortControl`, the document grid/list of `LibraryCard`s, and a pager.
+ * Clicking a card navigates to `/library/document/:id` (route added in
+ * Task 11) with the current search-string preserved so the back-navigation
+ * restores the parent query state.
  *
  * Every change other than paging resets `page` to 1 — narrowing the results
- * must never strand the user on a now-empty page. The `ViewToggle` is UI-only
- * state and does not touch the query.
+ * must never strand the user on a now-empty page. The `ViewToggle` is
+ * URL-persisted state but does not affect the query sent to the backend.
  *
  * Tier: features/library (CODE_GUIDELINES §12.3) — composes layout, patterns,
  * primitives, sibling features, the api hooks and lib/. No `pages` import
  * target reaches these patterns directly; `LibraryPage` hosts this screen.
  */
 export function LibraryScreen(): React.ReactElement {
-  const [query, setQuery] = useState<DocumentsQuery>(INITIAL_QUERY);
-  const [view, setView] = useState<LibraryView>('grid');
-  const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
+  const { query, view, setQuery, setView, searchString } = useLibraryUrlState();
+  const navigate = useNavigate();
 
   const documents = useDocuments(query);
   const facets = useFacets();
 
   // ── Query mutators — each resets to page 1 except the pager. ──
   function submitSearch(text: string): void {
-    setQuery((prev) => ({ ...prev, query: text.trim() === '' ? null : text.trim(), page: 1 }));
+    setQuery({ ...query, query: text.trim() === '' ? null : text.trim(), page: 1 });
   }
 
   function applyFilters(filters: FilterRequest): void {
-    setQuery((prev) => ({
-      ...prev,
+    setQuery({
+      ...query,
       correspondent_id: filters.correspondent_id ?? null,
       document_type_id: filters.document_type_id ?? null,
       tag_ids: filters.tag_ids,
       date_from: filters.date_from ?? null,
       date_to: filters.date_to ?? null,
       page: 1,
-    }));
+    });
   }
 
   function changeSort(sort: DocumentSortField): void {
-    setQuery((prev) => ({ ...prev, sort, page: 1 }));
+    setQuery({ ...query, sort, page: 1 });
   }
 
   function goToPage(page: number): void {
-    setQuery((prev) => ({ ...prev, page }));
+    setQuery({ ...query, page });
   }
 
   function clearAllFilters(): void {
-    setQuery((prev) => ({
-      ...prev,
+    setQuery({
+      ...query,
       correspondent_id: null,
       document_type_id: null,
       tag_ids: [],
       date_from: null,
       date_to: null,
       page: 1,
-    }));
+    });
   }
 
   // ── Active-filter chip strip — resolves ids to names via the facets. ──
@@ -145,7 +129,7 @@ export function LibraryScreen(): React.ReactElement {
         key: 'correspondent',
         label: nameFor(facetData.correspondents, query.correspondent_id),
         onRemove: () =>
-          setQuery((prev) => ({ ...prev, correspondent_id: null, page: 1 })),
+          setQuery({ ...query, correspondent_id: null, page: 1 }),
       });
     }
     if (query.document_type_id != null) {
@@ -153,7 +137,7 @@ export function LibraryScreen(): React.ReactElement {
         key: 'document-type',
         label: nameFor(facetData.document_types, query.document_type_id),
         onRemove: () =>
-          setQuery((prev) => ({ ...prev, document_type_id: null, page: 1 })),
+          setQuery({ ...query, document_type_id: null, page: 1 }),
       });
     }
     for (const tagId of query.tag_ids) {
@@ -161,29 +145,29 @@ export function LibraryScreen(): React.ReactElement {
         key: `tag-${tagId}`,
         label: nameFor(facetData.tags, tagId),
         onRemove: () =>
-          setQuery((prev) => ({
-            ...prev,
-            tag_ids: prev.tag_ids.filter((id) => id !== tagId),
+          setQuery({
+            ...query,
+            tag_ids: query.tag_ids.filter((id) => id !== tagId),
             page: 1,
-          })),
+          }),
       });
     }
     if (query.date_from != null && query.date_from !== '') {
       chips.push({
         key: 'date-from',
         label: `From ${query.date_from}`,
-        onRemove: () => setQuery((prev) => ({ ...prev, date_from: null, page: 1 })),
+        onRemove: () => setQuery({ ...query, date_from: null, page: 1 }),
       });
     }
     if (query.date_to != null && query.date_to !== '') {
       chips.push({
         key: 'date-to',
         label: `To ${query.date_to}`,
-        onRemove: () => setQuery((prev) => ({ ...prev, date_to: null, page: 1 })),
+        onRemove: () => setQuery({ ...query, date_to: null, page: 1 }),
       });
     }
     return chips;
-  }, [facetData, query]);
+  }, [facetData, query, setQuery]);
 
   // ── Derived paging values. ──
   // Use the server-echoed page_size when available so the pager is always
@@ -196,39 +180,6 @@ export function LibraryScreen(): React.ReactElement {
     total === 0 ? 0 : Math.min(query.page * effectivePageSize, total);
   const isFirstPage = query.page <= 1;
   const isLastPage = query.page >= pageCount;
-
-  // Determine if a preview can be shown — requires an open id and document data.
-  const previewDoc =
-    previewDocumentId !== null
-      ? documents.data?.documents.find((d) => d.id === previewDocumentId)
-      : undefined;
-
-  // When a preview is open, render DocumentPreviewScreen as a full-bleed
-  // overlay — the same pattern SearchPage uses. Construct the SourceDocument
-  // shape DocumentPreviewScreen expects; search-only fields (snippet, score)
-  // get harmless defaults — Wave 7 reconciles the interface.
-  if (previewDoc !== undefined) {
-    const source = {
-      document_id: previewDoc.id,
-      title: previewDoc.title,
-      correspondent: previewDoc.correspondent,
-      document_type: previewDoc.document_type,
-      created: previewDoc.created,
-      snippet: '',
-      score: 0,
-      // LibraryDocument does not carry a deep-link URL; null tells the
-      // DocumentViewerChrome to omit the "Open in Paperless" action.
-      paperless_url: null,
-    };
-    return (
-      <DocumentPreviewScreen
-        source={source}
-        onClose={() => setPreviewDocumentId(null)}
-        sourceIndex={1}
-        sourceCount={1}
-      />
-    );
-  }
 
   const rail = (
     <FilterControls
@@ -330,7 +281,7 @@ export function LibraryScreen(): React.ReactElement {
                 <LibraryCard
                   key={doc.id}
                   document={doc}
-                  onOpen={setPreviewDocumentId}
+                  onOpen={(id) => navigate(`/library/document/${id}${searchString}`)}
                 />
               ))}
             </div>

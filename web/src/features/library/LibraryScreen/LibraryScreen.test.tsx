@@ -1,6 +1,8 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { LibraryScreen } from './LibraryScreen';
 import type {
   DocumentsResponse,
@@ -56,6 +58,35 @@ function facetsResult(data: FacetsResponse = EMPTY_FACETS) {
   return { data, isLoading: false, isError: false };
 }
 
+/**
+ * A probe that records the current location for URL assertions. Place it as a
+ * sibling route under `path="*"` so it renders alongside the subject.
+ */
+function LocationProbe({ testId = 'location-probe' }: { testId?: string }) {
+  const loc = useLocation();
+  return (
+    <span data-testid={testId} style={{ display: 'none' }}>
+      {loc.pathname}{loc.search}
+    </span>
+  );
+}
+
+/**
+ * Render LibraryScreen inside a MemoryRouter at the given initial entry.
+ * The LocationProbe is mounted in a sibling route so tests can read the
+ * current URL after interactions.
+ */
+function renderScreen(initialEntry = '/library') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="*" element={<LibraryScreen />} />
+      </Routes>
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
 beforeEach(() => {
   mockUseDocuments.mockReset();
   mockUseFacets.mockReset();
@@ -67,7 +98,7 @@ describe('LibraryScreen', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(
       screen.getByRole('heading', { level: 1, name: 'Library' }),
     ).toBeInTheDocument();
@@ -77,7 +108,7 @@ describe('LibraryScreen', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult(undefined, { isLoading: true }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
@@ -85,7 +116,7 @@ describe('LibraryScreen', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult(undefined, { isError: true }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(screen.getByText(/could not load/i)).toBeInTheDocument();
   });
 
@@ -98,7 +129,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(screen.getByText('Doc one')).toBeInTheDocument();
     expect(screen.getByText('Doc two')).toBeInTheDocument();
   });
@@ -112,7 +143,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     // Total is rendered with thousands separators.
     expect(screen.getByText(/14,238/)).toBeInTheDocument();
     // Range for page 1 of a 1-item page — text is split across nodes so use
@@ -124,7 +155,7 @@ describe('LibraryScreen', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     // Both the EmptyState title and description contain "no documents" — assert
     // on the first (the primary message element, role="heading" equivalent).
     expect(screen.getAllByText(/no documents/i)[0]).toBeInTheDocument();
@@ -134,7 +165,7 @@ describe('LibraryScreen', () => {
     mockUseDocuments.mockReturnValue(
       documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     const field = screen.getByRole('searchbox');
     await userEvent.type(field, 'energy{Enter}');
     // The most recent useDocuments call carries the typed query.
@@ -152,7 +183,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     await userEvent.click(screen.getByRole('button', { name: /sort/i }));
     await userEvent.click(
       screen.getByRole('menuitemradio', { name: 'Title' }),
@@ -171,7 +202,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(
       screen.getByRole('button', { name: /previous/i }),
     ).toBeDisabled();
@@ -186,7 +217,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     await userEvent.click(screen.getByRole('button', { name: /next/i }));
     const lastCall = mockUseDocuments.mock.calls.at(-1)![0];
     expect(lastCall.page).toBe(2);
@@ -201,7 +232,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     expect(screen.getByRole('button', { name: /next/i })).toBeDisabled();
   });
 
@@ -223,7 +254,7 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    render(<LibraryScreen />);
+    renderScreen();
     // No active filter yet — no chip strip remove buttons.
     expect(
       screen.queryByRole('button', { name: /remove energy/i }),
@@ -239,11 +270,89 @@ describe('LibraryScreen', () => {
         page_size: 24,
       }),
     );
-    const { container } = render(<LibraryScreen />);
+    const { container } = renderScreen();
     await userEvent.click(screen.getByRole('button', { name: 'List' }));
     // The list container carries a data attribute for the active layout.
     expect(
       container.querySelector('[data-view="list"]'),
     ).not.toBeNull();
+  });
+
+  // ── URL-driven state tests ────────────────────────────────────────────────
+
+  it('mounts at a URL with filters and applies them from the URL', () => {
+    mockUseFacets.mockReturnValue(
+      facetsResult({
+        correspondents: [],
+        document_types: [],
+        tags: [{ kind: 'tag', id: 12, name: 'Urgent' }],
+        earliest: null,
+        latest: null,
+      }),
+    );
+    mockUseDocuments.mockReturnValue(
+      documentsResult({
+        documents: [makeDoc(1, 'Doc one')],
+        total: 1,
+        page: 1,
+        page_size: 24,
+      }),
+    );
+    // Mount at a URL that sets tag=12, view=list, sort=title.
+    const { container } = renderScreen('/library?tag=12&view=list&sort=title');
+
+    // The "Urgent" chip appears in the active-filter strip (resolved from tag id 12).
+    expect(screen.getByRole('button', { name: /remove urgent/i })).toBeInTheDocument();
+
+    // The list-view container is rendered (only visible when there are results).
+    expect(container.querySelector('[data-view="list"]')).not.toBeNull();
+
+    // The sort control shows "title" as selected — verify via useDocuments call.
+    const lastCall = mockUseDocuments.mock.calls.at(-1)![0];
+    expect(lastCall.sort).toBe('title');
+    expect(lastCall.tag_ids).toEqual([12]);
+  });
+
+  it('selecting a tag via FilterControls updates the URL', async () => {
+    mockUseFacets.mockReturnValue(
+      facetsResult({
+        correspondents: [],
+        document_types: [],
+        tags: [{ kind: 'tag', id: 7, name: 'Finance' }],
+        earliest: null,
+        latest: null,
+      }),
+    );
+    mockUseDocuments.mockReturnValue(
+      documentsResult({ documents: [], total: 0, page: 1, page_size: 24 }),
+    );
+    renderScreen('/library');
+
+    // Click the "Finance" chip in FilterControls to activate the tag filter.
+    await userEvent.click(screen.getByRole('button', { name: 'Finance' }));
+
+    // The URL now contains tag=7.
+    const probe = screen.getByTestId('location-probe');
+    expect(probe.textContent).toMatch(/tag=7/);
+  });
+
+  it('clicking a LibraryCard navigates to /library/document/:id with parent params', async () => {
+    mockUseDocuments.mockReturnValue(
+      documentsResult({
+        documents: [makeDoc(42, 'Invoice April')],
+        total: 1,
+        page: 1,
+        page_size: 24,
+      }),
+    );
+    renderScreen('/library?tag=12');
+
+    // Click the card open button.
+    await userEvent.click(screen.getByRole('button', { name: /preview "invoice april"/i }));
+
+    // The URL should now be /library/document/42 with parent params preserved.
+    const probe = screen.getByTestId('location-probe');
+    expect(probe.textContent).toMatch(/\/library\/document\/42/);
+    expect(probe.textContent).toMatch(/tag=12/);
   });
 });
