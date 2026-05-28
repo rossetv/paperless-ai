@@ -7,6 +7,7 @@ from search.wire import (
     DocumentListResponse,
     DocumentSummaryResponse,
     to_document_list_response,
+    to_document_summary_response,
 )
 
 
@@ -61,6 +62,28 @@ class TestLibraryWireModels:
         assert doc.title == "Gas Bill"
         assert doc.tags == ["utilities"]
         assert doc.page_count == 2
+
+    def test_to_document_summary_response_copies_all_fields(self) -> None:
+        """to_document_summary_response maps every field from the store dataclass."""
+        summary = DocumentSummary(
+            id=42,
+            title="An invoice",
+            correspondent="ACME",
+            document_type="Invoice",
+            tags=("urgent", "2024"),
+            created="2024-03-01T00:00:00Z",
+            page_count=3,
+        )
+
+        response = to_document_summary_response(summary)
+
+        assert response.id == 42
+        assert response.title == "An invoice"
+        assert response.correspondent == "ACME"
+        assert response.document_type == "Invoice"
+        assert response.created == "2024-03-01T00:00:00Z"
+        assert response.tags == ["urgent", "2024"]
+        assert response.page_count == 3
 
     def test_converter_handles_an_empty_page(self) -> None:
         """An empty DocumentPage maps to an envelope with no documents."""
