@@ -30,6 +30,7 @@ function makeDoc(id: number, title: string): LibraryDocument {
     created: '2025-01-12',
     tags: ['Energy'],
     page_count: 3,
+    paperless_url: `https://paperless.test/documents/${id}/`,
   };
 }
 

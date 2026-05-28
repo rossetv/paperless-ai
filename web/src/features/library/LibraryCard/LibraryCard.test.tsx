@@ -12,6 +12,7 @@ function makeDoc(overrides: Partial<LibraryDocument> = {}): LibraryDocument {
     created: '2025-01-12',
     tags: ['Energy', '2024'],
     page_count: 6,
+    paperless_url: 'https://paperless.test/documents/42/',
     ...overrides,
   };
 }

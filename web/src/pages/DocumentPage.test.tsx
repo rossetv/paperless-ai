@@ -37,6 +37,7 @@ function stubDoc(): void {
     created: null,
     tags: [],
     page_count: null,
+    paperless_url: 'https://paperless.test/documents/42/',
   });
 }
 
