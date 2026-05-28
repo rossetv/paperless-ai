@@ -46,11 +46,11 @@ from typing import TYPE_CHECKING
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
-from search.deps import get_app_db, require_api_scope, require_api_scope_member
+from search.deps import get_app_db, require_admin, require_api_scope, require_api_scope_member
 from search.sessions import CurrentUser
 from search.wire import (
     DocumentPatchRequest,
@@ -347,6 +347,109 @@ def build_document_router(
         finally:
             paperless.close()
         return _paperless_item_to_response(created)
+
+    # ------------------------------------------------------------------
+    # Pipeline re-queue endpoints
+    # ------------------------------------------------------------------
+
+    async def _swap_pipeline_tag(
+        document_id: int, *, remove_tag: int | None, add_tag: int
+    ) -> None:
+        """Read the document's tags, remove one tag, add another, write back.
+
+        The remove step is skipped when *remove_tag* is ``None`` (the setting
+        is not configured) or the tag is not present on the document. This
+        lets the reclassify and retranscribe endpoints behave correctly even
+        when the post-processing tag is absent or unconfigured.
+
+        Args:
+            document_id: The Paperless-ngx document id.
+            remove_tag: The tag id to remove, or ``None`` to skip removal.
+            add_tag: The tag id to add.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            doc = await loop.run_in_executor(
+                None, lambda: paperless.get_document(document_id)
+            )
+            current: set[int] = set(doc.get("tags") or [])
+            if remove_tag is not None:
+                current.discard(remove_tag)
+            current.add(add_tag)
+            await loop.run_in_executor(
+                None,
+                lambda: paperless.update_document_metadata(document_id, tags=current),
+            )
+        finally:
+            paperless.close()
+
+    @router.post(
+        "/api/documents/{document_id}/reclassify",
+        status_code=202,
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def reclassify_document(document_id: int) -> Response:
+        """Re-queue this document for classification.
+
+        Removes the classify-post tag (if present) and adds the classify-pre
+        tag, so the classifier daemon picks the document up on its next poll.
+        The daemon swaps the tags back on completion.
+
+        Auth: Member or above.
+        """
+        await _swap_pipeline_tag(
+            document_id,
+            remove_tag=settings.CLASSIFY_POST_TAG_ID,
+            add_tag=settings.CLASSIFY_PRE_TAG_ID,
+        )
+        return Response(status_code=202)
+
+    @router.post(
+        "/api/documents/{document_id}/retranscribe",
+        status_code=202,
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def retranscribe_document(document_id: int) -> Response:
+        """Re-queue this document for OCR retranscription.
+
+        Removes the OCR-post tag (if present) and adds the OCR-pre tag, so
+        the OCR daemon picks the document up on its next poll. Because the
+        OCR daemon typically also triggers classification, this effectively
+        re-runs the full pipeline for the document.
+
+        Auth: Member or above.
+        """
+        await _swap_pipeline_tag(
+            document_id,
+            remove_tag=settings.POST_TAG_ID,
+            add_tag=settings.PRE_TAG_ID,
+        )
+        return Response(status_code=202)
+
+    @router.delete(
+        "/api/documents/{document_id}",
+        status_code=204,
+        dependencies=[Depends(require_admin)],
+    )
+    async def delete_document(document_id: int) -> Response:
+        """Delete the document from Paperless-ngx.
+
+        Proxies to :meth:`~common.paperless.PaperlessClient.delete_document`.
+        The document is removed from Paperless and will be purged from the
+        search index on the next reconcile cycle.
+
+        Auth: Admin only.
+        """
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            await loop.run_in_executor(
+                None, lambda: paperless.delete_document(document_id)
+            )
+        finally:
+            paperless.close()
+        return Response(status_code=204)
 
     return router
 
