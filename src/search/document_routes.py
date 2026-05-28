@@ -4,6 +4,9 @@ This router, mounted by ``search/api.py`` alongside the search and account
 routers, owns the Wave 2 backend endpoints that feed the redesigned search
 UI (web-redesign §5):
 
+- ``GET /api/documents/{id}`` — return the wire ``DocumentSummaryResponse``
+  for one document, used by the shareable ``/document/:id`` and
+  ``/library/document/:id`` SPA routes to cold-load a document preview.
 - ``GET /api/documents/{id}/pdf`` — stream a document's original PDF out of
   Paperless-ngx, so the in-app DocumentPreview viewer renders it without the
   browser leaving the app.
