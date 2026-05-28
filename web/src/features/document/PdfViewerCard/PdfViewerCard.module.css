@@ -1,0 +1,75 @@
+/*
+ * PdfViewerCard — CSS Module.
+ *
+ * Layout: toolbar pinned at the top (flex-end, right-aligned actions),
+ * followed by the PdfFrame filling the remaining space.
+ *
+ * All values reference design tokens exclusively (Stylelint enforces this —
+ * no hex literals, raw px/rem, or named colours are permitted here).
+ */
+
+/* Override Card's default padding — the iframe must bleed to the card edge. */
+.card {
+  padding: var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+  flex-shrink: var(--z-base); /* never compress the toolbar */
+}
+
+/* ── Action links (Download + Open in Paperless) ─────────────────────────── */
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-10);
+  border-radius: var(--radius-standard);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-primary);
+  text-decoration: none;
+  background-color: var(--colour-surface);
+  transition: background-color var(--duration-standard) var(--easing-standard);
+}
+
+.action:hover {
+  background-color: var(--colour-button-active-bg);
+}
+
+.action-primary {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+  border-color: var(--colour-accent);
+}
+
+.action-primary:hover {
+  opacity: var(--opacity-disabled);
+}
+
+/* ── PDF frame area ──────────────────────────────────────────────────────── */
+
+/*
+ * The frame wrapper produced by PdfFrame takes 100% width; we give it a tall
+ * fixed minimum height so the viewer is immediately usable without scrolling.
+ * The dark background matches the PDF chrome's own backdrop (#525659-like).
+ */
+.frame {
+  flex: 1;
+  min-height: var(--height-library-preview);
+  background-color: var(--colour-surface-dark);
+  border-radius: var(--radius-standard);
+  overflow: hidden;
+}
