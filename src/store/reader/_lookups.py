@@ -17,6 +17,8 @@ import sqlite3
 import threading
 from collections.abc import Iterable
 
+import structlog
+
 from store._sql import placeholders
 from store.migrations import SchemaNotReadyError, StoreError
 from store.models import (
@@ -34,6 +36,8 @@ from store.models import (
 # empty by ``sqlite3.connect``) produces this; the store maps it to the typed
 # ``SchemaNotReadyError`` so callers never string-match ``sqlite3`` internals.
 _NO_SUCH_TABLE_MARKER = "no such table"
+
+log = structlog.get_logger(__name__)
 
 
 def _is_missing_table_error(exc: sqlite3.Error) -> bool:
@@ -442,7 +446,19 @@ def get_document_summary(
         raise StoreError("get_document_summary query failed") from exc
 
     tag_name_by_id: dict[int, str] = {r["id"]: r["name"] for r in tag_rows}
-    tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
+    raw_tag_ids = row["tag_ids"]
+    if raw_tag_ids:
+        try:
+            tag_ids: list[int] = json.loads(raw_tag_ids)
+        except json.JSONDecodeError:
+            log.warning(
+                "get_document_summary.tag_ids_parse_error",
+                document_id=row["id"],
+                raw=raw_tag_ids[:80],
+            )
+            tag_ids = []
+    else:
+        tag_ids = []
     tag_names = tuple(
         tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
     )
