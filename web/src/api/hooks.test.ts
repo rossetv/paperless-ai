@@ -717,6 +717,20 @@ describe('index-operations hooks', () => {
 import { useDocument } from './hooks';
 import * as client from './client';
 
+// ---------------------------------------------------------------------------
+// Wave 8/9 — taxonomy + document-patch hooks
+// ---------------------------------------------------------------------------
+
+import {
+  useUpdateDocument,
+  useCorrespondents,
+  useDocumentTypes,
+  useTags,
+  useCreateCorrespondent,
+  useCreateDocumentType,
+  useCreateTag,
+} from './hooks';
+
 describe('useDocument', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -756,5 +770,169 @@ describe('useDocument', () => {
     renderHook(() => useDocument(null), { wrapper: makeWrapper() });
     // The query is disabled — getDocument must not be called.
     expect(stub).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useUpdateDocument
+// ---------------------------------------------------------------------------
+
+describe('useUpdateDocument', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls patchDocument with the correct id and patch, and returns the updated document', async () => {
+    const updated = {
+      id: 42,
+      title: 'Renamed',
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: 'https://p.example/documents/42/',
+    };
+    const stub = vi.spyOn(client, 'patchDocument').mockResolvedValue(updated);
+
+    const { result } = renderHook(() => useUpdateDocument(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync({ id: 42, patch: { title: 'Renamed' } });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(stub).toHaveBeenCalledWith(42, { title: 'Renamed' });
+    expect(result.current.data).toEqual(updated);
+  });
+
+  it('surfaces ApiError on a failed PATCH', async () => {
+    vi.spyOn(client, 'patchDocument').mockRejectedValue(new ApiError(422, 'Unprocessable'));
+
+    const { result } = renderHook(() => useUpdateDocument(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync({ id: 99, patch: { title: 'bad' } }).catch(() => undefined);
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useCorrespondents
+// ---------------------------------------------------------------------------
+
+describe('useCorrespondents', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the correspondent list', async () => {
+    vi.spyOn(client, 'getCorrespondents').mockResolvedValue([
+      { id: 1, name: 'ACME', document_count: 7 },
+    ]);
+    const { result } = renderHook(() => useCorrespondents(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([{ id: 1, name: 'ACME', document_count: 7 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useDocumentTypes
+// ---------------------------------------------------------------------------
+
+describe('useDocumentTypes', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the document-type list', async () => {
+    vi.spyOn(client, 'getDocumentTypes').mockResolvedValue([
+      { id: 2, name: 'Invoice', document_count: 10 },
+    ]);
+    const { result } = renderHook(() => useDocumentTypes(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0]?.name).toBe('Invoice');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useTags
+// ---------------------------------------------------------------------------
+
+describe('useTags', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the tag list', async () => {
+    vi.spyOn(client, 'getTags').mockResolvedValue([
+      { id: 3, name: 'urgent', document_count: 4 },
+    ]);
+    const { result } = renderHook(() => useTags(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0]?.name).toBe('urgent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useCreateCorrespondent
+// ---------------------------------------------------------------------------
+
+describe('useCreateCorrespondent', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls createCorrespondent and resolves with the new item', async () => {
+    const newItem = { id: 10, name: 'New Corp', document_count: 0 };
+    const stub = vi.spyOn(client, 'createCorrespondent').mockResolvedValue(newItem);
+
+    const { result } = renderHook(() => useCreateCorrespondent(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync('New Corp');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(stub).toHaveBeenCalledWith('New Corp');
+    expect(result.current.data).toEqual(newItem);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useCreateDocumentType
+// ---------------------------------------------------------------------------
+
+describe('useCreateDocumentType', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls createDocumentType and resolves with the new item', async () => {
+    const newItem = { id: 20, name: 'Contract', document_count: 0 };
+    const stub = vi.spyOn(client, 'createDocumentType').mockResolvedValue(newItem);
+
+    const { result } = renderHook(() => useCreateDocumentType(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync('Contract');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(stub).toHaveBeenCalledWith('Contract');
+    expect(result.current.data).toEqual(newItem);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useCreateTag
+// ---------------------------------------------------------------------------
+
+describe('useCreateTag', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('calls createTag and resolves with the new item', async () => {
+    const newItem = { id: 30, name: 'important', document_count: 0 };
+    const stub = vi.spyOn(client, 'createTag').mockResolvedValue(newItem);
+
+    const { result } = renderHook(() => useCreateTag(), { wrapper: makeWrapper() });
+    await result.current.mutateAsync('important');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(stub).toHaveBeenCalledWith('important');
+    expect(result.current.data).toEqual(newItem);
   });
 });

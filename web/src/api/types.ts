@@ -619,3 +619,38 @@ export interface RebuildResponse {
   accepted: boolean;
   detail: string;
 }
+
+// ---------------------------------------------------------------------------
+// Document editing — taxonomy and patch types (Wave 8/9 — Document page)
+// ---------------------------------------------------------------------------
+
+/**
+ * A correspondent, document type, or tag as returned by the taxonomy endpoints.
+ *
+ * Mirrors `TaxonomyItemResponse` in `wire.py`. The same shape is used for all
+ * three taxonomy lists — `GET /api/correspondents`, `GET /api/document-types`,
+ * and `GET /api/tags` — to keep the frontend uniform.
+ */
+export interface TaxonomyItem {
+  id: number;
+  name: string;
+  document_count: number;
+}
+
+/**
+ * Optional fields for `PATCH /api/documents/{id}`.
+ *
+ * Only fields explicitly present in the request body are forwarded to
+ * Paperless-ngx. `null` clears the field in Paperless; omitting the field
+ * entirely leaves it unchanged. This matches the partial-update semantics
+ * declared in the backend's `DocumentPatchRequest` Pydantic model.
+ */
+export interface DocumentPatch {
+  title?: string | null;
+  correspondent_id?: number | null;
+  document_type_id?: number | null;
+  document_date?: string | null;
+  tags?: number[];
+  notes?: string | null;
+  archive_serial_number?: number | null;
+}
