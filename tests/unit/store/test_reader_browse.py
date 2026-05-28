@@ -308,3 +308,38 @@ def test_corrupted_tag_ids_falls_back_to_empty_tags(populated_db: str) -> None:
     assert page.total == 2
     corrupted_doc = next(d for d in page.documents if d.id == 1)
     assert corrupted_doc.tags == ()  # graceful fallback — no 500
+
+
+# ---------------------------------------------------------------------------
+# get_document_summary
+# ---------------------------------------------------------------------------
+
+
+def test_get_document_summary_returns_matching_row(populated_db: str) -> None:
+    """get_document_summary returns a DocumentSummary for a known id."""
+    reader = open_reader(populated_db)
+    summary = reader.get_document_summary(1)
+    reader.close()
+    assert summary is not None
+    assert summary.id == 1
+    # Shape parity with list_documents: page_count present
+    assert hasattr(summary, "page_count")
+
+
+def test_get_document_summary_returns_none_for_missing_id(populated_db: str) -> None:
+    """get_document_summary returns None when the document id does not exist."""
+    reader = open_reader(populated_db)
+    result = reader.get_document_summary(99999999)
+    reader.close()
+    assert result is None
+
+
+def test_get_document_summary_resolves_taxonomy_names(populated_db: str) -> None:
+    """get_document_summary resolves correspondent and document_type names."""
+    reader = open_reader(populated_db)
+    summary = reader.get_document_summary(1)
+    reader.close()
+    assert summary is not None
+    # populated_db's document 1 has both a correspondent and a document type
+    assert summary.correspondent is not None
+    assert summary.document_type is not None

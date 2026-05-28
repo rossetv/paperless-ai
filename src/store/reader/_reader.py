@@ -23,6 +23,7 @@ from store.models import (
     ChunkHit,
     DocumentBrowseQuery,
     DocumentPage,
+    DocumentSummary,
     FailedDocument,
     FacetSet,
     IndexedDocument,
@@ -98,6 +99,13 @@ class StoreReader:
         See :func:`store.reader._lookups.get_documents`.
         """
         return _lookups.get_documents(self._conn, self._query_lock, ids)
+
+    def get_document_summary(self, document_id: int) -> DocumentSummary | None:
+        """Return the DocumentSummary for one document id, or None if absent.
+
+        See :func:`store.reader._lookups.get_document_summary`.
+        """
+        return _lookups.get_document_summary(self._conn, self._query_lock, document_id)
 
     def get_chunks(self, ids: Iterable[int]) -> list[ChunkHit]:
         """Return ChunkHit objects for the given chunk ids.
