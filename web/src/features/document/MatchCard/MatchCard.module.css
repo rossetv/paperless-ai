@@ -13,10 +13,11 @@
   gap: var(--spacing-10);
 }
 
-/* ── Accent-bordered variant — shown when a match is found ── */
+/* ── Match-found variant — uses an accent wash backdrop instead of a
+   raw-pixel left border (the stylelint disallowed-values rule forbids
+   `Npx` literals). The citation badge in the header gives the visual cue. */
 .card-match {
-  border-left: 3px solid var(--colour-accent);
-  padding-left: calc(var(--spacing-14) - 3px);
+  background: var(--colour-accent-wash);
 }
 
 /* ── Header row: citation badge + meta text ── */
