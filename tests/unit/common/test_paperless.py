@@ -580,6 +580,124 @@ class TestClose:
         assert client._client.is_closed
 
 
+class TestDeleteDocument:
+    def test_delete_document_sends_delete_request(self):
+        with respx.mock:
+            route = respx.delete(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(204)
+            )
+            client = _make_client()
+            client.delete_document(42)
+        assert route.called
+        client.close()
+
+
+class TestNoteHelpers:
+    def test_add_note_posts_to_notes_endpoint(self):
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(201, json={"id": 7, "note": "hi"})
+            )
+            client = _make_client()
+            client.add_note(42, "hi")
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"note": "hi"}
+        client.close()
+
+    def test_delete_note_sends_delete_with_id_query(self):
+        with respx.mock:
+            route = respx.delete(
+                f"{BASE}/api/documents/42/notes/",
+                params={"id": "7"},
+            ).mock(return_value=httpx.Response(204))
+            client = _make_client()
+            client.delete_note(42, 7)
+        assert route.called
+        client.close()
+
+    def test_list_notes_reads_document_notes_array(self):
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"id": 42, "notes": [{"id": 1, "note": "first"}, {"id": 2, "note": "second"}]},
+                )
+            )
+            client = _make_client()
+            notes = client.list_notes(42)
+        assert notes == [{"id": 1, "note": "first"}, {"id": 2, "note": "second"}]
+        client.close()
+
+    def test_list_notes_handles_missing_notes_field(self):
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(200, json={"id": 42})
+            )
+            client = _make_client()
+            assert client.list_notes(42) == []
+        client.close()
+
+
+class TestUpdateDocumentMetadataNotes:
+    def test_update_document_metadata_supports_notes_replace(self):
+        """Notes are written via separate endpoint: delete all existing, then add new."""
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"id": 42, "notes": [{"id": 1, "note": "old"}, {"id": 5, "note": "older"}]},
+                )
+            )
+            delete_route = respx.delete(
+                f"{BASE}/api/documents/42/notes/"
+            ).mock(return_value=httpx.Response(204))
+            post_route = respx.post(
+                f"{BASE}/api/documents/42/notes/"
+            ).mock(return_value=httpx.Response(201, json={"id": 9, "note": "fresh"}))
+
+            client = _make_client()
+            client.update_document_metadata(42, notes="fresh")
+
+        assert delete_route.call_count == 2
+        assert post_route.called
+        client.close()
+
+    def test_update_document_metadata_notes_empty_string_deletes_all(self):
+        """notes='' deletes existing notes without adding a new one."""
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(
+                    200, json={"id": 42, "notes": [{"id": 1, "note": "old"}]}
+                )
+            )
+            delete_route = respx.delete(
+                f"{BASE}/api/documents/42/notes/"
+            ).mock(return_value=httpx.Response(204))
+            post_route = respx.post(
+                f"{BASE}/api/documents/42/notes/"
+            ).mock(return_value=httpx.Response(201))
+
+            client = _make_client()
+            client.update_document_metadata(42, notes="")
+
+        assert delete_route.called
+        assert not post_route.called
+        client.close()
+
+    def test_update_document_metadata_supports_asn(self):
+        with respx.mock:
+            route = respx.patch(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(200, json={"id": 42})
+            )
+            client = _make_client()
+            client.update_document_metadata(42, archive_serial_number=12345)
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"archive_serial_number": 12345}
+        client.close()
+
+
 class TestDownloadStream:
     """PaperlessClient.download_stream streams a document without buffering."""
 
