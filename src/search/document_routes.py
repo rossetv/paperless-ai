@@ -50,9 +50,10 @@ from starlette.responses import StreamingResponse
 
 from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
-from search.deps import get_app_db, require_api_scope
+from search.deps import get_app_db, require_api_scope, require_api_scope_member
 from search.sessions import CurrentUser
 from search.wire import (
+    DocumentPatchRequest,
     DocumentSummaryResponse,
     RecentSearchEntry,
     RecentSearchesResponse,
@@ -171,6 +172,62 @@ def build_document_router(
         caller.
         """
         return _recent_searches(app_db, user)
+
+    @router.patch(
+        "/api/documents/{document_id}",
+        dependencies=[Depends(require_api_scope_member)],
+    )
+    async def patch_document(
+        document_id: int,
+        body: DocumentPatchRequest,
+    ) -> DocumentSummaryResponse:
+        """Update editable document metadata.
+
+        Proxies to :meth:`~common.paperless.PaperlessClient.update_document_metadata`.
+        Returns the re-read summary from the search index. Note: the store index
+        only reflects the edit after the next reconcile cycle, so the response
+        may carry pre-edit values; the frontend uses optimistic UI to hide this
+        asymmetry from the user.
+
+        Auth: Member-or-above; read-only callers receive a 403. A 404 is
+        returned when *document_id* is not present in the store after the
+        Paperless update.
+        """
+        kwargs: dict[str, object] = {}
+        if body.title is not None:
+            kwargs["title"] = body.title
+        if body.correspondent_id is not None:
+            kwargs["correspondent_id"] = body.correspondent_id
+        if body.document_type_id is not None:
+            kwargs["document_type_id"] = body.document_type_id
+        if body.document_date is not None:
+            kwargs["document_date"] = body.document_date
+        if body.tags is not None:
+            kwargs["tags"] = set(body.tags)
+        if body.notes is not None:
+            kwargs["notes"] = body.notes
+        if body.archive_serial_number is not None:
+            kwargs["archive_serial_number"] = body.archive_serial_number
+
+        loop = asyncio.get_event_loop()
+        paperless = paperless_factory(settings)
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: paperless.update_document_metadata(document_id, **kwargs),
+            )
+        finally:
+            paperless.close()
+
+        summary = await loop.run_in_executor(
+            None, lambda: store_reader.get_document_summary(document_id)
+        )
+        if summary is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        return to_document_summary_response(
+            summary,
+            paperless_url=f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/",
+        )
 
     return router
 
