@@ -475,7 +475,8 @@ class TestLibraryDocumentPayload:
             assert doc["created"] == "2024-03-15T00:00:00Z"
             assert doc["page_count"] == 1
             assert set(doc["tags"]) == {"utilities", "2024"}
-            assert "paperless_url" not in doc
+            # Deep-link to Paperless-ngx is server-built from settings.PAPERLESS_URL.
+            assert doc["paperless_url"].endswith("/documents/2/")
         finally:
             store_reader.close()
             app_db.close()
