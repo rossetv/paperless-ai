@@ -12,11 +12,12 @@ import { ApiError } from '../api/client';
  * The `/library/document/:id` route — the document-preview overlay opened
  * from the library list, but addressable as a shareable URL.
  *
- * Resolves the document by id via `useDocument` (the library list cache is
- * read-through, so navigating from the list is instant). On close, navigates
- * to `/library?<parent params>` so the parent's filter / sort / page state
- * is restored — including the cold-start case where the recipient has no
- * library list in memory.
+ * Resolves the document by id via `useDocument` (one cheap `GET
+ * /api/documents/{id}` round-trip per open — the library-list cache is in
+ * a separate key, so this fetch always runs). On close, navigates to
+ * `/library?<parent params>` so the parent's filter / sort / page state is
+ * restored — the library-list cache *does* hit on that return, so the list
+ * re-renders instantly without a refetch.
  *
  * Tier: pages (CODE_GUIDELINES §12.3) — composes features + layout only.
  */
