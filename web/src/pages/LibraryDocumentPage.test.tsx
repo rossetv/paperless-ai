@@ -82,4 +82,16 @@ describe('LibraryDocumentPage', () => {
       expect(screen.getByText(/document not found/i)).toBeInTheDocument(),
     );
   });
+
+  it('does not fire a request when the :id is not a positive integer', async () => {
+    const stub = vi.spyOn(client, 'getDocument');
+    renderAt('/library/document/abc');
+    // Allow microtasks to settle without timing-out.
+    await Promise.resolve();
+    expect(stub).not.toHaveBeenCalled();
+    // The page renders the generic error state (data is undefined and no error).
+    await waitFor(() =>
+      expect(screen.getByText(/could not load document/i)).toBeInTheDocument(),
+    );
+  });
 });
