@@ -120,6 +120,13 @@ class PaperlessClient:
         self._raise_for_status_if_server_error(response)
         return response
 
+    # Any: see _get — pure passthrough to httpx.Client.delete.
+    @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
+    def _delete(self, url: str, **kwargs: Any) -> httpx.Response:
+        response = self._client.delete(url, **kwargs)
+        self._raise_for_status_if_server_error(response)
+        return response
+
     def _list_all(self, url: str) -> Generator[dict, None, None]:
         while url:
             response = self._get(url)
@@ -390,6 +397,8 @@ class PaperlessClient:
         log.info("Successfully updated document", doc_id=doc_id)
 
     # Maps DocumentMetadataUpdate keys to Paperless API field names.
+    # ``notes`` is intentionally absent: it is handled via the separate notes
+    # endpoint before the PATCH payload is assembled.
     _METADATA_FIELDS = types.MappingProxyType(
         {
             "title": "title",
@@ -399,6 +408,7 @@ class PaperlessClient:
             "tags": "tags",
             "language": "language",
             "custom_fields": "custom_fields",
+            "archive_serial_number": "archive_serial_number",
         }
     )
 
@@ -411,7 +421,20 @@ class PaperlessClient:
 
         Accepts keyword arguments matching :class:`DocumentMetadataUpdate`.
         Keys not provided (or absent) are silently skipped.
+
+        ``notes`` is handled separately from the PATCH payload: all existing
+        notes are deleted first, then the new text is posted (unless the value
+        is the empty string, in which case the document is left with no notes).
+        ``archive_serial_number`` is passed through to the PATCH endpoint.
         """
+        if "notes" in kwargs:
+            notes_text = kwargs.pop("notes")  # type: ignore[misc]
+            existing = self.list_notes(doc_id)
+            for note in existing:
+                self.delete_note(doc_id, note["id"])
+            if notes_text is not None and notes_text != "":
+                self.add_note(doc_id, notes_text)
+
         payload: dict[str, object] = {}
         for key, api_field in self._METADATA_FIELDS.items():
             # rationale: TypedDict.get() requires a Literal key; the loop variable
@@ -583,6 +606,50 @@ class PaperlessClient:
         """Single fast request to verify the API is reachable (no retry)."""
         url = f"{self.settings.PAPERLESS_URL}/api/"
         response = self._client.get(url, timeout=timeout)
+        response.raise_for_status()
+
+    def delete_document(self, doc_id: int) -> None:
+        """Delete a document from Paperless-ngx.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
+        log.info("paperless.delete_document", doc_id=doc_id)
+        response = self._delete(url)
+        response.raise_for_status()
+
+    def list_notes(self, doc_id: int) -> list[dict[str, Any]]:
+        """Return the document's notes array (each entry has ``id`` and ``note``).
+
+        Returns an empty list when the document has no notes or the ``notes``
+        field is absent from the response.
+        """
+        doc = self.get_document(doc_id)
+        notes = doc.get("notes") or []
+        # cast: the Paperless document JSON keeps a `notes` list of {id, note, …} dicts.
+        return cast("list[dict[str, Any]]", notes)
+
+    def add_note(self, doc_id: int, text: str) -> None:
+        """Post a new note onto a document.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/notes/"
+        log.info("paperless.add_note", doc_id=doc_id, length=len(text))
+        response = self._post(url, json={"note": text})
+        response.raise_for_status()
+
+    def delete_note(self, doc_id: int, note_id: int) -> None:
+        """Delete one note from a document by its id.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/notes/"
+        log.info("paperless.delete_note", doc_id=doc_id, note_id=note_id)
+        response = self._delete(url, params={"id": str(note_id)})
         response.raise_for_status()
 
     def close(self) -> None:

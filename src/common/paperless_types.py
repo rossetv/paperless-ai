@@ -41,6 +41,14 @@ class DocumentMetadataUpdate(TypedDict, total=False):
     and :meth:`update_document_metadata` skips any ``None`` value rather than
     patching it. ``tags`` is always a concrete set — the classifier never has
     "no opinion" on tags, it computes the full replacement set every time.
+
+    ``notes`` is a special case: Paperless stores notes at a separate endpoint
+    (``/api/documents/{id}/notes/``) rather than the document PATCH endpoint.
+    When provided, all existing notes are deleted and the new text is posted
+    (or the document is left with no notes if the value is the empty string).
+
+    ``archive_serial_number`` maps to the Paperless ``archive_serial_number``
+    PATCH field — the physical archive serial number for the document.
     """
 
     title: str | None
@@ -50,6 +58,8 @@ class DocumentMetadataUpdate(TypedDict, total=False):
     tags: set[int]
     language: str | None
     custom_fields: list[PaperlessCustomField] | None
+    notes: str | None
+    archive_serial_number: int | None
 
 
 # A read-side view of the Paperless-ngx document JSON shape (CODE_GUIDELINES
