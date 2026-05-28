@@ -1,18 +1,21 @@
 /**
  * Search page — the primary view of the application.
  *
- * A pure orchestrator. It owns the query, filter, citation-highlight and
- * open-preview state, drives `useSearch`, and selects which search screen to
- * render:
+ * A pure orchestrator. It owns the query, filter and citation-highlight state
+ * (query and filters via `useSearchUrlState`; highlight index stays local as
+ * ephemeral interaction state), drives `useSearch`, and selects which search
+ * screen to render:
  *
  *   - no query                       → IdleScreen (the hero)
- *   - a document preview is open      → DocumentPreviewScreen (overlay)
  *   - search in flight               → LoadingScreen
  *   - search error, 503              → IndexNotReadyScreen
  *   - search error, 401              → invalidate `me`; ProtectedRoute → login
  *   - search error, other            → SearchErrorScreen
  *   - success, zero sources          → NoResultsScreen
  *   - success, sources               → ResultsScreen
+ *
+ * Opening a document preview navigates to `/document/<id>?<searchString>` so
+ * the preview URL is shareable and the back button returns to the results.
  *
  * The page composes the Wave 1 `AppNavBar` shell and the `features/search`
  * screen components; it reaches no primitive or pattern directly (§12.3) and
@@ -24,6 +27,7 @@
  */
 
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
@@ -33,19 +37,12 @@ import { ResultsScreen } from '../features/search/ResultsScreen/ResultsScreen';
 import { NoResultsScreen } from '../features/search/NoResultsScreen/NoResultsScreen';
 import { IndexNotReadyScreen } from '../features/search/IndexNotReadyScreen/IndexNotReadyScreen';
 import { SearchErrorScreen } from '../features/search/SearchErrorScreen/SearchErrorScreen';
-import { DocumentPreviewScreen } from '../features/search/DocumentPreviewScreen/DocumentPreviewScreen';
 import { useSearch, ME_QUERY_KEY } from '../api/hooks';
 import { ApiError, Unauthenticated } from '../api/client';
-import type { FilterRequest } from '../api/types';
-
-/** The empty filter state — every filter cleared. */
-const EMPTY_FILTERS: FilterRequest = {
-  tag_ids: [],
-  correspondent_id: null,
-  document_type_id: null,
-  date_from: null,
-  date_to: null,
-};
+import {
+  useSearchUrlState,
+  EMPTY_FILTERS,
+} from '../features/search/useSearchUrlState';
 
 /** True when the error is the server's 503 "index not ready" signal. */
 function isIndexNotReady(error: Error): boolean {
@@ -57,15 +54,13 @@ function isIndexNotReady(error: Error): boolean {
  */
 export function SearchPage(): React.ReactElement {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const [query, setQuery] = React.useState('');
-  const [filters, setFilters] = React.useState<FilterRequest>(EMPTY_FILTERS);
+  const { query, filters, setQuery, setFilters, searchString } =
+    useSearchUrlState();
   const [highlightedIndex, setHighlightedIndex] = React.useState<
     number | undefined
   >(undefined);
-  const [previewDocumentId, setPreviewDocumentId] = React.useState<
-    number | null
-  >(null);
 
   const searchResult = useSearch({ query, filters });
 
@@ -84,10 +79,9 @@ export function SearchPage(): React.ReactElement {
   function runSearch(submitted: string): void {
     setQuery(submitted.trim());
     setHighlightedIndex(undefined);
-    setPreviewDocumentId(null);
   }
 
-  function handleFiltersChange(updated: FilterRequest): void {
+  function handleFiltersChange(updated: typeof EMPTY_FILTERS): void {
     setFilters(updated);
   }
 
@@ -100,11 +94,7 @@ export function SearchPage(): React.ReactElement {
   }
 
   function openPreview(documentId: number): void {
-    setPreviewDocumentId(documentId);
-  }
-
-  function closePreview(): void {
-    setPreviewDocumentId(null);
+    navigate(`/document/${documentId}${searchString}`);
   }
 
   /** Pick the screen to render from the query and the search result. */
@@ -112,29 +102,6 @@ export function SearchPage(): React.ReactElement {
     // Idle — no query submitted.
     if (query.trim().length === 0) {
       return <IdleScreen onSearch={runSearch} />;
-    }
-
-    // A document preview overlays everything else.
-    if (
-      previewDocumentId !== null &&
-      searchResult.isSuccess &&
-      searchResult.data !== undefined
-    ) {
-      const sources = searchResult.data.sources;
-      const sourceIdx = sources.findIndex(
-        (s) => s.document_id === previewDocumentId,
-      );
-      const previewSource = sourceIdx !== -1 ? sources[sourceIdx] : undefined;
-      if (previewSource !== undefined) {
-        return (
-          <DocumentPreviewScreen
-            source={previewSource}
-            onClose={closePreview}
-            sourceIndex={sourceIdx + 1}
-            sourceCount={sources.length}
-          />
-        );
-      }
     }
 
     // In flight.
