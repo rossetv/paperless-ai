@@ -22,7 +22,8 @@ import { ApiError } from '../api/client';
  */
 export function LibraryDocumentPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>();
-  const documentId = id !== undefined ? Number.parseInt(id, 10) : null;
+  const parsed = id !== undefined ? Number.parseInt(id, 10) : NaN;
+  const documentId = Number.isFinite(parsed) ? parsed : null;
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
