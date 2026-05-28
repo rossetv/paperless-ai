@@ -3,9 +3,9 @@
  *
  * All values come exclusively from design tokens (var(--…)).
  *
- * Icons use currentColor so no colour tokens are needed here — they inherit
- * from the surrounding text. Sizing uses spacing tokens (and one dedicated
- * --size-icon-xlarge token) to reach the standard icon sizes:
+ * Icons render as Font Awesome `<i>` elements with a webfont glyph, so
+ * `font-size` is the size knob (not width/height). They inherit colour from
+ * `currentColor`, so no colour tokens are needed here.
  *
  *   small  = calc(var(--spacing-6) * 2)  → 16 px
  *   medium = var(--spacing-13)           → 20 px
@@ -22,28 +22,23 @@
   display: inline-block;
   flex-shrink: 0;
   vertical-align: middle;
+  line-height: 1;
 }
 
-/* ── Size modifiers ── */
+/* ── Size modifiers — font-size drives the webfont glyph size. ── */
 
-/* rationale: 16 px is the standard small icon size; nearest token is
-   --spacing-6 (8 px) × 2 = 16 px — no hardcoded value. */
 .small {
-  width: calc(var(--spacing-6) * 2);
-  height: calc(var(--spacing-6) * 2);
+  font-size: calc(var(--spacing-6) * 2);
 }
 
 .medium {
-  width: var(--spacing-13);  /* 20 px */
-  height: var(--spacing-13);
+  font-size: var(--spacing-13);
 }
 
 .large {
-  width: var(--spacing-14);  /* 24 px */
-  height: var(--spacing-14);
+  font-size: var(--spacing-14);
 }
 
 .xlarge {
-  width: var(--size-icon-xlarge);  /* 32 px */
-  height: var(--size-icon-xlarge);
+  font-size: var(--size-icon-xlarge);
 }

@@ -12,8 +12,8 @@ describe('EmptyState', () => {
 
   it('renders the icon', () => {
     render(<EmptyState icon="search" message="Nothing to show" />);
-    // The Icon renders an SVG; check it is present in the document.
-    expect(document.querySelector('svg')).toBeInTheDocument();
+    // The Icon renders a Font Awesome <i class="fa-solid fa-magnifying-glass">.
+    expect(document.querySelector('i.fa-magnifying-glass')).toBeInTheDocument();
   });
 
   it('renders the action element when action prop is provided', () => {

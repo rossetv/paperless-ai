@@ -2,6 +2,32 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 
+const ALL_NAMES: IconName[] = [
+  'search',
+  'close',
+  'document',
+  'external-link',
+  'chevron-down',
+  'chevron-right',
+  'info',
+  'check',
+  'warning',
+  'tag',
+  'link',
+  'sparkle',
+  'waves',
+  'eye',
+  'eye-off',
+  'paragraph',
+  'lightning',
+  'list-lines',
+  'users',
+  'key',
+  'library',
+  'index',
+  'settings',
+];
+
 const meta = {
   title: 'Primitives/Icon',
   component: Icon,
@@ -12,24 +38,11 @@ const meta = {
   argTypes: {
     name: {
       control: 'select',
-      options: [
-        'search',
-        'close',
-        'document',
-        'external-link',
-        'chevron-down',
-        'chevron-right',
-        'filter',
-        'info',
-        'check',
-        'warning',
-        'arrow-left',
-        'tag',
-      ] satisfies IconName[],
+      options: ALL_NAMES satisfies IconName[],
     },
     size: {
       control: 'radio',
-      options: ['small', 'medium', 'large'],
+      options: ['small', 'medium', 'large', 'xlarge'],
     },
   },
 } satisfies Meta<typeof Icon>;
@@ -50,43 +63,32 @@ export const WithLabel: Story = {
 };
 
 export const AllIcons: StoryObj = {
-  render: () => {
-    const names: IconName[] = [
-      'search',
-      'close',
-      'document',
-      'external-link',
-      'chevron-down',
-      'chevron-right',
-      'filter',
-      'info',
-      'check',
-      'warning',
-      'arrow-left',
-      'tag',
-    ];
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 'var(--spacing-14)',
-          alignItems: 'center',
-          padding: 'var(--spacing-14)',
-        }}
-      >
-        {names.map((name) => (
-          <div
-            key={name}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-2)' }}
-          >
-            <Icon name={name} size="medium" />
-            <span style={{ fontSize: 'var(--font-size-micro)', fontFamily: 'monospace' }}>{name}</span>
-          </div>
-        ))}
-      </div>
-    );
-  },
+  render: () => (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 'var(--spacing-14)',
+        alignItems: 'center',
+        padding: 'var(--spacing-14)',
+      }}
+    >
+      {ALL_NAMES.map((name) => (
+        <div
+          key={name}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 'var(--spacing-2)',
+          }}
+        >
+          <Icon name={name} size="medium" />
+          <span style={{ fontSize: 'var(--font-size-micro)', fontFamily: 'monospace' }}>{name}</span>
+        </div>
+      ))}
+    </div>
+  ),
 };
 
 export const Sizes: StoryObj = {
@@ -95,6 +97,7 @@ export const Sizes: StoryObj = {
       <Icon name="search" size="small" />
       <Icon name="search" size="medium" />
       <Icon name="search" size="large" />
+      <Icon name="search" size="xlarge" />
     </div>
   ),
 };

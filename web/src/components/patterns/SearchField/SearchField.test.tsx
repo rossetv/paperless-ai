@@ -10,9 +10,8 @@ describe('SearchField', () => {
 
   it('renders a search icon within the field', () => {
     render(<SearchField id="q" onSubmit={vi.fn()} />);
-    // The search icon SVG should be present (aria-hidden decorative)
-    const svgs = document.querySelectorAll('svg');
-    expect(svgs.length).toBeGreaterThan(0);
+    // The search icon renders as a Font Awesome <i class="fa-solid fa-magnifying-glass">.
+    expect(document.querySelector('i.fa-magnifying-glass')).toBeInTheDocument();
   });
 
   it('renders a submit button', () => {
