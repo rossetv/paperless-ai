@@ -1,22 +1,20 @@
 import React from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Page } from '../components/layout/Page/Page';
 import { AppNavBar } from '../features/shell/AppNavBar/AppNavBar';
-import { DocumentPreviewScreen } from '../features/search/DocumentPreviewScreen/DocumentPreviewScreen';
+import { DocumentScreen } from '../features/document/DocumentScreen/DocumentScreen';
 import { DocumentErrorScreen } from '../features/document/DocumentErrorScreen/DocumentErrorScreen';
 import { FullPageLoading } from '../components/layout/FullPageLoading/FullPageLoading';
-import { useDocument } from '../api/hooks';
+import { useDocument, useMe } from '../api/hooks';
 import { ApiError } from '../api/client';
 
 /**
- * The `/document/:id` route — the document-preview overlay addressable
- * standalone (no library/search parent context) or from a search-result
- * link.
+ * The `/document/:id` route — the full-page document view addressable
+ * standalone (no library/search parent context) or from a search-result link.
  *
- * Close behaviour: if the URL carries a search context (`?q=…`), close
- * navigates back to `/?<params>` so the recipient lands in the same
- * result list the sender was viewing; otherwise close goes to `/library`
- * as a sensible default.
+ * Parent context: if the URL carries a search query (`?q=…`) the breadcrumb
+ * in `DocumentScreen` links back to `/?<params>` so the user returns to the
+ * same result list; otherwise it links to `/library` as the default.
  *
  * Tier: pages (CODE_GUIDELINES §12.3) — composes features + layout only.
  */
@@ -25,22 +23,12 @@ export function DocumentPage(): React.ReactElement {
   const parsed = id !== undefined ? Number.parseInt(id, 10) : NaN;
   const documentId = Number.isFinite(parsed) ? parsed : null;
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
 
   const docQuery = useDocument(documentId);
+  const me = useMe();
+  const canEdit = me.data?.user?.role !== 'readonly';
 
-  function close(): void {
-    if (searchParams.has('q')) {
-      const search = searchParams.toString();
-      navigate(`/${search === '' ? '' : `?${search}`}`);
-    } else {
-      navigate('/library');
-    }
-  }
-
-  if (docQuery.isLoading) {
-    return <FullPageLoading />;
-  }
+  if (docQuery.isLoading) return <FullPageLoading />;
 
   if (docQuery.isError || docQuery.data === undefined) {
     const notFound =
@@ -53,18 +41,17 @@ export function DocumentPage(): React.ReactElement {
     );
   }
 
-  const doc = docQuery.data;
-  const source = {
-    document_id: doc.id,
-    title: doc.title,
-    correspondent: doc.correspondent,
-    document_type: doc.document_type,
-    created: doc.created,
-    snippet: '',
-    score: 0,
-    paperless_url: null,
-    tags: doc.tags,
-  };
-
-  return <DocumentPreviewScreen source={source} onClose={close} />;
+  const parent: 'library' | 'search' = searchParams.has('q') ? 'search' : 'library';
+  const parentSearchString = parent === 'search' ? searchParams.toString() : '';
+  return (
+    <Page>
+      <AppNavBar />
+      <DocumentScreen
+        document={docQuery.data}
+        parent={parent}
+        parentSearch={parentSearchString === '' ? '' : `?${parentSearchString}`}
+        canEdit={canEdit}
+      />
+    </Page>
+  );
 }
