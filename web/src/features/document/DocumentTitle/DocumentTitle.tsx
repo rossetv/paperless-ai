@@ -4,35 +4,69 @@ import styles from './DocumentTitle.module.css';
 export interface DocumentTitleProps {
   /** The document title; renders a fallback when null. */
   title: string | null;
-  /**
-   * Whether the current user may edit the title.
-   * Accepted now to keep the API stable across waves; wired up in Wave B.
-   */
+  /** Whether the current user may edit the title. */
   canEdit: boolean;
   /**
-   * Called with the new title value when the user commits an edit.
-   * Accepted now to keep the API stable across waves; wired up in Wave B.
+   * Called with the trimmed new title when the user commits an edit.
+   * Not called on revert, Escape, or when the value is unchanged.
    */
   onChange: (next: string) => void;
 }
 
 /**
- * Document title heading — Wave A (view-only).
+ * Document title heading with optional inline editing.
  *
- * Renders the document title as an `<h1>`. Falls back to "Untitled document"
- * when `title` is null. The `canEdit` and `onChange` props are accepted now
- * so the public API does not churn when Wave B wires up inline editing.
+ * Read-only (`canEdit=false`): renders a plain `<h1>` — correct heading
+ * semantics for assistive tech.
+ *
+ * Editable (`canEdit=true`): the `<h1>` carries `role="button"` and responds
+ * to click / Enter by switching to an `<input>`. Blur or Enter commits the
+ * value (only fires `onChange` when it actually changed); Escape reverts.
  */
 export function DocumentTitle({
   title,
   canEdit,
   onChange,
 }: DocumentTitleProps): React.ReactElement {
-  // Editing is wired up in Wave B; the props are accepted now to keep the API stable.
-  void canEdit;
-  void onChange;
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(title ?? '');
+
+  // Keep draft in sync when the parent document is refreshed (e.g. post-save).
+  React.useEffect(() => {
+    setDraft(title ?? '');
+  }, [title]);
+
+  function commit(): void {
+    setEditing(false);
+    const next = draft.trim();
+    if (next !== (title ?? '')) onChange(next);
+  }
+
+  if (editing) {
+    return (
+      <input
+        className={styles['title-input']}
+        value={draft}
+        autoFocus
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { setDraft(title ?? ''); setEditing(false); }
+        }}
+      />
+    );
+  }
 
   return (
-    <h1 className={styles['title']}>{title ?? 'Untitled document'}</h1>
+    <h1
+      className={styles['title']}
+      role={canEdit ? 'button' : undefined}
+      tabIndex={canEdit ? 0 : undefined}
+      onClick={canEdit ? () => setEditing(true) : undefined}
+      onKeyDown={canEdit ? (e) => { if (e.key === 'Enter') setEditing(true); } : undefined}
+    >
+      {title ?? 'Untitled document'}
+    </h1>
   );
 }
