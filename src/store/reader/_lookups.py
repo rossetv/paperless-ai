@@ -21,6 +21,7 @@ from store._sql import placeholders
 from store.migrations import SchemaNotReadyError, StoreError
 from store.models import (
     ChunkHit,
+    DocumentSummary,
     FailedDocument,
     FacetSet,
     IndexedDocument,
@@ -387,3 +388,70 @@ def quick_check(conn: sqlite3.Connection, query_lock: threading.Lock) -> bool:
     except sqlite3.Error as exc:
         raise StoreError("quick_check failed") from exc
     return row is not None and row[0] == "ok"
+
+
+def get_document_summary(
+    conn: sqlite3.Connection,
+    query_lock: threading.Lock,
+    document_id: int,
+) -> DocumentSummary | None:
+    """Return the DocumentSummary for one document id, or None if absent.
+
+    The same row projection as the browse list (joins taxonomy for the
+    correspondent and document-type display names, resolves tag names from
+    the documents.tag_ids JSON array), but for a single id with no
+    pagination.
+
+    Args:
+        conn: The open index connection.
+        query_lock: The StoreReader's lock, held for the duration of the
+            two queries (row + tag taxonomy).
+        document_id: The Paperless document id to fetch.
+
+    Returns:
+        A DocumentSummary if the id exists in the index, otherwise None.
+
+    Raises:
+        StoreError: On SQLite error.
+    """
+    sql = (
+        "SELECT "
+        "    d.id, "
+        "    d.title, "
+        "    d.tag_ids, "
+        "    d.created, "
+        "    d.page_count, "
+        "    corr.name  AS correspondent_name, "
+        "    dtype.name AS document_type_name "
+        "FROM documents d "
+        "LEFT JOIN taxonomy corr "
+        "    ON corr.kind = 'correspondent' AND corr.id = d.correspondent_id "
+        "LEFT JOIN taxonomy dtype "
+        "    ON dtype.kind = 'document_type' AND dtype.id = d.document_type_id "
+        "WHERE d.id = ?"
+    )
+    try:
+        with query_lock:
+            row = conn.execute(sql, (document_id,)).fetchone()
+            if row is None:
+                return None
+            tag_rows = conn.execute(
+                "SELECT id, name FROM taxonomy WHERE kind = 'tag'"
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise StoreError("get_document_summary query failed") from exc
+
+    tag_name_by_id: dict[int, str] = {r["id"]: r["name"] for r in tag_rows}
+    tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
+    tag_names = tuple(
+        tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
+    )
+    return DocumentSummary(
+        id=row["id"],
+        title=row["title"],
+        correspondent=row["correspondent_name"],
+        document_type=row["document_type_name"],
+        tags=tag_names,
+        created=row["created"],
+        page_count=row["page_count"],
+    )
