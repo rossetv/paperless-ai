@@ -37,6 +37,8 @@ import { MetadataCard } from '../MetadataCard/MetadataCard';
 import { TagEditor } from '../TagEditor/TagEditor';
 import { SaveStatusPill, type SaveStatus } from '../SaveStatusPill/SaveStatusPill';
 import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
+import { MatchCard } from '../MatchCard/MatchCard';
+import { parseSearchParams } from '../../search/parseSearchParams';
 import styles from './DocumentScreen.module.css';
 
 export type { Role };
@@ -113,6 +115,13 @@ export function DocumentScreen({
     parent === 'library' ? `/library${parentSearch}` : `/${parentSearch}`;
   const breadcrumbLabel = parent === 'library' ? 'Library' : 'Search results';
 
+  // Parse the parent search string into query + filters so MatchCard can look
+  // up this document's position in the search results that led here.
+  const { query: parentQuery, filters: parentFilters } = React.useMemo(
+    () => parseSearchParams(parentSearch),
+    [parentSearch],
+  );
+
   // ── Tag id resolution ────────────────────────────────────────────────────
   // `document.tags` carries name strings. We resolve ids by name from the tag
   // list so the TagEditor (which operates on ids) can work correctly.
@@ -188,6 +197,14 @@ export function DocumentScreen({
         />
 
         <aside className={styles['side']}>
+          {parent === 'search' && (
+            <MatchCard
+              documentId={document.id}
+              query={parentQuery}
+              filters={parentFilters}
+            />
+          )}
+
           <MetadataCard
             document={document}
             correspondents={correspondents.data ?? []}

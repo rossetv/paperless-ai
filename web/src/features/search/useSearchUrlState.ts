@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { FilterRequest } from '../../api/types';
+import { paramsToFilters } from './parseSearchParams';
 
 /**
  * The empty filter state — no correspondent, no type, no tags, no date range.
@@ -15,27 +16,6 @@ export const EMPTY_FILTERS: FilterRequest = {
   date_from: null,
   date_to: null,
 };
-
-/** Parse a string into a positive integer, or null if not a positive int. */
-function toPositiveInt(value: string | null): number | null {
-  if (value === null) return null;
-  const n = Number.parseInt(value, 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/** Derive a FilterRequest from a URLSearchParams. */
-function paramsToFilters(params: URLSearchParams): FilterRequest {
-  return {
-    tag_ids: params
-      .getAll('tag')
-      .map((t) => Number.parseInt(t, 10))
-      .filter((n) => Number.isFinite(n) && n > 0),
-    correspondent_id: toPositiveInt(params.get('corr')),
-    document_type_id: toPositiveInt(params.get('type')),
-    date_from: params.get('from'),
-    date_to: params.get('to'),
-  };
-}
 
 /**
  * Emit a URLSearchParams with default-valued entries stripped, so the URL

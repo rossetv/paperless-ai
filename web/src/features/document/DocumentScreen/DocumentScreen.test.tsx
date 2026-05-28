@@ -6,7 +6,7 @@ import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tans
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { DocumentScreen } from './DocumentScreen';
 
-// ── Mock all hooks used by DocumentScreen and MetadataCard ─────────────────
+// ── Mock all hooks used by DocumentScreen and its children ─────────────────
 vi.mock('../../../api/hooks', () => ({
   useUpdateDocument: vi.fn(),
   useCorrespondents: vi.fn(),
@@ -18,6 +18,7 @@ vi.mock('../../../api/hooks', () => ({
   useReclassifyDocument: vi.fn(),
   useRetranscribeDocument: vi.fn(),
   useDeleteDocument: vi.fn(),
+  useSearch: vi.fn(),
 }));
 
 import {
@@ -31,6 +32,7 @@ import {
   useReclassifyDocument,
   useRetranscribeDocument,
   useDeleteDocument,
+  useSearch,
 } from '../../../api/hooks';
 
 const mockUseUpdateDocument = useUpdateDocument as ReturnType<typeof vi.fn>;
@@ -43,6 +45,7 @@ const mockUseCreateTag = useCreateTag as ReturnType<typeof vi.fn>;
 const mockUseReclassifyDocument = useReclassifyDocument as ReturnType<typeof vi.fn>;
 const mockUseRetranscribeDocument = useRetranscribeDocument as ReturnType<typeof vi.fn>;
 const mockUseDeleteDocument = useDeleteDocument as ReturnType<typeof vi.fn>;
+const mockUseSearch = useSearch as ReturnType<typeof vi.fn>;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -181,6 +184,20 @@ function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } =
   };
 }
 
+/** Minimal pending-state stub for useSearch — no data yet, not errored. */
+function searchPendingStub(): UseQueryResult<never, Error> {
+  return {
+    data: undefined,
+    error: null,
+    isLoading: true,
+    isPending: true,
+    isFetching: true,
+    isError: false,
+    isSuccess: false,
+    status: 'pending',
+  } as unknown as UseQueryResult<never, Error>;
+}
+
 beforeEach(() => {
   mockUseCorrespondents.mockReturnValue(queryOk(CORRESPONDENTS));
   mockUseDocumentTypes.mockReturnValue(queryOk(DOC_TYPES));
@@ -191,6 +208,9 @@ beforeEach(() => {
   mockUseReclassifyDocument.mockReturnValue(voidMutationStub());
   mockUseRetranscribeDocument.mockReturnValue(voidMutationStub());
   mockUseDeleteDocument.mockReturnValue(voidMutationStub());
+  // Default: useSearch returns pending so MatchCard renders a spinner (then
+  // resolves asynchronously). Overridden per-test where the full result matters.
+  mockUseSearch.mockReturnValue(searchPendingStub());
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -370,5 +390,62 @@ describe('DocumentScreen', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     );
+  });
+
+  // ── MatchCard integration ──────────────────────────────────────────────────
+
+  it('renders MatchCard at the top of the sidebar when parent is search', () => {
+    const mutate = vi.fn();
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
+    // Return a successful search with a matching source so the card shows content.
+    mockUseSearch.mockReturnValue(queryOk({
+      answer: '…',
+      sources: [
+        {
+          document_id: 934,
+          title: 'eBay Payslip 05/2026',
+          snippet: 'payslip **ireland**',
+          score: 0.85,
+          correspondent: 'eBay',
+          document_type: 'Payslip',
+          created: '2026-05-22',
+          paperless_url: 'https://p.example/documents/934/',
+          tags: [],
+        },
+      ],
+      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      stats: { llm_calls: 0, latency_ms: 0, refined: false },
+    }));
+    render(
+      <MemoryRouter>
+        <DocumentScreen
+          document={DOC}
+          parent="search"
+          parentSearch="?q=invoice"
+          role="member"
+        />
+      </MemoryRouter>,
+    );
+    // MatchCard should show the citation meta for this source.
+    expect(screen.getByText(/source 1 of 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/0\.85/)).toBeInTheDocument();
+  });
+
+  it('omits MatchCard when parent is library', () => {
+    const mutate = vi.fn();
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
+    render(
+      <MemoryRouter>
+        <DocumentScreen
+          document={DOC}
+          parent="library"
+          parentSearch=""
+          role="member"
+        />
+      </MemoryRouter>,
+    );
+    // Neither the citation meta nor the "didn't appear" message should be present.
+    expect(screen.queryByText(/source \d+ of \d+/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/didn't appear in the results/i)).not.toBeInTheDocument();
   });
 });
