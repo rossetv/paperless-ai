@@ -645,24 +645,48 @@ export function useTags(): UseQueryResult<TaxonomyItem[], Error> {
 /**
  * Partially update a document's metadata — PATCH /api/documents/{id}.
  *
- * On success:
- * - Writes the updated document directly into the `['document', id]` cache
- *   entry to avoid a redundant GET round-trip.
- * - Invalidates `['documents']` so the library list re-fetches with the
- *   new title / correspondent / type.
- * - Invalidates `['search']` so any cached search results that include the
- *   document are refreshed.
+ * Uses optimistic UI: on mutation start the cache is updated immediately with
+ * the fields we can merge directly (title, created). On error the snapshot is
+ * rolled back. On settle (success or error) the cache entry is invalidated so
+ * a background refetch picks up the reconciled server state.
+ *
+ * The server response is NOT written directly into the cache in `onSuccess`
+ * because Paperless-ngx has a reconcile lag — the PATCH response still carries
+ * pre-edit values until the next indexer cycle. Writing it would visibly revert
+ * the user's edit immediately after a successful save.
+ *
+ * `tags`, `correspondent_id`, and `document_type_id` are id-based in the patch
+ * but name-based on `LibraryDocument`, so they cannot be merged optimistically
+ * without a full taxonomy look-up. The invalidation in `onSettled` handles them
+ * once the reconcile cycle completes.
  */
 export function useUpdateDocument(): UseMutationResult<
   LibraryDocument,
   Error,
-  { id: number; patch: DocumentPatch }
+  { id: number; patch: DocumentPatch },
+  { previous: LibraryDocument | undefined }
 > {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }) => patchDocument(id, patch),
-    onSuccess: (updated, vars) => {
-      qc.setQueryData(queryKeys.document(vars.id), updated);
+    onMutate: async ({ id, patch }) => {
+      await qc.cancelQueries({ queryKey: queryKeys.document(id) });
+      const previous = qc.getQueryData<LibraryDocument>(queryKeys.document(id));
+      if (previous !== undefined) {
+        const optimistic: LibraryDocument = { ...previous };
+        if ('title' in patch) optimistic.title = patch.title ?? null;
+        if ('document_date' in patch) optimistic.created = patch.document_date ?? null;
+        qc.setQueryData(queryKeys.document(id), optimistic);
+      }
+      return { previous };
+    },
+    onError: (_err, vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData(queryKeys.document(vars.id), context.previous);
+      }
+    },
+    onSettled: (_data, _err, vars) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.document(vars.id) });
       void qc.invalidateQueries({ queryKey: ['documents'] });
       void qc.invalidateQueries({ queryKey: ['search'] });
     },

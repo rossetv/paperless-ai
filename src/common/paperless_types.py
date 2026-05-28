@@ -36,11 +36,15 @@ class PaperlessCustomField(TypedDict):
 class DocumentMetadataUpdate(TypedDict, total=False):
     """Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.
 
-    Every value type except ``tags`` admits ``None``: the classifier passes
-    ``None`` for a field it could not determine (no correspondent, no title),
-    and :meth:`update_document_metadata` skips any ``None`` value rather than
-    patching it. ``tags`` is always a concrete set — the classifier never has
-    "no opinion" on tags, it computes the full replacement set every time.
+    ``total=False`` means every key is optional. The caller's intent is inferred
+    from presence vs absence:
+
+    - **Absent key** — field was not supplied; Paperless is not touched for it.
+    - **Present key with ``None`` value** — field was explicitly cleared; Paperless
+      receives ``null`` and clears the field on the document.
+
+    ``tags`` is always a concrete set — ``None`` is not a valid value and will
+    not be forwarded (callers use an empty set to clear all tags).
 
     ``notes`` is a special case: Paperless stores notes at a separate endpoint
     (``/api/documents/{id}/notes/``) rather than the document PATCH endpoint.

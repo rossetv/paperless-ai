@@ -308,6 +308,36 @@ class TestUpdateDocumentMetadata:
         assert not route.called
         client.close()
 
+    def test_forwards_null_to_clear_field(self):
+        """Explicit None is forwarded to Paperless as null — clears the field."""
+        with respx.mock:
+            route = respx.patch(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(200, json={"id": 42}),
+            )
+            client = _make_client()
+
+            client.update_document_metadata(42, title=None, correspondent_id=None)
+
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"title": None, "correspondent": None}
+        client.close()
+
+    def test_skips_absent_fields(self):
+        """Fields NOT passed as kwargs do not appear in the payload."""
+        with respx.mock:
+            route = respx.patch(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(200, json={"id": 42}),
+            )
+            client = _make_client()
+
+            client.update_document_metadata(42, title="just title")
+
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"title": "just title"}  # no other keys
+        client.close()
+
 
 class TestListEndpoints:
     def test_list_correspondents(self):

@@ -26,8 +26,12 @@ export interface TaxonomyComboboxProps {
   selectedId: number | null;
   /** Whether the field can be opened and edited. */
   canEdit: boolean;
-  /** Called with the selected item's ID when the user picks an existing option. */
-  onSelect: (id: number) => void;
+  /**
+   * Called with the selected item's ID when the user picks an existing option,
+   * or with `null` when the user clicks the "Clear" option to remove the
+   * current selection.
+   */
+  onSelect: (id: number | null) => void;
   /** Called with the trimmed query string when the user clicks "Create <query>". */
   onCreate: (name: string) => void;
 }
@@ -93,6 +97,16 @@ export function TaxonomyCombobox({
           onKeyDown={(e) => { if (e.key === 'Escape') close(); }}
         />
         <ul role="listbox" className={styles['list']}>
+          {selectedId !== null && (
+            <li
+              role="option"
+              aria-selected={false}
+              className={styles['clear']}
+              onClick={() => { onSelect(null); close(); }}
+            >
+              Clear
+            </li>
+          )}
           {filtered.map((i) => (
             <li
               key={i.id}

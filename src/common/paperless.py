@@ -420,7 +420,9 @@ class PaperlessClient:
         """Update document metadata fields on Paperless.
 
         Accepts keyword arguments matching :class:`DocumentMetadataUpdate`.
-        Keys not provided (or absent) are silently skipped.
+        Absent keys are silently skipped (field is left unchanged). Explicitly
+        supplied ``None`` values are forwarded to Paperless as ``null``, which
+        Paperless treats as "clear this field".
 
         ``notes`` is handled separately from the PATCH payload: all existing
         notes are deleted first, then the new text is posted (unless the value
@@ -439,10 +441,12 @@ class PaperlessClient:
         for key, api_field in self._METADATA_FIELDS.items():
             # rationale: TypedDict.get() requires a Literal key; the loop variable
             # `key` is typed as `str` so mypy cannot prove it is Literal["tags"|…].
-            value = kwargs.get(key)  # type: ignore[literal-required]
-            if value is None:
+            if key not in kwargs:  # type: ignore[literal-required]
+                # Field absent — caller did not supply it, leave unchanged.
                 continue
-            if key == "tags":
+            value = kwargs[key]  # type: ignore[literal-required]
+            # `value` may be None — Paperless treats null as "clear the field".
+            if key == "tags" and value is not None:
                 # rationale: `value` is `int | str | list[int] | None` from the
                 # TypedDict union; mypy cannot narrow to Iterable[int] here even
                 # though the runtime branch guarantees it when key == "tags".

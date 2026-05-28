@@ -640,10 +640,12 @@ export interface TaxonomyItem {
 /**
  * Optional fields for `PATCH /api/documents/{id}`.
  *
- * Only fields explicitly present in the request body are forwarded to
- * Paperless-ngx. `null` clears the field in Paperless; omitting the field
- * entirely leaves it unchanged. This matches the partial-update semantics
- * declared in the backend's `DocumentPatchRequest` Pydantic model.
+ * - Omit a field to leave it unchanged.
+ * - Pass `null` to clear it on Paperless-ngx.
+ *
+ * The backend distinguishes "absent" from "explicit null" via Pydantic's
+ * `model_fields_set`. Only the fields present in the request body are
+ * forwarded to Paperless; absent fields are left untouched.
  */
 export interface DocumentPatch {
   title?: string | null;

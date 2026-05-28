@@ -196,20 +196,25 @@ def build_document_router(
         returned when *document_id* is not present in the store after the
         Paperless update.
         """
+        # Build kwargs from the *set* fields only — Pydantic tracks which fields
+        # were explicitly supplied via model_fields_set, so we can distinguish
+        # "field absent (do not touch)" from "field explicit null (clear it)".
+        fields_set = body.model_fields_set
         kwargs: dict[str, object] = {}
-        if body.title is not None:
+        if "title" in fields_set:
             kwargs["title"] = body.title
-        if body.correspondent_id is not None:
+        if "correspondent_id" in fields_set:
             kwargs["correspondent_id"] = body.correspondent_id
-        if body.document_type_id is not None:
+        if "document_type_id" in fields_set:
             kwargs["document_type_id"] = body.document_type_id
-        if body.document_date is not None:
+        if "document_date" in fields_set:
             kwargs["document_date"] = body.document_date
-        if body.tags is not None:
+        # tags=None is meaningless (no opinion on tags); only forward a concrete list.
+        if "tags" in fields_set and body.tags is not None:
             kwargs["tags"] = set(body.tags)
-        if body.notes is not None:
+        if "notes" in fields_set:
             kwargs["notes"] = body.notes
-        if body.archive_serial_number is not None:
+        if "archive_serial_number" in fields_set:
             kwargs["archive_serial_number"] = body.archive_serial_number
 
         loop = asyncio.get_event_loop()

@@ -629,6 +629,23 @@ def test_patch_document_returns_404_when_document_missing(app_db_path, conn) -> 
     assert response.json()["detail"] == "document not found"
 
 
+def test_patch_document_null_clears_field(app_db_path, conn) -> None:
+    """Sending null for a field clears it — the backend must forward null, not skip it."""
+    paperless = PaperlessStub()
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _min_summary(42)
+    app = _build_app_with_paperless_url(
+        app_db_path, paperless, "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+
+    response = client.patch("/api/documents/42", json={"title": None})
+
+    assert response.status_code == 200
+    paperless.assert_update_document_metadata_called_with(42, title=None)
+
+
 # ---------------------------------------------------------------------------
 # Taxonomy GET + POST  (/api/correspondents, /api/document-types, /api/tags)
 # ---------------------------------------------------------------------------

@@ -108,4 +108,35 @@ describe('TaxonomyCombobox', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByText('eBay')).toBeInTheDocument();
   });
+
+  it('shows a "Clear" option at the top of the listbox when an item is selected', () => {
+    render(
+      <TaxonomyCombobox label="Correspondent" items={ITEMS} selectedId={1}
+        canEdit={true} onSelect={vi.fn()} onCreate={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByText('Clear')).toBeInTheDocument();
+  });
+
+  it('does not show a "Clear" option when no item is selected', () => {
+    render(
+      <TaxonomyCombobox label="Correspondent" items={ITEMS} selectedId={null}
+        canEdit={true} onSelect={vi.fn()} onCreate={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.queryByText('Clear')).not.toBeInTheDocument();
+  });
+
+  it('clicking Clear fires onSelect(null) and closes the dropdown', () => {
+    const onSelect = vi.fn();
+    render(
+      <TaxonomyCombobox label="Correspondent" items={ITEMS} selectedId={1}
+        canEdit={true} onSelect={onSelect} onCreate={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByText('Clear'));
+    expect(onSelect).toHaveBeenCalledWith(null);
+    // Dropdown should be closed after clearing.
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
 });

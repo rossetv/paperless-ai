@@ -154,3 +154,18 @@
 .create:hover {
   background-color: var(--colour-accent-wash);
 }
+
+/* ── Clear row (shown at the top when a selection exists) ── */
+.clear {
+  display: block;
+  padding: var(--spacing-6) var(--spacing-10);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+  cursor: pointer;
+  border-bottom: var(--spacing-1) solid var(--colour-border-button);
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+.clear:hover {
+  background-color: var(--colour-button-active-bg);
+}

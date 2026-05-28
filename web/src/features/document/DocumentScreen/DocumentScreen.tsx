@@ -18,6 +18,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { LibraryDocument } from '../../../api/types';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useUpdateDocument,
   useCorrespondents,
@@ -95,6 +96,7 @@ export function DocumentScreen({
   const retranscribe = useRetranscribeDocument();
   const deleteDoc = useDeleteDocument();
 
+  const qc = useQueryClient();
   const canEdit = role !== 'readonly';
 
   // Reset the mutation success state after 2 s so the pill cycles back to idle.
@@ -155,7 +157,15 @@ export function DocumentScreen({
   function createTagThenAdd(name: string): void {
     createTag.mutate(name, {
       onSuccess: (created) => {
-        update.mutate({ id: document.id, patch: { tags: [...currentTagIds, created.id] } });
+        // Read the latest cached document rather than the captured `currentTagIds`
+        // to avoid a clobber race when two "create new tag" actions fire in quick
+        // succession before either resolves — each would otherwise overwrite the
+        // other's tag with the stale render-time snapshot.
+        const latest = qc.getQueryData<{ id: number; tags: string[] }>(['document', document.id]);
+        const latestTagIds = ((latest?.tags ?? document.tags) as string[])
+          .map((tagName) => tagsByName.get(tagName)?.id)
+          .filter((id): id is number => id !== undefined);
+        update.mutate({ id: document.id, patch: { tags: [...latestTagIds, created.id] } });
       },
     });
   }
@@ -211,8 +221,24 @@ export function DocumentScreen({
             documentTypes={documentTypes.data ?? []}
             canEdit={canEdit}
             onPatch={(patch) => update.mutate({ id: document.id, patch })}
-            onCreateCorrespondent={(name) => createCorrespondent.mutate(name)}
-            onCreateDocumentType={(name) => createDocumentType.mutate(name)}
+            onCreateCorrespondent={(name) =>
+              createCorrespondent.mutate(name, {
+                onSuccess: (created) =>
+                  update.mutate({
+                    id: document.id,
+                    patch: { correspondent_id: created.id },
+                  }),
+              })
+            }
+            onCreateDocumentType={(name) =>
+              createDocumentType.mutate(name, {
+                onSuccess: (created) =>
+                  update.mutate({
+                    id: document.id,
+                    patch: { document_type_id: created.id },
+                  }),
+              })
+            }
           />
 
           <Card>

@@ -812,6 +812,49 @@ describe('useUpdateDocument', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeInstanceOf(ApiError);
   });
+
+  it('does not clobber the cache with the stale server response', async () => {
+    // The server returns a reconcile-lagged response with the old title.
+    // The cache must NOT be set to that stale value directly — onSettled
+    // invalidates instead, triggering a refetch when the reconcile catches up.
+    const staleServerResponse = {
+      id: 42,
+      title: 'STALE-FROM-SERVER',
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+      paperless_url: 'https://p.example/documents/42/',
+    };
+    vi.spyOn(client, 'patchDocument').mockResolvedValue(staleServerResponse);
+    // Also stub getDocument so the invalidation refetch doesn't error loudly.
+    vi.spyOn(client, 'getDocument').mockResolvedValue(staleServerResponse);
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: qc }, children);
+
+    // Seed the cache with the current document.
+    qc.setQueryData(['document', 42], {
+      id: 42, title: 'current', correspondent: null, document_type: null,
+      created: null, tags: [], page_count: null, paperless_url: '',
+    });
+
+    const { result } = renderHook(() => useUpdateDocument(), { wrapper });
+
+    // Fire the mutation but don't await the settled state (which triggers a
+    // background refetch) — just check that the cache was never set to the
+    // stale server title directly.
+    result.current.mutate({ id: 42, patch: { title: 'fresh' } });
+
+    // onMutate runs synchronously and sets the optimistic title.
+    await waitFor(() => {
+      const cached = qc.getQueryData<{ title: string | null }>(['document', 42]);
+      // After onMutate the cache has 'fresh' (optimistic merge), never 'STALE-FROM-SERVER'.
+      expect(cached?.title).not.toBe('STALE-FROM-SERVER');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

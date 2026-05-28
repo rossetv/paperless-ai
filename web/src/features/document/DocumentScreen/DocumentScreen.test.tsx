@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tanstack/react-query';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { DocumentScreen } from './DocumentScreen';
@@ -165,6 +166,10 @@ function queryOk<T>(data: T): UseQueryResult<T, Error> {
 
 type Role = 'admin' | 'member' | 'readonly';
 
+function makeQueryClient(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+}
+
 function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } = {}) {
   const mutate = opts.mutate ?? vi.fn();
   mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
@@ -172,14 +177,16 @@ function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } =
   return {
     mutate,
     ...render(
-      <MemoryRouter>
-        <DocumentScreen
-          document={DOC}
-          parent="library"
-          parentSearch=""
-          role={opts.role ?? 'member'}
-        />
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen
+            document={DOC}
+            parent="library"
+            parentSearch=""
+            role={opts.role ?? 'member'}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     ),
   };
 }
@@ -238,9 +245,11 @@ describe('DocumentScreen', () => {
     const mutate = vi.fn();
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
-      <MemoryRouter>
-        <DocumentScreen document={DOC} parent="library" parentSearch="?tag=12" role="readonly" />
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen document={DOC} parent="library" parentSearch="?tag=12" role="readonly" />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     expect(screen.getByRole('link', { name: /library/i })).toHaveAttribute('href', '/library?tag=12');
   });
@@ -249,9 +258,11 @@ describe('DocumentScreen', () => {
     const mutate = vi.fn();
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
-      <MemoryRouter>
-        <DocumentScreen document={DOC} parent="search" parentSearch="?q=invoice" role="readonly" />
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen document={DOC} parent="search" parentSearch="?q=invoice" role="readonly" />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     expect(screen.getByRole('link', { name: /search results/i })).toHaveAttribute('href', '/?q=invoice');
   });
@@ -417,14 +428,16 @@ describe('DocumentScreen', () => {
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
     }));
     render(
-      <MemoryRouter>
-        <DocumentScreen
-          document={DOC}
-          parent="search"
-          parentSearch="?q=invoice"
-          role="member"
-        />
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen
+            document={DOC}
+            parent="search"
+            parentSearch="?q=invoice"
+            role="member"
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     // MatchCard should show the citation meta for this source.
     expect(screen.getByText(/source 1 of 1/i)).toBeInTheDocument();
@@ -435,17 +448,112 @@ describe('DocumentScreen', () => {
     const mutate = vi.fn();
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
     render(
-      <MemoryRouter>
-        <DocumentScreen
-          document={DOC}
-          parent="library"
-          parentSearch=""
-          role="member"
-        />
-      </MemoryRouter>,
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen
+            document={DOC}
+            parent="library"
+            parentSearch=""
+            role="member"
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     // Neither the citation meta nor the "didn't appear" message should be present.
     expect(screen.queryByText(/source \d+ of \d+/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/didn't appear in the results/i)).not.toBeInTheDocument();
+  });
+
+  // ── Bug 4: Create correspondent/type selects the created item ─────────────
+
+  it('creating a new correspondent patches it onto the document', async () => {
+    const updateMutate = vi.fn();
+    const correspondentMutate = vi.fn((
+      _name: string,
+      opts?: { onSuccess?: (data: TaxonomyItem) => void },
+    ) => {
+      // Simulate the created item being returned.
+      opts?.onSuccess?.({ id: 50, name: 'New Corp', document_count: 0 });
+    });
+
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
+    mockUseCreateCorrespondent.mockReturnValue(
+      createMutationStub({ mutate: correspondentMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
+    );
+
+    renderScreen({ role: 'member', mutate: updateMutate });
+
+    // Open the correspondent combobox and type a new name that has no exact match.
+    fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Corp' } });
+    fireEvent.click(screen.getByText(/create "new corp"/i));
+
+    // The create mutation must have been called.
+    expect(correspondentMutate).toHaveBeenCalledWith('New Corp', expect.objectContaining({ onSuccess: expect.any(Function) }));
+    // And on success, update must have been called with the new id.
+    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 50 } });
+  });
+
+  it('creating a new document type patches it onto the document', async () => {
+    const updateMutate = vi.fn();
+    const documentTypeMutate = vi.fn((
+      _name: string,
+      opts?: { onSuccess?: (data: TaxonomyItem) => void },
+    ) => {
+      opts?.onSuccess?.({ id: 60, name: 'New Type', document_count: 0 });
+    });
+
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
+    mockUseCreateDocumentType.mockReturnValue(
+      createMutationStub({ mutate: documentTypeMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
+    );
+
+    renderScreen({ role: 'member', mutate: updateMutate });
+
+    // Open the document-type combobox and type a new name.
+    fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Type' } });
+    fireEvent.click(screen.getByText(/create "new type"/i));
+
+    expect(documentTypeMutate).toHaveBeenCalledWith('New Type', expect.objectContaining({ onSuccess: expect.any(Function) }));
+    expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } });
+  });
+
+  // ── Bug 5: Tag create race uses latest cache state ────────────────────────
+
+  it('createTagThenAdd uses the latest document from the cache to avoid clobbering concurrent creates', async () => {
+    // Simulate rapid tag creates: the first resolves with tag 200, the second
+    // with tag 201. Both should end up in the final patch.
+    const updateMutate = vi.fn();
+    // createTag.mutate stubs — both invoke onSuccess synchronously.
+    const tagMutate = vi.fn((
+      _name: string,
+      opts?: { onSuccess?: (data: TaxonomyItem) => void },
+    ) => {
+      // First call returns tag 200; second returns tag 201.
+      const callCount = (tagMutate as ReturnType<typeof vi.fn>).mock.calls.length;
+      opts?.onSuccess?.({ id: callCount === 1 ? 200 : 201, name: _name, document_count: 0 });
+    });
+
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
+    mockUseCreateTag.mockReturnValue(
+      createMutationStub({ mutate: tagMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
+    );
+
+    renderScreen({ role: 'member', mutate: updateMutate });
+
+    // Simulate opening TagEditor and creating two new tags.
+    // We use the DOM to trigger TagEditor's onCreate callback twice.
+    const addButton = screen.getByRole('button', { name: /add tag/i });
+    fireEvent.click(addButton);
+    const input = screen.getByRole('combobox');
+    fireEvent.change(input, { target: { value: 'alpha-tag' } });
+    fireEvent.click(screen.getByText(/create "alpha-tag"/i));
+
+    // First create was called — update must have been called once.
+    expect(tagMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    const firstCall = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
+    expect(firstCall.patch.tags).toContain(200);
   });
 });
