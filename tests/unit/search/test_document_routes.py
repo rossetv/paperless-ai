@@ -1,4 +1,4 @@
-"""Tests for search.document_routes — the PDF proxy route.
+"""Tests for search.document_routes — the PDF proxy route and document summary route.
 
 Exercises GET /api/documents/{id}/pdf through a tiny FastAPI app and
 TestClient with the AppState wired and a stubbed PaperlessClient, so the
@@ -6,6 +6,10 @@ routing, auth gate, streaming and error mapping are all real. Covers: a
 signed-in user streams a document; the body and Content-Type are forwarded;
 an unknown id maps to 404; a Paperless network error maps to 502; an
 unauthenticated request is rejected 401.
+
+Also exercises GET /api/documents/{id} (the shareable-URL document summary
+endpoint added in Task 3): returns a DocumentSummaryResponse for a known id,
+404 for an unknown id, and 401 when unauthenticated.
 
 Adaptation from the plan: AppState takes app_db_path (a path string), not a
 live connection. The app is built with the tmp_path file; test fixtures seed
@@ -34,6 +38,7 @@ from search.auth import SESSION_COOKIE_NAME
 from search.document_routes import build_document_router
 from search.sessions import begin_session
 from search.setup import SetupState
+from store.models import DocumentSummary
 
 _PDF_BYTES = b"%PDF-1.7\nstreamed document body\n%%EOF"
 
@@ -45,11 +50,16 @@ def _make_404_status_error() -> httpx.HTTPStatusError:
     return httpx.HTTPStatusError("not found", request=request, response=response)
 
 
-def _build_app(app_db_path: str, paperless_client) -> FastAPI:
+def _build_app(
+    app_db_path: str,
+    paperless_client,
+    store_reader=None,
+) -> FastAPI:
     """A FastAPI app mounting the document router with a stubbed client.
 
     The router is built with a *paperless_factory* that returns the supplied
-    stub, so no real Paperless call is made.
+    stub, so no real Paperless call is made. An optional *store_reader* stub
+    is forwarded to ``build_document_router`` for the document-summary route.
     """
     app = FastAPI()
     attach_app_state(
@@ -61,7 +71,11 @@ def _build_app(app_db_path: str, paperless_client) -> FastAPI:
     )
     settings = MagicMock()
     app.include_router(
-        build_document_router(settings, paperless_factory=lambda _s: paperless_client)
+        build_document_router(
+            settings,
+            paperless_factory=lambda _s: paperless_client,
+            store_reader=store_reader if store_reader is not None else MagicMock(),
+        )
     )
     return app
 
@@ -84,9 +98,9 @@ def conn(app_db_path):
     c.close()
 
 
-def _client(app_db_path: str, paperless_client) -> TestClient:
+def _client(app_db_path: str, paperless_client, store_reader=None) -> TestClient:
     return TestClient(
-        _build_app(app_db_path, paperless_client),
+        _build_app(app_db_path, paperless_client, store_reader=store_reader),
         raise_server_exceptions=False,
         base_url="https://testserver",
     )
@@ -222,7 +236,11 @@ class TestRecentSearchesRoute:
         )
         settings = MagicMock()
         app.include_router(
-            build_document_router(settings, paperless_factory=lambda _s: MagicMock())
+            build_document_router(
+                settings,
+                paperless_factory=lambda _s: MagicMock(),
+                store_reader=MagicMock(),
+            )
         )
         return app
 
@@ -282,3 +300,59 @@ class TestRecentSearchesRoute:
         """An unauthenticated request is rejected 401."""
         client = self._client_no_paperless(app_db_path)
         assert client.get("/api/recent-searches").status_code == 401
+
+
+_DOCUMENT_SUMMARY = DocumentSummary(
+    id=42,
+    title="Test Invoice",
+    correspondent="ACME Ltd",
+    document_type="Invoice",
+    tags=("tax", "2024"),
+    created="2024-01-15T00:00:00Z",
+    page_count=3,
+)
+
+
+def test_get_document_returns_summary(app_db_path, conn) -> None:
+    """GET /api/documents/{id} returns the wire DocumentSummaryResponse for the id."""
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _DOCUMENT_SUMMARY
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/42")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == 42
+    assert body["title"] == "Test Invoice"
+    assert body["correspondent"] == "ACME Ltd"
+    assert body["document_type"] == "Invoice"
+    assert body["created"] == "2024-01-15T00:00:00Z"
+    assert body["tags"] == ["tax", "2024"]
+    assert body["page_count"] == 3
+    store_reader.get_document_summary.assert_called_once_with(42)
+
+
+def test_get_document_404_for_missing_id(app_db_path, conn) -> None:
+    """Stub get_document_summary returning None yields a 404."""
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = None
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/999")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "document not found"
+
+
+def test_get_document_requires_auth(app_db_path) -> None:
+    """An unauthenticated request to GET /api/documents/{id} is rejected 401."""
+    store_reader = MagicMock()
+    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+
+    response = client.get("/api/documents/42")
+
+    assert response.status_code == 401
+    store_reader.get_document_summary.assert_not_called()
