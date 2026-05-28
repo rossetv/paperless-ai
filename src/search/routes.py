@@ -494,6 +494,7 @@ async def _documents(
         document_page,
         page_number=page,
         page_size=page_size,
+        paperless_base_url=settings.PAPERLESS_URL.rstrip("/"),
     )
 
 

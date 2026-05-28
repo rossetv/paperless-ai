@@ -24,10 +24,12 @@ class TestLibraryWireModels:
             created="2024-03-01T00:00:00+00:00",
             tags=["utilities", "2024"],
             page_count=2,
+            paperless_url="https://paperless.example/documents/7/",
         )
         assert model.id == 7
         assert model.page_count == 2
         assert model.tags == ["utilities", "2024"]
+        assert model.paperless_url == "https://paperless.example/documents/7/"
 
     def test_converter_builds_the_paginated_envelope(self) -> None:
         """to_document_list_response maps a DocumentPage to the wire envelope."""
@@ -51,6 +53,7 @@ class TestLibraryWireModels:
             page,
             page_number=2,
             page_size=20,
+            paperless_base_url="https://p.example",
         )
         assert isinstance(response, DocumentListResponse)
         assert response.total == 41
@@ -62,6 +65,7 @@ class TestLibraryWireModels:
         assert doc.title == "Gas Bill"
         assert doc.tags == ["utilities"]
         assert doc.page_count == 2
+        assert doc.paperless_url == "https://p.example/documents/7/"
 
     def test_to_document_summary_response_copies_all_fields(self) -> None:
         """to_document_summary_response maps every field from the store dataclass."""
@@ -75,7 +79,9 @@ class TestLibraryWireModels:
             page_count=3,
         )
 
-        response = to_document_summary_response(summary)
+        response = to_document_summary_response(
+            summary, paperless_url="https://p.example/documents/42/"
+        )
 
         assert response.id == 42
         assert response.title == "An invoice"
@@ -85,6 +91,22 @@ class TestLibraryWireModels:
         assert response.tags == ["urgent", "2024"]
         assert response.page_count == 3
 
+    def test_to_document_summary_response_includes_paperless_url(self) -> None:
+        """to_document_summary_response forwards the supplied paperless_url."""
+        summary = DocumentSummary(
+            id=42,
+            title="An invoice",
+            correspondent="ACME",
+            document_type="Invoice",
+            tags=("urgent",),
+            created="2024-03-01T00:00:00Z",
+            page_count=3,
+        )
+        response = to_document_summary_response(
+            summary, paperless_url="https://p.example/documents/42/"
+        )
+        assert response.paperless_url == "https://p.example/documents/42/"
+
     def test_converter_handles_an_empty_page(self) -> None:
         """An empty DocumentPage maps to an envelope with no documents."""
         page = DocumentPage(documents=(), total=0, offset=0, limit=20)
@@ -92,6 +114,7 @@ class TestLibraryWireModels:
             page,
             page_number=1,
             page_size=20,
+            paperless_base_url="https://p.example",
         )
         assert response.documents == []
         assert response.total == 0

@@ -313,11 +313,41 @@ _DOCUMENT_SUMMARY = DocumentSummary(
 )
 
 
+def _build_app_with_paperless_url(
+    app_db_path: str,
+    paperless_client,
+    paperless_url: str,
+    store_reader=None,
+) -> FastAPI:
+    """A FastAPI app mounting the document router with a configured PAPERLESS_URL."""
+    app = FastAPI()
+    attach_app_state(
+        app.state,
+        AppState(
+            app_db_path=app_db_path,
+            setup_state=SetupState(),
+        ),
+    )
+    settings = MagicMock()
+    settings.PAPERLESS_URL = paperless_url
+    app.include_router(
+        build_document_router(
+            settings,
+            paperless_factory=lambda _s: paperless_client,
+            store_reader=store_reader if store_reader is not None else MagicMock(),
+        )
+    )
+    return app
+
+
 def test_get_document_returns_summary(app_db_path, conn) -> None:
     """GET /api/documents/{id} returns the wire DocumentSummaryResponse for the id."""
     store_reader = MagicMock()
     store_reader.get_document_summary.return_value = _DOCUMENT_SUMMARY
-    client = _client(app_db_path, MagicMock(), store_reader=store_reader)
+    app = _build_app_with_paperless_url(
+        app_db_path, MagicMock(), "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
 
     response = client.get("/api/documents/42")
@@ -332,6 +362,24 @@ def test_get_document_returns_summary(app_db_path, conn) -> None:
     assert body["tags"] == ["tax", "2024"]
     assert body["page_count"] == 3
     store_reader.get_document_summary.assert_called_once_with(42)
+
+
+def test_get_document_includes_paperless_url(app_db_path, conn) -> None:
+    """GET /api/documents/{id} includes the paperless_url for the document."""
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _DOCUMENT_SUMMARY
+    app = _build_app_with_paperless_url(
+        app_db_path, MagicMock(), "https://paperless.example", store_reader=store_reader
+    )
+    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/42")
+
+    assert response.status_code == 200
+    paperless_url = response.json()["paperless_url"]
+    assert paperless_url  # non-empty
+    assert paperless_url.endswith("/documents/42/")
 
 
 def test_get_document_404_for_missing_id(app_db_path, conn) -> None:
