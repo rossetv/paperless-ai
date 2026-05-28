@@ -2,9 +2,11 @@
  * Route table for the Paperless AI SPA.
  *
  * Real React-Router routes replace the former render-swap:
- *   - `/setup` — first-run setup, shown only while no users exist
- *   - `/login` — sign-in, shown only when unauthenticated
- *   - `/`      — the search app, protected
+ *   - `/setup`                   — first-run setup, shown only while no users exist
+ *   - `/login`                   — sign-in, shown only when unauthenticated
+ *   - `/`                        — the search app, protected
+ *   - `/library/document/:id`    — library document detail, protected
+ *   - `/document/:id`            — shareable document view, protected
  *
  * A bootstrap gate resolves two server queries on load — `GET
  * /api/setup/status` then `GET /api/auth/me` — and the route guards below
@@ -30,6 +32,8 @@ import { UsersPage } from './pages/UsersPage';
 import { KeysPage } from './pages/KeysPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LibraryPage } from './pages/LibraryPage';
+import { LibraryDocumentPage } from './pages/LibraryDocumentPage';
+import { DocumentPage } from './pages/DocumentPage';
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
 
@@ -210,6 +214,22 @@ export function AppRoutes(): React.ReactElement {
           <RequireAdmin>
             <KeysPage />
           </RequireAdmin>
+        }
+      />
+      <Route
+        path="/library/document/:id"
+        element={
+          <ProtectedRoute>
+            <LibraryDocumentPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/document/:id"
+        element={
+          <ProtectedRoute>
+            <DocumentPage />
+          </ProtectedRoute>
         }
       />
       {/* Unknown paths fall back to the root, which re-resolves the gate. */}
