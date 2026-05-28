@@ -1,0 +1,87 @@
+/*
+ * EditableField — CSS Module.
+ *
+ * A label + value row that supports inline editing.
+ * Mirrors the .field / .label / .value grid pattern used in
+ * DocumentScreen.module.css, but scoped to this component so it can be
+ * composed anywhere without leaking into sibling stylesheets.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Row container ── */
+.row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--spacing-10);
+  padding: var(--spacing-6) 0;
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* ── Label column ── */
+.label {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+  padding-top: var(--spacing-4);
+}
+
+/* ── Static value (read-only or non-editable) ── */
+.value {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  border-radius: var(--radius-micro);
+}
+
+/* ── Clickable value button (canEdit=true, not editing) ── */
+.value-button {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  border-radius: var(--radius-micro);
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+.value-button:hover {
+  background-color: var(--colour-button-active-bg);
+}
+
+.value-button:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* ── Inline input (editing state) ── */
+.input {
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  background: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-accent);
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  width: calc(100% + 2 * var(--spacing-6));
+  outline: none;
+}
+
+.input:focus {
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Empty / placeholder text ── */
+.empty {
+  color: var(--colour-text-tertiary);
+}
