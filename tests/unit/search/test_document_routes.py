@@ -365,7 +365,9 @@ def test_get_document_returns_summary(app_db_path, conn) -> None:
     app = _build_app_with_paperless_url(
         app_db_path, MagicMock(), "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
 
     response = client.get("/api/documents/42")
@@ -389,7 +391,9 @@ def test_get_document_includes_paperless_url(app_db_path, conn) -> None:
     app = _build_app_with_paperless_url(
         app_db_path, MagicMock(), "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
 
     response = client.get("/api/documents/42")
@@ -580,16 +584,22 @@ def test_patch_document_forwards_metadata_to_paperless(app_db_path, conn) -> Non
     app = _build_app_with_paperless_url(
         app_db_path, paperless, "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
 
-    response = client.patch("/api/documents/42", json={"title": "Renamed", "tags": [1, 2, 3]})
+    response = client.patch(
+        "/api/documents/42", json={"title": "Renamed", "tags": [1, 2, 3]}
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == 42
     assert body["title"] == "Renamed"
-    paperless.assert_update_document_metadata_called_with(42, title="Renamed", tags={1, 2, 3})
+    paperless.assert_update_document_metadata_called_with(
+        42, title="Renamed", tags={1, 2, 3}
+    )
 
 
 def test_patch_document_with_notes_field(app_db_path, conn) -> None:
@@ -600,7 +610,9 @@ def test_patch_document_with_notes_field(app_db_path, conn) -> None:
     app = _build_app_with_paperless_url(
         app_db_path, paperless, "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
 
     response = client.patch("/api/documents/42", json={"notes": "hello"})
@@ -636,7 +648,9 @@ def test_patch_document_returns_404_when_document_missing(app_db_path, conn) -> 
     app = _build_app_with_paperless_url(
         app_db_path, paperless, "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
 
     response = client.patch("/api/documents/42", json={"title": "x"})
@@ -653,7 +667,9 @@ def test_patch_document_null_clears_field(app_db_path, conn) -> None:
     app = _build_app_with_paperless_url(
         app_db_path, paperless, "https://paperless.example", store_reader=store_reader
     )
-    client = TestClient(app, raise_server_exceptions=False, base_url="https://testserver")
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
     client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
 
     response = client.patch("/api/documents/42", json={"title": None})
@@ -696,7 +712,9 @@ def api_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
 def readonly_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
     """A :class:`TestClient` signed in as a ``readonly`` user."""
     client = _client(app_db_path, paperless_stub, settings=settings)
-    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="readonly", username="readonly_u"))
+    client.cookies.set(
+        SESSION_COOKIE_NAME, _login(conn, role="readonly", username="readonly_u")
+    )
     return client
 
 
@@ -715,7 +733,9 @@ def member_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
     explicitly without a username collision.
     """
     client = _client(app_db_path, paperless_stub, settings=settings)
-    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member", username="member_u"))
+    client.cookies.set(
+        SESSION_COOKIE_NAME, _login(conn, role="member", username="member_u")
+    )
     return client
 
 
@@ -723,7 +743,9 @@ def member_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
 def admin_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
     """A :class:`TestClient` signed in as an ``admin`` user."""
     client = _client(app_db_path, paperless_stub, settings=settings)
-    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="admin", username="admin_u"))
+    client.cookies.set(
+        SESSION_COOKIE_NAME, _login(conn, role="admin", username="admin_u")
+    )
     return client
 
 
@@ -735,9 +757,13 @@ def admin_client(app_db_path, conn, paperless_stub, settings) -> TestClient:
         ("/api/tags", "list_tags"),
     ],
 )
-def test_taxonomy_get_returns_list(api_client, paperless_stub, path, list_method) -> None:
+def test_taxonomy_get_returns_list(
+    api_client, paperless_stub, path, list_method
+) -> None:
     """GET on a taxonomy path returns the list from Paperless as JSON."""
-    paperless_stub.set_list_return(list_method, [{"id": 1, "name": "ACME", "document_count": 7}])
+    paperless_stub.set_list_return(
+        list_method, [{"id": 1, "name": "ACME", "document_count": 7}]
+    )
     r = api_client.get(path)
     assert r.status_code == 200
     body = r.json()
@@ -777,7 +803,9 @@ def test_taxonomy_create_member_returns_201(
     api_client, paperless_stub, path, create_method
 ) -> None:
     """POST on a taxonomy path creates the item and returns 201."""
-    paperless_stub.set_create_return(create_method, {"id": 99, "name": "New", "document_count": 0})
+    paperless_stub.set_create_return(
+        create_method, {"id": 99, "name": "New", "document_count": 0}
+    )
     r = api_client.post(path, json={"name": "New"})
     assert r.status_code == 201
     assert r.json()["id"] == 99
@@ -858,7 +886,9 @@ def test_reclassify_member_only(
 
 def test_reclassify_unauthenticated(unauthenticated_client) -> None:
     """An unauthenticated POST /reclassify is rejected 401."""
-    assert unauthenticated_client.post("/api/documents/42/reclassify").status_code == 401
+    assert (
+        unauthenticated_client.post("/api/documents/42/reclassify").status_code == 401
+    )
 
 
 def test_retranscribe_member_only(
@@ -874,7 +904,9 @@ def test_retranscribe_member_only(
 
 def test_retranscribe_unauthenticated(unauthenticated_client) -> None:
     """An unauthenticated POST /retranscribe is rejected 401."""
-    assert unauthenticated_client.post("/api/documents/42/retranscribe").status_code == 401
+    assert (
+        unauthenticated_client.post("/api/documents/42/retranscribe").status_code == 401
+    )
 
 
 def test_delete_document_admin(admin_client, paperless_stub) -> None:

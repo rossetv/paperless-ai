@@ -651,7 +651,13 @@ class TestNoteHelpers:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(
                     200,
-                    json={"id": 42, "notes": [{"id": 1, "note": "first"}, {"id": 2, "note": "second"}]},
+                    json={
+                        "id": 42,
+                        "notes": [
+                            {"id": 1, "note": "first"},
+                            {"id": 2, "note": "second"},
+                        ],
+                    },
                 )
             )
             client = _make_client()
@@ -676,15 +682,18 @@ class TestUpdateDocumentMetadataNotes:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(
                     200,
-                    json={"id": 42, "notes": [{"id": 1, "note": "old"}, {"id": 5, "note": "older"}]},
+                    json={
+                        "id": 42,
+                        "notes": [{"id": 1, "note": "old"}, {"id": 5, "note": "older"}],
+                    },
                 )
             )
-            delete_route = respx.delete(
-                f"{BASE}/api/documents/42/notes/"
-            ).mock(return_value=httpx.Response(204))
-            post_route = respx.post(
-                f"{BASE}/api/documents/42/notes/"
-            ).mock(return_value=httpx.Response(201, json={"id": 9, "note": "fresh"}))
+            delete_route = respx.delete(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(204)
+            )
+            post_route = respx.post(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(201, json={"id": 9, "note": "fresh"})
+            )
 
             client = _make_client()
             client.update_document_metadata(42, notes="fresh")
@@ -701,12 +710,12 @@ class TestUpdateDocumentMetadataNotes:
                     200, json={"id": 42, "notes": [{"id": 1, "note": "old"}]}
                 )
             )
-            delete_route = respx.delete(
-                f"{BASE}/api/documents/42/notes/"
-            ).mock(return_value=httpx.Response(204))
-            post_route = respx.post(
-                f"{BASE}/api/documents/42/notes/"
-            ).mock(return_value=httpx.Response(201))
+            delete_route = respx.delete(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(204)
+            )
+            post_route = respx.post(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(201)
+            )
 
             client = _make_client()
             client.update_document_metadata(42, notes="")

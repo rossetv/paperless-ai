@@ -490,8 +490,12 @@ def _paperless_item_to_response(item: "PaperlessItem") -> TaxonomyItemResponse:
         # treat this as an unknown count rather than inferring len(list).
         raw = 0
     if isinstance(raw, str):
-        raw = int(raw) if raw.isdigit() else 0
-    return TaxonomyItemResponse(id=item["id"], name=item["name"], document_count=int(raw))
+        count = int(raw) if raw.isdigit() else 0
+    elif isinstance(raw, int):
+        count = raw
+    else:
+        count = 0
+    return TaxonomyItemResponse(id=item["id"], name=item["name"], document_count=count)
 
 
 # ---------------------------------------------------------------------------

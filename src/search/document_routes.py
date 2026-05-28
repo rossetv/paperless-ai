@@ -50,7 +50,13 @@ from starlette.responses import Response, StreamingResponse
 
 from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
-from search.deps import get_app_db, require_admin, require_api_scope, require_api_scope_member
+from common.paperless_types import DocumentMetadataUpdate
+from search.deps import (
+    get_app_db,
+    require_admin,
+    require_api_scope,
+    require_api_scope_member,
+)
 from search.sessions import CurrentUser
 from search.wire import (
     DocumentPatchRequest,
@@ -159,9 +165,7 @@ def build_document_router(
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
-        paperless_url = (
-            f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/"
-        )
+        paperless_url = f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/"
         return to_document_summary_response(summary, paperless_url=paperless_url)
 
     @router.get("/api/recent-searches")
@@ -199,8 +203,10 @@ def build_document_router(
         # Build kwargs from the *set* fields only — Pydantic tracks which fields
         # were explicitly supplied via model_fields_set, so we can distinguish
         # "field absent (do not touch)" from "field explicit null (clear it)".
+        # Built into a DocumentMetadataUpdate TypedDict so mypy can narrow the
+        # **kwargs splat to the expected per-field types.
         fields_set = body.model_fields_set
-        kwargs: dict[str, object] = {}
+        kwargs: DocumentMetadataUpdate = {}
         if "title" in fields_set:
             kwargs["title"] = body.title
         if "correspondent_id" in fields_set:
