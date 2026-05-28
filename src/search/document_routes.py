@@ -155,7 +155,10 @@ def build_document_router(
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
-        return to_document_summary_response(summary)
+        paperless_url = (
+            f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/"
+        )
+        return to_document_summary_response(summary, paperless_url=paperless_url)
 
     @router.get("/api/recent-searches")
     def recent_searches(

@@ -174,9 +174,12 @@ class DocumentSummaryResponse(BaseModel):
     """One document in the Library list (web-redesign §5).
 
     The full per-document payload the Library card renders: identity, the
-    resolved taxonomy display names, the document date, the tag names, and
-    the page count. No deep-link URL — documents are opened via the in-app
-    DocumentPreviewScreen, not by linking out to Paperless.
+    resolved taxonomy display names, the document date, the tag names, the
+    page count, and the deep-link URL into Paperless. The ``paperless_url``
+    field makes :class:`DocumentSummaryResponse` shape-compatible with
+    :class:`SourceDocumentResponse` from the perspective of the frontend, so
+    both Library cards and search-result cards can render the same open-in-
+    Paperless link without conditional logic.
     """
 
     id: int
@@ -186,6 +189,7 @@ class DocumentSummaryResponse(BaseModel):
     created: str | None
     tags: list[str]
     page_count: int | None
+    paperless_url: str
 
 
 # ---------------------------------------------------------------------------
@@ -366,12 +370,23 @@ def to_stats_response(stats: IndexStats) -> StatsResponse:
     )
 
 
-def to_document_summary_response(summary: DocumentSummary) -> DocumentSummaryResponse:
+def to_document_summary_response(
+    summary: DocumentSummary, *, paperless_url: str
+) -> DocumentSummaryResponse:
     """Convert one store :class:`~store.models.DocumentSummary` to the wire model.
 
     The explicit, tested boundary conversion (``CODE_GUIDELINES.md`` §5.6).
-    No deep-link URL is computed — documents are opened in-app via
-    ``/api/documents/{id}/pdf``, not by linking out to Paperless.
+    *paperless_url* is the fully-qualified deep-link into Paperless for this
+    document; callers construct it from ``settings.PAPERLESS_URL`` so this
+    function remains free of I/O and configuration knowledge.
+
+    Args:
+        summary: The store dataclass to convert.
+        paperless_url: The fully-qualified Paperless deep-link URL for the
+            document, e.g. ``https://paperless.example/documents/42/``.
+
+    Returns:
+        A :class:`DocumentSummaryResponse` ready to serialise as JSON.
     """
     return DocumentSummaryResponse(
         id=summary.id,
@@ -381,6 +396,7 @@ def to_document_summary_response(summary: DocumentSummary) -> DocumentSummaryRes
         created=summary.created,
         tags=list(summary.tags),
         page_count=summary.page_count,
+        paperless_url=paperless_url,
     )
 
 
@@ -389,6 +405,7 @@ def to_document_list_response(
     *,
     page_number: int,
     page_size: int,
+    paperless_base_url: str,
 ) -> DocumentListResponse:
     """Convert a store :class:`~store.models.DocumentPage` to the wire model.
 
@@ -398,21 +415,29 @@ def to_document_list_response(
     handler (which derived them from the validated query parameters) rather
     than recomputed here, so this function is a pure field copy.
 
-    No deep-link URL is computed — documents are opened via the in-app
-    DocumentPreviewScreen (``/api/documents/{id}/pdf``), not by linking out
-    to Paperless.
+    *paperless_base_url* is used to construct the ``paperless_url`` deep-link
+    for each document; the caller strips any trailing slash before passing it
+    so the per-document URLs are consistently formatted.
 
     Args:
         page: The browse page from
             :meth:`~store.reader.StoreReader.list_documents`.
         page_number: The 1-based page number this response represents.
         page_size: The page size that produced *page*.
+        paperless_base_url: The Paperless base URL with no trailing slash,
+            e.g. ``https://paperless.example``. Prepended to each document's
+            ``/documents/{id}/`` path.
 
     Returns:
         A :class:`DocumentListResponse` ready to serialise as JSON.
     """
     return DocumentListResponse(
-        documents=[to_document_summary_response(summary) for summary in page.documents],
+        documents=[
+            to_document_summary_response(
+                s, paperless_url=f"{paperless_base_url}/documents/{s.id}/"
+            )
+            for s in page.documents
+        ],
         total=page.total,
         page=page_number,
         page_size=page_size,
