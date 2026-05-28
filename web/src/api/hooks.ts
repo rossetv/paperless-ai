@@ -34,6 +34,7 @@ import {
   updateSettings,
   testConnection,
   getDocuments,
+  getDocument,
   getIndexStatus,
   getIndexActivity,
   getFailedDocuments,
@@ -68,6 +69,7 @@ import type {
   TestConnectionResponse,
   DocumentsQuery,
   DocumentsResponse,
+  LibraryDocument,
   IndexStatusResponse,
   IndexActivityResponse,
   IndexFailedResponse,
@@ -90,6 +92,7 @@ const queryKeys = {
   apiKeys: () => ['api-keys'] as const,
   settings: () => ['settings'] as const,
   documents: (query: DocumentsQuery) => ['documents', query] as const,
+  document: (id: number) => ['document', id] as const,
   indexStatus: () => ['index', 'status'] as const,
   indexActivity: () => ['index', 'activity'] as const,
   failedDocuments: () => ['index', 'failed'] as const,
@@ -552,5 +555,27 @@ export function useReconcile(): UseMutationResult<void, Error, void> {
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexStatus() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.indexActivity() });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shareable-URL hooks (Wave 7 — Shareable URLs)
+// ---------------------------------------------------------------------------
+
+/**
+ * `useQuery` for one document's metadata — GET /api/documents/{id}.
+ *
+ * Used by the document-preview route components that mount from a shareable
+ * URL (`/document/:id`, `/library/document/:id`) when there is no cached
+ * library list to read from. The query is disabled when `documentId` is
+ * `null` (e.g. whilst the route param is being parsed).
+ */
+export function useDocument(
+  documentId: number | null,
+): UseQueryResult<LibraryDocument, Error> {
+  return useQuery({
+    queryKey: queryKeys.document(documentId ?? 0),
+    queryFn: () => getDocument(documentId as number),
+    enabled: documentId !== null,
   });
 }

@@ -709,3 +709,49 @@ describe('index-operations hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
+
+// ---------------------------------------------------------------------------
+// useDocument (Wave 7 — Shareable URLs)
+// ---------------------------------------------------------------------------
+
+import { useDocument } from './hooks';
+import * as client from './client';
+
+describe('useDocument', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('fetches the document by id', async () => {
+    const stub = vi.spyOn(client, 'getDocument').mockResolvedValue({
+      id: 42,
+      title: 'An invoice',
+      correspondent: 'ACME',
+      document_type: 'Invoice',
+      created: '2024-03-01T00:00:00Z',
+      tags: ['urgent'],
+      page_count: 3,
+    });
+
+    const { result } = renderHook(() => useDocument(42), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(stub).toHaveBeenCalledWith(42);
+    expect(result.current.data?.id).toBe(42);
+  });
+
+  it('is disabled when documentId is null', () => {
+    const stub = vi.spyOn(client, 'getDocument').mockResolvedValue({
+      id: 0,
+      title: null,
+      correspondent: null,
+      document_type: null,
+      created: null,
+      tags: [],
+      page_count: null,
+    });
+    renderHook(() => useDocument(null), { wrapper: makeWrapper() });
+    // The query is disabled — getDocument must not be called.
+    expect(stub).not.toHaveBeenCalled();
+  });
+});

@@ -46,6 +46,7 @@ import type {
   TestConnectionResponse,
   DocumentsQuery,
   DocumentsResponse,
+  LibraryDocument,
   IndexStatusResponse,
   IndexActivityResponse,
   IndexFailedResponse,
@@ -497,6 +498,22 @@ export async function getDocuments(
 ): Promise<DocumentsResponse> {
   const qs = buildDocumentsQuery(query);
   return request<DocumentsResponse>(`${BASE_URL}/api/documents?${qs}`, {
+    method: 'GET',
+  });
+}
+
+/**
+ * GET /api/documents/{id} — fetch one document's metadata.
+ *
+ * Used by the route components that mount the document preview from a
+ * shareable URL (`/document/:id`, `/library/document/:id`) when there is
+ * no cached library list to read from. Returns the same `LibraryDocument`
+ * shape as items in the library list response.
+ *
+ * Throws `Unauthenticated` on 401 and `ApiError` on any other non-2xx.
+ */
+export async function getDocument(documentId: number): Promise<LibraryDocument> {
+  return request<LibraryDocument>(`${BASE_URL}/api/documents/${documentId}`, {
     method: 'GET',
   });
 }
