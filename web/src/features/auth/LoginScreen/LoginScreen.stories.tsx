@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { LoginScreen } from './LoginScreen';
 
 /**
- * LoginScreen drives the `useLogin` / `usePublicStats` hooks. Storybook does
- * not wire TanStack Query, so these stories are a visual reference only;
- * behavioural coverage lives in the test suite.
+ * LoginScreen drives the `useLogin` hook. Storybook does not wire TanStack
+ * Query, so these stories are a visual reference only; behavioural coverage
+ * lives in the test suite.
  */
 const meta = {
   title: 'Features/Auth/LoginScreen',

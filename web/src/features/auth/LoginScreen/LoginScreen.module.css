@@ -3,16 +3,23 @@
  *
  * The dark "island" sign-in screen. Dark in BOTH light and dark themes, so
  * it uses the theme-INDEPENDENT forced-dark tokens (--colour-dark-*). A
- * two-column layout: brand + hero + splash stats on the left, the sign-in
- * card on the right. Collapses to a single column below the tablet
- * breakpoint.
+ * two-column layout on desktop — brand + hero on the left, the sign-in
+ * card on the right — collapses to a centred single column on tablet and
+ * mobile, with the hero stacked above the card.
+ *
+ * Hero typography steps down across breakpoints (hero → heading → tile)
+ * via fixed scale tokens; no raw font sizes anywhere.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
 
 .screen {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 100vh;
+  min-height: 100svh;
   background-color: var(--colour-dark-bg);
   color: var(--colour-dark-text-primary);
   font-family: var(--font-text);
@@ -29,17 +36,17 @@
 
 .aurora {
   background: radial-gradient(
-    55% 45% at 50% 6%,
+    60% 50% at 28% 18%,
     var(--colour-dark-aurora-near),
-    transparent 60%
+    transparent 65%
   );
 }
 
 .aurora-far {
   background: radial-gradient(
-    40% 30% at 82% 92%,
+    45% 35% at 88% 92%,
     var(--colour-dark-aurora-far),
-    transparent 60%
+    transparent 65%
   );
 }
 
@@ -48,19 +55,20 @@
   position: relative;
   z-index: var(--z-base);
   display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   align-items: center;
-  gap: var(--spacing-14);
-  min-height: 100vh;
+  gap: var(--spacing-section);
+  width: 100%;
   max-width: var(--bp-desktop-large);
-  margin-inline: auto;
-  padding: var(--spacing-section) var(--spacing-14);
+  padding: var(--spacing-section) var(--spacing-section);
   box-sizing: border-box;
 }
 
-/* ── Left column — brand + hero + stats. ── */
+/* ── Left column — brand + hero.
+       Width is constrained by the grid column itself (1.05fr); we don't cap
+       further so the hero copy can breathe on wide displays. ── */
 .hero {
-  max-width: var(--width-content-max);
+  width: 100%;
 }
 
 .brand-row {
@@ -99,52 +107,30 @@
 }
 
 .subhead {
-  margin-top: var(--spacing-13);
+  margin-top: var(--spacing-14);
   margin-bottom: 0;
   max-width: var(--width-empty-state);
   font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
   line-height: var(--line-height-subheading);
   letter-spacing: var(--letter-spacing-subheading);
   color: var(--colour-dark-text-secondary);
 }
 
-/* ── Splash stats row. ── */
-.stats {
-  display: flex;
-  gap: var(--spacing-section);
-  margin-top: var(--spacing-section);
-}
-
-.stat-value {
-  font-family: var(--font-display);
-  font-size: var(--font-size-tile);
-  font-weight: var(--font-weight-hero);
-  line-height: var(--line-height-tile);
-  color: var(--colour-dark-text-primary);
-}
-
-.stat-label {
-  margin-top: var(--spacing-3);
-  font-size: var(--font-size-micro);
-  line-height: var(--line-height-micro);
-  letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-dark-text-tertiary);
-}
-
 /* ── Right column — the sign-in card. ── */
 .card-column {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .card {
-  width: var(--width-modal);
-  max-width: 100%;
+  width: 100%;
+  max-width: var(--width-modal);
   background-color: var(--colour-dark-surface);
   border: var(--spacing-1) solid var(--colour-dark-border-card);
   border-radius: var(--radius-large);
   box-shadow: var(--shadow-dark-card);
-  padding: var(--spacing-section) var(--spacing-section) var(--spacing-14);
+  padding: var(--spacing-16);
   box-sizing: border-box;
 }
 
@@ -165,27 +151,68 @@
 }
 
 /* ── Form internals. ── */
-.field + .field {
-  margin-top: var(--spacing-10);
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-13);
 }
 
-/* Password field — the input plus an in-field Show toggle. */
+/* Password field — manual label + a relative wrap so the Show toggle can be
+   absolutely centred on the input itself (not on the label above it). */
+.password-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.password-label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-dark-label);
+  text-transform: uppercase;
+}
+
 .password-wrap {
   position: relative;
 }
 
+/* Extra right padding on the password input clears the in-field Show button
+   so typed characters never collide with it. */
+.password-input input {
+  padding-right: var(--spacing-15);
+}
+
+/* In-field icon toggle — eye / eye-off. Vertically centred on the input
+   (top: half the input height) so the error message below the input never
+   pushes the toggle out of alignment. */
 .show-toggle {
   position: absolute;
-  right: var(--spacing-9);
-  top: var(--spacing-9);
-  padding: var(--spacing-1) var(--spacing-3);
+  right: var(--spacing-6);
+
+  /* Vertical centre of the input element measured from wrap top:
+       padding-block (spacing-6 = 8px) + half line-height (≈ 12.5px) + border (spacing-1 = 2px)
+       = 22.5px. Tokens compose this exactly via spacing-13 (20px) + spacing-3 / 2 (2.5px).
+       This anchors on the input alone, so an error message below the input never pushes
+       the toggle out of alignment. */
+  top: calc(var(--spacing-13) + var(--spacing-3) / 2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4);
   border: none;
   background: transparent;
   cursor: pointer;
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-dark-text-tertiary);
+  color: var(--colour-dark-text-secondary);
+  border-radius: var(--radius-micro);
+  transition: color var(--duration-standard) var(--easing-standard);
+}
+
+.show-toggle:hover {
+  color: var(--colour-dark-text-primary);
 }
 
 .show-toggle:focus-visible {
@@ -198,7 +225,6 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-7);
-  margin-top: var(--spacing-12);
   cursor: pointer;
 }
 
@@ -215,41 +241,143 @@
 }
 
 /* ── Submit button — full-width accent. ── */
-.submit {
-  margin-top: var(--spacing-13);
-}
-
-/* The button itself fills the full width of its .submit container. */
 .submit-button {
   width: 100%;
+  padding-top: var(--spacing-9);
+  padding-bottom: var(--spacing-9);
 }
 
 /* ── Inline error alert. ── */
 .error {
-  margin-top: var(--spacing-10);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
   color: var(--colour-accent);
 }
 
-/* ── Footer note — cookie / API-key explanation. ── */
-.note {
-  margin-top: var(--spacing-13);
-  font-size: var(--font-size-micro);
-  line-height: var(--line-height-micro);
-  letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-dark-text-tertiary);
-  text-align: center;
-}
-
-/* ── Responsive — collapse to one column on tablet and below. ── */
-@media (width <= 834px) {
+/* ── Responsive — tablet and below: stack hero above the card, both centred.
+       The two-column layout needs room to keep the hero on a single line; we
+       collapse early (at 1199.98px) so a 1024 px desktop never shows an
+       awkwardly-wrapped headline. ── */
+@media (width <= 1199.98px) {
   .layout {
     grid-template-columns: 1fr;
-    padding: var(--spacing-14);
+    gap: var(--spacing-16);
+    padding: var(--spacing-16);
+    justify-items: center;
+    text-align: center;
+    align-content: center;
+  }
+
+  .hero {
+    max-width: var(--bp-mobile-large);
+  }
+
+  .brand-row {
+    margin-bottom: var(--spacing-14);
+  }
+
+  .headline {
+    font-size: var(--font-size-heading);
+    line-height: var(--line-height-heading);
+    letter-spacing: var(--letter-spacing-heading);
+  }
+
+  .subhead {
+    margin-inline: auto;
   }
 
   .card-column {
     justify-content: center;
+    width: 100%;
+  }
+
+  .card {
+    text-align: left;
+  }
+}
+
+/* ── Responsive — mobile: tighter typography and full-width card. ── */
+@media (width <= 699.98px) {
+  .layout {
+    gap: var(--spacing-15);
+    padding: var(--spacing-section) var(--spacing-14) var(--spacing-16);
+  }
+
+  .brand-row {
+    margin-bottom: var(--spacing-13);
+  }
+
+  .headline {
+    font-size: var(--font-size-tile);
+    line-height: var(--line-height-tile);
+    letter-spacing: var(--letter-spacing-tile);
+  }
+
+  .subhead {
+    margin-top: var(--spacing-13);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    letter-spacing: var(--letter-spacing-body);
+  }
+
+  .card {
+    padding: var(--spacing-15);
+  }
+
+  .aurora {
+    background: radial-gradient(
+      80% 40% at 50% 0%,
+      var(--colour-dark-aurora-near),
+      transparent 70%
+    );
+  }
+
+  .aurora-far {
+    background: radial-gradient(
+      80% 30% at 50% 100%,
+      var(--colour-dark-aurora-far),
+      transparent 70%
+    );
+  }
+}
+
+/* ── Responsive — small mobile: shrink padding further so 360px viewports
+       breathe without the card touching the screen edge. ── */
+@media (width <= 419.98px) {
+  .layout {
+    padding: var(--spacing-15) var(--spacing-13) var(--spacing-15);
+  }
+
+  .card {
+    padding: var(--spacing-14);
+  }
+
+  .card-title {
+    font-size: var(--font-size-subheading);
+    line-height: var(--line-height-subheading);
+  }
+}
+
+/* ── Reduced motion — skip the hero fade-in. ── */
+@media (prefers-reduced-motion: no-preference) {
+  .hero,
+  .card {
+    animation: lift var(--duration-panel) var(--easing-decelerate) both;
+  }
+
+  .card {
+    animation-delay: var(--duration-fast);
+  }
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(var(--spacing-13));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
