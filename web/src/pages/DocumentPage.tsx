@@ -66,12 +66,5 @@ export function DocumentPage(): React.ReactElement {
     tags: doc.tags,
   };
 
-  return (
-    <DocumentPreviewScreen
-      source={source}
-      onClose={close}
-      sourceIndex={1}
-      sourceCount={1}
-    />
-  );
+  return <DocumentPreviewScreen source={source} onClose={close} />;
 }

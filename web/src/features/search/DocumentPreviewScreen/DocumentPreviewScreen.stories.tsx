@@ -30,7 +30,22 @@ export const Default: Story = {
       score: 0.92,
       tags: ['Utilities', 'Energy', '2024', 'Statement'],
     },
-    sourceIndex: 1,
-    sourceCount: 4,
+    searchContext: { sourceIndex: 1, sourceCount: 4 },
+  },
+};
+
+export const Standalone: Story = {
+  args: {
+    source: {
+      document_id: 9823,
+      title: 'Annual energy statement — 12 months to 31 Dec 2024',
+      correspondent: 'Npower Energy',
+      document_type: 'Statement',
+      created: '2025-01-12',
+      snippet: '',
+      paperless_url: null,
+      score: 0,
+      tags: ['Utilities', 'Energy', '2024', 'Statement'],
+    },
   },
 };

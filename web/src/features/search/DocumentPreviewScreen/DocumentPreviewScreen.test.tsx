@@ -15,7 +15,10 @@ const SOURCE: SourceDocument = {
   tags: ['Utilities', 'Energy'],
 };
 
-/** Render with the required source-position props. */
+/**
+ * Render with a real search context — the default for most tests below.
+ * Standalone-mode tests render directly without `searchContext`.
+ */
 function renderPreview(
   overrides: Partial<SourceDocument> = {},
   opts: { sourceIndex?: number; sourceCount?: number } = {},
@@ -24,8 +27,10 @@ function renderPreview(
     <DocumentPreviewScreen
       source={{ ...SOURCE, ...overrides }}
       onClose={() => {}}
-      sourceIndex={opts.sourceIndex ?? 1}
-      sourceCount={opts.sourceCount ?? 4}
+      searchContext={{
+        sourceIndex: opts.sourceIndex ?? 1,
+        sourceCount: opts.sourceCount ?? 4,
+      }}
     />,
   );
 }
@@ -49,8 +54,7 @@ describe('DocumentPreviewScreen', () => {
       <DocumentPreviewScreen
         source={SOURCE}
         onClose={onClose}
-        sourceIndex={1}
-        sourceCount={4}
+        searchContext={{ sourceIndex: 1, sourceCount: 4 }}
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: /close/i }));
@@ -130,14 +134,36 @@ describe('DocumentPreviewScreen', () => {
       paperless_url: SOURCE.paperless_url,
       score: SOURCE.score,
     };
+    render(<DocumentPreviewScreen source={noTags} onClose={() => {}} />);
+    expect(screen.queryByText('TAGS')).not.toBeInTheDocument();
+  });
+
+  // ── Standalone mode — no search context. ──
+  it('omits the "Source N of M" caption when there is no search context', () => {
     render(
       <DocumentPreviewScreen
-        source={noTags}
+        source={{ ...SOURCE, snippet: '', score: 0 }}
         onClose={() => {}}
-        sourceIndex={1}
-        sourceCount={1}
       />,
     );
-    expect(screen.queryByText('TAGS')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Source \d+ of \d+/)).not.toBeInTheDocument();
+  });
+
+  it('omits the matched-content panel when there is no search context', () => {
+    render(
+      <DocumentPreviewScreen
+        source={{ ...SOURCE, snippet: '', score: 0 }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/matched in this document/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/relevance/i)).not.toBeInTheDocument();
+  });
+
+  it('still renders title, metadata, and tags in standalone mode', () => {
+    render(<DocumentPreviewScreen source={SOURCE} onClose={() => {}} />);
+    expect(screen.getByText('Annual energy statement')).toBeInTheDocument();
+    expect(screen.getByText('Npower Energy')).toBeInTheDocument();
+    expect(screen.getByText('Utilities')).toBeInTheDocument();
   });
 });
