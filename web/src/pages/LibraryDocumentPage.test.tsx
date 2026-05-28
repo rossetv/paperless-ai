@@ -40,6 +40,7 @@ describe('LibraryDocumentPage', () => {
       created: '2024-03-01T00:00:00Z',
       tags: ['urgent'],
       page_count: 3,
+      paperless_url: 'https://paperless.test/documents/42/',
     });
     renderAt('/library/document/42');
     await waitFor(() => expect(screen.getByText('An invoice')).toBeInTheDocument());
@@ -55,6 +56,7 @@ describe('LibraryDocumentPage', () => {
       created: null,
       tags: [],
       page_count: null,
+      paperless_url: 'https://paperless.test/documents/42/',
     });
     const { getLocation } = renderAt('/library/document/42?tag=12&sort=title');
     await waitFor(() => expect(screen.getByText('An invoice')).toBeInTheDocument());

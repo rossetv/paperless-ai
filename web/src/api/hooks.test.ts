@@ -731,6 +731,7 @@ describe('useDocument', () => {
       created: '2024-03-01T00:00:00Z',
       tags: ['urgent'],
       page_count: 3,
+      paperless_url: 'https://p.example/documents/42/',
     });
 
     const { result } = renderHook(() => useDocument(42), { wrapper: makeWrapper() });
@@ -738,6 +739,7 @@ describe('useDocument', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(stub).toHaveBeenCalledWith(42);
     expect(result.current.data?.id).toBe(42);
+    expect(result.current.data?.paperless_url).toBe('https://p.example/documents/42/');
   });
 
   it('is disabled when documentId is null', () => {
@@ -749,6 +751,7 @@ describe('useDocument', () => {
       created: null,
       tags: [],
       page_count: null,
+      paperless_url: 'https://p.example/documents/0/',
     });
     renderHook(() => useDocument(null), { wrapper: makeWrapper() });
     // The query is disabled — getDocument must not be called.

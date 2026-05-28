@@ -493,6 +493,8 @@ export interface LibraryDocument {
   tags: string[];
   /** Number of pages in the document; null when the page count is unknown. */
   page_count: number | null;
+  /** Deep-link URL into Paperless-ngx for this document. */
+  paperless_url: string;
 }
 
 /** Response body for GET /api/documents. */
