@@ -1,0 +1,22 @@
+/*
+ * DocumentTitle — CSS Module.
+ *
+ * The document's primary <h1>. Uses the heading scale from tokens.css
+ * (DESIGN.md §3): 2.5 rem semibold with tight tracking.
+ *
+ * Minimal padding keeps the block flush enough that Wave B can add a
+ * hover/focus affordance around it without causing a layout shift.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.title {
+  margin: 0;
+  padding: var(--spacing-1) var(--spacing-2);
+  font-family: var(--font-display);
+  font-size: var(--font-size-heading);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--line-height-heading);
+  letter-spacing: var(--letter-spacing-heading);
+  color: var(--colour-text-primary);
+}
