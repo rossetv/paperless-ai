@@ -49,10 +49,16 @@ from appdb import recent_searches as recent_search_store
 from common.paperless import PaperlessClient
 from search.deps import get_app_db, require_api_scope
 from search.sessions import CurrentUser
-from search.wire import RecentSearchEntry, RecentSearchesResponse
+from search.wire import (
+    DocumentSummaryResponse,
+    RecentSearchEntry,
+    RecentSearchesResponse,
+    to_document_summary_response,
+)
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
 
@@ -69,6 +75,7 @@ def _default_paperless_factory(settings: Settings) -> PaperlessClient:
 def build_document_router(
     settings: Settings,
     *,
+    store_reader: StoreReader,
     paperless_factory: Callable[[Settings], PaperlessClient] = (
         _default_paperless_factory
     ),
@@ -78,6 +85,7 @@ def build_document_router(
     Args:
         settings: Application settings, forwarded to the Paperless client
             factory.
+        store_reader: The store reader used by the document-summary route.
         paperless_factory: Builds the :class:`PaperlessClient` for a request.
             Defaults to the real client; tests inject a stub factory.
 
@@ -121,6 +129,30 @@ def build_document_router(
         document from serving active content through this endpoint.
         """
         return await _stream_document_thumb(document_id, settings, paperless_factory)
+
+    @router.get(
+        "/api/documents/{document_id}",
+        dependencies=[reader_auth],
+        response_model=DocumentSummaryResponse,
+    )
+    async def document_summary(document_id: int) -> DocumentSummaryResponse:
+        """Return the summary for a single document by id.
+
+        Used by the shareable SPA routes (``/documents/{id}``) to fetch the
+        document metadata needed to render the DocumentPreviewScreen without a
+        full library list.
+
+        Auth: Read-only or above, plus the ``api`` scope for an API-key
+        caller. A 404 is returned when *document_id* is not present in the
+        store.
+        """
+        loop = asyncio.get_event_loop()
+        summary = await loop.run_in_executor(
+            None, store_reader.get_document_summary, document_id
+        )
+        if summary is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        return to_document_summary_response(summary)
 
     @router.get("/api/recent-searches")
     def recent_searches(
