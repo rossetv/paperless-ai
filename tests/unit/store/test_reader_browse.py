@@ -322,8 +322,8 @@ def test_get_document_summary_returns_matching_row(populated_db: str) -> None:
     reader.close()
     assert summary is not None
     assert summary.id == 1
-    # Shape parity with list_documents: page_count present
-    assert hasattr(summary, "page_count")
+    # Shape parity with list_documents: page_count matches the fixture value.
+    assert summary.page_count == 1
 
 
 def test_get_document_summary_returns_none_for_missing_id(populated_db: str) -> None:
@@ -335,11 +335,37 @@ def test_get_document_summary_returns_none_for_missing_id(populated_db: str) -> 
 
 
 def test_get_document_summary_resolves_taxonomy_names(populated_db: str) -> None:
-    """get_document_summary resolves correspondent and document_type names."""
+    """get_document_summary resolves correspondent, document_type, and tag names."""
     reader = open_reader(populated_db)
     summary = reader.get_document_summary(1)
     reader.close()
     assert summary is not None
-    # populated_db's document 1 has both a correspondent and a document type
-    assert summary.correspondent is not None
-    assert summary.document_type is not None
+    # populated_db document 1: correspondent_id=10 ("Alpha Corp"),
+    # document_type_id=20 ("Invoice"), tag_ids=(101, 102) → {"important", "scanned"}
+    assert summary.correspondent == "Alpha Corp"
+    assert summary.document_type == "Invoice"
+    assert set(summary.tags) == {"important", "scanned"}
+
+
+def test_get_document_summary_handles_corrupted_tag_ids(populated_db: str) -> None:
+    """A corrupted tag_ids column does not raise — it falls back to no tags.
+
+    Defence-in-depth: if a hand-edited DB stores a non-JSON value in
+    tag_ids, get_document_summary must not 500.  The document is returned
+    with an empty tag tuple and no exception is raised.
+    """
+    conn = sqlite3.connect(populated_db)
+    try:
+        conn.execute("UPDATE documents SET tag_ids = 'not-json' WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    reader = open_reader(populated_db)
+    try:
+        summary = reader.get_document_summary(1)
+    finally:
+        reader.close()
+
+    assert summary is not None
+    assert summary.tags == ()  # graceful fallback — no 500
