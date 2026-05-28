@@ -1,0 +1,48 @@
+/*
+ * MetadataCard — CSS Module.
+ *
+ * Styles for the card heading and the read-only date row. The taxonomy rows
+ * (TaxonomyCombobox) and editable date (EditableField) bring their own styles.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Card heading (e.g. "Details") ── */
+.card-h {
+  margin: 0;
+  margin-bottom: var(--spacing-10);
+  font-family: var(--font-display);
+  font-size: var(--font-size-caption);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Read-only date row (mirrors TaxonomyCombobox row layout) ── */
+.row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--spacing-10);
+  padding: var(--spacing-6) 0;
+  border-bottom: var(--spacing-1) solid var(--colour-border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+  padding-top: var(--spacing-4);
+}
+
+.value {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  border-radius: var(--radius-micro);
+}

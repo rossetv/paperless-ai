@@ -52,8 +52,10 @@ describe('LibraryDocumentPage', () => {
       paperless_url: 'https://paperless.test/documents/7/',
     });
     renderAt('/library/document/7');
+    // The title may render as a heading (canEdit=false) or a button-headed h1
+    // (canEdit=true, when useMe hasn't resolved). Either way the text is visible.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: 'Tax return 2025' })).toBeInTheDocument(),
+      expect(screen.getByText('Tax return 2025')).toBeInTheDocument(),
     );
   });
 
