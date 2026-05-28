@@ -48,7 +48,7 @@ from search.validation import (
     validate_username,
 )
 from store import SearchFilters
-from store.models import DocumentBrowseQuery
+from store.models import DocumentBrowseQuery, DocumentSummary
 
 if TYPE_CHECKING:
     from appdb.api_keys import ApiKey
@@ -366,6 +366,24 @@ def to_stats_response(stats: IndexStats) -> StatsResponse:
     )
 
 
+def to_document_summary_response(summary: DocumentSummary) -> DocumentSummaryResponse:
+    """Convert one store :class:`~store.models.DocumentSummary` to the wire model.
+
+    The explicit, tested boundary conversion (``CODE_GUIDELINES.md`` §5.6).
+    No deep-link URL is computed — documents are opened in-app via
+    ``/api/documents/{id}/pdf``, not by linking out to Paperless.
+    """
+    return DocumentSummaryResponse(
+        id=summary.id,
+        title=summary.title,
+        correspondent=summary.correspondent,
+        document_type=summary.document_type,
+        created=summary.created,
+        tags=list(summary.tags),
+        page_count=summary.page_count,
+    )
+
+
 def to_document_list_response(
     page: DocumentPage,
     *,
@@ -393,20 +411,8 @@ def to_document_list_response(
     Returns:
         A :class:`DocumentListResponse` ready to serialise as JSON.
     """
-    documents = [
-        DocumentSummaryResponse(
-            id=summary.id,
-            title=summary.title,
-            correspondent=summary.correspondent,
-            document_type=summary.document_type,
-            created=summary.created,
-            tags=list(summary.tags),
-            page_count=summary.page_count,
-        )
-        for summary in page.documents
-    ]
     return DocumentListResponse(
-        documents=documents,
+        documents=[to_document_summary_response(summary) for summary in page.documents],
         total=page.total,
         page=page_number,
         page_size=page_size,
