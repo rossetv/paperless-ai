@@ -556,4 +556,49 @@ describe('DocumentScreen', () => {
     const firstCall = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
     expect(firstCall.patch.tags).toContain(200);
   });
+
+  // ── Bug 8: Retry button re-fires the last attempted mutation ──────────────
+
+  it('retry button re-fires the last attempted PATCH with the same args', async () => {
+    // Phase 1: render in idle state so the user can trigger a mutation.
+    const mutate = vi.fn();
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
+
+    const { rerender } = render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen document={DOC} parent="library" parentSearch="" role="member" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Trigger a title change so lastAttemptRef is populated.
+    fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
+    const input = screen.getByDisplayValue('eBay Payslip 05/2026');
+    fireEvent.change(input, { target: { value: 'Renamed' } });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const firstCallArgs = mutate.mock.calls[0]![0] as { id: number; patch: object };
+    expect(firstCallArgs).toMatchObject({ id: 934, patch: { title: 'Renamed' } });
+
+    // Phase 2: re-render with the mutation in error state so the retry button appears.
+    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate, isError: true, isIdle: false, status: 'error' }));
+    rerender(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen document={DOC} parent="library" parentSearch="" role="member" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // The retry element is now visible — it renders as role="alert" (see SaveStatusPill).
+    const retryBtn = screen.getByRole('alert');
+    fireEvent.click(retryBtn);
+
+    // mutate must have been called a second time with the same args.
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+    const secondCallArgs = mutate.mock.calls[1]![0] as { id: number; patch: object };
+    expect(secondCallArgs).toEqual(firstCallArgs);
+  });
 });

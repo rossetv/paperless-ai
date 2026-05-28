@@ -99,6 +99,15 @@ export function DocumentScreen({
   const qc = useQueryClient();
   const canEdit = role !== 'readonly';
 
+  // Track the last attempted mutation args so the retry button can re-fire it.
+  const lastAttemptRef = React.useRef<{ id: number; patch: Parameters<typeof update.mutate>[0]['patch'] } | null>(null);
+
+  /** Wrap update.mutate to record the attempt before firing. */
+  function mutate(args: Parameters<typeof update.mutate>[0]): void {
+    lastAttemptRef.current = args;
+    update.mutate(args);
+  }
+
   // Reset the mutation success state after 2 s so the pill cycles back to idle.
   React.useEffect(() => {
     if (!update.isSuccess) return;
@@ -143,15 +152,15 @@ export function DocumentScreen({
   // ── Mutation helpers ──────────────────────────────────────────────────────
 
   function commitTitle(next: string): void {
-    update.mutate({ id: document.id, patch: { title: next === '' ? null : next } });
+    mutate({ id: document.id, patch: { title: next === '' ? null : next } });
   }
 
   function addTag(id: number): void {
-    update.mutate({ id: document.id, patch: { tags: [...currentTagIds, id] } });
+    mutate({ id: document.id, patch: { tags: [...currentTagIds, id] } });
   }
 
   function removeTag(id: number): void {
-    update.mutate({ id: document.id, patch: { tags: currentTagIds.filter((t) => t !== id) } });
+    mutate({ id: document.id, patch: { tags: currentTagIds.filter((t) => t !== id) } });
   }
 
   function createTagThenAdd(name: string): void {
@@ -165,7 +174,7 @@ export function DocumentScreen({
         const latestTagIds = ((latest?.tags ?? document.tags) as string[])
           .map((tagName) => tagsByName.get(tagName)?.id)
           .filter((id): id is number => id !== undefined);
-        update.mutate({ id: document.id, patch: { tags: [...latestTagIds, created.id] } });
+        mutate({ id: document.id, patch: { tags: [...latestTagIds, created.id] } });
       },
     });
   }
@@ -179,7 +188,12 @@ export function DocumentScreen({
       <div className={styles['title-row']}>
         <DocumentTitle title={document.title} canEdit={canEdit} onChange={commitTitle} />
         {saveStatus === 'error' ? (
-          <SaveStatusPill status={saveStatus} onRetry={() => update.reset()} />
+          <SaveStatusPill
+            status={saveStatus}
+            onRetry={() => {
+              if (lastAttemptRef.current !== null) mutate(lastAttemptRef.current);
+            }}
+          />
         ) : (
           <SaveStatusPill status={saveStatus} />
         )}
@@ -220,11 +234,11 @@ export function DocumentScreen({
             correspondents={correspondents.data ?? []}
             documentTypes={documentTypes.data ?? []}
             canEdit={canEdit}
-            onPatch={(patch) => update.mutate({ id: document.id, patch })}
+            onPatch={(patch) => mutate({ id: document.id, patch })}
             onCreateCorrespondent={(name) =>
               createCorrespondent.mutate(name, {
                 onSuccess: (created) =>
-                  update.mutate({
+                  mutate({
                     id: document.id,
                     patch: { correspondent_id: created.id },
                   }),
@@ -233,7 +247,7 @@ export function DocumentScreen({
             onCreateDocumentType={(name) =>
               createDocumentType.mutate(name, {
                 onSuccess: (created) =>
-                  update.mutate({
+                  mutate({
                     id: document.id,
                     patch: { document_type_id: created.id },
                   }),

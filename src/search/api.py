@@ -32,9 +32,12 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
 import structlog
 import uvicorn
 from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from appdb.connection import connect as connect_app_db
 from appdb.schema import ensure_schema as ensure_app_db_schema
@@ -119,6 +122,69 @@ def _start_search_heartbeat(settings: Settings) -> None:
     log.info("api.heartbeat_started")
 
 
+def register_paperless_exception_handlers(app: FastAPI) -> None:
+    """Register centralised Paperless-ngx error handlers on *app*.
+
+    Any ``httpx`` error that escapes a route handler — from mutation endpoints
+    such as PATCH, reclassify, retranscribe, delete, or taxonomy create — is
+    caught here and mapped to a meaningful HTTP status rather than surfacing as
+    a generic 500.
+
+    The streaming PDF/thumb handlers handle their own errors manually (they
+    must close the per-request ``httpx`` client before returning), so this
+    function is the safety net for all non-streaming paths.
+
+    Mapping:
+    - ``httpx.HTTPStatusError`` 404 → 404 "not found in Paperless-ngx"
+    - ``httpx.HTTPStatusError`` 409 → 409 "conflict in Paperless-ngx"
+    - ``httpx.HTTPStatusError`` 5xx → 502 "Paperless-ngx upstream error"
+    - ``httpx.HTTPStatusError`` other → forward the upstream status
+    - ``httpx.RequestError`` (network/timeout) → 502 "Could not reach Paperless-ngx"
+
+    Args:
+        app: The FastAPI application to register the handlers on.
+    """
+
+    @app.exception_handler(httpx.HTTPStatusError)
+    async def _paperless_http_error(  # noqa: RUF029 — must be async for FastAPI handler protocol
+        request: Request,
+        exc: httpx.HTTPStatusError,
+    ) -> JSONResponse:
+        status = exc.response.status_code
+        if status == 404:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "not found in Paperless-ngx"},
+            )
+        if status == 409:
+            return JSONResponse(
+                status_code=409,
+                content={"detail": "conflict in Paperless-ngx"},
+            )
+        if status >= 500:
+            log.warning("paperless.upstream_error", status=status)
+            return JSONResponse(
+                status_code=502,
+                content={"detail": "Paperless-ngx upstream error"},
+            )
+        log.warning("paperless.http_error", status=status)
+        return JSONResponse(
+            status_code=status,
+            content={"detail": "Paperless-ngx returned an error"},
+        )
+
+    @app.exception_handler(httpx.RequestError)
+    async def _paperless_network_error(  # noqa: RUF029
+        request: Request,
+        exc: httpx.RequestError,
+    ) -> JSONResponse:
+        log.warning("paperless.network_error", error=str(exc))
+        return JSONResponse(
+            status_code=502,
+            content={"detail": "Could not reach Paperless-ngx"},
+        )
+
+
 def create_app(
     settings: Settings,
     *,
@@ -150,6 +216,8 @@ def create_app(
     app_db_path = settings.APP_DB_PATH if app_db_path is None else app_db_path
 
     app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
+
+    register_paperless_exception_handlers(app)
 
     # Startup uses ONE short-lived connection: migrate app.db, then decide
     # whether first-run setup is needed. It is closed immediately — request

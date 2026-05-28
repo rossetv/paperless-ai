@@ -33,6 +33,7 @@ from fastapi.testclient import TestClient
 from appdb.connection import connect
 from appdb.schema import ensure_schema
 from appdb.users import create as create_user
+from search.api import register_paperless_exception_handlers
 from search.appstate import AppState, attach_app_state
 from search.auth import SESSION_COOKIE_NAME
 from search.document_routes import build_document_router
@@ -64,8 +65,14 @@ def _build_app(
     An optional *settings* mock is forwarded to ``build_document_router`` so
     that tests can configure tag-id attributes on the same object the router
     sees; when omitted a fresh :class:`~unittest.mock.MagicMock` is created.
+
+    The centralised Paperless exception handlers (from
+    :func:`~search.api.register_paperless_exception_handlers`) are registered
+    on every test app so that tests covering the error-mapping behaviour see
+    the same handler as production code.
     """
     app = FastAPI()
+    register_paperless_exception_handlers(app)
     attach_app_state(
         app.state,
         AppState(
@@ -236,6 +243,7 @@ class TestRecentSearchesRoute:
     def _build_app_no_paperless(app_db_path: str) -> FastAPI:
         """A FastAPI app with the document router; Paperless is never called."""
         app = FastAPI()
+        register_paperless_exception_handlers(app)
         attach_app_state(
             app.state,
             AppState(
@@ -330,6 +338,7 @@ def _build_app_with_paperless_url(
 ) -> FastAPI:
     """A FastAPI app mounting the document router with a configured PAPERLESS_URL."""
     app = FastAPI()
+    register_paperless_exception_handlers(app)
     attach_app_state(
         app.state,
         AppState(
@@ -451,13 +460,18 @@ class PaperlessStub:
         self._delete_calls: list[int] = []
         # Needed by the router; handlers call close() in a finally.
         self.close = MagicMock()
+        # When set, the corresponding method raises instead of returning a value.
+        self.raise_on_get_document: Exception | None = None
+        self.raise_on_update: Exception | None = None
 
     # ------------------------------------------------------------------
     # PATCH support
     # ------------------------------------------------------------------
 
     def update_document_metadata(self, doc_id: int, **kwargs) -> None:
-        """Record the call and return without error."""
+        """Record the call, or raise if ``raise_on_update`` is set."""
+        if self.raise_on_update is not None:
+            raise self.raise_on_update
         self._update_calls.append((doc_id, dict(kwargs)))
 
     def assert_update_document_metadata_called_with(
@@ -528,7 +542,9 @@ class PaperlessStub:
         self._get_document_return = doc
 
     def get_document(self, doc_id: int) -> dict:
-        """Return the pre-configured document dict, or a minimal default."""
+        """Return the pre-configured document dict, or raise if ``raise_on_get_document`` is set."""
+        if self.raise_on_get_document is not None:
+            raise self.raise_on_get_document
         if self._get_document_return is None:
             return {"id": doc_id, "tags": []}
         return self._get_document_return
@@ -877,3 +893,67 @@ def test_delete_document_member_forbidden(member_client, readonly_client) -> Non
 def test_delete_document_unauthenticated(unauthenticated_client) -> None:
     """An unauthenticated DELETE /api/documents/{id} is rejected 401."""
     assert unauthenticated_client.delete("/api/documents/42").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Centralised Paperless upstream error mapping (Bugs 6 & 7)
+# These tests verify the exception handlers registered by
+# register_paperless_exception_handlers map httpx errors to the correct HTTP
+# status codes rather than letting them surface as a generic 500.
+# ---------------------------------------------------------------------------
+
+
+def test_reclassify_paperless_404_returns_404(
+    api_client, paperless_stub, settings
+) -> None:
+    """If Paperless doesn't know the document, the SPA should see 404, not 500.
+
+    This covers Bug 6: _swap_pipeline_tag calls paperless.get_document, which
+    raises httpx.HTTPStatusError(404) for an unknown id.  The centralised
+    handler must map it to a 404 response.
+    """
+    settings.CLASSIFY_PRE_TAG_ID = 333
+    settings.CLASSIFY_POST_TAG_ID = 444
+    paperless_stub.raise_on_get_document = httpx.HTTPStatusError(
+        "not found",
+        request=httpx.Request("GET", "https://paperless.example/x"),
+        response=httpx.Response(
+            404, request=httpx.Request("GET", "https://paperless.example/x")
+        ),
+    )
+    r = api_client.post("/api/documents/42/reclassify")
+    assert r.status_code == 404
+
+
+def test_patch_paperless_upstream_500_returns_502(
+    api_client, paperless_stub, settings
+) -> None:
+    """A Paperless 5xx on PATCH /api/documents/{id} surfaces as 502, not 500.
+
+    This covers Bug 7: update_document_metadata raises httpx.HTTPStatusError(500).
+    The centralised handler must map it to 502 Bad Gateway.
+    """
+    paperless_stub.raise_on_update = httpx.HTTPStatusError(
+        "server error",
+        request=httpx.Request("PATCH", "https://paperless.example/x"),
+        response=httpx.Response(
+            500, request=httpx.Request("PATCH", "https://paperless.example/x")
+        ),
+    )
+    r = api_client.patch("/api/documents/42", json={"title": "x"})
+    assert r.status_code == 502
+
+
+def test_paperless_network_error_returns_502(
+    api_client, paperless_stub, settings
+) -> None:
+    """A network-level failure reaching Paperless surfaces as 502, not 500.
+
+    This covers Bug 7: the centralised httpx.RequestError handler must map
+    any ConnectError / timeout to 502 Bad Gateway.
+    """
+    settings.CLASSIFY_PRE_TAG_ID = 333
+    settings.CLASSIFY_POST_TAG_ID = 444
+    paperless_stub.raise_on_get_document = httpx.ConnectError("connection refused")
+    r = api_client.post("/api/documents/42/reclassify")
+    assert r.status_code == 502
