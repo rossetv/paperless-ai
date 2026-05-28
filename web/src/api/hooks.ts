@@ -577,5 +577,9 @@ export function useDocument(
     queryKey: queryKeys.document(documentId ?? 0),
     queryFn: () => getDocument(documentId as number),
     enabled: documentId !== null,
+    // A 404 (stale shared link) or 401 (expired session) is deterministic —
+    // retrying just doubles the round-trip before the page renders the
+    // error state. Matches the convention used by sibling error-prone hooks.
+    retry: false,
   });
 }

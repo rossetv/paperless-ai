@@ -70,13 +70,13 @@ function formatDate(iso: string | null): string {
  * A single document card for the Library grid/list.
  *
  * The whole card is a button that calls onOpen(document.id); the parent
- * LibraryScreen uses this to set previewDocumentId state, rendering the
- * in-app DocumentPreviewScreen as a full-bleed overlay — the same pattern
- * SearchPage uses for search results. Shows a soft preview area carrying the
- * real first-page thumbnail (proxied from Paperless-ngx), falling back to a
- * stylised DocThumb on error or while loading. Below the preview: a meta
- * block with correspondent · date, a two-line-clamped title, and a row of the
- * document type plus tag chips.
+ * LibraryScreen routes that to `/library/document/:id`, where the
+ * LibraryDocumentPage renders the DocumentPreviewScreen as a full-bleed
+ * overlay — making the open preview a shareable URL. Shows a soft preview
+ * area carrying the real first-page thumbnail (proxied from Paperless-ngx),
+ * falling back to a stylised DocThumb on error or while loading. Below the
+ * preview: a meta block with correspondent · date, a two-line-clamped
+ * title, and a row of the document type plus tag chips.
  *
  * Wave 5 is a plain browse — no search-match highlighting.
  *
