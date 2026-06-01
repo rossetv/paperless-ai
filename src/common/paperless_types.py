@@ -46,6 +46,11 @@ class DocumentMetadataUpdate(TypedDict, total=False):
     ``tags`` is always a concrete set — ``None`` is not a valid value and will
     not be forwarded (callers use an empty set to clear all tags).
 
+    ``custom_fields`` is an exception to the null-clears rule: Paperless rejects
+    ``custom_fields: null`` with a 400 ("This field may not be null."), so a
+    ``None`` value means "leave unchanged" and is omitted from the payload
+    (callers pass an empty list to clear all custom fields).
+
     ``notes`` is a special case: Paperless stores notes at a separate endpoint
     (``/api/documents/{id}/notes/``) rather than the document PATCH endpoint.
     When provided, all existing notes are deleted and the new text is posted

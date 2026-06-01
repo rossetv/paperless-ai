@@ -446,6 +446,13 @@ class PaperlessClient:
                 continue
             value = kwargs[key]  # type: ignore[literal-required]
             # `value` may be None — Paperless treats null as "clear the field".
+            if key == "custom_fields" and value is None:
+                # Exception to the null-clears contract: Paperless rejects
+                # `custom_fields: null` with a 400 ("This field may not be
+                # null."). Clearing custom fields is done with an empty list,
+                # so a None here means "no opinion — leave unchanged" and is
+                # omitted from the payload rather than forwarded as null.
+                continue
             if key == "tags" and value is not None:
                 # rationale: `value` is `int | str | list[int] | None` from the
                 # TypedDict union; mypy cannot narrow to Iterable[int] here even

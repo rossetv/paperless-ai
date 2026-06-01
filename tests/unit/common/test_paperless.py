@@ -323,6 +323,27 @@ class TestUpdateDocumentMetadata:
         assert body == {"title": None, "correspondent": None}
         client.close()
 
+    def test_omits_custom_fields_when_none(self):
+        """``custom_fields=None`` means "leave unchanged", not "clear".
+
+        Paperless rejects ``custom_fields: null`` with a 400 ("This field may
+        not be null."); clearing is done with an empty list. So None must be
+        omitted from the payload rather than forwarded as null.
+        """
+        with respx.mock:
+            route = respx.patch(f"{BASE}/api/documents/7/").mock(
+                return_value=httpx.Response(200, json={"id": 7}),
+            )
+            client = _make_client()
+
+            client.update_document_metadata(7, title="t", custom_fields=None)
+
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"title": "t"}
+        assert "custom_fields" not in body
+        client.close()
+
     def test_skips_absent_fields(self):
         """Fields NOT passed as kwargs do not appear in the payload."""
         with respx.mock:
