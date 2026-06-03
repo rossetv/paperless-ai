@@ -195,6 +195,10 @@ jobs:
           context: .
           push: false
           platforms: linux/amd64,linux/arm64
+          # Tests run once in the dedicated `tests` job above; skip the in-image
+          # suite so the cross-arch build never re-runs pytest under emulation.
+          build-args: |
+            RUN_TESTS=0
           tags: paperless-ai:pr-${{ github.event.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -206,6 +210,10 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          # Tests run once in the dedicated `tests` job above; skip the in-image
+          # suite so the cross-arch build never re-runs pytest under emulation.
+          build-args: |
+            RUN_TESTS=0
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/paperless-ai:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/paperless-ai:sha-${{ github.sha }}
