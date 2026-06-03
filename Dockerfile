@@ -1,6 +1,13 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Frontend Builder
 # Runs npm ci + vite build in a Node environment, producing web/dist.
-FROM node:22-slim AS frontend-builder
+# Pinned to the BUILD host's native architecture ($BUILDPLATFORM) rather than the
+# target platform: the frontend build emits architecture-neutral static assets,
+# so running the Node toolchain under QEMU emulation when cross-building the
+# linux/arm64 image would needlessly slow every multi-arch build for an
+# identical output.
+FROM --platform=$BUILDPLATFORM node:22-slim AS frontend-builder
 
 WORKDIR /web
 
@@ -17,8 +24,13 @@ RUN npm run build
 
 # ---------------------------------------------------------------------
 
-# Stage 2: Builder and Tester
-# This stage installs all dependencies (including dev), runs tests, and builds the application.
+# Stage 2: Builder, tester and wheel factory
+# Runs on the TARGET platform so any native wheels it builds match the runtime
+# image's architecture. Installs the full dev toolchain, runs the test suite,
+# then builds a wheelhouse for the production dependency closure. Building wheels
+# HERE — where a C/Rust toolchain exists — means the final stage never needs a
+# compiler, even on linux/arm64 where a dependency might lack a prebuilt
+# manylinux aarch64 wheel and would otherwise have to compile from an sdist.
 FROM python:3.11-slim AS builder
 
 # Install system dependencies required for building Python packages and running tests
@@ -55,13 +67,25 @@ COPY tests/ ./tests/
 # Install the application itself (which also installs production dependencies)
 RUN pip install --no-cache-dir .
 
-# Run the test suite to validate the application
-RUN pytest
+# Run the test suite to validate the application. Gated behind a build arg so the
+# slow emulated path (linux/arm64 under QEMU) can opt out with
+# `--build-arg RUN_TESTS=0`; it defaults on, so a plain `docker build` keeps the
+# safety gate.
+ARG RUN_TESTS=1
+RUN if [ "$RUN_TESTS" = "1" ]; then pytest; fi
+
+# Build a wheelhouse for the production dependency closure (the project plus its
+# runtime deps from pyproject — NOT the dev deps). Any dependency lacking a
+# prebuilt wheel for this platform is compiled into a wheel here, using the
+# toolchain installed above.
+RUN pip wheel --no-cache-dir --wheel-dir /wheels .
 
 # ---------------------------------------------------------------------
 
-# Stage 2: Final Production Image
-# This stage creates a lean, secure image with only runtime dependencies.
+# Stage 3: Final Production Image
+# Lean runtime image with NO build toolchain. Production dependencies are
+# installed from the prebuilt wheelhouse (offline, --no-index), so this stage
+# needs neither a compiler nor network access to PyPI on any architecture.
 FROM python:3.11-slim
 
 # Create a non-root user and group for security
@@ -77,12 +101,7 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory
 WORKDIR /app
 
-# Copy the application source code from the builder stage
-COPY --from=builder /app/src ./src
-# Copy the project definition to install production dependencies
-COPY --from=builder /app/pyproject.toml ./
-
-# Create a new, clean virtual environment for the production image
+# Create a clean virtual environment for the production image
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
@@ -90,9 +109,14 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Upgrade pip to the latest version
 RUN pip install --no-cache-dir --upgrade pip
 
-# Install only the production dependencies defined in pyproject.toml
-# The '.' tells pip to install the project in the current directory.
-RUN pip install --no-cache-dir .
+# Install the application and its production dependencies from the wheelhouse
+# built in the previous stage. --no-index guarantees nothing is pulled from PyPI
+# and no source build can be triggered: every requirement must already exist as
+# a wheel under /wheels. The wheelhouse is removed afterwards to keep the layer
+# lean.
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai \
+    && rm -rf /wheels
 
 # Tell api.py where to find the built frontend.  When installed as a Python
 # package, Path(__file__).parent.parent.parent resolves to the venv site-packages
@@ -110,5 +134,5 @@ USER appuser
 
 # Set the default command to run the OCR daemon.
 # (The same image can run the classifier via: `paperless-classifier-daemon`
-# or `python3 -m src.classifier.daemon`.)
+# or `python3 -m classifier.daemon`.)
 CMD ["paperless-ai"]
