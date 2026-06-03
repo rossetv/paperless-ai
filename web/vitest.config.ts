@@ -7,6 +7,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Thread workers share a process, so jsdom environment setup — the dominant
+    // cost of this suite — is materially cheaper than the default 'forks' pool
+    // (~27% faster locally). Per-file isolation stays ON: disabling it makes the
+    // suite fail (cross-file global/DOM pollution), so do not add `isolate: false`.
+    pool: 'threads',
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     coverage: {
