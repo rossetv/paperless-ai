@@ -42,7 +42,10 @@ jobs:
           pip install .
 
       - name: Run tests with coverage
-        run: pytest -q --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-report=term-missing --cov-fail-under=70
+        # -n auto distributes the suite across the runner's cores (pytest-xdist).
+        # pytest-cov combines the per-worker coverage data automatically, so the
+        # --cov-fail-under gate still measures the whole suite.
+        run: pytest -q -n auto --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-report=term-missing --cov-fail-under=70
 
       - name: Type-check store, indexer, search
         run: mypy src/store src/indexer src/search

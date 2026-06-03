@@ -79,7 +79,7 @@ ARG RUN_TESTS=1
 RUN if [ "$RUN_TESTS" = "1" ]; then \
         pip install --no-cache-dir -r requirements-dev.txt \
         && pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai \
-        && pytest; \
+        && pytest -n auto; \
     fi
 
 # ---------------------------------------------------------------------
