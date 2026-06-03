@@ -172,7 +172,17 @@ function makeQueryClient(): QueryClient {
 
 function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } = {}) {
   const mutate = opts.mutate ?? vi.fn();
-  mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
+  // vitest 4 types vi.fn() as a generic Mock that no longer auto-assigns to
+  // react-query's narrowly-typed mutate; cast to the expected signature.
+  mockUseUpdateDocument.mockReturnValue(
+    mutationStub({
+      mutate: mutate as unknown as UseMutateFunction<
+        LibraryDocument,
+        Error,
+        { id: number; patch: object }
+      >,
+    }),
+  );
 
   return {
     mutate,
