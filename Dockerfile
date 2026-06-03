@@ -57,28 +57,30 @@ RUN pip install --no-cache-dir --upgrade pip
 # Copy dependency definitions
 COPY pyproject.toml requirements-dev.txt ./
 
-# Install development and testing dependencies
-RUN pip install --no-cache-dir -r requirements-dev.txt
-
 # Copy the application source and tests
 COPY src/ ./src/
 COPY tests/ ./tests/
 
-# Install the application itself (which also installs production dependencies)
-RUN pip install --no-cache-dir .
-
-# Run the test suite to validate the application. Gated behind a build arg so the
-# slow emulated path (linux/arm64 under QEMU) can opt out with
-# `--build-arg RUN_TESTS=0`; it defaults on, so a plain `docker build` keeps the
-# safety gate.
-ARG RUN_TESTS=1
-RUN if [ "$RUN_TESTS" = "1" ]; then pytest; fi
-
-# Build a wheelhouse for the production dependency closure (the project plus its
-# runtime deps from pyproject — NOT the dev deps). Any dependency lacking a
-# prebuilt wheel for this platform is compiled into a wheel here, using the
-# toolchain installed above.
+# Build the production wheelhouse (the project plus its runtime deps from
+# pyproject — NOT the dev deps). Any dependency lacking a prebuilt wheel for this
+# platform is compiled into a wheel here, where the toolchain exists, so the
+# final stage never needs a compiler on any architecture. Placed before the
+# RUN_TESTS arg so this layer caches identically whether or not tests run.
 RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+
+# Test gate. The dev toolchain and the app install exist solely to run the suite,
+# so the entire step — not just `pytest` — is gated behind RUN_TESTS. CI passes
+# RUN_TESTS=0 because the dedicated `tests` job already runs pytest once,
+# natively; re-running it here (emulated, once per target architecture) would be
+# slow and redundant. A plain `docker build` defaults to RUN_TESTS=1 and keeps
+# the gate. The app is installed from the wheelhouse (offline) rather than
+# resolving the dependency tree a second time.
+ARG RUN_TESTS=1
+RUN if [ "$RUN_TESTS" = "1" ]; then \
+        pip install --no-cache-dir -r requirements-dev.txt \
+        && pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai \
+        && pytest; \
+    fi
 
 # ---------------------------------------------------------------------
 
