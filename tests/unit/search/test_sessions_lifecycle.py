@@ -15,6 +15,7 @@ import pytest
 
 from appdb.connection import connect
 from appdb.schema import ensure_schema
+from appdb.sessions import create as create_session
 from appdb.sessions import get_by_token_hash
 from appdb.users import create as create_user
 from appdb.users import update as update_user
@@ -54,6 +55,32 @@ def test_begin_session_stores_only_the_hashed_token(conn, user) -> None:
     issued = begin_session(conn, user_id=user.id, ttl_seconds=3600)
     assert get_by_token_hash(conn, issued.token) is None
     assert get_by_token_hash(conn, hash_token(issued.token)) is not None
+
+
+def test_begin_session_prunes_expired_sessions(conn, user) -> None:
+    """A new login sweeps already-expired sessions so the table stays bounded.
+
+    Regression guard for the sessions leak: prune_expired was dead code until
+    begin_session was wired to call it. Without the sweep, a session whose
+    owner never returns to present the cookie would live in app.db forever.
+    """
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    create_session(
+        conn,
+        token_hash=hash_token("dead-token"),
+        user_id=user.id,
+        expires_at=past,
+        user_agent=None,
+        ip=None,
+    )
+    assert get_by_token_hash(conn, hash_token("dead-token")) is not None
+
+    # A fresh login must prune the expired row...
+    begin_session(conn, user_id=user.id, ttl_seconds=3600)
+
+    # ...leaving only the new live session.
+    assert get_by_token_hash(conn, hash_token("dead-token")) is None
+    assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
 
 
 def test_begin_session_expiry_is_in_the_future(conn, user) -> None:
