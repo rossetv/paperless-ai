@@ -76,6 +76,38 @@ class TestConnect:
         finally:
             conn.close()
 
+    def test_performance_pragmas_applied(self, tmp_path) -> None:
+        """connect() tunes the page cache, mmap, and temp store for read speed.
+
+        These are advisory performance pragmas, not correctness ones, so they
+        are pinned here to stop a future edit silently dropping the measured
+        ~40% vector-scan win.
+        """
+        db_path = str(tmp_path / "perf.db")
+        conn = connect(db_path)
+        try:
+            # -262144 KiB == 256 MiB page cache (negative => KiB units).
+            assert conn.execute("PRAGMA cache_size").fetchone()[0] == -262144
+            # 512 MiB of memory-mapped reads enabled (default is 0 == off).
+            assert conn.execute("PRAGMA mmap_size").fetchone()[0] == 536870912
+            # temp_store=MEMORY is reported as 2.
+            assert conn.execute("PRAGMA temp_store").fetchone()[0] == 2
+        finally:
+            conn.close()
+
+    def test_fresh_database_uses_8k_page_size(self, tmp_path) -> None:
+        """A freshly created index uses an 8 KiB page so a 6 KiB embedding BLOB
+        does not spill onto an overflow-page chain. page_size only takes on a
+        new value before the first table exists, so this asserts the ordering
+        in connect() (page_size before journal_mode=WAL) is correct."""
+        db_path = str(tmp_path / "pagesize.db")
+        conn = connect(db_path)
+        try:
+            conn.execute("CREATE TABLE t (x INTEGER)")  # materialise page 1
+            assert conn.execute("PRAGMA page_size").fetchone()[0] == 8192
+        finally:
+            conn.close()
+
     def test_connect_always_opens_read_write(self, tmp_path) -> None:
         """Every connect() opens a read-write connection, even a re-open.
 
