@@ -427,15 +427,25 @@ class StoreWriter:
         log.warning("store.index_rebuild_completed")
 
     def checkpoint(self) -> None:
-        """Issue a WAL checkpoint (TRUNCATE mode).
+        """Refresh query-planner stats, then issue a WAL checkpoint (TRUNCATE).
 
         Called at the end of each reconciliation cycle so the search server
         never chases an unbounded WAL file (SPEC §3.2).
+
+        ``PRAGMA optimize`` runs first: after a large backfill the documents and
+        chunks tables have no ``sqlite_stat1`` statistics, so the read-side
+        planner (the search server's filter/browse queries) plans against
+        default uniform-distribution assumptions and can pick a worse index. It
+        is self-throttling — a no-op when nothing changed, re-ANALYZEing only
+        stale/missing stats — so it is safe to call every cycle, and running it
+        before the checkpoint folds its small ``sqlite_stat1`` write into the
+        same WAL truncation.
 
         Raises:
             StoreError: On SQLite error.
         """
         try:
+            self._conn.execute("PRAGMA optimize")
             self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except sqlite3.Error as exc:
             raise StoreError("failed to checkpoint WAL") from exc
