@@ -85,26 +85,26 @@ def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRout
     read_access = Depends(require_api_scope)
 
     @router.get("/api/index/status", dependencies=[read_access])
-    async def index_status(
+    def index_status(
         app_db: sqlite3.Connection = Depends(get_app_db),
     ) -> IndexStatusResponse:
         """Return every daemon's status and the overall health verdict."""
         return _index_status(app_db)
 
     @router.get("/api/index/activity", dependencies=[read_access])
-    async def index_activity(
+    def index_activity(
         app_db: sqlite3.Connection = Depends(get_app_db),
     ) -> IndexActivityResponse:
         """Return the most recent reconcile/sweep cycles."""
         return _index_activity(app_db)
 
     @router.get("/api/index/failed", dependencies=[read_access])
-    async def index_failed() -> IndexFailedResponse:
+    def index_failed() -> IndexFailedResponse:
         """Return the documents the indexer has failed to index."""
         return _index_failed(store_reader)
 
     @router.post("/api/index/rebuild", dependencies=[Depends(require_admin)])
-    async def index_rebuild() -> RebuildResponse:
+    def index_rebuild() -> RebuildResponse:
         """Trigger the destructive index rebuild (admin-only).
 
         Writes the ``rebuild.request`` sentinel; the indexer consumes it and
