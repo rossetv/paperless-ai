@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from ocr.image_converter import PageSource
 from ocr.text_assembly import OCR_ERROR_MARKER, PageResult
 from tests.helpers.factories import make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
-from tests.unit.ocr.conftest import make_image, make_processor
+from tests.unit.ocr.conftest import make_image, make_page_source, make_processor
 
 
 class TestOcrPagesInParallel:
@@ -26,9 +27,9 @@ class TestOcrPagesInParallel:
             PageResult("Text page 3", "m"),
         ]
         proc = make_processor(ocr_provider=ocr_provider, settings=settings)
-        images = [make_image() for _ in range(3)]
+        pages = make_page_source([make_image() for _ in range(3)])
 
-        results, failed = proc._ocr_pages_in_parallel(images)
+        results, failed = proc._ocr_pages_in_parallel(pages)
 
         # Assert — correct count, no failures, and content in correct order
         assert len(results) == 3
@@ -46,18 +47,18 @@ class TestOcrPagesInParallel:
             PageResult("Text page 3", "m"),
         ]
         proc = make_processor(ocr_provider=ocr_provider, settings=settings)
-        images = [make_image() for _ in range(3)]
+        pages = make_page_source([make_image() for _ in range(3)])
 
-        results, failed = proc._ocr_pages_in_parallel(images)
+        results, failed = proc._ocr_pages_in_parallel(pages)
 
         assert len(results) == 3
         assert 2 in failed  # page 2 (1-indexed)
         assert OCR_ERROR_MARKER in results[1].text
 
-    def test_empty_images_list(self):
+    def test_empty_page_source(self):
         proc = make_processor()
 
-        results, failed = proc._ocr_pages_in_parallel([])
+        results, failed = proc._ocr_pages_in_parallel(PageSource(images=[]))
 
         assert results == []
         assert failed == []

@@ -12,21 +12,21 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from ocr.image_converter import ImageConversionError
+from ocr.image_converter import ImageConversionError, PageSource
 from ocr.text_assembly import PageResult
 from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
-from tests.unit.ocr.conftest import make_image, make_processor
+from tests.unit.ocr.conftest import make_image, make_page_source, make_processor
 
 
 class TestProcessHappyPath:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images")
+    @patch("ocr.worker.open_page_source")
     @patch("ocr.worker.assemble_full_text")
     def test_full_pipeline_success(
-        self, mock_assemble, mock_b2i, mock_claim, mock_release
+        self, mock_assemble, mock_open_pages, mock_claim, mock_release
     ):
         settings = make_settings_obj(
             OCR_PROCESSING_TAG_ID=999,
@@ -36,8 +36,8 @@ class TestProcessHappyPath:
         paperless.get_document.return_value = {"id": 1, "title": "Test", "tags": [443]}
         paperless.download_content.return_value = (b"pdf-data", "application/pdf")
 
-        images = [make_image(), make_image()]
-        mock_b2i.return_value = images
+        pages = make_page_source([make_image(), make_image()])
+        mock_open_pages.return_value = pages
 
         ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = [
@@ -62,7 +62,7 @@ class TestProcessHappyPath:
         # Assert — full pipeline invoked with correct data flow
         mock_claim.assert_called_once()
         paperless.download_content.assert_called_once_with(1)
-        mock_b2i.assert_called_once()
+        mock_open_pages.assert_called_once()
         mock_assemble.assert_called_once()
         mock_release.assert_called_once()
         # Verify update_document called with correct content and tags
@@ -137,12 +137,12 @@ class TestProcessImageConversionFailure:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
     @patch(
-        "ocr.worker.bytes_to_images",
+        "ocr.worker.open_page_source",
         side_effect=ImageConversionError("Bad image"),
     )
     @patch("common.tags.clean_pipeline_tags")
     def test_conversion_failure_finalises_error(
-        self, mock_clean, mock_b2i, mock_claim, mock_release
+        self, mock_clean, mock_open_pages, mock_claim, mock_release
     ):
         settings = make_settings_obj(
             OCR_PROCESSING_TAG_ID=999,
@@ -162,9 +162,9 @@ class TestProcessImageConversionFailure:
 class TestProcessAlwaysReleasesLock:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images")
+    @patch("ocr.worker.open_page_source")
     def test_lock_released_on_download_failure(
-        self, mock_b2i, mock_claim, mock_release
+        self, mock_open_pages, mock_claim, mock_release
     ):
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
         paperless = make_mock_paperless()
@@ -180,13 +180,14 @@ class TestProcessAlwaysReleasesLock:
 
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images")
-    def test_lock_released_on_ocr_failure(self, mock_b2i, mock_claim, mock_release):
+    @patch("ocr.worker.open_page_source")
+    def test_lock_released_on_ocr_failure(
+        self, mock_open_pages, mock_claim, mock_release
+    ):
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
         paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
-        images = [make_image()]
-        mock_b2i.return_value = images
+        mock_open_pages.return_value = make_page_source([make_image()])
 
         ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = Exception("OCR boom")
@@ -202,18 +203,20 @@ class TestProcessAlwaysReleasesLock:
         mock_release.assert_called_once()
 
 
-class TestImagesAlwaysClosed:
+class TestPagesAlwaysReleased:
+    """Every page bitmap is released — per-page after OCR and via the source."""
+
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images")
+    @patch("ocr.worker.open_page_source")
     @patch("ocr.worker.assemble_full_text", return_value=("text", {"m"}))
     @patch("ocr.worker.get_latest_tags", return_value={443})
-    def test_images_closed_on_success(
-        self, mock_tags, mock_assemble, mock_b2i, mock_claim, mock_release
+    def test_pages_released_on_success(
+        self, mock_tags, mock_assemble, mock_open_pages, mock_claim, mock_release
     ):
         img1 = MagicMock(spec=Image.Image)
         img2 = MagicMock(spec=Image.Image)
-        mock_b2i.return_value = [img1, img2]
+        mock_open_pages.return_value = make_page_source([img1, img2])
 
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=None)
         paperless = make_mock_paperless()
@@ -226,15 +229,19 @@ class TestImagesAlwaysClosed:
 
         proc.process()
 
-        img1.close.assert_called_once()
-        img2.close.assert_called_once()
+        # Each page is closed after its transcription (and again by the source's
+        # close as a backstop) — the binding guarantee is "never leaked".
+        assert img1.close.called
+        assert img2.close.called
 
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images")
-    def test_images_closed_on_ocr_error(self, mock_b2i, mock_claim, mock_release):
+    @patch("ocr.worker.open_page_source")
+    def test_pages_released_on_ocr_error(
+        self, mock_open_pages, mock_claim, mock_release
+    ):
         img1 = MagicMock(spec=Image.Image)
-        mock_b2i.return_value = [img1]
+        mock_open_pages.return_value = make_page_source([img1])
 
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
         paperless = make_mock_paperless()
@@ -249,7 +256,9 @@ class TestImagesAlwaysClosed:
 
         proc.process()
 
-        img1.close.assert_called_once()
+        # A transcription failure must still release the page (closed in the
+        # per-page finally).
+        assert img1.close.called
 
 
 class TestOcrProcessorInit:
@@ -278,8 +287,8 @@ class TestOcrProcessorInit:
 class TestProcessNoPages:
     @patch("ocr.worker.release_processing_tag")
     @patch("ocr.worker.claim_processing_tag", return_value=True)
-    @patch("ocr.worker.bytes_to_images", return_value=[])
-    def test_no_pages_returns_early(self, mock_b2i, mock_claim, mock_release):
+    @patch("ocr.worker.open_page_source", return_value=PageSource(images=[]))
+    def test_no_pages_returns_early(self, mock_open_pages, mock_claim, mock_release):
         settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999)
         paperless = make_mock_paperless()
         paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}

@@ -13,6 +13,7 @@ from typing import Any
 
 from PIL import Image
 
+from ocr.image_converter import PageSource
 from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
@@ -44,3 +45,14 @@ def make_processor(
 def make_image() -> Image.Image:
     """Create a small non-blank test image."""
     return Image.new("RGB", (10, 10), color="red")
+
+
+def make_page_source(images: list[Image.Image]) -> PageSource:
+    """Wrap in-memory images in a PageSource (the non-PDF backing).
+
+    The worker consumes PDFs (path-backed, streamed) and non-PDFs (in-memory)
+    through the same :class:`PageSource` interface, so the unit tests exercise
+    the in-memory backing — which loads each image as-is and closes it on
+    ``close()`` — rather than mocking the type.
+    """
+    return PageSource(images=list(images))
