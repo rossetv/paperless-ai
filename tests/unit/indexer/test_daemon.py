@@ -656,3 +656,29 @@ def test_run_loop_does_not_rebuild_without_the_sentinel(tmp_path: Path) -> None:
             sentinel_path=tmp_path / "reconcile.request",
         )
     assert not store_writer.rebuild_index.called
+
+
+def test_rebuild_reconciler_closes_old_paperless_and_embedding_clients() -> None:
+    """On a config-change rebuild, both outgoing httpx clients are closed.
+
+    Regression guard for the EmbeddingClient hot-reload leak: old.paperless and
+    old.embedding_client must both be closed before the new reconciler is
+    built, releasing their connection pools deterministically rather than
+    leaving them to GC.
+    """
+    from indexer.daemon import _rebuild_reconciler
+
+    old = MagicMock()
+    settings = MagicMock()
+    with (
+        patch("indexer.daemon.configure_logging"),
+        patch("indexer.daemon.setup_libraries"),
+        patch("indexer.daemon.llm_limiter"),
+        patch("indexer.daemon.PaperlessClient"),
+        patch("indexer.daemon.EmbeddingClient"),
+        patch("indexer.daemon.Reconciler"),
+    ):
+        _rebuild_reconciler(settings, old)
+
+    old.paperless.close.assert_called_once_with()
+    old.embedding_client.close.assert_called_once_with()

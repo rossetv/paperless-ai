@@ -120,6 +120,18 @@ class EmbeddingClient:
         self._client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         self._concurrency = ConcurrencyGuard(settings.EMBEDDING_MAX_CONCURRENT)
 
+    def close(self) -> None:
+        """Close the underlying OpenAI client's httpx connection pool.
+
+        Mirrors :meth:`common.paperless.PaperlessClient.close`.  The indexer's
+        config hot-reload path replaces the ``EmbeddingClient`` between cycles;
+        closing the outgoing one releases its ``httpx`` pool deterministically
+        instead of stranding it until CPython finalises the abandoned object —
+        the project's explicit-close convention for I/O clients (CODE_GUIDELINES
+        §8).  Safe to call once; the client is not used again after close.
+        """
+        self._client.close()
+
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed a sequence of texts, returning one vector per input in order.
 
