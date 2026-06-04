@@ -105,8 +105,7 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     only databases created before v2 actually build it here.
     """
     conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_documents_indexed_at "
-        "ON documents (indexed_at)"
+        "CREATE INDEX IF NOT EXISTS idx_documents_indexed_at ON documents (indexed_at)"
     )
 
 
