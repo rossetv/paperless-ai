@@ -93,9 +93,15 @@ export function SearchPage(): React.ReactElement {
     setHighlightedIndex(index);
   }
 
-  function openPreview(documentId: number): void {
-    navigate(`/document/${documentId}${searchString}`);
-  }
+  // useCallback so the reference is stable across renders — SourceCard is
+  // React.memo'd and receives this as onPreview, so an inline/unstable handler
+  // would defeat the memo and re-render every source card on each parent render.
+  const openPreview = React.useCallback(
+    (documentId: number): void => {
+      navigate(`/document/${documentId}${searchString}`);
+    },
+    [navigate, searchString],
+  );
 
   /** Pick the screen to render from the query and the search result. */
   function renderScreen(): React.ReactElement {
