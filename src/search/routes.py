@@ -20,12 +20,11 @@ Forbidden: direct LLM/HTTP calls, imports from indexer/.
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import TYPE_CHECKING, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -33,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from appdb import recent_searches as recent_search_store
 from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
+from search.offload import LazySemaphore, run_blocking
 from search.sessions import CurrentUser
 from search.wire import (
     DocumentListResponse,
@@ -58,9 +58,6 @@ if TYPE_CHECKING:
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
-
-# Return type of a blocking call dispatched through _run_blocking.
-_T = TypeVar("_T")
 
 # The reconciliation sentinel file name (spec §5.8).  Written alongside the
 # index DB; picked up by the indexer's polling loop.
@@ -156,79 +153,6 @@ def _health_response(state: IndexHealthState) -> Response:
     )
 
 
-async def _run_blocking(call: Callable[[], _T]) -> _T:
-    """Run a blocking store/LLM call on the event loop's default executor.
-
-    The store and the LLM client perform blocking I/O; running them directly
-    in an async handler would stall the event loop.  ``run_in_executor`` keeps
-    the loop free to serve other requests.  The return type is preserved so
-    callers need no cast.
-    """
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, call)
-
-
-class _LazySemaphore:
-    """An :class:`asyncio.Semaphore` created on first use, not at build time.
-
-    A semaphore must be bound to the event loop that awaits it.  The router is
-    built before the serving loop exists, so the semaphore is created lazily on
-    the first :meth:`acquire`.  asyncio's single-threaded contract means only
-    one coroutine touches the internal state at a time — no lock is needed.
-
-    Hot-reloadable: :meth:`set_limit` swaps in a new semaphore when
-    ``SEARCH_MAX_CONCURRENT`` changes via the Settings API (web-redesign §5,
-    Wave 4). In-flight acquisitions on the *old* semaphore complete on the
-    old limit and release into the old object (it is reachable via the
-    awaiting coroutines' local frames); new acquisitions hit the new
-    semaphore. The brief window where both are alive is bounded by the
-    longest in-flight search, with the new cap fully in force for every new
-    request — no restart.
-
-    Args:
-        max_concurrent: The initial simultaneous-holder ceiling.
-    """
-
-    def __init__(self, max_concurrent: int) -> None:
-        self._max_concurrent = max_concurrent
-        self._semaphore: asyncio.Semaphore | None = None
-
-    def set_limit(self, max_concurrent: object) -> None:
-        """Replace the ceiling. Idempotent when *max_concurrent* is unchanged.
-
-        Called per request before :meth:`acquire`; the cheap equality check
-        keeps the steady-state cost at one ``int`` compare. A change builds a
-        fresh semaphore on the next acquire — see the class docstring for the
-        old/new overlap window discussion.
-
-        A value that does not coerce to ``int`` is ignored — keeps stub
-        cores in unit tests from crashing the handler with a ``TypeError``
-        out of :class:`asyncio.Semaphore`.
-        """
-        try:
-            new_limit = int(max_concurrent)  # type: ignore[call-overload]
-        except (TypeError, ValueError):
-            return
-        if new_limit == self._max_concurrent:
-            return
-        self._max_concurrent = new_limit
-        # Drop the existing semaphore so the next acquire builds a new one
-        # at the new limit. In-flight holders of the old object complete as
-        # they were (they captured the old reference); only new requests
-        # touch the replacement.
-        self._semaphore = None
-
-    def acquire(self) -> asyncio.Semaphore:
-        """Return the semaphore, creating it on first use.
-
-        The returned object is an async context manager — ``async with
-        lazy.acquire():`` holds one permit for the duration of the block.
-        """
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self._max_concurrent)
-        return self._semaphore
-
-
 def build_api_router(
     settings: Settings,
     resolve_core: Callable[[str], SearchCore],
@@ -278,7 +202,7 @@ def build_api_router(
     # the event loop actually serving requests, not whichever loop (if any) was
     # running at router-build time.  asyncio's single-threaded contract means
     # only one coroutine touches the holder at a time, so no lock is needed.
-    search_semaphore = _LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
+    search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
 
     # response_model=None: healthz returns a hand-built Response (a fixed
     # JSON body and an explicit status code), so FastAPI must not try to
@@ -292,8 +216,13 @@ def build_api_router(
         when the database is absent or the indexer has not finished; 503
         ``{"status": "index-corrupt"}`` when integrity fails.  The handler
         never raises — any unexpected error becomes a clean 503.
+
+        Offloaded: the body runs ``get_stats`` plus a ``PRAGMA quick_check``
+        (a full-database integrity scan) under the StoreReader's lock, so it
+        is dispatched to the threadpool to keep the Docker healthcheck off the
+        event loop.
         """
-        return _healthz(settings, store_reader)
+        return await run_blocking(lambda: _healthz(settings, store_reader))
 
     @router.post("/api/search")
     async def search(
@@ -314,26 +243,31 @@ def build_api_router(
         request so a saved configuration change takes effect on the next
         query — web-redesign §5, Wave 4.
         """
-        core = resolve_core(state.app_db_path)
+        # resolve_core opens app.db, runs ensure_schema, and on a config-version
+        # change rebuilds the whole core (new StoreReader/index.db connection) —
+        # all blocking SQLite, so it is offloaded off the event loop.
+        core = await run_blocking(lambda: resolve_core(state.app_db_path))
         # core carries the Settings it was built from (see SearchCore.settings);
         # pick the SEARCH_MAX_CONCURRENT off that and apply it to the lazy
         # semaphore. set_limit is a no-op when nothing changed, and ignores
         # non-int values so a stub core in tests does not crash the handler.
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         result = await _search(body, core, search_semaphore)
-        _record_recent_search(app_db, user, body.query)
+        # The recent-search write is a blocking multi-statement SQLite
+        # transaction (delete+insert+trim); keep it off the loop too.
+        await run_blocking(lambda: _record_recent_search(app_db, user, body.query))
         return result
 
     @router.get("/api/facets", dependencies=[reader_auth])
     async def facets() -> FacetsResponse:
         """Return taxonomy facets for the search UI filter panel."""
-        facet_set = await _run_blocking(store_reader.list_facets)
+        facet_set = await run_blocking(store_reader.list_facets)
         return to_facets_response(facet_set)
 
     @router.get("/api/stats", dependencies=[reader_auth])
     async def stats() -> StatsResponse:
         """Return summary statistics for the search index."""
-        index_stats = await _run_blocking(store_reader.get_stats)
+        index_stats = await run_blocking(store_reader.get_stats)
         return to_stats_response(index_stats)
 
     @router.get("/api/documents", dependencies=[reader_auth])
@@ -410,7 +344,7 @@ def _healthz(settings: Settings, store_reader: StoreReader) -> Response:
 
 
 async def _search(
-    body: SearchRequest, core: SearchCore, semaphore: _LazySemaphore
+    body: SearchRequest, core: SearchCore, semaphore: LazySemaphore
 ) -> SearchResponse:
     """Search handler body: bound concurrency, convert filters, run off the loop.
 
@@ -421,7 +355,7 @@ async def _search(
     ui_filters = to_search_filters(body.filters)
 
     async with semaphore.acquire():
-        result = await _run_blocking(
+        result = await run_blocking(
             lambda: core.answer(query=body.query, ui_filters=ui_filters)
         )
     return to_search_response(result)
@@ -480,7 +414,7 @@ async def _documents(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
-        document_page = await _run_blocking(
+        document_page = await run_blocking(
             lambda: store_reader.list_documents(browse_query)
         )
     except SchemaNotReadyError as exc:
