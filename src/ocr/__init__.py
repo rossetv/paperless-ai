@@ -16,7 +16,7 @@ Paperless HTTP through ``common.paperless``, LLM calls through ``common.llm``.
 
 from __future__ import annotations
 
-from .image_converter import ImageConversionError, bytes_to_images
+from .image_converter import ImageConversionError, PageSource, open_page_source
 from .provider import OcrProvider
 from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 from .worker import OcrProcessor
@@ -27,6 +27,7 @@ __all__ = [
     "OcrProcessor",
     "OcrProvider",
     "PageResult",
+    "PageSource",
     "assemble_full_text",
-    "bytes_to_images",
+    "open_page_source",
 ]

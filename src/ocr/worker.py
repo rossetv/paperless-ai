@@ -6,7 +6,6 @@ import datetime as dt
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import structlog
-from PIL import Image
 
 from common.claims import claim_processing_tag
 from common.config import Settings
@@ -19,7 +18,7 @@ from common.tags import (
     release_processing_tag,
 )
 from common.content_checks import is_error_content
-from .image_converter import ImageConversionError, bytes_to_images
+from .image_converter import ImageConversionError, PageSource, open_page_source
 from .provider import OcrProvider
 from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 
@@ -84,14 +83,17 @@ class OcrProcessor(ErrorFinaliserMixin):
             if not claimed:
                 return
 
-            images = self._download_and_convert(current_tags)
-            if images is None:
+            pages = self._download_and_convert(current_tags)
+            if pages is None:
                 return
 
             try:
-                page_results, failed_pages = self._ocr_pages_in_parallel(images)
+                page_count = len(pages)
+                page_results, failed_pages = self._ocr_pages_in_parallel(pages)
             finally:
-                self._close_images(images)
+                # Owns the page source's whole lifetime: this releases the PDF
+                # temp directory (or the in-memory images) even if OCR raised.
+                pages.close()
 
             if failed_pages:
                 log.warning(
@@ -101,7 +103,7 @@ class OcrProcessor(ErrorFinaliserMixin):
                 )
 
             full_text, models_used = assemble_full_text(
-                len(images),
+                page_count,
                 page_results,
                 include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
             )
@@ -124,17 +126,26 @@ class OcrProcessor(ErrorFinaliserMixin):
                 success=success,
             )
 
-    def _download_and_convert(self, current_tags: set[int]) -> list[Image.Image] | None:
+    def _download_and_convert(self, current_tags: set[int]) -> PageSource | None:
         """
-        Download the document and rasterise it into page images.
+        Download the document and open it as a streamable page source.
 
-        Returns the page images, or ``None`` when processing should stop: an
+        For PDFs the pages are rasterised to temp files and loaded one at a time
+        during OCR, so the whole document never sits in RAM; the returned
+        :class:`PageSource` owns that temp storage and is closed by the caller.
+
+        Returns the page source, or ``None`` when processing should stop: an
         undecodable download finalises the document with an error tag, and a
         document with no pages is logged and skipped.
         """
         content, content_type = self.paperless_client.download_content(self.doc_id)
         try:
-            images = bytes_to_images(content, content_type, dpi=self.settings.OCR_DPI)
+            pages = open_page_source(
+                content,
+                content_type,
+                dpi=self.settings.OCR_DPI,
+                max_side=self.settings.OCR_MAX_SIDE,
+            )
         except ImageConversionError:
             log.exception(
                 "Unable to convert document to images; marking error",
@@ -143,38 +154,31 @@ class OcrProcessor(ErrorFinaliserMixin):
             self._finalise_with_error(current_tags)
             return None
 
-        if not images:
+        if len(pages) == 0:
             log.warning("Document has no pages to process", doc_id=self.doc_id)
+            pages.close()
             return None
-        return images
-
-    def _close_images(self, images: list[Image.Image]) -> None:
-        """Release every page image; a close failure is logged, never raised."""
-        for image in images:
-            try:
-                image.close()
-            except OSError:
-                log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
+        return pages
 
     def _ocr_pages_in_parallel(
-        self, images: list[Image.Image]
+        self, pages: PageSource
     ) -> tuple[list[PageResult], list[int]]:
         """
         Run OCR on each page concurrently and preserve the original order.
 
+        Each task loads its page only when it starts and closes the bitmap the
+        moment transcription returns, so at most ``PAGE_WORKERS`` page images
+        are resident at once — the document is streamed, never fully unpacked.
+
         Returns ``(page_results, failed_page_numbers)``.
         """
+        page_count = len(pages)
         with ThreadPoolExecutor(max_workers=self.settings.PAGE_WORKERS) as executor:
             future_to_index = {
-                executor.submit(
-                    self.ocr_provider.transcribe_image,
-                    img,
-                    doc_id=self.doc_id,
-                    page_num=i + 1,
-                ): i
-                for i, img in enumerate(images)
+                executor.submit(self._ocr_one_page, pages, i): i
+                for i in range(page_count)
             }
-            results: list[PageResult] = [PageResult(text="", model="")] * len(images)
+            results: list[PageResult] = [PageResult(text="", model="")] * page_count
             failed_pages: list[int] = []
             for future in as_completed(future_to_index):
                 index = future_to_index[future]
@@ -192,6 +196,24 @@ class OcrProcessor(ErrorFinaliserMixin):
                         model="",
                     )
             return results, failed_pages
+
+    def _ocr_one_page(self, pages: PageSource, index: int) -> PageResult:
+        """Load page *index*, transcribe it, and free its bitmap.
+
+        The load is the memory-heavy step, so it happens inside the worker
+        thread (bounding resident pages to the pool size) and the image is
+        closed in a ``finally`` so a transcription failure cannot leak it.
+        """
+        image = pages.load_page(index)
+        try:
+            return self.ocr_provider.transcribe_image(
+                image, doc_id=self.doc_id, page_num=index + 1
+            )
+        finally:
+            try:
+                image.close()
+            except OSError:
+                log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
 
     def _has_ocr_errors(self, text: str) -> bool:
         """Return True if the OCR output contains error/refusal/redacted markers."""
