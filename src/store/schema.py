@@ -18,8 +18,9 @@ import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import run_migrations
 
-# The schema version recorded in meta.schema_version.
-SCHEMA_VERSION: int = 1
+# The schema version recorded in meta.schema_version. Must equal the highest
+# version in store.migrations.MIGRATIONS.
+SCHEMA_VERSION: int = 2
 
 # Verbatim DDL from SPEC §4.1.  All statements use IF NOT EXISTS so that
 # ensure_schema() is idempotent for the v1 schema.
@@ -78,6 +79,12 @@ CREATE INDEX IF NOT EXISTS idx_documents_document_type_id
 
 CREATE INDEX IF NOT EXISTS idx_documents_created
     ON documents (created);
+
+-- Backs the Library browse's default "recently added" sort
+-- (ORDER BY indexed_at DESC, id DESC); without it that very common view does a
+-- full table sort on every page request.
+CREATE INDEX IF NOT EXISTS idx_documents_indexed_at
+    ON documents (indexed_at);
 
 CREATE INDEX IF NOT EXISTS idx_chunks_document_id
     ON chunks (document_id);

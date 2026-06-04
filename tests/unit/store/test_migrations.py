@@ -43,6 +43,14 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in rows}
 
 
+def _index_names(conn: sqlite3.Connection) -> set[str]:
+    """Return the names of all indexes in the DB."""
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'index'"
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -211,6 +219,39 @@ class TestMigrationAtomicity:
         assert mock_conn.execute.call_count >= 1, (
             "_migrate_v1 must use execute() for each DDL statement"
         )
+
+
+# ---------------------------------------------------------------------------
+# v2: idx_documents_indexed_at
+# ---------------------------------------------------------------------------
+
+
+class TestV2IndexedAtMigration:
+    """Migration v2 adds idx_documents_indexed_at to a pre-v2 database."""
+
+    def test_fresh_database_has_indexed_at_index(self, conn) -> None:
+        run_migrations(conn)
+        assert "idx_documents_indexed_at" in _index_names(conn)
+
+    def test_existing_v1_database_gains_the_index_on_upgrade(self, conn) -> None:
+        """A database created at v1 (no indexed_at index) gains it at v2.
+
+        Simulates a deployed v1 database: build the schema, drop the v2 index,
+        and roll schema_version back to 1. Re-running migrations must apply v2
+        and create the index — the realistic in-place upgrade path.
+        """
+        run_migrations(conn)
+        conn.execute("DROP INDEX IF EXISTS idx_documents_indexed_at")
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')"
+        )
+        conn.commit()
+        assert "idx_documents_indexed_at" not in _index_names(conn)
+
+        run_migrations(conn)
+
+        assert _get_schema_version(conn) == 2
+        assert "idx_documents_indexed_at" in _index_names(conn)
 
 
 # ---------------------------------------------------------------------------
