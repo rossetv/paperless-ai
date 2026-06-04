@@ -35,6 +35,7 @@ Forbidden: FastAPI (api.py), direct LLM/HTTP calls.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -50,6 +51,7 @@ from search.api_keys import SCOPE_MCP, resolve_api_key
 from search.auth import SESSION_COOKIE_NAME, extract_bearer
 from search.deps import refresh_last_seen
 from search.models import SearchResult
+from search.offload import LazySemaphore, run_blocking
 from search.sessions import resolve_session
 from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
 from store import SearchFilters
@@ -108,7 +110,14 @@ class _BearerAuthMiddleware:
         bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
-        authenticated = self._is_authenticated(bearer, cookie)
+        # _is_authenticated opens its own app.db connection and runs blocking
+        # SQLite (resolve_session / resolve_api_key). This is raw ASGI
+        # middleware, so — unlike a FastAPI sync dependency, which FastAPI
+        # offloads automatically — nothing moves it off the loop for us. Offload
+        # it explicitly so MCP auth never blocks the event loop per request.
+        authenticated = await run_blocking(
+            lambda: self._is_authenticated(bearer, cookie)
+        )
 
         if not authenticated:
             log.warning(
@@ -286,6 +295,39 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         core: The search pipeline backing both tools.
     """
 
+    # Bound how many agentic searches run at once (LLM cost ceiling) and keep
+    # the blocking pipeline off the event loop, mirroring the REST /api/search
+    # handler. FastMCP 1.27 calls a sync tool DIRECTLY on the loop with no
+    # offload, so an unwrapped sync tool body would freeze every other MCP
+    # request and the co-mounted REST API for its multi-second, LLM-bound
+    # duration.
+    search_semaphore = LazySemaphore(core.settings.SEARCH_MAX_CONCURRENT)
+
+    async def _dispatch(
+        *,
+        query: str,
+        filters: dict[str, Any] | None,
+        core_call: Callable[[str, SearchFilters | None], SearchResult],
+        error_event: str,
+    ) -> str:
+        """Run one tool body off the loop, under the shared concurrency bound.
+
+        ``core.settings`` is re-read each call so a hot-reloaded
+        ``SEARCH_MAX_CONCURRENT`` takes effect without a restart; a ceiling of
+        0 (unbounded) makes the acquire a no-op (see :class:`LazySemaphore`).
+        """
+        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        async with search_semaphore.acquire():
+            return await run_blocking(
+                functools.partial(
+                    _run_search_tool,
+                    query=query,
+                    filters=filters,
+                    core_call=core_call,
+                    error_event=error_event,
+                )
+            )
+
     @mcp.tool(
         name="search_documents",
         description=(
@@ -294,12 +336,12 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
             "— the calling agent synthesises its own (saving one LLM call)."
         ),
     )
-    def search_documents(
+    async def search_documents(
         query: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
         """Call core.retrieve and return the SearchResult as JSON."""
-        return _run_search_tool(
+        return await _dispatch(
             query=query,
             filters=filters,
             core_call=lambda text, ui_filters: core.retrieve(
@@ -316,12 +358,12 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
             "documents, and execution statistics."
         ),
     )
-    def ask_documents(
+    async def ask_documents(
         question: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
         """Call core.answer and return the SearchResult as JSON."""
-        return _run_search_tool(
+        return await _dispatch(
             query=question,
             filters=filters,
             core_call=lambda text, ui_filters: core.answer(
