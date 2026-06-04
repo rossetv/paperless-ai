@@ -95,6 +95,21 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
             conn.execute(stmt)
 
 
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """Add idx_documents_indexed_at for the Library's default "added" sort.
+
+    The browse view's default sort is ``ORDER BY indexed_at DESC, id DESC``;
+    without an index on ``indexed_at`` SQLite sorts the whole documents table on
+    every page request. ``IF NOT EXISTS`` makes this a no-op on a fresh database
+    (where _migrate_v1 already created the index from the current _SCHEMA), so
+    only databases created before v2 actually build it here.
+    """
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_documents_indexed_at "
+        "ON documents (indexed_at)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -104,6 +119,7 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
 # must be in strictly ascending version order; the runner relies on this.
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate_v1),
+    (2, _migrate_v2),
 ]
 
 

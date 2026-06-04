@@ -187,13 +187,14 @@ class TestEnsureSchema:
         assert "meta" in _table_names(conn)
 
     def test_documents_indexes_exist(self, conn) -> None:
-        """All four column indexes on documents must be created."""
+        """All five column indexes on documents must be created."""
         ensure_schema(conn)
         indexes = _index_names(conn)
         assert "idx_documents_modified" in indexes
         assert "idx_documents_correspondent_id" in indexes
         assert "idx_documents_document_type_id" in indexes
         assert "idx_documents_created" in indexes
+        assert "idx_documents_indexed_at" in indexes
 
     def test_chunks_document_id_index_exists(self, conn) -> None:
         ensure_schema(conn)
@@ -245,8 +246,11 @@ class TestEnsureSchema:
         column_names = {row[1] for row in info}
         assert {"key", "value"} <= column_names
 
-    def test_schema_version_constant_is_one(self) -> None:
-        assert SCHEMA_VERSION == 1
+    def test_schema_version_constant_matches_latest_migration(self) -> None:
+        from store.migrations import MIGRATIONS
+
+        assert SCHEMA_VERSION == 2
+        assert SCHEMA_VERSION == MIGRATIONS[-1][0]
 
     def test_schema_string_not_empty(self) -> None:
         assert _SCHEMA.strip()

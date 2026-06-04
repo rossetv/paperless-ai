@@ -33,8 +33,9 @@ log = structlog.get_logger(__name__)
 # cannot be bound as a ``?`` parameter — it is mapped here through a fixed
 # dict to a fixed column expression.  Only these expressions ever reach the
 # SQL string; an unknown key raises ValueError before any query runs
-# (CODE_GUIDELINES §9.5).  Every expression is a documents-table column the
-# schema indexes (idx_documents_created, etc.) where one exists.
+# (CODE_GUIDELINES §9.5).  The two date sorts are index-backed
+# (idx_documents_created, idx_documents_indexed_at); ``title`` is not indexed
+# (a rarely-used text sort), so it falls back to a table sort by design.
 _SORT_COLUMNS: dict[str, str] = {
     "created": "d.created",
     "title": "d.title",
