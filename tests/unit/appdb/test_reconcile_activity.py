@@ -45,6 +45,32 @@ def test_record_cycle_then_read_round_trips(conn) -> None:
     assert rows[0].detail == "indexed 3 documents"
 
 
+def test_record_cycle_keeps_the_log_bounded(conn) -> None:
+    """The append-only log never grows past _ACTIVITY_CAP rows.
+
+    Regression guard for the unbounded-table leak: a long-lived indexer records
+    a cycle every few minutes for months, so record_cycle must trim as it
+    appends rather than letting the table grow without limit.
+    """
+    total = reconcile_activity._ACTIVITY_CAP + 25
+    for i in range(total):
+        reconcile_activity.record_cycle(
+            conn,
+            kind="sync",
+            started_at="2026-05-22T12:00:00+00:00",
+            finished_at="2026-05-22T12:00:05+00:00",
+            ok=True,
+            summary={"indexed": i},
+            detail=f"cycle {i}",
+        )
+
+    count = conn.execute("SELECT COUNT(*) FROM reconcile_activity").fetchone()[0]
+    assert count == reconcile_activity._ACTIVITY_CAP
+    # The newest cycle survives; the oldest has been trimmed away.
+    newest = reconcile_activity.read_recent(conn, limit=1)[0]
+    assert newest.detail == f"cycle {total - 1}"
+
+
 def test_read_recent_returns_newest_first(conn) -> None:
     for n in range(3):
         reconcile_activity.record_cycle(

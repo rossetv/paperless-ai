@@ -33,6 +33,13 @@ log = structlog.get_logger(__name__)
 #: The two kinds of reconcile cycle the indexer runs.
 CycleKind = Literal["sync", "sweep"]
 
+#: Maximum rows retained in this append-only log. The dashboard shows only the
+#: newest ~50 (index_routes._ACTIVITY_LIMIT); a generous cap keeps support
+#: history while stopping the table growing without bound over the indexer's
+#: (potentially months-long) lifetime. Trimmed once per cycle — cycles are
+#: minutes apart, so the cost is negligible.
+_ACTIVITY_CAP = 500
+
 
 @dataclass(frozen=True, slots=True)
 class ReconcileCycle:
@@ -92,6 +99,15 @@ def record_cycle(
                 json.dumps(summary),
                 detail,
             ),
+        )
+        # Trim to the newest _ACTIVITY_CAP rows so this append-only table stays
+        # bounded. id is a monotonic primary key, so this single indexed DELETE
+        # is cheaper than a NOT IN/LIMIT subquery; on a table smaller than the
+        # cap, MAX(id) - cap is negative and nothing is deleted.
+        conn.execute(
+            "DELETE FROM reconcile_activity "
+            "WHERE id <= (SELECT MAX(id) FROM reconcile_activity) - ?",
+            (_ACTIVITY_CAP,),
         )
 
 

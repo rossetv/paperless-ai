@@ -159,6 +159,12 @@ def begin_session(
         user_agent=user_agent,
         ip=ip,
     )
+    # Opportunistically sweep expired sessions so the table stays bounded to
+    # live sessions. Login is a cold path and expires_at is indexed, so this is
+    # one cheap indexed DELETE per login. resolve_session already prunes any
+    # single expired session whose cookie is re-presented; this catches the
+    # rest — sessions whose owner never returns to present the cookie again.
+    session_store.prune_expired(conn, now_iso=datetime.now(timezone.utc).isoformat())
     return IssuedSession(token=token, expires_at=expires_at)
 
 
