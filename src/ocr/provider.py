@@ -64,11 +64,7 @@ class OcrProvider(OpenAIChatMixin):
         if is_blank(image):
             return PageResult(text="", model="")
 
-        # Resize large images to reduce token cost and latency. Copy first so
-        # the caller's image is not mutated in-place.
-        image = image.copy()
-        image.thumbnail((self.settings.OCR_MAX_SIDE, self.settings.OCR_MAX_SIDE))
-        payload = _image_to_base64_png(image)
+        payload = self._encode_page(image)
 
         messages = [
             {"role": "system", "content": TRANSCRIPTION_PROMPT},
@@ -120,8 +116,29 @@ class OcrProvider(OpenAIChatMixin):
         log.error("All models failed or refused to transcribe the page", **log_ctx)
         return PageResult(text=self.settings.REFUSAL_MARK, model="")
 
+    def _encode_page(self, image: Image.Image) -> str:
+        """Return the base64 PNG payload for *image*, capped at ``OCR_MAX_SIDE``.
+
+        Only pages whose longer side exceeds the cap are resized, and only those
+        pay for a copy — pages already at or below the cap (the common case once
+        the PDF is rasterised at target size) are encoded straight from the
+        caller's image. The caller's image is never mutated either way: the
+        resize happens on a private copy that is closed here, once the payload —
+        the only thing that must outlive this call — has been built.
+        """
+        if max(image.size) <= self.settings.OCR_MAX_SIDE:
+            return _image_to_base64_png(image)
+
+        working = image.copy()
+        try:
+            working.thumbnail((self.settings.OCR_MAX_SIDE, self.settings.OCR_MAX_SIDE))
+            return _image_to_base64_png(working)
+        finally:
+            working.close()
+
 
 def _image_to_base64_png(image: Image.Image) -> str:
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+    """Encode *image* as a base64 PNG string, releasing the buffer promptly."""
+    with BytesIO() as buffer:
+        image.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode()
