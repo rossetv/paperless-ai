@@ -59,11 +59,15 @@ function thumbKindFor(documentType: string | null): DocThumbKind {
  * not rendered — all document access goes through the in-app
  * DocumentPreviewScreen.
  *
+ * Wrapped in `React.memo` — the `SourceList` parent can re-render (e.g. when
+ * `highlightedIndex` changes for a different card) without touching every
+ * sibling card whose props haven't changed.
+ *
  * Composed from: SourceCardSurface, Text, Button, Stack, DocumentMeta,
  * DocumentSnippet. No own CSS module (§12.5 — features layer is
  * composition-only).
  */
-export function SourceCard({
+function SourceCardInner({
   source,
   index,
   highlighted = false,
@@ -108,3 +112,11 @@ export function SourceCard({
     </SourceCardSurface>
   );
 }
+
+/**
+ * Memoised export — re-renders only when source data, index, highlight state,
+ * or the preview callback reference changes. The parent `SourceList` passes a
+ * stable `onPreview` from the page level so memo holds across re-renders
+ * triggered by `highlightedIndex` changing on other cards.
+ */
+export const SourceCard = React.memo(SourceCardInner);

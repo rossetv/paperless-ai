@@ -80,10 +80,15 @@ function formatDate(iso: string | null): string {
  *
  * Wave 5 is a plain browse — no search-match highlighting.
  *
+ * Wrapped in `React.memo` so re-renders of the parent grid (e.g. query
+ * refetch when no data changed) do not re-render all 24 visible cards.
+ * Props are a cache-stable document object + a stable `useCallback` from
+ * LibraryScreen + optional className — all shallow-comparable.
+ *
  * Tier: features/library (CODE_GUIDELINES 12.3) — composes the DocThumb and
  * Chip primitives, the api types, and lib/.
  */
-export function LibraryCard({
+function LibraryCardInner({
   document,
   onOpen,
   className,
@@ -111,6 +116,14 @@ export function LibraryCard({
               src={documentThumbUrl(document.id)}
               alt=""
               className={styles['thumb-img']}
+              // Fixed dimensions prevent layout shift; the browser reserves
+              // the space before the image loads. Values match the CSS tokens:
+              // --width-library-thumb (140 px) and --height-library-preview
+              // (220 px, cropped via object-fit/max-height in the CSS module).
+              width={140}
+              height={220}
+              loading="lazy"
+              decoding="async"
               onError={() => setImageFailed(true)}
             />
           )}
@@ -144,3 +157,9 @@ export function LibraryCard({
     </button>
   );
 }
+
+/**
+ * Memoised export — the component is `React.memo`'d so the parent grid can
+ * re-render (e.g. on query polling) without touching every visible card.
+ */
+export const LibraryCard = React.memo(LibraryCardInner);

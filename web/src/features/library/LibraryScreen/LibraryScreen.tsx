@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
@@ -169,6 +169,16 @@ export function LibraryScreen(): React.ReactElement {
     return chips;
   }, [facetData, query, setQuery]);
 
+  // ── Stable navigation callback — hoisted out of JSX so LibraryCard's
+  //    React.memo can do a meaningful prop comparison. An inline arrow
+  //    recreated on every render would defeat the memo entirely. ──
+  const handleOpen = useCallback(
+    (id: number) => {
+      void navigate(`/library/document/${id}${searchString}`);
+    },
+    [navigate, searchString],
+  );
+
   // ── Derived paging values. ──
   // Use the server-echoed page_size when available so the pager is always
   // consistent with what was actually returned, not the locally-held constant.
@@ -281,7 +291,7 @@ export function LibraryScreen(): React.ReactElement {
                 <LibraryCard
                   key={doc.id}
                   document={doc}
-                  onOpen={(id) => navigate(`/library/document/${id}${searchString}`)}
+                  onOpen={handleOpen}
                 />
               ))}
             </div>

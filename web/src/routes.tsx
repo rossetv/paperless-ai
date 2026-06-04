@@ -22,18 +22,34 @@
  * Classified as the `app` element type in `eslint-plugin-boundaries`.
  */
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+// Eager — these are the entry-path pages hit on every load.
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
-import { IndexPage } from './pages/IndexPage';
-import { UsersPage } from './pages/UsersPage';
-import { KeysPage } from './pages/KeysPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { LibraryPage } from './pages/LibraryPage';
-import { LibraryDocumentPage } from './pages/LibraryDocumentPage';
-import { DocumentPage } from './pages/DocumentPage';
+// Lazy — rarely-hit routes; split into separate async chunks.
+const IndexPage = React.lazy(() =>
+  import('./pages/IndexPage').then((m) => ({ default: m.IndexPage })),
+);
+const UsersPage = React.lazy(() =>
+  import('./pages/UsersPage').then((m) => ({ default: m.UsersPage })),
+);
+const KeysPage = React.lazy(() =>
+  import('./pages/KeysPage').then((m) => ({ default: m.KeysPage })),
+);
+const SettingsPage = React.lazy(() =>
+  import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
+const LibraryPage = React.lazy(() =>
+  import('./pages/LibraryPage').then((m) => ({ default: m.LibraryPage })),
+);
+const LibraryDocumentPage = React.lazy(() =>
+  import('./pages/LibraryDocumentPage').then((m) => ({ default: m.LibraryDocumentPage })),
+);
+const DocumentPage = React.lazy(() =>
+  import('./pages/DocumentPage').then((m) => ({ default: m.DocumentPage })),
+);
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
 
@@ -153,6 +169,7 @@ function BootstrapGate({
  */
 export function AppRoutes(): React.ReactElement {
   return (
+    <Suspense fallback={<FullPageLoading />}>
     <Routes>
       <Route
         path="/setup"
@@ -235,6 +252,7 @@ export function AppRoutes(): React.ReactElement {
       {/* Unknown paths fall back to the root, which re-resolves the gate. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 
