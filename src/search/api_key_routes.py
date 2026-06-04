@@ -82,7 +82,7 @@ def build_api_key_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/api/api-keys")
-    async def list_api_keys(
+    def list_api_keys(
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
     ) -> ApiKeyListResponse:
@@ -90,7 +90,7 @@ def build_api_key_router() -> APIRouter:
         return _list_api_keys(app_db, caller)
 
     @router.post("/api/api-keys", status_code=201)
-    async def create_api_key(
+    def create_api_key(
         body: CreateApiKeyRequest,
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
@@ -99,7 +99,7 @@ def build_api_key_router() -> APIRouter:
         return _create_api_key(body, app_db, caller)
 
     @router.patch("/api/api-keys/{api_key_id}")
-    async def update_api_key(
+    def update_api_key(
         api_key_id: int,
         body: UpdateApiKeyRequest,
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -109,7 +109,7 @@ def build_api_key_router() -> APIRouter:
         return _update_api_key(api_key_id, body, app_db, caller)
 
     @router.delete("/api/api-keys/{api_key_id}", status_code=204)
-    async def delete_api_key(
+    def delete_api_key(
         api_key_id: int,
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
