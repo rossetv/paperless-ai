@@ -34,14 +34,12 @@ RUN npm run build
 FROM python:3.11-slim AS builder
 
 # Install system dependencies required for building Python packages and running tests
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libjpeg-dev \
     zlib1g-dev \
     curl \
     poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -57,16 +55,22 @@ RUN pip install --no-cache-dir --upgrade pip
 # Copy dependency definitions
 COPY pyproject.toml requirements-dev.txt ./
 
-# Copy the application source and tests
+# Copy only the application source first — tests/ is kept separate so that
+# test-only edits do not bust the wheelhouse build cache.
 COPY src/ ./src/
-COPY tests/ ./tests/
 
 # Build the production wheelhouse (the project plus its runtime deps from
 # pyproject — NOT the dev deps). Any dependency lacking a prebuilt wheel for this
 # platform is compiled into a wheel here, where the toolchain exists, so the
 # final stage never needs a compiler on any architecture. Placed before the
-# RUN_TESTS arg so this layer caches identically whether or not tests run.
+# COPY tests/ and RUN_TESTS arg so this layer caches identically whether or
+# not tests change or run.
 RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+
+# Copy tests only after the wheelhouse is built; tests/ is not part of the
+# installed package (pyproject packages.find where=['src']), so it must not
+# sit above the pip wheel step or any test edit would bust the wheel cache.
+COPY tests/ ./tests/
 
 # Test gate. The dev toolchain and the app install exist solely to run the suite,
 # so the entire step — not just `pytest` — is gated behind RUN_TESTS. CI passes
@@ -93,11 +97,12 @@ FROM python:3.11-slim
 # Create a non-root user and group for security
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-# Install only essential runtime system dependencies
-RUN apt-get update && apt-get install -y \
+# Install only essential runtime system dependencies.
+# libgl1 and libglib2.0-0 are omitted: the image path is Pillow +
+# pdf2image→poppler (pdftoppm), none of which link libGL; nothing in src/
+# imports cv2/opencv/Qt/OpenGL.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
@@ -124,6 +129,15 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai \
 # package, Path(__file__).parent.parent.parent resolves to the venv site-packages
 # root, not /app.  The env var takes precedence over the relative-path fallback.
 ENV FRONTEND_DIST=/app/web/dist
+
+# Flush daemon logs immediately to docker logs (no line-buffering surprises).
+ENV PYTHONUNBUFFERED=1
+# Skip .pyc write churn in the ephemeral container filesystem.
+ENV PYTHONDONTWRITEBYTECODE=1
+# Cap glibc malloc arenas. glibc defaults to 8×NCPU arenas; across four long-lived
+# daemons with thread pools each arena retains freed heap, inflating steady-state
+# RSS. Two arenas is the standard cap for containerised Python workloads.
+ENV MALLOC_ARENA_MAX=2
 
 # Copy the built frontend from the Node stage so the StaticFiles mount is live.
 COPY --from=frontend-builder /web/dist ./web/dist
