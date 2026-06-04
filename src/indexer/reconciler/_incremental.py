@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import functools
 import itertools
+from collections import Counter
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -379,14 +380,15 @@ def _tally_outcomes(
         given_up: The count of documents dead-lettered this cycle — carried
             through onto the report; a subset of the failures.
     """
-    values = list(outcomes.values())
+    # One pass over the outcome values rather than a list copy plus four sum()
+    # scans. Counter[key] is 0 when the key is absent, matching the old per-key
+    # sums (including counts[None] for isolated per-document failures).
+    counts = Counter(outcomes.values())
     return SyncReport(
-        indexed=sum(1 for outcome in values if outcome is IndexOutcome.INDEXED),
-        metadata_only=sum(
-            1 for outcome in values if outcome is IndexOutcome.METADATA_ONLY
-        ),
-        skipped=sum(1 for outcome in values if outcome is IndexOutcome.SKIPPED),
-        failed=sum(1 for outcome in values if outcome is None),
+        indexed=counts[IndexOutcome.INDEXED],
+        metadata_only=counts[IndexOutcome.METADATA_ONLY],
+        skipped=counts[IndexOutcome.SKIPPED],
+        failed=counts[None],
         given_up=given_up,
     )
 
