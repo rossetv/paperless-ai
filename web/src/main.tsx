@@ -15,7 +15,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import '@fortawesome/fontawesome-free/css/all.min.css';
+// Import only the base declarations and the solid set — brands and regular are
+// unused and add ~130 KB of woff2 font files to the bundle.
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+import '@fortawesome/fontawesome-free/css/solid.min.css';
 import './styles/global.css';
 import { AuthProvider } from './hooks/useAuth';
 import App from './App';
@@ -25,6 +28,11 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 60_000,
       retry: 1,
+      // Disable refetch on window focus — the LLM-backed /api/search is
+      // expensive (up to 3 chained LLM calls) and re-billing on every
+      // alt-tab is wasteful. Auth hooks use staleTime:0 + mount refetch
+      // so login/logout state is unaffected by this setting.
+      refetchOnWindowFocus: false,
     },
   },
 });
