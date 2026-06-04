@@ -51,6 +51,7 @@ class Reconciler:
         self._settings = settings
         self._paperless = paperless
         self._store_writer = store_writer
+        self._embedding_client = embedding_client
         # The worker is stateless and thread-safe; one instance is shared
         # across the pool for the reconciler's lifetime (SPEC §5.3).
         self._indexer = DocumentIndexer(settings, store_writer, embedding_client)
@@ -64,6 +65,17 @@ class Reconciler:
         explicit-close convention used by the OCR and classifier daemons.
         """
         return self._paperless
+
+    @property
+    def embedding_client(self) -> EmbeddingClient:
+        """The batched embedding client.
+
+        Exposed so the indexer daemon can explicitly close it when the
+        reconciler is replaced on a hot-load config change — the same
+        explicit-close convention as :attr:`paperless`. The same instance is
+        shared with the internal DocumentIndexer.
+        """
+        return self._embedding_client
 
     @property
     def store_writer(self) -> StoreWriter:
