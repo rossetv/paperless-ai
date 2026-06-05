@@ -2,9 +2,11 @@
 
 This module holds the static prompt templates for the two LLM stages:
 
-1. **Planner** (``build_planner_system_prompt``) — analyses a user query and
-   emits structured JSON that drives hybrid retrieval.  The prompt is formatted
-   with today's date so the model can resolve relative temporal language.
+1. **Planner** (``build_planner_system_prompt`` + ``build_planner_user_message``)
+   — analyses a user query and emits structured JSON that drives hybrid
+   retrieval.  The system prompt is byte-stable (no per-call variable) so the
+   provider can cache it; today's date lives in the *user* turn so the model can
+   still resolve relative temporal language (RAG-09).
 
 2. **Synthesiser** (``build_synthesiser_user_message``) — assembles the user's
    question and retrieved chunks into a single user-role message.  The chunk
@@ -14,9 +16,9 @@ This module holds the static prompt templates for the two LLM stages:
 
 Usage pattern::
 
-    from search.prompts import build_planner_system_prompt, build_synthesiser_user_message
-    system_prompt = build_planner_system_prompt(today="2026-05-20")
-    user_message  = build_synthesiser_user_message(query=query, labelled_chunks=chunks)
+    from search.prompts import build_planner_system_prompt, build_planner_user_message
+    system_prompt = build_planner_system_prompt()
+    user_message  = build_planner_user_message(query=query, today="2026-05-20")
 
 Security note: these prompts embed no retrieved document content in the system
 prompt; they are control-plane prompts only.  Document chunks arrive in the
@@ -129,27 +131,27 @@ You are a search-query planning engine.  Your sole job is to analyse the user's
 search query and produce a structured JSON object that will drive a hybrid
 retrieval pipeline over a personal document archive (Paperless-ngx).
 
-Today's date is {today}.  Use it to resolve relative date expressions such as
-"last year", "since March", or "the past six months" into concrete ISO-8601
-dates.
+The user message states today's date.  Use it to resolve relative date
+expressions such as "last year", "since March", or "the past six months" into
+concrete ISO-8601 dates.
 
 # Output format
 
 Reply with a single valid JSON object.  No markdown fences, no explanations,
 no text outside the JSON object.  The object must have exactly these keys:
 
-{{
+{
   "semantic_queries": [string, ...],
   "keyword_terms": [string, ...],
-  "filter_candidates": {{
+  "filter_candidates": {
     "correspondent": string | null,
     "document_type": string | null,
     "tags": [string, ...],
     "date_from": string | null,
     "date_to": string | null
-  }},
+  },
   "sub_questions": [string, ...]
-}}
+}
 
 # Field guidance
 
@@ -188,17 +190,34 @@ discrete sub-questions.  Leave the list empty for a straightforward query.
 """.strip()
 
 
-def build_planner_system_prompt(today: str) -> str:
-    """Return the planner system prompt with today's date substituted.
+def build_planner_system_prompt() -> str:
+    """Return the byte-stable planner system prompt.
 
-    Args:
-        today: Today's date in YYYY-MM-DD format, used so the model can
-            resolve relative temporal expressions in the user query.
+    The prompt contains no per-call variable — today's date lives in the user
+    turn (:func:`build_planner_user_message`) so this system prompt is a stable,
+    cacheable prefix across every query and every day (RAG-09, spec §4.3).
 
     Returns:
-        The formatted system prompt string.
+        The static system prompt string.
     """
-    return _PLANNER_SYSTEM_PROMPT_TEMPLATE.format(today=today)
+    return _PLANNER_SYSTEM_PROMPT_TEMPLATE
+
+
+def build_planner_user_message(query: str, today: str) -> str:
+    """Assemble the planner user-role message: today's date, then the query.
+
+    The date is placed in the user turn (not the system prompt) so the system
+    prompt stays byte-stable and cacheable. The model is told, in the system
+    prompt, to read the date from here to resolve relative temporal language.
+
+    Args:
+        query: The raw user search query.
+        today: Today's date in YYYY-MM-DD form.
+
+    Returns:
+        The formatted user message string.
+    """
+    return f"Today's date is {today}.\n\nUser query: {query}"
 
 
 # ---------------------------------------------------------------------------
