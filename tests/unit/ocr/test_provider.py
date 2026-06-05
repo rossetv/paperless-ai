@@ -457,3 +457,42 @@ class TestOcrProviderImageDetail:
         provider = OcrProvider(settings)
 
         assert self._capture_detail(provider) == "low"
+
+
+class TestOcrProviderReasoningEffort:
+    def _capture_kwargs(self, provider) -> dict:
+        """Run a transcription and return the kwargs the completion saw."""
+        provider._create_completion = MagicMock(return_value=_make_response("ok"))
+        provider.transcribe_image(_make_test_image())
+        return provider._create_completion.call_args.kwargs
+
+    def test_defaults_to_medium_for_openai(self):
+        settings = _make_settings(
+            AI_MODELS=["model-a"],
+            LLM_PROVIDER="openai",
+            OCR_REASONING_EFFORT="medium",
+        )
+        provider = OcrProvider(settings)
+
+        assert self._capture_kwargs(provider)["reasoning_effort"] == "medium"
+
+    def test_honours_minimal_for_openai(self):
+        settings = _make_settings(
+            AI_MODELS=["model-a"],
+            LLM_PROVIDER="openai",
+            OCR_REASONING_EFFORT="minimal",
+        )
+        provider = OcrProvider(settings)
+
+        assert self._capture_kwargs(provider)["reasoning_effort"] == "minimal"
+
+    def test_omitted_for_non_openai(self):
+        # The OpenAI-only param must never reach an Ollama-compatible endpoint.
+        settings = _make_settings(
+            AI_MODELS=["model-a"],
+            LLM_PROVIDER="ollama",
+            OCR_REASONING_EFFORT="minimal",
+        )
+        provider = OcrProvider(settings)
+
+        assert "reasoning_effort" not in self._capture_kwargs(provider)
