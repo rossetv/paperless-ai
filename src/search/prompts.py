@@ -26,6 +26,100 @@ CODE_GUIDELINES.md §10.2.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common.config import Settings
+
+
+# ---------------------------------------------------------------------------
+# Structured-output schemas (RAG-06) — OpenAI strict json_schema.
+# Modelled on classifier/prompts.CLASSIFICATION_JSON_SCHEMA: strict mode
+# requires ``additionalProperties: false`` and every property listed in
+# ``required`` at every object level.
+# ---------------------------------------------------------------------------
+
+#: Strict schema mirroring the planner's QueryPlan output contract.
+PLANNER_JSON_SCHEMA: dict[str, object] = {
+    "name": "search_query_plan",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "semantic_queries": {"type": "array", "items": {"type": "string"}},
+            "keyword_terms": {"type": "array", "items": {"type": "string"}},
+            "filter_candidates": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "correspondent": {"type": ["string", "null"]},
+                    "document_type": {"type": ["string", "null"]},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "date_from": {"type": ["string", "null"]},
+                    "date_to": {"type": ["string", "null"]},
+                },
+                "required": [
+                    "correspondent",
+                    "document_type",
+                    "tags",
+                    "date_from",
+                    "date_to",
+                ],
+            },
+            "sub_questions": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "semantic_queries",
+            "keyword_terms",
+            "filter_candidates",
+            "sub_questions",
+        ],
+    },
+    "strict": True,
+}
+
+#: Strict schema for the synthesiser's discriminated Answered | NeedsMore union.
+#: A single required-superset object (not a oneOf): ``outcome`` discriminates; the
+#: branch-specific fields are all required and filled empty when unused — the
+#: existing tolerant parser (synthesizer._parse_response) already reads it this
+#: way, and final-mode coercion stays in code, never in the schema (spec §4.2).
+SYNTHESISER_JSON_SCHEMA: dict[str, object] = {
+    "name": "search_answer_outcome",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "outcome": {"type": "string", "enum": ["answered", "needs_more"]},
+            "answer": {"type": "string"},
+            "citations": {"type": "array", "items": {"type": "integer"}},
+            "adjustment": {"type": "string"},
+        },
+        "required": ["outcome", "answer", "citations", "adjustment"],
+    },
+    "strict": True,
+}
+
+
+def _planner_response_format(settings: Settings) -> dict[str, object] | None:
+    """Return the planner ``response_format`` for OpenAI, else ``None``.
+
+    Mirrors ``classifier/provider.ClassificationProvider._response_format``: the
+    strict ``json_schema`` is OpenAI-only; for any other provider (Ollama) the
+    planner relies on the prompt instruction plus ``extract_json_object``
+    (RAG-06, spec §4.1).
+    """
+    if settings.LLM_PROVIDER != "openai":
+        return None
+    return {"type": "json_schema", "json_schema": PLANNER_JSON_SCHEMA}
+
+
+def _synthesiser_response_format(settings: Settings) -> dict[str, object] | None:
+    """Return the synthesiser ``response_format`` for OpenAI, else ``None``."""
+    if settings.LLM_PROVIDER != "openai":
+        return None
+    return {"type": "json_schema", "json_schema": SYNTHESISER_JSON_SCHEMA}
+
+
 # ---------------------------------------------------------------------------
 # Planner prompt
 # ---------------------------------------------------------------------------
