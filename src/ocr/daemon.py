@@ -139,6 +139,8 @@ def main() -> None:
         poll_interval=settings.POLL_INTERVAL,
         ocr_dpi=settings.OCR_DPI,
         ocr_max_side=settings.OCR_MAX_SIDE,
+        ocr_image_detail=settings.OCR_IMAGE_DETAIL,
+        ocr_reasoning_effort=settings.OCR_REASONING_EFFORT,
         page_workers=settings.PAGE_WORKERS,
         document_workers=settings.DOCUMENT_WORKERS,
         llm_provider=settings.LLM_PROVIDER,
