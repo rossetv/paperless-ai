@@ -107,6 +107,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "CLASSIFY_MAX_PAGES": 3,
         "CLASSIFY_TAIL_PAGES": 2,
         "CLASSIFY_HEADERLESS_CHAR_LIMIT": 15000,
+        "CLASSIFY_REASONING_EFFORT": "medium",
         # Indexer / store fields.
         "INDEX_DB_PATH": "/tmp/test-index.db",
         "APP_DB_PATH": "/tmp/test-app.db",
