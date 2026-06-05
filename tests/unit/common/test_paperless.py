@@ -346,6 +346,28 @@ class TestUpdateDocumentMetadata:
         assert "custom_fields" not in body
         client.close()
 
+    def test_omits_document_date_when_none(self):
+        """``document_date=None`` means "leave unchanged", not "clear".
+
+        Paperless rejects ``created: null`` with a 400 ("This field may not be
+        null.") — every document always has a creation date, so there is no
+        clear operation. The classifier passes None whenever it cannot extract
+        a date, so None must be omitted rather than forwarded as null.
+        """
+        with respx.mock:
+            route = respx.patch(f"{BASE}/api/documents/9/").mock(
+                return_value=httpx.Response(200, json={"id": 9}),
+            )
+            client = _make_client()
+
+            client.update_document_metadata(9, title="t", document_date=None)
+
+        assert route.called
+        body = json_mod.loads(route.calls[0].request.content)
+        assert body == {"title": "t"}
+        assert "created" not in body
+        client.close()
+
     def test_skips_absent_fields(self):
         """Fields NOT passed as kwargs do not appear in the payload."""
         with respx.mock:
