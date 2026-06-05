@@ -141,6 +141,34 @@ class OpenAIChatMixin:
     def get_stats(self) -> dict[str, int]:
         return self._stats.snapshot()
 
+    def _record_attempt(self) -> None:
+        """Count one outgoing chat-completion call, if the provider tracks it."""
+        self._increment_stat_if_declared("attempts")
+
+    def _record_api_error(self) -> None:
+        """Count one give-up (non-strippable 400 or other API error), if tracked."""
+        self._increment_stat_if_declared("api_errors")
+
+    def _record_strip(self, param_key: str) -> None:
+        """Count one parameter strip under its registry stat key, if the provider
+        declared that key.
+
+        A provider opts in to per-parameter strip counters by listing the
+        registry ``stat_key`` (e.g. ``"temperature_retries"``) in its
+        ``_STAT_KEYS``. Providers that do not — OCR, the planner, the
+        synthesiser — silently skip the count, so the shared layer stays
+        agnostic of any provider's stat schema (spec §4.1).
+        """
+        for param, _matcher, stat_key in _STRIPPABLE_PARAMS:
+            if param == param_key:
+                self._increment_stat_if_declared(stat_key)
+                return
+
+    def _increment_stat_if_declared(self, stat_key: str) -> None:
+        """Increment *stat_key* only when this provider declared it in ``_STAT_KEYS``."""
+        if stat_key in self._STAT_KEYS:
+            self._stats.inc(stat_key)
+
     @retry(retryable_exceptions=RETRYABLE_OPENAI_EXCEPTIONS)
     def _create_completion(self, **kwargs: object) -> ChatCompletion:
         client = _openai_holder.get()
