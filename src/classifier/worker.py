@@ -11,6 +11,7 @@ from common.paperless import (
     PaperlessClient,
     is_permanent_paperless_error,
 )
+from common.per_document import WriteBackOutcome
 from common.tags import (
     ErrorFinaliserMixin,
     clean_pipeline_tags,
@@ -67,7 +68,7 @@ class ClassificationProcessor(ErrorFinaliserMixin):
         self.doc_id: int = doc["id"]
         self.title: str = doc.get("title") or "<untitled>"
 
-    def process(self) -> None:
+    def process(self) -> WriteBackOutcome | None:
         """
         Run the full classification workflow.
 
@@ -81,6 +82,12 @@ class ClassificationProcessor(ErrorFinaliserMixin):
         7. Validate the result (non-empty, non-generic).
         8. Apply metadata to Paperless (tags, correspondent, type, etc.).
         9. Release the processing-lock tag.
+
+        Returns the write-back outcome the daemon feeds to the circuit breaker:
+        :attr:`WriteBackOutcome.SAVED` when the metadata was applied,
+        :attr:`WriteBackOutcome.QUARANTINED` when a permanent Paperless
+        rejection error-tagged the document, or ``None`` for a cycle that wrote
+        back nothing (skipped, requeued, or already-errored).
         """
         log.info("Classifying document", doc_id=self.doc_id, title=self.title)
         self.classifier.reset_stats()
@@ -101,7 +108,7 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     doc_id=self.doc_id,
                 )
                 self._finalise_with_error(current_tags)
-                return
+                return None
 
             claimed = claim_processing_tag(
                 client=self.paperless_client,
@@ -110,14 +117,14 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                 purpose="classification",
             )
             if not claimed:
-                return
+                return None
 
             if not content.strip():
                 log.warning(
                     "Document has no OCR content; requeueing", doc_id=self.doc_id
                 )
                 self._requeue_for_ocr(current_tags)
-                return
+                return None
 
             if needs_error_tag(content):
                 log.warning(
@@ -125,7 +132,7 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     doc_id=self.doc_id,
                 )
                 self._finalise_with_error(current_tags)
-                return
+                return None
 
             input_text, truncation_notes = self._truncate_content(content)
 
@@ -139,11 +146,12 @@ class ClassificationProcessor(ErrorFinaliserMixin):
 
             usable = self._usable_result(result, current_tags)
             if usable is None:
-                return
+                return None
             try:
                 self._apply_classification(
                     document, current_tags, content, usable, model
                 )
+                return WriteBackOutcome.SAVED
             except PAPERLESS_CALL_EXCEPTIONS as exc:
                 # The LLM tokens for this document are already spent. A 4xx here
                 # (a rejected metadata PATCH, a stale taxonomy pk) is permanent:
@@ -160,6 +168,7 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     error=str(exc),
                 )
                 self._finalise_with_error(current_tags)
+                return WriteBackOutcome.QUARANTINED
         finally:
             if claimed:
                 release_processing_tag(

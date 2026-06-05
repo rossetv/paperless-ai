@@ -10,10 +10,13 @@ import pytest
 from classifier.daemon import (
     _DaemonState,
     _iter_docs_to_classify,
+    _process_and_record,
     _process_document,
     _reload_if_changed,
     main,
 )
+from common.circuit_breaker import WriteBackCircuitBreaker
+from common.per_document import WriteBackOutcome
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_paperless
 
@@ -243,6 +246,52 @@ class TestProcessDocument:
         client_instance.close.assert_called_once()
 
 
+class TestProcessAndRecord:
+    """_process_and_record feeds each document's outcome to the circuit breaker."""
+
+    @patch("classifier.daemon._process_document")
+    def test_saved_outcome_records_a_success(self, mock_process):
+        mock_process.return_value = WriteBackOutcome.SAVED
+        breaker = MagicMock()
+
+        _process_and_record(_doc(1, tags=[444]), MagicMock(), breaker)
+
+        breaker.record_success.assert_called_once()
+        breaker.record_failure.assert_not_called()
+
+    @patch("classifier.daemon._process_document")
+    def test_quarantined_outcome_records_a_failure(self, mock_process):
+        mock_process.return_value = WriteBackOutcome.QUARANTINED
+        breaker = MagicMock()
+
+        _process_and_record(_doc(1, tags=[444]), MagicMock(), breaker)
+
+        breaker.record_failure.assert_called_once()
+        breaker.record_success.assert_not_called()
+
+    @patch("classifier.daemon._process_document")
+    def test_no_write_back_leaves_the_breaker_untouched(self, mock_process):
+        mock_process.return_value = None
+        breaker = MagicMock()
+
+        _process_and_record(_doc(1, tags=[444]), MagicMock(), breaker)
+
+        breaker.record_success.assert_not_called()
+        breaker.record_failure.assert_not_called()
+
+    @patch("classifier.daemon._process_document")
+    def test_repeated_failures_trip_a_real_breaker(self, mock_process):
+        # End-to-end through a real breaker: three permanent rejections in a row
+        # halt the daemon, which is the whole point of the guard.
+        mock_process.return_value = WriteBackOutcome.QUARANTINED
+        breaker = WriteBackCircuitBreaker(failures_before_halt=3)
+
+        for _ in range(3):
+            _process_and_record(_doc(1, tags=[444]), MagicMock(), breaker)
+
+        assert breaker.is_tripped() is True
+
+
 class TestTaxonomyRefreshAsBatchHook:
     """TaxonomyCache.refresh is passed as before_each_batch."""
 
@@ -372,19 +421,27 @@ def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
             taxonomy_cache=taxonomy_cache,
             app_db_path=app_db,
         )
+        # A tripped breaker stays tripped while config is unchanged, and is
+        # reset by a config change (the operator's "I fixed it" signal).
+        breaker = WriteBackCircuitBreaker(failures_before_halt=1)
+        breaker.record_failure()
+        assert breaker.is_tripped() is True
         # No config change — _reload_if_changed leaves state.settings as-is.
-        _reload_if_changed(state)
+        _reload_if_changed(state, breaker)
         assert state.settings is settings
         assert state.list_client is list_client
         assert list_client.closed is False
         assert taxonomy_client.closed is False
+        assert breaker.is_tripped() is True
         # A config write bumps config_version; the hook swaps state.settings.
         c = connect(app_db)
         config_store.set_value(c, "CLASSIFY_MAX_CHARS", "1234")
         c.close()
-        _reload_if_changed(state)
+        _reload_if_changed(state, breaker)
     assert state.settings is not settings
     assert state.settings.CLASSIFY_MAX_CHARS == 1234
+    # The config change reset the breaker, so the daemon resumes.
+    assert breaker.is_tripped() is False
     # The previous clients were closed and replaced with the rebuilt ones.
     assert list_client.closed is True
     assert taxonomy_client.closed is True

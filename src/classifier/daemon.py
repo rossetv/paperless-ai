@@ -20,6 +20,7 @@ import structlog
 from appdb.connection import connect as connect_app_db
 from appdb.schema import ensure_schema
 from common.bootstrap import bootstrap_daemon
+from common.circuit_breaker import HALTED_DETAIL, WriteBackCircuitBreaker
 from common.concurrency import llm_limiter
 from common.config import Settings, current_settings
 from common.daemon_loop import CycleOutcome, run_polling_threadpool
@@ -28,7 +29,7 @@ from common.document_iter import iter_documents_by_pipeline_tag
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
 from common.paperless import PaperlessClient
-from common.per_document import run_per_document
+from common.per_document import WriteBackOutcome, run_per_document
 from .provider import ClassificationProvider
 from .taxonomy import TaxonomyCache
 from .worker import ClassificationProcessor
@@ -56,14 +57,18 @@ class _DaemonState:
     app_db_path: str
 
 
-def _reload_if_changed(state: _DaemonState) -> None:
+def _reload_if_changed(
+    state: _DaemonState, circuit_breaker: WriteBackCircuitBreaker
+) -> None:
     """The before-each-poll hook: rebuild config-derived resources on a change.
 
     ``current_settings()`` returns the SAME cached object when the config is
     unchanged, so the ``is`` check is the steady-state cost. On a change it
     closes the old Paperless clients, rebuilds logging / libraries / the LLM
     limiter, rebuilds both clients and the taxonomy cache from the new
-    configuration, and points *state* at the new configuration.
+    configuration, points *state* at the new configuration, and resets the
+    write-back circuit breaker — a config change is the operator's signal that a
+    halting fault (e.g. a bad tag id) may now be fixed, so the daemon resumes.
 
     ``poll_interval_seconds`` and ``max_workers`` are read once at loop
     construction — :func:`common.daemon_loop.run_polling_threadpool` fixes
@@ -76,6 +81,7 @@ def _reload_if_changed(state: _DaemonState) -> None:
     if latest is state.settings:
         return
     log.info("classifier.config_reloaded")
+    circuit_breaker.reset()
     state.list_client.close()
     state.taxonomy_client.close()
     configure_logging(latest)
@@ -91,15 +97,31 @@ def _reload_if_changed(state: _DaemonState) -> None:
 
 def _process_document(
     doc: dict, settings: Settings, taxonomy_cache: TaxonomyCache
-) -> None:
+) -> WriteBackOutcome | None:
     """Process a single Paperless document with its own HTTP session and provider."""
-    run_per_document(
+    return run_per_document(
         doc,
         settings,
         lambda d, paperless: ClassificationProcessor(
             d, paperless, ClassificationProvider(settings), taxonomy_cache, settings
         ),
     )
+
+
+def _process_and_record(
+    doc: dict, state: _DaemonState, circuit_breaker: WriteBackCircuitBreaker
+) -> None:
+    """Process a document, then report its write-back outcome to the breaker.
+
+    A saved result clears the failure streak; a permanently-rejected one extends
+    it. Outcomes that wrote nothing back (skipped, requeued) leave the breaker
+    untouched.
+    """
+    outcome = _process_document(doc, state.settings, state.taxonomy_cache)
+    if outcome is WriteBackOutcome.SAVED:
+        circuit_breaker.record_success()
+    elif outcome is WriteBackOutcome.QUARANTINED:
+        circuit_breaker.record_failure()
 
 
 def _iter_docs_to_classify(
@@ -161,6 +183,12 @@ def main() -> None:
         app_db_path=app_db_path,
     )
 
+    # Halts the daemon if Paperless rejects write-backs repeatedly, so a
+    # systemic failure cannot burn one LLM call per queued document. Process-
+    # lifetime, not config-derived: it survives a hot-reload and is only reset
+    # by one (see _reload_if_changed), so it lives here rather than in _DaemonState.
+    circuit_breaker = WriteBackCircuitBreaker()
+
     # The Index dashboard heartbeat (web-redesign spec §5). Reuse the
     # already-resolved app_db_path rather than re-reading the env var.
     app_db = connect_app_db(app_db_path)
@@ -169,7 +197,9 @@ def main() -> None:
 
     def _on_cycle(outcome: CycleOutcome) -> None:
         """Write the classifier daemon's heartbeat after every poll cycle."""
-        if outcome.idle:
+        if outcome.halted:
+            heartbeat.beat(detail=HALTED_DETAIL)
+        elif outcome.idle:
             heartbeat.beat_idle()
         else:
             heartbeat.beat(
@@ -183,14 +213,13 @@ def main() -> None:
             fetch_work=lambda: list(
                 _iter_docs_to_classify(state.list_client, state.settings)
             ),
-            process_item=lambda doc: _process_document(
-                doc, state.settings, state.taxonomy_cache
-            ),
+            process_item=lambda doc: _process_and_record(doc, state, circuit_breaker),
             before_each_batch=lambda _: state.taxonomy_cache.refresh(),
-            before_each_poll=lambda: _reload_if_changed(state),
+            before_each_poll=lambda: _reload_if_changed(state, circuit_breaker),
             poll_interval_seconds=state.settings.POLL_INTERVAL,
             max_workers=state.settings.DOCUMENT_WORKERS,
             on_cycle=_on_cycle,
+            halt_check=lambda: HALTED_DETAIL if circuit_breaker.is_tripped() else None,
         )
     finally:
         state.list_client.close()

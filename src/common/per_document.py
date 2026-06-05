@@ -11,10 +11,28 @@ collapses to a single call.
 from __future__ import annotations
 
 from collections.abc import Callable
+from enum import Enum
 from typing import Protocol
 
 from .config import Settings
 from .paperless import PaperlessClient
+
+
+class WriteBackOutcome(Enum):
+    """What a processor did with its token-costly result when it wrote back.
+
+    The daemon feeds this to the write-back circuit breaker
+    (:class:`common.circuit_breaker.WriteBackCircuitBreaker`): a ``SAVED`` resets
+    the failure streak, a ``QUARANTINED`` extends it. ``process()`` returns
+    ``None`` for a cycle that did no result write-back at all — a skipped,
+    requeued, or already-errored document — which the breaker ignores.
+    """
+
+    #: The result was written back to Paperless successfully.
+    SAVED = "saved"
+    #: Paperless rejected the write permanently (a 4xx); the document was
+    #: error-tagged so it leaves the queue instead of looping.
+    QUARANTINED = "quarantined"
 
 
 class DocumentProcessor(Protocol):
@@ -26,8 +44,8 @@ class DocumentProcessor(Protocol):
     serves.
     """
 
-    def process(self) -> None:
-        """Run the full per-document workflow."""
+    def process(self) -> WriteBackOutcome | None:
+        """Run the full per-document workflow, reporting the write-back outcome."""
         ...
 
 
@@ -35,12 +53,13 @@ def run_per_document(
     doc: dict,
     settings: Settings,
     build_processor: Callable[[dict, PaperlessClient], DocumentProcessor],
-) -> None:
+) -> WriteBackOutcome | None:
     """Process one document under a fresh, per-thread Paperless client.
 
     Constructs a :class:`PaperlessClient`, hands it to *build_processor* to
     assemble the daemon-specific processor, runs the processor, and closes the
-    client — even when processing raises.
+    client — even when processing raises. Returns the processor's write-back
+    outcome so the daemon can drive the circuit breaker.
 
     Args:
         doc: The Paperless document dict to process.
@@ -52,6 +71,6 @@ def run_per_document(
     # because httpx sessions are not thread-safe (CODE_GUIDELINES §8.3).
     paperless = PaperlessClient(settings)
     try:
-        build_processor(doc, paperless).process()
+        return build_processor(doc, paperless).process()
     finally:
         paperless.close()

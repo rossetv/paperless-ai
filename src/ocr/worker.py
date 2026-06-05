@@ -14,6 +14,7 @@ from common.paperless import (
     PaperlessClient,
     is_permanent_paperless_error,
 )
+from common.per_document import WriteBackOutcome
 from common.tags import (
     ErrorFinaliserMixin,
     clean_pipeline_tags,
@@ -50,13 +51,19 @@ class OcrProcessor(ErrorFinaliserMixin):
         self.doc_id: int = doc["id"]
         self.title: str = doc.get("title") or "<untitled>"
 
-    def process(self) -> None:
+    def process(self) -> WriteBackOutcome | None:
         """
         Execute the end-to-end OCR workflow for this document.
 
         Steps: refresh → check error tag → claim lock → download →
         convert to images → OCR pages → assemble text → update Paperless →
         release lock.
+
+        Returns the write-back outcome the daemon feeds to the circuit breaker:
+        :attr:`WriteBackOutcome.SAVED` when the transcription was written back,
+        :attr:`WriteBackOutcome.QUARANTINED` when a permanent Paperless rejection
+        error-tagged the document, or ``None`` for a cycle that saved no
+        transcription (skipped, no pages, undecodable, or bad OCR content).
         """
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
         self.ocr_provider.reset_stats()
@@ -76,7 +83,7 @@ class OcrProcessor(ErrorFinaliserMixin):
             ):
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
                 self._finalise_with_error(current_tags)
-                return
+                return None
 
             claimed = claim_processing_tag(
                 client=self.paperless_client,
@@ -85,11 +92,11 @@ class OcrProcessor(ErrorFinaliserMixin):
                 purpose="ocr",
             )
             if not claimed:
-                return
+                return None
 
             pages = self._download_and_convert(current_tags)
             if pages is None:
-                return
+                return None
 
             try:
                 page_count = len(pages)
@@ -112,8 +119,9 @@ class OcrProcessor(ErrorFinaliserMixin):
                 include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
             )
             try:
-                self._update_paperless_document(full_text, models_used)
+                outcome = self._update_paperless_document(full_text, models_used)
                 success = True
+                return outcome
             except PAPERLESS_CALL_EXCEPTIONS as exc:
                 # The vision tokens for every page are already spent. A 4xx on
                 # the write-back is permanent — re-queuing would re-OCR the whole
@@ -135,6 +143,7 @@ class OcrProcessor(ErrorFinaliserMixin):
                     ),
                     content=full_text,
                 )
+                return WriteBackOutcome.QUARANTINED
         finally:
             if claimed:
                 release_processing_tag(
@@ -247,12 +256,21 @@ class OcrProcessor(ErrorFinaliserMixin):
             text, self.settings.OCR_REFUSAL_MARKERS
         )
 
-    def _update_paperless_document(self, full_text: str, models_used: set[str]) -> None:
+    def _update_paperless_document(
+        self, full_text: str, models_used: set[str]
+    ) -> WriteBackOutcome | None:
         """
         Upload OCR text and update tags in Paperless.
 
         Detects error conditions (empty text, refusal markers, OCR errors)
         and routes to :meth:`_finalise_with_error` instead of the happy path.
+
+        Returns :attr:`WriteBackOutcome.SAVED` when the transcription was
+        written, or ``None`` for the bad-content case: that document failed OCR,
+        not the Paperless write, so it is not a write-back health signal and the
+        circuit breaker must not count it as a success (which would reset the
+        failure streak) — the same neutral treatment the classifier gives an
+        empty result.
         """
         if not full_text.strip() or self._has_ocr_errors(full_text):
             reason = (
@@ -269,7 +287,7 @@ class OcrProcessor(ErrorFinaliserMixin):
                 ),
                 content=full_text,
             )
-            return
+            return None
 
         current_tags = get_latest_tags(
             self.paperless_client, self.doc_id, fallback_doc=self.doc
@@ -284,6 +302,7 @@ class OcrProcessor(ErrorFinaliserMixin):
             removed_tag=self.settings.PRE_TAG_ID,
             added_tag=self.settings.POST_TAG_ID,
         )
+        return WriteBackOutcome.SAVED
 
     def _log_ocr_stats(self) -> None:
         stats = self.ocr_provider.get_stats()
