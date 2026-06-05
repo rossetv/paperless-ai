@@ -11,8 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from search.models import FilterCandidates, QueryPlan
-from search.refinement import adjust_plan, broaden_plan, merge_chunks
+from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
+from search.refinement import (
+    adjust_plan,
+    broaden_plan,
+    is_weak_retrieval,
+    merge_chunks,
+    trivial_plan,
+)
 from tests.helpers.factories import (
     make_filter_candidates,
     make_query_plan,
@@ -192,3 +198,52 @@ class TestMergeChunks:
         merged = merge_chunks(previous, new)
         scores = [chunk.rrf_score for chunk in merged]
         assert scores == sorted(scores, reverse=True)
+
+
+class TestTrivialPlan:
+    """trivial_plan returns the planner-fallback shape: raw query only (RAG-08)."""
+
+    def test_sole_semantic_query_is_the_raw_query(self) -> None:
+        plan = trivial_plan("council tax")
+        assert plan.semantic_queries == ("council tax",)
+
+    def test_all_other_fields_are_empty(self) -> None:
+        plan = trivial_plan("council tax")
+        assert plan.keyword_terms == ()
+        assert plan.sub_questions == ()
+        assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
+
+    def test_returns_a_query_plan(self) -> None:
+        assert isinstance(trivial_plan("x"), QueryPlan)
+
+
+class TestIsWeakRetrieval:
+    """Retrieval is weak below the chunk-count OR best-RRF-score floor (RAG-10)."""
+
+    def test_below_min_chunks_is_weak(self) -> None:
+        chunks = [make_retrieved_chunk(chunk_id=1, rrf_score=0.9)]
+        assert is_weak_retrieval(chunks, min_chunks=2, min_score=0.0) is True
+
+    def test_below_min_score_is_weak(self) -> None:
+        chunks = [make_retrieved_chunk(chunk_id=1, rrf_score=0.01)]
+        assert is_weak_retrieval(chunks, min_chunks=1, min_score=0.5) is True
+
+    def test_strong_retrieval_is_not_weak(self) -> None:
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, rrf_score=0.9),
+            make_retrieved_chunk(chunk_id=2, rrf_score=0.8),
+        ]
+        assert is_weak_retrieval(chunks, min_chunks=1, min_score=0.5) is False
+
+    def test_default_thresholds_are_a_noop(self) -> None:
+        """min_chunks=1, min_score=0.0: any single chunk passes both floors."""
+        chunks = [make_retrieved_chunk(chunk_id=1, rrf_score=0.001)]
+        assert is_weak_retrieval(chunks, min_chunks=1, min_score=0.0) is False
+
+    def test_uses_the_best_score_not_the_worst(self) -> None:
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, rrf_score=0.9),
+            make_retrieved_chunk(chunk_id=2, rrf_score=0.01),
+        ]
+        # Best is 0.9 ≥ 0.5 → not weak, even though a sibling is below.
+        assert is_weak_retrieval(chunks, min_chunks=1, min_score=0.5) is False

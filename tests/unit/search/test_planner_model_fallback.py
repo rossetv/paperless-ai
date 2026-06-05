@@ -173,3 +173,67 @@ class TestApiErrorNeverEscapes:
 
         assert "second model answered" in plan.semantic_queries
         assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
+
+
+class TestReasoningEffortForwarded:
+    """The planner forwards its configured reasoning_effort to the LLM call."""
+
+    def test_planner_forwards_configured_reasoning_effort(self) -> None:
+        # "medium" is the shipped default — proves the wiring forwards it verbatim.
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini"],
+            SEARCH_PLANNER_REASONING_EFFORT="medium",
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["reasoning_effort"] == "medium"
+
+    def test_planner_forwards_tuned_down_reasoning_effort(self) -> None:
+        # The realistic per-env tuning: an operator lowers the planner to "minimal"
+        # to capture the saving. Proves a non-default value forwards too.
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini"],
+            SEARCH_PLANNER_REASONING_EFFORT="minimal",
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["reasoning_effort"] == "minimal"
+
+
+class TestResponseFormatForwarded:
+    """The planner forwards a strict json_schema response_format on OpenAI."""
+
+    def test_planner_forwards_response_format_for_openai(self) -> None:
+        from search.prompts import PLANNER_JSON_SCHEMA
+
+        settings = make_search_settings(
+            LLM_PROVIDER="openai",
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            AI_MODELS=["gpt-5.4-mini"],
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["response_format"] == {
+            "type": "json_schema",
+            "json_schema": PLANNER_JSON_SCHEMA,
+        }
+
+    def test_planner_omits_response_format_for_ollama(self) -> None:
+        settings = make_search_settings(
+            LLM_PROVIDER="ollama",
+            SEARCH_PLANNER_MODEL="gemma3:12b",
+            AI_MODELS=["gemma3:12b"],
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert "response_format" not in call.kwargs
