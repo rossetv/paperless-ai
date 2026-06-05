@@ -277,6 +277,23 @@ def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]
     return log_format  # type: ignore[return-value]
 
 
+def _resolve_ocr_image_detail(
+    source: Mapping[str, str],
+) -> Literal["low", "high", "auto"]:
+    """Resolve and validate ``OCR_IMAGE_DETAIL`` (defaults to ``high``).
+
+    Mirrors the OpenAI chat-vision ``image_url.detail`` field. Defaulting to
+    ``high`` keeps the OCR request byte-identical to the value hardcoded before
+    this setting existed; an operator opts into the cheaper ``auto`` / ``low``
+    paths explicitly.
+    """
+    detail = source.get("OCR_IMAGE_DETAIL", "high")
+    if detail not in ("low", "high", "auto"):
+        raise ValueError("OCR_IMAGE_DETAIL must be 'low', 'high', or 'auto'")
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    return detail  # type: ignore[return-value]
+
+
 def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
     """Resolve and validate ``CHUNK_OVERLAP`` against *chunk_size*.
 
@@ -425,6 +442,7 @@ class Settings:
 
     OCR_DPI: int
     OCR_MAX_SIDE: int
+    OCR_IMAGE_DETAIL: Literal["low", "high", "auto"]
     PAGE_WORKERS: int
     DOCUMENT_WORKERS: int
 
@@ -622,6 +640,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
         OCR_DPI=_get_int_env(source, "OCR_DPI", 300),
         OCR_MAX_SIDE=_get_int_env(source, "OCR_MAX_SIDE", 1600),
+        OCR_IMAGE_DETAIL=_resolve_ocr_image_detail(source),
         PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),
         DOCUMENT_WORKERS=max(1, _get_int_env(source, "DOCUMENT_WORKERS", 4)),
         LOG_LEVEL=source.get("LOG_LEVEL", "INFO").upper(),
