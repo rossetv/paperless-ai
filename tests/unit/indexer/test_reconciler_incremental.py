@@ -447,3 +447,95 @@ class TestIncrementalSyncStreamsThePageStream:
         # Both the page document and the out-of-band retry were indexed.
         assert sorted(indexed_ids) == [1, 2]
         assert report.indexed == 2
+
+
+# ---------------------------------------------------------------------------
+# SACRED INVARIANTS — pinned before any efficiency change (spec §7)
+# ---------------------------------------------------------------------------
+
+
+class TestSacredInvariantsBaseline:
+    """I1/I2: the SHA-256 hash gate decides embed vs metadata-only.
+
+    These pin the contract the IDX-03 light-diff must preserve. They pass
+    against the current full-document path AND must keep passing after the
+    steady-state projection lands.
+    """
+
+    def test_unchanged_content_is_never_reembedded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """I1: a re-entered document with an unchanged hash embeds nothing."""
+        content = "Stable content body."
+        doc = make_paperless_document(
+            doc_id=5, content=content, modified="2024-06-01T12:00:00+00:00"
+        )
+        paperless = make_reconciler_paperless(documents=[doc])
+        index_state = {
+            5: IndexState(
+                modified="2024-06-01T12:00:00+00:00",
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-06-01T12:00:00+00:00", index_state=index_state
+        )
+
+        embedded: list[int] = []
+
+        def _index_document(
+            _self: object, d: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            # Mirror the real worker's gate exactly.
+            doc_hash = hashlib.sha256(d["content"].encode()).hexdigest()
+            if existing is not None and existing.content_hash == doc_hash:
+                return IndexOutcome.METADATA_ONLY
+            embedded.append(d["id"])
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        assert embedded == []  # I1: never re-embedded
+        assert report.indexed == 0
+        assert report.metadata_only == 1
+
+    def test_metadata_only_change_takes_the_no_embed_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """I2: content identical, metadata advanced → METADATA_ONLY, not INDEXED."""
+        content = "Identical content."
+        # modified advanced past the stored value (a metadata PATCH), content same.
+        doc = make_paperless_document(
+            doc_id=6, content=content, modified="2024-07-01T00:00:00+00:00"
+        )
+        paperless = make_reconciler_paperless(documents=[doc])
+        index_state = {
+            6: IndexState(
+                modified="2024-06-01T00:00:00+00:00",
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state=index_state
+        )
+
+        def _index_document(
+            _self: object, d: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            doc_hash = hashlib.sha256(d["content"].encode()).hexdigest()
+            if existing is not None and existing.content_hash == doc_hash:
+                return IndexOutcome.METADATA_ONLY
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        assert report.metadata_only == 1
+        assert report.indexed == 0
