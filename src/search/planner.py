@@ -94,6 +94,7 @@ class QueryPlanner(OpenAIChatMixin):
             messages=messages,
             fallback_models=self.settings.AI_MODELS,
             log_event_prefix="planner",
+            reasoning_effort=self.settings.SEARCH_PLANNER_REASONING_EFFORT,
         )
         if raw_content is None:
             return self._fallback_plan(
