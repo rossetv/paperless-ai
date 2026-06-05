@@ -220,3 +220,44 @@ class TestSynthReasoningEffortForwarded:
 
         call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
         assert call.kwargs["reasoning_effort"] == "low"
+
+
+class TestSynthResponseFormatForwarded:
+    """The synthesiser forwards a strict json_schema response_format on OpenAI."""
+
+    def test_synth_forwards_response_format_for_openai(self) -> None:
+        from search.prompts import SYNTHESISER_JSON_SCHEMA
+
+        settings = make_search_settings(
+            LLM_PROVIDER="openai",
+            SEARCH_ANSWER_MODEL="gpt-5.4",
+            AI_MODELS=["gpt-5.4"],
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["response_format"] == {
+            "type": "json_schema",
+            "json_schema": SYNTHESISER_JSON_SCHEMA,
+        }
+
+    def test_synth_omits_response_format_for_ollama(self) -> None:
+        settings = make_search_settings(
+            LLM_PROVIDER="ollama",
+            SEARCH_ANSWER_MODEL="gemma3:27b",
+            AI_MODELS=["gemma3:27b"],
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert "response_format" not in call.kwargs
