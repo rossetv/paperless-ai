@@ -581,7 +581,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_MAX_TOKENS=max(0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)),
         CLASSIFY_TAG_LIMIT=max(0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)),
         CLASSIFY_TAXONOMY_LIMIT=max(
-            0, _get_int_env(source, "CLASSIFY_TAXONOMY_LIMIT", 100)
+            0, _get_int_env(source, "CLASSIFY_TAXONOMY_LIMIT", 40)
         ),
         CLASSIFY_MAX_PAGES=max(0, _get_int_env(source, "CLASSIFY_MAX_PAGES", 3)),
         CLASSIFY_TAIL_PAGES=max(0, _get_int_env(source, "CLASSIFY_TAIL_PAGES", 2)),

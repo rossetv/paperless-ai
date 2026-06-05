@@ -103,7 +103,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "CLASSIFY_MAX_CHARS": 0,
         "CLASSIFY_MAX_TOKENS": 0,
         "CLASSIFY_TAG_LIMIT": 5,
-        "CLASSIFY_TAXONOMY_LIMIT": 100,
+        "CLASSIFY_TAXONOMY_LIMIT": 40,
         "CLASSIFY_MAX_PAGES": 3,
         "CLASSIFY_TAIL_PAGES": 2,
         "CLASSIFY_HEADERLESS_CHAR_LIMIT": 15000,
