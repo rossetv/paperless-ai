@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from classifier.taxonomy import TaxonomyContext
+from common.model_compat import model_compat_cache
 from tests.unit.classifier.conftest import (
     make_api_error,
     make_bad_request_error,
@@ -22,10 +25,19 @@ from tests.unit.classifier.conftest import (
 _EMPTY_TAXONOMY = TaxonomyContext(correspondents=[], document_types=[], tags=[])
 
 
-class TestTemperatureHandling:
-    """GPT-5 models skip temperature; others include it."""
+@pytest.fixture(autouse=True)
+def _reset_model_compat_cache():
+    """Each compat test starts with an empty per-model cache (process singleton)."""
+    model_compat_cache.reset()
+    yield
+    model_compat_cache.reset()
 
-    def test_temperature_omitted_for_gpt5_model(self):
+
+class TestTemperatureNowAlwaysSentThenAdapted:
+    """Temperature is no longer proactively withheld from gpt-5*; it is sent,
+    and a 400 strips-and-caches it (spec §4.3 accepted behaviour change)."""
+
+    def test_temperature_is_sent_on_the_first_call_for_gpt5(self):
         provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
@@ -38,9 +50,11 @@ class TestTemperatureHandling:
 
         provider.classify_text("text", _EMPTY_TAXONOMY)
 
-        assert "temperature" not in captured_kwargs
+        # First ever call for this model sends temperature (then a real model
+        # would 400; the mock just succeeds, proving the param was present).
+        assert captured_kwargs["temperature"] == 0.2
 
-    def test_temperature_included_for_non_gpt5_model(self):
+    def test_temperature_is_included_for_non_gpt5_model(self):
         provider = make_provider(AI_MODELS=["claude-3"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
@@ -53,8 +67,27 @@ class TestTemperatureHandling:
 
         provider.classify_text("text", _EMPTY_TAXONOMY)
 
-        assert "temperature" in captured_kwargs
         assert captured_kwargs["temperature"] == 0.2
+
+    def test_gpt5_strips_temperature_after_one_400_then_caches_it(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        good = make_completion_response(valid_classification_json())
+        calls: list[dict] = []
+
+        def track(**kwargs):
+            calls.append(dict(kwargs))
+            if len(calls) == 1:
+                raise make_bad_request_error("temperature is unsupported")
+            return good
+
+        provider._create_completion = track
+
+        result, model = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is not None
+        assert "temperature" in calls[0]
+        assert "temperature" not in calls[1]
+        assert "temperature" in model_compat_cache.rejected_params_for("gpt-5.4-mini")
 
 
 class TestMaxTokensHandling:
