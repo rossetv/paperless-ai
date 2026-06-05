@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from common.per_document import run_per_document
+from common.per_document import WriteBackOutcome, run_per_document
 from tests.helpers.factories import make_document, make_settings_obj
 
 
@@ -43,6 +43,17 @@ class TestRunPerDocument:
         run_per_document(make_document(), settings, build_processor)
 
         processor.process.assert_called_once_with()
+
+    @patch("common.per_document.PaperlessClient")
+    def test_returns_the_processor_write_back_outcome(self, mock_client_cls):
+        # The daemon needs the outcome to drive the circuit breaker.
+        settings = make_settings_obj()
+        processor = MagicMock()
+        processor.process.return_value = WriteBackOutcome.QUARANTINED
+
+        result = run_per_document(make_document(), settings, lambda d, c: processor)
+
+        assert result is WriteBackOutcome.QUARANTINED
 
     @patch("common.per_document.PaperlessClient")
     def test_closes_client_after_success(self, mock_client_cls):

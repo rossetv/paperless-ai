@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from common.per_document import WriteBackOutcome
 from ocr.image_converter import PageSource
 from ocr.text_assembly import OCR_ERROR_MARKER, PageResult
 from tests.helpers.factories import make_settings_obj
@@ -77,8 +78,11 @@ class TestUpdatePaperlessDocumentHappy:
 
         proc = make_processor(paperless=paperless, settings=settings)
 
-        proc._update_paperless_document("Good OCR text", {"model-a"})
+        outcome = proc._update_paperless_document("Good OCR text", {"model-a"})
 
+        # A real transcription written back is a SAVED outcome (resets the
+        # circuit breaker's failure streak).
+        assert outcome is WriteBackOutcome.SAVED
         paperless.update_document.assert_called_once()
         args = paperless.update_document.call_args
         doc_id, text, tags = args[0]
@@ -99,8 +103,12 @@ class TestUpdatePaperlessDocumentErrors:
         paperless = make_mock_paperless()
         proc = make_processor(paperless=paperless, settings=settings)
 
-        proc._update_paperless_document("   ", set())
+        outcome = proc._update_paperless_document("   ", set())
 
+        # Bad OCR content is a neutral outcome (None), NOT a SAVED success: it
+        # must not reset the circuit breaker's failure streak (a backlog of blank
+        # scans during a systemic Paperless outage would otherwise mask it).
+        assert outcome is None
         # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]

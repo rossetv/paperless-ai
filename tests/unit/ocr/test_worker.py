@@ -13,6 +13,7 @@ import httpx
 import pytest
 from PIL import Image
 
+from common.per_document import WriteBackOutcome
 from ocr.image_converter import ImageConversionError, PageSource
 from ocr.text_assembly import PageResult
 from ocr.worker import OcrProcessor
@@ -65,9 +66,10 @@ class TestProcessHappyPath:
             settings,
         )
 
-        proc.process()
+        outcome = proc.process()
 
         # Assert — full pipeline invoked with correct data flow
+        assert outcome is WriteBackOutcome.SAVED
         mock_claim.assert_called_once()
         paperless.download_content.assert_called_once_with(1)
         mock_open_pages.assert_called_once()
@@ -206,8 +208,9 @@ class TestProcessWriteBackFailure:
             settings,
         )
 
-        proc.process()
+        outcome = proc.process()
 
+        assert outcome is WriteBackOutcome.QUARANTINED
         assert paperless.update_document.call_count == 2
         finalise_tags = paperless.update_document.call_args[0][2]
         assert 552 in finalise_tags
@@ -246,6 +249,43 @@ class TestProcessWriteBackFailure:
 
         # Only the happy-path write was attempted — no error-tag finalisation.
         assert paperless.update_document.call_count == 1
+        mock_release.assert_called_once()
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("ocr.worker.release_processing_tag")
+    @patch("ocr.worker.claim_processing_tag", return_value=True)
+    @patch("ocr.worker.open_page_source")
+    @patch("ocr.worker.assemble_full_text")
+    def test_bad_ocr_content_is_a_neutral_outcome(
+        self,
+        mock_assemble,
+        mock_open_pages,
+        mock_claim,
+        mock_release,
+        mock_latest,
+    ):
+        # A document that OCRs to empty/refusal content is error-tagged, but the
+        # outcome is None — NOT SAVED. Reporting SAVED here would reset the
+        # circuit breaker's failure streak, letting a backlog of blank scans mask
+        # a systemic Paperless write failure. This runs the real worker (not a
+        # stubbed outcome) so the whole process() path is exercised.
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999, ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
+        paperless.download_content.return_value = (b"pdf-data", "application/pdf")
+        mock_open_pages.return_value = make_page_source([make_image()])
+        mock_assemble.return_value = ("   ", {"model-a"})  # empty transcription
+
+        proc = OcrProcessor(
+            {"id": 1, "title": "T", "tags": [443]},
+            paperless,
+            make_mock_ocr_provider(),
+            settings,
+        )
+
+        outcome = proc.process()
+
+        assert outcome is None
         mock_release.assert_called_once()
 
 

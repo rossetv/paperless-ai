@@ -28,12 +28,16 @@ class CycleOutcome:
 
     Attributes:
         processed: How many work items the iteration dispatched to the
-            thread pool. Zero on an idle poll.
+            thread pool. Zero on an idle or halted poll.
         idle: True when the poll found no work.
+        halted: True when the poll was skipped because ``halt_check`` reported
+            the daemon halted (e.g. the write-back circuit breaker tripped). No
+            work is fetched or processed on a halted poll.
     """
 
     processed: int
     idle: bool
+    halted: bool = False
 
 
 def _process_batch(
@@ -76,8 +80,17 @@ def _poll_once(
     max_workers: int,
     before_each_batch: Callable[[list[T]], None] | None,
     was_idle: bool,
+    halt_check: Callable[[], str | None] | None,
 ) -> CycleOutcome:
     """Execute a single poll iteration. Returns the iteration's outcome."""
+    if halt_check is not None and halt_check() is not None:
+        # The daemon is halted (the write-back circuit breaker has tripped).
+        # Skip fetching and processing so no LLM tokens are spent while the fault
+        # persists; the queued documents wait, untouched, for the daemon to
+        # resume. The breaker logs the trip once and ``on_cycle`` keeps the
+        # dashboard showing the halt, so no per-poll log is needed here.
+        return CycleOutcome(processed=0, idle=False, halted=True)
+
     items = fetch_work()
     if not items:
         if not was_idle:
@@ -108,6 +121,7 @@ def run_polling_threadpool(
     before_each_batch: Callable[[list[T]], None] | None = None,
     before_each_poll: Callable[[], None] | None = None,
     on_cycle: Callable[[CycleOutcome], None] | None = None,
+    halt_check: Callable[[], str | None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
     """Run an infinite polling loop and process items concurrently in a thread pool.
@@ -126,6 +140,11 @@ def run_polling_threadpool(
         on_cycle: Invoked once after every poll iteration with that iteration's
             CycleOutcome — the daemons use it to write a heartbeat. A callback
             exception is isolated and logged; it never crashes the loop.
+        halt_check: Polled at the top of each iteration. When it returns a
+            reason string the iteration is skipped entirely — no work is fetched
+            or processed — and the outcome is marked ``halted``. The tag daemons
+            use it to stop pulling work once the write-back circuit breaker has
+            tripped. ``None`` (the default) means never halt.
     """
     poll_interval_seconds = max(1, int(poll_interval_seconds))
     max_workers = max(1, int(max_workers))
@@ -142,6 +161,7 @@ def run_polling_threadpool(
                 max_workers=max_workers,
                 before_each_batch=before_each_batch,
                 was_idle=was_idle,
+                halt_check=halt_check,
             )
             was_idle = outcome.idle
             _run_on_cycle(on_cycle, outcome, daemon_name)

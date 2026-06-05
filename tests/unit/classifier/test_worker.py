@@ -12,6 +12,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from common.per_document import WriteBackOutcome
 from tests.helpers.factories import make_classification_result
 from tests.unit.classifier.conftest import make_doc_with_content, make_processor
 
@@ -31,8 +32,9 @@ class TestProcessHappyPath:
         proc = make_processor(doc=doc)
         proc.paperless_client.get_document.return_value = doc
 
-        proc.process()
+        outcome = proc.process()
 
+        assert outcome is WriteBackOutcome.SAVED
         proc.paperless_client.update_document_metadata.assert_called()
         update_call = proc.paperless_client.update_document_metadata.call_args
         assert update_call.kwargs.get("title") or update_call[1].get("title")
@@ -367,8 +369,9 @@ class TestProcessWriteBackFailure:
             None,
         ]
 
-        proc.process()
+        outcome = proc.process()
 
+        assert outcome is WriteBackOutcome.QUARANTINED
         assert proc.paperless_client.update_document_metadata.call_count == 2
         finalise_call = proc.paperless_client.update_document_metadata.call_args
         assert 552 in finalise_call.kwargs["tags"]

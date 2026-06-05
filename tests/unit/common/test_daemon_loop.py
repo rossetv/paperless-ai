@@ -223,6 +223,66 @@ class TestRunPollingThreadpool:
         fetch_work.assert_not_called()
         process_item.assert_not_called()
 
+    def test_halt_check_skips_fetch_and_processing(self):
+        # When halt_check reports a reason, the poll fetches and processes
+        # nothing — the guarantee that a halted daemon spends no LLM tokens.
+        fetch_work = MagicMock(return_value=[{"id": 1}])
+        process_item = MagicMock()
+        mock_sleep = _make_sleep_noop()
+
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=fetch_work,
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=1,
+                halt_check=lambda: "halted for a test",
+                sleep=mock_sleep,
+            )
+
+        fetch_work.assert_not_called()
+        process_item.assert_not_called()
+
+    def test_halt_check_returning_none_processes_normally(self):
+        fetch_work = MagicMock(return_value=[{"id": 1}])
+        process_item = MagicMock()
+        mock_sleep = _make_sleep_noop()
+
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=fetch_work,
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=1,
+                halt_check=lambda: None,
+                sleep=mock_sleep,
+            )
+
+        process_item.assert_called_once()
+
+    def test_halt_check_marks_the_cycle_outcome_halted(self):
+        from common.daemon_loop import CycleOutcome
+
+        outcomes: list[CycleOutcome] = []
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=lambda: [{"id": 1}],
+                process_item=MagicMock(),
+                poll_interval_seconds=5,
+                max_workers=1,
+                halt_check=lambda: "halted for a test",
+                on_cycle=outcomes.append,
+                sleep=_make_sleep_noop(),
+            )
+
+        assert len(outcomes) == 1
+        assert outcomes[0].halted is True
+        assert outcomes[0].idle is False
+        assert outcomes[0].processed == 0
+
     def test_logs_shutdown_message(self):
         fetch_work = MagicMock(return_value=[])
         process_item = MagicMock()
