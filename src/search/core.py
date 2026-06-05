@@ -55,7 +55,13 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
-from search.refinement import adjust_plan, broaden_plan, merge_chunks, trivial_plan
+from search.refinement import (
+    adjust_plan,
+    broaden_plan,
+    is_weak_retrieval,
+    merge_chunks,
+    trivial_plan,
+)
 from search.retriever import resolve_filters
 from search.sources import assemble_sources
 from search.text import (
@@ -233,6 +239,19 @@ class SearchCore:
             log.info(
                 "search.no_matches",
                 query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+            )
+            return self._no_match_result(plan, budget, started)
+
+        if self._settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL and is_weak_retrieval(
+            chunks,
+            min_chunks=self._settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS,
+            min_score=self._settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE,
+        ):
+            log.info(
+                "search.synth_skipped_weak_retrieval",
+                query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+                chunk_count=len(chunks),
+                best_score=max(chunk.rrf_score for chunk in chunks),
             )
             return self._no_match_result(plan, budget, started)
 

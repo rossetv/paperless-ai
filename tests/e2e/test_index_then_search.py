@@ -155,6 +155,18 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     # Real ints so the @retry decorator on the planner / synthesiser is well-formed.
     settings.MAX_RETRIES = 3
     settings.MAX_RETRY_BACKOFF_SECONDS = 30
+    # Area-3 SEARCH_* settings: pin them so the auto-created MagicMock attributes
+    # do not (a) enable the result cache with a non-int TTL or (b) trip the
+    # weak-retrieval / trivial-query gates with MagicMock thresholds. Cache OFF
+    # and both kill-switches OFF mirror make_search_settings's test defaults.
+    settings.SEARCH_CACHE_TTL_SECONDS = 0
+    settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL = False
+    settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL = False
+    settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS = 1
+    settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE = 0.0
+    settings.SEARCH_PLANNER_REASONING_EFFORT = "medium"
+    settings.SEARCH_ANSWER_REASONING_EFFORT = "medium"
+    settings.LLM_PROVIDER = "openai"
     return settings
 
 

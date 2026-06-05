@@ -113,3 +113,73 @@ class TestPlannerSkipWhenEnabled:
         assert llm_client.planner_calls == 0
         assert llm_client.total_calls <= 2
         assert result.stats.llm_calls <= 2
+
+
+class TestWeakRetrievalSkipDefaultOff:
+    def test_synth_runs_by_default_on_weak_retrieval(self) -> None:
+        reset_search_result_cache()
+        # One low-score chunk; flag default off → synth still runs.
+        weak = [make_chunk_hit(chunk_id=1, document_id=1, score=0.001)]
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("a [1].", citations=[1])],
+        )
+        core = _core(llm_client, _store_reader(hits=weak))
+        core.answer("a query")
+        assert llm_client.synthesiser_calls == 1  # synth NOT skipped
+
+
+class TestWeakRetrievalSkipWhenEnabled:
+    def test_flag_on_default_thresholds_still_synthesises(self) -> None:
+        reset_search_result_cache()
+        weak = [make_chunk_hit(chunk_id=1, document_id=1, score=0.001)]
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("a [1].", citations=[1])],
+        )
+        # Flag on but thresholds at no-op defaults (min chunks 1, min score 0.0):
+        # one chunk is >= 1 and any score >= 0.0, so retrieval is NOT weak.
+        core = _core(
+            llm_client,
+            _store_reader(hits=weak),
+            SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL=True,
+        )
+        core.answer("a query")
+        assert llm_client.synthesiser_calls == 1
+
+    def test_below_min_score_returns_no_match_without_synth(self) -> None:
+        reset_search_result_cache()
+        # Best fused score will be ~1/61 ≈ 0.0164 for a single top-rank chunk.
+        # Set the min-score threshold above that so retrieval reads as weak.
+        weak = [make_chunk_hit(chunk_id=1, document_id=1, score=0.001)]
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(
+            llm_client,
+            _store_reader(hits=weak),
+            SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL=True,
+            SEARCH_WEAK_RETRIEVAL_MIN_SCORE=0.5,  # above any single-chunk RRF score
+        )
+        result = core.answer("a query")
+        assert llm_client.synthesiser_calls == 0  # synth skipped
+        assert result.sources == ()  # no-match result reused
+        assert result.answer != ""  # the no-match answer is set
+
+    def test_below_min_chunks_returns_no_match_without_synth(self) -> None:
+        reset_search_result_cache()
+        weak = [make_chunk_hit(chunk_id=1, document_id=1, score=0.5)]
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(
+            llm_client,
+            _store_reader(hits=weak),
+            SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL=True,
+            SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS=2,  # one chunk < 2 → weak
+        )
+        result = core.answer("a query")
+        assert llm_client.synthesiser_calls == 0
+        assert result.sources == ()
