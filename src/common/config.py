@@ -134,6 +134,13 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_SERVER_PORT",
         "SEARCH_SESSION_TTL",
         "SEARCH_MAX_CONCURRENT",
+        "SEARCH_PLANNER_REASONING_EFFORT",
+        "SEARCH_ANSWER_REASONING_EFFORT",
+        "SEARCH_CACHE_TTL_SECONDS",
+        "SEARCH_SKIP_PLANNER_FOR_TRIVIAL",
+        "SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL",
+        "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS",
+        "SEARCH_WEAK_RETRIEVAL_MIN_SCORE",
     }
 )
 
@@ -334,6 +341,46 @@ def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
     return effort
 
 
+def _resolve_search_reasoning_effort(source: Mapping[str, str], var_name: str) -> str:
+    """Resolve and validate a search-stage reasoning-effort knob (defaults ``medium``).
+
+    Shares the classifier's ``_REASONING_EFFORT_CHOICES`` set and fail-closed
+    contract: an unrecognised value raises a ``ValueError`` naming *var_name* at
+    startup rather than silently sending a wrong (or, once the adaptive-compat
+    layer strips it, no) effort. ``medium`` is the models' own default effort, so
+    the default is a deliberate, zero-cost no-op the operator tunes *down* (to
+    ``low``/``minimal``) per stage to capture the saving (spec §4.8).
+
+    Args:
+        source: The environment mapping.
+        var_name: The setting key (``SEARCH_PLANNER_REASONING_EFFORT`` or
+            ``SEARCH_ANSWER_REASONING_EFFORT``) — named in the error on a typo.
+    """
+    effort = source.get(var_name, "medium").strip().lower()
+    if effort not in _REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"{var_name} must be one of "
+            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
+        )
+    return effort
+
+
+def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:
+    """Parse *var_name* from *source* as a float, falling back to *default*.
+
+    A non-numeric value raises a ``ValueError`` naming *var_name* — a typo'd
+    float cost knob fails loud at startup rather than silently defaulting
+    (CODE_GUIDELINES §1.11). Unset or blank falls back to *default*.
+    """
+    raw = source.get(var_name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{var_name} must be a number, got {raw!r}.") from exc
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Immutable, fully-validated configuration for one process.
@@ -418,6 +465,15 @@ class Settings:
     SEARCH_SERVER_PORT: int
     SEARCH_SESSION_TTL: int
     SEARCH_MAX_CONCURRENT: int
+
+    # Search/RAG token-cost settings (token-cost programme Area 3)
+    SEARCH_PLANNER_REASONING_EFFORT: str
+    SEARCH_ANSWER_REASONING_EFFORT: str
+    SEARCH_CACHE_TTL_SECONDS: int
+    SEARCH_SKIP_PLANNER_FOR_TRIVIAL: bool
+    SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL: bool
+    SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS: int
+    SEARCH_WEAK_RETRIEVAL_MIN_SCORE: float
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -625,6 +681,28 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
         SEARCH_MAX_CONCURRENT=max(0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)),
+        SEARCH_PLANNER_REASONING_EFFORT=_resolve_search_reasoning_effort(
+            source, "SEARCH_PLANNER_REASONING_EFFORT"
+        ),
+        SEARCH_ANSWER_REASONING_EFFORT=_resolve_search_reasoning_effort(
+            source, "SEARCH_ANSWER_REASONING_EFFORT"
+        ),
+        # 0 disables the result cache entirely (the kill-switch); negative clamps.
+        SEARCH_CACHE_TTL_SECONDS=max(
+            0, _get_int_env(source, "SEARCH_CACHE_TTL_SECONDS", 14400)
+        ),
+        SEARCH_SKIP_PLANNER_FOR_TRIVIAL=_get_bool_env(
+            source, "SEARCH_SKIP_PLANNER_FOR_TRIVIAL", False
+        ),
+        SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL=_get_bool_env(
+            source, "SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL", False
+        ),
+        SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS=max(
+            0, _get_int_env(source, "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS", 1)
+        ),
+        SEARCH_WEAK_RETRIEVAL_MIN_SCORE=max(
+            0.0, _get_float_env(source, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE", 0.0)
+        ),
     )
 
 
