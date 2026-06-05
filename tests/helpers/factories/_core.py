@@ -93,6 +93,8 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "LLM_MAX_CONCURRENT": 0,
         "OCR_DPI": 300,
         "OCR_MAX_SIDE": 1600,
+        "OCR_IMAGE_DETAIL": "high",
+        "OCR_REASONING_EFFORT": "medium",
         "PAGE_WORKERS": 2,
         "DOCUMENT_WORKERS": 2,
         "LOG_LEVEL": "INFO",

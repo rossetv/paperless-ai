@@ -42,6 +42,18 @@ class OcrProvider(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
+    def _reasoning_effort(self) -> str | None:
+        """The OpenAI ``reasoning_effort`` for OCR, or ``None`` for non-OpenAI.
+
+        ``reasoning_effort`` is an OpenAI-only flat kwarg (SDK 1.109.1). Gating
+        it on the provider — exactly as the classifier gates ``response_format``
+        (``classifier/provider.py``) — keeps Ollama/non-OpenAI requests clean
+        and keeps OCR independent of the shared compat layer.
+        """
+        if self.settings.LLM_PROVIDER != "openai":
+            return None
+        return self.settings.OCR_REASONING_EFFORT
+
     def transcribe_image(
         self,
         image: Image.Image,
@@ -75,7 +87,7 @@ class OcrProvider(OpenAIChatMixin):
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/png;base64,{payload}",
-                            "detail": "high",
+                            "detail": self.settings.OCR_IMAGE_DETAIL,
                         },
                     },
                 ],
@@ -91,6 +103,9 @@ class OcrProvider(OpenAIChatMixin):
                 "messages": messages,
                 "timeout": self.settings.REQUEST_TIMEOUT,
             }
+            reasoning_effort = self._reasoning_effort()
+            if reasoning_effort is not None:
+                params["reasoning_effort"] = reasoning_effort
             try:
                 self._stats.inc("attempts")
                 response = self._create_completion(**params)

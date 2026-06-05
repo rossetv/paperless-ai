@@ -81,6 +81,29 @@ class TestMain:
         assert call_kwargs["poll_interval_seconds"] == settings.POLL_INTERVAL
         assert call_kwargs["max_workers"] == settings.DOCUMENT_WORKERS
 
+    @patch("ocr.daemon.log")
+    @patch("ocr.daemon.ensure_schema")
+    @patch("ocr.daemon.connect_app_db")
+    @patch("ocr.daemon.run_polling_threadpool")
+    @patch("ocr.daemon.bootstrap_daemon")
+    def test_startup_banner_logs_resolved_ocr_knobs(
+        self, mock_bootstrap, mock_poll, mock_connect, mock_schema, mock_log
+    ):
+        settings = _settings(OCR_IMAGE_DETAIL="auto", OCR_REASONING_EFFORT="minimal")
+        list_client = make_mock_paperless()
+        mock_bootstrap.return_value = (settings, list_client)
+        mock_connect.return_value = MagicMock()
+
+        main()
+
+        banner = next(
+            call
+            for call in mock_log.info.call_args_list
+            if call.args and call.args[0] == "Starting daemon"
+        )
+        assert banner.kwargs["ocr_image_detail"] == "auto"
+        assert banner.kwargs["ocr_reasoning_effort"] == "minimal"
+
     @patch("ocr.daemon.ensure_schema")
     @patch("ocr.daemon.connect_app_db")
     @patch("ocr.daemon.run_polling_threadpool")
