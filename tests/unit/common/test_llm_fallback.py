@@ -178,6 +178,71 @@ class TestCompleteWithModelFallback:
         assert kwargs["model"] == "m1"
 
 
+class TestNoArgInvarianceCharacterisation:
+    """Pins today's no-extra-kwarg behaviour so Task 7's extension cannot drift it.
+
+    With none of the new optional kwargs supplied, the outgoing params must be
+    exactly ``{model, messages}`` and the fallback semantics identical to the
+    pre-extension direct-_create_completion path.
+    """
+
+    @pytest.fixture()
+    def client(self):
+        settings = MagicMock()
+        settings.MAX_RETRIES = 3
+        settings.MAX_RETRY_BACKOFF_SECONDS = 30
+        return _TestClient(settings)
+
+    def test_success_path_sends_only_model_and_messages(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("answer")
+
+        client._create_completion = capture
+
+        result = client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[{"role": "user", "content": "q"}],
+            fallback_models=["m2"],
+            log_event_prefix="planner",
+        )
+
+        assert result == "answer"
+        assert captured == [
+            {"model": "m1", "messages": [{"role": "user", "content": "q"}]}
+        ]
+
+    def test_all_models_fail_returns_none(self, client):
+        client._create_completion = MagicMock(side_effect=_api_error())
+
+        result = client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=["m2", "m3"],
+            log_event_prefix="planner",
+        )
+
+        assert result is None
+        assert client._create_completion.call_count == 3
+
+    def test_first_success_wins_and_short_circuits(self, client):
+        client._create_completion = MagicMock(
+            side_effect=[_api_error(), _completion("second")]
+        )
+
+        result = client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=["m2", "m3"],
+            log_event_prefix="planner",
+        )
+
+        assert result == "second"
+        assert client._create_completion.call_count == 2
+
+
 class TestRetryLimiterIntegration:
     """Integration tests for the retry decorator + LLMConcurrencyLimiter interaction.
 
