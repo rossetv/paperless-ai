@@ -119,7 +119,9 @@ export interface SettingsSection {
 
 /** A small fixed model-identifier list, reused by the planner/answer selects. */
 const MODEL_OPTIONS = [
+  { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
   { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+  { value: 'gpt-5.4', label: 'gpt-5.4' },
   { value: 'gpt-5.5', label: 'gpt-5.5' },
   { value: 'o4-mini', label: 'o4-mini' },
 ];
