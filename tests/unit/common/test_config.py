@@ -254,6 +254,23 @@ class TestValidation:
             _build(mocker, {**_MINIMAL_ENV, "MAX_RETRY_BACKOFF_SECONDS": value})
 
 
+class TestOcrImageDetail:
+    """OCR_IMAGE_DETAIL is a validated {low, high, auto} enum, default high."""
+
+    def test_defaults_to_high(self, mocker):
+        s = _build(mocker, _MINIMAL_ENV)
+        assert s.OCR_IMAGE_DETAIL == "high"
+
+    @pytest.mark.parametrize("value", ["low", "high", "auto"])
+    def test_accepts_each_allowed_value(self, mocker, value):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_IMAGE_DETAIL": value})
+        assert s.OCR_IMAGE_DETAIL == value
+
+    def test_rejects_unknown_value(self, mocker):
+        with pytest.raises(ValueError, match="OCR_IMAGE_DETAIL must be"):
+            _build(mocker, {**_MINIMAL_ENV, "OCR_IMAGE_DETAIL": "medium"})
+
+
 _CLAMPED_TO_ONE = [
     ("PAGE_WORKERS", "0"),
     ("PAGE_WORKERS", "-5"),
