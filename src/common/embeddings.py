@@ -154,16 +154,21 @@ class EmbeddingClient:
         if not texts:
             return []
 
+        # Fail-fast contract (IDX-02): batches are embedded in order and the
+        # first non-retryable batch failure raises immediately. A document
+        # either embeds wholly (one vector per input, in order) or fails wholly
+        # — embed never returns a short vector list, so upsert_document is never
+        # handed an incomplete document (fail-loud, CODE_GUIDELINES §1.11).
         vectors: list[list[float]] = []
-        for batch_start in range(0, len(texts), _BATCH_SIZE):
+        for batch_index, batch_start in enumerate(range(0, len(texts), _BATCH_SIZE)):
             batch = list(texts[batch_start : batch_start + _BATCH_SIZE])
-            batch_vectors = self._embed_batch(batch)
+            batch_vectors = self._embed_batch(batch, batch_index)
             vectors.extend(batch_vectors)
 
         return vectors
 
     @retry(retryable_exceptions=_RETRYABLE_EMBEDDING_EXCEPTIONS)
-    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+    def _embed_batch(self, batch: list[str], batch_index: int) -> list[list[float]]:
         """Send a single batch to the OpenAI embedding endpoint.
 
         This method is decorated with :func:`~common.retry.retry` so transient
@@ -173,6 +178,9 @@ class EmbeddingClient:
 
         Args:
             batch: A non-empty list of strings (at most ``_BATCH_SIZE`` items).
+            batch_index: The zero-based position of this batch within the
+                document's inputs — included in the failure message so an
+                operator can locate the offending chunk window (IDX-02).
 
         Returns:
             Vectors in the same order as ``batch``.
@@ -196,7 +204,8 @@ class EmbeddingClient:
             # (AttributeError, TypeError) is deliberately NOT caught here so it
             # surfaces unmasked rather than being mislabelled non-retryable.
             raise EmbeddingError(
-                f"Non-retryable embedding failure for batch of {len(batch)} texts"
+                f"Non-retryable embedding failure on batch {batch_index} "
+                f"({len(batch)} texts)"
             ) from exc
 
         # The API returns items in arbitrary order; sort by index to guarantee

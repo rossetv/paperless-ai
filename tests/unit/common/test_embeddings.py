@@ -417,3 +417,48 @@ class TestDimensionsPassthrough:
         assert call_kwargs.kwargs.get("dimensions") == 512, (
             "EMBEDDING_DIMENSIONS must be forwarded to the API as the 'dimensions' kwarg"
         )
+
+
+# ---------------------------------------------------------------------------
+# IDX-02: a non-retryable batch failure names the offending batch
+# ---------------------------------------------------------------------------
+
+
+class TestBatchFailureDiagnostics:
+    @patch("common.retry._sleep_backoff")
+    def test_embedding_error_names_the_failing_batch_index(self, mock_sleep) -> None:
+        """A non-retryable failure on the SECOND batch names batch index 1.
+
+        With >96 inputs the call splits into batches; a 400 on the second batch
+        must surface an EmbeddingError whose message identifies which batch
+        failed, so an operator can locate the offending chunk window.
+        """
+        settings = _make_settings(max_retries=3)
+        texts = [f"text {i}" for i in range(97)]  # 96 + 1 → two batches
+
+        call_count = {"n": 0}
+
+        def _create(*, model: str, input: list[str], **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                response = MagicMock()
+                response.data = [
+                    MagicMock(embedding=[0.0], index=i) for i in range(len(input))
+                ]
+                return response
+            raise openai.BadRequestError(
+                message="maximum context length exceeded",
+                response=MagicMock(status_code=400),
+                body=None,
+            )
+
+        mock_openai = MagicMock()
+        mock_openai.embeddings.create.side_effect = _create
+
+        with _client_with(mock_openai):
+            client = EmbeddingClient(settings)
+            with pytest.raises(EmbeddingError) as exc_info:
+                client.embed(texts)
+
+        # The message identifies the failing batch (the second, index 1).
+        assert "batch 1" in str(exc_info.value)
