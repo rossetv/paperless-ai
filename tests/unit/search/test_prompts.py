@@ -12,6 +12,8 @@ from search.prompts import (
     SYNTHESISER_JSON_SCHEMA,
     _planner_response_format,
     _synthesiser_response_format,
+    build_planner_system_prompt,
+    build_planner_user_message,
 )
 from tests.helpers.factories import make_search_settings
 
@@ -81,3 +83,32 @@ class TestResponseFormatGating:
     def test_synthesiser_response_format_none_for_ollama(self) -> None:
         settings = make_search_settings(LLM_PROVIDER="ollama")
         assert _synthesiser_response_format(settings) is None
+
+
+class TestPlannerSystemPromptByteStable:
+    """The planner system prompt no longer interpolates {today} (RAG-09)."""
+
+    def test_system_prompt_takes_no_argument(self) -> None:
+        prompt = build_planner_system_prompt()
+        assert "search-query planning engine" in prompt
+
+    def test_system_prompt_has_no_date_placeholder(self) -> None:
+        prompt = build_planner_system_prompt()
+        assert "{today}" not in prompt
+        # No concrete date leaked in either — it lives in the user turn now.
+        assert "Today's date is 20" not in prompt
+
+    def test_system_prompt_is_identical_across_calls(self) -> None:
+        assert build_planner_system_prompt() == build_planner_system_prompt()
+
+
+class TestPlannerUserMessageCarriesDate:
+    """The date moves into the user turn so the system prompt is cacheable."""
+
+    def test_user_message_contains_the_date(self) -> None:
+        msg = build_planner_user_message(query="find my invoice", today="2026-06-05")
+        assert "2026-06-05" in msg
+
+    def test_user_message_contains_the_query(self) -> None:
+        msg = build_planner_user_message(query="find my invoice", today="2026-06-05")
+        assert "find my invoice" in msg

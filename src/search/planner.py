@@ -34,7 +34,11 @@ import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
 from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
-from search.prompts import _planner_response_format, build_planner_system_prompt
+from search.prompts import (
+    _planner_response_format,
+    build_planner_system_prompt,
+    build_planner_user_message,
+)
 from search.text import QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
@@ -83,10 +87,12 @@ class QueryPlanner(OpenAIChatMixin):
             A frozen QueryPlan.  Never raises.
         """
         today = date.today().isoformat()
-        system_prompt = build_planner_system_prompt(today=today)
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
+            {"role": "system", "content": build_planner_system_prompt()},
+            {
+                "role": "user",
+                "content": build_planner_user_message(query=query, today=today),
+            },
         ]
 
         raw_content = self._complete_with_model_fallback(
