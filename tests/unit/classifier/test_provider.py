@@ -162,10 +162,9 @@ class TestClassifyTextEmptyInput:
 
 
 class TestClassifyTextTruncationNote:
-    """Truncation note is appended to the user message."""
+    """Truncation note sits after the taxonomy and before the transcription."""
 
-    def test_truncation_note_included_in_message(self):
-        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+    def _capture_user_message(self, provider, **classify_kwargs) -> str:
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -174,20 +173,39 @@ class TestClassifyTextTruncationNote:
             return response
 
         provider._create_completion = capture_completion
+        provider.classify_text(**classify_kwargs)
+        return captured_kwargs["messages"][1]["content"]
 
-        provider.classify_text(
-            "text",
-            TaxonomyContext(
+    def test_truncation_note_included_after_taxonomy(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        user_msg = self._capture_user_message(
+            provider,
+            text="body text",
+            taxonomy=TaxonomyContext(
                 correspondents=["Acme"], document_types=["Invoice"], tags=["tag"]
             ),
             truncation_note="NOTE: Truncated to 3 pages.",
         )
 
-        user_msg = captured_kwargs["messages"][1]["content"]
         assert "NOTE: Truncated to 3 pages." in user_msg
+        assert user_msg.index("Acme") < user_msg.index("NOTE: Truncated to 3 pages.")
+        assert user_msg.index("NOTE: Truncated to 3 pages.") < user_msg.index(
+            "Document transcription:"
+        )
 
     def test_no_truncation_note_when_none(self):
         provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        user_msg = self._capture_user_message(
+            provider, text="body text", taxonomy=_EMPTY_TAXONOMY, truncation_note=None
+        )
+
+        assert "NOTE:" not in user_msg
+
+
+class TestUserMessageOrdering:
+    """Stable prefix (taxonomy) first; document transcription last."""
+
+    def _capture_user_message(self, provider, text, taxonomy) -> str:
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -196,11 +214,55 @@ class TestClassifyTextTruncationNote:
             return response
 
         provider._create_completion = capture_completion
+        provider.classify_text(text, taxonomy)
+        return captured_kwargs["messages"][1]["content"]
 
-        provider.classify_text("text", _EMPTY_TAXONOMY, truncation_note=None)
+    def test_taxonomy_precedes_transcription(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        taxonomy = TaxonomyContext(
+            correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]
+        )
 
-        user_msg = captured_kwargs["messages"][1]["content"]
-        assert "NOTE:" not in user_msg
+        user_msg = self._capture_user_message(provider, "body text", taxonomy)
+
+        assert user_msg.index("Acme") < user_msg.index("Document transcription:")
+
+    def test_document_text_is_the_final_segment(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+
+        user_msg = self._capture_user_message(
+            provider, "UNIQUE-DOC-BODY", _EMPTY_TAXONOMY
+        )
+
+        assert user_msg.rstrip().endswith("UNIQUE-DOC-BODY")
+
+    def test_two_docs_share_an_identical_taxonomy_prefix(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        taxonomy = TaxonomyContext(
+            correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]
+        )
+
+        msg_a = self._capture_user_message(provider, "first document body", taxonomy)
+        msg_b = self._capture_user_message(provider, "second different body", taxonomy)
+
+        marker = "Document transcription:"
+        prefix_a = msg_a[: msg_a.index(marker)]
+        prefix_b = msg_b[: msg_b.index(marker)]
+        assert prefix_a == prefix_b
+        assert "Acme" in prefix_a
+
+    def test_taxonomy_json_serialisation_unchanged(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        taxonomy = TaxonomyContext(
+            correspondents=["Acmé & Co"], document_types=["Invoice"], tags=["bills"]
+        )
+
+        user_msg = self._capture_user_message(provider, "body", taxonomy)
+
+        # ensure_ascii=True escaping must be preserved by the reorder.
+        import json as _json
+
+        assert _json.dumps(["Acmé & Co"], ensure_ascii=True) in user_msg
 
 
 class TestStatsTracking:
