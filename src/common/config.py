@@ -471,8 +471,8 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         default_answer_model = "gemma3:27b"
     else:
         ollama_base_url = None
-        default_ai_models = ["gpt-5.4-mini", "gpt-5.5", "o4-mini"]
-        default_planner_model = "gpt-5.4-mini"
+        default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        default_planner_model = "gpt-5.4-nano"
         default_answer_model = "gpt-5.5"
 
     # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int), so it is never

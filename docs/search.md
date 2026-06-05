@@ -60,7 +60,7 @@ plan
 
 ### Stage 1 — Planner (`search/planner.py`)
 
-One LLM call (`SEARCH_PLANNER_MODEL`, default `gpt-5.4-mini` / `gemma3:12b`). Structured JSON output, parsed manually into a frozen `QueryPlan` dataclass — no Pydantic in the pipeline:
+One LLM call (`SEARCH_PLANNER_MODEL`, default `gpt-5.4-nano` / `gemma3:12b`). Structured JSON output, parsed manually into a frozen `QueryPlan` dataclass — no Pydantic in the pipeline:
 
 ```python
 QueryPlan(

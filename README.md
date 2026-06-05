@@ -204,7 +204,7 @@ These variables are read by the indexer daemon and the search server, in additio
 |:---|:---|:---|:---|
 | `SEARCH_TOP_K` | int | `10` | Documents fed to the synthesiser |
 | `SEARCH_MAX_REFINEMENTS` | int | `1` | Maximum agentic refinement steps (hard ceiling: 3 LLM calls per query) |
-| `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Query-planning model (cheap, structured extraction) |
+| `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-nano` / `gemma3:12b` | Query-planning model (cheap, structured extraction) |
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.5` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |

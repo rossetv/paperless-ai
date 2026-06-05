@@ -35,7 +35,7 @@ def _build(mocker, env: dict[str, str]) -> Settings:
 _SEARCH_DEFAULTS_OPENAI = [
     ("SEARCH_TOP_K", 10),
     ("SEARCH_MAX_REFINEMENTS", 1),
-    ("SEARCH_PLANNER_MODEL", "gpt-5.4-mini"),
+    ("SEARCH_PLANNER_MODEL", "gpt-5.4-nano"),
     ("SEARCH_ANSWER_MODEL", "gpt-5.5"),
     ("SEARCH_SERVER_HOST", "0.0.0.0"),
     ("SEARCH_SERVER_PORT", 8080),

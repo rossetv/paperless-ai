@@ -77,7 +77,7 @@ class TestDefaults:
 
     def test_ai_models_default_openai(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
-        assert s.AI_MODELS == ["gpt-5.4-mini", "gpt-5.5", "o4-mini"]
+        assert s.AI_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
 
     def test_ocr_refusal_markers_default(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
