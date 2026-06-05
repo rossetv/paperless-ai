@@ -18,6 +18,7 @@ from common.llm import (
     OpenAIChatMixin,
     _openai_holder,
 )
+from common.model_compat import model_compat_cache
 
 
 class _TestClient(OpenAIChatMixin):
@@ -169,13 +170,20 @@ class TestCompleteWithModelFallback:
                 log_event_prefix="planner",
             )
 
-        mock_log.warning.assert_called_once()
-        event, kwargs = (
-            mock_log.warning.call_args.args[0],
-            mock_log.warning.call_args.kwargs,
+        # A skipped model is now logged at two layers: the shared compat method
+        # (``llm.model_failed`` with the error string) and this fallback loop
+        # (``{prefix}.model_failed`` with the model name). The security
+        # invariant is that NEITHER line carries the prompt.
+        warning_calls = mock_log.warning.call_args_list
+        events = [call.args[0] for call in warning_calls]
+        assert "planner.model_failed" in events
+        prefixed = next(
+            call for call in warning_calls if call.args[0] == "planner.model_failed"
         )
-        assert event == "planner.model_failed"
-        assert kwargs["model"] == "m1"
+        assert prefixed.kwargs["model"] == "m1"
+        # No warning anywhere leaks the prompt text.
+        for call in warning_calls:
+            assert "secret prompt" not in str(call)
 
 
 class TestNoArgInvarianceCharacterisation:
@@ -241,6 +249,148 @@ class TestNoArgInvarianceCharacterisation:
 
         assert result == "second"
         assert client._create_completion.call_count == 2
+
+
+def _bad_request_fb(message: str) -> openai.BadRequestError:
+    """openai.BadRequestError builder for the fallback tests (no token spent)."""
+    response = MagicMock()
+    response.status_code = 400
+    response.headers = {}
+    response.json.return_value = {"error": {"message": message}}
+    return openai.BadRequestError(
+        message=message,
+        response=response,
+        body={"error": {"message": message}},
+    )
+
+
+class TestCompleteWithModelFallbackOptionalKwargs:
+    """The three optional kwargs are forwarded through the compat layer."""
+
+    @pytest.fixture()
+    def client(self):
+        settings = MagicMock()
+        settings.MAX_RETRIES = 3
+        settings.MAX_RETRY_BACKOFF_SECONDS = 30
+        return _TestClient(settings)
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        model_compat_cache.reset()
+        yield
+        model_compat_cache.reset()
+
+    def test_reasoning_effort_is_forwarded(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("a")
+
+        client._create_completion = capture
+
+        client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="planner",
+            reasoning_effort="low",
+        )
+
+        assert captured[0]["reasoning_effort"] == "low"
+
+    def test_response_format_is_forwarded(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("a")
+
+        client._create_completion = capture
+        fmt = {"type": "json_object"}
+
+        client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="synthesiser",
+            response_format=fmt,
+        )
+
+        assert captured[0]["response_format"] == fmt
+
+    def test_timeout_is_forwarded(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("a")
+
+        client._create_completion = capture
+
+        client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="planner",
+            timeout=12.5,
+        )
+
+        assert captured[0]["timeout"] == 12.5
+
+    def test_none_kwargs_are_omitted(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("a")
+
+        client._create_completion = capture
+
+        client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="planner",
+            reasoning_effort=None,
+            response_format=None,
+            timeout=None,
+        )
+
+        assert set(captured[0].keys()) == {"model", "messages"}
+
+    def test_a_forwarded_param_is_stripped_via_compat_then_succeeds(self, client):
+        """A model that rejects reasoning_effort strips it and recovers."""
+        client._create_completion = MagicMock(
+            side_effect=[
+                _bad_request_fb("reasoning_effort is not supported"),
+                _completion("recovered"),
+            ]
+        )
+
+        result = client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="planner",
+            reasoning_effort="low",
+        )
+
+        assert result == "recovered"
+        assert "reasoning_effort" in model_compat_cache.rejected_params_for("m1")
+
+    def test_all_models_fail_through_compat_returns_none(self, client):
+        client._create_completion = MagicMock(side_effect=_api_error())
+
+        result = client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=["m2"],
+            log_event_prefix="planner",
+            reasoning_effort="low",
+        )
+
+        assert result is None
 
 
 class TestRetryLimiterIntegration:

@@ -260,6 +260,9 @@ class OpenAIChatMixin:
         messages: list[dict[str, str]],
         fallback_models: Iterable[str],
         log_event_prefix: str,
+        reasoning_effort: str | None = None,
+        response_format: dict[str, object] | None = None,
+        timeout: float | None = None,
     ) -> str | None:
         """Run one chat completion, falling back through a chain of models.
 
@@ -270,15 +273,24 @@ class OpenAIChatMixin:
         The chain is ``primary_model`` followed by every model in
         *fallback_models*, deduplicated by :func:`unique_models` so the primary
         is never tried twice when it also appears in the fallback list.  Each
-        attempt goes through :meth:`_create_completion`, so it inherits the
-        shared ``@retry`` exponential backoff and the ``llm_limiter`` global
-        concurrency limiter for free.
+        attempt goes through :meth:`_create_with_compat`, so it inherits the
+        shared ``@retry`` exponential backoff, the ``llm_limiter`` global
+        concurrency limiter, and the per-model parameter-compatibility cache.
 
-        A model that still fails after retries raises an ``openai.APIError``
+        ``reasoning_effort``, ``response_format``, and ``timeout`` are optional
+        and additive: each is forwarded to the model only when non-``None``.
+        Every attempt is routed through :meth:`_create_with_compat`, so a model
+        that rejects any of these parameters has it stripped-and-cached rather
+        than failing the whole call. With none supplied the outgoing request is
+        exactly ``{model, messages}`` and the behaviour is identical to the
+        pre-extension direct path (pinned by the no-arg characterisation test).
+
+        A model that still fails after retries surfaces an ``openai.APIError``
         subclass — this covers *both* a retry-exhausted retryable error and a
         non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
-        ``NotFoundError``, ``BadRequestError``, …).  Every one is caught here as
-        the terminal "skip this model" branch; the next model is tried.
+        ``NotFoundError``, ``BadRequestError``, …).  :meth:`_create_with_compat`
+        turns every such terminal failure into ``None``; the next model is
+        tried.
 
         Args:
             primary_model: The model to try first.
@@ -288,29 +300,51 @@ class OpenAIChatMixin:
             log_event_prefix: The dotted event-name prefix for the
                 per-model-failure warning, e.g. ``"planner"`` →
                 ``"planner.model_failed"``.
+            reasoning_effort: Optional OpenAI reasoning-effort hint (e.g.
+                ``"low"``); omitted from the request when ``None``.
+            response_format: Optional response-format object (e.g. a
+                ``json_schema`` block); omitted when ``None``.
+            timeout: Optional per-call timeout in seconds; omitted when ``None``
+                so the SDK/client default applies (CODE_GUIDELINES §8.7).
 
         Returns:
             The raw text content of the first successful completion, or
             ``None`` when every model in the chain failed.
         """
         models = unique_models([primary_model, *fallback_models])
+        optional_params = self._optional_completion_params(
+            reasoning_effort=reasoning_effort,
+            response_format=response_format,
+            timeout=timeout,
+        )
         for model in models:
-            try:
-                completion = self._create_completion(model=model, messages=messages)
-            except openai.APIError as exc:
-                # Catches BOTH retry-exhausted retryable errors and
-                # non-retryable ones (AuthenticationError, PermissionDeniedError,
-                # NotFoundError, BadRequestError, …) — every one is an
-                # openai.APIError subclass.  Skip this model; try the next.
-                log.warning(
-                    f"{log_event_prefix}.model_failed",
-                    model=model,
-                    error=str(exc),
-                )
+            params: dict[str, object] = {
+                "model": model,
+                "messages": messages,
+                **optional_params,
+            }
+            completion = self._create_with_compat(params, model)
+            if completion is None:
+                log.warning(f"{log_event_prefix}.model_failed", model=model)
                 continue
             return completion.choices[0].message.content or ""
 
         return None
+
+    @staticmethod
+    def _optional_completion_params(
+        *,
+        reasoning_effort: str | None,
+        response_format: dict[str, object] | None,
+        timeout: float | None,
+    ) -> dict[str, object]:
+        """Build the dict of optional completion params, dropping every ``None``."""
+        candidates: dict[str, object | None] = {
+            "reasoning_effort": reasoning_effort,
+            "response_format": response_format,
+            "timeout": timeout,
+        }
+        return {key: value for key, value in candidates.items() if value is not None}
 
 
 def unique_models(models: list[str]) -> list[str]:
