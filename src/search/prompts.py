@@ -301,14 +301,19 @@ def build_synthesiser_user_message(
 ) -> str:
     """Assemble the user-role message for the synthesiser LLM call.
 
-    The message has two sections separated by an explicit data delimiter:
+    The message is laid out static-first so the provider can cache the prefix
+    (RAG-09, spec §4.3):
 
-    1. **Control plane** — the user's question and instructions.
-    2. **Data plane** — the retrieved chunk texts, each labelled [document_id].
+    1. **Data plane** — the explicit data delimiter then the retrieved chunk
+       texts, each labelled [document_id] (the byte-stable, cacheable lead).
+    2. **Control plane** — a ``---`` separator then the variable ``Question:``
+       line (and the final-mode directive), placed last.
 
-    The data delimiter instructs the model that everything below it is data
-    to be analysed, not instructions to be followed.  This is the
-    prompt-injection defence required by CODE_GUIDELINES.md §10.2.
+    The data delimiter still instructs the model that everything below it is
+    data to be analysed, not instructions to be followed; the chunk text stays
+    strictly below it, so the prompt-injection defence required by
+    CODE_GUIDELINES.md §10.2 is preserved — the question moving to the end adds
+    no untrusted content above the delimiter.
 
     Args:
         query: The user's original search query.
@@ -324,19 +329,24 @@ def build_synthesiser_user_message(
     """
     # The directive opens with _FINAL_MODE_TRIGGER — the same constant the
     # system prompt's "Final-mode rule" interpolates — so the model keys
-    # final-mode behaviour off a phrase defined in exactly one place.
+    # final-mode behaviour off a phrase defined in exactly one place.  It says
+    # "chunks above" because the question now sits *after* the chunk data.
     final_directive = (
         f"\n\n{_FINAL_MODE_TRIGGER}: provide your best answer based on the "
-        "chunks below, or state honestly that no relevant information was found."
+        "chunks above, or state honestly that no relevant information was found."
         if final
         else ""
     )
-
-    question_section = f"Question: {query}{final_directive}"
 
     chunks_section_parts = []
     for document_id, chunk_text in labelled_chunks:
         chunks_section_parts.append(f"[{document_id}]\n{chunk_text}")
     chunks_section = "\n\n".join(chunks_section_parts)
 
-    return f"{question_section}\n\n{_DATA_DELIMITER}\n\n{chunks_section}"
+    # RAG-09 ordering: the static delimiter + instructions and the chunk DATA
+    # lead (a byte-stable, cacheable prefix); the variable question trails. The
+    # chunk text remains strictly BELOW the data delimiter — the injection-safe
+    # structure required by CODE_GUIDELINES.md §10.2 is preserved.
+    question_section = f"Question: {query}{final_directive}"
+
+    return f"{_DATA_DELIMITER}\n\n{chunks_section}\n\n---\n{question_section}"
