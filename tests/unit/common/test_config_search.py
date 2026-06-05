@@ -155,3 +155,66 @@ class TestSearchSettingsBounds:
     def test_search_max_concurrent_clamped_to_zero(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_CONCURRENT": value})
         assert s.SEARCH_MAX_CONCURRENT == 0
+
+
+class TestSearchRagCostSettings:
+    """The seven Area-3 SEARCH_* settings resolve with the documented defaults."""
+
+    def test_reasoning_effort_defaults(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_PLANNER_REASONING_EFFORT == "medium"
+        assert settings.SEARCH_ANSWER_REASONING_EFFORT == "medium"
+        assert settings.SEARCH_CACHE_TTL_SECONDS == 14400
+        assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is False
+        assert settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL is False
+        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS == 1
+        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.0
+
+    def test_overrides_win(self, mocker) -> None:
+        # "high"/"low" (not the "medium" default) so the override genuinely bites.
+        settings = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_PLANNER_REASONING_EFFORT": "high",
+                "SEARCH_ANSWER_REASONING_EFFORT": "low",
+                "SEARCH_CACHE_TTL_SECONDS": "0",
+                "SEARCH_SKIP_PLANNER_FOR_TRIVIAL": "true",
+                "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "0.02",
+            },
+        )
+        assert settings.SEARCH_PLANNER_REASONING_EFFORT == "high"
+        assert settings.SEARCH_ANSWER_REASONING_EFFORT == "low"
+        assert settings.SEARCH_CACHE_TTL_SECONDS == 0
+        assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is True
+        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.02
+
+    def test_invalid_reasoning_effort_fails_closed(self, mocker) -> None:
+        """An unrecognised reasoning_effort raises at startup, naming the key."""
+        with pytest.raises(ValueError, match="SEARCH_PLANNER_REASONING_EFFORT"):
+            _build(
+                mocker,
+                {**_MINIMAL_ENV, "SEARCH_PLANNER_REASONING_EFFORT": "ludicrous"},
+            )
+
+    def test_negative_cache_ttl_clamps_to_zero(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_CACHE_TTL_SECONDS": "-5"})
+        assert settings.SEARCH_CACHE_TTL_SECONDS == 0
+
+    def test_negative_min_chunks_clamps_to_zero(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS": "-3"}
+        )
+        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS == 0
+
+    def test_negative_min_score_clamps_to_zero(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "-0.5"}
+        )
+        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.0
+
+    def test_non_numeric_min_score_raises(self, mocker) -> None:
+        with pytest.raises(ValueError, match="SEARCH_WEAK_RETRIEVAL_MIN_SCORE"):
+            _build(
+                mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "lots"}
+            )

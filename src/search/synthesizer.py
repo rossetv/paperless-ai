@@ -47,6 +47,7 @@ from search.models import (
     SearchMode,
 )
 from search.prompts import (
+    _synthesiser_response_format,
     build_synthesiser_system_prompt,
     build_synthesiser_user_message,
 )
@@ -137,6 +138,8 @@ class Synthesizer(OpenAIChatMixin):
             messages=messages,
             fallback_models=self.settings.AI_MODELS,
             log_event_prefix="synthesiser",
+            reasoning_effort=self.settings.SEARCH_ANSWER_REASONING_EFFORT,
+            response_format=_synthesiser_response_format(self.settings),
         )
         if raw_content is None:
             return self._degrade(

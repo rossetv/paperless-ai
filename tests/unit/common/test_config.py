@@ -491,12 +491,13 @@ def test_secret_keys_cover_the_two_secrets() -> None:
     assert SECRET_KEYS == frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 
 
-def test_config_keys_has_fifty_two_entries() -> None:
-    """CONFIG_KEYS is the 52-key config-table universe (post-Wave-3 SEARCH_API_KEY
-    is gone; CLASSIFY_REASONING_EFFORT added by the token-cost classifier work)."""
+def test_config_keys_has_fifty_nine_entries() -> None:
+    """CONFIG_KEYS is the 59-key config-table universe (post-Wave-3 SEARCH_API_KEY
+    is gone; CLASSIFY_REASONING_EFFORT from the classifier work, plus the seven
+    search/RAG token-cost keys from Area 3)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 52
+    assert len(CONFIG_KEYS) == 59
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
 
 

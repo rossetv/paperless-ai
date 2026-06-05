@@ -285,8 +285,13 @@ class TestPromptInjectionSafety:
                 f"Chunk text for doc {chunk.document_id!r} appeared before delimiter"
             )
 
-    def test_query_text_appears_before_chunk_content(self) -> None:
-        """The user's query (control plane) must appear before the data delimiter."""
+    def test_query_text_appears_after_chunk_content(self) -> None:
+        """RAG-09: the variable question now trails the static delimiter+data.
+
+        Injection safety is preserved a different way — chunk text is still
+        strictly below the delimiter; the question simply moves to the end so
+        the static instruction+delimiter prefix is byte-stable and cacheable.
+        """
         query = "What is the boiler warranty expiry date?"
         chunks = [_chunk(1, "Boiler warranty expires 2028.")]
         synthesiser = build_synthesizer(
@@ -298,7 +303,7 @@ class TestPromptInjectionSafety:
         delimiter_pos = user_content.find("---")
         query_pos = user_content.find(query)
         assert query_pos != -1, "Query text not found in user message"
-        assert query_pos < delimiter_pos, "Query must appear BEFORE the data delimiter"
+        assert query_pos > delimiter_pos, "RAG-09: query must now trail the delimiter"
 
     def test_chunk_is_labelled_with_document_id(self) -> None:
         """Each chunk is labelled [n] with its source document id for citation."""

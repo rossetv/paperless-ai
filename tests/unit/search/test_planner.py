@@ -395,3 +395,23 @@ class TestStrOrNoneRejectsContainers:
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.filter_candidates.document_type is None
+
+
+class TestPlannerDateInUserTurn:
+    """The planner sends a byte-stable system prompt and the date in the user turn."""
+
+    def test_user_message_carries_todays_date(self) -> None:
+        planner = build_planner(make_search_settings(), planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        messages = call.kwargs["messages"]
+        system = next(m["content"] for m in messages if m["role"] == "system")
+        user = next(m["content"] for m in messages if m["role"] == "user")
+        assert "{today}" not in system
+        assert "search-query planning engine" in system
+        # The user turn carries both the query and a concrete ISO date.
+        assert "any query" in user
+        import re
+
+        assert re.search(r"\d{4}-\d{2}-\d{2}", user) is not None

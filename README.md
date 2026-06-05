@@ -219,6 +219,13 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |
 | `SEARCH_SESSION_TTL` | int | `604800` | Web UI session-cookie lifetime in seconds (default: 7 days) |
 | `SEARCH_MAX_CONCURRENT` | int | `4` | Maximum concurrent `/api/search` requests |
+| `SEARCH_PLANNER_REASONING_EFFORT` | string | `medium` | Planner `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on the planner. Invalid values are rejected at startup; stripped automatically for models that don't support it |
+| `SEARCH_ANSWER_REASONING_EFFORT` | string | `medium` | Synthesiser `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on synthesis. Invalid values are rejected at startup; stripped automatically for unsupporting models |
+| `SEARCH_CACHE_TTL_SECONDS` | int | `14400` | TTL (seconds) for the in-process result cache; `0` disables it. Busted automatically when the index changes |
+| `SEARCH_SKIP_PLANNER_FOR_TRIVIAL` | bool | `false` | When true, skip the planner LLM call for short, signal-free keyword queries |
+| `SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL` | bool | `false` | When true, return "no matches" (no synth call) when retrieval is below the weak-retrieval thresholds |
+| `SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS` | int | `1` | Retrieval is "weak" below this chunk count (used only when the flag above is true) |
+| `SEARCH_WEAK_RETRIEVAL_MIN_SCORE` | float | `0.0` | Retrieval is "weak" when the best fused RRF score is below this (RRF scores are ~`1/(60+rank)`, so a single top hit ≈ 0.016) |
 
 ---
 
