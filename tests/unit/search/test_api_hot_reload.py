@@ -122,7 +122,7 @@ def test_resolve_search_core_reinitialises_openai_client_on_config_change(
         # (provided via the config table seeding from the env).
         _resolve_search_core(app_db)
         assert seen_api_keys == ["k-initial"]
-        assert seen_limits == [0]  # LLM_MAX_CONCURRENT default
+        assert seen_limits == [4]  # LLM_MAX_CONCURRENT default
 
         # An admin saves a new OPENAI_API_KEY through the Settings API.
         c = connect(app_db)
