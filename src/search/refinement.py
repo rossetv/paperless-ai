@@ -75,6 +75,33 @@ def trivial_plan(query: str) -> QueryPlan:
     )
 
 
+def is_weak_retrieval(
+    chunks: list[RetrievedChunk], *, min_chunks: int, min_score: float
+) -> bool:
+    """Return whether retrieval is too weak to be worth a synth call (RAG-10).
+
+    Weak when fewer than *min_chunks* chunks were found, or the best fused (RRF)
+    score is below *min_score*. The thresholds are passed in (not read off
+    Settings) so this stays a pure helper with no config dependency — the core
+    reads ``SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS`` / ``SEARCH_WEAK_RETRIEVAL_MIN_SCORE``
+    and passes them. With the defaults (1 and 0.0) this is inert; the whole gate
+    sits behind the default-off ``SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL`` flag
+    (spec §4.7).
+
+    Args:
+        chunks: The retrieved chunks (assumed non-empty by the caller).
+        min_chunks: The minimum chunk count below which retrieval is weak.
+        min_score: The minimum best-fused-score below which retrieval is weak.
+
+    Returns:
+        True when retrieval is below either floor.
+    """
+    if len(chunks) < min_chunks:
+        return True
+    best_score = max(chunk.rrf_score for chunk in chunks)
+    return best_score < min_score
+
+
 def adjust_plan(plan: QueryPlan, adjustment: str) -> QueryPlan:
     """Return a new QueryPlan extended with the synthesiser's adjustment hint.
 
