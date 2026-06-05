@@ -23,6 +23,7 @@ import structlog
 from openai.types.chat import ChatCompletion
 
 from .concurrency import llm_limiter
+from .model_compat import model_compat_cache
 from .retry import retry
 
 log = structlog.get_logger(__name__)
@@ -179,6 +180,78 @@ class OpenAIChatMixin:
             # without replacing **kwargs with an explicit typed signature.
             return client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
             # and narrowly scoped to this one call site.
+
+    def _create_with_compat(
+        self, params: dict[str, object], model: str
+    ) -> ChatCompletion | None:
+        """Send a chat completion, adapting to parameters *model* rejects.
+
+        Three phases:
+
+        1. **Pre-strip** every parameter already recorded as rejected for
+           *model* in :data:`~common.model_compat.model_compat_cache`, so a
+           model whose incompatibility was discovered earlier in this process
+           never pays a wasted 400 round-trip again.
+        2. **Send.** On success, return the completion.
+        3. **Adapt.** On an ``openai.BadRequestError`` that names a strippable
+           parameter present in *params*, strip it, record it in the cache, and
+           retry the same model. Bounded by the registry length so a misfiring
+           matcher cannot loop forever. A 400 bills no tokens, so the only cost
+           of a first-time discovery is one extra round-trip.
+
+        Any other ``openai.BadRequestError`` (a malformed request) or any other
+        ``openai.APIError`` (rate limit, 5xx, timeout after the ``@retry`` on
+        :meth:`_create_completion` is exhausted) is terminal: it is logged and
+        ``None`` is returned so the caller can advance to the next model.
+        """
+        params = self._pre_strip_known_rejected(dict(params), model)
+        for _attempt in range(len(_STRIPPABLE_PARAMS) + 1):
+            try:
+                self._record_attempt()
+                return self._create_completion(**params)
+            except openai.BadRequestError as error:
+                stripped_params = self._strip_rejected_param(error, params, model)
+                if stripped_params is None:
+                    log.warning("llm.request_rejected", model=model, error=str(error))
+                    self._record_api_error()
+                    return None
+                params = stripped_params
+            except openai.APIError as error:
+                log.warning("llm.model_failed", model=model, error=str(error))
+                self._record_api_error()
+                return None
+        log.warning("llm.request_rejected_after_strips", model=model)
+        self._record_api_error()
+        return None
+
+    def _pre_strip_known_rejected(
+        self, params: dict[str, object], model: str
+    ) -> dict[str, object]:
+        """Remove from *params* every parameter the cache says *model* rejects."""
+        for param_key in model_compat_cache.rejected_params_for(model):
+            params.pop(param_key, None)
+        return params
+
+    def _strip_rejected_param(
+        self, error: openai.BadRequestError, params: dict[str, object], model: str
+    ) -> dict[str, object] | None:
+        """Strip the parameter *error* names if it is present, else return ``None``.
+
+        Returns a new params dict with the offending parameter removed (and the
+        rejection cached + counted), or ``None`` when the 400 is not about a
+        strippable parameter that is actually present — the signal to give up.
+        """
+        param_key = _strippable_param_for_error(error)
+        if param_key is None or param_key not in params:
+            return None
+        log.warning(
+            "llm.param_unsupported_stripped", model=model, parameter=param_key
+        )
+        model_compat_cache.record_rejected(model, param_key)
+        self._record_strip(param_key)
+        remaining = dict(params)
+        del remaining[param_key]
+        return remaining
 
     def _complete_with_model_fallback(
         self,
