@@ -14,7 +14,9 @@ import httpx
 import pytest
 import respx
 
-from common.paperless import PaperlessClient
+import structlog.testing
+
+from common.paperless import PaperlessClient, is_permanent_paperless_error
 from tests.helpers.factories import make_settings_obj
 
 BASE = "http://paperless:8000"
@@ -358,6 +360,98 @@ class TestUpdateDocumentMetadata:
         body = json_mod.loads(route.calls[0].request.content)
         assert body == {"title": "just title"}  # no other keys
         client.close()
+
+
+def _status_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("PATCH", f"{BASE}/api/documents/1/")
+    return httpx.HTTPStatusError(
+        f"{status}", request=request, response=httpx.Response(status, request=request)
+    )
+
+
+class TestIsPermanentPaperlessError:
+    """The 4xx/transient split that decides quarantine vs retry."""
+
+    def test_4xx_is_permanent(self):
+        assert is_permanent_paperless_error(_status_error(400)) is True
+        assert is_permanent_paperless_error(_status_error(404)) is True
+        assert is_permanent_paperless_error(_status_error(422)) is True
+
+    def test_5xx_is_not_permanent(self):
+        assert is_permanent_paperless_error(_status_error(500)) is False
+        assert is_permanent_paperless_error(_status_error(503)) is False
+
+    def test_transient_4xx_codes_are_not_permanent(self):
+        # 408 Request Timeout and 429 Too Many Requests are retryable.
+        assert is_permanent_paperless_error(_status_error(408)) is False
+        assert is_permanent_paperless_error(_status_error(429)) is False
+
+    def test_network_error_is_not_permanent(self):
+        exc = httpx.ConnectError("connection refused")
+        assert is_permanent_paperless_error(exc) is False
+
+    def test_unrelated_exception_is_not_permanent(self):
+        assert is_permanent_paperless_error(ValueError("nope")) is False
+
+
+class TestMetadataWriteLogsRejectionBody:
+    """A 4xx PATCH must log the Paperless error body before raising.
+
+    httpx.HTTPStatusError carries only the status line; without capturing the
+    response body the rejected field is invisible, which is what made the
+    reprocessing loop undiagnosable.
+    """
+
+    def test_update_document_metadata_logs_body_on_400(self):
+        body = {"tags": ['Invalid pk "47" - object does not exist.']}
+        with respx.mock:
+            respx.patch(f"{BASE}/api/documents/1/").mock(
+                return_value=httpx.Response(400, json=body),
+            )
+            client = _make_client()
+            with structlog.testing.capture_logs() as captured:
+                with pytest.raises(httpx.HTTPStatusError):
+                    client.update_document_metadata(1, title="t", tags=[47])
+            client.close()
+
+        rejected = [
+            e for e in captured if e["event"] == "Paperless rejected document write"
+        ]
+        assert rejected, "expected a rejection log carrying the body"
+        assert rejected[0]["status_code"] == 400
+        assert rejected[0]["response_body"] == body
+        assert "tags" in rejected[0]["payload_keys"]
+
+    def test_update_document_logs_body_on_400(self):
+        with respx.mock:
+            respx.patch(f"{BASE}/api/documents/1/").mock(
+                return_value=httpx.Response(400, text="bad request"),
+            )
+            client = _make_client()
+            with structlog.testing.capture_logs() as captured:
+                with pytest.raises(httpx.HTTPStatusError):
+                    client.update_document(1, "content", [5])
+            client.close()
+
+        rejected = [
+            e for e in captured if e["event"] == "Paperless rejected document write"
+        ]
+        assert rejected
+        assert rejected[0]["response_body"] == "bad request"
+
+    def test_successful_metadata_write_does_not_log_rejection(self):
+        with respx.mock:
+            respx.patch(f"{BASE}/api/documents/1/").mock(
+                return_value=httpx.Response(200, json={"id": 1}),
+            )
+            client = _make_client()
+            with structlog.testing.capture_logs() as captured:
+                client.update_document_metadata(1, title="t")
+            client.close()
+
+        assert not [
+            e for e in captured if e["event"] == "Paperless rejected document write"
+        ]
 
 
 class TestListEndpoints:

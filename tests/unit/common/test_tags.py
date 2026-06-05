@@ -4,14 +4,24 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import httpx
+
 from common.tags import (
     clean_pipeline_tags,
     extract_tags,
+    finalise_document_with_error,
     get_latest_tags,
     release_processing_tag,
     remove_stale_queue_tag,
 )
 from tests.helpers.factories import make_settings_obj
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    """Build an ``httpx.HTTPStatusError`` carrying *status*."""
+    request = httpx.Request("PATCH", "http://paperless:8000/api/documents/1/")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
 
 
 class TestExtractTags:
@@ -300,3 +310,85 @@ class TestCleanPipelineTags:
         result = clean_pipeline_tags(tags, settings)
 
         assert result == {42}
+
+
+class TestFinaliseDocumentWithError:
+    """finalise_document_with_error must always de-queue the document.
+
+    The error tag is how a permanently-failed document leaves the queue. If
+    applying the error tag itself fails (a stale/deleted ERROR_TAG_ID is a
+    permanent 4xx), the document would otherwise keep its queue tag and be
+    reprocessed forever — re-spending LLM tokens. The fallback strips the
+    pipeline tags without the error tag so the loop still stops.
+    """
+
+    def _settings(self, **overrides):
+        base = dict(
+            PRE_TAG_ID=443,
+            POST_TAG_ID=444,
+            CLASSIFY_PRE_TAG_ID=445,
+            OCR_PROCESSING_TAG_ID=None,
+            CLASSIFY_PROCESSING_TAG_ID=None,
+            CLASSIFY_POST_TAG_ID=None,
+            ERROR_TAG_ID=552,
+        )
+        base.update(overrides)
+        return make_settings_obj(**base)
+
+    def test_applies_error_tag_on_the_happy_path(self):
+        client = MagicMock()
+        settings = self._settings()
+
+        finalise_document_with_error(client, 1, {443, 100}, settings)
+
+        client.update_document_metadata.assert_called_once()
+        tags = client.update_document_metadata.call_args.kwargs["tags"]
+        assert tags == {100, 552}
+
+    def test_falls_back_to_stripping_tags_when_error_tag_rejected(self):
+        client = MagicMock()
+        # First write (with the error tag) is rejected 400; the fallback
+        # (pipeline tags stripped, no error tag) then succeeds.
+        client.update_document_metadata.side_effect = [_http_status_error(400), None]
+        settings = self._settings()
+
+        finalise_document_with_error(client, 1, {443, 100}, settings)
+
+        assert client.update_document_metadata.call_count == 2
+        first = client.update_document_metadata.call_args_list[0].kwargs["tags"]
+        second = client.update_document_metadata.call_args_list[1].kwargs["tags"]
+        assert 552 in first  # attempted with the error tag
+        assert second == {100}  # fallback: queue tag gone, no error tag
+
+    def test_no_fallback_when_error_tag_unconfigured(self):
+        client = MagicMock()
+        client.update_document_metadata.side_effect = _http_status_error(400)
+        settings = self._settings(ERROR_TAG_ID=None)
+
+        finalise_document_with_error(client, 1, {443, 100}, settings)
+
+        # Nothing to fall back to — the payload already had no error tag.
+        client.update_document_metadata.assert_called_once()
+
+    def test_fallback_uses_update_document_when_content_supplied(self):
+        client = MagicMock()
+        client.update_document.side_effect = [_http_status_error(400), None]
+        settings = self._settings()
+
+        finalise_document_with_error(
+            client, 1, {443, 100}, settings, content="ocr text"
+        )
+
+        assert client.update_document.call_count == 2
+        second_tags = client.update_document.call_args_list[1][0][2]
+        assert second_tags == {100}
+
+    def test_both_writes_failing_leaves_document_queued(self):
+        client = MagicMock()
+        client.update_document_metadata.side_effect = _http_status_error(503)
+        settings = self._settings()
+
+        # Must not raise — finalisation is best-effort.
+        finalise_document_with_error(client, 1, {443, 100}, settings)
+
+        assert client.update_document_metadata.call_count == 2

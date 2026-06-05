@@ -36,6 +36,7 @@ __all__ = [
     "PaperlessDocument",
     "PaperlessItem",
     "RETRYABLE_HTTP_EXCEPTIONS",
+    "is_permanent_paperless_error",
 ]
 
 log = structlog.get_logger(__name__)
@@ -48,6 +49,31 @@ RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
 # in non-fatal error handling.  Covers network errors, HTTP errors, and
 # unexpected response shapes.
 PAPERLESS_CALL_EXCEPTIONS = (OSError, httpx.HTTPError, ValueError, KeyError)
+
+
+def is_permanent_paperless_error(exc: BaseException) -> bool:
+    """True when *exc* is a Paperless HTTP 4xx client error.
+
+    A 4xx (bad request, invalid pk, unrecognised field, …) is **deterministic**:
+    the same payload will be rejected on every retry, so re-running the upstream
+    work — for the daemons, an LLM OCR or classification call that has *already
+    spent tokens* — only burns more tokens to fail again. Callers use this to
+    decide between **quarantining** the document (error-tag it, stop the loop)
+    and **re-raising** a transient error (network blip, 5xx) for the daemon loop
+    to retry. 5xx is intentionally excluded: it is the retryable class the
+    ``@retry`` decorator already backs off on.
+
+    408 (Request Timeout) and 429 (Too Many Requests) are 4xx by number but
+    transient by semantics — a retry can succeed — so they are excluded from the
+    permanent set and left to retry like a 5xx. Paperless-ngx ships no rate
+    limiter today, so neither is expected in practice; excluding them is
+    belt-and-braces for a proxy sitting in front of it.
+    """
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and 400 <= exc.response.status_code < 500
+        and exc.response.status_code not in (408, 429)
+    )
 
 
 def _named_item_payload(
@@ -95,6 +121,34 @@ class PaperlessClient:
         """
         if response.status_code >= 500:
             response.raise_for_status()
+
+    def _raise_for_status_logging_body(
+        self, response: httpx.Response, *, doc_id: int, payload_keys: list[str]
+    ) -> None:
+        """``raise_for_status`` that first logs the body on a 4xx.
+
+        ``httpx.HTTPStatusError`` only carries the status line and URL — not the
+        response body — so a Paperless 400 surfaces as an opaque "Client error
+        '400 Bad Request'" with no clue which field was rejected. Paperless
+        returns a per-field JSON error body (e.g. ``{"tags": ["Invalid pk 47 -
+        object does not exist."]}``); capturing it here turns an undiagnosable
+        loop into a one-line answer. The exception is still raised so callers'
+        error handling is unchanged.
+        """
+        if response.is_success:
+            return
+        try:
+            body: object = response.json()
+        except ValueError:
+            body = response.text
+        log.error(
+            "Paperless rejected document write",
+            doc_id=doc_id,
+            status_code=response.status_code,
+            payload_keys=payload_keys,
+            response_body=body,
+        )
+        response.raise_for_status()
 
     # Any: **kwargs here is a pure passthrough to httpx's request methods
     # (json=, params=, timeout=, …); httpx itself types those parameters with
@@ -393,7 +447,9 @@ class PaperlessClient:
         )
         payload = {"content": content, "tags": tags_list}
         response = self._patch(url, json=payload)
-        response.raise_for_status()
+        self._raise_for_status_logging_body(
+            response, doc_id=doc_id, payload_keys=list(payload)
+        )
         log.info("Successfully updated document", doc_id=doc_id)
 
     # Maps DocumentMetadataUpdate keys to Paperless API field names.
@@ -469,7 +525,9 @@ class PaperlessClient:
             "Updating document metadata", doc_id=doc_id, payload_keys=list(payload)
         )
         response = self._patch(url, json=payload)
-        response.raise_for_status()
+        self._raise_for_status_logging_body(
+            response, doc_id=doc_id, payload_keys=list(payload)
+        )
         log.info("Successfully updated document metadata", doc_id=doc_id)
 
     def _list_named_items(self, url: str) -> list[PaperlessItem]:

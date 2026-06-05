@@ -9,10 +9,18 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from tests.helpers.factories import make_classification_result
 from tests.unit.classifier.conftest import make_doc_with_content, make_processor
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    """Build an ``httpx.HTTPStatusError`` carrying *status*."""
+    request = httpx.Request("PATCH", "http://paperless:8000/api/documents/1/")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
 
 
 class TestProcessHappyPath:
@@ -334,4 +342,51 @@ class TestProcessLockRelease:
         with pytest.raises(RuntimeError, match="LLM exploded"):
             proc.process()
 
+        mock_release.assert_called_once()
+
+
+class TestProcessWriteBackFailure:
+    """A failed metadata write-back must not re-burn tokens forever.
+
+    The LLM call has already spent tokens by the time the write-back runs, so a
+    permanent (4xx) rejection has to quarantine the document — leaving it queued
+    would re-classify it on every poll. A transient (5xx) rejection re-raises so
+    the daemon loop retries once Paperless recovers.
+    """
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_permanent_4xx_quarantines_document(self, mock_release, mock_claim):
+        doc = make_doc_with_content("Invoice from Acme Corp. Total: $100.")
+        proc = make_processor(doc=doc, settings_overrides={"ERROR_TAG_ID": 552})
+        proc.paperless_client.get_document.return_value = doc
+        # First call (the metadata write) is rejected with a 400; the second
+        # call (the error-tag finalisation) succeeds.
+        proc.paperless_client.update_document_metadata.side_effect = [
+            _http_status_error(400),
+            None,
+        ]
+
+        proc.process()
+
+        assert proc.paperless_client.update_document_metadata.call_count == 2
+        finalise_call = proc.paperless_client.update_document_metadata.call_args
+        assert 552 in finalise_call.kwargs["tags"]
+        mock_release.assert_called_once()
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_transient_5xx_reraises_without_quarantine(self, mock_release, mock_claim):
+        doc = make_doc_with_content("Invoice from Acme Corp. Total: $100.")
+        proc = make_processor(doc=doc, settings_overrides={"ERROR_TAG_ID": 552})
+        proc.paperless_client.get_document.return_value = doc
+        proc.paperless_client.update_document_metadata.side_effect = _http_status_error(
+            503
+        )
+
+        with pytest.raises(httpx.HTTPStatusError):
+            proc.process()
+
+        # Only the apply was attempted — no error-tag finalisation.
+        assert proc.paperless_client.update_document_metadata.call_count == 1
         mock_release.assert_called_once()

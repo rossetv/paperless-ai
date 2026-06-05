@@ -9,7 +9,11 @@ import structlog
 
 from common.claims import claim_processing_tag
 from common.config import Settings
-from common.paperless import PaperlessClient
+from common.paperless import (
+    PAPERLESS_CALL_EXCEPTIONS,
+    PaperlessClient,
+    is_permanent_paperless_error,
+)
 from common.tags import (
     ErrorFinaliserMixin,
     clean_pipeline_tags,
@@ -107,8 +111,30 @@ class OcrProcessor(ErrorFinaliserMixin):
                 page_results,
                 include_page_models=self.settings.OCR_INCLUDE_PAGE_MODELS,
             )
-            self._update_paperless_document(full_text, models_used)
-            success = True
+            try:
+                self._update_paperless_document(full_text, models_used)
+                success = True
+            except PAPERLESS_CALL_EXCEPTIONS as exc:
+                # The vision tokens for every page are already spent. A 4xx on
+                # the write-back is permanent — re-queuing would re-OCR the whole
+                # document next poll and burn the tokens again, forever.
+                # Quarantine it (error tag + the transcription we have) so it
+                # leaves the queue. Transient errors (5xx/network) re-raise for
+                # the daemon loop to retry once Paperless recovers.
+                if not is_permanent_paperless_error(exc):
+                    raise
+                log.error(
+                    "Paperless rejected OCR write; quarantining document to "
+                    "break the re-OCR loop",
+                    doc_id=self.doc_id,
+                    error=str(exc),
+                )
+                self._finalise_with_error(
+                    get_latest_tags(
+                        self.paperless_client, self.doc_id, fallback_doc=self.doc
+                    ),
+                    content=full_text,
+                )
         finally:
             if claimed:
                 release_processing_tag(
