@@ -103,51 +103,67 @@ class ClassificationProvider(OpenAIChatMixin):
         taxonomy: TaxonomyContext,
         truncation_note: str | None,
     ) -> str:
-        parts: list[str] = []
+        # STABLE PREFIX — byte-identical across every document in a batch, so
+        # OpenAI's prompt cache keys on it. Tag-limit guidance, then the three
+        # taxonomy lists. Nothing per-document appears above this point.
+        parts: list[str] = [
+            self._tag_limit_guidance(),
+            self._taxonomy_block(taxonomy),
+        ]
 
+        # VARIABLE SUFFIX — per-document content, last so it never shifts the
+        # cacheable prefix. The note (if any) precedes the transcription; the
+        # transcription is always the final segment.
         if truncation_note:
             parts.append(truncation_note)
+        parts.append(f"Document transcription:\n{text}")
 
-        # Tag limit guidance for the LLM
+        return "\n\n".join(parts)
+
+    def _tag_limit_guidance(self) -> str:
+        """Return the stable tag-count instruction for the cacheable prefix."""
         if self.settings.CLASSIFY_TAG_LIMIT == 0:
-            parts.append(
-                "Tag limit: return no optional tags. Required tags (year, country, "
-                "model, error) are added automatically."
+            return (
+                "Tag limit: return no optional tags. Required tags (year, "
+                "country, model, error) are added automatically."
             )
-        else:
-            parts.append(
-                f"Tag limit: return no more than {self.settings.CLASSIFY_TAG_LIMIT} "
-                "optional tags. Required tags (year, country, model, error) are added "
-                "automatically."
-            )
+        return (
+            f"Tag limit: return no more than {self.settings.CLASSIFY_TAG_LIMIT} "
+            "optional tags. Required tags (year, country, model, error) are "
+            "added automatically."
+        )
 
-        # Taxonomy context so the LLM can reuse existing items
-        parts.append(
+    def _taxonomy_block(self, taxonomy: TaxonomyContext) -> str:
+        """Return the stable taxonomy lists for the cacheable prefix.
+
+        No per-document content is interpolated here, so the block is identical
+        for every document in a batch — which is what lets OpenAI cache it.
+        """
+        return (
             "Existing correspondents (prefer these when possible):\n"
             f"{json.dumps(taxonomy.correspondents, ensure_ascii=True)}\n\n"
             "Existing document types (prefer these when possible):\n"
             f"{json.dumps(taxonomy.document_types, ensure_ascii=True)}\n\n"
             "Existing tags (prefer these when possible):\n"
-            f"{json.dumps(taxonomy.tags, ensure_ascii=True)}\n\n"
-            "Document transcription:\n"
-            f"{text}"
+            f"{json.dumps(taxonomy.tags, ensure_ascii=True)}"
         )
-
-        return "\n\n".join(parts)
 
     def _build_params(self, model: str, messages: list[dict]) -> dict:
         """Build the chat-completion params, always requesting temperature.
 
-        Temperature and (for OpenAI) the ``json_schema`` response format are
-        always *requested*; a model that rejects either has it stripped and
-        cached by the shared :meth:`_create_with_compat` layer. ``max_tokens``
-        is requested only when ``CLASSIFY_MAX_TOKENS > 0`` (default 0 → omitted).
+        Temperature, ``reasoning_effort`` and (for OpenAI) the ``json_schema``
+        response format are always *requested*; a model that rejects any of them
+        has it stripped and cached by the shared :meth:`_create_with_compat`
+        layer, so it is never *persistently* sent to a model that does not
+        accept it. ``max_tokens`` is requested only when
+        ``CLASSIFY_MAX_TOKENS > 0`` (default 0 → omitted).
         """
         params: dict = {
             "model": model,
             "messages": messages,
             "timeout": self.settings.REQUEST_TIMEOUT,
             "temperature": DEFAULT_CLASSIFY_TEMPERATURE,
+            "reasoning_effort": self.settings.CLASSIFY_REASONING_EFFORT,
         }
         if self.settings.CLASSIFY_MAX_TOKENS > 0:
             params["max_tokens"] = self.settings.CLASSIFY_MAX_TOKENS

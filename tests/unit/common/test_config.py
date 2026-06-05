@@ -58,10 +58,11 @@ _SIMPLE_DEFAULTS = [
     ("CLASSIFY_MAX_CHARS", 0),
     ("CLASSIFY_MAX_TOKENS", 0),
     ("CLASSIFY_TAG_LIMIT", 5),
-    ("CLASSIFY_TAXONOMY_LIMIT", 100),
+    ("CLASSIFY_TAXONOMY_LIMIT", 40),
     ("CLASSIFY_MAX_PAGES", 3),
     ("CLASSIFY_TAIL_PAGES", 2),
     ("CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000),
+    ("CLASSIFY_REASONING_EFFORT", "medium"),
 ]
 
 
@@ -111,6 +112,11 @@ _CUSTOM_ENV_VARS = [
     ("CLASSIFY_MAX_PAGES", "10", "CLASSIFY_MAX_PAGES", 10),
     ("CLASSIFY_TAIL_PAGES", "5", "CLASSIFY_TAIL_PAGES", 5),
     ("CLASSIFY_HEADERLESS_CHAR_LIMIT", "8000", "CLASSIFY_HEADERLESS_CHAR_LIMIT", 8000),
+    ("CLASSIFY_REASONING_EFFORT", "high", "CLASSIFY_REASONING_EFFORT", "high"),
+    ("CLASSIFY_REASONING_EFFORT", "low", "CLASSIFY_REASONING_EFFORT", "low"),
+    ("CLASSIFY_REASONING_EFFORT", "minimal", "CLASSIFY_REASONING_EFFORT", "minimal"),
+    ("CLASSIFY_REASONING_EFFORT", "MEDIUM", "CLASSIFY_REASONING_EFFORT", "medium"),
+    ("CLASSIFY_REASONING_EFFORT", " minimal ", "CLASSIFY_REASONING_EFFORT", "minimal"),
     ("ERROR_TAG_ID", "999", "ERROR_TAG_ID", 999),
     ("OCR_PROCESSING_TAG_ID", "77", "OCR_PROCESSING_TAG_ID", 77),
     ("CLASSIFY_PRE_TAG_ID", "555", "CLASSIFY_PRE_TAG_ID", 555),
@@ -229,6 +235,13 @@ class TestValidation:
     def test_invalid_log_format_raises(self, mocker):
         with pytest.raises(ValueError, match="LOG_FORMAT must be"):
             _build(mocker, {**_MINIMAL_ENV, "LOG_FORMAT": "xml"})
+
+    @pytest.mark.parametrize("value", ["none", "xhigh", ""])
+    def test_invalid_reasoning_effort_raises(self, mocker, value):
+        with pytest.raises(
+            ValueError, match="CLASSIFY_REASONING_EFFORT must be one of"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_REASONING_EFFORT": value})
 
     @pytest.mark.parametrize("value", ["0", "-1"])
     def test_max_retries_invalid_raises(self, mocker, value):
@@ -478,12 +491,12 @@ def test_secret_keys_cover_the_two_secrets() -> None:
     assert SECRET_KEYS == frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 
 
-def test_config_keys_has_fifty_one_entries() -> None:
-    """CONFIG_KEYS is the 51-key config-table universe (post-Wave-3:
-    SEARCH_API_KEY is gone)."""
+def test_config_keys_has_fifty_two_entries() -> None:
+    """CONFIG_KEYS is the 52-key config-table universe (post-Wave-3 SEARCH_API_KEY
+    is gone; CLASSIFY_REASONING_EFFORT added by the token-cost classifier work)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 51
+    assert len(CONFIG_KEYS) == 52
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
 
 
