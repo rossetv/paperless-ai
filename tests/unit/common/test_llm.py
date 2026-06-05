@@ -20,6 +20,7 @@ from common.llm import (
     unique_models,
     _openai_holder,
 )
+from common.model_compat import model_compat_cache
 
 
 class TestUniqueModels:
@@ -286,3 +287,162 @@ class TestGuardedStatHelpers:
         client._record_api_error()
         client._record_strip("temperature")
         assert client.get_stats() == {}
+
+
+class _CompatClient(OpenAIChatMixin):
+    """A mixin subclass for exercising _create_with_compat with strip stats."""
+
+    _STAT_KEYS = (
+        "attempts",
+        "api_errors",
+        "temperature_retries",
+        "response_format_retries",
+        "max_tokens_retries",
+    )
+
+    def __init__(self):
+        self.settings = MagicMock()
+        self._init_stats()
+
+
+def _ok_completion() -> MagicMock:
+    """A successful OpenAI-shaped completion."""
+    choice = MagicMock()
+    choice.message.content = "ok"
+    completion = MagicMock()
+    completion.choices = [choice]
+    return completion
+
+
+class TestCreateWithCompat:
+    """OpenAIChatMixin._create_with_compat — adaptive strip-on-400 with cache."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        model_compat_cache.reset()
+        yield
+        model_compat_cache.reset()
+
+    def test_passes_params_through_on_success(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(return_value=_ok_completion())
+
+        result = client._create_with_compat(
+            {"model": "m", "messages": [], "temperature": 0.2}, "m"
+        )
+
+        assert result is not None
+        client._create_completion.assert_called_once_with(
+            model="m", messages=[], temperature=0.2
+        )
+
+    def test_strips_temperature_on_400_and_retries(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(
+            side_effect=[_bad_request("temperature is unsupported"), _ok_completion()]
+        )
+
+        result = client._create_with_compat(
+            {"model": "m", "messages": [], "temperature": 0.2}, "m"
+        )
+
+        assert result is not None
+        assert client._create_completion.call_count == 2
+        # second call carries no temperature
+        assert "temperature" not in client._create_completion.call_args.kwargs
+        assert client.get_stats()["temperature_retries"] == 1
+
+    def test_records_a_strip_in_the_cache(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(
+            side_effect=[_bad_request("temperature is unsupported"), _ok_completion()]
+        )
+
+        client._create_with_compat(
+            {"model": "m", "messages": [], "temperature": 0.2}, "m"
+        )
+
+        assert "temperature" in model_compat_cache.rejected_params_for("m")
+
+    def test_pre_strips_a_cached_rejected_param_without_a_400(self):
+        model_compat_cache.record_rejected("m", "temperature")
+        client = _CompatClient()
+        client._create_completion = MagicMock(return_value=_ok_completion())
+
+        client._create_with_compat(
+            {"model": "m", "messages": [], "temperature": 0.2}, "m"
+        )
+
+        # One call only — no wasted 400 round-trip — and temperature was pre-stripped.
+        assert client._create_completion.call_count == 1
+        assert "temperature" not in client._create_completion.call_args.kwargs
+
+    def test_non_strippable_400_returns_none(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(
+            side_effect=_bad_request("messages: array too long")
+        )
+
+        result = client._create_with_compat({"model": "m", "messages": []}, "m")
+
+        assert result is None
+        assert client.get_stats()["api_errors"] == 1
+
+    def test_other_api_error_returns_none(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(
+            side_effect=openai.APIError(message="boom", request=MagicMock(), body=None)
+        )
+
+        result = client._create_with_compat({"model": "m", "messages": []}, "m")
+
+        assert result is None
+        assert client.get_stats()["api_errors"] == 1
+
+    def test_strip_loop_is_bounded_and_gives_up(self):
+        """A 400 that always names a present param but never succeeds still ends."""
+        client = _CompatClient()
+        # Always rejects temperature; after stripping it, the SAME message no
+        # longer matches a present param -> give up as api_error.
+        client._create_completion = MagicMock(
+            side_effect=_bad_request("temperature is unsupported")
+        )
+
+        result = client._create_with_compat(
+            {"model": "m", "messages": [], "temperature": 0.2}, "m"
+        )
+
+        assert result is None
+        assert client.get_stats()["temperature_retries"] == 1
+        assert client.get_stats()["api_errors"] == 1
+        # bounded: at most len(params)+1 attempts, never infinite.
+        assert client._create_completion.call_count <= len(_STRIPPABLE_PARAMS) + 1
+
+    def test_strips_three_distinct_params_across_three_400s(self):
+        client = _CompatClient()
+        client._create_completion = MagicMock(
+            side_effect=[
+                _bad_request("temperature is unsupported"),
+                _bad_request("response_format not supported"),
+                _bad_request("max_tokens not supported"),
+                _ok_completion(),
+            ]
+        )
+
+        result = client._create_with_compat(
+            {
+                "model": "m",
+                "messages": [],
+                "temperature": 0.2,
+                "response_format": {"type": "json_schema"},
+                "max_tokens": 500,
+            },
+            "m",
+        )
+
+        assert result is not None
+        stats = client.get_stats()
+        assert stats["temperature_retries"] == 1
+        assert stats["response_format_retries"] == 1
+        assert stats["max_tokens_retries"] == 1
+        assert stats["attempts"] == 4
