@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from search.cache import build_cache_key, get_search_result_cache, is_cacheable
 from search.errors import LlmBudgetExceededError
 from search.models import (
     Answered,
@@ -56,11 +57,13 @@ from search.models import (
 )
 from search.refinement import adjust_plan, broaden_plan, merge_chunks
 from search.retriever import resolve_filters
+from search.sources import assemble_sources
 from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
-from store.models import IndexedDocument
+from store import StoreError
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from search.cache import _CacheKey
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
@@ -74,11 +77,6 @@ log = structlog.get_logger(__name__)
 # Raising this is a security-review point — it bounds per-request cost on a
 # billable endpoint.
 _MAX_LLM_CALLS = 3
-
-# The maximum number of characters of chunk text shown as a source snippet in
-# the UI.  A snippet is a preview, not the whole chunk; ~280 chars is roughly
-# three lines and enough to judge relevance.
-_SNIPPET_MAX_CHARS = 280
 
 # Shown as the answer when retrieval yields nothing (spec §6.3): a no-hits
 # query short-circuits before any synthesis call, so there is no model prose.
@@ -177,12 +175,12 @@ class SearchCore:
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
-        Executes the hard-bounded loop of spec §6.3: plan, resolve filters,
-        retrieve, broaden-and-retry once if retrieval is empty, synthesise
-        once, and — if the synthesiser asks for more and the refinement budget
-        allows — adjust, retrieve again, merge, and synthesise a final time.
-
-        At most three LLM calls are ever made (see the module docstring).
+        A successful answer is served from / written to the process result
+        cache (RAG-05) keyed on the normalised query, the UI filters, and a
+        cheap index-version signal. A cache hit makes zero LLM calls. The cache
+        is bypassed (fail-open) when the index version cannot be read, and a
+        no-match or degraded result is never cached. ``SEARCH_CACHE_TTL_SECONDS``
+        of 0 disables the cache entirely.
 
         Args:
             query: The raw user search query.
@@ -192,6 +190,34 @@ class SearchCore:
         Returns:
             A SearchResult with the synthesised answer, ranked source
             documents, the query plan, and execution statistics.
+        """
+        cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
+        cache_key = self._cache_key(query, ui_filters)
+        if cache_key is not None:
+            cached = cache.get(cache_key)
+            if cached is not None:
+                log.info("search.cache_hit", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
+                return cached
+
+        result = self._answer_uncached(query, ui_filters)
+
+        if cache_key is not None and is_cacheable(result):
+            cache.put(cache_key, result)
+        return result
+
+    def _answer_uncached(
+        self,
+        query: str,
+        ui_filters: SearchFilters | None,
+    ) -> SearchResult:
+        """Run the bounded pipeline once, ignoring the cache.
+
+        The original ``answer`` body — the hard-bounded loop of spec §6.3: plan,
+        resolve filters, retrieve, broaden-and-retry once if retrieval is empty,
+        synthesise once, and — if the synthesiser asks for more and the
+        refinement budget allows — adjust, retrieve again, merge, and synthesise
+        a final time. At most three LLM calls are ever made (see the module
+        docstring).
         """
         started = time.monotonic()
         budget = _LlmBudget()
@@ -216,10 +242,43 @@ class SearchCore:
             refined = True
 
         answer_text = outcome.answer if isinstance(outcome, Answered) else ""
-        sources = self._assemble_sources(chunks)
+        sources = assemble_sources(
+            chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
+        )
         return self._build_result(
             answer_text, sources, plan, budget, started, refined=refined
         )
+
+    def _cache_key(
+        self, query: str, ui_filters: SearchFilters | None
+    ) -> _CacheKey | None:
+        """Build the result-cache key, or None when the index version is unreadable.
+
+        Returning None makes ``answer`` bypass the cache for this request
+        (fail-open) — a search must never fail because the cache could not key
+        itself (spec §6).
+        """
+        index_version = self._index_version()
+        if index_version is None:
+            return None
+        return build_cache_key(
+            query=query, filters=ui_filters, index_version=index_version
+        )
+
+    def _index_version(self) -> str | None:
+        """Return ``document_count:chunk_count`` as the cache index version.
+
+        A change in either count (a document indexed, re-chunked, or pruned)
+        moves the version string and invalidates prior cache entries (spec §7).
+        A store read failure logs at DEBUG and returns None — the caller then
+        bypasses the cache rather than failing the search.
+        """
+        try:
+            stats = self._store_reader.get_stats()
+        except StoreError as exc:
+            log.debug("search.cache_version_unavailable", error=str(exc))
+            return None
+        return f"{stats.document_count}:{stats.chunk_count}"
 
     def retrieve(
         self,
@@ -245,7 +304,9 @@ class SearchCore:
 
         plan = self._plan(query, budget)
         chunks = self._retrieve_with_broaden(plan, ui_filters)
-        sources = self._assemble_sources(chunks)
+        sources = assemble_sources(
+            chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
+        )
         return self._build_result("", sources, plan, budget, started, refined=False)
 
     # ------------------------------------------------------------------
@@ -337,77 +398,8 @@ class SearchCore:
         return outcome, merged
 
     # ------------------------------------------------------------------
-    # Source assembly and result construction
+    # Result construction
     # ------------------------------------------------------------------
-
-    def _assemble_sources(
-        self,
-        chunks: list[RetrievedChunk],
-    ) -> tuple[SourceDocument, ...]:
-        """Build ranked SourceDocuments from the retrieved chunks.
-
-        Groups chunks by document (keeping each document's best fused score
-        and a snippet from its highest-scoring chunk), resolves correspondent
-        and document-type names via one ``get_documents`` look-up, and builds
-        a Paperless deep-link per document.  Documents are ordered by score,
-        highest first.
-        """
-        if not chunks:
-            return ()
-
-        best_score, snippet = _best_chunk_per_document(chunks)
-        document_ids = list(best_score.keys())
-        indexed = self._store_reader.get_documents(document_ids)
-        indexed_by_id = {document.id: document for document in indexed}
-
-        sources = [
-            self._build_source(
-                document_id=document_id,
-                score=best_score[document_id],
-                snippet=snippet[document_id],
-                indexed=indexed_by_id.get(document_id),
-            )
-            for document_id in document_ids
-        ]
-        sources.sort(key=lambda source: source.score, reverse=True)
-        return tuple(sources)
-
-    def _build_source(
-        self,
-        *,
-        document_id: int,
-        score: float,
-        snippet: str,
-        indexed: IndexedDocument | None,
-    ) -> SourceDocument:
-        """Build one SourceDocument, tolerating an absent index row.
-
-        A document can be missing from the index look-up if it was pruned
-        between retrieval and assembly — a rare race.  The source is still
-        returned (the chunk text is real); only the taxonomy-resolved fields
-        fall back to None.
-        """
-        return SourceDocument(
-            document_id=document_id,
-            title=indexed.title if indexed is not None else None,
-            correspondent=indexed.correspondent if indexed is not None else None,
-            document_type=indexed.document_type if indexed is not None else None,
-            created=indexed.created if indexed is not None else None,
-            snippet=snippet,
-            paperless_url=self._paperless_url(document_id),
-            score=score,
-        )
-
-    def _paperless_url(self, document_id: int) -> str:
-        """Return the Paperless-ngx web deep-link for *document_id*.
-
-        Built from ``PAPERLESS_PUBLIC_URL`` — the browser-facing base — not
-        ``PAPERLESS_URL``, which may be an internal API address the user's
-        browser cannot resolve. Both are stored already stripped of any
-        trailing slash (see ``Settings.from_environment``); the document
-        detail route in the Paperless-ngx UI is ``/documents/{id}/``.
-        """
-        return f"{self._settings.PAPERLESS_PUBLIC_URL}/documents/{document_id}/"
 
     def _build_result(
         self,
@@ -446,41 +438,6 @@ class SearchCore:
 # ---------------------------------------------------------------------------
 # Module-level helpers (no SearchCore state)
 # ---------------------------------------------------------------------------
-
-
-def _best_chunk_per_document(
-    chunks: list[RetrievedChunk],
-) -> tuple[dict[int, float], dict[int, str]]:
-    """Reduce chunks to each document's best score and a display snippet.
-
-    A document may contribute several chunks; its source score is the highest
-    fused score among them and its snippet is drawn from that best chunk.
-    Iteration order does not matter — only a strict score comparison decides
-    the winner, so the reduction is deterministic.
-
-    Returns:
-        A pair of ``{document_id: best_score}`` and ``{document_id: snippet}``.
-    """
-    best_score: dict[int, float] = {}
-    snippet: dict[int, str] = {}
-    for chunk in chunks:
-        current = best_score.get(chunk.document_id)
-        if current is None or chunk.rrf_score > current:
-            best_score[chunk.document_id] = chunk.rrf_score
-            snippet[chunk.document_id] = _snippet(chunk.text)
-    return best_score, snippet
-
-
-def _snippet(text: str) -> str:
-    """Return a UI-display snippet — the chunk text trimmed to a preview.
-
-    Collapses internal whitespace runs (OCR text is often ragged) and caps the
-    length at ``_SNIPPET_MAX_CHARS`` with an ellipsis when truncated.
-    """
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= _SNIPPET_MAX_CHARS:
-        return collapsed
-    return collapsed[:_SNIPPET_MAX_CHARS].rstrip() + "…"
 
 
 def _elapsed_ms(started: float) -> int:
