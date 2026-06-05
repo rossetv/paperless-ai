@@ -234,3 +234,55 @@ class TestStrippableParamForError:
             "reasoning_effort",
             "verbosity",
         }
+
+
+class _StatsClient(OpenAIChatMixin):
+    """A mixin subclass that declares a subset of strip stat keys."""
+
+    _STAT_KEYS = ("attempts", "api_errors", "temperature_retries")
+
+    def __init__(self):
+        self.settings = MagicMock()
+        self._init_stats()
+
+
+class _NoStatsClient(OpenAIChatMixin):
+    """A mixin subclass with no stat keys (like the planner / synthesiser)."""
+
+    _STAT_KEYS = ()
+
+    def __init__(self):
+        self.settings = MagicMock()
+        self._init_stats()
+
+
+class TestGuardedStatHelpers:
+    """The shared compat layer records stats only when the key is declared."""
+
+    def test_record_attempt_increments_declared_key(self):
+        client = _StatsClient()
+        client._record_attempt()
+        assert client.get_stats()["attempts"] == 1
+
+    def test_record_api_error_increments_declared_key(self):
+        client = _StatsClient()
+        client._record_api_error()
+        assert client.get_stats()["api_errors"] == 1
+
+    def test_record_strip_increments_declared_stat_key(self):
+        client = _StatsClient()
+        client._record_strip("temperature")
+        assert client.get_stats()["temperature_retries"] == 1
+
+    def test_record_strip_is_a_noop_for_undeclared_stat_key(self):
+        client = _StatsClient()
+        # verbosity_retries is not in _STAT_KEYS -> must not raise, must not add.
+        client._record_strip("verbosity")
+        assert "verbosity_retries" not in client.get_stats()
+
+    def test_helpers_are_safe_when_no_stats_declared(self):
+        client = _NoStatsClient()
+        client._record_attempt()
+        client._record_api_error()
+        client._record_strip("temperature")
+        assert client.get_stats() == {}
