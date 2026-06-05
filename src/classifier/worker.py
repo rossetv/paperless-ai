@@ -6,7 +6,11 @@ import structlog
 
 from common.claims import claim_processing_tag
 from common.config import Settings
-from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessClient
+from common.paperless import (
+    PAPERLESS_CALL_EXCEPTIONS,
+    PaperlessClient,
+    is_permanent_paperless_error,
+)
 from common.tags import (
     ErrorFinaliserMixin,
     clean_pipeline_tags,
@@ -136,7 +140,26 @@ class ClassificationProcessor(ErrorFinaliserMixin):
             usable = self._usable_result(result, current_tags)
             if usable is None:
                 return
-            self._apply_classification(document, current_tags, content, usable, model)
+            try:
+                self._apply_classification(
+                    document, current_tags, content, usable, model
+                )
+            except PAPERLESS_CALL_EXCEPTIONS as exc:
+                # The LLM tokens for this document are already spent. A 4xx here
+                # (a rejected metadata PATCH, a stale taxonomy pk) is permanent:
+                # leaving the document queued would re-classify it every poll and
+                # burn tokens forever. Quarantine it with the error tag so it
+                # leaves the queue. Transient errors (5xx/network) re-raise so the
+                # daemon loop retries them once Paperless recovers.
+                if not is_permanent_paperless_error(exc):
+                    raise
+                log.error(
+                    "Paperless rejected classification write; quarantining "
+                    "document to break the reprocessing loop",
+                    doc_id=self.doc_id,
+                    error=str(exc),
+                )
+                self._finalise_with_error(current_tags)
         finally:
             if claimed:
                 release_processing_tag(

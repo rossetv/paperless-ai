@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from PIL import Image
 
@@ -18,6 +19,13 @@ from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
 from tests.unit.ocr.conftest import make_image, make_page_source, make_processor
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    """Build an ``httpx.HTTPStatusError`` carrying *status*."""
+    request = httpx.Request("PATCH", "http://paperless:8000/api/documents/1/")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
 
 
 class TestProcessHappyPath:
@@ -156,6 +164,88 @@ class TestProcessImageConversionFailure:
 
         proc.process()
 
+        mock_release.assert_called_once()
+
+
+class TestProcessWriteBackFailure:
+    """A failed OCR write-back must not re-burn vision tokens forever.
+
+    Every page's transcription is already paid for by the time the write-back
+    runs, so a permanent (4xx) rejection must quarantine the document — leaving
+    it queued would re-OCR it on every poll. A transient (5xx) rejection
+    re-raises so the daemon loop retries once Paperless recovers.
+    """
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("ocr.worker.release_processing_tag")
+    @patch("ocr.worker.claim_processing_tag", return_value=True)
+    @patch("ocr.worker.open_page_source")
+    @patch("ocr.worker.assemble_full_text")
+    def test_permanent_4xx_quarantines_document(
+        self,
+        mock_assemble,
+        mock_open_pages,
+        mock_claim,
+        mock_release,
+        mock_latest,
+    ):
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999, ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
+        paperless.download_content.return_value = (b"pdf-data", "application/pdf")
+        mock_open_pages.return_value = make_page_source([make_image()])
+        mock_assemble.return_value = ("Full transcription text", {"model-a"})
+        # The happy-path write is rejected 400; the error-tag finalisation
+        # (which also uses update_document, with content) then succeeds.
+        paperless.update_document.side_effect = [_http_status_error(400), None]
+
+        proc = OcrProcessor(
+            {"id": 1, "title": "T", "tags": [443]},
+            paperless,
+            make_mock_ocr_provider(),
+            settings,
+        )
+
+        proc.process()
+
+        assert paperless.update_document.call_count == 2
+        finalise_tags = paperless.update_document.call_args[0][2]
+        assert 552 in finalise_tags
+        mock_release.assert_called_once()
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("ocr.worker.release_processing_tag")
+    @patch("ocr.worker.claim_processing_tag", return_value=True)
+    @patch("ocr.worker.open_page_source")
+    @patch("ocr.worker.assemble_full_text")
+    def test_transient_5xx_reraises_without_quarantine(
+        self,
+        mock_assemble,
+        mock_open_pages,
+        mock_claim,
+        mock_release,
+        mock_latest,
+    ):
+        settings = make_settings_obj(OCR_PROCESSING_TAG_ID=999, ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        paperless.get_document.return_value = {"id": 1, "title": "T", "tags": [443]}
+        paperless.download_content.return_value = (b"pdf-data", "application/pdf")
+        mock_open_pages.return_value = make_page_source([make_image()])
+        mock_assemble.return_value = ("Full transcription text", {"model-a"})
+        paperless.update_document.side_effect = _http_status_error(503)
+
+        proc = OcrProcessor(
+            {"id": 1, "title": "T", "tags": [443]},
+            paperless,
+            make_mock_ocr_provider(),
+            settings,
+        )
+
+        with pytest.raises(httpx.HTTPStatusError):
+            proc.process()
+
+        # Only the happy-path write was attempted — no error-tag finalisation.
+        assert paperless.update_document.call_count == 1
         mock_release.assert_called_once()
 
 
