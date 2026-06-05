@@ -182,3 +182,41 @@ class TestApiErrorNeverEscapes:
         assert isinstance(outcome, Answered)
         assert outcome.answer == "model two answered [1]."
         assert synthesiser._create_completion.call_count == 2  # type: ignore[attr-defined]
+
+
+class TestSynthReasoningEffortForwarded:
+    """The synthesiser forwards its configured reasoning_effort to the LLM call."""
+
+    def test_synth_forwards_configured_reasoning_effort(self) -> None:
+        # "medium" is the shipped default — proves the wiring forwards it verbatim.
+        settings = make_search_settings(
+            SEARCH_ANSWER_MODEL="gpt-5.4",
+            AI_MODELS=["gpt-5.4"],
+            SEARCH_ANSWER_REASONING_EFFORT="medium",
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["reasoning_effort"] == "medium"
+
+    def test_synth_forwards_tuned_down_reasoning_effort(self) -> None:
+        # The realistic per-env tuning: an operator lowers the synth to "low".
+        settings = make_search_settings(
+            SEARCH_ANSWER_MODEL="gpt-5.4",
+            AI_MODELS=["gpt-5.4"],
+            SEARCH_ANSWER_REASONING_EFFORT="low",
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["reasoning_effort"] == "low"

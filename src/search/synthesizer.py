@@ -137,6 +137,7 @@ class Synthesizer(OpenAIChatMixin):
             messages=messages,
             fallback_models=self.settings.AI_MODELS,
             log_event_prefix="synthesiser",
+            reasoning_effort=self.settings.SEARCH_ANSWER_REASONING_EFFORT,
         )
         if raw_content is None:
             return self._degrade(
