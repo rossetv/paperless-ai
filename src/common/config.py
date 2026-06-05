@@ -526,14 +526,14 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ERROR_TAG_ID=_get_optional_positive_int_env(source, "ERROR_TAG_ID", 552),
         POLL_INTERVAL=_get_int_env(source, "POLL_INTERVAL", 15),
         MAX_RETRIES=_require_at_least_one(
-            "MAX_RETRIES", _get_int_env(source, "MAX_RETRIES", 20)
+            "MAX_RETRIES", _get_int_env(source, "MAX_RETRIES", 3)
         ),
         MAX_RETRY_BACKOFF_SECONDS=_require_at_least_one(
             "MAX_RETRY_BACKOFF_SECONDS",
             _get_int_env(source, "MAX_RETRY_BACKOFF_SECONDS", 30),
         ),
         REQUEST_TIMEOUT=_get_int_env(source, "REQUEST_TIMEOUT", 180),
-        LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 0)),
+        LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
         OCR_DPI=_get_int_env(source, "OCR_DPI", 300),
         OCR_MAX_SIDE=_get_int_env(source, "OCR_MAX_SIDE", 1600),
         PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),

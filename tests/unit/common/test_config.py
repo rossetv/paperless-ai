@@ -43,10 +43,10 @@ _SIMPLE_DEFAULTS = [
     ("CLASSIFY_PROCESSING_TAG_ID", None),
     ("ERROR_TAG_ID", 552),
     ("POLL_INTERVAL", 15),
-    ("MAX_RETRIES", 20),
+    ("MAX_RETRIES", 3),
     ("MAX_RETRY_BACKOFF_SECONDS", 30),
     ("REQUEST_TIMEOUT", 180),
-    ("LLM_MAX_CONCURRENT", 0),
+    ("LLM_MAX_CONCURRENT", 4),
     ("OCR_DPI", 300),
     ("OCR_MAX_SIDE", 1600),
     ("PAGE_WORKERS", 8),
@@ -441,6 +441,11 @@ class TestClassifyPersonFieldId:
 class TestLlmMaxConcurrent:
     def test_negative_clamped_to_zero(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "-3"})
+        assert s.LLM_MAX_CONCURRENT == 0
+
+    def test_env_zero_overrides_the_new_default(self, mocker):
+        """Setting LLM_MAX_CONCURRENT=0 still selects unbounded, beating the default."""
+        s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "0"})
         assert s.LLM_MAX_CONCURRENT == 0
 
 

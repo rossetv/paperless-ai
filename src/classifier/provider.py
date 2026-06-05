@@ -1,12 +1,17 @@
-"""OpenAI-compatible classification provider with model fallback and parameter compatibility."""
+"""OpenAI-compatible classification provider with model fallback.
+
+Parameter compatibility (stripping a param a model rejects, with a per-model
+process cache) is handled by the shared :class:`~common.llm.OpenAIChatMixin`
+adaptive layer — this provider no longer carries its own. It always *requests*
+temperature and (for OpenAI) a ``json_schema`` response format; the shared
+layer strips whatever a given model rejects and caches the discovery.
+"""
 
 from __future__ import annotations
 
 import json
 
-import openai
 import structlog
-from openai.types.chat import ChatCompletion
 
 from common.config import Settings
 from common.llm import OpenAIChatMixin, unique_models
@@ -38,86 +43,10 @@ class ClassificationProvider(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def _supports_temperature(self, model: str) -> bool:
-        # OpenAI's GPT-5 series does not accept a temperature parameter and
-        # returns 400 if one is supplied.  This prefix check avoids a wasted
-        # round-trip for known-unsupported models; unknown models will still be
-        # handled gracefully by _create_with_compat's parameter-stripping logic.
-        return not model.startswith("gpt-5")
-
-    def _is_temperature_error(self, error: openai.BadRequestError) -> bool:
-        message = str(error).lower()
-        return "temperature" in message and "unsupported" in message
-
-    def _is_response_format_error(self, error: openai.BadRequestError) -> bool:
-        message = str(error).lower()
-        return "response_format" in message or "json_schema" in message
-
-    def _is_max_tokens_error(self, error: openai.BadRequestError) -> bool:
-        message = str(error).lower()
-        return "max_tokens" in message or "max tokens" in message
-
     def _response_format(self) -> dict | None:
         if self.settings.LLM_PROVIDER != "openai":
             return None
         return {"type": "json_schema", "json_schema": CLASSIFICATION_JSON_SCHEMA}
-
-    # Strippable parameters: (param_key, error_detector_method, stat_key).
-    _COMPAT_PARAMS: tuple[tuple[str, str, str], ...] = (
-        ("temperature", "_is_temperature_error", "temperature_retries"),
-        ("response_format", "_is_response_format_error", "response_format_retries"),
-        ("max_tokens", "_is_max_tokens_error", "max_tokens_retries"),
-    )
-
-    def _create_with_compat(self, params: dict, model: str) -> ChatCompletion | None:
-        """Call the chat completion API, retrying after stripping unsupported params.
-
-        Ollama and some OpenAI models reject parameters they don't understand
-        (``temperature``, ``response_format``, ``max_tokens``).  When we get a
-        ``400 Bad Request`` whose message names the offending parameter, we
-        remove it and retry the same model — up to ``len(_COMPAT_PARAMS)`` times.
-        """
-        for _ in range(len(self._COMPAT_PARAMS) + 1):
-            try:
-                self._stats.inc("attempts")
-                return self._create_completion(**params)
-            except openai.BadRequestError as e:
-                stripped = self._try_strip_compat_param(e, params, model)
-                if stripped is not None:
-                    params = stripped
-                    continue
-                log.warning(
-                    "Classification request rejected", model=model, error=str(e)
-                )
-                self._stats.inc("api_errors")
-                return None
-            except openai.APIError as e:
-                log.warning("Classification model failed", model=model, error=str(e))
-                self._stats.inc("api_errors")
-                return None
-        log.warning("Classification request rejected after compat retries", model=model)
-        self._stats.inc("api_errors")
-        return None
-
-    def _try_strip_compat_param(
-        self,
-        error: openai.BadRequestError,
-        params: dict,
-        model: str,
-    ) -> dict | None:
-        """Strip the first unsupported parameter from *params*, or return ``None``."""
-        for param_key, detector_name, stat_key in self._COMPAT_PARAMS:
-            if param_key in params and getattr(self, detector_name)(error):
-                log.warning(
-                    "Model does not support parameter; retrying without it",
-                    model=model,
-                    parameter=param_key,
-                )
-                self._stats.inc(stat_key)
-                stripped = dict(params)
-                del stripped[param_key]
-                return stripped
-        return None
 
     def classify_text(
         self,
@@ -156,11 +85,11 @@ class ClassificationProvider(OpenAIChatMixin):
                 if model != primary_model:
                     self._stats.inc("fallback_successes")
                 return result, model
-            except (json.JSONDecodeError, ValueError) as e:
+            except (json.JSONDecodeError, ValueError) as error:
                 log.warning(
                     "Classification response invalid",
                     model=model,
-                    error=str(e),
+                    error=str(error),
                 )
                 self._stats.inc("invalid_json")
                 continue
@@ -207,13 +136,19 @@ class ClassificationProvider(OpenAIChatMixin):
         return "\n\n".join(parts)
 
     def _build_params(self, model: str, messages: list[dict]) -> dict:
+        """Build the chat-completion params, always requesting temperature.
+
+        Temperature and (for OpenAI) the ``json_schema`` response format are
+        always *requested*; a model that rejects either has it stripped and
+        cached by the shared :meth:`_create_with_compat` layer. ``max_tokens``
+        is requested only when ``CLASSIFY_MAX_TOKENS > 0`` (default 0 → omitted).
+        """
         params: dict = {
             "model": model,
             "messages": messages,
             "timeout": self.settings.REQUEST_TIMEOUT,
+            "temperature": DEFAULT_CLASSIFY_TEMPERATURE,
         }
-        if self._supports_temperature(model):
-            params["temperature"] = DEFAULT_CLASSIFY_TEMPERATURE
         if self.settings.CLASSIFY_MAX_TOKENS > 0:
             params["max_tokens"] = self.settings.CLASSIFY_MAX_TOKENS
         response_format = self._response_format()
