@@ -7,6 +7,7 @@ everything; the embedding-model meta is preserved.
 
 from __future__ import annotations
 
+from store.writer import StoreWriter
 from tests.helpers.factories import make_chunks, make_document_meta
 from tests.helpers.store import open_writer
 
@@ -43,3 +44,18 @@ def test_rebuild_index_preserves_the_embedding_model_meta(db_path: str) -> None:
         assert writer.read_meta("embedding_model") == "text-embedding-3-small"
     finally:
         writer.close()
+
+
+def test_rebuild_index_is_a_writer_only_operation(db_path: str) -> None:
+    """I4: the wipe lives only on the write side (StoreWriter).
+
+    A regression guard: rebuild_index must remain a StoreWriter method (gated by
+    the indexer's single-writer flock), never reachable from the read side. The
+    StoreReader has no such method — asserting its absence pins the invariant
+    that a full re-embed cannot be triggered from a read/search path.
+    """
+    from store.reader import StoreReader
+
+    assert hasattr(StoreWriter, "rebuild_index")
+    assert not hasattr(StoreReader, "rebuild_index")
+    assert not hasattr(StoreReader, "check_embedding_model")
