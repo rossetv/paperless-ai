@@ -55,10 +55,14 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
-from search.refinement import adjust_plan, broaden_plan, merge_chunks
+from search.refinement import adjust_plan, broaden_plan, merge_chunks, trivial_plan
 from search.retriever import resolve_filters
 from search.sources import assemble_sources
-from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
+from search.text import (
+    ADJUSTMENT_LOG_PREFIX_CHARS,
+    QUERY_LOG_PREFIX_CHARS,
+    is_trivial_query,
+)
 from store import StoreError
 
 if TYPE_CHECKING:
@@ -314,7 +318,20 @@ class SearchCore:
     # ------------------------------------------------------------------
 
     def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan:
-        """Run the planner stage and record its single LLM call."""
+        """Run the planner stage, or skip it for a trivial query (RAG-08).
+
+        When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
+        short, signal-free keyword lookup, the planner LLM call is skipped and
+        the fallback-shaped trivial plan is used — retrieval still runs vector +
+        FTS on the raw query, so nothing is lost (spec §4.6). The flag defaults
+        off, preserving today's always-plan behaviour.
+        """
+        if self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query):
+            log.info(
+                "search.planner_skipped_trivial",
+                query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+            )
+            return trivial_plan(query)
         budget.record()
         return self._planner.plan(query)
 

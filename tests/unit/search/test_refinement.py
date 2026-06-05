@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from search.models import FilterCandidates, QueryPlan
-from search.refinement import adjust_plan, broaden_plan, merge_chunks
+from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
+from search.refinement import adjust_plan, broaden_plan, merge_chunks, trivial_plan
 from tests.helpers.factories import (
     make_filter_candidates,
     make_query_plan,
@@ -192,3 +192,20 @@ class TestMergeChunks:
         merged = merge_chunks(previous, new)
         scores = [chunk.rrf_score for chunk in merged]
         assert scores == sorted(scores, reverse=True)
+
+
+class TestTrivialPlan:
+    """trivial_plan returns the planner-fallback shape: raw query only (RAG-08)."""
+
+    def test_sole_semantic_query_is_the_raw_query(self) -> None:
+        plan = trivial_plan("council tax")
+        assert plan.semantic_queries == ("council tax",)
+
+    def test_all_other_fields_are_empty(self) -> None:
+        plan = trivial_plan("council tax")
+        assert plan.keyword_terms == ()
+        assert plan.sub_questions == ()
+        assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
+
+    def test_returns_a_query_plan(self) -> None:
+        assert isinstance(trivial_plan("x"), QueryPlan)
