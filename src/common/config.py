@@ -294,6 +294,28 @@ def _resolve_ocr_image_detail(
     return detail  # type: ignore[return-value]
 
 
+def _resolve_ocr_reasoning_effort(
+    source: Mapping[str, str],
+) -> Literal["minimal", "low", "medium", "high"]:
+    """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``medium``).
+
+    Shares the classifier's ``_REASONING_EFFORT_CHOICES`` set and fail-closed
+    contract (the OpenAI 1.109.1 ``ReasoningEffort`` literal). ``medium`` is the
+    models' own default effort, so the default value keeps the OCR request
+    behaviourally identical to before this setting existed; an operator opts into
+    the cheaper ``minimal`` / ``low`` tiers explicitly to cut the reasoning-token
+    premium on the highest-volume call.
+    """
+    effort = source.get("OCR_REASONING_EFFORT", "medium").strip().lower()
+    if effort not in _REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            "OCR_REASONING_EFFORT must be one of "
+            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
+        )
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    return effort  # type: ignore[return-value]
+
+
 def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
     """Resolve and validate ``CHUNK_OVERLAP`` against *chunk_size*.
 
@@ -443,6 +465,7 @@ class Settings:
     OCR_DPI: int
     OCR_MAX_SIDE: int
     OCR_IMAGE_DETAIL: Literal["low", "high", "auto"]
+    OCR_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"]
     PAGE_WORKERS: int
     DOCUMENT_WORKERS: int
 
@@ -641,6 +664,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         OCR_DPI=_get_int_env(source, "OCR_DPI", 300),
         OCR_MAX_SIDE=_get_int_env(source, "OCR_MAX_SIDE", 1600),
         OCR_IMAGE_DETAIL=_resolve_ocr_image_detail(source),
+        OCR_REASONING_EFFORT=_resolve_ocr_reasoning_effort(source),
         PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),
         DOCUMENT_WORKERS=max(1, _get_int_env(source, "DOCUMENT_WORKERS", 4)),
         LOG_LEVEL=source.get("LOG_LEVEL", "INFO").upper(),
