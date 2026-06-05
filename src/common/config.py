@@ -118,6 +118,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "CLASSIFY_MAX_PAGES",
         "CLASSIFY_TAIL_PAGES",
         "CLASSIFY_HEADERLESS_CHAR_LIMIT",
+        "CLASSIFY_REASONING_EFFORT",
         "EMBEDDING_MODEL",
         "EMBEDDING_DIMENSIONS",
         "EMBEDDING_MAX_CONCURRENT",
@@ -305,6 +306,34 @@ def _resolve_server_port(source: Mapping[str, str]) -> int:
     return port
 
 
+# Allowed reasoning-effort values for the classifier. Matches the installed
+# OpenAI SDK's ``ReasoningEffort`` literal (openai 1.109.1,
+# openai/types/shared/reasoning_effort.py): all four of minimal/low/medium/high.
+# "none" is intentionally excluded — it is not in that literal.
+_REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(
+    {"minimal", "low", "medium", "high"}
+)
+
+
+def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
+    """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``medium``).
+
+    ``medium`` is the models' own default effort, so the default is a deliberate,
+    zero-cost no-op: it pins the knob and lets each environment tune *down* (to
+    ``low``/``minimal``) to capture the saving. A model that does not accept the
+    parameter never has it forced on it: the shared adaptive-compat layer strips
+    ``reasoning_effort`` on a 400 and caches the rejection per model
+    (foundation-llm-plumbing-design §4.1).
+    """
+    effort = source.get("CLASSIFY_REASONING_EFFORT", "medium").strip().lower()
+    if effort not in _REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            "CLASSIFY_REASONING_EFFORT must be one of "
+            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
+        )
+    return effort
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Immutable, fully-validated configuration for one process.
@@ -366,6 +395,7 @@ class Settings:
     CLASSIFY_MAX_PAGES: int
     CLASSIFY_TAIL_PAGES: int
     CLASSIFY_HEADERLESS_CHAR_LIMIT: int
+    CLASSIFY_REASONING_EFFORT: str
 
     # Indexer / store settings (semantic-search spec §10)
     INDEX_DB_PATH: str
@@ -558,6 +588,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_HEADERLESS_CHAR_LIMIT=max(
             0, _get_int_env(source, "CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000)
         ),
+        CLASSIFY_REASONING_EFFORT=_resolve_classify_reasoning_effort(source),
         INDEX_DB_PATH=source.get("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
         APP_DB_PATH=source.get("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
         EMBEDDING_MODEL=source.get("EMBEDDING_MODEL", "text-embedding-3-small"),
