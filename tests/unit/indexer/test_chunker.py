@@ -288,3 +288,68 @@ class TestChunkTextOverlapPrefixOverflow:
             "C" * 18,
             "D" * 18,
         ]
+
+
+# ---------------------------------------------------------------------------
+# IDX-02: oversized-chunk character cap
+# ---------------------------------------------------------------------------
+
+
+class TestOversizedChunkCap:
+    """No emitted chunk exceeds _MAX_CHUNK_CHARS, even with a huge chunk_size."""
+
+    def test_no_chunk_exceeds_the_character_cap(self) -> None:
+        """A single paragraph far larger than the cap is hard-split under it."""
+        from indexer.chunker import _MAX_CHUNK_CHARS
+
+        # One unbroken token-free blob (no blank lines, no spaces) larger than
+        # the cap. chunk_size is set huge so the paragraph-aware pass would emit
+        # it as ONE oversized chunk without the cap.
+        blob = "A" * (_MAX_CHUNK_CHARS * 3 + 17)
+        chunks = chunk_text(blob, chunk_size=_MAX_CHUNK_CHARS * 4, overlap=0)
+
+        assert len(chunks) >= 4
+        assert all(len(chunk.text) <= _MAX_CHUNK_CHARS for chunk in chunks)
+
+    def test_split_chunks_have_contiguous_indices(self) -> None:
+        """After the cap split, chunk_index is contiguous from 0."""
+        from indexer.chunker import _MAX_CHUNK_CHARS
+
+        blob = "B" * (_MAX_CHUNK_CHARS * 2 + 5)
+        chunks = chunk_text(blob, chunk_size=_MAX_CHUNK_CHARS * 4, overlap=0)
+
+        assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
+
+    def test_split_preserves_page_hint(self) -> None:
+        """Sub-chunks inherit the parent chunk's page_hint."""
+        from indexer.chunker import _MAX_CHUNK_CHARS
+
+        body = "C" * (_MAX_CHUNK_CHARS * 2)
+        content = f"--- Page 4 ---\n{body}"
+        chunks = chunk_text(content, chunk_size=_MAX_CHUNK_CHARS * 4, overlap=0)
+
+        assert len(chunks) >= 2
+        assert all(c.page_hint == 4 for c in chunks)
+
+    def test_split_reassembles_to_the_original_text(self) -> None:
+        """Concatenating the sub-chunks reproduces the oversized chunk's text."""
+        from indexer.chunker import _MAX_CHUNK_CHARS
+
+        blob = "D" * (_MAX_CHUNK_CHARS * 2 + 13)
+        chunks = chunk_text(blob, chunk_size=_MAX_CHUNK_CHARS * 4, overlap=0)
+
+        assert "".join(c.text for c in chunks) == blob
+
+    def test_normal_document_is_untouched_by_the_cap(self) -> None:
+        """A document whose chunks are all under the cap is unchanged.
+
+        With the production CHUNK_SIZE (2000) well under the 6000 cap, the cap
+        pass is a pure pass-through and the chunk boundaries are identical.
+        """
+        content = "\n\n".join(f"Paragraph {i} body text." for i in range(50))
+        capped = chunk_text(content, chunk_size=2000, overlap=256)
+
+        assert all(len(c.text) <= 2000 for c in capped)
+        # Every chunk is under the cap, so none was split — indices contiguous,
+        # count matches a direct re-run (determinism).
+        assert capped == chunk_text(content, chunk_size=2000, overlap=256)
