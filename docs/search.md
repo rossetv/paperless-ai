@@ -87,7 +87,7 @@ No cross-encoder re-ranker. At the project's target scale (≤~50k chunks), brut
 
 ### Stage 3 — Synthesiser (`search/synthesizer.py`)
 
-One LLM call (`SEARCH_ANSWER_MODEL`, default `gpt-5.4` / `gemma3:27b`). The question and retrieved chunks are passed together, each chunk labelled with its source document. Retrieved chunks are **untrusted input** — the prompt places them below an explicit delimiter and instructs the model to treat everything below as data, never as instructions (prompt-injection defence).
+One LLM call (`SEARCH_ANSWER_MODEL`, default `gpt-5.5` / `gemma3:27b`). The question and retrieved chunks are passed together, each chunk labelled with its source document. Retrieved chunks are **untrusted input** — the prompt places them below an explicit delimiter and instructs the model to treat everything below as data, never as instructions (prompt-injection defence).
 
 Structured output is a discriminated result — `Answered(answer, citations)` or `NeedsMore(adjustment)`.
 
