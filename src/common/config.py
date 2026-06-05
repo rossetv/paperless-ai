@@ -105,6 +105,8 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "LLM_MAX_CONCURRENT",
         "OCR_DPI",
         "OCR_MAX_SIDE",
+        "OCR_IMAGE_DETAIL",
+        "OCR_REASONING_EFFORT",
         "PAGE_WORKERS",
         "DOCUMENT_WORKERS",
         "LOG_LEVEL",
