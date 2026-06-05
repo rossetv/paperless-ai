@@ -360,3 +360,63 @@ class TestResponseFormat:
         provider.classify_text("text", _EMPTY_TAXONOMY)
 
         assert "response_format" not in captured_kwargs
+
+
+class TestReasoningEffort:
+    """reasoning_effort is sent from settings and is strippable on rejection."""
+
+    def test_reasoning_effort_sent_from_settings(self):
+        # Default effort is "medium" (the models' own default); prove it flows
+        # through to the outgoing params unchanged.
+        provider = make_provider(
+            AI_MODELS=["gpt-5.4-mini"], CLASSIFY_REASONING_EFFORT="medium"
+        )
+        response = make_completion_response(valid_classification_json())
+        captured_kwargs = {}
+
+        def capture_completion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return response
+
+        provider._create_completion = capture_completion
+
+        provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert captured_kwargs["reasoning_effort"] == "medium"
+
+    def test_reasoning_effort_uses_configured_value(self):
+        provider = make_provider(
+            AI_MODELS=["gpt-5.4"], CLASSIFY_REASONING_EFFORT="high"
+        )
+        response = make_completion_response(valid_classification_json())
+        captured_kwargs = {}
+
+        def capture_completion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return response
+
+        provider._create_completion = capture_completion
+
+        provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert captured_kwargs["reasoning_effort"] == "high"
+
+    def test_reasoning_effort_stripped_on_400_then_retried(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        response = make_completion_response(valid_classification_json())
+        error = make_bad_request_error("Unsupported parameter: 'reasoning_effort'")
+        calls: list[dict] = []
+
+        def track_calls(**kwargs):
+            calls.append(dict(kwargs))
+            if len(calls) == 1:
+                raise error
+            return response
+
+        provider._create_completion = track_calls
+
+        result, _ = provider.classify_text("text", _EMPTY_TAXONOMY)
+
+        assert result is not None
+        assert "reasoning_effort" in calls[0]
+        assert "reasoning_effort" not in calls[1]
