@@ -468,6 +468,11 @@ class PaperlessClient:
         }
     )
 
+    # DocumentMetadataUpdate keys that Paperless rejects when sent as null
+    # ("This field may not be null"). A None for these means "leave unchanged"
+    # and is omitted from the PATCH payload rather than forwarded as null.
+    _NON_NULLABLE_FIELDS = frozenset({"custom_fields", "document_date"})
+
     def update_document_metadata(
         self,
         doc_id: int,
@@ -478,7 +483,9 @@ class PaperlessClient:
         Accepts keyword arguments matching :class:`DocumentMetadataUpdate`.
         Absent keys are silently skipped (field is left unchanged). Explicitly
         supplied ``None`` values are forwarded to Paperless as ``null``, which
-        Paperless treats as "clear this field".
+        Paperless treats as "clear this field" — except for the fields in
+        :attr:`_NON_NULLABLE_FIELDS` (``custom_fields`` and ``document_date``),
+        which Paperless rejects when null and where None means "leave unchanged".
 
         ``notes`` is handled separately from the PATCH payload: all existing
         notes are deleted first, then the new text is posted (unless the value
@@ -502,12 +509,16 @@ class PaperlessClient:
                 continue
             value = kwargs[key]  # type: ignore[literal-required]
             # `value` may be None — Paperless treats null as "clear the field".
-            if key == "custom_fields" and value is None:
-                # Exception to the null-clears contract: Paperless rejects
-                # `custom_fields: null` with a 400 ("This field may not be
-                # null."). Clearing custom fields is done with an empty list,
-                # so a None here means "no opinion — leave unchanged" and is
-                # omitted from the payload rather than forwarded as null.
+            if key in self._NON_NULLABLE_FIELDS and value is None:
+                # Exception to the null-clears contract: Paperless rejects null
+                # for these fields with a 400 ("This field may not be null").
+                #   - custom_fields: cleared with an empty list, not null.
+                #   - document_date (`created`): every document always has a
+                #     creation date; there is no "clear" operation. The
+                #     classifier passes None whenever it cannot extract a date,
+                #     which must mean "leave the existing date unchanged".
+                # A None here therefore means "no opinion — leave unchanged" and
+                # is omitted from the payload rather than forwarded as null.
                 continue
             if key == "tags" and value is not None:
                 # rationale: `value` is `int | str | list[int] | None` from the
