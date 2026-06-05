@@ -34,7 +34,7 @@ import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
 from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
-from search.prompts import build_planner_system_prompt
+from search.prompts import _planner_response_format, build_planner_system_prompt
 from search.text import QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
@@ -95,6 +95,7 @@ class QueryPlanner(OpenAIChatMixin):
             fallback_models=self.settings.AI_MODELS,
             log_event_prefix="planner",
             reasoning_effort=self.settings.SEARCH_PLANNER_REASONING_EFFORT,
+            response_format=_planner_response_format(self.settings),
         )
         if raw_content is None:
             return self._fallback_plan(
