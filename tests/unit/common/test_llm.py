@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import openai
 import pytest
 
 from common.llm import (
     OpenAIChatMixin,
+    _STRIPPABLE_PARAMS,
+    _strippable_param_for_error,
     extract_json_object,
     unique_models,
     _openai_holder,
@@ -167,3 +170,67 @@ class TestCreateCompletion:
         _openai_holder._client = None
         with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
             client._create_completion(model="m")
+
+
+def _bad_request(message: str) -> openai.BadRequestError:
+    """Build an openai.BadRequestError carrying *message* (no token spent)."""
+    response = MagicMock()
+    response.status_code = 400
+    response.headers = {}
+    response.json.return_value = {"error": {"message": message}}
+    return openai.BadRequestError(
+        message=message,
+        response=response,
+        body={"error": {"message": message}},
+    )
+
+
+class TestStrippableParamForError:
+    """_strippable_param_for_error names the param a 400 says is unsupported."""
+
+    def test_temperature_unsupported(self):
+        error = _bad_request("temperature is unsupported for this model")
+        assert _strippable_param_for_error(error) == "temperature"
+
+    def test_response_format_unsupported(self):
+        error = _bad_request("response_format is not supported")
+        assert _strippable_param_for_error(error) == "response_format"
+
+    def test_json_schema_wording_maps_to_response_format(self):
+        error = _bad_request("json_schema is not supported by this model")
+        assert _strippable_param_for_error(error) == "response_format"
+
+    def test_max_tokens_underscore_form(self):
+        error = _bad_request("max_tokens is not supported")
+        assert _strippable_param_for_error(error) == "max_tokens"
+
+    def test_max_tokens_space_form(self):
+        error = _bad_request("max tokens parameter not allowed")
+        assert _strippable_param_for_error(error) == "max_tokens"
+
+    def test_max_completion_tokens(self):
+        error = _bad_request("max_completion_tokens is not supported")
+        assert _strippable_param_for_error(error) == "max_completion_tokens"
+
+    def test_reasoning_effort(self):
+        error = _bad_request("reasoning_effort is not supported for this model")
+        assert _strippable_param_for_error(error) == "reasoning_effort"
+
+    def test_verbosity(self):
+        error = _bad_request("verbosity is not a supported parameter")
+        assert _strippable_param_for_error(error) == "verbosity"
+
+    def test_unrelated_400_returns_none(self):
+        error = _bad_request("messages: array too long")
+        assert _strippable_param_for_error(error) is None
+
+    def test_registry_param_keys_are_the_six_documented(self):
+        keys = {param_key for param_key, _, _ in _STRIPPABLE_PARAMS}
+        assert keys == {
+            "temperature",
+            "response_format",
+            "max_tokens",
+            "max_completion_tokens",
+            "reasoning_effort",
+            "verbosity",
+        }

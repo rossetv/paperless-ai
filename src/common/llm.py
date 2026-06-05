@@ -34,6 +34,49 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.InternalServerError,
 )
 
+# Strippable-parameter registry: ``(param_key, error_message_substring, stat_key)``.
+#
+# When a model returns a 400 whose (lower-cased) message contains the substring,
+# the matching parameter is stripped and retried. The substring matchers are
+# deliberately broad and migrated from the prod-proven classifier detectors;
+# the registry's fixed length bounds the strip loop so a misfiring matcher can
+# never loop forever. ``stat_key`` is the optional per-strip counter a provider
+# *may* declare in its ``_STAT_KEYS``; the shared layer increments it only when
+# the provider declared it (see ``_record_strip``).
+#
+# Ordering matters: ``max_completion_tokens`` precedes ``max_tokens`` so the
+# longer, more specific message wins before the shorter substring can match it.
+#
+# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the matchers for
+# ``reasoning_effort``, ``verbosity``, and ``max_completion_tokens`` are
+# best-effort and MUST be verified against a real openai~=1.35 400 response
+# before relying on them in production (see the plan's Task 9).
+_STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
+    ("temperature", "temperature", "temperature_retries"),
+    ("response_format", "response_format", "response_format_retries"),
+    ("response_format", "json_schema", "response_format_retries"),
+    ("max_completion_tokens", "max_completion_tokens", "max_completion_tokens_retries"),
+    ("max_tokens", "max_tokens", "max_tokens_retries"),
+    ("max_tokens", "max tokens", "max_tokens_retries"),
+    ("reasoning_effort", "reasoning_effort", "reasoning_effort_retries"),
+    ("verbosity", "verbosity", "verbosity_retries"),
+)
+
+
+def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:
+    """Return the strippable parameter a 400 names as unsupported, or ``None``.
+
+    Substring-matches the lower-cased error message against the registry, in
+    order, so the first (most specific) match wins. ``None`` means the 400 is
+    not about a strippable parameter — a malformed request the caller cannot
+    recover by stripping.
+    """
+    message = str(error).lower()
+    for param_key, matcher, _stat_key in _STRIPPABLE_PARAMS:
+        if matcher in message:
+            return param_key
+    return None
+
 
 class _OpenAIClientHolder:
     """Thread-safe holder for the shared OpenAI client singleton.
