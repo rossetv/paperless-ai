@@ -526,13 +526,25 @@ def test_secret_keys_cover_the_two_secrets() -> None:
     assert SECRET_KEYS == frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 
 
-def test_config_keys_has_fifty_nine_entries() -> None:
-    """CONFIG_KEYS is the 59-key config-table universe (post-Wave-3 SEARCH_API_KEY
-    is gone; CLASSIFY_REASONING_EFFORT from the classifier work, plus the seven
-    search/RAG token-cost keys from Area 3)."""
+def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
+    """Both OCR knobs are persisted via the Settings API but are neither
+    secrets nor reindex keys — they change only the next OCR request."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
+
+    for key in ("OCR_IMAGE_DETAIL", "OCR_REASONING_EFFORT"):
+        assert key in CONFIG_KEYS
+        assert key not in SECRET_KEYS
+        assert key not in REINDEX_KEYS
+
+
+def test_config_keys_has_sixty_one_entries() -> None:
+    """CONFIG_KEYS is the 61-key config-table universe (the 59-key post-Wave-3
+    base, plus OCR_IMAGE_DETAIL + OCR_REASONING_EFFORT added by the OCR
+    token-cost area). The final cross-area count is reconciled at integration —
+    sibling areas add keys too."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 59
+    assert len(CONFIG_KEYS) == 61
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
 
 
