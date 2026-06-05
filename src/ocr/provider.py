@@ -75,7 +75,7 @@ class OcrProvider(OpenAIChatMixin):
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/png;base64,{payload}",
-                            "detail": "high",
+                            "detail": self.settings.OCR_IMAGE_DETAIL,
                         },
                     },
                 ],
