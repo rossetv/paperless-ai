@@ -271,6 +271,24 @@ class TestOcrImageDetail:
             _build(mocker, {**_MINIMAL_ENV, "OCR_IMAGE_DETAIL": "medium"})
 
 
+class TestOcrReasoningEffort:
+    """OCR_REASONING_EFFORT is a validated {minimal, low, medium, high} enum,
+    default medium (the OpenAI model default, so the default is a no-op)."""
+
+    def test_defaults_to_medium(self, mocker):
+        s = _build(mocker, _MINIMAL_ENV)
+        assert s.OCR_REASONING_EFFORT == "medium"
+
+    @pytest.mark.parametrize("value", ["minimal", "low", "medium", "high"])
+    def test_accepts_each_allowed_value(self, mocker, value):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": value})
+        assert s.OCR_REASONING_EFFORT == value
+
+    def test_rejects_unknown_value(self, mocker):
+        with pytest.raises(ValueError, match="OCR_REASONING_EFFORT must be"):
+            _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": "ludicrous"})
+
+
 _CLAMPED_TO_ONE = [
     ("PAGE_WORKERS", "0"),
     ("PAGE_WORKERS", "-5"),
