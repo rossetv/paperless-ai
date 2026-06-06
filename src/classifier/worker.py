@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import structlog
 
 from common.claims import claim_processing_tag
@@ -41,6 +43,20 @@ from .tag_filters import (
 from .taxonomy import TaxonomyCache
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedTaxonomyIds:
+    """The Paperless ids resolved from a classification result.
+
+    A named shape rather than a 3-tuple so the call site reads by field, not by
+    position (CODE_GUIDELINES §5.8). ``tag_ids`` is a tuple to keep the shape
+    fully immutable.
+    """
+
+    tag_ids: tuple[int, ...]
+    correspondent_id: int | None
+    document_type_id: int | None
 
 
 class ClassificationProcessor:
@@ -302,7 +318,7 @@ class ClassificationProcessor:
 
     def _resolve_taxonomy_ids(
         self, result: ClassificationResult, tag_names: list[str]
-    ) -> tuple[list[int], int | None, int | None]:
+    ) -> _ResolvedTaxonomyIds:
         """Resolve tag names and classification fields to Paperless IDs."""
         tag_ids = self.taxonomy_cache.get_or_create_tag_ids(tag_names)
         correspondent_id = (
@@ -315,7 +331,11 @@ class ClassificationProcessor:
             if result.document_type
             else None
         )
-        return tag_ids, correspondent_id, document_type_id
+        return _ResolvedTaxonomyIds(
+            tag_ids=tuple(tag_ids),
+            correspondent_id=correspondent_id,
+            document_type_id=document_type_id,
+        )
 
     def _apply_classification(
         self,
@@ -330,14 +350,12 @@ class ClassificationProcessor:
         date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))
 
         tag_names = self._build_tag_names(result, content, date_for_tags)
-        tag_ids, correspondent_id, document_type_id = self._resolve_taxonomy_ids(
-            result, tag_names
-        )
+        resolved = self._resolve_taxonomy_ids(result, tag_names)
 
         current_tags = clean_pipeline_tags(current_tags, self.settings)
         if self.settings.CLASSIFY_POST_TAG_ID is not None:
             current_tags.add(self.settings.CLASSIFY_POST_TAG_ID)
-        current_tags.update(tag_ids)
+        current_tags.update(resolved.tag_ids)
 
         custom_fields = None
         if self.settings.CLASSIFY_PERSON_FIELD_ID and result.person:
@@ -353,8 +371,8 @@ class ClassificationProcessor:
         self.paperless_client.update_document_metadata(
             self.doc_id,
             title=title or None,
-            correspondent_id=correspondent_id,
-            document_type_id=document_type_id,
+            correspondent_id=resolved.correspondent_id,
+            document_type_id=resolved.document_type_id,
             document_date=parsed_date,
             tags=current_tags,
             language=language,
@@ -365,7 +383,7 @@ class ClassificationProcessor:
             "Document classification applied",
             doc_id=self.doc_id,
             model=model,
-            tags_added=len(tag_ids),
+            tags_added=len(resolved.tag_ids),
         )
 
     def _log_classification_stats(self) -> None:
