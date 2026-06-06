@@ -297,9 +297,7 @@ class TestPromptInjectionGuard:
 
     def test_user_message_fences_document_content_with_delimiter(self):
         provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
-        messages = self._capture_messages(
-            provider, "UNIQUE-BODY-TEXT", _EMPTY_TAXONOMY
-        )
+        messages = self._capture_messages(provider, "UNIQUE-BODY-TEXT", _EMPTY_TAXONOMY)
         user_msg = messages[1]["content"]
         # The delimiter must appear immediately before the interpolated content.
         assert "DOCUMENT CONTENT" in user_msg
