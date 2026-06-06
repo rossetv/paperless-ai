@@ -45,6 +45,7 @@ import structlog
 from common.clock import parse_paperless_timestamp, utc_now_iso
 from common.paperless import PaperlessDocument, PaperlessItem
 from indexer.reconciler import _failed_documents
+from indexer.reconciler._light_diff import _LIGHT_DIFF_FIELDS, _diff_light_page
 from indexer.worker import IndexOutcome
 from store.models import TaxonomyEntry
 
@@ -166,18 +167,41 @@ def run_incremental_sync(
     # so it is read once upfront and shared by every batch's worker fan-out.
     index_state = store_writer.get_index_state()
 
-    # Stream the watermark page in batches.  The Paperless client yields the raw
-    # document JSON; this is the boundary at which the indexer adopts the typed
-    # PaperlessDocument view of that foreign shape (CODE_GUIDELINES §5.3).  A
-    # paging failure mid-stream propagates as a normal exception — the daemon
-    # loop's outer boundary handles it; it is not swallowed here.
-    page_stream = cast(
-        "Iterator[PaperlessDocument]",
-        paperless.iter_all_documents(modified_after=watermark),
-    )
-    outcomes, page_ids, latest_modified = _index_page_stream(
-        indexer, page_stream, index_state, worker_count
-    )
+    # Consume the watermark page.  Two paths (IDX-03):
+    #
+    # - First-run backfill (watermark is None): every document is new, so its
+    #   OCR body must be fetched and embedded regardless.  Page FULL documents
+    #   and stream them in batches — the original O(one batch)-memory path.  A
+    #   light projection would buy nothing here and would replace one paged
+    #   list with N per-id fetches (a round-trip regression).
+    # - Steady state (watermark is not None): page the LIGHT {id, modified}
+    #   projection, skip byte-for-byte-unchanged re-entered documents without
+    #   fetching their OCR body, and fetch the full document only for the
+    #   genuinely-changed ones.  The SHA-256 hash gate runs verbatim on every
+    #   fetched document.
+    #
+    # A paging failure mid-stream propagates as a normal exception in both
+    # paths — the daemon loop's outer boundary handles it; it is not swallowed.
+    if watermark is None:
+        page_stream = cast(
+            "Iterator[PaperlessDocument]",
+            paperless.iter_all_documents(modified_after=watermark),
+        )
+        outcomes, page_ids, latest_modified = _index_page_stream(
+            indexer, page_stream, index_state, worker_count
+        )
+    else:
+        light_rows = paperless.iter_all_documents(
+            modified_after=watermark, fields=_LIGHT_DIFF_FIELDS
+        )
+        outcomes, page_ids, latest_modified = _diff_light_page(
+            _index_documents,
+            indexer,
+            paperless,
+            light_rows,
+            index_state,
+            worker_count,
+        )
 
     # Re-attempt every previously-failed document the watermark page did not
     # already cover.  Ids gone from Paperless are dropped from the map.
