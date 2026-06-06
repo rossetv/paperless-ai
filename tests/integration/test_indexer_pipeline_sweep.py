@@ -156,7 +156,11 @@ class TestDeletionSweepEndToEnd:
             # The sweep's enumeration fails after two pages — a network drop.
             paperless_broken = MagicMock()
 
-            def _iter_all_documents(*, modified_after: str | None = None):
+            def _iter_all_documents(
+                *,
+                modified_after: str | None = None,
+                fields: tuple[str, ...] | None = None,
+            ):
                 yield {"id": 1}
                 yield {"id": 2}
                 raise ConnectionError("Paperless vanished mid-pagination")

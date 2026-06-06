@@ -131,7 +131,9 @@ class TestDeletionSweepPartialEnumerationPrunesNothing:
         """
         paperless = MagicMock()
 
-        def _iter_all_documents(*, modified_after: str | None = None):
+        def _iter_all_documents(
+            *, modified_after: str | None = None, fields: tuple[str, ...] | None = None
+        ):
             # Yield a couple of ids, then fail mid-pagination.
             yield {"id": 1}
             yield {"id": 2}
@@ -156,7 +158,9 @@ class TestDeletionSweepPartialEnumerationPrunesNothing:
         """An immediate enumeration failure also prunes nothing."""
         paperless = MagicMock()
 
-        def _iter_all_documents(*, modified_after: str | None = None):
+        def _iter_all_documents(
+            *, modified_after: str | None = None, fields: tuple[str, ...] | None = None
+        ):
             raise ConnectionError("Paperless down before the first page")
             yield  # pragma: no cover — unreachable, makes this a generator
 
@@ -218,6 +222,32 @@ class TestDeletionSweepConfirmsBeforePruning:
 
         confirmed = {call.args[0] for call in paperless.document_exists.call_args_list}
         assert confirmed == {5, 6}
+
+
+# ---------------------------------------------------------------------------
+# IDX-03 perf: the enumeration projects to the id field only
+# ---------------------------------------------------------------------------
+
+
+class TestSweepEnumerationUsesLightProjection:
+    """The sweep enumerates ids with a fields=('id',) projection (IDX-03 perf)."""
+
+    def test_enumeration_requests_only_the_id_field(self) -> None:
+        paperless = make_reconciler_paperless(all_ids=[1, 2, 3])
+        # Store holds the same ids → no candidates → no pruning, but the
+        # enumeration still runs and must use the light projection.
+        store_writer = make_reconciler_store_writer(store_ids={1, 2, 3})
+
+        _reconciler(paperless, store_writer).deletion_sweep()
+
+        # The unfiltered enumeration call (no modified_after) carried fields=("id",).
+        sweep_calls = [
+            call
+            for call in paperless.iter_all_documents.call_args_list
+            if "modified_after" not in call.kwargs
+        ]
+        assert len(sweep_calls) == 1
+        assert sweep_calls[0].kwargs.get("fields") == ("id",)
 
 
 # ---------------------------------------------------------------------------
