@@ -189,6 +189,62 @@ class TestIncrementalSyncEndToEnd:
         finally:
             store_writer.close()
 
+    def test_emptied_content_prunes_the_previously_indexed_document(
+        self, tmp_path: Any
+    ) -> None:
+        """A document whose OCR content is cleared after indexing is pruned.
+
+        IDX-01: cycle 1 indexes a document with content; cycle 2 re-enters it
+        with the content cleared (and ``modified`` advanced, as Paperless bumps
+        it on every save).  The worker must delete its stale rows from the real
+        store so search stops serving chunks for content that no longer exists.
+        Before the fix the document survived as a SKIPPED no-op and its chunks
+        lingered.
+        """
+        store_writer = _open_writer(tmp_path)
+        try:
+            # Cycle 1: index a real document with content.
+            Reconciler(
+                _settings(tmp_path),
+                make_reconciler_paperless(
+                    documents=[
+                        make_paperless_document(
+                            doc_id=42,
+                            content="Content that will later be cleared.",
+                            modified="2024-06-01T00:00:00+00:00",
+                        )
+                    ]
+                ),
+                store_writer,
+                make_mock_embedding_client(),
+            ).incremental_sync()
+            assert 42 in store_writer.get_all_document_ids()
+
+            # Cycle 2: the OCR content is cleared (e.g. the source file was
+            # replaced and re-OCR is pending); ``modified`` advanced.
+            report = Reconciler(
+                _settings(tmp_path),
+                make_reconciler_paperless(
+                    documents=[
+                        make_paperless_document(
+                            doc_id=42,
+                            content="",
+                            modified="2024-07-01T00:00:00+00:00",
+                        )
+                    ]
+                ),
+                store_writer,
+                make_mock_embedding_client(),
+            ).incremental_sync()
+
+            assert report.skipped == 1
+            assert report.indexed == 0
+            # The stale rows are gone from the real store.
+            assert 42 not in store_writer.get_all_document_ids()
+            assert 42 not in store_writer.get_index_state()
+        finally:
+            store_writer.close()
+
     def test_partial_incremental_enumeration_leaves_watermark_unmoved(
         self, tmp_path: Any
     ) -> None:

@@ -113,6 +113,68 @@ class TestGateErrorTag:
 
 
 # ---------------------------------------------------------------------------
+# Gate: a previously-indexed document that became un-indexable is pruned
+# ---------------------------------------------------------------------------
+
+
+class TestGatePrunesStaleDocument:
+    """A document that was indexed but is now un-indexable has its rows pruned.
+
+    IDX-01: when the OCR content is emptied, or the error tag is applied, *after*
+    the document was indexed, the worker must delete its stale rows from the
+    store rather than silently SKIPPED — otherwise search keeps serving chunks
+    for content that no longer exists, and the deletion sweep cannot reach it
+    (the document still exists in Paperless).
+    """
+
+    def _existing_state(self) -> IndexState:
+        """A store row standing for a previously-indexed document."""
+        return IndexState(
+            modified="2024-05-01T00:00:00+00:00",
+            content_hash="some_previously_indexed_hash",
+        )
+
+    def test_emptied_content_prunes_the_previously_indexed_document(self) -> None:
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
+
+        doc = _make_doc(content="")
+        outcome = indexer.index_document(doc, existing=self._existing_state())
+
+        assert outcome is IndexOutcome.SKIPPED
+        embedding_client.embed.assert_not_called()
+        store_writer.upsert_document.assert_not_called()
+        store_writer.update_metadata.assert_not_called()
+        # The stale rows must be pruned.
+        store_writer.delete_documents.assert_called_once_with((doc["id"],))
+
+    def test_error_tagged_after_indexing_prunes_the_document(self) -> None:
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
+
+        doc = _make_doc(tags=[10, 552])
+        outcome = indexer.index_document(doc, existing=self._existing_state())
+
+        assert outcome is IndexOutcome.SKIPPED
+        store_writer.delete_documents.assert_called_once_with((doc["id"],))
+
+    def test_never_indexed_unindexable_document_is_not_pruned(self) -> None:
+        """No existing row → SKIPPED is a pure no-op; nothing is deleted."""
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
+
+        doc = _make_doc(content="")
+        outcome = indexer.index_document(doc, existing=None)
+
+        assert outcome is IndexOutcome.SKIPPED
+        store_writer.delete_documents.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # New document: full index path
 # ---------------------------------------------------------------------------
 
