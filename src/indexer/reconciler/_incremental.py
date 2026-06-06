@@ -31,21 +31,25 @@ by argument; the :class:`~indexer.reconciler.Reconciler` facade owns those.
 
 from __future__ import annotations
 
-import functools
 import itertools
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import structlog
 
 from common.clock import parse_paperless_timestamp, utc_now_iso
 from common.paperless import PaperlessDocument, PaperlessItem
 from indexer.reconciler import _failed_documents
-from indexer.reconciler._light_diff import _LIGHT_DIFF_FIELDS, _diff_light_page
+from indexer.reconciler._fanout import _WORKER_THREAD_PREFIX, _index_documents
+from indexer.reconciler._light_diff import (
+    _LIGHT_DIFF_FIELDS,
+    _LightDocumentRow,
+    _diff_light_page,
+)
 from indexer.worker import IndexOutcome
 from store.models import TaxonomyEntry
 
@@ -66,10 +70,6 @@ OVERLAP_MARGIN: timedelta = timedelta(seconds=10)
 # Meta keys owned by the incremental sync (SPEC §4.1).
 _WATERMARK_META_KEY = "modified_watermark"
 _LAST_RECONCILE_META_KEY = "last_reconcile_at"
-
-# Thread-pool name so log correlation and profilers can attribute the work
-# (CODE_GUIDELINES §8.6).
-_WORKER_THREAD_PREFIX = "indexer-document"
 
 # How many documents the watermark page stream is consumed in at a time.  Set
 # to the Paperless API ``page_size`` so one batch is one HTTP page: the indexer
@@ -167,55 +167,69 @@ def run_incremental_sync(
     # so it is read once upfront and shared by every batch's worker fan-out.
     index_state = store_writer.get_index_state()
 
-    # Consume the watermark page.  Two paths (IDX-03):
-    #
-    # - First-run backfill (watermark is None): every document is new, so its
-    #   OCR body must be fetched and embedded regardless.  Page FULL documents
-    #   and stream them in batches — the original O(one batch)-memory path.  A
-    #   light projection would buy nothing here and would replace one paged
-    #   list with N per-id fetches (a round-trip regression).
-    # - Steady state (watermark is not None): page the LIGHT {id, modified}
-    #   projection, skip byte-for-byte-unchanged re-entered documents without
-    #   fetching their OCR body, and fetch the full document only for the
-    #   genuinely-changed ones.  The SHA-256 hash gate runs verbatim on every
-    #   fetched document.
-    #
-    # A paging failure mid-stream propagates as a normal exception in both
-    # paths — the daemon loop's outer boundary handles it; it is not swallowed.
-    if watermark is None:
-        page_stream = cast(
-            "Iterator[PaperlessDocument]",
-            paperless.iter_all_documents(modified_after=watermark),
-        )
-        outcomes, page_ids, latest_modified = _index_page_stream(
-            indexer, page_stream, index_state, worker_count
-        )
-    else:
-        light_rows = paperless.iter_all_documents(
-            modified_after=watermark, fields=_LIGHT_DIFF_FIELDS
-        )
-        outcomes, page_ids, latest_modified = _diff_light_page(
-            _index_documents,
-            indexer,
-            paperless,
-            light_rows,
-            index_state,
-            worker_count,
-        )
+    # One worker pool per cycle, reused across every batch and the retry pass
+    # (IDX-09): a fresh pool per 100-document batch would spin up and tear down
+    # ``ceil(N/100)`` pools on a backfill of N documents and fragment the
+    # thread-name numbering across batches.  The pool is named for log
+    # correlation (CODE_GUIDELINES §8.6) and shut down on the way out of the
+    # cycle — including on an exception — by the ``with`` block, which joins the
+    # in-flight worker threads before the cycle unwinds (graceful shutdown).
+    pool_size = max(1, worker_count)
+    with ThreadPoolExecutor(
+        max_workers=pool_size,
+        thread_name_prefix=_WORKER_THREAD_PREFIX,
+    ) as pool:
+        # Consume the watermark page.  Two paths (IDX-03):
+        #
+        # - First-run backfill (watermark is None): every document is new, so
+        #   its OCR body must be fetched and embedded regardless.  Page FULL
+        #   documents and stream them in batches — the original O(one
+        #   batch)-memory path.  A light projection would buy nothing here and
+        #   would replace one paged list with N per-id fetches (a round-trip
+        #   regression).
+        # - Steady state (watermark is not None): page the LIGHT {id, modified}
+        #   projection, skip byte-for-byte-unchanged re-entered documents
+        #   without fetching their OCR body, and fetch the full document only
+        #   for the genuinely-changed ones.  The SHA-256 hash gate runs verbatim
+        #   on every fetched document.
+        #
+        # A paging failure mid-stream propagates as a normal exception in both
+        # paths — the daemon loop's outer boundary handles it; it is not
+        # swallowed.
+        if watermark is None:
+            page_stream = cast(
+                "Iterator[PaperlessDocument]",
+                paperless.iter_all_documents(modified_after=watermark),
+            )
+            outcomes, page_ids, latest_modified = _index_page_stream(
+                pool, indexer, page_stream, index_state
+            )
+        else:
+            light_rows = cast(
+                "Iterator[_LightDocumentRow]",
+                paperless.iter_all_documents(
+                    modified_after=watermark, fields=_LIGHT_DIFF_FIELDS
+                ),
+            )
+            outcomes, page_ids, latest_modified = _diff_light_page(
+                pool,
+                indexer,
+                paperless,
+                light_rows,
+                index_state,
+            )
 
-    # Re-attempt every previously-failed document the watermark page did not
-    # already cover.  Ids gone from Paperless are dropped from the map.
-    failed_map = _failed_documents.read_failed_documents(store_writer)
-    retry_documents = _failed_documents.fetch_retry_documents(
-        paperless, failed_map, page_ids
-    )
-    # Retry documents are bounded by the failed-map size; index them through the
-    # same batched path for consistency and merge their outcomes into the
-    # cycle-wide dict.  They do NOT influence the watermark (see below).
-    for batch in _batched(retry_documents, _WATERMARK_PAGE_BATCH_SIZE):
-        outcomes.update(
-            _index_documents(indexer, list(batch), index_state, worker_count)
+        # Re-attempt every previously-failed document the watermark page did not
+        # already cover.  Ids gone from Paperless are dropped from the map.
+        failed_map = _failed_documents.read_failed_documents(store_writer)
+        retry_documents = _failed_documents.fetch_retry_documents(
+            paperless, failed_map, page_ids
         )
+        # Retry documents are bounded by the failed-map size; index them through
+        # the same batched path for consistency and merge their outcomes into
+        # the cycle-wide dict.  They do NOT influence the watermark (see below).
+        for batch in _batched(retry_documents, _WATERMARK_PAGE_BATCH_SIZE):
+            outcomes.update(_index_documents(pool, indexer, list(batch), index_state))
 
     # Rebuild and persist the failed-document map from this cycle's result.
     given_up = _failed_documents.update_failed_documents(
@@ -252,10 +266,10 @@ def run_incremental_sync(
 
 
 def _index_page_stream(
+    pool: ThreadPoolExecutor,
     indexer: DocumentIndexer,
     page_stream: Iterator[PaperlessDocument],
     index_state: dict[int, IndexState],
-    worker_count: int,
 ) -> tuple[dict[int, IndexOutcome | None], set[int], datetime | None]:
     """Consume the watermark page stream in batches and index each batch.
 
@@ -289,69 +303,11 @@ def _index_page_stream(
         # list(): the batch is the unit of work and is dropped at the end of
         # this iteration — at most one page of OCR bodies is resident at once.
         documents = list(batch)
-        outcomes.update(_index_documents(indexer, documents, index_state, worker_count))
+        outcomes.update(_index_documents(pool, indexer, documents, index_state))
         page_ids.update(doc["id"] for doc in documents)
         latest_modified = _fold_latest_modified(latest_modified, documents)
         log.info("reconcile.page_batch_indexed", batch_size=len(documents))
     return outcomes, page_ids, latest_modified
-
-
-def _index_documents(
-    indexer: DocumentIndexer,
-    documents: list[PaperlessDocument],
-    index_state: dict[int, IndexState],
-    worker_count: int,
-) -> dict[int, IndexOutcome | None]:
-    """Fan *documents* across the worker pool and map each id to its outcome.
-
-    Each document is dispatched to :func:`_index_one`, which catches and
-    isolates that document's failure.  The pool is named for log correlation
-    (CODE_GUIDELINES §8.6).
-
-    Returns:
-        A mapping of document id to its :class:`~indexer.worker.IndexOutcome`,
-        or ``None`` for a document whose indexing raised.
-    """
-    if not documents:
-        return {}
-
-    pool_size = max(1, worker_count)
-    # A partial binds the indexer and index_state; only the per-document arg
-    # varies across the map, which keeps the dispatch readable (no lambda
-    # closing over loop state — CODE_GUIDELINES §1.1).
-    index_one = functools.partial(_index_one, indexer, index_state)
-    with ThreadPoolExecutor(
-        max_workers=pool_size,
-        thread_name_prefix=_WORKER_THREAD_PREFIX,
-    ) as pool:
-        results = list(pool.map(index_one, documents))
-    return dict(results)
-
-
-def _index_one(
-    indexer: DocumentIndexer,
-    index_state: dict[int, IndexState],
-    doc: PaperlessDocument,
-) -> tuple[int, IndexOutcome | None]:
-    """Index one document, isolating any failure (SPEC §5.7).
-
-    Returns ``(document_id, outcome)`` where *outcome* is the worker's
-    :class:`~indexer.worker.IndexOutcome` on success, or ``None`` when indexing
-    raised — the failure is logged with its traceback and the cycle continues
-    with the next document.  The id is returned alongside the outcome so the
-    caller can rebuild the failed-document map regardless of worker-pool
-    completion order.
-    """
-    document_id = doc["id"]
-    try:
-        return document_id, indexer.index_document(doc, index_state.get(document_id))
-    except Exception:
-        # rationale: per-document worker dispatch — one document's failure is
-        # logged and isolated, the batch continues (CODE_GUIDELINES §6.4
-        # site 2, SPEC §5.7).  The failure is recorded in the failed-document
-        # map and retried out-of-band next cycle.
-        log.exception("reconcile.document_failed", document_id=document_id)
-        return document_id, None
 
 
 def _advance_watermark(store_writer: StoreWriter, latest: datetime | None) -> None:
@@ -417,7 +373,10 @@ def _tally_outcomes(
     )
 
 
-def _to_taxonomy_entries(kind: str, items: list[PaperlessItem]) -> list[TaxonomyEntry]:
+def _to_taxonomy_entries(
+    kind: Literal["correspondent", "document_type", "tag"],
+    items: list[PaperlessItem],
+) -> list[TaxonomyEntry]:
     """Flatten a Paperless taxonomy list into TaxonomyEntry rows.
 
     Each item is a :class:`~common.paperless.PaperlessItem` from one of the

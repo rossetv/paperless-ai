@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.clock import utc_now_iso
-
 from common.paperless import PAPERLESS_CALL_EXCEPTIONS
 
 if TYPE_CHECKING:
