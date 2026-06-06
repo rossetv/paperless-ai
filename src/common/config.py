@@ -610,13 +610,10 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         default_planner_model = "gpt-5.4-nano"
         default_answer_model = "gpt-5.5"
 
-    # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int), so it is never
-    # None here; _get_optional_int_env returns int | None only because it
-    # cannot express "None only when the default is None".
-    classify_pre_tag_id = _get_optional_int_env(
-        source, "CLASSIFY_PRE_TAG_ID", post_tag_id
-    )
-    assert classify_pre_tag_id is not None  # default is an int → never None
+    # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
+    # int default and treats blank as unset, so it returns a plain int — no
+    # int | None union to narrow away with an assert (COMMON-16, §17.2).
+    classify_pre_tag_id = _get_int_env(source, "CLASSIFY_PRE_TAG_ID", post_tag_id)
 
     # PAPERLESS_URL is the API base (often an internal address);
     # PAPERLESS_PUBLIC_URL is the browser-facing base for document
