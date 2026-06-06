@@ -206,7 +206,9 @@ class SearchCore:
         if cache_key is not None:
             cached = cache.get(cache_key)
             if cached is not None:
-                log.info("search.cache_hit", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
+                log.info(
+                    "search.cache_hit", query_prefix=query[:QUERY_LOG_PREFIX_CHARS]
+                )
                 return cached
 
         result = self._answer_uncached(query, ui_filters)

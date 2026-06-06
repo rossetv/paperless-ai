@@ -215,6 +215,4 @@ class TestSearchRagCostSettings:
 
     def test_non_numeric_min_score_raises(self, mocker) -> None:
         with pytest.raises(ValueError, match="SEARCH_WEAK_RETRIEVAL_MIN_SCORE"):
-            _build(
-                mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "lots"}
-            )
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "lots"})

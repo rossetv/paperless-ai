@@ -346,9 +346,7 @@ def test_embedding_model_change_logs_projected_scope_at_critical(db_path: str) -
         writer.close()
 
     assert rebuilt is True  # behaviour unchanged: a mismatch still rebuilds
-    critical = [
-        e for e in captured if e["event"] == "store.full_reembed_projected"
-    ]
+    critical = [e for e in captured if e["event"] == "store.full_reembed_projected"]
     assert len(critical) == 1
     assert critical[0]["log_level"] == "critical"
     assert critical[0]["trigger"] == "embedding_model_change"
@@ -374,6 +372,4 @@ def test_embedding_model_match_logs_no_reembed_projection(db_path: str) -> None:
         writer.close()
 
     assert rebuilt is False
-    assert not [
-        e for e in captured if e["event"] == "store.full_reembed_projected"
-    ]
+    assert not [e for e in captured if e["event"] == "store.full_reembed_projected"]

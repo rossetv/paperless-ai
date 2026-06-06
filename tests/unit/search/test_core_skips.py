@@ -75,9 +75,7 @@ class TestPlannerSkipWhenEnabled:
             planner_response=planner_response_json(),
             synthesiser_responses=[answered_response_json("a [1].", citations=[1])],
         )
-        core = _core(
-            llm_client, _store_reader(), SEARCH_SKIP_PLANNER_FOR_TRIVIAL=True
-        )
+        core = _core(llm_client, _store_reader(), SEARCH_SKIP_PLANNER_FOR_TRIVIAL=True)
         result = core.answer("invoices")
         assert llm_client.planner_calls == 0  # planner skipped
         assert llm_client.synthesiser_calls == 1  # synth still ran
@@ -89,9 +87,7 @@ class TestPlannerSkipWhenEnabled:
             planner_response=planner_response_json(),
             synthesiser_responses=[answered_response_json("a [1].", citations=[1])],
         )
-        core = _core(
-            llm_client, _store_reader(), SEARCH_SKIP_PLANNER_FOR_TRIVIAL=True
-        )
+        core = _core(llm_client, _store_reader(), SEARCH_SKIP_PLANNER_FOR_TRIVIAL=True)
         core.answer("invoices from last year")  # temporal → not trivial
         assert llm_client.planner_calls == 1
 
