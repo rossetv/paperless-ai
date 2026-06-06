@@ -978,26 +978,14 @@ def current_settings_with_version(
         else os.environ.get("APP_DB_PATH", "/data/app.db")
     )
 
-    # Delegate to current_settings for all snapshot + cache logic.
-    settings = current_settings(resolved)
-
-    # After current_settings returns, _SETTINGS_CACHE[resolved] holds exactly
-    # the (version, settings) pair that was built and is now current. Read it
-    # back to get the version — this is a GIL-atomic dict read, no lock needed.
-    cached = _SETTINGS_CACHE.get(resolved)
-    if cached is not None:
-        return cached[0], cached[1]
-
-    # Defensive fallback: the cache was cleared between current_settings and
-    # the read above (only possible if _reset_core_cache_for_test was called
-    # from another thread, which tests never do concurrently). Call once more.
-    settings = current_settings(resolved)
-    cached = _SETTINGS_CACHE.get(resolved)
-    if cached is not None:
-        return cached[0], cached[1]
-
-    # Should never reach here; return version 0 so callers rebuild next time.
-    return 0, settings
+    # Delegate to current_settings for all snapshot + cache logic. Every return
+    # path inside it leaves _SETTINGS_CACHE[resolved] populated with the
+    # (version, settings) pair it returned — the fast path returns an entry that
+    # already existed, the slow path writes one before returning — so the read
+    # below is always a hit. This is a GIL-atomic dict read, no lock needed.
+    current_settings(resolved)
+    version, settings = _SETTINGS_CACHE[resolved]
+    return version, settings
 
 
 def _merge_environment(
