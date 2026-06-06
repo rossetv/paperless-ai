@@ -20,7 +20,17 @@ from collections.abc import Iterable
 import structlog
 
 from store._sql import placeholders
-from store.migrations import SchemaNotReadyError, StoreError
+
+# _is_missing_table_error lives in store.migrations (the lower module) so the
+# corrupt-vs-fresh distinction is defined once; a fresh, schema-less index
+# database (auto-created empty by ``sqlite3.connect``) raises "no such table",
+# which the store maps to the typed ``SchemaNotReadyError`` so callers never
+# string-match ``sqlite3`` internals.
+from store.migrations import (
+    SchemaNotReadyError,
+    StoreError,
+    _is_missing_table_error,
+)
 from store.models import (
     ChunkHit,
     DocumentSummary,
@@ -31,21 +41,7 @@ from store.models import (
     TaxonomyEntry,
 )
 
-# Substring SQLite uses in the ``OperationalError`` message when a queried
-# table does not exist.  A fresh, schema-less index database (auto-created
-# empty by ``sqlite3.connect``) produces this; the store maps it to the typed
-# ``SchemaNotReadyError`` so callers never string-match ``sqlite3`` internals.
-_NO_SUCH_TABLE_MARKER = "no such table"
-
 log = structlog.get_logger(__name__)
-
-
-def _is_missing_table_error(exc: sqlite3.Error) -> bool:
-    """Return whether *exc* is a SQLite "no such table" operational error."""
-    return (
-        isinstance(exc, sqlite3.OperationalError)
-        and _NO_SUCH_TABLE_MARKER in str(exc).lower()
-    )
 
 
 def get_documents(

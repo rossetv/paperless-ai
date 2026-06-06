@@ -9,11 +9,17 @@ migration rolls back atomically (no partial table, no advanced version).
 from __future__ import annotations
 
 import sqlite3
+import unittest.mock as _mock
 
 import pytest
 
 from appdb.connection import connect
-from appdb.migrations import MIGRATIONS, AppDbError, run_migrations
+from appdb.migrations import (
+    MIGRATIONS,
+    AppDbError,
+    _read_schema_version,
+    run_migrations,
+)
 from appdb.schema import SCHEMA_VERSION
 
 
@@ -102,6 +108,38 @@ def test_future_schema_version_raises_appdb_error(conn) -> None:
     conn.commit()
     with pytest.raises(AppDbError, match="9999"):
         run_migrations(conn)
+
+
+def test_missing_meta_table_is_read_as_version_zero() -> None:
+    """A genuine missing meta table reads as version 0 — a fresh database."""
+    mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+    mock_conn.execute.side_effect = sqlite3.OperationalError("no such table: meta")
+    assert _read_schema_version(mock_conn) == 0
+
+
+def test_corrupt_database_operational_error_propagates() -> None:
+    """A malformed/locked database must fail loud, not be masked as fresh.
+
+    Swallowing a non-missing-table OperationalError as version 0 would re-run
+    every migration against a corrupt or busy app.db and hide the damage
+    (CODE_GUIDELINES.md §1.11).
+    """
+    mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+    mock_conn.execute.side_effect = sqlite3.OperationalError(
+        "database disk image is malformed"
+    )
+    with pytest.raises(sqlite3.OperationalError, match="malformed"):
+        _read_schema_version(mock_conn)
+
+
+def test_run_migrations_does_not_mask_a_corrupt_database() -> None:
+    """run_migrations propagates a corrupt-database error rather than rebuilding."""
+    mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+    mock_conn.execute.side_effect = sqlite3.OperationalError(
+        "database disk image is malformed"
+    )
+    with pytest.raises(sqlite3.OperationalError, match="malformed"):
+        run_migrations(mock_conn)
 
 
 def test_users_role_check_constraint_rejects_a_bad_role(conn) -> None:
