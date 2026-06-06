@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from search.appstate import AppState, get_app_state
+from search.errors import AppStateNotAttachedError
 from search.setup import SetupState
 
 
@@ -45,7 +46,7 @@ def test_get_app_state_returns_the_stashed_state() -> None:
 
 
 def test_get_app_state_raises_when_state_is_missing() -> None:
-    """A request with no AppState stashed yields a clear RuntimeError."""
+    """A request with no AppState stashed yields a typed AppStateNotAttachedError."""
 
     class _FakeState:
         pass
@@ -59,5 +60,5 @@ def test_get_app_state_raises_when_state_is_missing() -> None:
             self.app = app
 
     request = _FakeRequest(_FakeApp())
-    with pytest.raises(RuntimeError, match="AppState"):
+    with pytest.raises(AppStateNotAttachedError, match="AppState"):
         get_app_state(request)  # type: ignore[arg-type]

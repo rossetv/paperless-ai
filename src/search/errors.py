@@ -22,6 +22,30 @@ class SearchError(Exception):
     """
 
 
+class AppStateNotAttachedError(SearchError):
+    """The request reached a handler before the account wiring was attached.
+
+    :func:`search.appstate.get_app_state` raises this when no
+    :class:`~search.appstate.AppState` is on ``app.state`` — the app was built
+    without :func:`~search.appstate.attach_app_state`. It is a programmer
+    error surfaced loudly (``CODE_GUIDELINES.md`` §1.11) rather than a generic
+    ``RuntimeError`` (§6.1) or a confusing ``AttributeError`` deep in a
+    handler.
+    """
+
+
+class RowVanishedError(SearchError):
+    """A row confirmed to exist returned ``None`` from its own write.
+
+    Raised after an ``UPDATE`` whose target was checked to exist on the same
+    connection moments before: the write's re-read should always return the
+    row, so a ``None`` means the row vanished mid-transaction — a data-integrity
+    fault that must fail loud (``CODE_GUIDELINES.md`` §1.11). It replaces a bare
+    ``assert`` (§17.2), which ``python -O`` strips, turning the fault into a
+    later ``AttributeError`` far from its cause.
+    """
+
+
 class LlmBudgetExceededError(SearchError):
     """The pipeline attempted more LLM chat calls than the hard ceiling allows.
 

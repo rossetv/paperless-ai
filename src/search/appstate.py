@@ -20,8 +20,8 @@ introspects :func:`get_app_state`'s signature at app-build time to recognise
 the special ``Request`` parameter — a string forward reference would be
 mis-read as a query parameter (a spurious 422).
 
-Depends on: starlette Request, search.setup. Forbidden: FastAPI route
-decorators, sqlite3 SQL.
+Depends on: starlette Request, search.setup, search.errors. Forbidden:
+FastAPI route decorators, sqlite3 SQL.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from dataclasses import dataclass
 
 from starlette.requests import Request
 
+from search.errors import AppStateNotAttachedError
 from search.setup import SetupState
 
 # The attribute name under which the AppState is stored on app.state.
@@ -76,14 +77,14 @@ def get_app_state(request: Request) -> AppState:
         The application's :class:`AppState`.
 
     Raises:
-        RuntimeError: No :class:`AppState` was attached — the app was built
-            without the account wiring. This is a programming error, surfaced
-            loudly rather than as a confusing ``AttributeError`` deep in a
-            handler.
+        AppStateNotAttachedError: No :class:`AppState` was attached — the app
+            was built without the account wiring. This is a programming error,
+            surfaced loudly rather than as a confusing ``AttributeError`` deep
+            in a handler.
     """
     state = getattr(request.app.state, _APP_STATE_ATTR, None)
     if not isinstance(state, AppState):
-        raise RuntimeError(
+        raise AppStateNotAttachedError(
             "No AppState attached to the application — the search app was "
             "built without the account wiring (search.appstate.attach_app_state)."
         )

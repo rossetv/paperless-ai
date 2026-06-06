@@ -22,8 +22,8 @@ an unrecoverable lockout. Under the shared transaction the second writer
 blocks on SQLite's write lock until the first commits, then re-reads the count
 and sees the first writer's effect.
 
-Allowed deps: sqlite3, appdb (connection, users, sessions). Forbidden:
-FastAPI, store, daemons.
+Allowed deps: sqlite3, appdb (connection, users, sessions), search.errors.
+Forbidden: FastAPI, store, daemons.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from appdb import sessions as session_store
 from appdb import users as user_store
 from appdb.connection import transaction
 from appdb.users import Role, User, UserStatus
+from search.errors import RowVanishedError
 
 
 class GuardError(Exception):
@@ -243,8 +244,12 @@ def apply_guarded_update(
             password_hash=password_hash,
         )
     # The caller's 404 check passed and this is the only writer for the row
-    # within the transaction — the update matched a row.
-    assert updated is not None
+    # within the transaction — the update matched a row. An explicit raise
+    # (not an `assert`, which `python -O` strips — §17.2) makes a row that
+    # vanished mid-transaction fail loud here rather than as a later
+    # AttributeError.
+    if updated is None:
+        raise RowVanishedError(f"user {target_id} vanished during a guarded update")
     # Suspending a user revokes their access immediately: drop every session
     # they hold (spec §4.4). A committed follow-on — see the docstring.
     if status == "suspended":
