@@ -1003,3 +1003,83 @@ class TestDownloadStream:
         finally:
             client.close()
         assert len(requests) == 1
+
+
+class TestThumbStream:
+    """PaperlessClient.thumb_stream shares download_stream's contract.
+
+    thumb_stream and download_stream were near-verbatim duplicates (COMMON-09);
+    these tests pin the thumbnail-specific behaviour (the /thumb/ endpoint and
+    the image/jpeg default) so the shared extraction stays behaviour-preserving.
+    """
+
+    @staticmethod
+    def _streaming_client(
+        *,
+        body: bytes,
+        status_code: int = 200,
+        content_type: str | None = "image/webp",
+        requests: list[httpx.Request] | None = None,
+    ) -> PaperlessClient:
+        settings = MagicMock()
+        settings.PAPERLESS_URL = "https://paperless.example"
+        settings.PAPERLESS_TOKEN = "tok"
+        settings.REQUEST_TIMEOUT = 30
+
+        def _handler(request: httpx.Request) -> httpx.Response:
+            if requests is not None:
+                requests.append(request)
+            headers = {"Content-Type": content_type} if content_type else {}
+            return httpx.Response(status_code, content=body, headers=headers)
+
+        client = PaperlessClient(settings)
+        client._client.close()
+        client._client = httpx.Client(transport=httpx.MockTransport(_handler))
+        return client
+
+    def test_thumb_stream_yields_the_body(self) -> None:
+        thumb = b"RIFF....WEBP fake thumbnail"
+        client = self._streaming_client(body=thumb)
+        try:
+            _content_type, chunks = client.thumb_stream(100)
+            assembled = b"".join(chunks)
+        finally:
+            client.close()
+        assert assembled == thumb
+
+    def test_thumb_stream_returns_the_content_type(self) -> None:
+        client = self._streaming_client(body=b"img", content_type="image/webp")
+        try:
+            content_type, chunks = client.thumb_stream(100)
+            list(chunks)
+        finally:
+            client.close()
+        assert content_type == "image/webp"
+
+    def test_thumb_stream_defaults_content_type_to_jpeg_when_absent(self) -> None:
+        client = self._streaming_client(body=b"img", content_type=None)
+        try:
+            content_type, chunks = client.thumb_stream(100)
+            list(chunks)
+        finally:
+            client.close()
+        assert content_type == "image/jpeg"
+
+    def test_thumb_stream_hits_the_thumb_endpoint(self) -> None:
+        requests: list[httpx.Request] = []
+        client = self._streaming_client(body=b"img", requests=requests)
+        try:
+            _content_type, chunks = client.thumb_stream(100)
+            list(chunks)
+        finally:
+            client.close()
+        assert len(requests) == 1
+        assert requests[0].url.path == "/api/documents/100/thumb/"
+
+    def test_thumb_stream_raises_on_404(self) -> None:
+        client = self._streaming_client(body=b"nope", status_code=404)
+        try:
+            with pytest.raises(httpx.HTTPStatusError):
+                client.thumb_stream(999)
+        finally:
+            client.close()
