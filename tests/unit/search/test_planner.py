@@ -125,6 +125,62 @@ class TestWellFormedResponse:
         assert "VAT" in plan.keyword_terms
 
 
+class TestPlanWidthIsCapped:
+    """The plan's search-driving lists are capped in code, not just the prompt.
+
+    The prompt asks for 1-3 semantic queries and 0-3 sub-questions, but a
+    misbehaving or adversarial model can return more. Each extra entry is an
+    extra vector_search pass holding the store reader lock on a billable,
+    network-facing endpoint, so the documented width is enforced as a code-level
+    guarantee (SRCH-03), bounding the fan-out regardless of model output.
+    """
+
+    def test_semantic_queries_are_capped(self) -> None:
+        from search.planner import _MAX_SEMANTIC_QUERIES
+
+        payload = planner_response_json(
+            semantic_queries=[f"rephrasing {i}" for i in range(10)]
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert len(plan.semantic_queries) == _MAX_SEMANTIC_QUERIES
+
+    def test_sub_questions_are_capped(self) -> None:
+        from search.planner import _MAX_SUB_QUESTIONS
+
+        payload = planner_response_json(
+            sub_questions=[f"sub-question {i}?" for i in range(10)]
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert len(plan.sub_questions) == _MAX_SUB_QUESTIONS
+
+    def test_cap_keeps_the_first_entries_in_order(self) -> None:
+        """The cap truncates the tail, preserving the model's leading entries."""
+        from search.planner import _MAX_SEMANTIC_QUERIES
+
+        payload = planner_response_json(
+            semantic_queries=["first", "second", "third", "fourth", "fifth"]
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert (
+            plan.semantic_queries
+            == ("first", "second", "third")[:_MAX_SEMANTIC_QUERIES]
+        )
+
+    def test_within_limit_lists_are_untouched(self) -> None:
+        """A compliant plan (≤3 each) is passed through unchanged."""
+        payload = planner_response_json(
+            semantic_queries=["one", "two"],
+            sub_questions=["q1?"],
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert plan.semantic_queries == ("one", "two")
+        assert plan.sub_questions == ("q1?",)
+
+
 # ---------------------------------------------------------------------------
 # Relative-date language
 # ---------------------------------------------------------------------------
