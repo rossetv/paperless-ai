@@ -110,6 +110,22 @@ class DocumentIndexer:
         # type checker sees a concrete str on the indexing path.
         content = _indexable_content(doc, self._settings.ERROR_TAG_ID)
         if content is None:
+            # A document that was previously indexed but has since become
+            # un-indexable (its OCR content was cleared, or an operator applied
+            # the error tag) must have its stale rows pruned — otherwise search
+            # keeps serving chunks for content that no longer exists, and the
+            # deletion sweep cannot reach it because the document still exists in
+            # Paperless (IDX-01). A document that was never indexed (no existing
+            # row) is a pure no-op skip. The prune is one transaction in the
+            # StoreWriter; a crash mid-delete rolls back to the prior version.
+            if existing is not None:
+                self._store_writer.delete_documents((document_id,))
+                log.info(
+                    "worker.stale_document_pruned",
+                    document_id=document_id,
+                    reason="empty_content_or_error_tag",
+                )
+                return IndexOutcome.SKIPPED
             log.warning(
                 "worker.document_skipped",
                 document_id=document_id,
