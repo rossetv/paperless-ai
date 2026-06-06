@@ -700,6 +700,10 @@ class PaperlessClient:
             httpx.RequestError: A network-level failure.
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/?page_size=1"
+        # why: deliberately bypasses the @retry-wrapped _get, like ping(). This
+        # backs the Settings "Test connection" probe, which wants a single fast
+        # shot with a short timeout — a transient 5xx should surface to the
+        # operator immediately, not be retried with backoff (COMMON-10).
         response = self._client.get(url, timeout=timeout)
         response.raise_for_status()
         count = response.json().get("count", 0)
