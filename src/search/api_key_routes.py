@@ -35,7 +35,7 @@ a ``sqlite3.Connection`` is never shared across requests, mirroring
 ``account_routes`` and ``document_routes``.
 
 Allowed deps: fastapi, sqlite3, structlog, appdb, search (api_keys, deps,
-sessions, wire).
+errors, sessions, wire).
 """
 
 from __future__ import annotations
@@ -56,6 +56,7 @@ from search.api_keys import (
     serialise_scopes,
 )
 from search.deps import get_app_db, require_key_management
+from search.errors import RowVanishedError
 from search.sessions import CurrentUser
 from search.wire import (
     ApiKeyEnvelope,
@@ -276,8 +277,12 @@ def _update_api_key(
 
     updated = key_store.update(app_db, api_key_id, **changes)
     # The row existed at the top of this handler and update() re-reads it on
-    # the same connection — it cannot have vanished.
-    assert updated is not None
+    # the same connection — it cannot have vanished. An explicit raise (not an
+    # `assert`, stripped under `python -O` — §17.2) keeps the guarantee under
+    # optimisation: a row that vanished fails loud here, not as a later
+    # AttributeError.
+    if updated is None:
+        raise RowVanishedError(f"api key {api_key_id} vanished during an update")
     log.info(
         "search.api_key_updated",
         api_key_id=api_key_id,
