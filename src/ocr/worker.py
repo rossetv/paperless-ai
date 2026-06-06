@@ -215,7 +215,10 @@ class OcrProcessor:
         Returns ``(page_results, failed_page_numbers)``.
         """
         page_count = len(pages)
-        with ThreadPoolExecutor(max_workers=self.settings.PAGE_WORKERS) as executor:
+        with ThreadPoolExecutor(
+            max_workers=self.settings.PAGE_WORKERS,
+            thread_name_prefix="ocr-page",
+        ) as executor:
             future_to_index = {
                 executor.submit(self._ocr_one_page, pages, i): i
                 for i in range(page_count)

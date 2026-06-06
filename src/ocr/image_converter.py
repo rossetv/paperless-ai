@@ -244,6 +244,9 @@ def _pdf_to_page_source(
     # Omit ``size`` entirely when no cap is requested: poppler's runtime default
     # is ``None`` but the published type rejects it, and an absent kwarg is the
     # honest way to say "render at the natural DPI".
+    # rationale: pdf2image.convert_from_bytes takes a heterogeneous kwarg dict
+    # (int dpi, str output_folder/fmt, bool paths_only, int size) with no
+    # published TypedDict, so dict[str, Any] is the only honest value type.
     kwargs: dict[str, Any] = {
         "dpi": dpi,
         "output_folder": temp_dir,
@@ -253,7 +256,7 @@ def _pdf_to_page_source(
     if max_side is not None:
         kwargs["size"] = max_side
     try:
-        result = convert_from_bytes(content, **kwargs)
+        raw_paths = convert_from_bytes(content, **kwargs)
     except Exception:
         # rationale: rasterisation-boundary cleanup — any failure inside poppler
         # (corrupt PDF, OOM, missing binary) must not strand the temp directory.
@@ -263,5 +266,5 @@ def _pdf_to_page_source(
     # paths_only=True makes convert_from_bytes yield str paths (the published
     # type only models the in-memory list[Image]); they are sorted by zero-padded
     # page number, so lexical order is page order even past page 9.
-    paths = cast("list[str]", result)
+    paths = cast("list[str]", raw_paths)
     return PageSource(paths=paths, temp_dir=temp_dir)
