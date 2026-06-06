@@ -222,6 +222,93 @@ def test_login_for_a_suspended_account_returns_403(tmp_path: Path) -> None:
         app_db.close()
 
 
+def test_repeated_failures_lock_the_login_with_429(tmp_path: Path) -> None:
+    """A burst of wrong passwords locks the (IP, username) with 429 (HTTP-01)."""
+    from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
+
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="alice-password", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+
+        # Exhaust the failure budget — each one is a plain 401.
+        for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
+            assert (
+                login(client, username="alice", password="wrong-password").status_code
+                == 401
+            )
+
+        # The next attempt is denied before the password is even checked.
+        blocked = login(client, username="alice", password="wrong-password")
+        assert blocked.status_code == 429
+        assert SESSION_COOKIE_NAME not in blocked.cookies
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_a_correct_password_after_failures_is_not_throttled(tmp_path: Path) -> None:
+    """Failures short of the lockout do not block a subsequent valid login."""
+    from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
+
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="alice-password", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+
+        # One short of the lockout, then the right password.
+        for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT - 1):
+            assert (
+                login(client, username="alice", password="wrong-password").status_code
+                == 401
+            )
+        ok = login(client, username="alice", password="alice-password")
+        assert ok.status_code == 200, ok.text
+        assert SESSION_COOKIE_NAME in ok.cookies
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_a_success_resets_the_failure_counter(tmp_path: Path) -> None:
+    """A successful login clears the counter, so later typos start fresh."""
+    from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
+
+    settings = make_settings(tmp_path)
+    seed_store(settings)
+    app_db = open_app_db(tmp_path)
+    store_reader = StoreReader(settings)
+    try:
+        seed_user(app_db, username="alice", password="alice-password", role="member")
+        client = build_account_client(settings, app_db, store_reader)
+
+        for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT - 1):
+            assert (
+                login(client, username="alice", password="wrong-password").status_code
+                == 401
+            )
+        assert (
+            login(client, username="alice", password="alice-password").status_code
+            == 200
+        )
+
+        # After the reset a single further failure is still just a 401, not a
+        # lockout — the earlier near-miss burst was cleared.
+        assert (
+            login(client, username="alice", password="wrong-password").status_code
+            == 401
+        )
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
 def test_remember_login_sets_a_seven_day_cookie(tmp_path: Path) -> None:
     """remember=True -> Max-Age 604800 (7 days)."""
     settings = make_settings(tmp_path)

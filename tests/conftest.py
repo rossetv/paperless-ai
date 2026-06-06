@@ -42,6 +42,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.e2e)
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """Drop the process-wide login throttle before each test.
+
+    The throttle is a process singleton (one per single-process server); left
+    standing, failed-login counts from one test would leak into the next. Reset
+    it up front so every test starts from a clean throttle.
+    """
+    from search.login_throttle import reset_login_throttle
+
+    reset_login_throttle()
+    yield
+
+
 @pytest.fixture
 def settings():
     """A real Settings instance with minimal valid configuration."""
