@@ -94,19 +94,26 @@ def record(conn: sqlite3.Connection, *, user_id: int, query: str) -> RecentSearc
         The inserted :class:`RecentSearch`.
     """
     now = _utc_now_iso()
-    # Remove any prior identical query for this user so the new row is the
-    # single, newest occurrence.
-    conn.execute(
-        "DELETE FROM recent_searches WHERE user_id = ? AND query = ?",
-        (user_id, query),
-    )
-    cursor = conn.execute(
-        "INSERT INTO recent_searches (user_id, query, created_at) VALUES (?, ?, ?)",
-        (user_id, query, now),
-    )
-    new_id = int(cursor.lastrowid or 0)
-    _trim_to_cap(conn, user_id)
-    conn.commit()
+    # The delete, insert and trim are one transaction: an explicit ``with
+    # conn:`` block commits on success and rolls back on any exception, so a
+    # concurrent reader never sees the history mid-trim and a mid-step failure
+    # leaves the prior history wholly intact. A bare ``conn.commit()`` would
+    # rely on the sqlite3 module's implicit-BEGIN, which silently loses
+    # atomicity the day the connection runs in autocommit mode (§9.6). This
+    # matches the sibling writers daemon_status / reconcile_activity.
+    with conn:
+        # Remove any prior identical query for this user so the new row is the
+        # single, newest occurrence.
+        conn.execute(
+            "DELETE FROM recent_searches WHERE user_id = ? AND query = ?",
+            (user_id, query),
+        )
+        cursor = conn.execute(
+            "INSERT INTO recent_searches (user_id, query, created_at) VALUES (?, ?, ?)",
+            (user_id, query, now),
+        )
+        new_id = int(cursor.lastrowid or 0)
+        _trim_to_cap(conn, user_id)
     log.info("appdb.recent_search_recorded", user_id=user_id)
     return RecentSearch(id=new_id, user_id=user_id, query=query, created_at=now)
 
@@ -116,7 +123,7 @@ def _trim_to_cap(conn: sqlite3.Connection, user_id: int) -> None:
 
     Keeps the ``MAX_PER_USER`` rows with the most recent ``created_at`` (id
     breaks a tie deterministically) and deletes the rest. Called by
-    :func:`record` inside its transaction; the caller commits.
+    :func:`record` inside its ``with conn:`` transaction, which commits.
 
     Args:
         conn: An open ``app.db`` connection.
