@@ -63,6 +63,8 @@
   position: absolute;
   left: 0;
   right: 0;
+
+  /* 8 px gap below the link baseline — keep in sync with .link padding-bottom */
   bottom: calc(-1 * var(--spacing-6));
   height: var(--spacing-1);
   background: var(--colour-accent);

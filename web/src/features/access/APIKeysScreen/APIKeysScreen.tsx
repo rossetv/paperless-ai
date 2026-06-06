@@ -144,7 +144,7 @@ export function APIKeysScreen(): React.ReactElement {
     {
       key: 'actions',
       header: '',
-      width: 'var(--width-col-expiry)',
+      width: 'var(--width-col-actions-narrow)',
       align: 'end',
       render: (k) => {
         const state = keyStateOf(k);

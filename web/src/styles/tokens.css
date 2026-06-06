@@ -96,12 +96,14 @@
   --line-height-subheading:    1.19;
   --letter-spacing-subheading: 0.231px;
 
-  /* sub-heading — 22 px bold display; section title below card level.
-     Used by the Text primitive 'sub-heading' variant (Results sources header). */
-  --font-size-sub-heading:      1.375rem;
-  --font-weight-sub-heading:    700;
-  --line-height-sub-heading:    1.19;
-  --letter-spacing-sub-heading: -0.2px;
+  /* Section title — 22 px bold display; a section title below card level.
+     Used by the Text primitive 'sub-heading' variant (Results sources header).
+     Named distinctly from the 21 px --font-*-subheading set above, which was a
+     one-hyphen near-twin and easy to pick by mistake. */
+  --font-size-section-title:      1.375rem;
+  --font-weight-section-title:    700;
+  --line-height-section-title:    1.19;
+  --letter-spacing-section-title: -0.2px;
 
   /* Nav Heading — 34 px, weight 600, lh 1.47, ls -0.374 px */
   --font-size-nav-heading:     2.125rem;
@@ -316,10 +318,8 @@
   /* Application content container max-width — matches the 1320 px design artboard
    * inner container (1440 px viewport minus equal side gutters). Every authenticated
    * page's outermost content wrapper must reference this token so all screens share
-   * an identical visible width. --width-content-max is kept as an alias for any
-   * third-party or legacy references. */
+   * an identical visible width. */
   --width-app-content:  1320px;
-  --width-content-max:  var(--width-app-content);
 
   /* Navigation height */
   --height-nav:         48px;
@@ -420,6 +420,14 @@
   /* Disabled controls — reduces prominence without hiding entirely */
   --opacity-disabled: 0.48;
 
+  /* De-emphasis levels for non-disabled chrome — subtle partial fades.
+     subdued: faintly dimmed text/icon; muted: secondary chrome icon;
+     pressed: active/hover press feedback; inactive: untested/idle indicator. */
+  --opacity-subdued: 0.85;
+  --opacity-muted: 0.75;
+  --opacity-pressed: 0.7;
+  --opacity-inactive: 0.6;
+
   /* ─────────────────────────────────────────────
    * Forced-dark surface — the Login / First-run "dark island"
    *
@@ -449,9 +457,6 @@
 
   /* Label text on the dark island */
   --colour-dark-label:          rgb(255 255 255 / 50%);
-
-  /* Link colour on the dark island */
-  --colour-dark-link:           #2997ff;
 
   /* Aurora glow tints — soft radial brand light on the login backdrop */
   --colour-dark-aurora-near:    rgb(0 113 227 / 30%);
@@ -514,9 +519,6 @@
    * A 5:7 portrait aspect ratio at 220 px height gives ≈ 157 px; 140 px
    * keeps a small margin and looks balanced inside the preview area. */
   --width-library-thumb:        140px;
-
-  /* Document-preview viewer — the page-navigation thumbnail rail width */
-  --width-preview-rail:         56px;
 
   /* Document-preview viewer — the metadata sidebar width */
   --width-preview-sidebar:      380px;
@@ -597,9 +599,6 @@
 
   /* NumberStepper — width of the central editable value field. */
   --width-stepper-input:     56px;
-
-  /* Settings icon tile — width/height of the accent-tinted header icon tile. */
-  --size-section-icon:       36px;
 
   /* Row — fixed width of the left label column on the Settings screen. */
   --width-row-label:         280px;

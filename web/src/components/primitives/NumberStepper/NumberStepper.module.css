@@ -40,7 +40,7 @@
   background-color: transparent;
   font-family: var(--font-text);
   font-size: var(--font-size-body);
-  line-height: 1;
+  line-height: var(--line-height-tight);
   color: var(--colour-text-secondary);
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--easing-standard);

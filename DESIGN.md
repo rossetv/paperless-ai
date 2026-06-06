@@ -68,6 +68,7 @@ The color story is starkly binary. Product sections alternate between pure black
 | Tile Heading | SF Pro Display | 28px (1.75rem) | 400 | 1.14 (tight) | 0.196px | Product tile headlines |
 | Card Title | SF Pro Display | 21px (1.31rem) | 700 | 1.19 (tight) | 0.231px | Bold card headings |
 | Sub-heading | SF Pro Display | 21px (1.31rem) | 400 | 1.19 (tight) | 0.231px | Regular card headings |
+| Section title | SF Pro Display | 22px (1.38rem) | 700 | 1.19 (tight) | -0.2px | Bold section title below card level — Text `sub-heading` variant; `--font-*-section-title` |
 | Nav Heading | SF Pro Text | 34px (2.13rem) | 600 | 1.47 | -0.374px | Large navigation headings |
 | Sub-nav | SF Pro Text | 24px (1.50rem) | 300 | 1.50 | normal | Light sub-navigation text |
 | Body | SF Pro Text | 17px (1.06rem) | 400 | 1.47 | -0.374px | Standard reading text |
@@ -448,7 +449,7 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `IconButton` | primitives | `label` (a11y, required), `children` (icon element), `disabled`, `type`, `onClick`, `className` | Circular icon-only button; icon is supplied as `children` |
 | `Input` | primitives | `label`, `type`, `surface` (light/dark), `error`, `disabled` | Dark surface for Login/Setup island |
 | `TextArea` | primitives | `label`, `surface`, `error`, `disabled` | Multi-line companion to Input |
-| `Link` | primitives | `href`, `variant` (default/pill), `external` | External links open in new tab, `rel="noopener"` |
+| `Link` | primitives | `href`, `variant` (default/inline/on-dark), `external` | External links open in new tab, `rel="noopener"` |
 | `Badge` | primitives | `variant` (neutral/accent) | Inline label chip |
 | `RoleBadge` | primitives | `role` (admin/member/readonly) | Maps role to semantic colour token |
 | `StatusBadge` | primitives | `tone` (ok/warn/danger/info/neutral/violet) | Leading status dot + label |
@@ -467,7 +468,9 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `NumberStepper` | primitives | `value`, `min`, `max`, `step`, `onChange`, `label` | ± stepper for numeric settings |
 | `StatTile` | primitives | `value`, `label`, `sub` (optional caption), `accent` (boolean), `className` | Single-stat display; `accent` applies the accent colour; `sub` renders a caption sub-line |
 | `Row` | primitives | `label`, `children`, `action`, `description`, `divider` | Settings row — two-column label/control layout |
-| `SectionCard` | primitives | `icon`, `title`, `description`, `children` | Settings section card with an icon header |
+| `SettingsBlock` | primitives | `title`, `subtitle`, `id`, `children` | Settings section block — `<h2>` heading + right-aligned subtitle; holds `SettingsCard`s (renamed from the former `SectionCard`) |
+| `SettingsCard` | primitives | `title`, `subtitle`, `headerActions`, `children` | Sub-card surface within a `SettingsBlock`; body is a stack of `Row`s |
+| `SettingsListField` | primitives | `id`, `label`, `value`, `onChange`, `placeholder`, `disabled` | Editable string-list field — add / remove / reorder items |
 | `FormField` | primitives | `label`, `id`, `error`, `hint`, `children` | Label + error wrapper for form controls |
 | `SettingsTextField` | primitives | `label`, `value`, `onChange`, `disabled`, `error` | Settings-specific text input row |
 | `SettingsSelectField` | primitives | `label`, `options`, `value`, `onChange`, `disabled` | Settings-specific select row |
@@ -500,6 +503,8 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `SettingsSideNav` | `items`, `activePath` | Settings left nav (vertical tabs) |
 | `ViewerSplit` | `sidebar`, `children` | Document-preview two-pane split |
 | `FullPageLoading` | `label` | Full-viewport spinner placeholder |
+| `MobileTopBar` | `brand`, `actions` | Mobile (<700px) top bar — brand leading, optional trailing actions |
+| `BottomTabBar` | `items` | Fixed mobile bottom tab bar (glass nav); icon + label tabs from `NAV_LINKS` |
 
 ### 11.5 Patterns catalogue
 
@@ -609,7 +614,6 @@ primitives. Key feature groups:
 - `SourceCard` — a single search result; "Preview" opens `DocumentPreviewScreen`.
 - `SourceList` — ordered list of `SourceCard`s.
 - `FilterControls` — filter rail (reused in Library).
-- `CitationLink` — inline `[n]` citation chip that highlights the corresponding source.
 - `QueryPlanSummary` — `Disclosure` wrapping the agentic query plan.
 - `DocumentPreviewScreen` — the in-app PDF viewer overlay (see §12.3).
 
@@ -630,7 +634,7 @@ primitives. Key feature groups:
 ### 13.6 `features/settings`
 
 - `SettingsScreen` — settings form with sections; uses `SettingsLayout`.
-- `SettingsSection` — one section card (uses `SectionCard` primitive).
+- `SettingsSection` — one section card (uses `SettingsBlock` / `SettingsCard` primitives).
 - `SecretField` — masked secret input with reveal toggle.
 - `TestConnectionRow` — Paperless API connection test action row.
 - `fieldModel.ts` — typed field definitions for every settings key.

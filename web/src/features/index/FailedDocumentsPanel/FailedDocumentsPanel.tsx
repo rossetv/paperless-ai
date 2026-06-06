@@ -66,6 +66,7 @@ export function FailedDocumentsPanel({
                 <button
                   type="button"
                   className={styles['action']}
+                  aria-label={`Preview document ${doc.document_id}: ${doc.title ?? '(no title)'}`}
                   onClick={() => onOpen(doc.document_id)}
                 >
                   Preview

@@ -55,8 +55,11 @@ describe('FailedDocumentsPanel', () => {
   it('calls onOpen with the document id when the Preview button is clicked', async () => {
     const onOpen = vi.fn();
     render(<FailedDocumentsPanel documents={DOCS} onOpen={onOpen} />);
-    const previewButtons = screen.getAllByRole('button', { name: /^preview$/i });
-    await userEvent.click(previewButtons[0]!);
+    // Each button now carries a unique aria-label — match on the first document's id.
+    const previewButton = screen.getByRole('button', {
+      name: /preview document 8421/i,
+    });
+    await userEvent.click(previewButton);
     expect(onOpen).toHaveBeenCalledWith(8421);
   });
 

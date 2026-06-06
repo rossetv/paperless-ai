@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Link } from '../../../components/primitives/Link/Link';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
@@ -63,6 +63,7 @@ export function IndexScreen(): React.ReactElement {
 
   const [previewDocumentId, setPreviewDocumentId] = useState<number | null>(null);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const activityRef = useRef<HTMLElement>(null);
 
   const failedDocuments = failedQuery.data?.documents ?? [];
   const stats = statsQuery.data;
@@ -90,9 +91,7 @@ export function IndexScreen(): React.ReactElement {
           <Button
             variant="primary"
             onClick={() =>
-              document
-                .getElementById('recent-activity')
-                ?.scrollIntoView({ behavior: 'smooth' })
+              activityRef.current?.scrollIntoView({ behavior: 'smooth' })
             }
           >
             View live log
@@ -178,7 +177,7 @@ export function IndexScreen(): React.ReactElement {
           </section>
 
           <div className={styles['split-row']}>
-            <section className={styles['activity-panel']} id="recent-activity">
+            <section className={styles['activity-panel']} id="recent-activity" ref={activityRef}>
               <div className={styles['activity-panel-head']}>
                 <h3 className={styles['activity-head']}>Recent activity</h3>
                 {(activityQuery.data?.cycles ?? []).length > ACTIVITY_ROW_LIMIT && (

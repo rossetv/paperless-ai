@@ -14,7 +14,7 @@
   font-family: var(--font-display);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
-  line-height: 1;
+  line-height: var(--line-height-tight);
   letter-spacing: var(--letter-spacing-label);
   text-transform: uppercase;
   color: var(--colour-text-tertiary);

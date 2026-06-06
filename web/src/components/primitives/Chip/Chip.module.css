@@ -67,7 +67,7 @@
   cursor: pointer;
   color: inherit;
   font-size: var(--font-size-body);
-  line-height: 1;
+  line-height: var(--line-height-tight);
 
   /* Tighten the touch target; add spacing-1 breathing room */
   margin-inline-start: var(--spacing-1);

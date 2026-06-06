@@ -100,7 +100,7 @@
 /* ── Icon within a link. ── */
 .link-icon {
   flex-shrink: 0;
-  opacity: 0.75;
+  opacity: var(--opacity-muted);
   transition: color var(--duration-standard) var(--easing-standard),
               opacity var(--duration-standard) var(--easing-standard);
 }

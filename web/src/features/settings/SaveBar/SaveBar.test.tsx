@@ -18,15 +18,22 @@ describe('SaveBar', () => {
   it('is visually hidden when dirtyCount is zero', () => {
     const { container } = renderBar({ dirtyCount: 0 });
     const bar = container.firstElementChild as HTMLElement;
-    expect(bar.style.transform).toBe('translateY(100%)');
+    expect(bar.className).toMatch(/bar-hidden/);
     expect(bar).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('is visible when dirtyCount is greater than zero', () => {
     const { container } = renderBar({ dirtyCount: 1 });
     const bar = container.firstElementChild as HTMLElement;
-    expect(bar.style.transform).toBe('translateY(0)');
+    expect(bar.className).not.toMatch(/bar-hidden/);
     expect(bar).toHaveAttribute('aria-hidden', 'false');
+  });
+
+  it('carries aria-live and aria-atomic for screen-reader announcements', () => {
+    const { container } = renderBar({ dirtyCount: 1 });
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar).toHaveAttribute('aria-live', 'polite');
+    expect(bar).toHaveAttribute('aria-atomic', 'true');
   });
 
   it('shows the unsaved change count', () => {

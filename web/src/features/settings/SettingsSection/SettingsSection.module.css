@@ -16,5 +16,5 @@
   font-size: var(--font-size-micro);
   letter-spacing: var(--letter-spacing-micro);
   color: var(--colour-status-warn-fg);
-  opacity: 0.85;
+  opacity: var(--opacity-subdued);
 }

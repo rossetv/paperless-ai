@@ -1,7 +1,7 @@
 import React from 'react';
 import { AnswerSurface } from '../../../components/primitives/AnswerSurface/AnswerSurface';
 import type { SourceDocument, SearchStats } from '../../../api/types';
-import { CitationLink } from '../CitationLink/CitationLink';
+import { CitationMark } from '../../../components/primitives/CitationMark/CitationMark';
 
 export interface AnswerCardProps {
   /** The synthesised answer text, with `[document_id]` inline citation markers
@@ -29,7 +29,7 @@ type Segment = TextSegment | CitationSegment;
  * `[N]` runs become citation segments carrying the raw N (a document id, as
  * emitted by the synthesiser prompt); everything else is plain text. The
  * caller resolves each citation against the sources list — when an id has a
- * matching source the marker renders as a `CitationLink`, otherwise it is
+ * matching source the marker renders as a `CitationMark`, otherwise it is
  * shown verbatim so a stale id never becomes a dead control.
  */
 function parseAnswer(answer: string): Segment[] {
@@ -61,10 +61,10 @@ function parseAnswer(answer: string): Segment[] {
  *
  * Composes the `AnswerSurface` primitive (the eyebrow + display-prose +
  * provenance footer). The answer text is parsed into plain runs and `[n]`
- * citation markers; in-range markers render as `CitationLink`s, out-of-range
+ * citation markers; in-range markers render as `CitationMark`s, out-of-range
  * markers render verbatim so a bad citation never becomes a dead control.
  *
- * Composed from: AnswerSurface, CitationLink. No own CSS module (§12.5 —
+ * Composed from: AnswerSurface, CitationMark. No own CSS module (§12.5 —
  * features layer is composition-only).
  */
 export function AnswerCard({
@@ -103,7 +103,7 @@ export function AnswerCard({
         const oneBasedIndex = sourceIndex + 1;
         const source = sources[sourceIndex];
         return (
-          <CitationLink
+          <CitationMark
             key={i}
             index={oneBasedIndex}
             onActivate={handleCitationActivate}

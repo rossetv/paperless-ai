@@ -54,7 +54,7 @@
 
 .conn-untested .conn-dot {
   background: var(--colour-text-tertiary);
-  opacity: 0.6;
+  opacity: var(--opacity-inactive);
 }
 
 /* ── Ghost test button — mediaman's `.btn-test`: transparent pill with a
