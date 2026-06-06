@@ -122,8 +122,10 @@ def build_account_router(store_reader: StoreReader) -> APIRouter:
     ) -> UserEnvelope:
         """Verify credentials and set the session cookie (§4.4).
 
-        401 on bad credentials; 403 when the account is suspended; 429 when the
-        (client IP, username) pair has too many recent failures (HTTP-01).
+        401 on bad credentials; 403 when the account is suspended; 429 when
+        either the (client IP, username) pair or the username alone has too many
+        recent failures (HTTP-01; the per-username counter survives
+        X-Forwarded-For rotation, §10.6).
         """
         return _login(body, request, response, app_db)
 
@@ -247,18 +249,23 @@ def _login(
 ) -> UserEnvelope:
     """Login-handler body: throttle, authenticate, open a session, set the cookie.
 
-    A bounded per-(client IP, username) failed-attempt throttle (HTTP-01,
-    §10.6) denies a key with 429 once it has accumulated a burst of failures,
-    *before* any argon2 work — so password login is not just argon2-cost-limited
-    against an online guessing campaign. A first attempt and a successful login
-    are never affected: the counter starts at zero and a success clears it.
+    A bounded failed-attempt throttle (HTTP-01, §10.6) denies a key with 429
+    once it has accumulated a burst of failures, *before* any argon2 work — so
+    password login is not just argon2-cost-limited against an online guessing
+    campaign. Two counters guard it: per-(client IP, username) for the common
+    single-source case, and per-username (IP-independent) so a distributed
+    attack that rotates X-Forwarded-For — which is attacker-controllable while
+    SEARCH_FORWARDED_ALLOW_IPS defaults to "*" — is still bounded. A first
+    attempt and a successful login are never affected: the counters start at
+    zero and a success clears both.
     """
     client_ip = request.client.host if request.client else None
     attempt_key = build_attempt_key(client_ip=client_ip, username=body.username)
     throttle = get_login_throttle()
     if throttle.is_locked(attempt_key):
-        # Too many recent failures for this (IP, username) — deny without
-        # touching the password verifier. Generic message, no account hints.
+        # Too many recent failures for this (IP, username) pair or for this
+        # username across all IPs — deny without touching the password verifier.
+        # Generic message, no account hints.
         log.warning("search.login_throttled", username=body.username)
         raise HTTPException(
             status_code=429,
