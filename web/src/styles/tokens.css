@@ -601,6 +601,16 @@
   /* Row — fixed width of the left label column on the Settings screen. */
   --width-row-label:         280px;
 
+  /* Document field label column — the fixed 100 px label/icon column used in
+   * MetadataCard, EditableField, TaxonomyCombobox, and the DocumentScreen
+   * metadata-grid header. All four CSS modules reference this one token. */
+  --width-doc-field-label:   100px;
+
+  /* Document sidebar — the clamp bounds for the metadata sidebar column in the
+   * DocumentScreen two-column split (content fr vs. sidebar). */
+  --width-doc-sidebar-min:   280px;
+  --width-doc-sidebar-max:   360px;
+
   /* ─────────────────────────────────────────────
    * Avatar palette — deterministic per-user background colours.
    *

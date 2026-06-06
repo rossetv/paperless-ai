@@ -34,7 +34,7 @@
   font-size: var(--font-size-block-title);
   font-weight: var(--font-weight-heading);
   letter-spacing: var(--letter-spacing-block-title);
-  line-height: 1.14;
+  line-height: var(--line-height-tile);
   white-space: nowrap;
   color: var(--colour-text-primary);
 }

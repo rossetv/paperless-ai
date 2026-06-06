@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text } from '../../../components/primitives/Text/Text';
+import { Button } from '../../../components/primitives/Button/Button';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import { useFacets } from '../../../api/hooks';
 import type { FilterRequest } from '../../../api/types';
@@ -88,21 +89,10 @@ export function ActiveFiltersStrip({
 
   return (
     <div className={styles['strip']} role="region" aria-label="Active filters">
-      {/* "Filtered by" label — styled as caption via inline tokens so no
-          className prop is needed on Text (exactOptionalPropertyTypes). */}
-      <span
-        style={{
-          fontFamily: 'var(--font-text)',
-          fontSize: 'var(--font-size-caption)',
-          fontWeight: 'var(--font-weight-caption)',
-          lineHeight: 'var(--line-height-caption)',
-          letterSpacing: 'var(--letter-spacing-caption)',
-          color: 'var(--colour-text-secondary)',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      {/* "Filtered by" label — caption variant, secondary tone. */}
+      <Text as="span" variant="caption" tone="secondary">
         Filtered by
-      </span>
+      </Text>
 
       {chips.map((label, i) => (
         <Chip key={i} selected>
@@ -110,24 +100,10 @@ export function ActiveFiltersStrip({
         </Chip>
       ))}
 
-      {/* Clear all — plain button styled as a link. */}
-      <button
-        type="button"
-        onClick={onClearAll}
-        style={{
-          background: 'none',
-          border: 'none',
-          padding: 0,
-          color: 'var(--colour-link)',
-          fontFamily: 'var(--font-text)',
-          fontSize: 'var(--font-size-caption)',
-          letterSpacing: 'var(--letter-spacing-caption)',
-          cursor: 'pointer',
-          marginLeft: 'var(--spacing-2)',
-        }}
-      >
+      {/* Clear all — ghost Button carries the token-based focus ring. */}
+      <Button variant="ghost" size="small" onClick={onClearAll}>
         Clear all
-      </button>
+      </Button>
 
       <span className={styles['spacer']} />
 

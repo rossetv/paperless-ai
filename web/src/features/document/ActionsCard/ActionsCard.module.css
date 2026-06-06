@@ -13,7 +13,7 @@
   margin-bottom: var(--spacing-10);
   font-family: var(--font-display);
   font-size: var(--font-size-caption);
-  font-weight: 600;
+  font-weight: var(--font-weight-caption-bold);
   line-height: 1;
   letter-spacing: var(--letter-spacing-label);
   text-transform: uppercase;

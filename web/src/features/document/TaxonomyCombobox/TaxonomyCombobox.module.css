@@ -12,7 +12,7 @@
 /* ── Row container ── */
 .row {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: var(--width-doc-field-label) 1fr;
   gap: var(--spacing-10);
   padding: var(--spacing-6) 0;
   border-bottom: var(--spacing-1) solid var(--colour-border);

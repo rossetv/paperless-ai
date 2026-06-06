@@ -13,7 +13,7 @@
   margin-bottom: var(--spacing-10);
   font-family: var(--font-display);
   font-size: var(--font-size-caption);
-  font-weight: 600;
+  font-weight: var(--font-weight-caption-bold);
   line-height: 1;
   letter-spacing: var(--letter-spacing-label);
   text-transform: uppercase;
@@ -23,7 +23,7 @@
 /* ── Read-only date row (mirrors TaxonomyCombobox row layout) ── */
 .row {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: var(--width-doc-field-label) 1fr;
   gap: var(--spacing-10);
   padding: var(--spacing-6) 0;
   border-bottom: var(--spacing-1) solid var(--colour-border);
