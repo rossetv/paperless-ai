@@ -86,15 +86,21 @@ class TestIncrementalSyncEndToEnd:
         finally:
             store_writer.close()
 
-    def test_overlap_reincludes_boundary_document_as_metadata_only(
-        self, tmp_path: Any
-    ) -> None:
-        """A second cycle re-fetches the boundary document; the content-hash
-        gate makes it a cheap METADATA_ONLY update — no re-embed."""
+    def test_metadata_change_refetches_as_metadata_only(self, tmp_path: Any) -> None:
+        """A classifier metadata PATCH advances ``modified``; the second cycle
+        re-fetches the document and the content-hash gate makes it a cheap
+        METADATA_ONLY update — no re-embed.
+
+        Paperless bumps ``modified`` on every save (auto_now), so a title/tag
+        change advances it: the steady-state diff (IDX-03) therefore re-fetches
+        the document and runs the SHA-256 gate, which routes the byte-identical
+        OCR content to ``update_metadata``.  (An *unchanged* ``modified`` is
+        skipped cold instead — covered by
+        ``TestSteadyStateLightDiffEndToEnd``.)
+        """
         store_writer = _open_writer(tmp_path)
         try:
             content = "Boundary document — stable content."
-            modified = "2024-06-05T12:00:00+00:00"
 
             # Cycle 1: index the document fresh.
             Reconciler(
@@ -104,7 +110,7 @@ class TestIncrementalSyncEndToEnd:
                         make_paperless_document(
                             doc_id=5,
                             content=content,
-                            modified=modified,
+                            modified="2024-06-05T12:00:00+00:00",
                             title="Original Title",
                         )
                     ]
@@ -113,8 +119,8 @@ class TestIncrementalSyncEndToEnd:
                 make_mock_embedding_client(),
             ).incremental_sync()
 
-            # Cycle 2: the watermark overlap re-fetches the same document, but
-            # only its title has changed — the OCR content is byte-identical.
+            # Cycle 2: a classifier metadata PATCH changed the title and so
+            # advanced modified; the OCR content is byte-identical.
             embedding_two = make_mock_embedding_client()
             report_two = Reconciler(
                 _settings(tmp_path),
@@ -123,7 +129,7 @@ class TestIncrementalSyncEndToEnd:
                         make_paperless_document(
                             doc_id=5,
                             content=content,
-                            modified=modified,
+                            modified="2024-06-06T09:30:00+00:00",
                             title="Title Updated By The Classifier",
                         )
                     ]
