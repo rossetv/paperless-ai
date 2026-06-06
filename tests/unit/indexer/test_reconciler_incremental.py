@@ -545,9 +545,7 @@ class TestSacredInvariantsBaseline:
         content = "Identical content."
         old_modified = "2024-06-01T00:00:00+00:00"
         new_modified = "2024-07-01T00:00:00+00:00"
-        doc = make_paperless_document(
-            doc_id=6, content=content, modified=new_modified
-        )
+        doc = make_paperless_document(doc_id=6, content=content, modified=new_modified)
         paperless = _light_paperless(
             full_docs=[doc], light_rows=[{"id": 6, "modified": new_modified}]
         )
@@ -579,9 +577,7 @@ class TestSacredInvariantsBaseline:
 # ---------------------------------------------------------------------------
 
 
-def _light_paperless(
-    *, full_docs: list[dict], light_rows: list[dict]
-) -> MagicMock:
+def _light_paperless(*, full_docs: list[dict], light_rows: list[dict]) -> MagicMock:
     """A Paperless mock that returns light {id, modified} rows on the watermark
     page and full documents from get_document(id).
 
@@ -660,9 +656,7 @@ class TestSteadyStateLightDiff:
         content = "Identical body."
         old_modified = "2024-06-01T00:00:00+00:00"
         new_modified = "2024-07-01T00:00:00+00:00"
-        full = make_paperless_document(
-            doc_id=8, content=content, modified=new_modified
-        )
+        full = make_paperless_document(doc_id=8, content=content, modified=new_modified)
         paperless = _light_paperless(
             full_docs=[full], light_rows=[{"id": 8, "modified": new_modified}]
         )
@@ -787,9 +781,7 @@ class TestSkipStillAdvancesWatermark:
 
         run_incremental_sync(paperless, store_writer)
 
-        expected = (
-            datetime.fromisoformat(modified) - OVERLAP_MARGIN
-        ).isoformat()
+        expected = (datetime.fromisoformat(modified) - OVERLAP_MARGIN).isoformat()
         assert store_writer._meta["modified_watermark"] == expected
 
 

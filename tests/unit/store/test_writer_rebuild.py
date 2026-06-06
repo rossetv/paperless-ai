@@ -75,9 +75,7 @@ def test_rebuild_index_logs_projected_scope_at_critical(db_path: str) -> None:
         writer.close()
 
     critical = [
-        event
-        for event in captured
-        if event["event"] == "store.full_reembed_projected"
+        event for event in captured if event["event"] == "store.full_reembed_projected"
     ]
     assert len(critical) == 1
     assert critical[0]["log_level"] == "critical"

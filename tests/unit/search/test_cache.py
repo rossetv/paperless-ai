@@ -31,7 +31,9 @@ class _FakeClock:
         self.now += seconds
 
 
-def _key(query: str = "q", *, filters: SearchFilters | None = None, version: str = "1:1"):
+def _key(
+    query: str = "q", *, filters: SearchFilters | None = None, version: str = "1:1"
+):
     return build_cache_key(query=query, filters=filters, index_version=version)
 
 
@@ -50,7 +52,9 @@ class TestPutAndGet:
         cache = SearchResultCache(ttl_seconds=100, clock=_FakeClock())
         result = make_search_result()
         cache.put(
-            build_cache_key(query="Show My  Invoices", filters=None, index_version="1:1"),
+            build_cache_key(
+                query="Show My  Invoices", filters=None, index_version="1:1"
+            ),
             result,
         )
         # Different spacing + case → same normalised key → hit.
@@ -95,12 +99,18 @@ class TestFiltersInKey:
     def test_different_filters_do_not_collide(self) -> None:
         cache = SearchResultCache(ttl_seconds=100, clock=_FakeClock())
         f1 = SearchFilters(
-            date_from=None, date_to=None, correspondent_id=1,
-            document_type_id=None, tag_ids=(),
+            date_from=None,
+            date_to=None,
+            correspondent_id=1,
+            document_type_id=None,
+            tag_ids=(),
         )
         f2 = SearchFilters(
-            date_from=None, date_to=None, correspondent_id=2,
-            document_type_id=None, tag_ids=(),
+            date_from=None,
+            date_to=None,
+            correspondent_id=2,
+            document_type_id=None,
+            tag_ids=(),
         )
         r1 = make_search_result(answer="for corr 1")
         cache.put(_key(filters=f1), r1)

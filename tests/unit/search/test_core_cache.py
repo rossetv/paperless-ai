@@ -29,7 +29,9 @@ from tests.unit.search.conftest import build_search_core
 def _store_reader(*, document_count: int = 3, chunk_count: int = 10) -> MagicMock:
     store_reader = MagicMock()
     store_reader.list_facets.return_value = make_facet_set()
-    store_reader.vector_search.return_value = [make_chunk_hit(chunk_id=1, document_id=1)]
+    store_reader.vector_search.return_value = [
+        make_chunk_hit(chunk_id=1, document_id=1)
+    ]
     store_reader.keyword_search.return_value = []
     store_reader.get_documents.return_value = [make_indexed_document()]
     store_reader.get_stats.return_value = make_index_stats(

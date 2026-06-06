@@ -20,13 +20,13 @@ class TestIsTrivialQuery:
     @pytest.mark.parametrize(
         "query",
         [
-            "invoices from last year",       # relative-date word
-            "documents since March",         # month name
-            "council tax 2024",              # digit
-            "letters from npower Limited",   # too long + proper noun
+            "invoices from last year",  # relative-date word
+            "documents since March",  # month name
+            "council tax 2024",  # digit
+            "letters from npower Limited",  # too long + proper noun
             "what did I pay British Gas in January",  # long + month + proper noun
-            "invoice #4501",                 # identifier punctuation
-            "energy bills for the past six months",   # long + temporal
+            "invoice #4501",  # identifier punctuation
+            "energy bills for the past six months",  # long + temporal
         ],
     )
     def test_temporal_or_entity_or_long_queries_are_not_trivial(

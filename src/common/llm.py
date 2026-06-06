@@ -244,9 +244,7 @@ class OpenAIChatMixin:
         param_key = _strippable_param_for_error(error)
         if param_key is None or param_key not in params:
             return None
-        log.warning(
-            "llm.param_unsupported_stripped", model=model, parameter=param_key
-        )
+        log.warning("llm.param_unsupported_stripped", model=model, parameter=param_key)
         model_compat_cache.record_rejected(model, param_key)
         self._record_strip(param_key)
         remaining = dict(params)

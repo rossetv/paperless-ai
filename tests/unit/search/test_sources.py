@@ -30,7 +30,9 @@ class TestAssembleSources:
             make_retrieved_chunk(chunk_id=1, document_id=7, rrf_score=0.2),
             make_retrieved_chunk(chunk_id=2, document_id=7, rrf_score=0.9),
         ]
-        sources = assemble_sources(chunks, _reader(make_indexed_document(document_id=7)), _BASE_URL)
+        sources = assemble_sources(
+            chunks, _reader(make_indexed_document(document_id=7)), _BASE_URL
+        )
         assert len(sources) == 1
         assert sources[0].document_id == 7
         assert sources[0].score == 0.9  # best of the two chunks

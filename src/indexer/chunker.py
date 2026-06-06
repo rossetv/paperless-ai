@@ -159,9 +159,7 @@ def _assemble_chunks(
     return chunks
 
 
-def _cap_chunk_sizes(
-    chunks: list[TextChunk], *, max_chars: int
-) -> list[TextChunk]:
+def _cap_chunk_sizes(chunks: list[TextChunk], *, max_chars: int) -> list[TextChunk]:
     """Hard-split any chunk longer than *max_chars*, re-numbering chunk_index.
 
     The defensive ceiling that keeps a single chunk under the embedding model's
