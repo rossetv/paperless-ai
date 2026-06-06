@@ -34,7 +34,7 @@ class TestParseClassificationResponse:
         result = parse_classification_response(self._full_response())
         assert result.title == "Invoice 2024"
         assert result.correspondent == "Acme Corp"
-        assert result.tags == ["bills", "finance"]
+        assert result.tags == ("bills", "finance")
         assert result.document_date == "2024-01-15"
         assert result.document_type == "Invoice"
         assert result.language == "en"
@@ -50,25 +50,25 @@ class TestParseClassificationResponse:
 
     def test_tags_as_single_string(self):
         result = parse_classification_response(self._full_response(tags="bills"))
-        assert result.tags == ["bills"]
+        assert result.tags == ("bills",)
 
     def test_tags_as_empty_string(self):
         result = parse_classification_response(self._full_response(tags="   "))
-        assert result.tags == []
+        assert result.tags == ()
 
     def test_tags_as_list_of_mixed_types(self):
         result = parse_classification_response(
             self._full_response(tags=["bills", 42, "finance"])
         )
-        assert result.tags == ["bills", "42", "finance"]
+        assert result.tags == ("bills", "42", "finance")
 
     def test_tags_as_number_ignored(self):
         result = parse_classification_response(self._full_response(tags=42))
-        assert result.tags == []
+        assert result.tags == ()
 
     def test_tags_as_none(self):
         result = parse_classification_response(self._full_response(tags=None))
-        assert result.tags == []
+        assert result.tags == ()
 
     def test_empty_response_raises_value_error(self):
         with pytest.raises(ValueError, match="empty"):
@@ -91,7 +91,7 @@ class TestParseClassificationResponse:
         result = parse_classification_response(
             self._full_response(tags=["bills", "  ", "", "finance"])
         )
-        assert result.tags == ["bills", "finance"]
+        assert result.tags == ("bills", "finance")
 
     def test_string_fields_are_stripped(self):
         result = parse_classification_response(
@@ -103,7 +103,7 @@ class TestParseClassificationResponse:
         text = json.dumps({"title": "Test"})
         result = parse_classification_response(text)
         assert result.correspondent == ""
-        assert result.tags == []
+        assert result.tags == ()
         assert result.document_date == ""
         assert result.document_type == ""
         assert result.language == ""

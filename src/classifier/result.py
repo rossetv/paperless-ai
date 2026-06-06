@@ -17,7 +17,10 @@ class ClassificationResult:
 
     title: str
     correspondent: str
-    tags: list[str]
+    # tuple, not list: a frozen dataclass with a mutable list field is only
+    # half-frozen — result.tags.append(...) would silently mutate "frozen"
+    # state. A tuple makes the immutability contract real (CODE_GUIDELINES §5.2).
+    tags: tuple[str, ...]
     document_date: str
     document_type: str
     language: str
@@ -58,7 +61,7 @@ def parse_classification_response(text: str) -> ClassificationResult:
     else:
         tags_list = []
 
-    tags = [str(tag).strip() for tag in tags_list if str(tag).strip()]
+    tags = tuple(str(tag).strip() for tag in tags_list if str(tag).strip())
 
     return ClassificationResult(
         title=get_str("title"),

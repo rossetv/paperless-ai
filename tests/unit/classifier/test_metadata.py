@@ -24,7 +24,7 @@ def _make_result(**overrides) -> ClassificationResult:
     defaults = {
         "title": "",
         "correspondent": "",
-        "tags": [],
+        "tags": (),
         "document_date": "",
         "document_type": "",
         "language": "",
@@ -175,11 +175,11 @@ class TestIsEmptyClassification:
         assert is_empty_classification(result) is False
 
     def test_has_tags_returns_false(self):
-        result = _make_result(tags=["bills"])
+        result = _make_result(tags=("bills",))
         assert is_empty_classification(result) is False
 
     def test_whitespace_only_tags_returns_true(self):
-        result = _make_result(tags=["  ", "\t"])
+        result = _make_result(tags=("  ", "\t"))
         assert is_empty_classification(result) is True
 
     def test_has_correspondent_returns_false(self):
@@ -203,5 +203,5 @@ class TestIsEmptyClassification:
         assert is_empty_classification(result) is False
 
     def test_empty_tags_list_returns_true(self):
-        result = _make_result(tags=[])
+        result = _make_result(tags=())
         assert is_empty_classification(result) is True
