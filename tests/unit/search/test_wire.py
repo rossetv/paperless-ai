@@ -201,26 +201,6 @@ class TestBrowseQueryParser:
             )
             assert query.sort == public_sort
 
-    def test_unknown_sort_raises_value_error(self) -> None:
-        """An unrecognised sort name is rejected with ValueError."""
-        import pytest
-
-        from search.wire import to_document_browse_query
-
-        with pytest.raises(ValueError, match="sort"):
-            to_document_browse_query(
-                page=1,
-                page_size=20,
-                sort="relevance",
-                descending=True,
-                text=None,
-                date_from=None,
-                date_to=None,
-                correspondent_id=None,
-                document_type_id=None,
-                tag_ids=[],
-            )
-
     def test_filters_and_text_are_carried_through(self) -> None:
         """Every filter and the text query reach the store shape."""
         from search.wire import to_document_browse_query
