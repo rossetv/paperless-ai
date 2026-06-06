@@ -1,8 +1,19 @@
-/** Reset browser default list styles to prevent global.css bleed. */
+/**
+ * SourceList — list reset + inter-card spacing.
+ *
+ * The <ol> resets the browser/global list chrome (global.css adds list padding,
+ * margins and a secondary text colour) and lays the cards out as a flex column
+ * with a gap. The gap — not an <li> margin — owns the spacing between cards;
+ * `.item { margin: 0 }` neutralises the global `li` margin so it does not add
+ * to the gap.
+ */
 .list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
 }
 
 .item {

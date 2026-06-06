@@ -1,5 +1,4 @@
 import React from 'react';
-import { Stack } from '../../../components/layout/Stack/Stack';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import type { SourceDocument } from '../../../api/types';
 import { SourceCard } from '../SourceCard/SourceCard';
@@ -28,8 +27,9 @@ export interface SourceListProps {
  *
  * Shows an EmptyState when there are no sources to display.
  *
- * Composed from: Stack, EmptyState, SourceCard.
- * Own CSS module resets browser list defaults so global.css list styles do not bleed.
+ * Composed from: EmptyState, SourceCard.
+ * Own CSS module resets browser list defaults (so global.css list styles do not
+ * bleed in) and owns the inter-card spacing via a flex-column gap.
  */
 export function SourceList({
   sources,
@@ -47,22 +47,20 @@ export function SourceList({
   }
 
   return (
-    <Stack direction="vertical" gap={6}>
-      <ol className={styles['list']} aria-label="Sources">
-        {sources.map((source, i) => {
-          const index = i + 1;
-          return (
-            <li key={source.document_id} className={styles['item']}>
-              <SourceCard
-                source={source}
-                index={index}
-                highlighted={highlightedIndex === index}
-                onPreview={onPreview}
-              />
-            </li>
-          );
-        })}
-      </ol>
-    </Stack>
+    <ol className={styles['list']} aria-label="Sources">
+      {sources.map((source, i) => {
+        const index = i + 1;
+        return (
+          <li key={source.document_id} className={styles['item']}>
+            <SourceCard
+              source={source}
+              index={index}
+              highlighted={highlightedIndex === index}
+              onPreview={onPreview}
+            />
+          </li>
+        );
+      })}
+    </ol>
   );
 }

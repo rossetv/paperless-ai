@@ -62,7 +62,7 @@ describe('LoadingScreen', () => {
     expect(screen.getByText(/synthesising the answer/i)).toBeInTheDocument();
   });
 
-  it('marks the retrieving stage as in progress', () => {
+  it('marks the active stage as in progress', () => {
     render(
       <LoadingScreen
         query="q"
@@ -73,7 +73,7 @@ describe('LoadingScreen', () => {
     expect(screen.getByText(/in progress/i)).toBeInTheDocument();
   });
 
-  it('renders the ETA pill', () => {
+  it('renders the live elapsed counter', () => {
     render(
       <LoadingScreen
         query="q"
@@ -81,7 +81,8 @@ describe('LoadingScreen', () => {
         onFiltersChange={() => {}}
       />,
     );
-    expect(screen.getByText('~2s')).toBeInTheDocument();
+    // Starts at 0s and ticks up — assert the seconds-counter format renders.
+    expect(screen.getByText(/^\d+s$/)).toBeInTheDocument();
   });
 
   it('renders skeleton source placeholders', () => {
