@@ -323,7 +323,11 @@ class OpenAIChatMixin:
             }
             completion = self._create_with_compat(params, model)
             if completion is None:
-                log.warning(f"{log_event_prefix}.model_failed", model=model)
+                # Stable event name; the per-stage prefix is structured context,
+                # not interpolated into the event string (§7.2, COMMON-22).
+                log.warning(
+                    "llm.fallback_model_failed", stage=log_event_prefix, model=model
+                )
                 continue
             return completion.choices[0].message.content or ""
 
