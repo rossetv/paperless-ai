@@ -35,8 +35,11 @@
    `common/llm` wrapper; all embeddings through `common/embeddings`. A bare `httpx`
    or `openai` call outside those three modules is the blocker
    ([§8.1](#81-outbound-io-goes-through-the-shared-clients)).
-2. The store is the only database. `src/store/` owns every `sqlite3` call and every
-   line of SQL; nothing else imports `sqlite3` ([§9.1](#91-the-store-owns-all-sql)).
+2. The two databases own all SQL. `src/store/` owns the search index
+   (`index.db`); `src/appdb/` owns the application database (`app.db` — accounts,
+   sessions, API keys, config, daemon status). Every `sqlite3` call and every line
+   of SQL lives in one of those two packages; nothing else imports `sqlite3`
+   ([§9.1](#91-the-store-owns-all-sql)).
 3. Parameter-substitute every SQL value; no f-string SQL, ever
    ([§9.5](#95-parameter-substitute-always)).
 4. `from __future__ import annotations` and full type signatures on every public
@@ -183,8 +186,9 @@ single-instance.
 
 ## 2. Module Taxonomy
 
-The backend has four layers. Imports flow downward only; an upward or sideways
-cross-package import is a review-blocker defect. The diagram is the contract.
+The backend has five layers (two of them — `common/` and `appdb/` — are leaves at
+the bottom). Imports flow downward only; an upward or sideways cross-package
+import is a review-blocker defect. The diagram is the contract.
 
 ```
    ┌─────────────────────────────────────────────────────────────┐
@@ -209,8 +213,26 @@ cross-package import is a review-blocker defect. The diagram is the contract.
    │  common/   config · paperless · llm · embeddings · retry ·   │
    │  daemon_loop · tags · claims · bootstrap · shutdown ·        │
    │  concurrency · preflight · logging_config · constants        │
+   └────────────────────────────┬────────────────────────────────┘
+                                │
+                                ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │  appdb/   app.db: users · sessions · api_keys · config ·     │
+   │  daemon_status · reconcile_activity · recent_searches        │
+   │  (the application DB — accounts and config, NOT the index)   │
    └─────────────────────────────────────────────────────────────┘
 ```
+
+There are in fact two database-owning packages, not one. `store/` owns the
+search index (`index.db`); `appdb/` owns the application database (`app.db`).
+They are deliberately separate so that rebuilding the index never destroys user
+accounts, API keys, or configuration, and so the OCR and classifier daemons —
+barred from importing `store/` — can still read `app.db` config. `appdb/` sits
+**below** `common/`: `common` reads `app.db` (config hot-load, daemon
+heartbeats), so `appdb` is a leaf the whole tree may import. `store/` and
+`appdb/` do not import each other; the migration machinery in `appdb/` is
+adapted from `store.migrations` — copied, not shared — so the two databases
+version independently.
 
 ### 2.1 `common/`
 
@@ -219,35 +241,61 @@ configuration, the Paperless API client, the LLM and embedding wrappers, retry
 logic, the polling loop, tag operations, structured logging.
 
 **Allowed deps.** Standard library, the project's third-party runtime dependencies
-(`httpx`, `openai`, `structlog`, `Pillow`, `pdf2image`). No imports from any other
-internal package — `common` is the leaf.
+(`httpx`, `openai`, `structlog`, `Pillow`, `pdf2image`), and `appdb/` — the only
+internal package `common` may import, for `app.db` config hot-load and daemon
+heartbeats (`appdb` sits below `common`). No other internal package.
 
 **Forbidden patterns.** No imports from `store/`, `ocr/`, `classifier/`,
-`indexer/`, or `search/`. No `sqlite3`. No FastAPI. No business logic specific to
-one daemon.
+`indexer/`, or `search/`. No direct `sqlite3` — `app.db` access goes through
+`appdb/`, never a raw connection. No FastAPI. No business logic specific to one
+daemon.
 
 ### 2.2 `store/`
 
-**Purpose.** The SQLite search index: schema definition, migrations, the write API
-(`StoreWriter`), and the read API (`StoreReader`). Owns every `sqlite3` call and
-every line of SQL in the codebase.
+**Purpose.** The SQLite search index (`index.db`): schema definition, migrations,
+the write API (`StoreWriter`), and the read API (`StoreReader`). Owns every
+`sqlite3` call and every line of SQL **for the index**. (The *application*
+database, `app.db`, is owned by the separate `appdb/` package — see §2.2.1.)
 
 **Allowed deps.** `sqlite3`, `sqlite-vec`, `common/`.
 
-**Forbidden patterns.** No imports from `indexer/`, `search/`, or the daemons. No
-HTTP. No LLM calls. No business logic — the store persists and queries; it does not
-decide what to persist. See [§9](#9-the-store).
+**Forbidden patterns.** No imports from `indexer/`, `search/`, the daemons, or
+`appdb/`. No HTTP. No LLM calls. No business logic — the store persists and queries;
+it does not decide what to persist. See [§9](#9-the-store).
+
+### 2.2.1 `appdb/`
+
+**Purpose.** The application database (`app.db`): the `users`, `sessions`,
+`api_keys`, `config`, `daemon_status`, `reconcile_activity`, and
+`recent_searches` tables, with the argon2id password hashing in
+`appdb.passwords`. Owns every `sqlite3` call and every line of SQL **for
+`app.db`**, exactly as `store/` owns the index's. It is a separate database, and
+a separate package, on purpose: rebuilding the search index must never destroy
+accounts, API keys, or configuration, and the OCR and classifier daemons (barred
+from `store/`) must still read `app.db` config. The migration machinery is
+adapted from `store.migrations` — copied, not shared — so the two databases
+version independently.
+
+**Allowed deps.** `sqlite3`, `argon2`, `structlog`. `appdb/` sits **below**
+`common/` in the import graph (`common` reads `app.db` for config hot-load and
+daemon heartbeats), so it imports no other internal package.
+
+**Forbidden patterns.** No imports from `store/`, `common/`, `ocr/`,
+`classifier/`, `indexer/`, or `search/`. No FastAPI, `httpx`, or `openai`. No
+business logic — `appdb` persists and queries `app.db`; the policy that decides
+what to write lives in the caller (`search/`, the daemons, `common`).
 
 ### 2.3 `ocr/` and `classifier/`
 
 **Purpose.** The two tag-driven processing daemons. OCR transcribes document pages
 via a vision model; the classifier enriches document metadata via an LLM.
 
-**Allowed deps.** `common/`. **Not `store/`** — these daemons are tag-driven and
-hold no index state.
+**Allowed deps.** `common/`, and `appdb/` for `app.db` access only — config
+hot-load (`appdb.config`) and writing a `daemon_status` heartbeat. **Not
+`store/`** — these daemons are tag-driven and hold no index state.
 
-**Forbidden patterns.** No FastAPI. No `sqlite3`. No imports from `indexer/` or
-`search/`.
+**Forbidden patterns.** No FastAPI. No direct `sqlite3` — `app.db` access goes
+through `appdb/`, never a raw connection. No imports from `indexer/` or `search/`.
 
 ### 2.4 `indexer/`
 
@@ -255,22 +303,27 @@ hold no index state.
 store: chunk new and changed documents, embed the chunks, upsert them, prune
 deleted documents.
 
-**Allowed deps.** `store/` (the `StoreWriter`), `common/`.
+**Allowed deps.** `store/` (the `StoreWriter`), `common/`, and `appdb/` for
+`app.db` access only — config hot-load and writing `daemon_status` /
+`reconcile_activity` rows for the Index dashboard.
 
-**Forbidden patterns.** No FastAPI. No imports from `search/`. The indexer never
-reads the store for query purposes — it reads index *state* (`get_index_state`) to
-drive reconciliation, nothing more.
+**Forbidden patterns.** No FastAPI. No imports from `search/`. No direct
+`sqlite3`. The indexer never reads the store for query purposes — it reads index
+*state* (`get_index_state`) to drive reconciliation, nothing more.
 
 ### 2.5 `search/`
 
 **Purpose.** The read side. The agentic search pipeline — plan, retrieve, refine,
 synthesise — and the two interface processes that expose it.
 
-**Allowed deps.** `store/` (the `StoreReader`), `common/`.
+**Allowed deps.** `store/` (the `StoreReader`), `appdb/` (accounts, sessions, API
+keys, config, dashboard reads — the network-facing server is the primary `app.db`
+caller), and `common/`.
 
 **Forbidden patterns.** `search/` core (the pipeline) imports no FastAPI and no MCP
 SDK — those belong only in `search/api.py` and `search/mcp_server.py` respectively.
-The pipeline is a pure library. No imports from `indexer/` or the daemons.
+The pipeline is a pure library. No direct `sqlite3` — `app.db` access goes through
+`appdb/`. No imports from `indexer/` or the daemons.
 
 **Subpackages and modules.**
 
@@ -283,15 +336,20 @@ The pipeline is a pure library. No imports from `indexer/` or the daemons.
 
 ### 2.6 Cross-package rules
 
-1. `common/` imports nothing from another internal package.
-2. `store/` imports only `common/`.
-3. `ocr/`, `classifier/` import only `common/`.
-4. `indexer/` imports `store/` and `common/`.
-5. `search/` imports `store/` and `common/`. The pipeline never imports `fastapi`
-   or `mcp`; only the two interface modules do.
-6. No package imports a daemon (`ocr`, `classifier`, `indexer`) or `search`,
+1. `appdb/` imports nothing from another internal package — it is a leaf,
+   below `common/`.
+2. `common/` imports only `appdb/` (for `app.db` config and heartbeats) — nothing
+   else internal.
+3. `store/` imports only `common/`. `store/` and `appdb/` never import each other.
+4. `ocr/`, `classifier/` import `common/` and `appdb/` (the latter for `app.db`
+   config and `daemon_status` heartbeats only) — **not** `store/`.
+5. `indexer/` imports `store/`, `common/`, and `appdb/` (config, `daemon_status`,
+   `reconcile_activity`).
+6. `search/` imports `store/`, `appdb/`, and `common/`. The pipeline never imports
+   `fastapi` or `mcp`; only the two interface modules do.
+7. No package imports a daemon (`ocr`, `classifier`, `indexer`) or `search`,
    except the interface modules importing the `search` pipeline.
-7. A new top-level package needs a documented purpose, allowed-deps list, and
+8. A new top-level package needs a documented purpose, allowed-deps list, and
    forbidden patterns added to this section in the same PR.
 
 ## 3. File Organisation
@@ -626,12 +684,14 @@ state and is guarded.
 A bespoke client gets the timeout, the retry, or the auth header wrong eventually;
 the shared ones get it right by construction.
 
-### 8.2 SQLite only through `store/`
+### 8.2 SQLite only through `store/` and `appdb/`
 
-Every `sqlite3.connect`, every cursor, every SQL string lives in `src/store/`. A
-`sqlite3` import anywhere else is a review-blocker — it bypasses the WAL
-configuration, the pragmas, the foreign-keys setting, and the schema-version check.
-See [§9](#9-the-store).
+Every `sqlite3.connect`, every cursor, every SQL string lives in `src/store/`
+(the search index, `index.db`) or `src/appdb/` (the application database,
+`app.db`). A `sqlite3` import anywhere else is a review-blocker — it bypasses the
+WAL configuration, the pragmas, the foreign-keys setting, and the schema-version
+check that each package centralises for its own database. See
+[§9](#9-the-store).
 
 ### 8.3 The `PaperlessClient` is not thread-safe
 
@@ -682,15 +742,25 @@ transaction ([§9.6](#96-transactions-are-explicit)) guarantees a clean boundary
 
 The store is a single SQLite file (`INDEX_DB_PATH`) holding the search index:
 document metadata, text chunks, vector embeddings (`sqlite-vec`), and a full-text
-index (FTS5). It is the only database in the project.
+index (FTS5). It is one of the project's **two** SQLite databases: the store holds
+the search index, and the separate `appdb/` package
+([§2.2.1](#221-appdb)) owns the application database (`app.db` — accounts,
+sessions, API keys, config, daemon status). The two are independent files with
+independent schemas and migration histories, so rebuilding the index never
+touches accounts or configuration. The rules in this section govern the store;
+`appdb` owns **all** of `app.db`'s SQL by the same discipline, behind its own
+typed module functions.
 
 ### 9.1 The store owns all SQL
 
-`src/store/` is the only package that imports `sqlite3` or `sqlite-vec` and the
-only place SQL strings exist. The indexer and the search pipeline call
-`StoreWriter` and `StoreReader` methods; they never see a cursor or a row. A
-repository method does **one** logical operation — composing several into a
-workflow is the caller's job, not the store's.
+`src/store/` is the only package that imports `sqlite3` or `sqlite-vec` for the
+**index**, and the only place index SQL strings exist. (The application database's
+SQL lives, by the same rule, in `src/appdb/` — those two packages are the only
+SQL-owning packages; nothing else imports `sqlite3`.) The indexer and the search
+pipeline call `StoreWriter` and `StoreReader` methods; they never see a cursor or
+a row. A repository method does **one** logical operation — composing several into
+a workflow is the caller's job, not the store's. `appdb` exposes the same
+shape: typed module functions returning frozen dataclasses, never a raw row.
 
 ### 9.2 Schema is declared, applied idempotently, and versioned
 
@@ -777,12 +847,17 @@ Once set up, every `/api/*` request requires one of two credentials:
 - **Cookie session** — the human path. `POST /api/auth/login` validates the
   username and password and issues a signed `HttpOnly` session cookie. The browser
   attaches it on every subsequent request.
-- **Bearer API key** — the programmatic path. Admins and members may mint
-  `sk-pls-...` API keys via `POST /api/api-keys`. Each key carries one or both
-  scopes (`api`, `mcp`). The `api` scope gates the REST data endpoints; the `mcp`
-  scope gates the MCP server. Presenting an `api`-only key to the MCP server is a
-  403; presenting an `mcp`-only key to a scope-enforced REST endpoint is equally a
-  403.
+- **Bearer API key** — the programmatic path. Admins and members may mint API
+  keys via `POST /api/api-keys`. Each key carries a non-empty subset of three
+  scopes (`api`, `mcp`, `admin`). The `api` scope gates the REST data endpoints;
+  the `mcp` scope gates the MCP server; the `admin` scope gates the
+  administrative endpoints (user and key management). Presenting an `api`-only key
+  to the MCP server is a 403; presenting an `mcp`-only key to a scope-enforced
+  REST endpoint is equally a 403; an endpoint guarded by `require_admin` demands
+  the `admin` scope. The scope set is validated at mint time
+  (`search.api_keys.serialise_scopes` rejects any value outside these three), so
+  an unknown scope can never be persisted, and the `appdb.api_keys.scopes` column
+  only ever holds a subset of `api`/`mcp`/`admin`.
 
 A new endpoint is gated by `require_api_scope` (read-only+) or
 `require_api_scope_member` (member+) or `require_admin` (admin-only). Opting an
@@ -1330,7 +1405,8 @@ useful. Run it against every PR before approving.
 
 ### 17.7 SQL and database
 
-- [ ] No `sqlite3` import outside `src/store/`.
+- [ ] No `sqlite3` import outside `src/store/` (the index) and `src/appdb/`
+      (the application database) — the two SQL-owning packages.
 - [ ] No value interpolated into a SQL string — parameters only
       ([§9.5](#95-parameter-substitute-always)).
 
