@@ -117,7 +117,13 @@ class PageSource:
         caller is responsible for closing the returned image.
         """
         if self._images:
-            return self._images[index]
+            # Hand back a copy, not the retained object: the worker closes
+            # every image it loads in a finally block (CODE_GUIDELINES §1.4),
+            # and closing the stored copy would invalidate the source's own
+            # reference — corrupting any subsequent load_page of the same index
+            # and the double-close in close(). The PDF path copies for the same
+            # reason; the in-memory path must match.
+            return self._images[index].copy()
 
         path = self._paths[index]
         try:

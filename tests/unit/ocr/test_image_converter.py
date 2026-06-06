@@ -220,15 +220,42 @@ class TestPageSourceLifecycle:
     """The PageSource contract: known count, lazy loads, owned cleanup."""
 
     def test_close_releases_in_memory_images(self):
+        # close() releases the source's retained images. The image handed to
+        # the caller by load_page is an independent copy (so the worker can
+        # close it safely), so it stays usable after the source is closed —
+        # mirroring the PDF path's no-open-handle contract.
         png_bytes = _make_png_bytes()
         source = open_page_source(png_bytes, "image/png")
+        retained = source._images[0]
         page = source.load_page(0)
 
         source.close()
 
-        # A closed Pillow image raises on any pixel operation.
+        # The source's own image is closed; a closed Pillow image raises on
+        # any pixel operation.
         with pytest.raises(ValueError, match="closed image"):
-            page.load()
+            retained.load()
+        # The caller's copy is independent and survives the close.
+        assert page.size == (10, 10)
+        assert page.convert("L").histogram() is not None
+        page.close()
+
+    def test_in_memory_load_page_returns_a_caller_owned_copy(self):
+        # The worker closes every image it loads in a finally block. If
+        # load_page handed back the object retained in _images, that close
+        # would invalidate the source's own copy — a second load_page (e.g. a
+        # cancelled-future retry) would then get a corrupted, closed image.
+        png_bytes = _make_png_bytes()
+        source = open_page_source(png_bytes, "image/png")
+
+        first = source.load_page(0)
+        first.close()  # mimic _ocr_one_page's finally block
+
+        second = source.load_page(0)
+        # The retained source image must survive the caller closing its copy.
+        assert second.size == (10, 10)
+        assert second.convert("L").histogram() is not None
+        source.close()
 
     def test_close_is_idempotent(self):
         png_bytes = _make_png_bytes()
