@@ -351,6 +351,7 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
     from appdb.connection import connect  # noqa: PLC0415
     from appdb.schema import ensure_schema  # noqa: PLC0415
     from common.config import current_settings_with_version  # noqa: PLC0415
+    from search.cache import reset_search_result_cache  # noqa: PLC0415
 
     conn = connect(app_db_path)
     try:
@@ -381,6 +382,14 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
         core, _store_reader = _resolve_components(settings, None, None)
         _CORE_CACHE[app_db_path] = (cache_version, core)
+        # A config change can alter the answer for an otherwise-identical query
+        # (answer model, reasoning effort, top-k, prompts, ...). Drop the
+        # result-cache singleton so the next query recomputes under the new
+        # configuration — and the cache rebuilds with any new
+        # SEARCH_CACHE_TTL_SECONDS — rather than serving a pre-change answer for
+        # up to the TTL. The index-version key already busts on corpus changes;
+        # this closes the config-change gap.
+        reset_search_result_cache()
         return core
 
 
