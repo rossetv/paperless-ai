@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from openai import APIError as OpenAIAPIError
 import structlog
+from openai import APIError as OpenAIAPIError
 
 from .config import Settings
 from .llm import get_openai_client, is_openai_client_ready
