@@ -26,6 +26,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from common.clock import normalise_paperless_timestamp
 from indexer.reconciler import OVERLAP_MARGIN
 from indexer.worker import IndexOutcome
 from store.models import IndexState
@@ -136,6 +137,14 @@ class TestIncrementalSyncIndexesNewDocuments:
     def test_stored_watermark_is_passed_as_modified_after(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """In steady state the watermark is the modified_after, with the light projection.
+
+        A stored watermark selects the steady-state path (IDX-03): the page is
+        the light ``{id, modified}`` projection, so the call carries both
+        ``modified_after=watermark`` and ``fields=_LIGHT_DIFF_FIELDS``.
+        """
+        from indexer.reconciler._light_diff import _LIGHT_DIFF_FIELDS
+
         watermark = "2024-05-01T00:00:00+00:00"
         paperless = make_reconciler_paperless(documents=[])
         store_writer = make_reconciler_store_writer(watermark=watermark)
@@ -146,7 +155,9 @@ class TestIncrementalSyncIndexesNewDocuments:
 
         run_incremental_sync(paperless, store_writer)
 
-        paperless.iter_all_documents.assert_called_once_with(modified_after=watermark)
+        paperless.iter_all_documents.assert_called_once_with(
+            modified_after=watermark, fields=_LIGHT_DIFF_FIELDS
+        )
 
     def test_empty_cycle_does_not_change_the_watermark(
         self, monkeypatch: pytest.MonkeyPatch
@@ -174,14 +185,17 @@ class TestIncrementalSyncIndexesNewDocuments:
 class TestIncrementalSyncWatermarkOverlap:
     """The overlap re-includes a boundary document; the hash gate makes it cheap."""
 
-    def test_boundary_document_reincluded_is_a_metadata_only_no_op(
+    def test_boundary_document_reincluded_is_skipped_cold(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A re-included boundary document with an unchanged hash → METADATA_ONLY.
+        """A re-included boundary document with an unchanged modified is skipped.
 
-        The worker decides METADATA_ONLY when the existing IndexState's
-        content_hash matches.  The reconciler must pass that existing state so
-        the gate fires and the re-inclusion is free (no re-embed).
+        In steady state (IDX-03) the overlap re-inclusion is even cheaper than a
+        metadata-only update: a document whose projected ``modified`` equals the
+        stored ``modified`` is skipped cold — its OCR body is never fetched and
+        the worker is never invoked, so it certainly cannot be re-embedded.  The
+        watermark still advances over it (covered by
+        ``TestSkipStillAdvancesWatermark``).
         """
         content = "Stable boundary content."
         boundary_modified = "2024-06-01T12:00:00+00:00"
@@ -192,7 +206,10 @@ class TestIncrementalSyncWatermarkOverlap:
 
         existing_hash = hashlib.sha256(content.encode()).hexdigest()
         index_state = {
-            7: IndexState(modified=boundary_modified, content_hash=existing_hash)
+            7: IndexState(
+                modified=normalise_paperless_timestamp(boundary_modified),
+                content_hash=existing_hash,
+            )
         }
         store_writer = make_reconciler_store_writer(
             watermark=boundary_modified, index_state=index_state
@@ -212,11 +229,12 @@ class TestIncrementalSyncWatermarkOverlap:
 
         report = run_incremental_sync(paperless, store_writer)
 
-        # The reconciler passed the document's existing IndexState.
-        assert captured_existing == [index_state[7]]
-        # The hash gate fired: a cheap metadata-only update, not a re-index.
-        assert report.metadata_only == 1
+        # The boundary document was skipped: the worker never ran and the OCR
+        # body was never fetched — no re-embed, no metadata write.
+        assert captured_existing == []
+        paperless.get_document.assert_not_called()
         assert report.indexed == 0
+        assert report.metadata_only == 0
 
     def test_changed_document_is_reindexed(
         self, monkeypatch: pytest.MonkeyPatch
@@ -447,3 +465,414 @@ class TestIncrementalSyncStreamsThePageStream:
         # Both the page document and the out-of-band retry were indexed.
         assert sorted(indexed_ids) == [1, 2]
         assert report.indexed == 2
+
+
+# ---------------------------------------------------------------------------
+# SACRED INVARIANTS — pinned before any efficiency change (spec §7)
+# ---------------------------------------------------------------------------
+
+
+class TestSacredInvariantsBaseline:
+    """I1/I2: the SHA-256 hash gate decides embed vs metadata-only.
+
+    These pin the contract the IDX-03 light-diff must preserve, exercised
+    through the real steady-state path:
+
+    - I1 (never re-embed unchanged work): a re-entered document whose
+      ``modified`` is unchanged is skipped cold — never fetched, never embedded.
+    - I2 (metadata-only change takes the no-embed path): a document whose
+      ``modified`` advanced but whose content is byte-for-byte identical is
+      fetched, hash-gated, and routed to ``update_metadata`` — never re-embedded.
+    """
+
+    def test_unchanged_content_is_never_reembedded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """I1: a re-entered document with an unchanged modified embeds nothing.
+
+        In steady state the document is skipped before the worker, so it is
+        never even handed to the SHA-256 gate — the strongest possible form of
+        "unchanged content is never re-embedded".
+        """
+        content = "Stable content body."
+        modified = "2024-06-01T12:00:00+00:00"
+        doc = make_paperless_document(doc_id=5, content=content, modified=modified)
+        paperless = _light_paperless(
+            full_docs=[doc], light_rows=[{"id": 5, "modified": modified}]
+        )
+        index_state = {
+            5: IndexState(
+                modified=normalise_paperless_timestamp(modified),
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark=modified, index_state=index_state
+        )
+
+        embedded: list[int] = []
+
+        def _index_document(
+            _self: object, d: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            # Mirror the real worker's gate exactly.
+            doc_hash = hashlib.sha256(d["content"].encode()).hexdigest()
+            if existing is not None and existing.content_hash == doc_hash:
+                return IndexOutcome.METADATA_ONLY
+            embedded.append(d["id"])
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        assert embedded == []  # I1: never re-embedded
+        paperless.get_document.assert_not_called()  # never even fetched
+        assert report.indexed == 0
+        assert report.metadata_only == 0  # skipped, not even a metadata write
+
+    def test_metadata_only_change_takes_the_no_embed_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """I2: content identical, metadata advanced → METADATA_ONLY, not INDEXED.
+
+        The document's ``modified`` advanced (a metadata PATCH), so the
+        steady-state diff fetches it and runs the SHA-256 gate; identical content
+        means the gate routes it to the no-embed metadata-only path.
+        """
+        content = "Identical content."
+        old_modified = "2024-06-01T00:00:00+00:00"
+        new_modified = "2024-07-01T00:00:00+00:00"
+        doc = make_paperless_document(
+            doc_id=6, content=content, modified=new_modified
+        )
+        paperless = _light_paperless(
+            full_docs=[doc], light_rows=[{"id": 6, "modified": new_modified}]
+        )
+        index_state = {
+            6: IndexState(
+                modified=normalise_paperless_timestamp(old_modified),
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state=index_state
+        )
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document",
+            _hash_gated_index_document,
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        paperless.get_document.assert_called_once_with(6)  # fetched lazily
+        assert report.metadata_only == 1
+        assert report.indexed == 0
+
+
+# ---------------------------------------------------------------------------
+# IDX-03 guard tests (G1–G4) — steady-state light-diff (spec §7)
+# These FAIL until Task 6 lands the steady-state projection path.
+# ---------------------------------------------------------------------------
+
+
+def _light_paperless(
+    *, full_docs: list[dict], light_rows: list[dict]
+) -> MagicMock:
+    """A Paperless mock that returns light {id, modified} rows on the watermark
+    page and full documents from get_document(id).
+
+    iter_all_documents(modified_after=..., fields=...) → light_rows when a
+    `fields` projection is requested, else full_docs. get_document(id) returns
+    the matching full document.
+    """
+    paperless = MagicMock()
+    by_id = {doc["id"]: doc for doc in full_docs}
+
+    def _iter(**kwargs: object) -> list[dict]:
+        if "modified_after" not in kwargs:
+            # Deletion-sweep style call (no incremental keyword) — ids only.
+            return [{"id": doc_id} for doc_id in by_id]
+        if kwargs.get("fields") is not None:
+            return list(light_rows)
+        return list(full_docs)
+
+    paperless.iter_all_documents.side_effect = _iter
+    paperless.get_document.side_effect = lambda doc_id: by_id[doc_id]
+    paperless.document_exists.return_value = True
+    paperless.list_correspondents.return_value = []
+    paperless.list_document_types.return_value = []
+    paperless.list_tags.return_value = []
+    return paperless
+
+
+class TestSteadyStateLightDiff:
+    """In steady state, unchanged re-entered documents are skipped cold."""
+
+    def test_steady_state_skip_never_embeds_or_fetches(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """G/I1: a byte-for-byte-unchanged re-entered doc is neither fetched nor embedded."""
+        modified = "2024-06-01T12:00:00+00:00"
+        full = make_paperless_document(doc_id=7, content="x", modified=modified)
+        paperless = _light_paperless(
+            full_docs=[full], light_rows=[{"id": 7, "modified": modified}]
+        )
+        # The store already holds this doc with the SAME normalised modified.
+        from common.clock import normalise_paperless_timestamp
+
+        index_state = {
+            7: IndexState(
+                modified=normalise_paperless_timestamp(modified),
+                content_hash="whatever",
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark=modified, index_state=index_state
+        )
+
+        calls: list[int] = []
+
+        def _index_document(
+            _self: object, d: dict, existing: IndexState | None
+        ) -> IndexOutcome:
+            calls.append(d["id"])
+            return IndexOutcome.INDEXED
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", _index_document
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        assert calls == []  # never run through the worker
+        paperless.get_document.assert_not_called()  # OCR body never fetched
+        assert report.indexed == 0
+        assert report.metadata_only == 0
+
+    def test_changed_modified_same_content_is_metadata_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """I2: a doc whose modified advanced is fetched, hash-gated, metadata-only."""
+        content = "Identical body."
+        old_modified = "2024-06-01T00:00:00+00:00"
+        new_modified = "2024-07-01T00:00:00+00:00"
+        full = make_paperless_document(
+            doc_id=8, content=content, modified=new_modified
+        )
+        paperless = _light_paperless(
+            full_docs=[full], light_rows=[{"id": 8, "modified": new_modified}]
+        )
+        from common.clock import normalise_paperless_timestamp
+
+        index_state = {
+            8: IndexState(
+                modified=normalise_paperless_timestamp(old_modified),
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state=index_state
+        )
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document",
+            _hash_gated_index_document,
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        paperless.get_document.assert_called_once_with(8)  # fetched lazily
+        assert report.metadata_only == 1
+        assert report.indexed == 0
+
+
+class TestFirstRunBackfillGuard:
+    """G1: first-run backfill keeps the full-document page path."""
+
+    def test_first_run_backfill_pages_full_documents(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With no watermark, iter_all_documents is called WITHOUT a fields projection."""
+        docs = [make_paperless_document(doc_id=i) for i in (1, 2)]
+        paperless = make_reconciler_paperless(documents=docs)
+        store_writer = make_reconciler_store_writer(watermark=None)
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", always_indexed
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        # The incremental call carried no `fields` projection (full bodies).
+        incremental = [
+            call
+            for call in paperless.iter_all_documents.call_args_list
+            if "modified_after" in call.kwargs
+        ]
+        assert len(incremental) == 1
+        assert incremental[0].kwargs.get("fields") is None
+        # get_document is NOT used as a per-id fetch on first run.
+        paperless.get_document.assert_not_called()
+        assert report.indexed == 2
+
+
+class TestLightDiffIsFailSafe:
+    """G2: an unrecognisable modified format degrades to a full fetch, never a skip."""
+
+    def test_unrecognised_modified_format_falls_back_to_full_fetch(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If projected modified can't be matched, the doc is fetched and hash-gated."""
+        content = "Body."
+        full = make_paperless_document(
+            doc_id=9, content=content, modified="2024-06-01T00:00:00+00:00"
+        )
+        # The light row carries a garbage modified the normaliser keeps verbatim,
+        # which will NOT equal the store's normalised value.
+        paperless = _light_paperless(
+            full_docs=[full], light_rows=[{"id": 9, "modified": "not-a-timestamp"}]
+        )
+        index_state = {
+            9: IndexState(
+                modified="2024-06-01T00:00:00+00:00",
+                content_hash=hashlib.sha256(content.encode()).hexdigest(),
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state=index_state
+        )
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document",
+            _hash_gated_index_document,
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        # Fell back to a full fetch + hash gate (status quo), did not skip.
+        paperless.get_document.assert_called_once_with(9)
+        assert report.metadata_only == 1
+
+
+class TestSkipStillAdvancesWatermark:
+    """G3: a cycle that skips every document still advances the watermark."""
+
+    def test_skipped_documents_still_advance_the_watermark(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from common.clock import normalise_paperless_timestamp
+
+        modified = "2024-06-10T08:30:00+00:00"
+        full = make_paperless_document(doc_id=10, content="x", modified=modified)
+        paperless = _light_paperless(
+            full_docs=[full], light_rows=[{"id": 10, "modified": modified}]
+        )
+        index_state = {
+            10: IndexState(
+                modified=normalise_paperless_timestamp(modified),
+                content_hash="h",
+            )
+        }
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state=index_state
+        )
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", always_indexed
+        )
+
+        run_incremental_sync(paperless, store_writer)
+
+        expected = (
+            datetime.fromisoformat(modified) - OVERLAP_MARGIN
+        ).isoformat()
+        assert store_writer._meta["modified_watermark"] == expected
+
+
+class TestChangedFetchFailureIsolated:
+    """G4: a get_document failure for one changed id is isolated (SPEC §5.7)."""
+
+    def test_changed_document_fetch_failure_is_isolated(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from common.paperless import PAPERLESS_CALL_EXCEPTIONS  # noqa: F401
+
+        good = make_paperless_document(
+            doc_id=11, content="a", modified="2024-07-01T00:00:00+00:00"
+        )
+        # Both ids have advanced modified → both are "changed" → both fetched.
+        paperless = _light_paperless(
+            full_docs=[good],
+            light_rows=[
+                {"id": 11, "modified": "2024-07-01T00:00:00+00:00"},
+                {"id": 12, "modified": "2024-07-02T00:00:00+00:00"},
+            ],
+        )
+
+        def _get_document(doc_id: int) -> dict:
+            if doc_id == 12:
+                raise ConnectionError("Paperless dropped fetching doc 12")
+            return good
+
+        paperless.get_document.side_effect = _get_document
+        store_writer = make_reconciler_store_writer(
+            watermark="2024-05-01T00:00:00+00:00", index_state={}
+        )
+
+        monkeypatch.setattr(
+            "indexer.worker.DocumentIndexer.index_document", always_indexed
+        )
+
+        report = run_incremental_sync(paperless, store_writer)
+
+        # Doc 11 indexed; doc 12's fetch failure is isolated and counted.
+        assert report.indexed == 1
+        assert report.failed == 1
+
+
+# ---------------------------------------------------------------------------
+# _is_unchanged — the load-bearing skip predicate (spec §4.2)
+# ---------------------------------------------------------------------------
+
+
+class TestIsUnchangedPredicate:
+    """The skip predicate matches only on equal NORMALISED modified values."""
+
+    def test_equal_after_normalisation_is_unchanged(self) -> None:
+        from common.clock import normalise_paperless_timestamp
+        from indexer.reconciler._light_diff import _is_unchanged
+
+        existing = IndexState(
+            modified=normalise_paperless_timestamp("2024-06-01T12:00:00Z"),
+            content_hash="h",
+        )
+        # A different wire format for the SAME instant must compare equal.
+        assert _is_unchanged(existing, "2024-06-01T12:00:00+00:00") is True
+
+    def test_different_instant_is_not_unchanged(self) -> None:
+        from common.clock import normalise_paperless_timestamp
+        from indexer.reconciler._light_diff import _is_unchanged
+
+        existing = IndexState(
+            modified=normalise_paperless_timestamp("2024-06-01T12:00:00Z"),
+            content_hash="h",
+        )
+        assert _is_unchanged(existing, "2024-07-01T00:00:00+00:00") is False
+
+    def test_none_existing_is_not_unchanged(self) -> None:
+        from indexer.reconciler._light_diff import _is_unchanged
+
+        # A document with no store row is new — never "unchanged".
+        assert _is_unchanged(None, "2024-06-01T12:00:00+00:00") is False
+
+    def test_unparseable_projected_modified_is_not_unchanged(self) -> None:
+        from indexer.reconciler._light_diff import _is_unchanged
+
+        existing = IndexState(modified="2024-06-01T12:00:00+00:00", content_hash="h")
+        # A garbage projected value the normaliser keeps verbatim will not equal
+        # the store's normalised value → fall back to a full fetch (not a skip).
+        assert _is_unchanged(existing, "not-a-timestamp") is False

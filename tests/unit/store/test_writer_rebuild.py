@@ -7,6 +7,9 @@ everything; the embedding-model meta is preserved.
 
 from __future__ import annotations
 
+import structlog.testing
+
+from store.writer import StoreWriter
 from tests.helpers.factories import make_chunks, make_document_meta
 from tests.helpers.store import open_writer
 
@@ -41,5 +44,54 @@ def test_rebuild_index_preserves_the_embedding_model_meta(db_path: str) -> None:
         writer.write_meta("embedding_model", "text-embedding-3-small")
         writer.rebuild_index()
         assert writer.read_meta("embedding_model") == "text-embedding-3-small"
+    finally:
+        writer.close()
+
+
+def test_rebuild_index_is_a_writer_only_operation(db_path: str) -> None:
+    """I4: the wipe lives only on the write side (StoreWriter).
+
+    A regression guard: rebuild_index must remain a StoreWriter method (gated by
+    the indexer's single-writer flock), never reachable from the read side. The
+    StoreReader has no such method — asserting its absence pins the invariant
+    that a full re-embed cannot be triggered from a read/search path.
+    """
+    from store.reader import StoreReader
+
+    assert hasattr(StoreWriter, "rebuild_index")
+    assert not hasattr(StoreReader, "rebuild_index")
+    assert not hasattr(StoreReader, "check_embedding_model")
+
+
+def test_rebuild_index_logs_projected_scope_at_critical(db_path: str) -> None:
+    """rebuild_index logs a CRITICAL projected-cost line before the wipe (IDX-04)."""
+    writer = open_writer(db_path)
+    try:
+        writer.upsert_document(make_document_meta(id=1), make_chunks(3))
+        writer.upsert_document(make_document_meta(id=2), make_chunks(2))
+        with structlog.testing.capture_logs() as captured:
+            writer.rebuild_index()
+    finally:
+        writer.close()
+
+    critical = [
+        event
+        for event in captured
+        if event["event"] == "store.full_reembed_projected"
+    ]
+    assert len(critical) == 1
+    assert critical[0]["log_level"] == "critical"
+    assert critical[0]["trigger"] == "index_rebuild"
+    assert critical[0]["document_count"] == 2
+    assert critical[0]["current_chunk_count"] == 5
+
+
+def test_rebuild_index_still_wipes_after_logging(db_path: str) -> None:
+    """The CRITICAL log does not gate the wipe — the index is still emptied."""
+    writer = open_writer(db_path)
+    try:
+        writer.upsert_document(make_document_meta(id=1), make_chunks(3))
+        writer.rebuild_index()
+        assert writer.get_all_document_ids() == set()
     finally:
         writer.close()

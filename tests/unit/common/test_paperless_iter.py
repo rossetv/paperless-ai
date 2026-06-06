@@ -175,6 +175,74 @@ class TestIterAllDocuments:
         assert documents[1]["id"] == 20
         client.close()
 
+    def test_fields_projection_is_sent_as_a_query_param(self):
+        """Passing fields=(...) adds the Paperless `fields` sparse-fieldset param."""
+        url = (
+            f"{BASE}/api/documents/"
+            "?ordering=modified&page_size=100&fields=id%2Cmodified"
+        )
+        with respx.mock:
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 5, "modified": "2024-06-02T00:00:00Z"}],
+                        "next": None,
+                    },
+                )
+            )
+            client = _make_client()
+
+            rows = list(client.iter_all_documents(fields=("id", "modified")))
+
+        assert rows == [{"id": 5, "modified": "2024-06-02T00:00:00Z"}]
+        client.close()
+
+    def test_no_fields_projection_sends_no_fields_param(self):
+        """With fields=None (default) the request carries no `fields` parameter."""
+        url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
+        with respx.mock:
+            route = respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200, json={"results": [{"id": 1}], "next": None}
+                )
+            )
+            client = _make_client()
+
+            list(client.iter_all_documents())
+
+        # The exact-URL match above already excludes a fields param; assert the
+        # request was made (the route was hit) for clarity.
+        assert route.called
+        client.close()
+
+    def test_fields_and_modified_after_combine(self):
+        """A light projection and the modified__gt filter are both applied."""
+        url = (
+            f"{BASE}/api/documents/?ordering=modified&page_size=100"
+            "&modified__gt=2024-06-01T00%3A00%3A00Z&fields=id%2Cmodified"
+        )
+        with respx.mock:
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "results": [{"id": 9, "modified": "2024-06-05T00:00:00Z"}],
+                        "next": None,
+                    },
+                )
+            )
+            client = _make_client()
+
+            rows = list(
+                client.iter_all_documents(
+                    modified_after="2024-06-01T00:00:00Z", fields=("id", "modified")
+                )
+            )
+
+        assert rows == [{"id": 9, "modified": "2024-06-05T00:00:00Z"}]
+        client.close()
+
 
 class TestDocumentExists:
     def test_returns_true_when_document_found(self):
