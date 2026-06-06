@@ -62,66 +62,6 @@
   gap: var(--spacing-4);
 }
 
-/* ── Neutral ghost pill action (Edit). ── */
-.action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4) var(--spacing-10);
-  border: var(--spacing-1) solid var(--colour-hairline-strong);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--colour-text-primary);
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  font-weight: var(--font-weight-caption-bold);
-  letter-spacing: var(--letter-spacing-caption);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard),
-              border-color var(--duration-fast) var(--easing-standard);
-}
-
-.action-button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.action-button:hover {
-  background: var(--colour-button-light-bg);
-  border-color: var(--colour-text-tertiary);
-}
-
-/* ── Danger ghost pill (Revoke / Delete) — same shape, danger tint. ── */
-.danger-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4) var(--spacing-10);
-  border: var(--spacing-1) solid var(--colour-hairline-strong);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--colour-status-danger-fg);
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  font-weight: var(--font-weight-caption-bold);
-  letter-spacing: var(--letter-spacing-caption);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard),
-              border-color var(--duration-fast) var(--easing-standard);
-}
-
-.danger-button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.danger-button:hover {
-  background: var(--colour-status-danger-bg);
-  border-color: var(--colour-status-danger-fg);
-}
-
 /* ── Footer note — small, low-key reminder under the table. ── */
 .note {
   margin-top: var(--spacing-10);
@@ -134,11 +74,3 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Loading / error state. ── */
-.state {
-  padding: var(--spacing-section) 0;
-  text-align: center;
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  color: var(--colour-text-tertiary);
-}

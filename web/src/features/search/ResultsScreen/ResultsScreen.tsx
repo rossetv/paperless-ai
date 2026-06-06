@@ -9,6 +9,7 @@ import { SourceList } from '../SourceList/SourceList';
 import { QueryPlanSummary } from '../QueryPlanSummary/QueryPlanSummary';
 import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import type { FilterRequest, SearchResponse } from '../../../api/types';
+import styles from './ResultsScreen.module.css';
 
 export interface ResultsScreenProps {
   /** The query that produced the result — recapped in the inline field. */
@@ -52,8 +53,8 @@ export interface ResultsScreenProps {
  * and document preview are delegated to the parent via callbacks.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Text, FilterControls,
- * AnswerCard, SourceList, QueryPlanSummary, ActiveFiltersStrip. No own CSS
- * module (§12.5 — features layer is composition-only).
+ * AnswerCard, SourceList, QueryPlanSummary, ActiveFiltersStrip.
+ * Own CSS module resets heading margin so the Sources heading fits the Stack gap.
  */
 export function ResultsScreen({
   query,
@@ -119,7 +120,7 @@ export function ResultsScreen({
             22 px display variant matching the design (MAJOR 2). The caption
             sits alongside as a sibling, not inside the <h2>. */}
         <Stack direction="horizontal" gap={6} align="baseline">
-          <h2 style={{ margin: 0 }}>
+          <h2 className={styles['sources-heading']}>
             <Text as="span" variant="sub-heading">
               Sources
             </Text>

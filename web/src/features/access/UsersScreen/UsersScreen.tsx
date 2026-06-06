@@ -6,11 +6,15 @@ import { Avatar } from '../../../components/primitives/Avatar/Avatar';
 import { Button } from '../../../components/primitives/Button/Button';
 import { RoleBadge } from '../../../components/primitives/RoleBadge/RoleBadge';
 import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBadge';
+import { Spinner } from '../../../components/primitives/Spinner/Spinner';
+import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { useUsers } from '../../../api/hooks';
 import { useAuth } from '../../../hooks/useAuth';
 import type { User } from '../../../api/types';
 import { StatTile } from '../../../components/primitives/StatTile/StatTile';
 import { UserEditDrawer } from '../UserEditDrawer/UserEditDrawer';
+import { formatShortDate } from '../../../lib/formatDate';
+import { deriveInitials } from '../../../lib/deriveInitials';
 import styles from './UsersScreen.module.css';
 
 /**
@@ -32,26 +36,6 @@ const AVATAR_PALETTE = [
 function avatarColour(id: number): string {
   // Modulo guarantees the index is in bounds; the fallback satisfies TypeScript.
   return AVATAR_PALETTE[id % AVATAR_PALETTE.length] ?? AVATAR_PALETTE[0];
-}
-
-/** Derive up-to-two-character initials from a user. */
-function initialsOf(user: User): string {
-  const source = user.display_name?.trim() ?? '';
-  if (source.length > 0) {
-    const words = source.split(/\s+/);
-    const letters = words.slice(0, 2).map((w) => w[0] ?? '');
-    return letters.join('').toUpperCase();
-  }
-  return user.username.slice(0, 2).toUpperCase();
-}
-
-/** Format an ISO timestamp as a short local date, or a dash when null. */
-function formatDate(iso: string | null): string {
-  if (iso === null) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 /**
@@ -100,7 +84,7 @@ export function UsersScreen(): React.ReactElement {
       header: 'User',
       render: (u) => (
         <div className={styles['identity']}>
-          <Avatar initials={initialsOf(u)} colour={avatarColour(u.id)} />
+          <Avatar initials={deriveInitials(u.display_name ?? null, u.username)} colour={avatarColour(u.id)} />
           <div className={styles['identity-text']}>
             <div className={styles['name-row']}>
               <span className={styles['name']}>
@@ -122,7 +106,7 @@ export function UsersScreen(): React.ReactElement {
       key: 'last',
       header: 'Last sign-in',
       width: 'var(--width-col-date-wide)',
-      render: (u) => formatDate(u.last_login_at),
+      render: (u) => formatShortDate(u.last_login_at),
     },
     {
       key: 'actions',
@@ -131,13 +115,13 @@ export function UsersScreen(): React.ReactElement {
       align: 'end',
       render: (u) => (
         <div className={styles['row-actions']}>
-          <button
-            type="button"
-            className={styles['action-button']}
+          <Button
+            variant="ghost"
+            size="small"
             onClick={() => setDrawerUser(u)}
           >
             Edit
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -154,12 +138,14 @@ export function UsersScreen(): React.ReactElement {
       }
     >
       {usersQuery.isLoading ? (
-        <div className={styles['state']} role="status" aria-live="polite">
-          Loading users…
-        </div>
+        <Spinner size="large" label="Loading users…" />
       ) : usersQuery.isError ? (
-        <div className={styles['state']}>
-          Could not load users. Refresh to try again.
+        <div role="alert">
+          <EmptyState
+            icon="warning"
+            message="Could not load users"
+            description="Something went wrong fetching the user list. Refresh to try again."
+          />
         </div>
       ) : (
         <>

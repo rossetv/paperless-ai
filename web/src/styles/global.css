@@ -224,7 +224,7 @@ table {
 
 code,
 pre {
-  font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   color: var(--colour-text-primary);
 }

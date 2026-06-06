@@ -16,16 +16,24 @@ const WEEK = 7 * DAY;
 /**
  * Return a short relative-time label for an ISO-8601 timestamp.
  *
- * Buckets: under a minute → "just now"; under an hour → "Nm ago"; under a
- * day → "Nh ago"; exactly one day → "yesterday"; under a week → "N days
- * ago"; otherwise "N weeks ago". An unparseable input yields an empty
+ * Buckets: null or under a minute → "just now"; under an hour → "Nm ago";
+ * under a day → "Nh ago"; exactly one day → "yesterday"; under a week → "N
+ * days ago"; otherwise "N weeks ago". An unparseable input yields an empty
  * string so the caller can simply omit the label.
  *
- * @param iso  The ISO-8601 timestamp to describe.
+ * `null` is accepted as "no recorded time" and reads as "just now" — the
+ * activity feed and daemon cards pass `null` for an event happening this very
+ * cycle. This is the single relative-time helper for the whole app; the index
+ * feature previously carried a divergent copy (CODE_GUIDELINES §1.9).
+ *
+ * @param iso  The ISO-8601 timestamp to describe, or null for "just now".
  * @param now  The reference instant — defaults to the current time;
  *             injectable so tests are deterministic.
  */
-export function relativeTime(iso: string, now: Date = new Date()): string {
+export function relativeTime(iso: string | null, now: Date = new Date()): string {
+  if (iso === null) {
+    return 'just now';
+  }
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) {
     return '';

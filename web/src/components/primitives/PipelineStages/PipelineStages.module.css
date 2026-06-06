@@ -85,8 +85,11 @@
   }
 }
 
-/* Stage text column. */
+/* Stage text column — a flex column so the label sits above the detail line
+   (both are inline <span>s; without this they run together on one line). */
 .text {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
 }

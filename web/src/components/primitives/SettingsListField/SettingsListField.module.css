@@ -82,7 +82,7 @@
 }
 
 .remove-button {
-  color: var(--colour-status-error);
+  color: var(--colour-status-danger-fg);
 }
 
 .order-button:disabled,
@@ -97,8 +97,8 @@
 }
 
 .remove-button:hover:not(:disabled) {
-  background-color: var(--colour-status-error-bg);
-  color: var(--colour-status-error);
+  background-color: var(--colour-status-danger-bg);
+  color: var(--colour-status-danger-fg);
 }
 
 /* ── Add row ── */

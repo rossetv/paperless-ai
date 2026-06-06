@@ -4,6 +4,7 @@ import { Table } from '../../../components/primitives/Table/Table';
 import type { Column } from '../../../components/primitives/Table/Table';
 import { Button } from '../../../components/primitives/Button/Button';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
+import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
 import { cn } from '../../../lib/cn';
 import { useApiKeys, useDeleteApiKey } from '../../../api/hooks';
@@ -11,6 +12,7 @@ import { useAuth } from '../../../hooks/useAuth';
 import type { ApiKey } from '../../../api/types';
 import { APIKeyCreatePanel } from '../APIKeyCreatePanel/APIKeyCreatePanel';
 import { APIKeyEditPanel } from '../APIKeyEditPanel/APIKeyEditPanel';
+import { formatShortDate } from '../../../lib/formatDate';
 import styles from './APIKeysScreen.module.css';
 
 /** The lifecycle state of a key, derived from its timestamps. */
@@ -25,17 +27,9 @@ function keyStateOf(key: ApiKey): KeyState {
   return 'active';
 }
 
-/** Format an ISO timestamp as a short local date. */
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 /** Format the "last used" cell — a date, or a dash when never used. */
 function formatLastUsed(iso: string | null): string {
-  return iso === null ? 'Never used' : formatDate(iso);
+  return iso === null ? 'Never used' : formatShortDate(iso);
 }
 
 /**
@@ -50,11 +44,11 @@ function ExpiryLabel({ keyRow }: { keyRow: ApiKey }): React.ReactElement {
   if (state === 'expired') {
     return (
       <span className={styles['expiry-expired']}>
-        Expired {formatDate(keyRow.expires_at)}
+        Expired {formatShortDate(keyRow.expires_at)}
       </span>
     );
   }
-  return <span>{formatDate(keyRow.expires_at)}</span>;
+  return <span>{formatShortDate(keyRow.expires_at)}</span>;
 }
 
 /**
@@ -116,7 +110,7 @@ export function APIKeysScreen(): React.ReactElement {
               <span>{k.key_prefix}••••••••••</span>
               <span className={styles['key-count']}>
                 {k.request_count.toLocaleString()} requests · created{' '}
-                {formatDate(k.created_at)}
+                {formatShortDate(k.created_at)}
               </span>
             </span>
           </div>
@@ -161,31 +155,31 @@ export function APIKeysScreen(): React.ReactElement {
         return (
           <div className={styles['row-actions']}>
             {canEdit && (
-              <button
-                type="button"
-                className={styles['action-button']}
+              <Button
+                variant="ghost"
+                size="small"
                 onClick={() => setEditingKey(k)}
               >
                 Edit
-              </button>
+              </Button>
             )}
             {confirmingId === k.id ? (
-              <button
-                type="button"
-                className={styles['danger-button']}
+              <Button
+                variant="destructive"
+                size="small"
                 disabled={deleteKey.isPending}
                 onClick={() => void handleDelete(k.id)}
               >
                 Confirm
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
-                className={styles['danger-button']}
+              <Button
+                variant="destructive"
+                size="small"
                 onClick={() => setConfirmingId(k.id)}
               >
                 {actionLabel}
-              </button>
+              </Button>
             )}
           </div>
         );
@@ -204,12 +198,14 @@ export function APIKeysScreen(): React.ReactElement {
       }
     >
       {keysQuery.isLoading ? (
-        <div className={styles['state']} role="status" aria-live="polite">
-          Loading API keys…
-        </div>
+        <Spinner size="large" label="Loading API keys…" />
       ) : keysQuery.isError ? (
-        <div className={styles['state']}>
-          Could not load the API keys. Refresh to try again.
+        <div role="alert">
+          <EmptyState
+            icon="warning"
+            message="Could not load API keys"
+            description="Something went wrong fetching the key list. Refresh to try again."
+          />
         </div>
       ) : keys.length === 0 ? (
         <EmptyState

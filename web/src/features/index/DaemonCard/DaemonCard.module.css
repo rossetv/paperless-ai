@@ -8,6 +8,8 @@
  */
 
 .card {
+  display: flex;
+  flex-direction: column;
   background-color: var(--colour-surface);
   border: var(--spacing-1) solid var(--colour-border);
   border-radius: var(--radius-large);
@@ -36,6 +38,7 @@
 
 /* ── Role sub-line. ── */
 .role {
+  flex: 1;
   margin-top: var(--spacing-2);
   margin-bottom: var(--spacing-10);
   font-family: var(--font-text);

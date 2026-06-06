@@ -349,7 +349,7 @@ describe('LibraryScreen', () => {
     renderScreen('/library?tag=12');
 
     // Click the card open button.
-    await userEvent.click(screen.getByRole('button', { name: /preview "invoice april"/i }));
+    await userEvent.click(screen.getByRole('button', { name: /open document: invoice april/i }));
 
     // The URL should now be /library/document/42 with parent params preserved.
     const probe = screen.getByTestId('location-probe');

@@ -13,6 +13,7 @@ import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { Card } from '../../../components/primitives/Card/Card';
 import { TaxonomyCombobox } from '../TaxonomyCombobox/TaxonomyCombobox';
 import { EditableField } from '../EditableField/EditableField';
+import { formatLongDate } from '../../../lib/formatDate';
 import styles from './MetadataCard.module.css';
 
 /** Subset of a PATCH request covered by MetadataCard. */
@@ -54,17 +55,6 @@ function resolveId(items: TaxonomyItem[], name: string | null): number | null {
   return items.find((i) => i.name === name)?.id ?? null;
 }
 
-/**
- * Format an ISO-8601 date string for display (e.g. "22 May 2026").
- *
- * Returns "No date" for null; returns the raw string when parsing fails.
- */
-function formatDocDate(iso: string | null): string {
-  if (iso === null) return 'No date';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-}
 
 /**
  * Sidebar card showing correspondent, document type, and document date.
@@ -120,7 +110,9 @@ export function MetadataCard({
       ) : (
         <div className={styles['row']}>
           <div className={styles['label']}>Date</div>
-          <div className={styles['value']}>{formatDocDate(document.created)}</div>
+          <div className={styles['value']}>
+            {document.created === null ? 'No date' : formatLongDate(document.created)}
+          </div>
         </div>
       )}
     </Card>

@@ -10,7 +10,12 @@
 
 .row {
   display: grid;
-  grid-template-columns: 1fr auto;
+
+  /* Fixed label column, fluid control column — so text inputs fill the
+     available width instead of collapsing to their intrinsic size. The
+     control column right-aligns its child (see .control), so compact
+     controls (toggles, segmented) still sit flush right. */
+  grid-template-columns: var(--width-row-label) minmax(0, 1fr);
   gap: var(--spacing-16);
   align-items: center;
   padding: var(--spacing-10) 0;

@@ -10,6 +10,7 @@ import { PipelineStages } from '../../../components/primitives/PipelineStages/Pi
 import type { PipelineStage } from '../../../components/primitives/PipelineStages/PipelineStages';
 import { FilterControls } from '../FilterControls/FilterControls';
 import type { FilterRequest } from '../../../api/types';
+import styles from './LoadingScreen.module.css';
 
 export interface LoadingScreenProps {
   /** The in-flight query — recapped in the inline search field. */
@@ -55,8 +56,8 @@ const PIPELINE_STAGES: readonly PipelineStage[] = [
  * request is a single round-trip, so live stage progress is not observable.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Card, Spinner, Text,
- * Skeleton, PipelineStages, FilterControls. No own CSS module (§12.5 —
- * features layer is composition-only).
+ * Skeleton, PipelineStages, FilterControls.
+ * Own CSS module provides the spacer class used in the spinner row.
  */
 export function LoadingScreen({
   query,
@@ -89,7 +90,7 @@ export function LoadingScreen({
               <Text as="span" variant="body-emphasis">
                 Searching your library…
               </Text>
-              <span style={{ flex: 1 }} />
+              <span className={styles['spacer']} />
               <Text as="span" variant="micro" tone="tertiary">
                 ~2s
               </Text>

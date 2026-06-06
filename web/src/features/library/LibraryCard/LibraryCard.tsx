@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { DocThumb } from '../../../components/primitives/DocThumb/DocThumb';
-import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Icon } from '../../../components/primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
+import { formatShortDate } from '../../../lib/formatDate';
+import { thumbKindForDocumentType } from '../../document/thumbKind';
 import type { LibraryDocument } from '../../../api/types';
 import { documentThumbUrl } from '../../../api/client';
 import styles from './LibraryCard.module.css';
@@ -14,56 +15,11 @@ export interface LibraryCardProps {
   /** Called with the document id when the card is clicked — triggers the
    *  in-app DocumentPreviewScreen overlay in LibraryScreen. */
   onOpen: (id: number) => void;
+  /** Layout mode — 'grid' (default) stacks thumbnail above metadata;
+   *  'list' places the thumbnail as a fixed-width left column. */
+  view?: 'grid' | 'list';
   /** Additional class names to merge onto the button root. */
   className?: string;
-}
-
-/**
- * Map a free-text Paperless document type to one of DocThumb's three page
- * shapes. Substring-matched, case-insensitively: "invoice" -> invoice,
- * "statement"/"payslip" -> statement, everything else -> letter. Mirrors the
- * mapping features/search/SourceCard uses, so a document looks the same
- * shape in search and in the library.
- */
-function thumbKindFor(documentType: string | null): DocThumbKind {
-  const text = (documentType ?? '').toLowerCase();
-  if (text.includes('invoice')) {
-    return 'invoice';
-  }
-  if (text.includes('statement') || text.includes('payslip')) {
-    return 'statement';
-  }
-  return 'letter';
-}
-
-/** Short month names for the British D MMM YYYY date format. */
-const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-] as const;
-
-/**
- * Format an ISO-8601 date string as a short British date: 12 Jan 2025.
- *
- * Parsed from the leading YYYY-MM-DD so the result does not drift with the
- * viewer's timezone. Returns an em dash for a null or unparseable value.
- */
-function formatDate(iso: string | null): string {
-  if (iso === null) {
-    return '—';
-  }
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (match === null) {
-    return '—';
-  }
-  const year = match[1]!;
-  const monthIndex = Number(match[2]) - 1;
-  const day = Number(match[3]);
-  const month = MONTHS[monthIndex];
-  if (month === undefined) {
-    return '—';
-  }
-  return `${day} ${month} ${year}`;
 }
 
 /**
@@ -78,6 +34,10 @@ function formatDate(iso: string | null): string {
  * preview: a meta block with correspondent · date, a two-line-clamped
  * title, and a row of the document type plus tag chips.
  *
+ * In `view="grid"` (default) the card stacks thumbnail above metadata.
+ * In `view="list"` the thumbnail becomes a fixed-width left column so the
+ * row reads as: thumbnail | correspondent · date · title · chips.
+ *
  * Wave 5 is a plain browse — no search-match highlighting.
  *
  * Wrapped in `React.memo` so re-renders of the parent grid (e.g. query
@@ -91,6 +51,7 @@ function formatDate(iso: string | null): string {
 function LibraryCardInner({
   document,
   onOpen,
+  view = 'grid',
   className,
 }: LibraryCardProps): React.ReactElement {
   const title = document.title ?? 'Untitled document';
@@ -100,15 +61,15 @@ function LibraryCardInner({
   return (
     <button
       type="button"
-      className={cn(styles['card'], className)}
-      aria-label={`Preview "${title}"`}
+      className={cn(styles['card'], view === 'list' && styles['card-list'], className)}
+      aria-label={`Open document: ${title}`}
       onClick={() => onOpen(document.id)}
     >
       <div className={styles['preview']}>
         <div className={styles['thumb']}>
           {imageFailed ? (
             <DocThumb
-              kind={thumbKindFor(document.document_type)}
+              kind={thumbKindForDocumentType(document.document_type)}
               className={styles['thumb-fallback'] ?? ''}
             />
           ) : (
@@ -138,7 +99,7 @@ function LibraryCardInner({
         <div className={styles['provenance']}>
           <span className={styles['correspondent']}>{correspondent}</span>
           <span className={styles['dot']} aria-hidden="true">{'·'}</span>
-          <span className={styles['date']}>{formatDate(document.created)}</span>
+          <span className={styles['date']}>{formatShortDate(document.created)}</span>
         </div>
 
         <div className={styles['title']}>{title}</div>

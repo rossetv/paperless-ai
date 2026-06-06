@@ -3,6 +3,7 @@ import { Stack } from '../../../components/layout/Stack/Stack';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import type { SourceDocument } from '../../../api/types';
 import { SourceCard } from '../SourceCard/SourceCard';
+import styles from './SourceList.module.css';
 
 export interface SourceListProps {
   /** Ordered list of source documents from the search response. */
@@ -28,7 +29,7 @@ export interface SourceListProps {
  * Shows an EmptyState when there are no sources to display.
  *
  * Composed from: Stack, EmptyState, SourceCard.
- * No own CSS module (§12.5 — features layer is composition-only).
+ * Own CSS module resets browser list defaults so global.css list styles do not bleed.
  */
 export function SourceList({
   sources,
@@ -47,11 +48,11 @@ export function SourceList({
 
   return (
     <Stack direction="vertical" gap={6}>
-      <ol>
+      <ol className={styles['list']} aria-label="Sources">
         {sources.map((source, i) => {
           const index = i + 1;
           return (
-            <li key={source.document_id}>
+            <li key={source.document_id} className={styles['item']}>
               <SourceCard
                 source={source}
                 index={index}

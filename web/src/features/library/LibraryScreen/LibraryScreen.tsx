@@ -292,6 +292,7 @@ export function LibraryScreen(): React.ReactElement {
                   key={doc.id}
                   document={doc}
                   onOpen={handleOpen}
+                  view={view}
                 />
               ))}
             </div>

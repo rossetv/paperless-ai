@@ -9,7 +9,7 @@
 
 .hero {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: var(--spacing-14);
   align-items: center;
   background-color: var(--colour-surface);
@@ -70,28 +70,3 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Right-aligned uptime block. ── */
-.uptime {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--spacing-2);
-  padding-left: var(--spacing-14);
-  border-left: var(--spacing-1) solid var(--colour-border);
-}
-
-.uptime-value {
-  font-family: var(--font-display);
-  font-size: var(--font-size-subheading);
-  font-weight: var(--font-weight-heading);
-  letter-spacing: var(--letter-spacing-subheading);
-  color: var(--colour-text-primary);
-}
-
-.uptime-since {
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-caption);
-  letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-text-tertiary);
-}

@@ -65,7 +65,7 @@
 
 /* ── Error state — the border colour changes; aria-invalid is set in JS. ── */
 .control-error {
-  border-color: var(--colour-accent);
+  border-color: var(--colour-status-danger-fg);
 }
 
 /* ── Error message — the validation text shown below a control ── */
@@ -75,7 +75,7 @@
   font-weight: var(--font-weight-micro);
   line-height: var(--line-height-micro);
   letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-accent);
+  color: var(--colour-status-danger-fg);
 }
 
 /* ── Dark-surface variant — the forced-dark login / setup island.

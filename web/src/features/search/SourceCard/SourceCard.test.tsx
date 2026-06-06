@@ -31,7 +31,7 @@ describe('SourceCard', () => {
     render(<SourceCard source={makeSource()} index={1} onPreview={() => {}} />);
     expect(screen.getByText('Npower Energy')).toBeInTheDocument();
     expect(screen.getByText('Statement')).toBeInTheDocument();
-    expect(screen.getByText('2025-01-12')).toBeInTheDocument();
+    expect(screen.getByText('12 Jan 2025')).toBeInTheDocument();
   });
 
   it('highlights the bold run in the snippet', () => {

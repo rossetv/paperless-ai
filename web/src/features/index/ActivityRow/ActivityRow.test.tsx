@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { ActivityRow, relativeTime } from './ActivityRow';
+import { ActivityRow } from './ActivityRow';
 import type { ReconcileCycle } from '../../../api/types';
 
 /**
@@ -16,34 +16,7 @@ const OK_CYCLE: ReconcileCycle = {
   detail: 'incremental sync complete',
 };
 
-describe('relativeTime', () => {
-  // A fixed "now" so the relative phrasing is deterministic.
-  const NOW = new Date('2026-05-22T09:00:00Z');
-
-  it('returns "now" when the timestamp is null', () => {
-    expect(relativeTime(null, NOW)).toBe('now');
-  });
-
-  it('returns "now" for a timestamp under a minute old', () => {
-    expect(relativeTime('2026-05-22T08:59:30Z', NOW)).toBe('now');
-  });
-
-  it('returns minutes for a timestamp minutes old', () => {
-    expect(relativeTime('2026-05-22T08:56:00Z', NOW)).toBe('4m ago');
-  });
-
-  it('returns hours for a timestamp hours old', () => {
-    expect(relativeTime('2026-05-22T06:00:00Z', NOW)).toBe('3h ago');
-  });
-
-  it('returns days for a timestamp days old', () => {
-    expect(relativeTime('2026-05-20T09:00:00Z', NOW)).toBe('2d ago');
-  });
-
-  it('returns "now" for a future timestamp (clock skew)', () => {
-    expect(relativeTime('2026-05-22T09:05:00Z', NOW)).toBe('now');
-  });
-});
+// Unit tests for relativeTime are in lib/relativeTime.test.ts.
 
 describe('ActivityRow', () => {
   it('renders the cycle kind label', () => {

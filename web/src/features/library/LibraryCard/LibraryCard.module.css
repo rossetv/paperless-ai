@@ -9,6 +9,11 @@
 .card {
   display: flex;
   flex-direction: column;
+
+  /* height: 100% ensures the button fills its grid cell in Safari, which does
+   * not stretch buttons to fill align-stretch by default. This lets the spacer
+   * correctly pin chips to the bottom and equalises row heights across cards. */
+  height: 100%;
   overflow: hidden;
   border: none;
   background: none;
@@ -20,6 +25,15 @@
   transition:
     transform var(--duration-standard) var(--easing-standard),
     box-shadow var(--duration-standard) var(--easing-standard);
+}
+
+/* List-view modifier — thumbnail left column, metadata right. */
+.card-list {
+  flex-direction: row;
+  align-items: stretch;
+
+  /* Give the row a resting surface so the hover shadow reads against the page. */
+  background: var(--colour-button-light-bg);
 }
 
 /* Lift on hover/focus — the card is a single interactive surface. */
@@ -106,6 +120,19 @@
   padding: var(--spacing-12);
 }
 
+/* In list view the preview is a fixed-width left column with auto height so it
+   doesn't dictate the row height, and the meta block fills the rest. (Declared
+   after the base .preview/.meta rules to keep specificity ascending.) */
+.card-list .preview {
+  width: var(--width-library-thumb);
+  flex-shrink: 0;
+  height: auto;
+}
+
+.card-list .meta {
+  flex: 1;
+}
+
 .provenance {
   display: flex;
   align-items: center;
@@ -118,6 +145,9 @@
 }
 
 .correspondent {
+  /* min-width: 0 is required for text-overflow: ellipsis to fire inside a flex
+   * container — without it the flex item refuses to shrink below its content. */
+  min-width: 0;
   color: var(--colour-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

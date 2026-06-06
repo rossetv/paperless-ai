@@ -6,6 +6,7 @@ import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { Grid } from '../../../components/layout/Grid/Grid';
 import type { QueryPlan, SearchStats } from '../../../api/types';
+import styles from './QueryPlanSummary.module.css';
 
 export interface QueryPlanSummaryProps {
   /** The query plan produced by the search pipeline. */
@@ -22,8 +23,8 @@ export interface QueryPlanSummaryProps {
  * when the pipeline ran a refinement pass); the body lists the semantic
  * queries and the keyword terms in two columns.
  *
- * Composed from: Disclosure, Badge, Text, Chip, Stack, Grid. No own CSS
- * module (§12.5 — features layer is composition-only).
+ * Composed from: Disclosure, Badge, Text, Chip, Stack, Grid.
+ * Own CSS module resets browser list defaults so global.css list styles do not bleed.
  */
 export function QueryPlanSummary({
   plan,
@@ -56,9 +57,9 @@ export function QueryPlanSummary({
           <Text as="span" variant="micro" tone="tertiary">
             Semantic queries
           </Text>
-          <ol>
+          <ol className={styles['list']}>
             {plan.semantic_queries.map((query, i) => (
-              <li key={i}>
+              <li key={i} className={styles['item']}>
                 <Text as="span" variant="caption">
                   {query}
                 </Text>
