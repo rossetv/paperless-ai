@@ -139,6 +139,9 @@ def _make_mock_core(answer: str = "The bill is £198.00.") -> MagicMock:
             ),
         ),
     )
+    # The search handler sizes the semaphore from the core's settings; give the
+    # stub a real int-typed settings object so set_limit receives an int.
+    core.settings = make_search_settings()
     return core
 
 

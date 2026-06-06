@@ -85,6 +85,10 @@ def _make_core(
     core = MagicMock()
     core.retrieve.return_value = retrieve_result or _retrieve_result()
     core.answer.return_value = answer_result or _answer_result()
+    # The MCP search handler reads SEARCH_MAX_CONCURRENT off the live core's
+    # settings to size the shared semaphore; give the stub a real int-typed
+    # settings object so set_limit receives an int, as the production core does.
+    core.settings = make_search_settings()
     return core
 
 

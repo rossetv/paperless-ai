@@ -297,6 +297,7 @@ async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
 
     core = MagicMock()
     core.answer.side_effect = blocking_answer
+    core.settings = settings
 
     store_reader = MagicMock()
     store_reader.list_facets.return_value = None
