@@ -926,6 +926,14 @@ def current_settings(app_db_path: str | None = None) -> Settings:
             # First-run seed (web-redesign §5). The seed runs inside its own
             # ``BEGIN IMMEDIATE`` and bumps config_version; re-snapshot so the
             # cache key matches the post-seed version.
+            #
+            # Cross-process precondition (COMMON-04): on a fresh deployment
+            # every process (the daemons, the search server) can boot at once,
+            # all see an empty config table, and all call seed_from_env. That is
+            # only safe because seed_from_env is idempotent — it no-ops once any
+            # row exists and writes via INSERT ... ON CONFLICT, so a concurrent
+            # double-seed converges on the same env-derived values rather than
+            # corrupting the table. Do not relax that idempotency in appdb.
             conn = connect(resolved)
             try:
                 config_store.seed_from_env(
