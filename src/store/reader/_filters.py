@@ -72,6 +72,13 @@ def escape_fts_term(term: str) -> str:
     The term is placed between double-quotes in the MATCH expression so that
     FTS5 treats it as a phrase/token rather than a boolean operator.  Any
     literal double-quote inside the term is doubled per the FTS5 spec.
+
+    Invariant (§10.4): the caller re-quotes *each* element as a literal phrase
+    (``f'"{escape_fts_term(term)}"'``), so a term like ``foo OR bar`` becomes
+    the literal phrase ``"foo OR bar"`` — operators are neutralised. This holds
+    only while every element is a single user token; never pass a pre-built
+    MATCH expression (multiple terms joined with operators) as one ``term`` and
+    expect boolean behaviour — it would be quoted into a single literal phrase.
     """
     return term.replace('"', '""')
 
