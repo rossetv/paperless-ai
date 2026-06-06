@@ -270,6 +270,7 @@ class SearchCore:
         sources = assemble_sources(
             chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
         )
+        sources = _cited_sources(sources, outcome)
         return self._build_result(
             answer_text, sources, plan, budget, started, refined=refined
         )
@@ -481,3 +482,39 @@ class SearchCore:
 def _elapsed_ms(started: float) -> int:
     """Return whole milliseconds elapsed since the monotonic timestamp *started*."""
     return int((time.monotonic() - started) * 1000)
+
+
+def _cited_sources(
+    sources: tuple[SourceDocument, ...],
+    outcome: Answered | NeedsMore,
+) -> tuple[SourceDocument, ...]:
+    """Narrow assembled sources to the documents the answer actually cited.
+
+    ``SearchResult.sources`` is the *cited* source set (spec §6.4): the frontend
+    resolves each ``[n]`` marker by matching ``document_id`` in ``sources``, so a
+    returned-but-uncited document is both wrong by contract and noise in the UI
+    (SRCH-02). When the synthesiser emitted parseable citations, keep only the
+    sources whose document is cited, preserving the existing descending-score
+    rank order.
+
+    The fallback is deliberate and safe: if the outcome carries no usable
+    citations — a :class:`NeedsMore`, a degraded answer, or a model that simply
+    cited nothing — every retrieved source is returned rather than an empty
+    list, so a citation-shy answer still shows its supporting documents.
+
+    Args:
+        sources: The rank-ordered sources assembled from the retrieved chunks.
+        outcome: The synthesiser outcome carrying any document-id citations.
+
+    Returns:
+        The cited subset in rank order, or *sources* unchanged when there are
+        no citations to filter by.
+    """
+    if not isinstance(outcome, Answered) or not outcome.citations:
+        return sources
+    cited_ids = set(outcome.citations)
+    cited = tuple(source for source in sources if source.document_id in cited_ids)
+    # A citation set that matches no retrieved document (every cited id was
+    # hallucinated) leaves nothing to show — fall back to the retrieved set
+    # rather than returning an empty, sourceless answer.
+    return cited if cited else sources
