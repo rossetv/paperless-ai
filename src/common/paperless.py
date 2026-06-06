@@ -18,13 +18,21 @@ from .paperless_types import (
 )
 from .retry import retry
 
-# rationale: this module exceeds CODE_GUIDELINES §3.1's 500-line ceiling
-# (currently ~531 lines) because the `PaperlessClient` is one cohesive REST
-# client: every Paperless operation (documents, tags, custom fields, the
-# streaming download for the in-app PDF viewer, the count for the
-# test-connection probe) is a method on the same client instance with shared
-# retry, timeout, and auth state. The wire-shape TypedDicts were already split
-# out to `common.paperless_types` to keep this file as small as it is.
+# rationale: this module is 763 lines, over CODE_GUIDELINES §3.1's 500-line
+# ceiling. The bulk is the single ``PaperlessClient`` class: every Paperless
+# operation (documents, tags, custom fields, the streaming download for the
+# in-app PDF viewer, the count for the test-connection probe) is a method on the
+# same instance, sharing one ``httpx`` session and the retry/timeout/auth state
+# set up in ``__init__``. §3.3 says to prefer a package over a sibling-dump when
+# a file grows — but a package split here would have to scatter ONE class across
+# modules via inheritance mixins, each carrying an implicit ``self._client`` /
+# ``self.settings`` contract. That is precisely the mixin-for-DRY anti-pattern
+# §1.9 warns against and the one this very codebase just deleted (ErrorFinaliser
+# Mixin, COMMON-07); reintroducing three or four of them to split one client
+# would lower clarity, not raise it. The genuinely separable pieces have already
+# left: the wire-shape TypedDicts live in ``common.paperless_types`` (re-exported
+# below). One cohesive client is one concept (§3.2); keeping it whole is the
+# honest call. (COMMON-02)
 #
 # Re-exported below so callers keep importing the Paperless wire shapes from
 # ``common.paperless``; the definitions live in ``common.paperless_types``.
