@@ -172,14 +172,18 @@ class TestCompleteWithModelFallback:
 
         # A skipped model is now logged at two layers: the shared compat method
         # (``llm.model_failed`` with the error string) and this fallback loop
-        # (``{prefix}.model_failed`` with the model name). The security
+        # (the stable ``llm.fallback_model_failed`` event, with the per-stage
+        # prefix as a ``stage`` kwarg and the model name). The security
         # invariant is that NEITHER line carries the prompt.
         warning_calls = mock_log.warning.call_args_list
         events = [call.args[0] for call in warning_calls]
-        assert "planner.model_failed" in events
+        assert "llm.fallback_model_failed" in events
         prefixed = next(
-            call for call in warning_calls if call.args[0] == "planner.model_failed"
+            call
+            for call in warning_calls
+            if call.args[0] == "llm.fallback_model_failed"
         )
+        assert prefixed.kwargs["stage"] == "planner"
         assert prefixed.kwargs["model"] == "m1"
         # No warning anywhere leaks the prompt text.
         for call in warning_calls:
