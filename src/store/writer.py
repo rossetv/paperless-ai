@@ -26,6 +26,7 @@ import structlog
 
 from common.clock import utc_now_iso
 from common.config import Settings
+from store._reembed_guard import log_reembed_projection
 from store._sql import placeholders
 from store.migrations import StoreError
 from store.models import ChunkInput, DocumentMeta, IndexState, TaxonomyEntry
@@ -368,6 +369,15 @@ class StoreWriter:
             configured_model=configured_model,
             configured_dimensions=configured_dims,
         )
+        # LLM-11 / IDX-04: make the impending full re-embed loud BEFORE the
+        # wipe.  Read outside the write lock through the existing connection;
+        # the wipe transaction below is unchanged.
+        log_reembed_projection(
+            self._conn,
+            trigger="embedding_model_change",
+            stored_model=stored_model,
+            configured_model=configured_model,
+        )
 
         try:
             with self._write_lock:
@@ -412,6 +422,10 @@ class StoreWriter:
             StoreError: On SQLite error — the transaction is rolled back.
         """
         log.warning("store.index_rebuild_started")
+        # LLM-11 / IDX-04: a "Rebuild index" wipes every chunk and forces a full
+        # re-embed on the next reconcile — log the projected scope at CRITICAL
+        # before the wipe.  The wipe transaction below is unchanged.
+        log_reembed_projection(self._conn, trigger="index_rebuild")
         try:
             with self._write_lock:
                 with self._conn:

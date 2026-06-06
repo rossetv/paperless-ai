@@ -318,3 +318,62 @@ class TestConcurrentUpserts:
         assert chunk_ids == fts_rowids, (
             "§4.2 invariant violated after concurrent upserts"
         )
+
+
+# ---------------------------------------------------------------------------
+# Re-embed cost-guard — CRITICAL projected-scope log before the model-change wipe
+# ---------------------------------------------------------------------------
+
+
+def test_embedding_model_change_logs_projected_scope_at_critical(db_path: str) -> None:
+    """check_embedding_model logs a CRITICAL projected-cost line on a mismatch (IDX-04)."""
+    import structlog.testing
+
+    # Seed an index under model "old-model".  check_embedding_model writes the
+    # embedding_model meta so the reopen below sees a genuine mismatch (not a
+    # first-run None), then upsert the chunks whose count the log projects.
+    writer = open_writer(db_path, model="old-model")
+    writer.check_embedding_model()  # writes embedding_model meta = "old-model"
+    writer.upsert_document(make_document_meta(id=1), make_chunks(4))
+    writer.close()
+
+    # Reopen under a DIFFERENT model → mismatch → wipe path.
+    writer = open_writer(db_path, model="new-model")
+    try:
+        with structlog.testing.capture_logs() as captured:
+            rebuilt = writer.check_embedding_model()
+    finally:
+        writer.close()
+
+    assert rebuilt is True  # behaviour unchanged: a mismatch still rebuilds
+    critical = [
+        e for e in captured if e["event"] == "store.full_reembed_projected"
+    ]
+    assert len(critical) == 1
+    assert critical[0]["log_level"] == "critical"
+    assert critical[0]["trigger"] == "embedding_model_change"
+    assert critical[0]["document_count"] == 1
+    assert critical[0]["current_chunk_count"] == 4
+
+
+def test_embedding_model_match_logs_no_reembed_projection(db_path: str) -> None:
+    """When the model matches, no wipe and no projected-cost CRITICAL log.
+
+    The first call writes the model meta (a first-run mismatch); the assertion
+    is on the SECOND call, where the stored model already matches so no wipe and
+    no re-embed projection happen.
+    """
+    import structlog.testing
+
+    writer = open_writer(db_path, model="same-model")
+    try:
+        writer.check_embedding_model()  # first run — writes embedding_model meta
+        with structlog.testing.capture_logs() as captured:
+            rebuilt = writer.check_embedding_model()  # model now matches
+    finally:
+        writer.close()
+
+    assert rebuilt is False
+    assert not [
+        e for e in captured if e["event"] == "store.full_reembed_projected"
+    ]
