@@ -182,6 +182,7 @@ class Settings:
     SEARCH_ANSWER_MODEL: str
     SEARCH_SERVER_HOST: str
     SEARCH_SERVER_PORT: int
+    SEARCH_FORWARDED_ALLOW_IPS: str
     SEARCH_SESSION_TTL: int
     SEARCH_MAX_CONCURRENT: int
 
@@ -393,6 +394,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         # operator restrict exposure at the reverse proxy / port map.
         SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),  # nosec B104 - intentional default, auth-gated, exposure restricted by reverse proxy
         SEARCH_SERVER_PORT=_resolve_server_port(source),
+        # Which peers uvicorn trusts the X-Forwarded-For/-Proto headers from.
+        # Defaults to "*" — unchanged behaviour, correct behind a reverse
+        # proxy whose port is the only reachable one. Pin it to the proxy CIDR
+        # in production if the uvicorn port can be reached directly, so an
+        # attacker cannot spoof the client IP or the cookie Secure flag (§10.1).
+        SEARCH_FORWARDED_ALLOW_IPS=source.get("SEARCH_FORWARDED_ALLOW_IPS", "*"),
         SEARCH_SESSION_TTL=_require_at_least_one(
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
         ),

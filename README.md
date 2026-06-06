@@ -217,6 +217,7 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.5` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |
+| `SEARCH_FORWARDED_ALLOW_IPS` | string | `*` | Peers uvicorn trusts the `X-Forwarded-For` / `X-Forwarded-Proto` headers from. `*` trusts every peer — correct when the search server's port is reachable **only** through your reverse proxy. If that port can be reached directly, pin this to the proxy's IP or CIDR (e.g. `10.0.0.0/8`, or a single `172.18.0.2`): otherwise an attacker reaching the port directly can spoof those headers to forge the client IP recorded in audit logs / sessions and to flip the session-cookie `Secure` flag. Comma-separated for multiple values |
 | `SEARCH_SESSION_TTL` | int | `604800` | Web UI session-cookie lifetime in seconds (default: 7 days) |
 | `SEARCH_MAX_CONCURRENT` | int | `4` | Maximum concurrent `/api/search` requests |
 | `SEARCH_PLANNER_REASONING_EFFORT` | string | `medium` | Planner `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on the planner. Invalid values are rejected at startup; stripped automatically for models that don't support it |
