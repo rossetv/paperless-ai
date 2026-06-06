@@ -234,6 +234,94 @@ class TestSourceDocumentAssembly:
         assert source.document_type is None
 
 
+class TestSourcesReflectCitations:
+    """answer() returns the documents the answer actually cited (SRCH-02).
+
+    ``SearchResult.sources`` is documented as the *cited* source documents, and
+    the frontend resolves each ``[n]`` marker by matching ``document_id`` in
+    ``sources``. Returning every retrieved document — cited or not — breaks that
+    contract. The cited set is returned when the model emits parseable
+    citations; with none, the full retrieved set is the safe fallback.
+    """
+
+    def _core_over_two_docs(self, *, citations: list[int]) -> SearchResult:
+        """Retrieve two documents (7 and 8); the answer cites *citations*."""
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer.", citations=citations)
+            ],
+        )
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=llm_client,
+            store_reader=_store_reader(
+                vector_hits=[
+                    make_chunk_hit(chunk_id=1, document_id=7),
+                    make_chunk_hit(chunk_id=2, document_id=8),
+                ],
+                documents=[_indexed(document_id=7), _indexed(document_id=8)],
+            ),
+            embedding_client=_embedding_client(),
+        )
+        return core.answer("a query")
+
+    def test_only_cited_documents_are_returned(self) -> None:
+        """Retrieval finds 7 and 8; the answer cites only 7 → sources is {7}."""
+        result = self._core_over_two_docs(citations=[7])
+
+        source_ids = {source.document_id for source in result.sources}
+        assert source_ids == {7}
+
+    def test_uncited_retrieved_document_is_dropped(self) -> None:
+        """Document 8 was retrieved but never cited — it must not appear."""
+        result = self._core_over_two_docs(citations=[7])
+
+        assert 8 not in {source.document_id for source in result.sources}
+
+    def test_no_citations_falls_back_to_full_retrieved_set(self) -> None:
+        """An answer with no parseable citations keeps every retrieved doc."""
+        result = self._core_over_two_docs(citations=[])
+
+        source_ids = {source.document_id for source in result.sources}
+        assert source_ids == {7, 8}
+
+    def test_citation_for_unretrieved_document_is_ignored(self) -> None:
+        """A hallucinated citation to a non-retrieved doc cannot conjure a source.
+
+        The model cites 7 (retrieved) and 999 (never retrieved). Only 7 has a
+        real source document; 999 is dropped rather than fabricated.
+        """
+        result = self._core_over_two_docs(citations=[7, 999])
+
+        source_ids = {source.document_id for source in result.sources}
+        assert source_ids == {7}
+
+    def test_cited_sources_stay_in_rank_order(self) -> None:
+        """Cited sources keep descending-score order, not citation order."""
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            # Cite in the "wrong" order; the result must still rank by score.
+            synthesiser_responses=[answered_response_json("Answer.", citations=[8, 7])],
+        )
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=llm_client,
+            store_reader=_store_reader(
+                vector_hits=[
+                    make_chunk_hit(chunk_id=1, document_id=7, score=0.9),
+                    make_chunk_hit(chunk_id=2, document_id=8, score=0.1),
+                ],
+                documents=[_indexed(document_id=7), _indexed(document_id=8)],
+            ),
+            embedding_client=_embedding_client(),
+        )
+        result = core.answer("a query")
+
+        ordered_ids = [source.document_id for source in result.sources]
+        assert ordered_ids == [7, 8]
+
+
 # ---------------------------------------------------------------------------
 # UI filters are threaded through to retrieval
 # ---------------------------------------------------------------------------
