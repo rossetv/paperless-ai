@@ -206,7 +206,13 @@ def get_search_result_cache(ttl_seconds: int) -> SearchResultCache:
 
 
 def reset_search_result_cache() -> None:
-    """Drop the process-wide cache singleton — for tests only."""
+    """Drop the process-wide cache singleton.
+
+    Called on a configuration change (so an edited answer model / reasoning
+    effort / top-k / prompt is not served a pre-change answer for up to the
+    TTL, and a new ``SEARCH_CACHE_TTL_SECONDS`` takes effect), and by tests for
+    isolation. The next :func:`get_search_result_cache` rebuilds it lazily.
+    """
     global _search_result_cache
     with _search_result_cache_lock:
         _search_result_cache = None

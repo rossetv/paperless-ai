@@ -65,6 +65,60 @@ def test_search_core_is_rebuilt_when_config_version_moves(tmp_path) -> None:
         assert call_count["n"] == 2
 
 
+def test_result_cache_is_dropped_when_config_version_moves(tmp_path) -> None:
+    """A config change drops the result-cache singleton, so a previously-cached
+    answer is recomputed under the new configuration.
+
+    Advisory follow-up: the cache key busts on a corpus change (index_version)
+    but not on a settings edit (answer model, reasoning effort, top-k, ...), so
+    a byte-identical repeat query could serve a pre-change answer until the TTL.
+    The rebuild path now drops the cache.
+    """
+    from appdb import config as config_store
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+    from common.config import _SETTINGS_CACHE
+    from search import cache as result_cache
+    from search.api import _reset_core_cache_for_test, _resolve_search_core
+
+    app_db = str(tmp_path / "app.db")
+    conn = connect(app_db)
+    ensure_schema(conn)
+    conn.close()
+    env = {
+        "APP_DB_PATH": app_db,
+        "INDEX_DB_PATH": str(tmp_path / "index.db"),
+        "PAPERLESS_TOKEN": "t",
+        "OPENAI_API_KEY": "k",
+    }
+
+    def fake_resolve_components(settings, core, store_reader):
+        del settings, core, store_reader
+        return "core", "store_reader"
+
+    with (
+        patch.dict(os.environ, env, clear=True),
+        patch("search.api._resolve_components", side_effect=fake_resolve_components),
+        patch("search.api.setup_libraries"),
+        patch("search.api.llm_limiter"),
+    ):
+        _SETTINGS_CACHE.pop(app_db, None)
+        _reset_core_cache_for_test()
+        result_cache.reset_search_result_cache()
+
+        _resolve_search_core(app_db)
+        # Materialise the result-cache singleton, as an answered query would.
+        result_cache.get_search_result_cache(14400)
+        assert result_cache._search_result_cache is not None
+
+        # A settings edit bumps config_version; the rebuild must drop the cache.
+        c = connect(app_db)
+        config_store.set_value(c, "SEARCH_ANSWER_MODEL", "gpt-5.4")
+        c.close()
+        _resolve_search_core(app_db)
+        assert result_cache._search_result_cache is None
+
+
 def test_resolve_search_core_reinitialises_openai_client_on_config_change(
     tmp_path,
 ) -> None:
