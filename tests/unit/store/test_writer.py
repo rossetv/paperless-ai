@@ -337,6 +337,35 @@ class TestUpdateMetadata:
         conn.close()
         assert original_fts_rowids == new_fts_rowids
 
+    def test_update_metadata_raises_when_document_is_absent(self, db_path: str) -> None:
+        """A metadata-only update of a missing document fails loud, not silently.
+
+        The metadata-only path is taken because the content hash matched a
+        previously-indexed row; if that row was concurrently pruned the UPDATE
+        affects 0 rows. Returning success would diverge the index from the
+        reconciler's in-memory state — a latent "document silently missing"
+        bug — so the writer must raise (§1.11).
+        """
+        writer = open_writer(db_path)
+        try:
+            with pytest.raises(StoreError, match="42"):
+                writer.update_metadata(make_document_meta(id=42))
+        finally:
+            writer.close()
+
+    def test_update_metadata_succeeds_for_present_document(self, db_path: str) -> None:
+        """The rowcount guard does not break the normal present-document path."""
+        writer = open_writer(db_path)
+        writer.upsert_document(make_document_meta(id=7), make_chunks(2))
+        # Must not raise — the row exists, so exactly one row is updated.
+        writer.update_metadata(make_document_meta(id=7, title="New"))
+        writer.close()
+
+        conn = connect(db_path)
+        row = conn.execute("SELECT title FROM documents WHERE id = 7").fetchone()
+        conn.close()
+        assert row[0] == "New"
+
 
 # ---------------------------------------------------------------------------
 # Transaction atomicity: crash mid-upsert leaves prior version intact

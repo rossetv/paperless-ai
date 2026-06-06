@@ -230,14 +230,18 @@ class StoreWriter:
             meta: Updated document metadata.
 
         Raises:
-            StoreError: On SQLite error.
+            StoreError: On SQLite error, or when no document row matched
+                ``meta.id`` — a 0-row update means the index has diverged from
+                the reconciler's in-memory state (the row was concurrently
+                pruned or never upserted), which must fail loud rather than
+                silently no-op (§1.11).
         """
         now = utc_now_iso()
         tag_ids_json = json.dumps(list(meta.tag_ids))
         try:
             with self._write_lock:
                 with self._conn:
-                    self._conn.execute(
+                    cursor = self._conn.execute(
                         """
                         UPDATE documents SET
                             title            = ?,
@@ -260,6 +264,17 @@ class StoreWriter:
                             meta.id,
                         ),
                     )
+                    # rowcount is reliable here: same connection, single
+                    # UPDATE, inside the transaction. 0 rows means the target
+                    # document is no longer in the index — surface it loudly so
+                    # the next reconcile re-indexes it rather than leaving the
+                    # index quietly missing a document.
+                    if cursor.rowcount == 0:
+                        raise StoreError(
+                            f"update_metadata: document {meta.id} is not in the "
+                            "index (0 rows updated); the index has diverged from "
+                            "the reconciler state"
+                        )
         except sqlite3.Error as exc:
             raise StoreError(
                 f"failed to update metadata for document {meta.id}"
