@@ -31,7 +31,11 @@ from search.deps import get_current_user, require_role
 from search.routes import build_api_router
 from search.sessions import begin_session
 from search.setup import SetupState
-from tests.helpers.factories import make_search_result, make_source_document
+from tests.helpers.factories import (
+    make_search_result,
+    make_search_settings,
+    make_source_document,
+)
 
 
 def _mock_core(*, fail: bool = False) -> MagicMock:
@@ -54,6 +58,9 @@ def _mock_core(*, fail: bool = False) -> MagicMock:
                 ),
             ),
         )
+    # The search handler sizes the semaphore from the core's settings; give the
+    # stub a real int-typed settings object so set_limit receives an int.
+    core.settings = make_search_settings()
     return core
 
 

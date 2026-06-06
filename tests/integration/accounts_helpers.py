@@ -131,6 +131,10 @@ def make_mock_core() -> MagicMock:
             ),
         ),
     )
+    # The /api/search handler reads SEARCH_MAX_CONCURRENT off the live core's
+    # settings to size the shared semaphore; give the stub a real int-typed
+    # settings object so set_limit receives an int, as the production core does.
+    core.settings = make_search_settings()
     return core
 
 

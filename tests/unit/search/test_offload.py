@@ -5,7 +5,7 @@ Covers:
 - LazySemaphore bounds concurrency at its ceiling.
 - A ceiling of 0 means unbounded (a no-op acquire) — NOT asyncio.Semaphore(0),
   which would deadlock the first acquirer.
-- set_limit() switches the ceiling and ignores non-int values.
+- set_limit() switches the ceiling.
 """
 
 from __future__ import annotations
@@ -74,8 +74,8 @@ async def test_set_limit_switches_to_unbounded() -> None:
 
 
 @pytest.mark.anyio
-async def test_set_limit_ignores_non_int_values() -> None:
-    """A non-int (e.g. a test stub's MagicMock) leaves the ceiling unchanged."""
+async def test_set_limit_raises_the_ceiling() -> None:
+    """A higher ceiling lets more workers run at once on the next acquire."""
     semaphore = LazySemaphore(1)
-    semaphore.set_limit("not-an-int")
-    assert await _peak_concurrency(semaphore, workers=3) == 1
+    semaphore.set_limit(3)
+    assert await _peak_concurrency(semaphore, workers=4) == 3

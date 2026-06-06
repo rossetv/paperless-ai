@@ -72,7 +72,7 @@ class LazySemaphore:
         self._max_concurrent = max_concurrent
         self._semaphore: asyncio.Semaphore | None = None
 
-    def set_limit(self, max_concurrent: object) -> None:
+    def set_limit(self, max_concurrent: int) -> None:
         """Replace the ceiling. Idempotent when *max_concurrent* is unchanged.
 
         Called per request before :meth:`acquire`; the cheap equality check
@@ -80,17 +80,14 @@ class LazySemaphore:
         fresh semaphore on the next acquire — see the class docstring for the
         old/new overlap window discussion.
 
-        A value that does not coerce to ``int`` is ignored — keeps stub cores
-        in unit tests from crashing the handler with a ``TypeError`` out of
-        :class:`asyncio.Semaphore`.
+        Args:
+            max_concurrent: The new simultaneous-holder ceiling; ``0`` or
+                negative means unbounded. Supplied from
+                ``Settings.SEARCH_MAX_CONCURRENT``, which is always an ``int``.
         """
-        try:
-            new_limit = int(max_concurrent)  # type: ignore[call-overload]
-        except (TypeError, ValueError):
+        if max_concurrent == self._max_concurrent:
             return
-        if new_limit == self._max_concurrent:
-            return
-        self._max_concurrent = new_limit
+        self._max_concurrent = max_concurrent
         # Drop the existing semaphore so the next acquire builds a new one at
         # the new limit. In-flight holders of the old object complete as they
         # were (they captured the old reference); only new requests touch the
