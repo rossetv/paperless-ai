@@ -6,7 +6,7 @@ the Paperless-ngx API client (:mod:`.paperless`), the LLM and embedding wrappers
 (:mod:`.llm`, :mod:`.embeddings`), retry logic (:mod:`.retry`), the polling loop
 (:mod:`.daemon_loop`), tag operations (:mod:`.tags`), concurrency guards
 (:mod:`.concurrency`), preflight checks (:mod:`.preflight`), structured logging
-(:mod:`.logging_config`), and the shared daemon startup sequence
+(:mod:`.logging_config`), the shared daemon startup sequence
 (:mod:`.bootstrap`), and the best-effort daemon heartbeat (:mod:`.heartbeat`).
 
 Allowed dependencies: the standard library and the project's third-party
