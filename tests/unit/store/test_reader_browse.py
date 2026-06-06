@@ -23,6 +23,7 @@ import sqlite3
 import pytest
 
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
+from store.reader._lookups import _resolve_tag_names
 from tests.helpers.store import open_reader, open_writer
 
 
@@ -369,3 +370,42 @@ def test_get_document_summary_handles_corrupted_tag_ids(populated_db: str) -> No
 
     assert summary is not None
     assert summary.tags == ()  # graceful fallback — no 500
+
+
+def test_resolve_tag_names_scopes_the_query_to_the_given_ids(
+    populated_db: str,
+) -> None:
+    """PERF-01: tag names resolve via an id-scoped IN (...), not a full scan.
+
+    _resolve_tag_names must read only the supplied ids — the document's own
+    handful of tags — instead of loading the entire tag taxonomy on every
+    get_document_summary call. The populated taxonomy holds tags 101 and 102;
+    asking for 102 alone must return only "scanned".
+    """
+    conn = sqlite3.connect(populated_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        resolved = _resolve_tag_names(conn, [102])
+    finally:
+        conn.close()
+
+    assert resolved == {102: "scanned"}
+
+
+def test_resolve_tag_names_runs_no_query_for_an_empty_id_list() -> None:
+    """An empty id list resolves to {} without touching the database."""
+    sentinel = object()
+    resolved = _resolve_tag_names(sentinel, [])  # type: ignore[arg-type]
+    assert resolved == {}
+
+
+def test_resolve_tag_names_omits_unknown_ids(populated_db: str) -> None:
+    """An id absent from the taxonomy simply does not appear in the map."""
+    conn = sqlite3.connect(populated_db)
+    conn.row_factory = sqlite3.Row
+    try:
+        resolved = _resolve_tag_names(conn, [101, 999])
+    finally:
+        conn.close()
+
+    assert resolved == {101: "important"}
