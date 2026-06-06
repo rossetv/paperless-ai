@@ -274,7 +274,7 @@ class TaxonomyCache:
             try:
                 created = kind.creator(name.strip())
             except PAPERLESS_CALL_EXCEPTIONS:
-                log.warning(
+                log.exception(
                     "Failed to create item; refreshing cache",
                     item_label=kind.label,
                     name=name,
@@ -282,7 +282,7 @@ class TaxonomyCache:
                 try:
                     self.refresh()
                 except PAPERLESS_CALL_EXCEPTIONS:
-                    log.warning("Cache refresh also failed", item_label=kind.label)
+                    log.exception("Cache refresh also failed", item_label=kind.label)
                     raise
                 kind = kind_factory()
                 matched = _match_item(
