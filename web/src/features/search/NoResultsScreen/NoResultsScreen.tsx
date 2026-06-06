@@ -5,10 +5,13 @@ import { SearchField } from '../../../components/patterns/SearchField/SearchFiel
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Icon } from '../../../components/primitives/Icon/Icon';
+import { Text } from '../../../components/primitives/Text/Text';
+import { Card } from '../../../components/primitives/Card/Card';
 import { FilterControls } from '../FilterControls/FilterControls';
 import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import { QUICK_FILTERS } from '../lib/quickFilters';
 import type { FilterRequest } from '../../../api/types';
+import styles from './NoResultsScreen.module.css';
 
 export interface NoResultsScreenProps {
   /** The query that produced no results — recapped in the inline field. */
@@ -91,57 +94,30 @@ export function NoResultsScreen({
           }
         />
 
-        {/* MAJOR 3 — "Try instead" suggestion block. Three canned queries
-            from QUICK_FILTERS (shared with IdleScreen). Each row calls
-            onSearch so the user navigates directly to a fresh result. */}
-        <div
-          style={{
-            background: 'rgba(0,0,0,0.03)',
-            borderRadius: 12,
-            padding: '18px 22px',
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              marginBottom: '10px',
-              fontFamily: 'var(--font-text)',
-              fontSize: 'var(--font-size-caption)',
-              fontWeight: 'var(--font-weight-caption-bold)',
-              lineHeight: 'var(--line-height-caption)',
-              letterSpacing: '0.5px',
-              textTransform: 'uppercase',
-              color: 'var(--colour-text-secondary)',
-            }}
-          >
-            Try instead
-          </p>
-          <Stack direction="vertical" gap={3}>
+        {/* "Try instead" suggestion block — three canned queries from
+            QUICK_FILTERS (shared with IdleScreen). Each row calls onSearch
+            so the user navigates directly to a fresh result. Uses Card and
+            Button primitives so focus rings and design tokens come for free. */}
+        <Card>
+          <Stack direction="vertical" gap={6}>
+            <Text as="p" variant="caption-bold" tone="secondary">
+              Try instead
+            </Text>
             {QUICK_FILTERS.slice(0, 3).map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"
                 onClick={() => onSearch(suggestion)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '6px 0',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  width: '100%',
-                }}
+                className={styles['suggestion-row']}
               >
                 <Icon name="search" size="small" />
-                <span style={{ color: 'var(--colour-link)', fontFamily: 'var(--font-text)', fontSize: 'var(--font-size-body)' }}>
+                <Text as="span" variant="body" tone="primary">
                   {suggestion}
-                </span>
+                </Text>
               </button>
             ))}
           </Stack>
-        </div>
+        </Card>
       </Stack>
     </SearchScreenLayout>
   );

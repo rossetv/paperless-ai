@@ -1,0 +1,33 @@
+/*
+ * NoResultsScreen — CSS Module.
+ *
+ * Screen-level layout for the "Try instead" suggestion rows. All values come
+ * exclusively from design tokens (var(--…)), per CODE_GUIDELINES §12.4/§12.5.
+ */
+
+/* ── Suggestion row button — replaces the raw <button> with inline styles ── */
+.suggestion-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  padding: var(--spacing-4) var(--spacing-3);
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  border-radius: var(--radius-micro);
+  transition: background var(--duration-fast) var(--easing-standard);
+  color: var(--colour-link);
+}
+
+.suggestion-row:hover {
+  background: var(--colour-button-active-bg);
+}
+
+/* Focus ring — token-based, keyboard-accessible (§12.7). */
+.suggestion-row:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}

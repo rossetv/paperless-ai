@@ -29,5 +29,5 @@
 
 .count strong {
   color: var(--colour-text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-caption-bold);
 }
