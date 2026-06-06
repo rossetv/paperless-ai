@@ -117,3 +117,32 @@ def test_list_for_user_empty_history_is_empty_list(conn) -> None:
     """A user who has never searched gets an empty list."""
     uid = _user_id(conn, "alice")
     assert list_for_user(conn, uid) == []
+
+
+def test_record_is_atomic_when_the_trim_fails(conn, monkeypatch) -> None:
+    """A failure after the insert rolls back the whole record (delete + insert).
+
+    record claims the delete, insert and trim run inside one transaction. With
+    only a bare conn.commit() and no ``with conn:`` block, a failure in the
+    trim step would leave the new row committed-then-not — or, worse on a
+    future autocommit connection, the delete and insert partially applied.
+    Injecting a failure in _trim_to_cap and asserting the prior history is
+    wholly intact proves the transaction wraps all three statements.
+    """
+    import appdb.recent_searches as recent_searches
+
+    uid = _user_id(conn, "alice")
+    record(conn, user_id=uid, query="original")
+
+    def _boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated trim failure")
+
+    monkeypatch.setattr(recent_searches, "_trim_to_cap", _boom)
+
+    with pytest.raises(RuntimeError, match="simulated trim failure"):
+        record(conn, user_id=uid, query="should be rolled back")
+
+    # The failed record must have changed nothing: neither the rolled-back new
+    # row nor a deletion of the original may survive.
+    queries = [r.query for r in list_for_user(conn, uid)]
+    assert queries == ["original"]
