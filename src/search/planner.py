@@ -46,6 +46,15 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
+# The documented plan width (the planner prompt asks for these maxima). They are
+# enforced in code, not merely requested, so the per-query vector_search fan-out
+# is bounded regardless of model output: each semantic query and each
+# sub-question becomes one KNN pass holding the store reader lock, and this
+# endpoint is billable and network-facing (SRCH-03, CODE_GUIDELINES §14.6). The
+# JSON schema cannot bound array length, so the bound lives here.
+_MAX_SEMANTIC_QUERIES = 3
+_MAX_SUB_QUESTIONS = 3
+
 
 class QueryPlanner(OpenAIChatMixin):
     """Converts a raw user query into a structured QueryPlan via one LLM call.
@@ -197,9 +206,16 @@ def _build_query_plan(data: dict[str, object]) -> QueryPlan:
         KeyError: If a required nested key is absent.
         TypeError: If a field has an unexpected type.
     """
-    semantic_queries = tuple(t for t in _str_list(data.get("semantic_queries")) if t)
+    # Cap the two lists that drive vector_search fan-out at their documented
+    # widths (SRCH-03): a model returning more than asked must not multiply the
+    # KNN passes (and the store-lock holds) on a billable endpoint.
+    semantic_queries = tuple(t for t in _str_list(data.get("semantic_queries")) if t)[
+        :_MAX_SEMANTIC_QUERIES
+    ]
     keyword_terms = tuple(t for t in _str_list(data.get("keyword_terms")) if t)
-    sub_questions = tuple(t for t in _str_list(data.get("sub_questions")) if t)
+    sub_questions = tuple(t for t in _str_list(data.get("sub_questions")) if t)[
+        :_MAX_SUB_QUESTIONS
+    ]
 
     raw_filter_candidates = data.get("filter_candidates")
     fc_raw: dict[str, object] = (

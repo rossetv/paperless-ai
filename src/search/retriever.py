@@ -312,8 +312,11 @@ class Retriever:
 
         Embeds all semantic queries and sub-questions in a single batch call
         (one round-trip to the embedding API), then runs vector search for each
-        resulting embedding.  Runs keyword search once for all keyword terms.
-        All ranked lists are fused with RRF.
+        resulting embedding.  The plan width is capped in the planner
+        (``_MAX_SEMANTIC_QUERIES`` + ``_MAX_SUB_QUESTIONS``), so this fan-out is
+        bounded at six KNN passes per query regardless of model output (SRCH-03).
+        Runs keyword search once for all keyword terms.  All ranked lists are
+        fused with RRF.
 
         Groups fused chunks by document_id; each document is represented by its
         highest-scoring chunk.  Returns the top ``SEARCH_TOP_K`` documents'
