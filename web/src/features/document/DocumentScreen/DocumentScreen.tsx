@@ -274,7 +274,7 @@ export function DocumentScreen({
             onReclassify={(id) =>
               reclassify.mutate(id, {
                 onSuccess: () => {
-                  /* TODO: toast — add in a follow-up task */
+                  /* TODO(VR): show a success toast — tracked in WEB-16 */
                 },
               })
             }

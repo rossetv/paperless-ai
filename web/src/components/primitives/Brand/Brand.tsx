@@ -12,7 +12,7 @@ export interface BrandProps {
    * Fill colour for the document sheets.
    * Defaults to `currentColor` so the mark inherits the surrounding text colour.
    */
-  color?: string;
+  colour?: string;
   /**
    * Accessible label. Supply to make the icon non-decorative (e.g. when it is
    * the only content in a link). Omit (or pass `undefined`) for decorative use —
@@ -32,8 +32,8 @@ export interface BrandProps {
  * sheet's top-right corner — the geometric logo from the handoff artboard.
  *
  * The spark circle is always #0071e3 (--colour-accent); the sheets use the
- * `color` prop (defaults to `currentColor`) so the mark works on both light
- * and dark backgrounds without a `color` prop.
+ * `colour` prop (defaults to `currentColor`) so the mark works on both light
+ * and dark backgrounds without a `colour` prop.
  *
  * Placement: render `Brand` inside a flex row alongside the wordmark span.
  * The `Brand` component renders the SVG only.
@@ -43,7 +43,7 @@ export interface BrandProps {
  */
 export function Brand({
   size = 22,
-  color = 'currentColor',
+  colour = 'currentColor',
   'aria-label': ariaLabel,
   'data-testid': testId,
   className,
@@ -65,9 +65,9 @@ export function Brand({
       {...accessibilityProps}
     >
       {/* Back sheet — semi-opaque */}
-      <rect x="3" y="2.5" width="11" height="14.5" rx="1.6" fill={color} fillOpacity="0.42" />
+      <rect x="3" y="2.5" width="11" height="14.5" rx="1.6" fill={colour} fillOpacity="0.42" />
       {/* Front sheet — opaque */}
-      <rect x="7" y="5" width="11" height="14.5" rx="1.6" fill={color} />
+      <rect x="7" y="5" width="11" height="14.5" rx="1.6" fill={colour} />
       {/* Spark notch — outer circle (accent blue, always) */}
       <circle cx="15.4" cy="7.6" r="1.4" fill="var(--colour-accent)" />
       {/* Spark notch — inner dot (white) */}

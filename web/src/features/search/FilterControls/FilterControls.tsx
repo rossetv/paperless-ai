@@ -8,6 +8,7 @@ import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
+import { useDebounce } from '../../../hooks/useDebounce';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
 import styles from './FilterControls.module.css';
 
@@ -61,20 +62,12 @@ export function FilterControls({
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
 
-  // Tag search input — raw (undbounced) value drives the visible input.
+  // Tag search input — raw (undebounced) value drives the visible input.
   const [tagQuery, setTagQuery] = React.useState('');
   // Debounced query used for actual filtering.
-  const [debouncedQuery, setDebouncedQuery] = React.useState('');
+  const debouncedQuery = useDebounce(tagQuery, TAG_SEARCH_DEBOUNCE_MS);
   // Whether the "Show all" state is active.
   const [expanded, setExpanded] = React.useState(false);
-
-  // Debounce the tag query.
-  React.useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(tagQuery);
-    }, TAG_SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [tagQuery]);
 
   function updateFilters(partial: Partial<FilterRequest>): void {
     onFiltersChange({ ...filters, ...partial });
