@@ -135,7 +135,7 @@ class TestClassificationPipelineIntegration:
         }"""
         result = parse_classification_response(llm_json)
         assert result.title == ""
-        assert result.tags == []
+        assert result.tags == ()
         assert is_empty_classification(result) is True
 
     def test_pipeline_with_markdown_wrapped_json(self):

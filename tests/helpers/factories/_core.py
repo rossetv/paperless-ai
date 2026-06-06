@@ -233,7 +233,7 @@ def make_classification_result(**overrides: Any) -> ClassificationResult:
     defaults = {
         "title": "Test Invoice",
         "correspondent": "Acme Corp",
-        "tags": ["invoice", "2025"],
+        "tags": ("invoice", "2025"),
         "document_date": "2025-01-15",
         "document_type": "Invoice",
         "language": "en",
