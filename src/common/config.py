@@ -181,11 +181,17 @@ def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
 def _get_int_env(source: Mapping[str, str], var_name: str, default: int) -> int:
     """Parse *var_name* from *source* as an integer, falling back to *default*.
 
-    Raises a ``ValueError`` naming *var_name* when the value is set but is not
-    a valid integer.
+    An unset, empty, or whitespace-only value falls back to *default* — the
+    Settings UI round-trips a cleared numeric field as ``""``, so a blanked
+    field must mean "use the coded default" rather than crash the daemon on its
+    next hot-reload. This mirrors :func:`_get_optional_int_env`'s blank handling
+    so the required-int and optional-int paths agree (COMMON-20).
+
+    Raises a ``ValueError`` naming *var_name* when the value is set to a
+    non-blank string that is not a valid integer.
     """
     raw = source.get(var_name)
-    if raw is None:
+    if raw is None or not raw.strip():
         return default
     try:
         return int(raw)
@@ -653,7 +659,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             source, "CLASSIFY_PROCESSING_TAG_ID"
         ),
         ERROR_TAG_ID=_get_optional_positive_int_env(source, "ERROR_TAG_ID", 552),
-        POLL_INTERVAL=_get_int_env(source, "POLL_INTERVAL", 15),
+        POLL_INTERVAL=_require_at_least_one(
+            "POLL_INTERVAL", _get_int_env(source, "POLL_INTERVAL", 15)
+        ),
         MAX_RETRIES=_require_at_least_one(
             "MAX_RETRIES", _get_int_env(source, "MAX_RETRIES", 3)
         ),
@@ -661,10 +669,14 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "MAX_RETRY_BACKOFF_SECONDS",
             _get_int_env(source, "MAX_RETRY_BACKOFF_SECONDS", 30),
         ),
-        REQUEST_TIMEOUT=_get_int_env(source, "REQUEST_TIMEOUT", 180),
+        REQUEST_TIMEOUT=_require_at_least_one(
+            "REQUEST_TIMEOUT", _get_int_env(source, "REQUEST_TIMEOUT", 180)
+        ),
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
-        OCR_DPI=_get_int_env(source, "OCR_DPI", 300),
-        OCR_MAX_SIDE=_get_int_env(source, "OCR_MAX_SIDE", 1600),
+        OCR_DPI=_require_at_least_one("OCR_DPI", _get_int_env(source, "OCR_DPI", 300)),
+        OCR_MAX_SIDE=_require_at_least_one(
+            "OCR_MAX_SIDE", _get_int_env(source, "OCR_MAX_SIDE", 1600)
+        ),
         OCR_IMAGE_DETAIL=_resolve_ocr_image_detail(source),
         OCR_REASONING_EFFORT=_resolve_ocr_reasoning_effort(source),
         PAGE_WORKERS=max(1, _get_int_env(source, "PAGE_WORKERS", 8)),

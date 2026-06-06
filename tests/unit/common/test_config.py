@@ -253,6 +253,53 @@ class TestValidation:
         with pytest.raises(ValueError, match="MAX_RETRY_BACKOFF_SECONDS must be >= 1"):
             _build(mocker, {**_MINIMAL_ENV, "MAX_RETRY_BACKOFF_SECONDS": value})
 
+    # COMMON-03: a handful of required numeric settings used to flow straight
+    # through _get_int_env with no floor, so a typo'd negative was accepted and
+    # only blew up later (a negative httpx timeout fails at request time, a
+    # negative DPI corrupts rasterisation). §1.11 says fail closed and loud at
+    # startup — each must reject a non-positive value naming the variable.
+    @pytest.mark.parametrize(
+        "env_key, value",
+        [
+            ("REQUEST_TIMEOUT", "-5"),
+            ("REQUEST_TIMEOUT", "0"),
+            ("OCR_DPI", "-1"),
+            ("OCR_DPI", "0"),
+            ("OCR_MAX_SIDE", "-100"),
+            ("OCR_MAX_SIDE", "0"),
+            ("POLL_INTERVAL", "-1"),
+            ("POLL_INTERVAL", "0"),
+        ],
+    )
+    def test_non_positive_required_numeric_fails_closed(self, mocker, env_key, value):
+        with pytest.raises(ValueError, match=f"{env_key} must be >= 1"):
+            _build(mocker, {**_MINIMAL_ENV, env_key: value})
+
+
+class TestBlankNumericFallsBackToDefault:
+    """COMMON-20: a blanked numeric field (the Settings UI round-trips "")
+    falls back to the coded default consistently, instead of crashing the
+    required-int path while the optional-int path silently defaults."""
+
+    @pytest.mark.parametrize(
+        "env_key, expected_default",
+        [
+            ("POLL_INTERVAL", 15),
+            ("REQUEST_TIMEOUT", 180),
+            ("OCR_DPI", 300),
+            ("OCR_MAX_SIDE", 1600),
+            ("MAX_RETRIES", 3),
+            ("CHUNK_SIZE", 2000),
+            ("PRE_TAG_ID", 443),
+        ],
+    )
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_falls_back_to_default(
+        self, mocker, env_key, expected_default, blank
+    ):
+        s = _build(mocker, {**_MINIMAL_ENV, env_key: blank})
+        assert getattr(s, env_key) == expected_default
+
 
 class TestOcrImageDetail:
     """OCR_IMAGE_DETAIL is a validated {low, high, auto} enum, default high."""
