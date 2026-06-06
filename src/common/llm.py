@@ -202,6 +202,17 @@ class OpenAIChatMixin:
         ``openai.APIError`` (rate limit, 5xx, timeout after the ``@retry`` on
         :meth:`_create_completion` is exhausted) is terminal: it is logged and
         ``None`` is returned so the caller can advance to the next model.
+
+        rationale (§5.4 carve-out, COMMON-12/13): the ``None`` here is a
+        *designed* per-model signal — "this model failed, try the next" — not a
+        half-baked exception. The model-fallback chain in
+        :meth:`_complete_with_model_fallback` needs a non-throwing failure to
+        iterate its candidate models, and its callers (the planner and the
+        synthesiser) have explicit graceful-degradation paths keyed on the
+        terminal ``None``. Raising a domain ``LLMError`` instead would break
+        those degradation contracts, so the asymmetry with
+        :class:`~common.embeddings.EmbeddingError` (embeddings have no fallback
+        chain, so they raise) is deliberate, not an oversight.
         """
         params = self._pre_strip_known_rejected(dict(params), model)
         for _attempt in range(len(_STRIPPABLE_PARAMS) + 1):
