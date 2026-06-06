@@ -8,10 +8,11 @@ Design notes:
 - No Pydantic; parsing follows the manual pattern from classifier/result.py
   (CODE_GUIDELINES.md §5.6).
 - Prompt-injection safety (CODE_GUIDELINES.md §10.2): retrieved chunk texts
-  are untrusted document content.  They are placed in the *user* message below
-  an explicit data delimiter; the system prompt declares that everything below
-  the delimiter is data to be analysed, never instructions to be followed.
-  This mirrors the defensive structure in ocr/prompts.py.
+  are untrusted document content.  In the *user* message the question leads and
+  the chunks follow, fenced inside a data block delimited by an unpredictable
+  per-message nonce; the system prompt declares that everything between the
+  nonce fences is data to be analysed, never instructions to be followed.  A
+  chunk cannot reproduce the nonce, so it cannot forge the boundary (SRCH-01).
 - ``mode="exploratory"`` allows the model to return NeedsMore when context is
   too thin.  ``mode="final"`` coerces the outcome to Answered — even on thin
   context the model must answer or state that nothing was found.
