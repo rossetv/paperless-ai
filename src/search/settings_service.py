@@ -7,7 +7,7 @@ the logic they need that is worth testing in isolation lives here, FastAPI-free:
   and *source* (``database`` / ``environment`` / ``default``), so the Settings
   screen can show where each value comes from.
 - :func:`validate_change_set` checks a proposed change against the catalogue
-  and against :func:`common.config._build_settings`, so an invalid value is
+  and against :func:`common.config.build_settings`, so an invalid value is
   rejected *before* it touches ``app.db``.
 - :func:`reindex_required` reports whether any changed key needs a full
   document re-index. Saving hot-loads with no restart (spec §5); the only
