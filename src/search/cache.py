@@ -179,9 +179,13 @@ class SearchResultCache:
 
 
 # The documented process-wide singleton and its accessor (CODE_GUIDELINES §4.6,
-# §8.5). The first caller fixes the TTL ceiling for the process lifetime; a
-# hot-reloaded SEARCH_CACHE_TTL_SECONDS takes effect on the next process (it is
-# an operational ceiling, not per-request state — spec §4.4).
+# §8.5). The first caller fixes the TTL; subsequent calls reuse the existing
+# instance and ignore their ttl_seconds argument. A changed
+# SEARCH_CACHE_TTL_SECONDS therefore takes effect only after
+# reset_search_result_cache() drops the singleton — which the Settings save path
+# does on every config change (api.py) — so the next get rebuilds at the new
+# TTL. The TTL is not pinned for the process lifetime; it hot-reloads on a
+# config change, like the rest of Wave 4's settings.
 _search_result_cache: SearchResultCache | None = None
 _search_result_cache_lock = threading.Lock()
 
@@ -190,8 +194,11 @@ def get_search_result_cache(ttl_seconds: int) -> SearchResultCache:
     """Return the process-wide :class:`SearchResultCache`, building it once.
 
     Args:
-        ttl_seconds: The TTL the singleton is built with on first call;
-            ignored on subsequent calls (the ceiling is process-fixed).
+        ttl_seconds: The TTL the singleton is built with on first call; ignored
+            while a singleton already exists. A changed TTL takes effect after
+            :func:`reset_search_result_cache` drops the singleton (the Settings
+            save path calls it on every config change), so the next call here
+            rebuilds the cache at the new TTL.
 
     Returns:
         The shared cache instance.
