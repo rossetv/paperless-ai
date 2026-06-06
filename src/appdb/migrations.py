@@ -27,6 +27,20 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
+# Substring SQLite puts in the OperationalError message when a queried table
+# does not exist. Used to tell "fresh database, no schema yet" apart from a
+# genuinely broken database (a malformed disk image, a locked file), which
+# raises a *different* OperationalError that must never be masked as fresh.
+_NO_SUCH_TABLE_MARKER = "no such table"
+
+
+def _is_missing_table_error(exc: sqlite3.Error) -> bool:
+    """Return whether *exc* is a SQLite "no such table" operational error."""
+    return (
+        isinstance(exc, sqlite3.OperationalError)
+        and _NO_SUCH_TABLE_MARKER in str(exc).lower()
+    )
+
 
 class AppDbError(Exception):
     """Base exception for application-database failures.
@@ -234,19 +248,29 @@ def _read_schema_version(conn: sqlite3.Connection) -> int:
     """Return the stored ``schema_version``, or 0 for a fresh database.
 
     Returns 0 when the ``meta`` table does not exist (a fresh database) or
-    when its ``schema_version`` row is absent.
+    when its ``schema_version`` row is absent. Any OperationalError other than
+    a missing ``meta`` table — a malformed disk image, a locked file —
+    propagates rather than being masked as version 0, so a corrupt or busy
+    ``app.db`` fails loud instead of being silently re-migrated (§1.11).
 
     Args:
         conn: An open SQLite connection.
 
     Returns:
         The stored ``schema_version`` as an integer, or 0 when absent.
+
+    Raises:
+        sqlite3.OperationalError: The query failed for a reason other than the
+            ``meta`` table being absent.
     """
     try:
         row = conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
-    except sqlite3.OperationalError:
-        # The meta table does not exist yet — a fresh database.
-        return 0
+    except sqlite3.OperationalError as exc:
+        if _is_missing_table_error(exc):
+            # The meta table does not exist yet — a fresh database.
+            return 0
+        # A malformed or locked database must fail loud, never be re-migrated.
+        raise
     return int(row[0]) if row is not None else 0

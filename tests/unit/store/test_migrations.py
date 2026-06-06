@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 import sqlite3
+import unittest.mock as _mock
 
 import pytest
 
@@ -295,3 +296,48 @@ class TestFutureVersionGuard:
 
     def test_store_error_is_exception_subclass(self) -> None:
         assert issubclass(StoreError, Exception)
+
+
+# ---------------------------------------------------------------------------
+# Corrupt / locked database is not masked as fresh
+# ---------------------------------------------------------------------------
+
+
+class TestCorruptDatabaseFailsLoud:
+    """_read_schema_version must only treat a missing meta table as version 0.
+
+    A genuine "no such table: meta" means a fresh database and is correctly
+    read as version 0. Any other OperationalError — a malformed disk image, a
+    locked file — must propagate rather than be swallowed as "fresh", which
+    would re-run every migration against a corrupt or busy database and mask
+    the damage (CODE_GUIDELINES.md §1.11 fail-loud).
+    """
+
+    def test_missing_meta_table_is_read_as_version_zero(self) -> None:
+        from store.migrations import _read_schema_version
+
+        mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+        mock_conn.execute.side_effect = sqlite3.OperationalError("no such table: meta")
+
+        assert _read_schema_version(mock_conn) == 0
+
+    def test_corrupt_database_operational_error_propagates(self) -> None:
+        from store.migrations import _read_schema_version
+
+        mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+        mock_conn.execute.side_effect = sqlite3.OperationalError(
+            "database disk image is malformed"
+        )
+
+        with pytest.raises(sqlite3.OperationalError, match="malformed"):
+            _read_schema_version(mock_conn)
+
+    def test_run_migrations_does_not_mask_a_corrupt_database(self) -> None:
+        """A corrupt database must not be silently re-migrated from v1."""
+        mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
+        mock_conn.execute.side_effect = sqlite3.OperationalError(
+            "database disk image is malformed"
+        )
+
+        with pytest.raises(sqlite3.OperationalError, match="malformed"):
+            run_migrations(mock_conn)
