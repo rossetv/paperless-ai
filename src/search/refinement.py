@@ -98,7 +98,11 @@ def is_weak_retrieval(
     """
     if len(chunks) < min_chunks:
         return True
-    best_score = max(chunk.rrf_score for chunk in chunks)
+    # chunks is sorted by rrf_score descending (retriever.retrieve / merge_chunks),
+    # so the head is the best score in O(1) — no scan needed (§1.3). The caller
+    # guarantees a non-empty list, and the min_chunks guard above already returns
+    # for any list shorter than the (>= 1) floor.
+    best_score = chunks[0].rrf_score
     return best_score < min_score
 
 
