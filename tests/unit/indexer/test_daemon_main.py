@@ -56,16 +56,18 @@ def test_main_exits_nonzero_when_lock_contended(
 
     # Patch acquire_writer_lock to simulate a contended lock.
     monkeypatch.setattr(
-        "indexer.daemon.acquire_writer_lock",
+        "indexer.daemon._boot.acquire_writer_lock",
         lambda path: (_ for _ in ()).throw(IndexerLockError("lock held")),
     )
     # daemon.main() now calls current_settings() (the hot-load accessor), so
     # the stand-in is patched directly on the daemon module — Wave 4 switched
     # the entry point off Settings.from_environment().
     settings = make_settings_obj(INDEX_DB_PATH=str(tmp_path / "index.db"))
-    monkeypatch.setattr("indexer.daemon.current_settings", lambda *a, **kw: settings)
-    monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
-    monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
+    monkeypatch.setattr(
+        "indexer.daemon._boot.current_settings", lambda *a, **kw: settings
+    )
+    monkeypatch.setattr("indexer.daemon._boot.configure_logging", lambda s: None)
+    monkeypatch.setattr("indexer.daemon._boot.setup_libraries", lambda s: None)
 
     with pytest.raises(SystemExit) as exc_info:
         from indexer import daemon
@@ -90,30 +92,32 @@ def test_main_proceeds_when_lock_acquired(
             DOCUMENT_WORKERS=1,
         )
         monkeypatch.setattr(
-            "indexer.daemon.current_settings", lambda *a, **kw: settings
+            "indexer.daemon._boot.current_settings", lambda *a, **kw: settings
         )
-        monkeypatch.setattr("indexer.daemon.configure_logging", lambda s: None)
-        monkeypatch.setattr("indexer.daemon.setup_libraries", lambda s: None)
+        monkeypatch.setattr("indexer.daemon._boot.configure_logging", lambda s: None)
+        monkeypatch.setattr("indexer.daemon._boot.setup_libraries", lambda s: None)
         monkeypatch.setattr(
-            "indexer.daemon.acquire_writer_lock", lambda path: lock_handle
+            "indexer.daemon._boot.acquire_writer_lock", lambda path: lock_handle
         )
-        monkeypatch.setattr("indexer.daemon.register_signal_handlers", lambda: None)
+        monkeypatch.setattr(
+            "indexer.daemon._boot.register_signal_handlers", lambda: None
+        )
         # Preflight stubs.
         monkeypatch.setattr(
-            "indexer.daemon.PaperlessClient",
+            "indexer.daemon._boot.PaperlessClient",
             lambda s: MagicMock(ping=lambda: None),
         )
         embedding_client = MagicMock()
         embedding_client.embed.return_value = [[0.0]]
         monkeypatch.setattr(
-            "indexer.daemon.EmbeddingClient", lambda s: embedding_client
+            "indexer.daemon._boot.EmbeddingClient", lambda s: embedding_client
         )
         store_writer = MagicMock()
         store_writer.check_embedding_model.return_value = False
         store_writer.checkpoint.return_value = None
-        monkeypatch.setattr("indexer.daemon.StoreWriter", lambda s: store_writer)
+        monkeypatch.setattr("indexer.daemon._boot.StoreWriter", lambda s: store_writer)
         monkeypatch.setattr(
-            "indexer.daemon.Reconciler", lambda **kwargs: _make_reconciler()
+            "indexer.daemon._boot.Reconciler", lambda **kwargs: _make_reconciler()
         )
         # Force the loop to exit immediately on entry.
         shutdown_mod.request_shutdown()
@@ -203,8 +207,10 @@ def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
     clock_readings = [start + i * _WAKE_CHECK_INTERVAL for i in range(ticks * 3 + 20)]
     clock_iter = iter(clock_readings)
 
-    with patch("indexer.daemon.time.monotonic", side_effect=lambda: next(clock_iter)):
-        with patch("indexer.daemon.time.sleep"):
+    with patch(
+        "indexer.daemon._wait.time.monotonic", side_effect=lambda: next(clock_iter)
+    ):
+        with patch("indexer.daemon._wait.time.sleep"):
             _interruptible_wait(
                 seconds=TOTAL_WAIT,
                 sentinel_path=sentinel_path,
