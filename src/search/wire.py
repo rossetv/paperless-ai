@@ -35,7 +35,7 @@ Forbidden: FastAPI, sqlite3, any I/O.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -1020,10 +1020,18 @@ class TestConnectionResponse(BaseModel):
     detail: str
 
 
-# Maps the public ``sort`` query-parameter values to the store's sort keys.
-# The public API exposes ``added`` (a friendly name); the store column is
-# ``indexed_at``.  ``created`` and ``title`` are identical on both sides.
-_BROWSE_SORT_ALIASES: dict[str, str] = {
+# The public ``sort`` query-parameter enum for ``GET /api/documents``. Enforced
+# at the FastAPI ``Query`` boundary (``search.routes``) so an out-of-set value is
+# a 422 before any handler runs; :func:`to_document_browse_query` then trusts the
+# narrowed type and needs no runtime guard (SRCH-11, CODE_GUIDELINES §6.1).
+BrowseSort = Literal["created", "title", "added"]
+
+# Maps each public ``sort`` value to the store's sort key. The public API
+# exposes ``added`` (a friendly name); the store column is ``indexed_at``.
+# ``created`` and ``title`` are identical on both sides. The mapping is total
+# over :data:`BrowseSort`, so the lookup in :func:`to_document_browse_query`
+# cannot miss.
+_BROWSE_SORT_ALIASES: dict[BrowseSort, str] = {
     "created": "created",
     "title": "title",
     "added": "indexed_at",
@@ -1034,7 +1042,7 @@ def to_document_browse_query(
     *,
     page: int,
     page_size: int,
-    sort: str,
+    sort: BrowseSort,
     descending: bool,
     text: str | None,
     date_from: str | None,
@@ -1052,12 +1060,15 @@ def to_document_browse_query(
 
     The public ``sort`` value is translated through
     :data:`_BROWSE_SORT_ALIASES` — the API name ``added`` maps to the store
-    column ``indexed_at``; ``created`` and ``title`` pass through.
+    column ``indexed_at``; ``created`` and ``title`` pass through. ``sort`` is a
+    :data:`BrowseSort`, validated at the ``Query`` boundary, so the lookup is
+    total and cannot miss — no runtime guard is needed (SRCH-11, §6.1).
 
     Args:
         page: The 1-based page number (FastAPI enforces ``>= 1``).
         page_size: Rows per page (FastAPI enforces ``1..MAX_PAGE_SIZE``).
-        sort: One of ``created``, ``title``, ``added``.
+        sort: One of ``created``, ``title``, ``added`` (the :data:`BrowseSort`
+            enum, enforced at the HTTP boundary).
         descending: True for a descending sort, False for ascending.
         text: Optional in-library text query, or None.
         date_from: Optional inclusive ISO-8601 lower date bound, or None.
@@ -1068,14 +1079,8 @@ def to_document_browse_query(
 
     Returns:
         The :class:`~store.models.DocumentBrowseQuery` for the store reader.
-
-    Raises:
-        ValueError: *sort* is not a recognised sort name.
     """
-    store_sort = _BROWSE_SORT_ALIASES.get(sort)
-    if store_sort is None:
-        allowed = ", ".join(sorted(_BROWSE_SORT_ALIASES))
-        raise ValueError(f"unknown sort {sort!r}; expected one of {allowed}")
+    store_sort = _BROWSE_SORT_ALIASES[sort]
     return DocumentBrowseQuery(
         text=text,
         date_from=date_from,

@@ -35,6 +35,7 @@ from search.deps import get_app_db
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import CurrentUser
 from search.wire import (
+    BrowseSort,
     DocumentListResponse,
     FacetsResponse,
     MAX_PAGE_NUMBER,
@@ -274,7 +275,7 @@ def build_api_router(
     async def documents(  # noqa: PLR0913 — one param per browse filter
         page: int = Query(default=1, ge=1, le=MAX_PAGE_NUMBER),
         page_size: int = Query(default=24, ge=1, le=MAX_PAGE_SIZE),
-        sort: Literal["created", "title", "added"] = Query(default="added"),
+        sort: BrowseSort = Query(default="added"),
         descending: bool = Query(default=True),
         query: str | None = Query(default=None, max_length=MAX_QUERY_LENGTH),
         correspondent_id: int | None = Query(default=None),
@@ -376,7 +377,7 @@ async def _documents(
     *,
     page: int,
     page_size: int,
-    sort: str,
+    sort: BrowseSort,
     descending: bool,
     text: str | None,
     correspondent_id: int | None,
@@ -392,26 +393,24 @@ async def _documents(
     browse shape, runs the (blocking) ``list_documents`` query off the event
     loop, and converts the page to the wire envelope.
 
-    A ``sort`` value outside the allowed set is rejected by FastAPI before
-    this body runs; the explicit :class:`ValueError` catch is defence in
-    depth.  An index with no schema yet surfaces as a 503, consistent with
-    the index-not-ready contract; any other store fault propagates as a 500.
+    ``sort`` is a :data:`~search.wire.BrowseSort`, validated to the allowed set
+    at the ``Query`` boundary, so :func:`to_document_browse_query` cannot fail
+    on it — no runtime guard is needed here (SRCH-11).  An index with no schema
+    yet surfaces as a 503, consistent with the index-not-ready contract; any
+    other store fault propagates as a 500.
     """
-    try:
-        browse_query = to_document_browse_query(
-            page=page,
-            page_size=page_size,
-            sort=sort,
-            descending=descending,
-            text=text,
-            date_from=date_from,
-            date_to=date_to,
-            correspondent_id=correspondent_id,
-            document_type_id=document_type_id,
-            tag_ids=tag_ids,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    browse_query = to_document_browse_query(
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        descending=descending,
+        text=text,
+        date_from=date_from,
+        date_to=date_to,
+        correspondent_id=correspondent_id,
+        document_type_id=document_type_id,
+        tag_ids=tag_ids,
+    )
 
     try:
         document_page = await run_blocking(
