@@ -17,23 +17,27 @@ bypassed for any document whose content reaches the store.
 
 These helpers live in a sibling module of :mod:`._incremental` (CODE_GUIDELINES
 §3.1, to keep ``_incremental.py`` under the 500-line ceiling).  The worker
-fan-out they need is injected by the caller as *index_documents* so this module
-does not import back from :mod:`._incremental` (no import cycle).
+fan-out they need lives in the leaf module :mod:`._fanout`, which both this
+module and :mod:`._incremental` import downward — so there is no import cycle
+and no injected function pointer.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import structlog
 
 from common.clock import normalise_paperless_timestamp, parse_paperless_timestamp
 from common.paperless import PAPERLESS_CALL_EXCEPTIONS, PaperlessDocument
+from indexer.reconciler._fanout import _index_documents
 from indexer.worker import IndexOutcome
 
 if TYPE_CHECKING:
+    from concurrent.futures import ThreadPoolExecutor
+
     from common.paperless import PaperlessClient
     from indexer.worker import DocumentIndexer
     from store.models import IndexState
@@ -46,21 +50,21 @@ log = structlog.get_logger(__name__)
 _LIGHT_DIFF_FIELDS: tuple[str, ...] = ("id", "modified")
 
 
-class _IndexDocuments(Protocol):
-    """The worker fan-out :func:`_diff_light_page` calls for the changed set.
+# The {id, modified} projection a steady-state watermark page yields — the
+# external Paperless wire shape the diff reads, pinned as a TypedDict
+# (CODE_GUIDELINES §5.3, mirroring ``PaperlessDocument``) so ``row["id"]`` and
+# ``row["modified"]`` are typed rather than bare ``dict`` → ``Any`` access.
+class _LightDocumentRow(TypedDict):
+    """A light ``{id, modified}`` Paperless projection row (IDX-11).
 
-    Matches :func:`indexer.reconciler._incremental._index_documents` — it is
-    injected rather than imported so this module never imports back from
-    ``_incremental`` (CODE_GUIDELINES §3.1 sibling extraction, no import cycle).
+    Attributes:
+        id: The Paperless document id — always present.
+        modified: The last-modified timestamp; an ISO-8601 datetime, or absent
+            on a malformed upstream row (read defensively, hence NotRequired).
     """
 
-    def __call__(
-        self,
-        indexer: DocumentIndexer,
-        documents: list[PaperlessDocument],
-        index_state: dict[int, IndexState],
-        worker_count: int,
-    ) -> dict[int, IndexOutcome | None]: ...
+    id: int
+    modified: NotRequired[str | None]
 
 
 def _is_unchanged(existing: IndexState | None, projected_modified: str | None) -> bool:
@@ -86,12 +90,11 @@ def _is_unchanged(existing: IndexState | None, projected_modified: str | None) -
 
 
 def _diff_light_page(
-    index_documents: _IndexDocuments,
+    pool: ThreadPoolExecutor,
     indexer: DocumentIndexer,
     paperless: PaperlessClient,
-    light_rows: Iterable[dict],
+    light_rows: Iterable[_LightDocumentRow],
     index_state: dict[int, IndexState],
-    worker_count: int,
 ) -> tuple[dict[int, IndexOutcome | None], set[int], datetime | None]:
     """Steady-state diff: skip unchanged rows, fetch + index only changed ones.
 
@@ -112,13 +115,13 @@ def _diff_light_page(
     (SPEC §5.7): it is recorded as a ``None`` outcome and the cycle continues.
 
     Args:
-        index_documents: The worker fan-out (injected from
-            :mod:`._incremental`) that indexes the changed documents.
+        pool: The cycle-scoped worker pool (built by
+            :func:`._incremental.run_incremental_sync`) the changed set is
+            fanned across via :func:`._fanout._index_documents`.
         indexer: The stateless per-document worker.
         paperless: The Paperless API client (for the lazy ``get_document``).
         light_rows: The ``{id, modified}`` rows from the projected watermark page.
         index_state: The store's id → ``IndexState`` map.
-        worker_count: Size of the worker pool.
 
     Returns:
         ``(outcomes, page_ids, latest_modified)`` — the per-id outcomes (a
@@ -148,9 +151,7 @@ def _diff_light_page(
             to_fetch=len(to_fetch),
         )
         changed_documents = _fetch_full_documents(paperless, to_fetch, outcomes)
-        outcomes.update(
-            index_documents(indexer, changed_documents, index_state, worker_count)
-        )
+        outcomes.update(_index_documents(pool, indexer, changed_documents, index_state))
     else:
         log.debug("reconcile.steady_state_all_unchanged", skipped=len(page_ids))
 
