@@ -429,6 +429,46 @@ def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> 
 
 
 @dataclass(frozen=True, slots=True)
+class _ProviderDefaults:
+    """The model and base-URL defaults that depend on ``LLM_PROVIDER``.
+
+    Resolved once in :func:`_resolve_provider_defaults` so the provider branch
+    lives in one place rather than inline in :func:`_build_settings` (COMMON-15).
+    """
+
+    ollama_base_url: str | None
+    ai_models: list[str]
+    planner_model: str
+    answer_model: str
+
+
+def _resolve_provider_defaults(
+    llm_provider: Literal["openai", "ollama"], source: Mapping[str, str]
+) -> _ProviderDefaults:
+    """Resolve the provider-dependent model and base-URL defaults.
+
+    Under ``ollama`` the Ollama base URL is read (defaulting to the local
+    daemon) and the model defaults are the local Gemma set; under ``openai`` the
+    base URL is ``None`` and the defaults are the GPT set. These are only
+    *defaults* — an explicit ``AI_MODELS`` / ``SEARCH_*_MODEL`` value in *source*
+    still wins in :func:`_build_settings`.
+    """
+    if llm_provider == "ollama":
+        return _ProviderDefaults(
+            ollama_base_url=source.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL),
+            ai_models=["gemma3:27b", "gemma3:12b"],
+            planner_model="gemma3:12b",
+            answer_model="gemma3:27b",
+        )
+    return _ProviderDefaults(
+        ollama_base_url=None,
+        ai_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
+        planner_model="gpt-5.4-nano",
+        answer_model="gpt-5.5",
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Immutable, fully-validated configuration for one process.
 
@@ -597,18 +637,11 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         "CHUNK_SIZE", _get_int_env(source, "CHUNK_SIZE", 2000)
     )
 
-    if llm_provider == "ollama":
-        ollama_base_url: str | None = source.get(
-            "OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL
-        )
-        default_ai_models = ["gemma3:27b", "gemma3:12b"]
-        default_planner_model = "gemma3:12b"
-        default_answer_model = "gemma3:27b"
-    else:
-        ollama_base_url = None
-        default_ai_models = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
-        default_planner_model = "gpt-5.4-nano"
-        default_answer_model = "gpt-5.5"
+    provider_defaults = _resolve_provider_defaults(llm_provider, source)
+    ollama_base_url = provider_defaults.ollama_base_url
+    default_ai_models = provider_defaults.ai_models
+    default_planner_model = provider_defaults.planner_model
+    default_answer_model = provider_defaults.answer_model
 
     # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
     # int default and treats blank as unset, so it returns a plain int — no
