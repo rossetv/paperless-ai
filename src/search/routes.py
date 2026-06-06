@@ -451,4 +451,6 @@ def _record_recent_search(
         # rationale: a recent-search write failure must not fail the search
         # itself (CODE_GUIDELINES §6.4). The search response has already been
         # built; logging and swallowing here is the correct outer-boundary act.
-        log.warning("api.recent_search_record_failed", user_id=user.id)
+        # log.exception attaches the active traceback (§7.5) so a recurring DB
+        # fault on this best-effort side path is debuggable, not just counted.
+        log.exception("api.recent_search_record_failed", user_id=user.id)
