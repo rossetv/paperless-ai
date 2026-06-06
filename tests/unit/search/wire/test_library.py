@@ -1,14 +1,14 @@
-"""Tests for search.wire — the HTTP boundary models and converters."""
+"""Tests for search.wire.library — the Library browse models and converters."""
 
 from __future__ import annotations
 
-from store.models import DocumentPage, DocumentSummary
 from search.wire import (
     DocumentListResponse,
     DocumentSummaryResponse,
     to_document_list_response,
     to_document_summary_response,
 )
+from store.models import DocumentPage, DocumentSummary
 
 
 class TestLibraryWireModels:
