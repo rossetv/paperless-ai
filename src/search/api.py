@@ -430,9 +430,15 @@ def main() -> None:
     edge scheme (HTTPS — so the session cookie gets its ``Secure`` flag) and
     ``request.client.host`` reflects the real client IP from
     ``X-Forwarded-For`` (so ``sessions.ip`` records the client, not the
-    proxy). ``forwarded_allow_ips="*"`` trusts those headers from any peer:
-    the search server's port is never exposed directly — only the reverse
-    proxy reaches it — so every inbound connection is the trusted proxy.
+    proxy).
+
+    ``forwarded_allow_ips`` is the set of peers uvicorn trusts those headers
+    from. It is taken from ``SEARCH_FORWARDED_ALLOW_IPS`` and defaults to
+    ``"*"`` (trust any peer) — unchanged behaviour, correct when the uvicorn
+    port is reachable only by the reverse proxy. If that port can be reached
+    directly, pin the setting to the proxy's IP/CIDR so an attacker cannot
+    spoof ``X-Forwarded-For`` / ``X-Forwarded-Proto`` to forge the audited
+    client IP or flip the cookie ``Secure`` flag (CODE_GUIDELINES §10.1).
     """
     from common.bootstrap import bootstrap_process
 
@@ -457,5 +463,5 @@ def main() -> None:
         host=settings.SEARCH_SERVER_HOST,
         port=settings.SEARCH_SERVER_PORT,
         proxy_headers=True,
-        forwarded_allow_ips="*",
+        forwarded_allow_ips=settings.SEARCH_FORWARDED_ALLOW_IPS,
     )
