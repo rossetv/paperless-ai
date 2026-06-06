@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
@@ -22,38 +22,48 @@ export interface LoadingScreenProps {
 }
 
 /**
- * The agentic-search pipeline stages, fixed for the in-flight view.
+ * Build the pipeline-stage rail from the elapsed search time.
  *
  * `POST /api/search` is a single round-trip — the browser cannot observe the
- * server's progress — so the rail shows a representative snapshot: planning
- * done, retrieval in progress, synthesis pending. It is an "in-flight"
- * affordance, not a live progress meter.
+ * server's real stage boundaries — so this is a time-based ESTIMATE, not a
+ * measured progress meter. Planning is shown working for the first couple of
+ * seconds, then retrieval, then synthesis (the long tail, where most of a
+ * search's wall-clock goes). It exists so the rail visibly advances instead of
+ * sitting frozen on a hard-coded snapshot; the counter beside it shows the real
+ * measured elapsed time. A truly live rail would need the server to stream
+ * per-stage events, which the single-round-trip API does not.
  */
-const PIPELINE_STAGES: readonly PipelineStage[] = [
-  {
-    label: 'Planning the query',
-    detail: 'Semantic queries and keyword terms',
-    state: 'done',
-  },
-  {
-    label: 'Embedding & retrieving',
-    detail: 'Vector + keyword search, RRF fusion',
-    state: 'active',
-  },
-  {
-    label: 'Synthesising the answer',
-    detail: 'Final answer with citations',
-    state: 'pending',
-  },
-];
+function pipelineStages(elapsedSeconds: number): PipelineStage[] {
+  const planningDone = elapsedSeconds >= 2;
+  const retrievingDone = elapsedSeconds >= 5;
+  return [
+    {
+      label: 'Planning the query',
+      detail: 'Semantic queries and keyword terms',
+      state: planningDone ? 'done' : 'active',
+    },
+    {
+      label: 'Embedding & retrieving',
+      detail: 'Vector + keyword search, RRF fusion',
+      state: !planningDone ? 'pending' : retrievingDone ? 'done' : 'active',
+    },
+    {
+      label: 'Synthesising the answer',
+      detail: 'Final answer with citations',
+      state: retrievingDone ? 'active' : 'pending',
+    },
+  ];
+}
 
 /**
  * The search loading screen.
  *
  * The rail+content layout: the filter rail, then a recap of the query, a card
- * carrying the spinner and the `PipelineStages` rail, and two skeleton source
- * placeholders. The pipeline rail is a fixed in-flight snapshot — the search
- * request is a single round-trip, so live stage progress is not observable.
+ * carrying the spinner, a live elapsed counter and the `PipelineStages` rail,
+ * and two skeleton source placeholders. The counter ticks the real measured
+ * elapsed time; the rail advances on a time estimate (see `pipelineStages`) —
+ * the search request is a single round-trip, so true per-stage progress is not
+ * observable from the browser.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Card, Spinner, Text,
  * Skeleton, PipelineStages, FilterControls.
@@ -64,6 +74,18 @@ export function LoadingScreen({
   filters,
   onFiltersChange,
 }: LoadingScreenProps): React.ReactElement {
+  // Real elapsed seconds since this screen mounted — drives the visible counter
+  // and the estimated stage progression. The interval is cleared on unmount,
+  // which happens as soon as the search resolves and results replace this view.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
   return (
     <SearchScreenLayout
       variant="rail"
@@ -83,8 +105,7 @@ export function LoadingScreen({
         {/* Pipeline progress card. */}
         <Card elevated>
           <Stack direction="vertical" gap={10}>
-            {/* Spinner row: icon, heading, spacer, ETA pill (MINOR 2). Gap 9
-                ≈ 11 px — the nearest token to the design's 12 px. */}
+            {/* Spinner row: icon, heading, spacer, live elapsed counter. */}
             <Stack direction="horizontal" gap={9} align="center">
               <Spinner size="small" label="Searching" />
               <Text as="span" variant="body-emphasis">
@@ -92,10 +113,10 @@ export function LoadingScreen({
               </Text>
               <span className={styles['spacer']} />
               <Text as="span" variant="micro" tone="tertiary">
-                ~2s
+                {elapsedSeconds}s
               </Text>
             </Stack>
-            <PipelineStages stages={[...PIPELINE_STAGES]} />
+            <PipelineStages stages={pipelineStages(elapsedSeconds)} />
           </Stack>
         </Card>
 

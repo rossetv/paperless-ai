@@ -30,6 +30,19 @@ const EMBEDDING_MODEL_OPTIONS = [
   { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
 ];
 
+/**
+ * OpenAI reasoning-effort tiers (the SDK's `ReasoningEffort` literal). Higher
+ * tiers spend more reasoning tokens for better quality; OpenAI-only — the value
+ * is ignored when the provider is Ollama. Reused by the OCR, classifier, and
+ * search planner/answer reasoning selects.
+ */
+const REASONING_EFFORT_OPTIONS = [
+  { value: 'minimal', label: 'Minimal' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+];
+
 // ---------------------------------------------------------------------------
 // SETTINGS_SECTIONS — the ordered declarative model for the Settings screen
 // ---------------------------------------------------------------------------
@@ -170,10 +183,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             control: { kind: 'select', options: MODEL_OPTIONS },
           },
           {
+            key: 'SEARCH_PLANNER_REASONING_EFFORT',
+            label: 'Planner reasoning effort',
+            hint: 'How hard the planner thinks: minimal / low / medium / high. OpenAI only.',
+            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
+          },
+          {
             key: 'SEARCH_ANSWER_MODEL',
             label: 'Answer model',
             hint: 'Stronger model for user-facing synthesis.',
             control: { kind: 'select', options: MODEL_OPTIONS },
+          },
+          {
+            key: 'SEARCH_ANSWER_REASONING_EFFORT',
+            label: 'Answer reasoning effort',
+            hint: 'How hard the answer model thinks: minimal / low / medium / high. OpenAI only.',
+            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
           },
         ],
       },
@@ -305,6 +330,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ],
       },
       {
+        id: 'ocr-reasoning',
+        title: 'Reasoning',
+        subtitle: 'How hard the vision model thinks per page — higher tiers cost more reasoning tokens (OpenAI only).',
+        fields: [
+          {
+            key: 'OCR_REASONING_EFFORT',
+            label: 'Reasoning effort',
+            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
+          },
+        ],
+      },
+      {
         id: 'refusal',
         title: 'Refusal handling',
         subtitle: 'What to do when a model refuses to transcribe a page.',
@@ -395,6 +433,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             label: 'Person custom-field ID',
             hint: 'A text custom field where the classifier stores the inferred person name.',
             control: { kind: 'number', min: 0 },
+          },
+        ],
+      },
+      {
+        id: 'classify-reasoning',
+        title: 'Reasoning',
+        subtitle: 'How hard the classifier model thinks — higher tiers cost more reasoning tokens (OpenAI only).',
+        fields: [
+          {
+            key: 'CLASSIFY_REASONING_EFFORT',
+            label: 'Reasoning effort',
+            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
           },
         ],
       },
