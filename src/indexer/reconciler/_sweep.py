@@ -114,7 +114,10 @@ def _enumerate_paperless_ids(paperless: PaperlessClient) -> set[int] | None:
     only returned if it was built to completion.
     """
     try:
-        return {doc["id"] for doc in paperless.iter_all_documents()}
+        # fields=("id",): the sweep needs only the id set, so project away every
+        # other field — notably the OCR content body — for a strictly smaller
+        # enumeration transfer (IDX-03 perf). Behaviour is unchanged.
+        return {doc["id"] for doc in paperless.iter_all_documents(fields=("id",))}
     except PAPERLESS_CALL_EXCEPTIONS:
         # rationale: Paperless transport boundary — any enumeration failure
         # must downgrade to "prune nothing", never propagate as a partial id

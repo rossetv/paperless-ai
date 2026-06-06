@@ -9,6 +9,7 @@ from tests.helpers.factories import (
     DEFAULT_EMBEDDING_DIMENSIONS,
     make_document,
     make_embedding,
+    make_paperless_document,
     make_settings_obj,
 )
 
@@ -294,6 +295,16 @@ def make_reconciler_paperless(
     Disambiguating on a ``None`` value instead would misroute a first-run
     incremental sync into the sweep branch.
 
+    The steady-state incremental sync (IDX-03) passes a ``fields`` projection and
+    then re-fetches each new/changed document by id via ``get_document``.  This
+    builder serves the full *documents* for the projected list call (the
+    reconciler reads ``id`` and ``modified`` off each row to drive the diff) and
+    stubs ``get_document`` to return the matching document by id, falling back to
+    a generic ``make_paperless_document(doc_id=...)`` for an id not in
+    *documents* (e.g. an out-of-band failed-document retry that lives past the
+    watermark).  A test that needs a bespoke fetch can still override
+    ``get_document`` after construction.
+
     Args:
         documents: Documents an incremental call returns.
         all_ids: Document ids a deletion-sweep enumeration returns.
@@ -303,13 +314,21 @@ def make_reconciler_paperless(
     paperless = MagicMock()
     docs = documents if documents is not None else []
     ids = all_ids if all_ids is not None else []
+    by_id = {doc["id"]: doc for doc in docs if "id" in doc}
 
     def _iter_all_documents(**kwargs: Any) -> list[dict]:
         if "modified_after" in kwargs:
             return docs
         return [{"id": doc_id} for doc_id in ids]
 
+    def _get_document(doc_id: int) -> dict:
+        # Serve the full document the steady-state diff re-fetches by id; an id
+        # outside *documents* (an out-of-band retry past the watermark) gets a
+        # generic indexer-shaped stub so the worker still has a real dict to hash.
+        return by_id.get(doc_id, make_paperless_document(doc_id=doc_id))
+
     paperless.iter_all_documents.side_effect = _iter_all_documents
+    paperless.get_document.side_effect = _get_document
     paperless.list_correspondents.return_value = correspondents or []
     paperless.list_document_types.return_value = []
     paperless.list_tags.return_value = []

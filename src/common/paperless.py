@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import types
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, Generator, Iterable, Unpack, cast
 
 import httpx
@@ -612,7 +612,10 @@ class PaperlessClient:
         )
 
     def iter_all_documents(
-        self, *, modified_after: str | None = None
+        self,
+        *,
+        modified_after: str | None = None,
+        fields: Sequence[str] | None = None,
     ) -> Iterator[dict]:
         """Yield every document from Paperless, ordered by ``modified`` ascending.
 
@@ -625,13 +628,25 @@ class PaperlessClient:
             modified_after: If supplied, only documents whose ``modified``
                 timestamp is strictly after this value are returned.  The
                 value is passed to Paperless as the ``modified__gt`` filter
-                parameter.
+                parameter (server-side filter).
+            fields: If supplied, request only these document fields from
+                Paperless via the ``fields`` sparse-fieldset projection.
+                ``None`` (the default) returns the full document object,
+                including the OCR ``content`` body.  A light
+                ``("id", "modified")`` projection lets the reconciler diff which
+                documents changed without paying to transfer every OCR body
+                (IDX-03); Paperless drops every field not listed.
         """
         params: dict[str, str | int] = {"ordering": "modified", "page_size": 100}
         if modified_after is not None:
             # modified__gt is the Paperless-ngx documents filterset parameter
             # for strict greater-than on the modified field (server-side filter).
             params["modified__gt"] = modified_after
+        if fields is not None:
+            # fields is the Paperless-ngx sparse-fieldset projection: the server
+            # serialises only the listed fields, omitting the heavy OCR content
+            # body when it is not requested (IDX-03).
+            params["fields"] = ",".join(fields)
         url = str(
             httpx.URL(f"{self.settings.PAPERLESS_URL}/api/documents/", params=params)
         )

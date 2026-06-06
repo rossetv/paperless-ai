@@ -148,7 +148,17 @@ class TestIncrementalSyncFailedDocumentRetry:
                 # The poison doc was in the page so no out-of-band re-fetch.
                 paperless.get_document.assert_not_called()
             else:
-                paperless.get_document.assert_called_once_with(poison_id)
+                # The poison doc lives past the watermark, so it is fetched
+                # out-of-band via the failed-documents retry path.  (The healthy
+                # page document is also re-fetched by the steady-state diff —
+                # IDX-03 — since its modified advanced, so get_document is called
+                # for both; assert the poison retry specifically happened.)
+                poison_fetches = [
+                    call
+                    for call in paperless.get_document.call_args_list
+                    if call.args == (poison_id,)
+                ]
+                assert len(poison_fetches) == 1
 
             if cycle < MAX_CONSECUTIVE_DOCUMENT_FAILURES - 1:
                 # Still being retried — failed, not yet given up.

@@ -29,6 +29,20 @@ from dataclasses import dataclass
 # Capture group 1 is the 1-based page number.
 _PAGE_MARKER_RE = re.compile(r"^--- Page (\d+)(?: \([^)]+\))? ---$")
 
+# A defensive character ceiling enforced AFTER paragraph-aware chunking, so no
+# single chunk can exceed the embedding model's 8191-token input limit. Chunk
+# size is configured in CHARACTERS (CHUNK_SIZE, default 2000), but the OpenAI
+# embedding limit is in TOKENS: dense CJK / non-Latin / base64-like OCR can pack
+# well over 8191 tokens into 2000 characters, and such a chunk fails the whole
+# embedding batch (a non-retryable 400) — re-billing up to 95 valid siblings on
+# every retry (IDX-02). ~6000 characters is a conservative floor: even at the
+# ~1 token : 1 character worst case for dense scripts it stays under 8191
+# tokens, while leaving normal CHUNK_SIZE-2000 chunks completely untouched.
+#
+# Exact token counting via tiktoken is a deliberately-avoided dependency
+# (CODE_GUIDELINES §15.1); a conservative character cap is used instead.
+_MAX_CHUNK_CHARS = 6000
+
 
 @dataclass(frozen=True, slots=True)
 class TextChunk:
@@ -145,6 +159,48 @@ def _assemble_chunks(
     return chunks
 
 
+def _cap_chunk_sizes(
+    chunks: list[TextChunk], *, max_chars: int
+) -> list[TextChunk]:
+    """Hard-split any chunk longer than *max_chars*, re-numbering chunk_index.
+
+    The defensive ceiling that keeps a single chunk under the embedding model's
+    token limit (IDX-02). A chunk whose text is at or below *max_chars* passes
+    through unchanged; a longer one is sliced into contiguous *max_chars*-
+    character sub-chunks that inherit its ``page_hint``. ``chunk_index`` is
+    reassigned across the whole returned list so indices stay contiguous from 0.
+
+    No overlap is added between forced sub-splits: overlap is a retrieval
+    nicety, and a chunk this dense is already an anomaly — re-adding overlap
+    here would re-introduce the very size risk this guard exists to remove.
+    """
+    if all(len(chunk.text) <= max_chars for chunk in chunks):
+        # Common case (CHUNK_SIZE 2000 < cap): nothing to split — return as-is
+        # so the normal path is byte-for-byte unchanged.
+        return chunks
+
+    capped: list[TextChunk] = []
+    for chunk in chunks:
+        if len(chunk.text) <= max_chars:
+            capped.append(
+                TextChunk(
+                    chunk_index=len(capped),
+                    text=chunk.text,
+                    page_hint=chunk.page_hint,
+                )
+            )
+            continue
+        for start in range(0, len(chunk.text), max_chars):
+            capped.append(
+                TextChunk(
+                    chunk_index=len(capped),
+                    text=chunk.text[start : start + max_chars],
+                    page_hint=chunk.page_hint,
+                )
+            )
+    return capped
+
+
 def chunk_text(
     content: str,
     *,
@@ -216,4 +272,6 @@ def chunk_text(
         return []
 
     # --- Pass 2: assemble paragraphs into chunks.
-    return _assemble_chunks(paragraphs, chunk_size=chunk_size, overlap=overlap)
+    chunks = _assemble_chunks(paragraphs, chunk_size=chunk_size, overlap=overlap)
+    # --- Pass 3: enforce the defensive per-chunk character cap (IDX-02).
+    return _cap_chunk_sizes(chunks, max_chars=_MAX_CHUNK_CHARS)
