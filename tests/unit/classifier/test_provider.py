@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from classifier.prompts import DOCUMENT_CONTENT_DELIMITER
 from classifier.result import ClassificationResult
 from classifier.taxonomy import TaxonomyContext
 from tests.unit.classifier.conftest import (
@@ -190,7 +191,7 @@ class TestClassifyTextTruncationNote:
         assert "NOTE: Truncated to 3 pages." in user_msg
         assert user_msg.index("Acme") < user_msg.index("NOTE: Truncated to 3 pages.")
         assert user_msg.index("NOTE: Truncated to 3 pages.") < user_msg.index(
-            "Document transcription:"
+            DOCUMENT_CONTENT_DELIMITER
         )
 
     def test_no_truncation_note_when_none(self):
@@ -225,7 +226,7 @@ class TestUserMessageOrdering:
 
         user_msg = self._capture_user_message(provider, "body text", taxonomy)
 
-        assert user_msg.index("Acme") < user_msg.index("Document transcription:")
+        assert user_msg.index("Acme") < user_msg.index(DOCUMENT_CONTENT_DELIMITER)
 
     def test_document_text_is_the_final_segment(self):
         provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
@@ -245,7 +246,7 @@ class TestUserMessageOrdering:
         msg_a = self._capture_user_message(provider, "first document body", taxonomy)
         msg_b = self._capture_user_message(provider, "second different body", taxonomy)
 
-        marker = "Document transcription:"
+        marker = DOCUMENT_CONTENT_DELIMITER
         prefix_a = msg_a[: msg_a.index(marker)]
         prefix_b = msg_b[: msg_b.index(marker)]
         assert prefix_a == prefix_b
@@ -263,6 +264,47 @@ class TestUserMessageOrdering:
         import json as _json
 
         assert _json.dumps(["Acmé & Co"], ensure_ascii=True) in user_msg
+
+
+class TestPromptInjectionGuard:
+    """Untrusted document content is fenced with a data-isolation delimiter.
+
+    §10.2: every prompt that embeds retrieved/untrusted content places it below
+    an explicit delimiter and instructs the model to treat it as data, never as
+    instructions. The classifier's user message is the only site where untrusted
+    document text is interpolated.
+    """
+
+    def _capture_messages(self, provider, text, taxonomy) -> list[dict]:
+        response = make_completion_response(valid_classification_json())
+        captured_kwargs: dict = {}
+
+        def capture_completion(**kwargs):
+            captured_kwargs.update(kwargs)
+            return response
+
+        provider._create_completion = capture_completion
+        provider.classify_text(text, taxonomy)
+        return captured_kwargs["messages"]
+
+    def test_system_prompt_instructs_to_treat_content_as_data(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        messages = self._capture_messages(provider, "body", _EMPTY_TAXONOMY)
+        system = messages[0]["content"]
+        assert "DOCUMENT CONTENT" in system
+        assert "data" in system.lower()
+        assert "instruction" in system.lower()
+
+    def test_user_message_fences_document_content_with_delimiter(self):
+        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        messages = self._capture_messages(
+            provider, "UNIQUE-BODY-TEXT", _EMPTY_TAXONOMY
+        )
+        user_msg = messages[1]["content"]
+        # The delimiter must appear immediately before the interpolated content.
+        assert "DOCUMENT CONTENT" in user_msg
+        assert "DATA ONLY" in user_msg
+        assert user_msg.index("DOCUMENT CONTENT") < user_msg.index("UNIQUE-BODY-TEXT")
 
 
 class TestStatsTracking:
