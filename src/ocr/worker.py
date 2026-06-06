@@ -16,9 +16,9 @@ from common.paperless import (
 )
 from common.per_document import WriteBackOutcome
 from common.tags import (
-    ErrorFinaliserMixin,
     clean_pipeline_tags,
     extract_tags,
+    finalise_document_with_error,
     get_latest_tags,
     release_processing_tag,
 )
@@ -30,7 +30,7 @@ from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
 log = structlog.get_logger(__name__)
 
 
-class OcrProcessor(ErrorFinaliserMixin):
+class OcrProcessor:
     """
     Orchestrates the OCR processing of a single Paperless document.
 
@@ -82,7 +82,9 @@ class OcrProcessor(ErrorFinaliserMixin):
                 and self.settings.ERROR_TAG_ID in current_tags
             ):
                 log.warning("Document has error tag; skipping OCR", doc_id=self.doc_id)
-                self._finalise_with_error(current_tags)
+                finalise_document_with_error(
+                    self.paperless_client, self.doc_id, current_tags, self.settings
+                )
                 return None
 
             claimed = claim_processing_tag(
@@ -137,10 +139,13 @@ class OcrProcessor(ErrorFinaliserMixin):
                     doc_id=self.doc_id,
                     error=str(exc),
                 )
-                self._finalise_with_error(
+                finalise_document_with_error(
+                    self.paperless_client,
+                    self.doc_id,
                     get_latest_tags(
                         self.paperless_client, self.doc_id, fallback_doc=self.doc
                     ),
+                    self.settings,
                     content=full_text,
                 )
                 return WriteBackOutcome.QUARANTINED
@@ -186,7 +191,9 @@ class OcrProcessor(ErrorFinaliserMixin):
                 "Unable to convert document to images; marking error",
                 doc_id=self.doc_id,
             )
-            self._finalise_with_error(current_tags)
+            finalise_document_with_error(
+                self.paperless_client, self.doc_id, current_tags, self.settings
+            )
             return None
 
         if len(pages) == 0:
@@ -263,7 +270,8 @@ class OcrProcessor(ErrorFinaliserMixin):
         Upload OCR text and update tags in Paperless.
 
         Detects error conditions (empty text, refusal markers, OCR errors)
-        and routes to :meth:`_finalise_with_error` instead of the happy path.
+        and routes to :func:`~common.tags.finalise_document_with_error` instead
+        of the happy path.
 
         Returns :attr:`WriteBackOutcome.SAVED` when the transcription was
         written, or ``None`` for the bad-content case: that document failed OCR,
@@ -281,10 +289,13 @@ class OcrProcessor(ErrorFinaliserMixin):
                 doc_id=self.doc_id,
                 reason=reason,
             )
-            self._finalise_with_error(
+            finalise_document_with_error(
+                self.paperless_client,
+                self.doc_id,
                 get_latest_tags(
                     self.paperless_client, self.doc_id, fallback_doc=self.doc
                 ),
+                self.settings,
                 content=full_text,
             )
             return None
