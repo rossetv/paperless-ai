@@ -354,12 +354,42 @@ class PaperlessClient:
                 is closed before the exception propagates.
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/download/"
+        return self._stream_endpoint(url, default_content_type="application/pdf")
 
-        # A single stream. send(..., stream=True) opens the response without
-        # reading the body; the status and headers are available immediately.
-        # raise_for_status() is checked eagerly here so a non-2xx status
-        # surfaces before this method returns — the response is closed first
-        # so the failed-request connection is never leaked.
+    def _stream_endpoint(
+        self, url: str, *, default_content_type: str
+    ) -> tuple[str, Iterator[bytes]]:
+        """Open *url* as a single streaming response, returning (content_type, body).
+
+        The shared engine behind :meth:`download_stream` and
+        :meth:`thumb_stream` — the only difference between those two is the URL
+        suffix and the *default_content_type* used when Paperless omits the
+        header, so the connection-leak-safety contract lives here once rather
+        than being duplicated (COMMON-09).
+
+        ``send(..., stream=True)`` opens the response without reading the body;
+        the status and headers are available immediately. ``raise_for_status``
+        is checked eagerly here so a non-2xx status surfaces before this method
+        returns — the response is closed first so the failed-request connection
+        is never leaked. Server errors are **not** retried: a streaming body
+        cannot be safely replayed once partially consumed, so this deliberately
+        bypasses the ``@retry``-wrapped :meth:`_get`.
+
+        Args:
+            url: The fully-qualified Paperless endpoint to stream.
+            default_content_type: The ``Content-Type`` to report when Paperless
+                omits the header.
+
+        Returns:
+            A two-tuple of the response ``Content-Type`` and an iterator that
+            yields the body in byte chunks. The iterator owns the open
+            response; its ``finally`` closes it so a partially-consumed stream
+            never leaks the connection.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response — the open stream is
+                closed before the exception propagates.
+        """
         request = self._client.build_request("GET", url)
         response = self._client.send(request, stream=True)
         try:
@@ -367,7 +397,7 @@ class PaperlessClient:
         except httpx.HTTPError:
             response.close()
             raise
-        content_type = response.headers.get("Content-Type", "application/pdf")
+        content_type = response.headers.get("Content-Type", default_content_type)
 
         def _iter_body() -> Iterator[bytes]:
             """Yield the body of the already-open streaming response.
@@ -410,29 +440,7 @@ class PaperlessClient:
                 is closed before the exception propagates.
         """
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/thumb/"
-
-        request = self._client.build_request("GET", url)
-        response = self._client.send(request, stream=True)
-        try:
-            response.raise_for_status()
-        except httpx.HTTPError:
-            response.close()
-            raise
-        content_type = response.headers.get("Content-Type", "image/jpeg")
-
-        def _iter_body() -> Iterator[bytes]:
-            """Yield the body of the already-open streaming response.
-
-            The ``finally`` closes the response — releasing the connection —
-            whether the caller drained every chunk, stopped early, or the
-            transfer raised mid-body.
-            """
-            try:
-                yield from response.iter_bytes()
-            finally:
-                response.close()
-
-        return content_type, _iter_body()
+        return self._stream_endpoint(url, default_content_type="image/jpeg")
 
     def update_document(
         self, doc_id: int, content: str, new_tags: Iterable[int]
