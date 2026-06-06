@@ -78,7 +78,7 @@
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
   cursor: pointer;
-  line-height: 1;
+  line-height: var(--line-height-tight);
 }
 
 .remove-button {

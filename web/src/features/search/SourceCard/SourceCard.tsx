@@ -19,7 +19,7 @@ export interface SourceCardProps {
   index: number;
   /**
    * When true, visually highlights the card — used by the parent when the
-   * user activates a CitationLink pointing to this source.
+   * user activates a CitationMark pointing to this source.
    */
   highlighted?: boolean;
   /**

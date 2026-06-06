@@ -1,9 +1,10 @@
 /*
  * SaveBar feature — CSS Module.
  *
- * Fixed-bottom glass bar. Slides up via transform when dirty; transform is
- * applied inline in the component so the transition still fires. Backdrop blur
- * gives the frosted-glass effect matching the mock savebar.
+ * Fixed-bottom glass bar. Slides up via `.bar-hidden` when dirty count is zero;
+ * the base `.bar` sits at translateY(0) so the transition fires on both
+ * entry and exit. Backdrop blur gives the frosted-glass effect matching the
+ * mock savebar.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -20,7 +21,12 @@
   /* stylelint-disable-next-line property-no-vendor-prefix */
   -webkit-backdrop-filter: var(--backdrop-nav);
   border-top: var(--spacing-1) solid var(--colour-hairline-strong);
+  transform: translateY(0);
   transition: transform var(--duration-panel) var(--easing-decelerate);
+}
+
+.bar-hidden {
+  transform: translateY(100%);
 }
 
 /* ── Inner — max-width centred row. ── */

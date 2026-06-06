@@ -160,7 +160,6 @@ export function APIKeyCreatePanel({
                     type="checkbox"
                     checked={on}
                     onChange={() => toggleScope(scope.id)}
-                    aria-label={scope.id}
                   />
                   <span className={styles['scope-text']}>
                     <span className={styles['scope-name']}>

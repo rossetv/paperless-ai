@@ -187,7 +187,9 @@
 
 /* In-field icon toggle — eye / eye-off. Vertically centred on the input
    (top: half the input height) so the error message below the input never
-   pushes the toggle out of alignment. */
+   pushes the toggle out of alignment. Only positioning is declared here;
+   visual chrome (background, border, sizing, focus ring, hover) is provided
+   by the IconButton primitive. */
 .show-toggle {
   position: absolute;
   right: var(--spacing-6);
@@ -199,25 +201,6 @@
        the toggle out of alignment. */
   top: calc(var(--spacing-13) + var(--spacing-3) / 2);
   transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4);
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--colour-dark-text-secondary);
-  border-radius: var(--radius-micro);
-  transition: color var(--duration-standard) var(--easing-standard);
-}
-
-.show-toggle:hover {
-  color: var(--colour-dark-text-primary);
-}
-
-.show-toggle:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-accent);
-  outline-offset: var(--spacing-1);
 }
 
 /* ── Keep-signed-in checkbox row. ── */
@@ -251,7 +234,7 @@
 .error {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
-  color: var(--colour-accent);
+  color: var(--colour-status-danger-fg);
 }
 
 /* ── Responsive — tablet and below: stack hero above the card, both centred.

@@ -9,7 +9,7 @@ export interface SourceListProps {
   /** Ordered list of source documents from the search response. */
   sources: SourceDocument[];
   /**
-   * 1-based index of the source to highlight (matches a CitationLink index).
+   * 1-based index of the source to highlight (matches a CitationMark index).
    * When undefined, no source is highlighted.
    */
   highlightedIndex?: number;

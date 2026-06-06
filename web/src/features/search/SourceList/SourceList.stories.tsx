@@ -55,7 +55,7 @@ export const Populated: Story = {
   },
 };
 
-/** One source highlighted — simulates a CitationLink activation. */
+/** One source highlighted — simulates a CitationMark activation. */
 export const WithHighlight: Story = {
   args: {
     sources,

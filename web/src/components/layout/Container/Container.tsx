@@ -11,7 +11,7 @@ export interface ContainerProps {
 /**
  * Horizontally-centred, max-width content container.
  *
- * Constrains content to --width-content-max (980px) and centres it with
+ * Constrains content to --width-app-content (1320px) and centres it with
  * auto margins. Adds horizontal padding so content never touches the viewport
  * edge on narrow viewports.
  *

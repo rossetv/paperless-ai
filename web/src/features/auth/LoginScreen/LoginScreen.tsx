@@ -3,6 +3,7 @@ import { Brand } from '../../../components/primitives/Brand/Brand';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Icon } from '../../../components/primitives/Icon/Icon';
+import { IconButton } from '../../../components/primitives/IconButton/IconButton';
 import { useLogin } from '../../../api/hooks';
 import { Unauthenticated, ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../credentials';
@@ -118,15 +119,13 @@ export function LoginScreen(): React.ReactElement {
                     onChange={(e) => setPassword(e.target.value)}
                     className={styles['password-input'] ?? ''}
                   />
-                  <button
-                    type="button"
-                    className={styles['show-toggle']}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    aria-pressed={showPassword}
+                  <IconButton
+                    label={showPassword ? 'Hide password' : 'Show password'}
                     onClick={() => setShowPassword((prev) => !prev)}
+                    className={styles['show-toggle'] ?? ''}
                   >
                     <Icon name={showPassword ? 'eye-off' : 'eye'} size="small" />
-                  </button>
+                  </IconButton>
                 </div>
               </div>
 

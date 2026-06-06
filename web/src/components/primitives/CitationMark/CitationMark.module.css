@@ -20,7 +20,7 @@
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro-bold);
-  line-height: 1;
+  line-height: var(--line-height-tight);
   vertical-align: super;
   cursor: pointer;
   border: none;

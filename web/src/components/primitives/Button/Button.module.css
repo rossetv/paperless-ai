@@ -73,11 +73,11 @@
 }
 
 .destructive:hover:not(:disabled) {
-  opacity: 0.85;
+  opacity: var(--opacity-subdued);
 }
 
 .destructive:active:not(:disabled) {
-  opacity: 0.7;
+  opacity: var(--opacity-pressed);
 }
 
 /* ── Ghost variant — no border or background, low-prominence action ── */

@@ -54,6 +54,11 @@
   --colour-overlay-dark:    rgb(0 0 0 / 90%);
   --colour-hover-dark:      rgb(255 255 255 / 32%);
 
+  /* Shadows — a black drop shadow is invisible on a black surface, so dark mode
+     pairs a faint top inset highlight with a deeper drop to convey elevation. */
+  --shadow-card:   rgb(255 255 255 / 6%) 0 1px 0 inset, 0 4px 24px rgb(0 0 0 / 60%);
+  --shadow-answer: rgb(255 255 255 / 5%) 0 1px 0 inset, 0 8px 24px rgb(0 0 0 / 40%);
+
   /* Navigation — unchanged (already dark glass) */
   --colour-nav-bg:          rgb(0 0 0 / 80%);
 
