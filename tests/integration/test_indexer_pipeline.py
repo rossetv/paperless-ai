@@ -246,6 +246,87 @@ class TestIncrementalSyncEndToEnd:
 
 
 # ---------------------------------------------------------------------------
+# Steady-state light-diff (IDX-03) — end to end against a real store
+# ---------------------------------------------------------------------------
+
+
+class TestSteadyStateLightDiffEndToEnd:
+    """The IDX-03 steady-state skip, against a real store and real worker."""
+
+    def test_unchanged_reentry_skips_without_refetching_content(
+        self, tmp_path: Any
+    ) -> None:
+        """Cycle 1 indexes a doc; cycle 2 (overlap re-entry) skips it cold.
+
+        Cycle 2 pages the light {id, modified} projection. Because the store now
+        holds the doc's normalised modified, the reconciler skips it WITHOUT
+        calling get_document — proving no OCR body is re-fetched (IDX-03) and the
+        document is not re-embedded (the SHA-256 gate is never even reached
+        because nothing changed).
+        """
+        from common.clock import normalise_paperless_timestamp
+
+        content = "--- Page 1 ---\nStable invoice body for the steady-state test."
+        modified = "2024-06-01T12:00:00+00:00"
+        full_doc = make_paperless_document(
+            doc_id=42, content=content, modified=modified
+        )
+
+        # A Paperless mock that serves full docs on cycle 1 (first run, no
+        # fields) and the light projection on cycle 2 (fields requested).
+        paperless = MagicMock()
+        light_row = {"id": 42, "modified": modified}
+
+        def _iter(**kwargs: Any) -> list[dict]:
+            if "modified_after" not in kwargs:
+                return [{"id": 42}]  # sweep-style (unused here)
+            if kwargs.get("fields") is not None:
+                return [light_row]
+            return [full_doc]
+
+        paperless.iter_all_documents.side_effect = _iter
+        paperless.get_document.side_effect = lambda doc_id: full_doc
+        paperless.list_correspondents.return_value = []
+        paperless.list_document_types.return_value = []
+        paperless.list_tags.return_value = []
+
+        embedding_client = make_mock_embedding_client()
+        writer = _open_writer(tmp_path)
+        try:
+            reconciler = Reconciler(
+                _settings(tmp_path),
+                paperless,
+                writer,
+                embedding_client,
+            )
+
+            # Cycle 1: first run (no watermark) → full document path → indexed.
+            report1 = reconciler.incremental_sync()
+            assert report1.indexed == 1
+            embed_calls_after_cycle1 = embedding_client.embed.call_count
+            assert embed_calls_after_cycle1 >= 1
+
+            # The store now holds doc 42 with the normalised modified.
+            state = writer.get_index_state()
+            assert 42 in state
+            assert state[42].modified == normalise_paperless_timestamp(modified)
+
+            # Cycle 2: a watermark exists → light projection. The doc re-enters
+            # via the overlap but is byte-for-byte unchanged → skipped cold.
+            paperless.get_document.reset_mock()
+            report2 = reconciler.incremental_sync()
+
+            assert report2.indexed == 0
+            assert report2.metadata_only == 0
+            # No OCR body re-fetched (the IDX-03 win).
+            paperless.get_document.assert_not_called()
+            # No re-embed (the SHA-256 incremental guarantee).
+            assert embedding_client.embed.call_count == embed_calls_after_cycle1
+        finally:
+            writer.close()
+
+
+# ---------------------------------------------------------------------------
 # Taxonomy refresh — end to end
 # ---------------------------------------------------------------------------
 
