@@ -13,8 +13,9 @@ Two tools are exposed:
 - ``ask_documents(question, filters?)`` — calls ``core.answer()``.  Returns the
   full result including the synthesised answer (spec §7.2).
 
-Both tools share one body helper (:func:`_run_search_tool`): length-check the
-query at the boundary, convert the optional filters, invoke the core method,
+Both tools share one body helper (:func:`_run_search_tool`): normalise the
+query at the boundary (trim, reject empty/whitespace-only, enforce the maximum
+length — §10.4/§10.6), convert the optional filters, invoke the core method,
 serialise the result, and turn any failure into a sanitised tool error.
 
 Authentication (web-redesign §5):
@@ -53,7 +54,7 @@ from search.deps import refresh_last_seen
 from search.models import SearchResult
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import resolve_session
-from search.wire import MAX_QUERY_LENGTH, FilterRequest, to_search_filters
+from search.wire import FilterRequest, normalise_query, to_search_filters
 from store import SearchFilters
 
 if TYPE_CHECKING:
@@ -210,11 +211,12 @@ def _run_search_tool(
 ) -> str:
     """Run one search-tool body: validate, convert, invoke core, serialise.
 
-    The shared body of both MCP tools.  It length-checks *query* at the
-    boundary (§10.4), converts the optional *filters*, invokes *core_call*, and
-    serialises the result.  Any failure from the core is logged with its full
-    traceback server-side and surfaced to the MCP client as a sanitised
-    :class:`ValueError` carrying no internal detail.
+    The shared body of both MCP tools.  It normalises *query* at the boundary
+    via :func:`~search.wire.normalise_query` (trim, reject empty/whitespace-only,
+    enforce the maximum length — §10.4/§10.6), converts the optional *filters*,
+    invokes *core_call*, and serialises the result.  Any failure from the core
+    is logged with its full traceback server-side and surfaced to the MCP
+    client as a sanitised :class:`ValueError` carrying no internal detail.
 
     Args:
         query: The user's query or question.
@@ -228,13 +230,15 @@ def _run_search_tool(
         The serialised :class:`~search.models.SearchResult` as a JSON string.
 
     Raises:
-        ValueError: When *query* exceeds :data:`~search.wire.MAX_QUERY_LENGTH`,
-            or — sanitised — when the core call fails.
+        ValueError: When *query* is empty/whitespace-only or exceeds
+            :data:`~search.wire.MAX_QUERY_LENGTH`, or — sanitised — when the
+            core call fails.
     """
-    if len(query) > MAX_QUERY_LENGTH:
-        raise ValueError(
-            f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
-        )
+    # Validate (and trim) the query at the boundary BEFORE the try/except so an
+    # empty/whitespace-only or over-length query surfaces its own clear message
+    # to the client, not the sanitised "search failed" fallback. The pipeline
+    # only ever sees the normalised query (HTTP-04/HTTP-07).
+    query = normalise_query(query)
 
     # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — this is the MCP
     # protocol boundary.  Raw exception strings from the core (which can carry

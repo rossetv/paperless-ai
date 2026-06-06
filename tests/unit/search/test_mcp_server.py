@@ -623,3 +623,58 @@ async def test_ask_documents_rejects_over_length_question() -> None:
         block.text for block in result.content if hasattr(block, "text")
     )
     assert "4000" in error_text or "maximum" in error_text.lower()
+
+
+@pytest.mark.anyio
+async def test_search_documents_rejects_empty_query() -> None:
+    """An empty query is rejected at the boundary, never reaching the LLM (HTTP-04)."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings, _app_db_path())
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("search_documents", {"query": ""})
+
+    assert result.isError is True
+    core.retrieve.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_ask_documents_rejects_whitespace_only_question() -> None:
+    """A whitespace-only question is rejected before any LLM spend (HTTP-04)."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings, _app_db_path())
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        result = await client.call_tool("ask_documents", {"question": "   \t  "})
+
+    assert result.isError is True
+    core.answer.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_ask_documents_trims_surrounding_whitespace() -> None:
+    """A valid question is trimmed so the pipeline sees one normalised form (HTTP-07)."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core(answer_result=_answer_result())
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings, _app_db_path())
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        await client.call_tool("ask_documents", {"question": "  what is owed?  "})
+
+    core.answer.assert_called_once()
+    call_args = core.answer.call_args
+    passed_query = call_args.kwargs.get("query")
+    if passed_query is None and call_args.args:
+        passed_query = call_args.args[0]
+    assert passed_query == "what is owed?"
