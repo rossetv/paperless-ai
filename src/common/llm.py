@@ -179,7 +179,6 @@ class OpenAIChatMixin:
             # runtime return is always ChatCompletion; a tighter call-site type is impossible
             # without replacing **kwargs with an explicit typed signature.
             return client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
-            # and narrowly scoped to this one call site.
 
     def _create_with_compat(
         self, params: dict[str, object], model: str
