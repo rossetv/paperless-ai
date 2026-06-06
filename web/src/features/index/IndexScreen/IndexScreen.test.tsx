@@ -246,9 +246,8 @@ describe('IndexScreen', () => {
     expect(screen.getByText(/chunks per document/i)).toBeInTheDocument();
     // Embedding model — hard-coded dims
     expect(screen.getByText('1,536 dimensions')).toBeInTheDocument();
-    // Last reconcile — formatted date sub-line (en-GB locale date)
-    const dateSub = screen.getAllByText(/\d{2}\/\d{2}\/\d{4}/);
-    expect(dateSub.length).toBeGreaterThan(0);
+    // Last reconcile — formatted date sub-line (formatShortDate: "22 May 2026")
+    expect(screen.getByText('22 May 2026')).toBeInTheDocument();
   });
 
   it('does not show "View full log ›" when cycles fit within the limit', () => {

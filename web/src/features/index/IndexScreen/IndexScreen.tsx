@@ -19,6 +19,7 @@ import { FailedDocumentsPanel } from '../FailedDocumentsPanel/FailedDocumentsPan
 import { RebuildIndexCard } from '../RebuildIndexCard/RebuildIndexCard';
 import { DocumentPreviewScreen } from '../../search/DocumentPreviewScreen/DocumentPreviewScreen';
 import { relativeTime } from '../../../lib/relativeTime';
+import { formatShortDate } from '../../../lib/formatDate';
 import styles from './IndexScreen.module.css';
 
 /** Number of activity rows to show before the "View full log" link appears. */
@@ -155,9 +156,7 @@ export function IndexScreen(): React.ReactElement {
                 label="Last reconcile"
                 {...(stats.last_reconcile_at !== null
                   ? {
-                      sub: new Date(stats.last_reconcile_at).toLocaleDateString(
-                        'en-GB',
-                      ),
+                      sub: formatShortDate(stats.last_reconcile_at),
                     }
                   : {})}
               />

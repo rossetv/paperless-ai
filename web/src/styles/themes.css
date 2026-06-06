@@ -23,6 +23,10 @@
   /* Surface */
   --colour-surface:         #272729;
 
+  /* Dark-variant card surface — one step darker than the theme surface so a
+     Card surface="dark" stays distinct from a default card in dark mode. */
+  --colour-surface-dark:    #1c1c1e;
+
   /* Text */
   --colour-text-primary:    #fff;
   --colour-text-secondary:  rgb(255 255 255 / 80%);

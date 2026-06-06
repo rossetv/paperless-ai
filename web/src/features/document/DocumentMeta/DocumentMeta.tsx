@@ -2,6 +2,7 @@ import React from 'react';
 import { Badge } from '../../../components/primitives/Badge/Badge';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import type { PreviewableDocument } from '../../../api/types';
+import { formatShortDate } from '../../../lib/formatDate';
 
 export interface DocumentMetaProps {
   /**
@@ -36,7 +37,7 @@ export function DocumentMeta({ source }: DocumentMetaProps): React.ReactElement 
       )}
       {source.created !== null && source.created !== undefined && (
         <time dateTime={source.created}>
-          <Badge variant="neutral">{source.created}</Badge>
+          <Badge variant="neutral">{formatShortDate(source.created)}</Badge>
         </time>
       )}
     </Stack>

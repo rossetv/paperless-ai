@@ -1,5 +1,7 @@
 import React from 'react';
 import { SettingsLayout } from '../../../components/layout/SettingsLayout/SettingsLayout';
+import { Spinner } from '../../../components/primitives/Spinner/Spinner';
+import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { useSettings, useUpdateSettings } from '../../../api/hooks';
 import type { SettingItem } from '../../../api/types';
 import type { ConfigValue, SettingsDraft } from '../fieldModel';
@@ -13,7 +15,6 @@ import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
 import { TestConnectionAction } from '../TestConnectionAction/TestConnectionAction';
 import { SaveBar } from '../SaveBar/SaveBar';
-import styles from './SettingsScreen.module.css';
 
 /**
  * Parse the server's `SettingItem[]` into the typed draft the screen edits.
@@ -148,7 +149,7 @@ export function SettingsScreen(): React.ReactElement {
   if (query.isPending) {
     return (
       <SettingsLayout title="Settings">
-        <div className={styles['placeholder']}>Loading settings…</div>
+        <Spinner size="large" label="Loading settings…" />
       </SettingsLayout>
     );
   }
@@ -156,8 +157,12 @@ export function SettingsScreen(): React.ReactElement {
   if (query.isError || query.data === undefined) {
     return (
       <SettingsLayout title="Settings">
-        <div className={`${styles['placeholder']} ${styles['placeholder-error']}`}>
-          Could not load settings. Refresh to try again.
+        <div role="alert">
+          <EmptyState
+            icon="warning"
+            message="Could not load settings."
+            description="Refresh the page to try again."
+          />
         </div>
       </SettingsLayout>
     );

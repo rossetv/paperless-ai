@@ -150,10 +150,11 @@ function BootstrapGate({
     return <Navigate to="/login" replace />;
   }
 
-  // intent === 'login' — bounce an already-authenticated user to the app.
-  if (meQuery.isLoading) {
-    return <FullPageLoading />;
-  }
+  // intent === 'login'. Render the login form immediately rather than a
+  // loading screen while `me` resolves: on a post-logout redirect the me
+  // query is mid-refetch (isLoading), and showing FullPageLoading here caused
+  // a blank loading frame between sign-out and the form. An already-resolved
+  // authenticated user is still bounced to the app below.
   if (meQuery.data?.user !== undefined) {
     return <Navigate to="/" replace />;
   }

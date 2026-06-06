@@ -49,6 +49,10 @@
   color: var(--colour-text-primary);
 }
 
+.search-input::placeholder {
+  color: var(--colour-text-tertiary);
+}
+
 /* ── User identity cell — avatar beside name + username. ── */
 .identity {
   display: flex;
@@ -99,41 +103,3 @@
   gap: var(--spacing-4);
 }
 
-/* ── Ghost pill action button — mediaman-style. ── */
-.action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--spacing-4) var(--spacing-10);
-  border: var(--spacing-1) solid var(--colour-hairline-strong);
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--colour-text-primary);
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  font-weight: var(--font-weight-caption-bold);
-  letter-spacing: var(--letter-spacing-caption);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard),
-              border-color var(--duration-fast) var(--easing-standard);
-}
-
-.action-button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.action-button:hover {
-  background-color: var(--colour-button-light-bg);
-  border-color: var(--colour-text-tertiary);
-}
-
-/* ── Loading / error states. ── */
-.state {
-  padding: var(--spacing-section) 0;
-  text-align: center;
-  font-family: var(--font-text);
-  font-size: var(--font-size-body);
-  color: var(--colour-text-tertiary);
-}

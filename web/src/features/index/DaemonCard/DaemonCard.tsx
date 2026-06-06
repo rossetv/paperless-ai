@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../../../lib/cn';
 import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBadge';
 import type { StatusTone } from '../../../components/primitives/StatusBadge/StatusBadge';
-import { relativeTime } from '../ActivityRow/ActivityRow';
+import { relativeTime } from '../../../lib/relativeTime';
 import type { DaemonStatus, DaemonState } from '../../../api/types';
 import styles from './DaemonCard.module.css';
 
@@ -29,7 +29,7 @@ export interface DaemonCardProps {
  * badge tone via `STATE_PRESENTATION`.
  *
  * Tier: features/index (CODE_GUIDELINES §12.3) — composes the StatusBadge
- * primitive, reuses `relativeTime` from ActivityRow, and takes a domain
+ * primitive, reuses `relativeTime` from lib/relativeTime, and takes a domain
  * wire type.
  */
 export function DaemonCard({ daemon, className }: DaemonCardProps): React.ReactElement {

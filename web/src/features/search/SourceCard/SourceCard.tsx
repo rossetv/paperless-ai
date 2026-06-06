@@ -1,6 +1,5 @@
 import React from 'react';
 import { SourceCardSurface } from '../../../components/primitives/SourceCardSurface/SourceCardSurface';
-import type { DocThumbKind } from '../../../components/primitives/DocThumb/DocThumb';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Stack } from '../../../components/layout/Stack/Stack';
@@ -8,6 +7,7 @@ import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
 import { documentThumbUrl } from '../../../api/client';
 import type { SourceDocument } from '../../../api/types';
+import { thumbKindForDocumentType } from '../../document/thumbKind';
 
 export interface SourceCardProps {
   /** The source document to display. */
@@ -27,23 +27,6 @@ export interface SourceCardProps {
    * the in-app document-preview viewer for that id.
    */
   onPreview: (documentId: number) => void;
-}
-
-/**
- * Pick a thumbnail style from the document's type.
- *
- * The `DocThumb` primitive offers three page shapes; map the free-text
- * Paperless document type onto the nearest one, defaulting to a statement.
- */
-function thumbKindFor(documentType: string | null): DocThumbKind {
-  const type = (documentType ?? '').toLowerCase();
-  if (type.includes('invoice') || type.includes('receipt')) {
-    return 'invoice';
-  }
-  if (type.includes('letter') || type.includes('notification')) {
-    return 'letter';
-  }
-  return 'statement';
 }
 
 /**
@@ -76,7 +59,7 @@ function SourceCardInner({
   return (
     <SourceCardSurface
       index={index}
-      thumbKind={thumbKindFor(source.document_type)}
+      thumbKind={thumbKindForDocumentType(source.document_type)}
       thumbImageUrl={documentThumbUrl(source.document_id)}
       matched={highlighted ? [3, 4, 7] : [5, 6]}
       highlighted={highlighted}

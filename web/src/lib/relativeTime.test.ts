@@ -31,4 +31,8 @@ describe('relativeTime', () => {
   it('returns an empty string for an unparseable timestamp', () => {
     expect(relativeTime('not-a-date', NOW)).toBe('');
   });
+
+  it('reads null as "just now" (an event happening this cycle)', () => {
+    expect(relativeTime(null, NOW)).toBe('just now');
+  });
 });

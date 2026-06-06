@@ -1,34 +1,8 @@
 import React from 'react';
 import { cn } from '../../../lib/cn';
+import { relativeTime } from '../../../lib/relativeTime';
 import type { ReconcileCycle } from '../../../api/types';
 import styles from './ActivityRow.module.css';
-
-/**
- * Render an ISO-8601 timestamp as a short relative phrase.
- *
- * `null` → "now"; under a minute (or any future time, i.e. clock skew) →
- * "now"; otherwise the largest whole unit — "4m ago", "3h ago", "2d ago".
- * `now` is injectable so the unit test is deterministic; production passes
- * the real current time.
- */
-export function relativeTime(at: string | null, now: Date = new Date()): string {
-  if (at === null) {
-    return 'now';
-  }
-  const deltaMs = now.getTime() - new Date(at).getTime();
-  if (deltaMs < 60_000) {
-    return 'now';
-  }
-  const minutes = Math.floor(deltaMs / 60_000);
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 /** Format a summary count map as a compact human string — "+3 indexed · 1 failed". */
 function formatSummary(summary: Record<string, number>): string {

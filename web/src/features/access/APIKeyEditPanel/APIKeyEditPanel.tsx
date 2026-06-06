@@ -6,40 +6,8 @@ import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
 import { cn } from '../../../lib/cn';
 import { useUpdateApiKey } from '../../../api/hooks';
 import type { ApiKey, ApiScope } from '../../../api/types';
+import { SCOPES, EXPIRY_CHOICES, expiryIso } from '../APIKeyCreatePanel/apiKeyFormData';
 import styles from './APIKeyEditPanel.module.css';
-
-/** The selectable scopes, with their human descriptions. */
-const SCOPES: { id: ApiScope; description: string }[] = [
-  {
-    id: 'api',
-    description: 'REST endpoints under /api/* — search, facets, stats, reconcile.',
-  },
-  {
-    id: 'mcp',
-    description: 'The MCP server at /mcp — ask_documents, search_documents.',
-  },
-  {
-    id: 'admin',
-    description: 'Manage users and other keys. Grant sparingly.',
-  },
-];
-
-/** Expiry quick-pick options, in days. `null` means "never expires". */
-const EXPIRY_CHOICES: { label: string; days: number | null }[] = [
-  { label: 'Never', days: null },
-  { label: '7 days', days: 7 },
-  { label: '30 days', days: 30 },
-  { label: '90 days', days: 90 },
-  { label: '365 days', days: 365 },
-];
-
-/** Convert a day-count to an ISO expiry, or null for "never". */
-function expiryIso(days: number | null): string | null {
-  if (days === null) return null;
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
-}
 
 export interface APIKeyEditPanelProps {
   /** The key being edited — its current values pre-fill the form. */
@@ -164,7 +132,6 @@ export function APIKeyEditPanel({
                   />
                   <span className={styles['scope-text']}>
                     <span className={styles['scope-name']}>
-                      {scope.id.toUpperCase()}
                       <ScopePill scope={scope.id} />
                     </span>
                     <span className={styles['scope-desc']}>{scope.description}</span>

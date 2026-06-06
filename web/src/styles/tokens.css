@@ -132,6 +132,9 @@
   --line-height-button-large:  1.00;
   --letter-spacing-button-large: normal;
 
+  /* Tight single-line leading — for large numerals and icon-only contexts. */
+  --line-height-tight: 1;
+
   /*
    * Button — 17 px, weight 400.
    *

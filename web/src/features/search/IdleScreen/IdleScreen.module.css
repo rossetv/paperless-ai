@@ -1,0 +1,4 @@
+/** Highlights the document count in the hero subtitle with the primary text colour. */
+.count-highlight {
+  color: var(--colour-text-primary);
+}

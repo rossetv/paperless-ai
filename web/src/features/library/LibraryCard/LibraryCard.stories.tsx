@@ -55,3 +55,22 @@ export const ThumbFallback: Story = {
   args: { document: { ...DOC, document_type: 'Invoice' } },
   name: 'Thumbnail fallback (DocThumb)',
 };
+
+/**
+ * List-view layout — thumbnail is a fixed-width left column, metadata
+ * occupies the remaining row width. The card has a resting surface so the
+ * hover shadow reads against the page.
+ */
+export const ListViewStatement: Story = {
+  args: { document: DOC, view: 'list' },
+  name: 'List view (statement)',
+};
+
+/** List view with sparse metadata — confirms ellipsis fires for long names. */
+export const ListViewSparse: Story = {
+  args: {
+    document: { ...DOC, title: null, correspondent: 'A Very Long Correspondent Name That Should Truncate', document_type: null, tags: [] },
+    view: 'list',
+  },
+  name: 'List view (sparse / long correspondent)',
+};

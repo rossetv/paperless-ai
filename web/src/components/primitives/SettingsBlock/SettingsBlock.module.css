@@ -35,7 +35,7 @@
   font-weight: var(--font-weight-heading);
   letter-spacing: var(--letter-spacing-block-title);
   line-height: var(--line-height-tile);
-  white-space: nowrap;
+  overflow-wrap: break-word;
   color: var(--colour-text-primary);
 }
 

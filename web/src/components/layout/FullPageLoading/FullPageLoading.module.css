@@ -11,5 +11,9 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--colour-dark-bg);
+
+  /* Theme-aware page background — this loader is shown inside the authenticated
+     app shell (ProtectedRoute, DocumentPage) and on the bootstrap/login path,
+     so it must match the current theme rather than force pure black. */
+  background: var(--colour-bg);
 }

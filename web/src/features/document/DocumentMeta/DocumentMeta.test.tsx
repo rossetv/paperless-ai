@@ -39,7 +39,7 @@ describe('DocumentMeta', () => {
 
   it('renders the created date when present', () => {
     render(<DocumentMeta source={fullDocument} />);
-    expect(screen.getByText('2023-04-12')).toBeInTheDocument();
+    expect(screen.getByText('12 Apr 2023')).toBeInTheDocument();
   });
 
   it('does not render a correspondent badge when correspondent is null', () => {
@@ -55,7 +55,7 @@ describe('DocumentMeta', () => {
 
   it('does not render a date when created is null', () => {
     render(<DocumentMeta source={minimalDocument} />);
-    expect(screen.queryByText('2023-04-12')).not.toBeInTheDocument();
+    expect(screen.queryByText('12 Apr 2023')).not.toBeInTheDocument();
   });
 
   it('renders without crashing when all optional fields are null', () => {

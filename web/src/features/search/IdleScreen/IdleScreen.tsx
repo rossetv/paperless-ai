@@ -9,6 +9,7 @@ import { IndexStatusFooter } from '../../../components/primitives/IndexStatusFoo
 import { useRecentSearches, useStats } from '../../../api/hooks';
 import { relativeTime } from '../../../lib/relativeTime';
 import { QUICK_FILTERS } from '../lib/quickFilters';
+import styles from './IdleScreen.module.css';
 
 export interface IdleScreenProps {
   /** Called with a query string when the user starts a search. */
@@ -27,8 +28,8 @@ export interface IdleScreenProps {
  * The status footer is shown only once `useStats` has resolved.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Text, Chip,
- * RecentSearchStrip, IndexStatusFooter. No own CSS module (§12.5 — features
- * layer is composition-only).
+ * RecentSearchStrip, IndexStatusFooter.
+ * Own CSS module provides the count-highlight class for the hero subtitle.
  */
 export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
   const recent = useRecentSearches();
@@ -52,7 +53,7 @@ export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
         {stats.isSuccess && stats.data !== undefined && (
           <Text as="p" variant="body-large" tone="tertiary">
             Semantic + keyword search across{' '}
-            <strong style={{ color: 'var(--colour-text-primary)', fontWeight: 600 }}>
+            <strong className={styles['count-highlight']}>
               {stats.data.document_count.toLocaleString('en-GB')}
             </strong>{' '}
             documents in your Paperless library.

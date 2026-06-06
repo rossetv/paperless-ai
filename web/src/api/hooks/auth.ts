@@ -113,16 +113,26 @@ export function useLogin(): UseMutationResult<LoginResponse, Error, LoginRequest
 /**
  * Logout mutation — POST /api/auth/logout.
  *
- * On success the `me` query cache is cleared so `useAuth` immediately reports
+ * On settle the `me` query cache is cleared so `useAuth` immediately reports
  * the user as signed out and the router sends them to `/login`.
  */
 export function useLogout(): UseMutationResult<void, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: logout,
-    onSuccess: () => {
-      queryClient.setQueryData(queryKeys.me(), undefined);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+    // onSettled (not onSuccess): clear the cache whether the request succeeded
+    // or failed. AppNavBar navigates to /login regardless of outcome, so a
+    // failed logout must still drop the cached user — otherwise the stale
+    // "logged-in" me entry would bounce the /login redirect straight back into
+    // the app. Fail-closed: a sign-out click always lands signed out locally.
+    onSettled: () => {
+      // Remove (not merely invalidate) the me query so no stale "logged-in"
+      // user lingers in the cache — invalidating would keep the old user as
+      // placeholder data and bounce the /login redirect straight back to the
+      // app. With the entry removed, `me` resolves to "no user" and the
+      // router settles on /login. Paired with the BootstrapGate change that
+      // renders the login form immediately rather than a loading screen.
+      queryClient.removeQueries({ queryKey: queryKeys.me() });
     },
   });
 }
