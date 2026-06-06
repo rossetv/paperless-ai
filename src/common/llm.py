@@ -214,7 +214,7 @@ class OpenAIChatMixin:
         :class:`~common.embeddings.EmbeddingError` (embeddings have no fallback
         chain, so they raise) is deliberate, not an oversight.
         """
-        params = self._pre_strip_known_rejected(dict(params), model)
+        params = self._pre_strip_known_rejected(params, model)
         for _attempt in range(len(_STRIPPABLE_PARAMS) + 1):
             try:
                 self._record_attempt()
@@ -237,10 +237,15 @@ class OpenAIChatMixin:
     def _pre_strip_known_rejected(
         self, params: dict[str, object], model: str
     ) -> dict[str, object]:
-        """Remove from *params* every parameter the cache says *model* rejects."""
-        for param_key in model_compat_cache.rejected_params_for(model):
-            params.pop(param_key, None)
-        return params
+        """Return a copy of *params* without every parameter the cache says
+        *model* rejects.
+
+        Pure: it does not mutate the *params* it is handed, so the function both
+        returning a value and leaving its argument untouched read consistently
+        (§1.1/§4.1, COMMON-23).
+        """
+        rejected = model_compat_cache.rejected_params_for(model)
+        return {key: value for key, value in params.items() if key not in rejected}
 
     def _strip_rejected_param(
         self, error: openai.BadRequestError, params: dict[str, object], model: str
