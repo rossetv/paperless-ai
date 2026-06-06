@@ -18,6 +18,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+import structlog
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -152,3 +153,36 @@ def test_record_failure_does_not_fail_the_search(conn, tmp_path, monkeypatch) ->
 
     response = client.post("/api/search", json={"query": "resilient"})
     assert response.status_code == 200
+
+
+def test_record_failure_logs_the_traceback(conn, tmp_path, monkeypatch) -> None:
+    """The swallowed record failure is logged with its traceback (§7.5).
+
+    A best-effort side path that loses the stack is undebuggable; the handler
+    must use ``log.exception`` so a recurring fault here carries ``exc_info``.
+    """
+    user = create_user(conn, username="dave", password_hash="h", role="readonly")
+    token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("recent_searches write failed")
+
+    monkeypatch.setattr("search.routes.recent_search_store.record", _boom)
+
+    captured: list[bool] = []
+    real_exception = structlog.get_logger("search.routes").exception
+
+    def _spy_exception(event, *args, **kwargs):
+        # log.exception sets exc_info=True implicitly; structlog records it so
+        # the active traceback is attached. Capture that the call happened.
+        captured.append(True)
+        return real_exception(event, *args, **kwargs)
+
+    monkeypatch.setattr("search.routes.log.exception", _spy_exception)
+
+    client = _client(tmp_path, _mock_core())
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post("/api/search", json={"query": "logged"})
+    assert response.status_code == 200
+    assert captured == [True]
