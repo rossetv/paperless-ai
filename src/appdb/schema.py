@@ -20,8 +20,12 @@ import sqlite3
 
 from appdb.migrations import run_migrations
 
-# The highest schema version the current code knows. Recorded in
-# meta.schema_version by the migration runner after the last migration.
+# INVARIANT: a SCHEMA_V* string must not contain a ``;`` inside a ``--`` comment.
+# The migration bodies in appdb.migrations split each schema on ``;`` and
+# execute the fragments directly (they do NOT strip comment lines first, unlike
+# store._migrate_v1). A ``;`` inside a comment would split into a fragment that
+# starts with plain text rather than a SQL keyword and break the migration. Keep
+# comments inside these strings semicolon-free, or strip comments before split.
 SCHEMA_VERSION: int = 5
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
