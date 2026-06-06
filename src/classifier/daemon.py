@@ -4,9 +4,9 @@ Configuration is loaded from the application database (``app.db``) layered
 over the environment by :func:`common.bootstrap.bootstrap_daemon` (web-redesign
 spec §5), and **re-checked at the top of every poll** via
 :func:`common.config.current_settings` so a saved configuration change takes
-effect on the next cycle with no restart. The daemon imports no database
-package directly — it remains barred from ``store``; the only database access
-is the ``appdb`` read inside the shared bootstrap and the hot-load accessor.
+effect on the next cycle with no restart. The daemon imports ``appdb`` for
+configuration hot-load and heartbeat bootstrap but remains barred from
+``store``; it accesses no search-index tables directly.
 """
 
 from __future__ import annotations
