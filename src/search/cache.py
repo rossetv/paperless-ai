@@ -19,8 +19,11 @@ Invalidation
 The cache key carries an *index version* — ``f"{document_count}:{chunk_count}"``
 from ``StoreReader.get_stats`` (computed by the caller, not here). When a
 document is indexed, re-chunked, or pruned, the counts move, the version string
-changes, and every prior entry stops matching — newly-indexed documents are
-never invisible beyond the moment the index changes (spec §7).
+changes, and every prior entry stops matching, so an index change is normally
+visible on the next query (spec §7). The signal is the count *pair*, not a
+content digest, so the rare same-cycle add-and-prune that leaves both counts
+unchanged is not detected — that staleness is bounded by the TTL, which is why a
+content-collision-proof version is not warranted at this scale (§14.6).
 
 Allowed deps: search.models (SearchResult), store.reader (SearchFilters),
     standard library.

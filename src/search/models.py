@@ -123,7 +123,10 @@ class SearchStats:
     """Pipeline execution statistics returned with every SearchResult.
 
     Attributes:
-        llm_calls: Number of LLM calls made (planner + synthesiser; max 3).
+        llm_calls: Number of LLM calls *attempted* (planner + synthesiser; max
+            3). A stage that degrades to its fallback after every model failed
+            is counted here too, so on a degraded query this can exceed the
+            number of calls actually billed; on a successful query they match.
         latency_ms: Wall-clock time for the full pipeline in milliseconds.
         refined: Whether the bounded refinement loop was triggered.
     """

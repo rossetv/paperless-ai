@@ -96,11 +96,14 @@ _NO_MATCHES_ANSWER = "No matching documents were found in the archive for this q
 class _LlmBudget:
     """A monotonically-increasing counter enforcing the 3-LLM-call ceiling.
 
-    Every LLM chat call in the pipeline is recorded here before it is made.
-    ``record`` raises if the running total would exceed ``_MAX_LLM_CALLS`` —
-    the defensive half of the ceiling guarantee (see the module docstring).
-    The final ``count`` is the true number of calls reported in
-    ``SearchStats``.
+    Every LLM chat call in the pipeline is recorded here *before* it is made —
+    recording first is what lets ``record`` refuse a call that would breach the
+    ceiling, the defensive half of the guarantee (see the module docstring).
+    A consequence is that ``count`` is the number of calls *attempted*, not
+    necessarily billed: a stage that degrades to its fallback because every
+    model failed (returning no content, with no successful API call) is still
+    counted. ``SearchStats.llm_calls`` therefore reports attempts; on a fully
+    successful query attempts equal billable calls.
     """
 
     def __init__(self) -> None:
@@ -253,7 +256,10 @@ class SearchCore:
                 "search.synth_skipped_weak_retrieval",
                 query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
                 chunk_count=len(chunks),
-                best_score=max(chunk.rrf_score for chunk in chunks),
+                # chunks is sorted by rrf_score descending, so the head is the
+                # best score in O(1); the empty case is excluded by the guard
+                # above (§1.3, SRCH-07).
+                best_score=chunks[0].rrf_score,
             )
             return self._no_match_result(plan, budget, started)
 
