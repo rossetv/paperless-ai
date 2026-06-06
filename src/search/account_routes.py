@@ -25,7 +25,7 @@ threadpool — keeping that work off the event loop. Each takes its ``app.db``
 connection from the per-request :func:`~search.deps.get_app_db` dependency.
 
 Allowed deps: fastapi, structlog, appdb, search (sessions, setup, accounts,
-deps, appstate, cookies, wire), store (reader).
+deps, appstate, cookies, login_throttle, wire), store (reader).
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from search.appstate import AppState, get_app_state
 from search.auth import SESSION_COOKIE_NAME
 from search.cookies import clear_session_cookie, set_session_cookie
 from search.deps import get_app_db, get_current_user, require_admin
+from search.login_throttle import build_attempt_key, get_login_throttle
 from search.passwords_login import authenticate
 from search.sessions import CurrentUser, begin_session, cookie_ttl_seconds, end_session
 from search.setup import SetupState, is_setup_needed, verify_setup_token
@@ -121,7 +122,8 @@ def build_account_router(store_reader: StoreReader) -> APIRouter:
     ) -> UserEnvelope:
         """Verify credentials and set the session cookie (§4.4).
 
-        401 on bad credentials; 403 when the account is suspended.
+        401 on bad credentials; 403 when the account is suspended; 429 when the
+        (client IP, username) pair has too many recent failures (HTTP-01).
         """
         return _login(body, request, response, app_db)
 
@@ -243,13 +245,38 @@ def _login(
     response: Response,
     app_db: sqlite3.Connection,
 ) -> UserEnvelope:
-    """Login-handler body: authenticate, open a session, set the cookie."""
+    """Login-handler body: throttle, authenticate, open a session, set the cookie.
+
+    A bounded per-(client IP, username) failed-attempt throttle (HTTP-01,
+    §10.6) denies a key with 429 once it has accumulated a burst of failures,
+    *before* any argon2 work — so password login is not just argon2-cost-limited
+    against an online guessing campaign. A first attempt and a successful login
+    are never affected: the counter starts at zero and a success clears it.
+    """
+    client_ip = request.client.host if request.client else None
+    attempt_key = build_attempt_key(client_ip=client_ip, username=body.username)
+    throttle = get_login_throttle()
+    if throttle.is_locked(attempt_key):
+        # Too many recent failures for this (IP, username) — deny without
+        # touching the password verifier. Generic message, no account hints.
+        log.warning("search.login_throttled", username=body.username)
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+        )
+
     user = authenticate(app_db, body.username, body.password)
     if user is None:
         # Wrong username or password — one message for both, so the response
-        # does not reveal whether the username exists.
+        # does not reveal whether the username exists. Count the failure toward
+        # the brute-force throttle.
+        throttle.record_failure(attempt_key)
         log.warning("search.login_rejected", username=body.username)
         raise HTTPException(status_code=401, detail="Invalid username or password.")
+    # The password was correct: clear any earlier failure history for this key
+    # so a legitimate user is never throttled by their own past typos — even on
+    # the suspended path below, where the credential itself was valid.
+    throttle.record_success(attempt_key)
     if user.status != "active":
         log.warning("search.login_suspended", username=body.username)
         raise HTTPException(status_code=403, detail="This account is suspended.")
