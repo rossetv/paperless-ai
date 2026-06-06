@@ -13,9 +13,9 @@ from common.paperless import (
 )
 from common.per_document import WriteBackOutcome
 from common.tags import (
-    ErrorFinaliserMixin,
     clean_pipeline_tags,
     extract_tags,
+    finalise_document_with_error,
     release_processing_tag,
 )
 from .content_prep import (
@@ -43,7 +43,7 @@ from .taxonomy import TaxonomyCache
 log = structlog.get_logger(__name__)
 
 
-class ClassificationProcessor(ErrorFinaliserMixin):
+class ClassificationProcessor:
     """
     Orchestrates the classification of a single Paperless document.
 
@@ -107,7 +107,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     "Document has error tag; skipping classification",
                     doc_id=self.doc_id,
                 )
-                self._finalise_with_error(current_tags)
+                finalise_document_with_error(
+                    self.paperless_client, self.doc_id, current_tags, self.settings
+                )
                 return None
 
             claimed = claim_processing_tag(
@@ -131,7 +133,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     "OCR content contains refusal markers; marking error",
                     doc_id=self.doc_id,
                 )
-                self._finalise_with_error(current_tags)
+                finalise_document_with_error(
+                    self.paperless_client, self.doc_id, current_tags, self.settings
+                )
                 return None
 
             input_text, truncation_notes = self._truncate_content(content)
@@ -167,7 +171,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                     doc_id=self.doc_id,
                     error=str(exc),
                 )
-                self._finalise_with_error(current_tags)
+                finalise_document_with_error(
+                    self.paperless_client, self.doc_id, current_tags, self.settings
+                )
                 return WriteBackOutcome.QUARANTINED
         finally:
             if claimed:
@@ -192,7 +198,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
         """
         if not result or is_empty_classification(result):
             log.warning("Classification returned empty result", doc_id=self.doc_id)
-            self._finalise_with_error(current_tags)
+            finalise_document_with_error(
+                self.paperless_client, self.doc_id, current_tags, self.settings
+            )
             return None
 
         if is_generic_document_type(result.document_type):
@@ -201,7 +209,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
                 doc_id=self.doc_id,
                 document_type=result.document_type,
             )
-            self._finalise_with_error(current_tags)
+            finalise_document_with_error(
+                self.paperless_client, self.doc_id, current_tags, self.settings
+            )
             return None
         return result
 
@@ -262,7 +272,9 @@ class ClassificationProcessor(ErrorFinaliserMixin):
             log.exception(
                 "Failed to requeue document for OCR; marking error", doc_id=self.doc_id
             )
-            self._finalise_with_error(tags)
+            finalise_document_with_error(
+                self.paperless_client, self.doc_id, tags, self.settings
+            )
             return
         log.info("Requeued document for OCR", doc_id=self.doc_id)
 

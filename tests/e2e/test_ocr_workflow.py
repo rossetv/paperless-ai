@@ -219,7 +219,7 @@ class TestOcrErrorPath:
         provider.transcribe_image.assert_not_called()
 
         # Error tag should be applied via update_document_metadata
-        # The _finalise_with_error path calls update_document_metadata with error tag
+        # finalise_document_with_error calls update_document_metadata with the error tag
         assert 552 in state["tags"]
 
 

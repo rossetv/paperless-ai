@@ -160,61 +160,6 @@ class TestUpdatePaperlessDocumentErrors:
         assert 552 in tags_arg
 
 
-class TestFinaliseWithError:
-    @patch("common.tags.clean_pipeline_tags")
-    def test_adds_error_tag(self, mock_clean):
-        mock_clean.return_value = {100}  # user tag preserved
-        settings = make_settings_obj(ERROR_TAG_ID=552)
-        paperless = make_mock_paperless()
-        proc = make_processor(paperless=paperless, settings=settings)
-
-        proc._finalise_with_error({443, 100})
-
-        paperless.update_document_metadata.assert_called_once()
-        call_tags = set(paperless.update_document_metadata.call_args[1]["tags"])
-        assert 552 in call_tags  # error tag added
-        assert 100 in call_tags  # user tag preserved
-
-    @patch("common.tags.clean_pipeline_tags")
-    def test_no_error_tag_configured(self, mock_clean):
-        mock_clean.return_value = {100}
-        settings = make_settings_obj(ERROR_TAG_ID=None)
-        paperless = make_mock_paperless()
-        proc = make_processor(paperless=paperless, settings=settings)
-
-        proc._finalise_with_error({443, 100})
-
-        paperless.update_document_metadata.assert_called_once()
-        call_tags = set(paperless.update_document_metadata.call_args[1]["tags"])
-        assert 100 in call_tags
-
-    @patch("common.tags.clean_pipeline_tags")
-    def test_with_content_updates_document(self, mock_clean):
-        mock_clean.return_value = {552}
-        settings = make_settings_obj(ERROR_TAG_ID=552)
-        paperless = make_mock_paperless()
-        proc = make_processor(paperless=paperless, settings=settings)
-
-        proc._finalise_with_error({443}, content="Error OCR text")
-
-        # Assert — uses update_document (not update_document_metadata)
-        paperless.update_document.assert_called_once()
-        args = paperless.update_document.call_args[0]
-        assert args[1] == "Error OCR text"
-
-    @patch("common.tags.clean_pipeline_tags")
-    def test_without_content_uses_metadata_update(self, mock_clean):
-        mock_clean.return_value = set()
-        settings = make_settings_obj(ERROR_TAG_ID=None)
-        paperless = make_mock_paperless()
-        proc = make_processor(paperless=paperless, settings=settings)
-
-        proc._finalise_with_error({443})
-
-        paperless.update_document_metadata.assert_called_once()
-        paperless.update_document.assert_not_called()
-
-
 class TestLogOcrStats:
     @patch("ocr.worker.log")
     def test_normal_stats_logged(self, mock_log):

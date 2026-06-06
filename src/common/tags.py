@@ -191,41 +191,6 @@ def _write_finalised_tags(
         client.update_document_metadata(doc_id, tags=tags)
 
 
-class ErrorFinaliserMixin:
-    """Gives a per-document processor a one-call error-finalisation method.
-
-    The OCR and classifier processors both finalise a failed document by
-    delegating to :func:`finalise_document_with_error` with their own client,
-    id, and settings. Inheriting this mixin removes that verbatim wrapper from
-    each — the processor calls ``self._finalise_with_error(tags)`` and the
-    mixin supplies the three instance attributes every such processor carries.
-    """
-
-    paperless_client: PaperlessClient
-    doc_id: int
-    settings: Settings
-
-    def _finalise_with_error(
-        self, tags: set[int], *, content: str | None = None
-    ) -> None:
-        """Mark this document as errored and strip its pipeline tags.
-
-        Args:
-            tags: The document's current tag ids; pipeline tags are removed
-                and the error tag (when configured) is added.
-            content: When given, the document content is replaced as part of
-                the same update — the OCR worker passes the error-marked
-                transcription so the failure is visible in Paperless.
-        """
-        finalise_document_with_error(
-            self.paperless_client,
-            self.doc_id,
-            tags,
-            self.settings,
-            content=content,
-        )
-
-
 def pipeline_tag_ids(settings: Settings) -> set[int]:
     """Collect all configured pipeline tag IDs from *settings*."""
     ids: set[int] = {
