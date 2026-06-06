@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from store import SearchFilters
 
@@ -26,6 +26,14 @@ if TYPE_CHECKING:
 # boundary (``SearchRequest.query``) and the MCP boundary (``mcp_server``) so
 # both surfaces enforce one limit (CODE_GUIDELINES §3.5).
 MAX_QUERY_LENGTH = 4000
+
+# The minimum length of a search query *after trimming* surrounding whitespace
+# (§10.4/§10.6).  An empty or whitespace-only query carries no intent yet would
+# still be dispatched into the bounded LLM pipeline — up to three chat calls —
+# burning budget for nothing.  Rejecting it at the boundary (a 422 over REST, a
+# structured error over MCP) is the cheap abuse defence.  Enforced identically
+# at both surfaces via :func:`normalise_query`.
+MIN_QUERY_LENGTH = 1
 
 
 # ---------------------------------------------------------------------------
@@ -48,11 +56,50 @@ class FilterRequest(BaseModel):
     tag_ids: list[int] = Field(default_factory=list)
 
 
+def normalise_query(query: str) -> str:
+    """Trim a query and reject it when nothing meaningful remains (§10.4).
+
+    The single normalisation point for a search query, shared by the HTTP
+    boundary (:class:`SearchRequest`) and the MCP boundary
+    (``search.mcp_server``) so both surfaces apply one rule (§1.3): strip the
+    surrounding whitespace, then reject an empty result. Returning the trimmed
+    value means the pipeline only ever sees a normalised query.
+
+    Args:
+        query: The raw query string from the request body or tool call.
+
+    Returns:
+        The trimmed query.
+
+    Raises:
+        ValueError: When *query* is empty or whitespace-only after trimming,
+            or longer than :data:`MAX_QUERY_LENGTH`.
+    """
+    if len(query) > MAX_QUERY_LENGTH:
+        raise ValueError(
+            f"query exceeds the maximum length of {MAX_QUERY_LENGTH} characters"
+        )
+    trimmed = query.strip()
+    if len(trimmed) < MIN_QUERY_LENGTH:
+        raise ValueError("query must not be empty or whitespace-only")
+    return trimmed
+
+
 class SearchRequest(BaseModel):
     """Body for POST /api/search."""
 
+    # max_length bounds the *raw* payload before trimming so an enormous
+    # all-whitespace body is rejected by the cheap Pydantic constraint without
+    # building the trimmed copy; normalise_query then trims and rejects an
+    # empty result (§10.4/§10.6, HTTP-04/HTTP-07).
     query: str = Field(max_length=MAX_QUERY_LENGTH)
     filters: FilterRequest | None = None
+
+    @field_validator("query")
+    @classmethod
+    def _normalise_query(cls, query: str) -> str:
+        """Trim the query and reject an empty/whitespace-only one (§10.4)."""
+        return normalise_query(query)
 
 
 # ---------------------------------------------------------------------------

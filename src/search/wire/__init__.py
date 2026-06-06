@@ -81,12 +81,14 @@ from search.wire.library import (
 )
 from search.wire.search import (
     MAX_QUERY_LENGTH,
+    MIN_QUERY_LENGTH,
     FilterRequest,
     QueryPlanResponse,
     SearchRequest,
     SearchResponse,
     SearchStatsResponse,
     SourceDocumentResponse,
+    normalise_query,
     to_search_filters,
     to_search_response,
 )
@@ -106,6 +108,7 @@ __all__ = [
     "MAX_PAGE_SIZE",
     "MAX_PAPERLESS_URL_LENGTH",
     "MAX_QUERY_LENGTH",
+    "MIN_QUERY_LENGTH",
     "MAX_SETTINGS_KEYS",
     "MAX_SETTINGS_VALUE_LENGTH",
     "ApiKeyEnvelope",
@@ -153,6 +156,7 @@ __all__ = [
     "UserListResponse",
     "UserResponse",
     "_paperless_item_to_response",
+    "normalise_query",
     "to_api_key_response",
     "to_document_browse_query",
     "to_document_list_response",
