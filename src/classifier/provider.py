@@ -19,6 +19,7 @@ from .prompts import (
     CLASSIFICATION_JSON_SCHEMA,
     CLASSIFICATION_PROMPT,
     DEFAULT_CLASSIFY_TEMPERATURE,
+    DOCUMENT_CONTENT_DELIMITER,
 )
 from .result import ClassificationResult, parse_classification_response
 from .taxonomy import TaxonomyContext
@@ -113,10 +114,13 @@ class ClassificationProvider(OpenAIChatMixin):
 
         # VARIABLE SUFFIX — per-document content, last so it never shifts the
         # cacheable prefix. The note (if any) precedes the transcription; the
-        # transcription is always the final segment.
+        # transcription is always the final segment, fenced below the
+        # data-isolation delimiter so untrusted document text cannot be read as
+        # an instruction (CODE_GUIDELINES §10.2 — the system prompt tells the
+        # model to treat everything after this exact line as data only).
         if truncation_note:
             parts.append(truncation_note)
-        parts.append(f"Document transcription:\n{text}")
+        parts.append(f"{DOCUMENT_CONTENT_DELIMITER}\n{text}")
 
         return "\n\n".join(parts)
 
