@@ -12,11 +12,19 @@ bounded ``busy_timeout`` so a contended write never hangs indefinitely.
 exit, and rolls back on any exception. The search server's last-admin guards
 use it to make a read-then-write check atomic.
 
+``utc_now_iso`` is the shared timestamp helper: every ``app.db`` module that
+records a current-time timestamp calls this single function so the format is
+consistent across the whole package.
+
+``RowVanishedError`` is the shared typed fault for "a row this module just wrote
+is missing from its own write" — defined here so the three writer modules raise
+one named type rather than each inventing its own.
+
 This is adapted from ``store.schema.connect`` — appdb deliberately does not
 share code with ``store`` (see the package docstring) — and drops the
 sqlite-vec extension load, which ``app.db`` does not need.
 
-Allowed deps: sqlite3. Forbidden: any import from store/search/daemons.
+Allowed deps: sqlite3, datetime. Forbidden: any import from store/search/daemons.
 """
 
 from __future__ import annotations
@@ -24,10 +32,35 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timezone
+
+
+class RowVanishedError(Exception):
+    """A row this process just wrote is unexpectedly absent from its own write.
+
+    Raised when a single-row ``INSERT`` reports success but ``cursor.lastrowid``
+    is ``None``, or when the row read back on the same connection immediately
+    after that ``INSERT`` — before any other writer can intervene — comes back
+    missing. Both mean an invariant SQLite itself guarantees has been broken, so
+    the caller cannot sensibly recover: a typed domain fault, never a bare
+    ``RuntimeError`` (CODE_GUIDELINES §6.1).
+    """
+
 
 # The busy timeout, in milliseconds. A contended write waits up to this long
 # for the lock before raising sqlite3.OperationalError, rather than hanging.
 _BUSY_TIMEOUT_MS = 5000
+
+
+def utc_now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string with a ``+00:00`` offset.
+
+    Every ``app.db`` table stores timestamps in this format. All ``appdb``
+    modules call this shared helper so the format is consistent across the
+    package — the six tables are written and compared as like strings without
+    any per-module re-implementation.
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 
 def connect(db_path: str) -> sqlite3.Connection:

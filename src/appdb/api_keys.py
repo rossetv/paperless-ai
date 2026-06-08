@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import structlog
+
+from appdb.connection import RowVanishedError, utc_now_iso
 
 log = structlog.get_logger(__name__)
 
@@ -73,12 +74,6 @@ class ApiKey:
     last_used_at: str | None
     revoked_at: str | None
     request_count: int
-
-
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string with a ``+00:00``
-    offset — the timestamp format every ``app.db`` table stores."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _row_to_api_key(row: sqlite3.Row) -> ApiKey:
@@ -143,7 +138,7 @@ def create(
     Raises:
         DuplicateKeyHashError: *key_hash* is already stored.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     try:
         # The INSERT runs inside ``with conn:`` so the happy path commits and any
         # mid-write exception rolls back; the IntegrityError below is re-raised
@@ -168,18 +163,25 @@ def create(
     except sqlite3.IntegrityError as exc:
         # The only UNIQUE constraint on api_keys is key_hash.
         raise DuplicateKeyHashError("an API key with this hash already exists") from exc
-    # A successful single-row INSERT always sets lastrowid; the assert narrows
-    # the int | None the sqlite3 stub declares so the type checker is satisfied.
+    # A successful single-row INSERT always sets lastrowid; the sqlite3 stub
+    # declares int | None but a committed INSERT row always has an id.
     new_api_key_id = cursor.lastrowid
-    assert new_api_key_id is not None
+    if new_api_key_id is None:
+        raise RowVanishedError(
+            "INSERT INTO api_keys succeeded but cursor.lastrowid is None"
+        )
     log.info(
         "appdb.api_key_created",
         api_key_id=new_api_key_id,
         owner_user_id=owner_user_id,
     )
     created = get_by_id(conn, new_api_key_id)
-    # The row was just inserted on this connection — it must be present.
-    assert created is not None
+    if created is None:
+        # The row was just inserted on this connection — if it is missing the
+        # database is in an unrecoverable state.
+        raise RowVanishedError(
+            f"api_key {new_api_key_id} missing immediately after INSERT"
+        )
     return created
 
 

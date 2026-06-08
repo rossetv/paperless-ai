@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Literal
 
 import structlog
+
+from appdb.connection import RowVanishedError, utc_now_iso
 
 log = structlog.get_logger(__name__)
 
@@ -73,12 +74,6 @@ class User:
     updated_at: str
     last_login_at: str | None
     password_changed_at: str | None
-
-
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string with a ``+00:00``
-    offset — the timestamp format every ``app.db`` table stores."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _row_to_user(row: sqlite3.Row) -> User:
@@ -141,7 +136,7 @@ def create(
     Raises:
         UsernameTakenError: *username* is already in use.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     try:
         # The INSERT runs inside ``with conn:`` so the happy path commits and any
         # mid-write exception rolls back; the IntegrityError below is re-raised
@@ -157,14 +152,19 @@ def create(
     except sqlite3.IntegrityError as exc:
         # The only UNIQUE constraint on users is username.
         raise UsernameTakenError(f"username {username!r} is already in use") from exc
-    # A successful single-row INSERT always sets lastrowid; the assert narrows
-    # the int | None the sqlite3 stub declares so the type checker is satisfied.
+    # A successful single-row INSERT always sets lastrowid; the sqlite3 stub
+    # declares int | None, but a committed INSERT row always has an id.
     new_user_id = cursor.lastrowid
-    assert new_user_id is not None
+    if new_user_id is None:
+        raise RowVanishedError(
+            "INSERT INTO users succeeded but cursor.lastrowid is None"
+        )
     log.info("appdb.user_created", user_id=new_user_id, role=role)
     created = get_by_id(conn, new_user_id)
-    # The row was just inserted in this connection — it must be present.
-    assert created is not None
+    if created is None:
+        # The row was just inserted on this connection — if it is missing the
+        # database is in an unrecoverable state.
+        raise RowVanishedError(f"user {new_user_id} missing immediately after INSERT")
     return created
 
 
@@ -228,7 +228,7 @@ def create_initial_admin(
         inserted; ``None`` when at least one user already existed (i.e.
         ``cursor.rowcount == 0``).
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     with conn:
         cursor = conn.execute(
             "INSERT INTO users "
@@ -240,14 +240,21 @@ def create_initial_admin(
         )
     if cursor.rowcount != 1:
         return None
-    # The INSERT inserted exactly one row, so lastrowid is set; the assert
-    # narrows the int | None the sqlite3 stub declares.
+    # The INSERT inserted exactly one row, so lastrowid is set; the sqlite3
+    # stub declares int | None but a committed INSERT row always has an id.
     new_user_id = cursor.lastrowid
-    assert new_user_id is not None
+    if new_user_id is None:
+        raise RowVanishedError(
+            "INSERT INTO users (initial admin) succeeded but cursor.lastrowid is None"
+        )
     log.info("appdb.initial_admin_created", user_id=new_user_id)
     created = get_by_id(conn, new_user_id)
-    # The row was just inserted in this connection — it must be present.
-    assert created is not None
+    if created is None:
+        # The row was just inserted on this connection — if it is missing the
+        # database is in an unrecoverable state.
+        raise RowVanishedError(
+            f"initial admin user {new_user_id} missing immediately after INSERT"
+        )
     return created
 
 
@@ -305,7 +312,7 @@ def update(
     Returns:
         The updated :class:`User`, or ``None`` when *user_id* does not exist.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     # Build the SET clause from only the supplied columns. Column names are
     # fixed literals chosen here — never interpolated user input — and every
     # value is bound as a parameter, so this carries no injection.
@@ -398,5 +405,5 @@ def record_login(conn: sqlite3.Connection, user_id: int) -> None:
     with conn:
         conn.execute(
             "UPDATE users SET last_login_at = ? WHERE id = ?",
-            (_utc_now_iso(), user_id),
+            (utc_now_iso(), user_id),
         )

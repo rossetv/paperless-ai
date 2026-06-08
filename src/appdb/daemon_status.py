@@ -34,6 +34,8 @@ from typing import Literal
 
 import structlog
 
+from appdb.connection import utc_now_iso
+
 log = structlog.get_logger(__name__)
 
 # The default heartbeat-staleness window, in seconds. A daemon whose last
@@ -71,11 +73,6 @@ class DaemonStatus:
     last_heartbeat: str
 
 
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an offset-aware ISO-8601 string."""
-    return datetime.now(timezone.utc).isoformat()
-
-
 def record_heartbeat(
     conn: sqlite3.Connection,
     *,
@@ -97,7 +94,7 @@ def record_heartbeat(
             work, otherwise a one-liner describing the current activity.
         processed_count: The daemon's monotonic throughput counter.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     with conn:
         conn.execute(
             "INSERT INTO daemon_status "

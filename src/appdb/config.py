@@ -37,19 +37,12 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping
-from datetime import datetime, timezone
 
 import structlog
 
-from appdb.connection import transaction
+from appdb.connection import transaction, utc_now_iso
 
 log = structlog.get_logger(__name__)
-
-
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an offset-aware ISO-8601 string —
-    the timestamp format every ``app.db`` table stores."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def get_all(conn: sqlite3.Connection) -> dict[str, str]:
@@ -168,7 +161,7 @@ def set_value(conn: sqlite3.Connection, key: str, value: str) -> None:
             "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
             "updated_at = excluded.updated_at",
-            (key, value, _utc_now_iso()),
+            (key, value, utc_now_iso()),
         )
         _bump_config_version(conn)
     log.info("appdb.config_set", key=key)
@@ -217,7 +210,7 @@ def set_many_in_transaction(conn: sqlite3.Connection, values: dict[str, str]) ->
     """
     if not values:
         return
-    now = _utc_now_iso()
+    now = utc_now_iso()
     conn.executemany(
         "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
