@@ -25,6 +25,7 @@ it now use a minted DB-backed API key or a session cookie.
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -403,3 +404,53 @@ def test_search_returns_422_when_query_exceeds_max_length() -> None:
         "/api/search", json={"query": too_long_query}, headers=_bearer_headers(raw_key)
     )
     assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat — opens the Settings-provided app.db, never the env default
+# ---------------------------------------------------------------------------
+
+
+def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> None:
+    """``_start_search_heartbeat`` must open ``settings.APP_DB_PATH``.
+
+    Regression: the heartbeat closure read ``os.environ["APP_DB_PATH"]``
+    (defaulting to ``/data/app.db``) instead of the ``Settings`` it was given.
+    On any deployment whose ``app.db`` lives elsewhere — or in a process where
+    that variable is unset — the search tile heartbeat wrote to the wrong file
+    (or the hard-coded default), so the Index dashboard reported the live
+    server as "stopped". This pins the path to the injected settings and proves
+    the stale env default is never consulted.
+    """
+    from search.api import _start_search_heartbeat
+
+    app_db_path = str(tmp_path / "elsewhere" / "app.db")
+    (tmp_path / "elsewhere").mkdir()
+    settings = _settings(APP_DB_PATH=app_db_path)
+
+    opened_paths: list[str] = []
+
+    def _record_connect(path: str) -> MagicMock:
+        opened_paths.append(path)
+        return MagicMock()
+
+    # Force the env default to a different, wrong path: if the closure still
+    # read the environment, the assertion below would catch it pointing here.
+    with (
+        patch("search.api.connect_app_db", side_effect=_record_connect),
+        patch("search.api.ensure_app_db_schema"),
+        # No-op the ticker so the daemon thread returns immediately after the
+        # connect under test, rather than looping until the shutdown flag.
+        patch("search.api.run_heartbeat_ticker"),
+        patch.dict("os.environ", {"APP_DB_PATH": "/data/wrong.db"}),
+    ):
+        _start_search_heartbeat(settings)
+        # The heartbeat runs on a daemon thread; join the named worker so the
+        # connect has happened before we assert (bounded — the patched ticker
+        # returns at once).
+        for thread in threading.enumerate():
+            if thread.name == "search-heartbeat":
+                thread.join(timeout=5)
+
+    assert opened_paths == [app_db_path]
+    assert "/data/wrong.db" not in opened_paths

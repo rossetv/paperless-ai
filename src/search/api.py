@@ -99,7 +99,7 @@ def _start_search_heartbeat(settings: Settings) -> None:
 
     def _run() -> None:
         try:
-            conn = connect_app_db(os.environ.get("APP_DB_PATH", "/data/app.db"))
+            conn = connect_app_db(settings.APP_DB_PATH)
             ensure_app_db_schema(conn)
         except Exception as exc:  # noqa: BLE001
             # rationale: best-effort heartbeat — if app.db cannot be opened

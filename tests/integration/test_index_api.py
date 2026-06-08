@@ -83,12 +83,32 @@ def test_status_returns_four_daemon_tiles(index_env) -> None:
     assert names == {"ocr", "classifier", "indexer", "search"}
 
 
-def test_status_reports_down_when_no_daemon_has_run(index_env) -> None:
-    """No heartbeats at all → every daemon stopped → overall 'down'."""
+def test_status_reports_degraded_when_only_the_search_server_is_alive(
+    index_env,
+) -> None:
+    """Worker daemons stopped but the search server alive → 'degraded'.
+
+    The search server heartbeats itself from ``create_app`` (it is, after all,
+    the process serving this request), so the moment the app is built the
+    ``search`` daemon is ``running`` while the three worker daemons that have
+    never beaten remain ``stopped``. The rolled-up verdict is therefore
+    ``degraded``, not ``down`` — ``down`` would require *every* daemon stopped,
+    which can never be observed through a live search server. We record the
+    ``search`` beat explicitly so the assertion does not race the heartbeat
+    thread's first tick.
+    """
+    _settings, app_db, _reader = index_env
+    daemon_status.record_heartbeat(
+        app_db, name="search", detail="serving search requests", processed_count=0
+    )
     client = _admin_client(index_env)
     body = client.get("/api/index/status").json()
-    assert body["health"] == "down"
-    assert all(d["state"] == "stopped" for d in body["daemons"])
+    assert body["health"] == "degraded"
+    tiles = {d["name"]: d for d in body["daemons"]}
+    assert tiles["search"]["state"] == "running"
+    assert tiles["ocr"]["state"] == "stopped"
+    assert tiles["classifier"]["state"] == "stopped"
+    assert tiles["indexer"]["state"] == "stopped"
 
 
 def test_status_reflects_a_recorded_heartbeat(index_env) -> None:
