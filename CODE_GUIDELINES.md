@@ -276,6 +276,22 @@ from `store/`) must still read `app.db` config. The migration machinery is
 adapted from `store.migrations` — copied, not shared — so the two databases
 version independently.
 
+**Why the two migration runners are deliberately duplicated, not deduped.**
+`store.migrations` and `appdb.migrations` are near-identical, and a future reader
+will be tempted to extract a shared runner. Do not. The duplication is the
+correct design, for two reasons. First, the databases version on independent
+schedules: a change to the index schema bumps `index.db`'s version and must not
+drag `app.db` through a migration it does not need, and vice versa — a shared
+runner would couple two version sequences that have no reason to move together.
+Second, both databases can be open at once — most sharply during an
+embedding-model rebuild, when the index is being torn down and re-created while
+`app.db` keeps serving accounts and config — so their migration code must be able
+to run side by side without a shared lock, a shared connection assumption, or a
+shared version table. Coupling the two runners would manufacture a dependency
+between two stores whose whole point is to fail and evolve apart. Treat the
+duplication as load-bearing: a fix to one runner is considered for the other by
+hand, not unified into one.
+
 **Allowed deps.** `sqlite3`, `argon2`, `structlog`. `appdb/` sits **below**
 `common/` in the import graph (`common` reads `app.db` for config hot-load and
 daemon heartbeats), so it imports no other internal package.
@@ -370,6 +386,19 @@ carve-out mechanism; there is no separate list.
 
 The same limits apply to the frontend: a `.tsx` or `.ts` file over 500 lines, a
 function or component over 60 body lines, needs a `// rationale:` comment.
+
+**Pure-data-file exemption.** The file-length ceiling is about scannability of
+*logic* — a 500-line file you must reason about is the problem. A file that is
+*entirely declarative data* — one typed data literal, no behaviour, no branching,
+no functions — does not carry that cost: it is a table you look things up in, not
+code you trace. Such a file is exempt from the line-count split, on two conditions:
+it carries the required `# rationale:` / `// rationale:` comment stating that it is
+a pure data literal exempt under §3.1, and it contains **no logic** — the moment a
+function, a conditional, or a computed value appears, the exemption is void and the
+file splits or moves the logic out. The exemption covers length only; the
+`one concept per file` rule ([§3.2](#32-one-concept-per-file)) and the import limit
+still apply. Motivating example: `web/src/features/settings/fieldModel/sections.ts`
+(627 lines of config-field definitions, pure data).
 
 ### 3.2 One concept per file
 
@@ -1013,6 +1042,27 @@ components, and there is exactly one source of design values.
 | Test             | Vitest + React Testing Library  | Mirrors the backend's discipline |
 | Quality gates    | ESLint, Prettier, Stylelint     | Boundary lint + no-hardcoded-values lint |
 
+**The `import React` convention.** Under React 18's `react-jsx` transform the
+runtime `React` namespace is no longer needed to render JSX — the compiler injects
+the runtime itself. So:
+
+- Type-only references use a type-only import: `import type { ReactElement,
+  ReactNode } from 'react'`. This pulls in no runtime value and is erased by the
+  compiler.
+- The runtime `React` namespace is imported **only** when you actually call a
+  value on it — `React.memo`, `React.lazy`, `React.forwardRef`, and the like. If
+  you reach for one of those, prefer a named import (`import { memo } from 'react'`)
+  and call it directly; fall back to the namespace only where a named import reads
+  worse.
+- Never mix the two styles. A file does not carry both a bare `import React` it
+  never dereferences and a separate `import type` from `react`; pick the one the
+  file actually uses.
+
+The codebase is currently inconsistent — most files still carry a runtime
+`import React` whether or not they touch the namespace. New and modified files
+follow the rule above; a divergent file is brought into line in the PR that next
+touches it.
+
 A new frontend dependency is justified like any other ([§15](#15-dependencies)).
 
 ### 12.2 Directory layout
@@ -1081,6 +1131,21 @@ What this rule buys, concretely:
 `api/` and `hooks/` are cross-cutting leaves: `api/` is imported by `features` and
 `pages`; `hooks/` holds generic hooks importable by `components`, `features`, and
 `pages`. Neither imports a component.
+
+**The downward rule governs *layers*; a second rule governs imports *between
+features*.** A `features/<x>` module may import from a sibling `features/<y>` only
+when both belong to the same domain sub-tree — a `search/` screen importing a
+`search/` helper is fine. A cross-domain feature dependency is forbidden: if two
+unrelated features need the same component, that component is not a feature, it is
+a shared building block, and it gets promoted up to `components/` — reviewed once,
+then importable by both. One feature reaching sideways into an unrelated feature
+couples two domains that should evolve apart, and re-creates by the back door the
+"every screen builds its own" drift the layer stack exists to prevent.
+
+A live violation to fix on next touch: `features/index` imports
+`DocumentPreviewScreen` from `features/search`. The two are unrelated domains, so
+that shared screen belongs in `components/`, not inside one feature where the other
+has to reach across for it.
 
 ### 12.4 Design tokens are the only source of design values
 
