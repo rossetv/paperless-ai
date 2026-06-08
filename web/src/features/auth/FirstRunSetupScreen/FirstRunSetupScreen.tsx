@@ -4,7 +4,7 @@ import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
 import { useSetup } from '../../../api/hooks';
 import { ApiError } from '../../../api/client';
-import { validateUsername, validatePassword } from '../credentials';
+import { validateUsername, validatePassword } from '../../../lib/credentials';
 import styles from './FirstRunSetupScreen.module.css';
 
 /**

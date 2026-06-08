@@ -8,13 +8,10 @@ import {
   useUpdateUser,
   useDeleteUser,
 } from '../../../api/hooks';
+import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
 import styles from './UserEditDrawer.module.css';
 
-/** Username rule mirrored from the Wave 1 contract. */
-const USERNAME_RE = /^[A-Za-z0-9._-]+$/;
-/** Minimum password length mirrored from the Wave 1 contract. */
-const MIN_PASSWORD = 8;
 /** Selectable RBAC roles. */
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
@@ -88,21 +85,30 @@ export function UserEditDrawer({
     setFieldError((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  /** Validate; returns an error map (empty when valid). */
+  /** Validate; returns an error map (empty when valid).
+   *
+   * The username and password rules are the canonical `validateUsername` /
+   * `validatePassword` from the auth feature — the same checks the login and
+   * first-run-setup screens use — so the three screens never drift. The
+   * drawer adds only its own contextual gating: the username is validated on
+   * create only (it is read-only in edit mode), a password is required on
+   * create but optional on edit, and the confirm-field match is a
+   * drawer-local concern the shared validators do not cover.
+   */
   function validate(): Partial<Record<keyof FormState, string>> {
     const errors: Partial<Record<keyof FormState, string>> = {};
-    const username = form.username.trim();
     if (isCreate) {
-      if (username.length < 3 || username.length > 64 || !USERNAME_RE.test(username)) {
-        errors.username =
-          'Username must be 3–64 characters: letters, digits, dot, dash or underscore.';
+      const usernameError = validateUsername(form.username.trim());
+      if (usernameError !== undefined) {
+        errors.username = usernameError;
       }
     }
     // A password is required on create; optional on edit.
     const wantsPassword = isCreate || form.password.length > 0;
     if (wantsPassword) {
-      if (form.password.length < MIN_PASSWORD) {
-        errors.password = `Password must be at least 8 characters.`;
+      const passwordError = validatePassword(form.password);
+      if (passwordError !== undefined) {
+        errors.password = passwordError;
       } else if (form.password !== form.confirm) {
         errors.confirm = 'Passwords do not match.';
       }
