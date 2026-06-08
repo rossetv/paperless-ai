@@ -6,7 +6,7 @@ import { Icon } from '../../../components/primitives/Icon/Icon';
 import { IconButton } from '../../../components/primitives/IconButton/IconButton';
 import { useLogin } from '../../../api/hooks';
 import { Unauthenticated, ApiError } from '../../../api/client';
-import { validateUsername, validatePassword } from '../credentials';
+import { validateUsername, validatePassword } from '../../../lib/credentials';
 import styles from './LoginScreen.module.css';
 
 /**

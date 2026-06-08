@@ -79,7 +79,10 @@ describe('UserEditDrawer — create mode', () => {
     await userEvent.type(screen.getByLabelText(/^new password/i), 'password1');
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
-    expect(screen.getByText(/username must be 3/i)).toBeInTheDocument();
+    // The canonical validateUsername message (shared with the auth screens).
+    expect(
+      screen.getByText(/username must be between 3 and 64 characters/i),
+    ).toBeInTheDocument();
   });
 
   it('rejects a short password on submit', async () => {
