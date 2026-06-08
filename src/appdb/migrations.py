@@ -52,6 +52,28 @@ class AppDbError(Exception):
     """
 
 
+def _apply_schema_string(conn: sqlite3.Connection, schema: str) -> None:
+    """Execute each ``CREATE``/``INSERT`` statement in *schema* on *conn*.
+
+    Splits *schema* on ``";"`` and executes every non-empty statement via
+    ``conn.execute``. ``conn.executescript`` is deliberately avoided — it
+    issues an implicit ``COMMIT`` before running, which would break the
+    atomicity of the surrounding transaction and could leave the schema applied
+    but ``schema_version`` un-advanced.
+
+    This is a package-private helper called only by the ``_migrate_vN``
+    functions; it carries no deferred import because the callers do those.
+
+    Args:
+        conn: An open connection with an active transaction.
+        schema: A ``;``-separated string of SQL DDL/DML statements.
+    """
+    for statement in schema.split(";"):
+        stmt = statement.strip()
+        if stmt:
+            conn.execute(stmt)
+
+
 def _migrate_v1(conn: sqlite3.Connection) -> None:
     """Apply the v1 schema: the users and sessions tables and their indexes.
 
@@ -70,10 +92,7 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V1  # noqa: PLC0415
 
-    for statement in SCHEMA_V1.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            conn.execute(stmt)
+    _apply_schema_string(conn, SCHEMA_V1)
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
@@ -92,10 +111,7 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V2  # noqa: PLC0415
 
-    for statement in SCHEMA_V2.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            conn.execute(stmt)
+    _apply_schema_string(conn, SCHEMA_V2)
 
 
 def _migrate_v3(conn: sqlite3.Connection) -> None:
@@ -115,10 +131,7 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V3  # noqa: PLC0415
 
-    for statement in SCHEMA_V3.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            conn.execute(stmt)
+    _apply_schema_string(conn, SCHEMA_V3)
 
 
 def _migrate_v4(conn: sqlite3.Connection) -> None:
@@ -143,10 +156,7 @@ def _migrate_v4(conn: sqlite3.Connection) -> None:
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V4  # noqa: PLC0415
 
-    for statement in SCHEMA_V4.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            conn.execute(stmt)
+    _apply_schema_string(conn, SCHEMA_V4)
     # Seed the hot-load counter. INSERT OR IGNORE keeps the migration
     # idempotent and never clobbers a value a running deployment has bumped.
     conn.execute(
@@ -170,10 +180,7 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V5  # noqa: PLC0415
 
-    for statement in SCHEMA_V5.split(";"):
-        stmt = statement.strip()
-        if stmt:
-            conn.execute(stmt)
+    _apply_schema_string(conn, SCHEMA_V5)
 
 
 # Ordered (version, migration_function) pairs. The version is the

@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import structlog
+
+from appdb.connection import utc_now_iso
 
 log = structlog.get_logger(__name__)
 
@@ -58,12 +59,6 @@ class RecentSearch:
     created_at: str
 
 
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string with a ``+00:00``
-    offset — the timestamp format the ``recent_searches`` table stores."""
-    return datetime.now(timezone.utc).isoformat()
-
-
 def _row_to_recent_search(row: sqlite3.Row) -> RecentSearch:
     """Build a :class:`RecentSearch` from a ``recent_searches`` table row."""
     return RecentSearch(
@@ -93,7 +88,7 @@ def record(conn: sqlite3.Connection, *, user_id: int, query: str) -> RecentSearc
     Returns:
         The inserted :class:`RecentSearch`.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     # The delete, insert and trim are one transaction: an explicit ``with
     # conn:`` block commits on success and rolls back on any exception, so a
     # concurrent reader never sees the history mid-trim and a mid-step failure

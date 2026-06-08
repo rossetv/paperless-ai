@@ -22,9 +22,10 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import structlog
+
+from appdb.connection import RowVanishedError, utc_now_iso
 
 log = structlog.get_logger(__name__)
 
@@ -54,12 +55,6 @@ class Session:
     last_seen_at: str
     user_agent: str | None
     ip: str | None
-
-
-def _utc_now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string with a ``+00:00``
-    offset — the timestamp format the ``sessions`` table stores."""
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _row_to_session(row: sqlite3.Row) -> Session:
@@ -106,7 +101,7 @@ def create(
     Returns:
         The created :class:`Session`.
     """
-    now = _utc_now_iso()
+    now = utc_now_iso()
     with conn:
         cursor = conn.execute(
             "INSERT INTO sessions "
@@ -120,8 +115,12 @@ def create(
         f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE id = ?",  # nosec B608 - _SESSION_COLUMNS is a module constant; lastrowid bound via ?
         (cursor.lastrowid,),
     ).fetchone()
-    # The row was just inserted in this connection — it must be present.
-    assert row is not None
+    if row is None:
+        # The row was just inserted on this connection — if it is missing the
+        # database is in an unrecoverable state.
+        raise RowVanishedError(
+            f"session {cursor.lastrowid} missing immediately after INSERT"
+        )
     return _row_to_session(row)
 
 
