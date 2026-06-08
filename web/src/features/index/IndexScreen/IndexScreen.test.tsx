@@ -237,17 +237,25 @@ describe('IndexScreen', () => {
     expect(screen.getByRole('button', { name: /view live log/i })).toBeInTheDocument();
   });
 
-  it('renders sub-lines on all four stat tiles', () => {
+  it('renders sub-lines on the stat tiles whose sub-line is known', () => {
     primeAll();
     render(<IndexScreen />);
     // Documents indexed — "synced X ago"
     expect(screen.getByText(/synced/i)).toBeInTheDocument();
     // Semantic chunks — chunks-per-document
     expect(screen.getByText(/chunks per document/i)).toBeInTheDocument();
-    // Embedding model — hard-coded dims
-    expect(screen.getByText('1,536 dimensions')).toBeInTheDocument();
     // Last reconcile — formatted date sub-line (formatShortDate: "22 May 2026")
     expect(screen.getByText('22 May 2026')).toBeInTheDocument();
+  });
+
+  it('shows the embedding model name without a fabricated dimensions sub-line', () => {
+    // GET /api/stats does not expose the embedding dimension count, so the
+    // tile must render only the model name — never a hard-coded figure that is
+    // wrong for any non-default model (e.g. text-embedding-3-large = 3072).
+    primeAll();
+    render(<IndexScreen />);
+    expect(screen.getByText('text-embedding-3-small')).toBeInTheDocument();
+    expect(screen.queryByText(/dimensions/i)).not.toBeInTheDocument();
   });
 
   it('does not show "View full log ›" when cycles fit within the limit', () => {

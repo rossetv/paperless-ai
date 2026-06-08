@@ -140,12 +140,11 @@ export function IndexScreen(): React.ReactElement {
                     }
                   : {})}
               />
-              {/* sub hard-coded to the env default; no dim field is exposed by the API yet. */}
-              <StatTile
-                value={stats.embedding_model ?? '—'}
-                label="Embedding model"
-                sub="1,536 dimensions"
-              />
+              {/* No sub-line: the embedding dimension count is not exposed by
+                  GET /api/stats, so the tile shows only the model name rather
+                  than a hard-coded figure that is wrong for any non-default
+                  model (e.g. text-embedding-3-large = 3072). */}
+              <StatTile value={stats.embedding_model ?? '—'} label="Embedding model" />
               <StatTile
                 value={
                   stats.last_reconcile_at !== null
