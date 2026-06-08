@@ -9,6 +9,8 @@ list/update/delete/count functions are exercised in test_users_admin.py.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from appdb.connection import connect
@@ -20,6 +22,7 @@ from appdb.users import (
     create_initial_admin,
     get_by_id,
     get_by_username,
+    update,
 )
 
 
@@ -75,6 +78,37 @@ def test_create_rejects_a_duplicate_username(conn) -> None:
     create(conn, username="eve", password_hash="h", role="member")
     with pytest.raises(UsernameTakenError):
         create(conn, username="eve", password_hash="h2", role="admin")
+
+
+def test_update_rolls_back_and_leaves_no_open_transaction_on_failure(conn) -> None:
+    """A mid-transaction failure rolls back cleanly via ``with conn:`` (§9.6).
+
+    Regression for the bare-``conn.commit()`` write path: when the UPDATE
+    statement raises (here, an invalid ``role`` rejected by the table's CHECK
+    constraint), the ``with conn:`` context manager must roll back and leave the
+    connection with **no open transaction**. The old code reached ``conn.commit()``
+    only on the happy path, so a raised statement left the transaction dangling —
+    poisoning the very next writer on this connection with
+    "cannot start a transaction within a transaction". This test fails against
+    the bare-commit version and passes once the write is wrapped.
+    """
+    created = create(conn, username="trent", password_hash="h", role="member")
+
+    # An invalid role is rejected by the users.role CHECK constraint, so the
+    # UPDATE raises *inside* the with-block. The Role type is a Literal — a type
+    # ignore lets the test pass a value the DB layer (not mypy) rejects.
+    with pytest.raises(sqlite3.IntegrityError):
+        update(conn, created.id, role="superadmin")  # type: ignore[arg-type]
+
+    # The rollback ran: the connection is clean, not stuck mid-transaction.
+    assert conn.in_transaction is False
+
+    # The next write on the same connection succeeds — proof the transaction was
+    # not left open — and the failed update left the row's prior state intact.
+    refreshed = update(conn, created.id, display_name="Trent")
+    assert refreshed is not None
+    assert refreshed.role == "member"
+    assert refreshed.display_name == "Trent"
 
 
 def test_get_by_username_returns_none_when_absent(conn) -> None:
