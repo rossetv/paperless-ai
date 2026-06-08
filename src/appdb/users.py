@@ -143,16 +143,18 @@ def create(
     """
     now = _utc_now_iso()
     try:
-        cursor = conn.execute(
-            "INSERT INTO users "
-            "(username, password_hash, display_name, email, role, status, "
-            " created_at, updated_at, last_login_at, password_changed_at) "
-            "VALUES (?, ?, ?, ?, ?, 'active', ?, ?, NULL, ?)",
-            (username, password_hash, display_name, email, role, now, now, now),
-        )
-        conn.commit()
+        # The INSERT runs inside ``with conn:`` so the happy path commits and any
+        # mid-write exception rolls back; the IntegrityError below is re-raised
+        # as a typed error after that rollback (§9.6).
+        with conn:
+            cursor = conn.execute(
+                "INSERT INTO users "
+                "(username, password_hash, display_name, email, role, status, "
+                " created_at, updated_at, last_login_at, password_changed_at) "
+                "VALUES (?, ?, ?, ?, ?, 'active', ?, ?, NULL, ?)",
+                (username, password_hash, display_name, email, role, now, now, now),
+            )
     except sqlite3.IntegrityError as exc:
-        conn.rollback()
         # The only UNIQUE constraint on users is username.
         raise UsernameTakenError(f"username {username!r} is already in use") from exc
     # A successful single-row INSERT always sets lastrowid; the assert narrows
@@ -227,15 +229,15 @@ def create_initial_admin(
         ``cursor.rowcount == 0``).
     """
     now = _utc_now_iso()
-    cursor = conn.execute(
-        "INSERT INTO users "
-        "(username, password_hash, display_name, email, role, status, "
-        " created_at, updated_at, last_login_at, password_changed_at) "
-        "SELECT ?, ?, ?, ?, 'admin', 'active', ?, ?, NULL, ? "
-        "WHERE NOT EXISTS (SELECT 1 FROM users)",
-        (username, password_hash, display_name, email, now, now, now),
-    )
-    conn.commit()
+    with conn:
+        cursor = conn.execute(
+            "INSERT INTO users "
+            "(username, password_hash, display_name, email, role, status, "
+            " created_at, updated_at, last_login_at, password_changed_at) "
+            "SELECT ?, ?, ?, ?, 'admin', 'active', ?, ?, NULL, ? "
+            "WHERE NOT EXISTS (SELECT 1 FROM users)",
+            (username, password_hash, display_name, email, now, now, now),
+        )
     if cursor.rowcount != 1:
         return None
     # The INSERT inserted exactly one row, so lastrowid is set; the assert
@@ -328,11 +330,11 @@ def update(
         values.append(now)
 
     values.append(user_id)
-    cursor = conn.execute(
-        f"UPDATE users SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
-        values,
-    )
-    conn.commit()
+    with conn:
+        cursor = conn.execute(
+            f"UPDATE users SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
+            values,
+        )
     if cursor.rowcount == 0:
         # No row matched user_id — the user does not exist.
         return None
@@ -350,8 +352,8 @@ def delete(conn: sqlite3.Connection, user_id: int) -> None:
         conn: An open ``app.db`` connection.
         user_id: The id of the user to delete.
     """
-    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     log.info("appdb.user_deleted", user_id=user_id)
 
 
@@ -393,8 +395,8 @@ def record_login(conn: sqlite3.Connection, user_id: int) -> None:
         conn: An open ``app.db`` connection.
         user_id: The id of the user who logged in.
     """
-    conn.execute(
-        "UPDATE users SET last_login_at = ? WHERE id = ?",
-        (_utc_now_iso(), user_id),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (_utc_now_iso(), user_id),
+        )

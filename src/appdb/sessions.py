@@ -107,14 +107,14 @@ def create(
         The created :class:`Session`.
     """
     now = _utc_now_iso()
-    cursor = conn.execute(
-        "INSERT INTO sessions "
-        "(token_hash, user_id, created_at, expires_at, last_seen_at, "
-        " user_agent, ip) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (token_hash, user_id, now, expires_at, now, user_agent, ip),
-    )
-    conn.commit()
+    with conn:
+        cursor = conn.execute(
+            "INSERT INTO sessions "
+            "(token_hash, user_id, created_at, expires_at, last_seen_at, "
+            " user_agent, ip) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (token_hash, user_id, now, expires_at, now, user_agent, ip),
+        )
     log.info("appdb.session_created", session_id=cursor.lastrowid, user_id=user_id)
     row = conn.execute(
         f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE id = ?",  # nosec B608 - _SESSION_COLUMNS is a module constant; lastrowid bound via ?
@@ -153,11 +153,11 @@ def touch_last_seen(conn: sqlite3.Connection, token_hash: str, *, seen_at: str) 
         token_hash: The session's token hash.
         seen_at: The ISO-8601 UTC timestamp to record.
     """
-    conn.execute(
-        "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
-        (seen_at, token_hash),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+            (seen_at, token_hash),
+        )
 
 
 def delete(conn: sqlite3.Connection, token_hash: str) -> None:
@@ -169,8 +169,8 @@ def delete(conn: sqlite3.Connection, token_hash: str) -> None:
         conn: An open ``app.db`` connection.
         token_hash: The session's token hash.
     """
-    conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
 
 def delete_for_user(conn: sqlite3.Connection, user_id: int) -> None:
@@ -183,8 +183,8 @@ def delete_for_user(conn: sqlite3.Connection, user_id: int) -> None:
         conn: An open ``app.db`` connection.
         user_id: The owning user's id.
     """
-    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     log.info("appdb.sessions_revoked", user_id=user_id)
 
 
@@ -202,6 +202,6 @@ def prune_expired(conn: sqlite3.Connection, *, now_iso: str) -> int:
     Returns:
         The count of pruned rows.
     """
-    cursor = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_iso,))
-    conn.commit()
+    with conn:
+        cursor = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_iso,))
     return cursor.rowcount

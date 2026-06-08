@@ -145,25 +145,27 @@ def create(
     """
     now = _utc_now_iso()
     try:
-        cursor = conn.execute(
-            "INSERT INTO api_keys "
-            "(key_hash, key_prefix, name, owner_user_id, scopes, "
-            " created_at, expires_at, last_used_at, revoked_at, "
-            " request_count) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0)",
-            (
-                key_hash,
-                key_prefix,
-                name,
-                owner_user_id,
-                scopes,
-                now,
-                expires_at,
-            ),
-        )
-        conn.commit()
+        # The INSERT runs inside ``with conn:`` so the happy path commits and any
+        # mid-write exception rolls back; the IntegrityError below is re-raised
+        # as a typed error after that rollback (§9.6).
+        with conn:
+            cursor = conn.execute(
+                "INSERT INTO api_keys "
+                "(key_hash, key_prefix, name, owner_user_id, scopes, "
+                " created_at, expires_at, last_used_at, revoked_at, "
+                " request_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0)",
+                (
+                    key_hash,
+                    key_prefix,
+                    name,
+                    owner_user_id,
+                    scopes,
+                    now,
+                    expires_at,
+                ),
+            )
     except sqlite3.IntegrityError as exc:
-        conn.rollback()
         # The only UNIQUE constraint on api_keys is key_hash.
         raise DuplicateKeyHashError("an API key with this hash already exists") from exc
     # A successful single-row INSERT always sets lastrowid; the assert narrows
@@ -265,11 +267,11 @@ def revoke(conn: sqlite3.Connection, api_key_id: int, *, revoked_at: str) -> Non
         api_key_id: The id of the key to revoke.
         revoked_at: The ISO-8601 UTC revocation timestamp.
     """
-    conn.execute(
-        "UPDATE api_keys SET revoked_at = ? WHERE id = ?",
-        (revoked_at, api_key_id),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "UPDATE api_keys SET revoked_at = ? WHERE id = ?",
+            (revoked_at, api_key_id),
+        )
     log.info("appdb.api_key_revoked", api_key_id=api_key_id)
 
 
@@ -284,8 +286,8 @@ def delete(conn: sqlite3.Connection, api_key_id: int) -> None:
         conn: An open ``app.db`` connection.
         api_key_id: The id of the key to delete.
     """
-    conn.execute("DELETE FROM api_keys WHERE id = ?", (api_key_id,))
-    conn.commit()
+    with conn:
+        conn.execute("DELETE FROM api_keys WHERE id = ?", (api_key_id,))
     log.info("appdb.api_key_deleted", api_key_id=api_key_id)
 
 
@@ -304,13 +306,13 @@ def touch(conn: sqlite3.Connection, api_key_id: int, *, used_at: str) -> None:
         api_key_id: The id of the key that served a request.
         used_at: The ISO-8601 UTC timestamp of the request.
     """
-    conn.execute(
-        "UPDATE api_keys "
-        "SET last_used_at = ?, request_count = request_count + 1 "
-        "WHERE id = ?",
-        (used_at, api_key_id),
-    )
-    conn.commit()
+    with conn:
+        conn.execute(
+            "UPDATE api_keys "
+            "SET last_used_at = ?, request_count = request_count + 1 "
+            "WHERE id = ?",
+            (used_at, api_key_id),
+        )
 
 
 # Sentinel for "this field was not supplied" in update(). expires_at is
@@ -365,10 +367,10 @@ def update(
 
     if assignments:
         params.append(api_key_id)  # type: ignore[arg-type]
-        conn.execute(
-            f"UPDATE api_keys SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
-            tuple(params),
-        )
-        conn.commit()
+        with conn:
+            conn.execute(
+                f"UPDATE api_keys SET {', '.join(assignments)} WHERE id = ?",  # nosec B608 - assignments are literal "col = ?" fragments built above; values bound via ?
+                tuple(params),
+            )
         log.info("appdb.api_key_updated", api_key_id=api_key_id)
     return get_by_id(conn, api_key_id)
