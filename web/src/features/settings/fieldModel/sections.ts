@@ -230,6 +230,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ],
       },
       {
+        id: 'identity',
+        title: 'Identity awareness',
+        subtitle:
+          'When on, the signed-in user\'s display name is threaded into the planner and answer model so first-person queries ("my passport", "our boiler") resolve to the right person. The name is also included in the result cache key so two users never share each other\'s answer.',
+        fields: [
+          {
+            key: 'SEARCH_IDENTITY_AWARE',
+            label: 'Identity-aware search',
+            hint: 'Resolve first-person references to the signed-in user\'s display name. Requires the account to have a display name set. Default on.',
+            control: { kind: 'toggle' },
+          },
+        ],
+      },
+      {
         id: 'search-models',
         title: 'Models',
         subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',

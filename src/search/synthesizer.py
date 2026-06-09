@@ -103,6 +103,7 @@ class Synthesizer(OpenAIChatMixin):
         chunks: Sequence[RetrievedChunk],
         *,
         mode: SearchMode,
+        asker: str | None = None,
     ) -> AnswerOutcome:
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
@@ -116,6 +117,9 @@ class Synthesizer(OpenAIChatMixin):
                 with its source document id so the model can cite [n] references.
             mode: Either ``"exploratory"`` (the model may return NeedsMore) or
                 ``"final"`` (the model must return Answered — coerced if needed).
+            asker: The sanitised asker identity, or None. When set, the user
+                message includes an identity directive in the control plane so
+                first-person references resolve to the asker.
 
         Returns:
             An ``Answered`` or ``NeedsMore`` dataclass.  Never raises.
@@ -128,6 +132,7 @@ class Synthesizer(OpenAIChatMixin):
             query=query,
             labelled_chunks=labelled_chunks,
             final=is_final,
+            asker=asker,
         )
         messages = [
             {"role": "system", "content": system_prompt},
