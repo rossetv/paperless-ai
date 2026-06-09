@@ -32,6 +32,7 @@
 export * from './client/core';
 export * from './client/auth';
 export * from './client/search';
+export * from './client/searchStream';
 export * from './client/access';
 export * from './client/settings';
 export * from './client/library';
