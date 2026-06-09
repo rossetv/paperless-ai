@@ -93,7 +93,7 @@ def _resolve_provider_defaults(
     return _ProviderDefaults(
         ollama_base_url=None,
         ai_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        planner_model="gpt-5.4-nano",
+        planner_model="gpt-5.4-mini",
         answer_model="gpt-5.5",
     )
 
@@ -194,6 +194,39 @@ class Settings:
     SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL: bool
     SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS: int
     SEARCH_WEAK_RETRIEVAL_MIN_SCORE: float
+
+    # Fail-fast gate knobs (search fail-fast spec §3)
+    SEARCH_GATE_ADEQUACY: bool
+    """Enable the query-adequacy gate (Layer 1, folded into the planner call).
+
+    When ``True`` (the default), a planner response signalling an inadequate
+    query is returned as a clarify outcome before retrieval and synthesis.
+    Set to ``False`` to restore today's unconditional-plan behaviour, e.g.
+    during incident response when the adequacy prompt has regressed.
+    """
+    SEARCH_GATE_RELEVANCE: bool
+    """Enable the post-retrieval relevance gate (Layer 2, absolute similarity).
+
+    When ``True`` (the default), retrieval results whose best vector similarity
+    falls below ``SEARCH_RELEVANCE_MIN_SIMILARITY`` *and* that have no keyword
+    hit are returned as a no-match outcome, skipping synthesis. Set to ``False``
+    to bypass the gate (fail-open) while the similarity floor is being tuned.
+    """
+    SEARCH_RELEVANCE_MIN_SIMILARITY: float
+    """Minimum absolute vector similarity required to proceed to synthesis.
+
+    An interim value of ``0.0`` (the default) effectively disables the floor
+    until Task 4 calibrates it against the live index. Floored at ``≥ 0.0``;
+    negative values are clamped to ``0.0``.
+    """
+    SEARCH_MIN_QUERY_CHARS: int
+    """Minimum number of non-whitespace characters for a search query (Layer 0).
+
+    Queries shorter than this floor are rejected before any LLM call. The
+    default of ``2`` catches blank, single-character, and whitespace-only
+    inputs without being so strict that it blocks legitimate short queries.
+    Floored at ``≥ 0``; negative values are clamped to ``0``.
+    """
 
     @classmethod
     def from_environment(cls) -> Settings:
@@ -426,5 +459,17 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_WEAK_RETRIEVAL_MIN_SCORE=max(
             0.0, _get_float_env(source, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE", 0.0)
+        ),
+        SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
+        SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
+        # Floored at 0.0 — a negative floor would never reject anything, same
+        # as 0.0, so clamping is more forgiving than raising.
+        SEARCH_RELEVANCE_MIN_SIMILARITY=max(
+            0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.0)
+        ),
+        # Floored at 0 — a negative char floor disables the Layer-0 guard, same
+        # as 0, so clamping matches the intent without refusing the daemon start.
+        SEARCH_MIN_QUERY_CHARS=max(
+            0, _get_int_env(source, "SEARCH_MIN_QUERY_CHARS", 2)
         ),
     )
