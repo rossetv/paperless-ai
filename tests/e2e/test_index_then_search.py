@@ -192,6 +192,9 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_GATE_JUDGE = False
     settings.SEARCH_JUDGE_MODEL = "gpt-5.4-mini"
     settings.SEARCH_JUDGE_REASONING_EFFORT = "low"
+    # Identity-awareness (Task 10): pin a real bool so the asker path exercises
+    # a deterministic gate rather than a truthy MagicMock attribute.
+    settings.SEARCH_IDENTITY_AWARE = True
     return settings
 
 

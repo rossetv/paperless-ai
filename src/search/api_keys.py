@@ -186,6 +186,8 @@ class ResolvedKey:
         owner_username: The owning user's login name, for logging/display.
         owner_role: The owner's current role. A key never grants more than
             its owner's role allows.
+        owner_display_name: The owner's optional display name (the search "who
+            is asking" signal), or None when the account has no display name.
         scopes: The frozenset of scopes parsed from the key's ``scopes``
             column.
         last_used_at: The key's stored ``last_used_at`` (or ``None``), so the
@@ -196,6 +198,7 @@ class ResolvedKey:
     owner_user_id: int
     owner_username: str
     owner_role: str
+    owner_display_name: str | None
     scopes: frozenset[str]
     last_used_at: str | None
 
@@ -263,6 +266,7 @@ def resolve_api_key(
         owner_user_id=owner.id,
         owner_username=owner.username,
         owner_role=owner.role,
+        owner_display_name=owner.display_name,
         scopes=parse_scopes(record.scopes),
         last_used_at=record.last_used_at,
     )

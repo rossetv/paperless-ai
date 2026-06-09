@@ -594,3 +594,26 @@ class TestAdequacyGate:
         outcome = planner.plan("life")
 
         assert isinstance(outcome, QueryPlan)
+
+
+class TestPlannerAsker:
+    """planner.plan forwards the asker into the user-turn message."""
+
+    def test_plan_forwards_asker_into_the_prompt(self) -> None:
+        """When asker is set, the planner user message must contain the name."""
+        captured: list[str] = []
+
+        def _capture_and_respond(*, model, messages, **rest):
+            for m in messages:
+                if m.get("role") == "user":
+                    captured.append(m["content"])
+            from tests.helpers.llm import make_chat_completion, planner_response_json
+
+            return make_chat_completion(planner_response_json())
+
+        planner = build_planner(make_search_settings(), planner_response_json())
+        planner._create_completion = _capture_and_respond  # type: ignore[method-assign]
+        planner.plan("my passport", asker="Vilmar Rosset")
+        assert any("Vilmar Rosset" in m for m in captured), (
+            "Asker not found in the planner's user message."
+        )

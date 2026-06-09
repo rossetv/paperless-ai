@@ -396,3 +396,12 @@ class TestRelevanceTierThresholds:
     def test_non_numeric_tier_raises(self, mocker) -> None:
         with pytest.raises(ValueError, match="SEARCH_RELEVANCE_TIER_GOOD"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_GOOD": "high"})
+
+
+class TestIdentityAwareSetting:
+    def test_defaults_on(self, mocker) -> None:
+        assert _build(mocker, _MINIMAL_ENV).SEARCH_IDENTITY_AWARE is True
+
+    def test_overridable_off(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_IDENTITY_AWARE": "false"})
+        assert settings.SEARCH_IDENTITY_AWARE is False
