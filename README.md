@@ -257,6 +257,9 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_GATE_ADEQUACY` | bool | `true` | **Layer 1** — let the planner return a "too vague, please clarify" outcome instead of a plan (folded into the existing planner call, no extra spend) |
 | `SEARCH_GATE_RELEVANCE` | bool | `true` | **Layer 2** — skip synthesis and return "no matches" when retrieval is clearly irrelevant |
 | `SEARCH_RELEVANCE_MIN_SIMILARITY` | float | `0.60` | Absolute vector-similarity floor for Layer 2. Reject only when the best match is below this **and** there is no keyword hit. Calibrated against the live index (good queries ≥ 0.666, off-topic ≈ 0.567) |
+| `SEARCH_RELEVANCE_TIER_STRONG` | float | `0.70` | Badge cut-point: a shown result at or above this similarity is labelled "Strong match". Independent of the gate floor above |
+| `SEARCH_RELEVANCE_TIER_GOOD` | float | `0.66` | Badge cut-point for "Good match". Validated `partial ≤ good ≤ strong` |
+| `SEARCH_RELEVANCE_TIER_PARTIAL` | float | `0.60` | Badge cut-point for "Partial match"; below this a shown result is labelled "Weak match" |
 
 ---
 

@@ -10,9 +10,14 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from search.sources import _best_chunk_per_document, _snippet, assemble_sources
-from tests.helpers.factories import make_indexed_document, make_retrieved_chunk
+from tests.helpers.factories import (
+    make_indexed_document,
+    make_relevance_thresholds,
+    make_retrieved_chunk,
+)
 
 _BASE_URL = "http://paperless.example:8000"
+_THRESHOLDS = make_relevance_thresholds()
 
 
 def _reader(*indexed) -> MagicMock:
@@ -22,7 +27,7 @@ def _reader(*indexed) -> MagicMock:
 
 
 def _assemble(chunks, reader):
-    return assemble_sources(chunks, reader, _BASE_URL)
+    return assemble_sources(chunks, reader, _BASE_URL, _THRESHOLDS)
 
 
 class TestAssembleSources:

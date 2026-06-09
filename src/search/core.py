@@ -76,6 +76,7 @@ from search.refinement import (
     trivial_plan,
 )
 from search.retriever import resolve_filters
+from search.relevance import RelevanceThresholds
 from search.sources import assemble_sources
 from search.text import (
     ADJUSTMENT_LOG_PREFIX_CHARS,
@@ -209,6 +210,20 @@ class SearchCore:
         consumers continue to use ``self._settings`` directly.
         """
         return self._settings
+
+    def _relevance_thresholds(self) -> RelevanceThresholds:
+        """Build the relevance-badge cut-points from the live settings.
+
+        Read per request from ``self._settings`` so a retune of the
+        ``SEARCH_RELEVANCE_TIER_*`` knobs hot-loads on the next search (the core
+        is rebuilt on a config-version bump) with no restart. The values are
+        already validated and ordered by the config layer.
+        """
+        return RelevanceThresholds(
+            strong=self._settings.SEARCH_RELEVANCE_TIER_STRONG,
+            good=self._settings.SEARCH_RELEVANCE_TIER_GOOD,
+            partial=self._settings.SEARCH_RELEVANCE_TIER_PARTIAL,
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -345,7 +360,10 @@ class SearchCore:
 
         answer_text = outcome.answer if isinstance(outcome, Answered) else ""
         sources = assemble_sources(
-            chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
+            chunks,
+            self._store_reader,
+            self._settings.PAPERLESS_PUBLIC_URL,
+            self._relevance_thresholds(),
         )
         sources = _cited_sources(sources, outcome)
         return self._build_result(
@@ -420,7 +438,10 @@ class SearchCore:
         # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
         chunks, _signal = self._retrieve_with_broaden(plan, ui_filters)
         sources = assemble_sources(
-            chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
+            chunks,
+            self._store_reader,
+            self._settings.PAPERLESS_PUBLIC_URL,
+            self._relevance_thresholds(),
         )
         return self._build_result("", sources, plan, budget, started, refined=False)
 
