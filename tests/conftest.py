@@ -56,6 +56,25 @@ def _reset_login_throttle():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_search_result_cache():
+    """Drop the process-wide search-result cache before each test.
+
+    The result cache is a process singleton keyed by query + config version. A
+    test that runs a cacheable query with a live TTL leaves a warm entry that a
+    later test issuing the *same* query (same config version) would be served
+    from cache — short-circuiting the pipeline and breaking its LLM-call-count
+    assertions (e.g. ``test_search_pipeline`` expecting two calls). The unit
+    search tests reset it by hand; doing it here as an autouse fixture makes
+    every test — unit, integration, e2e — start from a cold cache, closing the
+    cross-suite leak at source rather than per file.
+    """
+    from search.cache import reset_search_result_cache
+
+    reset_search_result_cache()
+    yield
+
+
 @pytest.fixture
 def settings():
     """A real Settings instance with minimal valid configuration."""

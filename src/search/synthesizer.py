@@ -56,6 +56,7 @@ from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from common.llm import LlmCallUsage
 
 log = structlog.get_logger(__name__)
 
@@ -104,6 +105,7 @@ class Synthesizer(OpenAIChatMixin):
         *,
         mode: SearchMode,
         asker: str | None = None,
+        usage_sink: list[LlmCallUsage] | None = None,
     ) -> AnswerOutcome:
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
@@ -120,6 +122,10 @@ class Synthesizer(OpenAIChatMixin):
             asker: The sanitised asker identity, or None. When set, the user
                 message includes an identity directive in the control plane so
                 first-person references resolve to the asker.
+            usage_sink: Optional list to receive one
+                :class:`~common.llm.LlmCallUsage` record capturing the token
+                usage for this synthesise call (the search telemetry). ``None``
+                (the default) skips capture and keeps behaviour unchanged.
 
         Returns:
             An ``Answered`` or ``NeedsMore`` dataclass.  Never raises.
@@ -146,6 +152,7 @@ class Synthesizer(OpenAIChatMixin):
             log_event_prefix="synthesiser",
             reasoning_effort=self.settings.SEARCH_ANSWER_REASONING_EFFORT,
             response_format=_synthesiser_response_format(self.settings),
+            usage_sink=usage_sink,
         )
         if raw_content is None:
             return self._degrade(

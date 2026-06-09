@@ -20,6 +20,30 @@ const meta = {
       date_to: null,
     },
     onFiltersChange: () => {},
+    // A representative mid-stream snapshot: planning and retrieval done, the
+    // judge currently running.
+    phaseRecords: [
+      {
+        phase: 'plan',
+        label: 'Planning the query',
+        detail: {
+          rewritten_query: 'Total Npower energy payments in 2024',
+          skipped_trivial: false,
+        },
+        tokens: { prompt: 1180, completion: 64, reasoning: 0, total: 1244 },
+        cost: { usd: 0.004, local: false },
+        ms: 410,
+      },
+      {
+        phase: 'retrieve',
+        label: 'Retrieving documents',
+        detail: { chunk_count: 18, doc_count: 6, broadened: false },
+        tokens: null,
+        cost: null,
+        ms: 120,
+      },
+    ],
+    activePhase: 'judge',
   },
 } satisfies Meta<typeof LoadingScreen>;
 

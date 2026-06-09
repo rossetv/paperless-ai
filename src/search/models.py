@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from common.llm import LlmCallUsage as LlmCallUsage  # re-exported for consumers
 from search.relevance import RelevanceTier
 
 #: The synthesiser's two operating modes (spec §6.3).  ``"exploratory"`` lets
@@ -134,6 +135,59 @@ class SourceDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """Token counts for one or more LLM calls. ``reasoning`` is a subset of
+    ``completion`` (reasoning tokens bill as output); ``total`` == prompt +
+    completion (the API's ``total_tokens``)."""
+
+    prompt: int
+    completion: int
+    reasoning: int
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class Cost:
+    """A priced cost. ``usd`` is None for an unknown/unpriced model; ``local`` is
+    True for a local (Ollama) provider, where cost is genuinely zero."""
+
+    usd: float | None
+    local: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseRecord:
+    """One completed pipeline phase, for the trace. ``tokens``/``cost`` are None
+    for non-LLM phases (retrieve, gate, cache)."""
+
+    phase: str
+    label: str
+    detail: dict[str, object]
+    tokens: TokenUsage | None
+    cost: Cost | None
+    ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class SearchTrace:
+    """The ordered per-phase trace assembled during a search."""
+
+    phases: tuple[PhaseRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CostSummary:
+    """Whole-query token + cost totals. ``usd`` is None when any LLM call was
+    unpriced-and-not-local (no honest total). ``local`` is True when every billed
+    call was local."""
+
+    tokens: TokenUsage
+    usd: float | None
+    local: bool
+    llm_calls: int
+
+
+@dataclass(frozen=True, slots=True)
 class SearchStats:
     """Pipeline execution statistics returned with every SearchResult.
 
@@ -144,11 +198,23 @@ class SearchStats:
             number of calls actually billed; on a successful query they match.
         latency_ms: Wall-clock time for the full pipeline in milliseconds.
         refined: Whether the bounded refinement loop was triggered.
+        trace: The ordered per-phase reasoning trace assembled during the
+            search (planner rewrite, retrieve, gate, per-document judge
+            verdicts, synthesis, refinement). Defaults to an empty trace so
+            pre-telemetry constructions stay valid; the core populates it.
+        cost: Whole-query token + dollar-cost totals. Defaults to a zero-token,
+            unpriced summary; the core populates it from the per-phase usage.
+            Both ride on ``SearchStats`` so they are cacheable and reach every
+            consumer (REST, MCP, the SPA) uniformly.
     """
 
     llm_calls: int
     latency_ms: int
     refined: bool
+    trace: SearchTrace = SearchTrace(phases=())
+    cost: CostSummary = CostSummary(
+        tokens=TokenUsage(0, 0, 0, 0), usd=None, local=False, llm_calls=0
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,17 +317,36 @@ class JudgeCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class JudgeVerdict:
-    """The relevance judge's verdict.
+class DocVerdict:
+    """The judge's per-document verdict: keep/drop + a one-line reason.
 
-    ``relevant_document_ids`` are the documents to keep. An empty set with
-    ``degraded=False`` means "nothing is relevant" → the core bails. On any judge
-    failure the verdict carries the full candidate set with ``degraded=True``
-    (fail-open: keep everything), so a broken judge never suppresses an answer.
+    ``reason`` is empty when SEARCH_JUDGE_RATIONALES is off, or a short
+    (length-capped) justification when on. It is model-generated text, rendered
+    as escaped text on the client.
     """
 
-    relevant_document_ids: frozenset[int]
+    document_id: int
+    keep: bool
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgeVerdict:
+    """The relevance judge's verdict — one :class:`DocVerdict` per candidate.
+
+    ``relevant_document_ids`` (the documents to keep) is derived from the kept
+    verdicts. An all-drop verdict with ``degraded=False`` means "nothing
+    relevant" → the core bails. On any judge failure the verdict carries every
+    candidate as kept with ``degraded=True`` (fail-open).
+    """
+
+    verdicts: tuple[DocVerdict, ...]
     degraded: bool = False
+
+    @property
+    def relevant_document_ids(self) -> frozenset[int]:
+        """Derive the set of kept document ids from the per-document verdicts."""
+        return frozenset(v.document_id for v in self.verdicts if v.keep)
 
 
 # ---------------------------------------------------------------------------

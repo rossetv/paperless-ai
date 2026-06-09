@@ -596,6 +596,43 @@ class TestAdequacyGate:
         assert isinstance(outcome, QueryPlan)
 
 
+class TestPlannerUsageSink:
+    """planner.plan forwards a usage_sink into the shared completion helper."""
+
+    def test_plan_forwards_usage_sink_into_completion_helper(self) -> None:
+        """The passed sink is forwarded verbatim to _complete_with_model_fallback."""
+        planner = build_planner(make_search_settings(), planner_response_json())
+        seen: dict[str, object] = {}
+
+        def _spy(**kwargs: object) -> str:
+            seen.update(kwargs)
+            return planner_response_json()
+
+        planner._complete_with_model_fallback = _spy  # type: ignore[method-assign]
+        sink: list = []
+        planner.plan("a query", usage_sink=sink)
+        assert seen.get("usage_sink") is sink
+
+    def test_plan_populates_the_sink_end_to_end(self) -> None:
+        """A real (mocked) call records one LlmCallUsage into the sink (zeros, as
+        make_chat_completion pins usage=None)."""
+        from common.llm import LlmCallUsage
+
+        planner = build_planner(make_search_settings(), planner_response_json())
+        sink: list[LlmCallUsage] = []
+        planner.plan("a query", usage_sink=sink)
+        assert len(sink) == 1
+        assert sink[0] == LlmCallUsage(
+            model="gpt-5.4-mini", prompt=0, completion=0, reasoning=0, total=0
+        )
+
+    def test_plan_without_sink_still_works(self) -> None:
+        """Omitting usage_sink (the default) leaves behaviour unchanged."""
+        planner = build_planner(make_search_settings(), planner_response_json())
+        outcome = planner.plan("a query")
+        assert isinstance(outcome, QueryPlan)
+
+
 class TestPlannerAsker:
     """planner.plan forwards the asker into the user-turn message."""
 

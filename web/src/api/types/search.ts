@@ -114,6 +114,126 @@ export interface SearchStats {
 }
 
 // ---------------------------------------------------------------------------
+// Trace + cost telemetry (Wave — live reasoning trace + token/cost)
+// ---------------------------------------------------------------------------
+
+/**
+ * Token counts for one or more LLM calls.
+ *
+ * Mirrors `TokenUsageResponse` in `wire/search.py`. `reasoning` is a SUBSET of
+ * `completion` (reasoning tokens bill as output) — never add it to a cost
+ * separately; `total` is the API's `total_tokens`.
+ */
+export interface TokenUsage {
+  prompt: number;
+  completion: number;
+  reasoning: number;
+  total: number;
+}
+
+/**
+ * A priced cost for one phase or one call.
+ *
+ * Mirrors `CostResponse`. `usd` is `null` for an unknown/unpriced model (the UI
+ * shows "—"); `local` is `true` for a local (Ollama) provider, where the cost
+ * is genuinely zero.
+ */
+export interface Cost {
+  usd: number | null;
+  local: boolean;
+}
+
+/**
+ * The pipeline phases, in execution order. `cache` is emitted only on a
+ * cache-hit short-circuit. Mirrors the backend `phase` discriminator.
+ */
+export type SearchPhase =
+  | 'plan'
+  | 'retrieve'
+  | 'gate'
+  | 'judge'
+  | 'synthesise'
+  | 'refine'
+  | 'cache';
+
+/**
+ * One completed pipeline phase, for the trace.
+ *
+ * Mirrors `PhaseRecordResponse`. `tokens`/`cost` are `null` for the non-LLM
+ * phases (retrieve, gate, cache). `detail` is a per-phase free-form map the SPA
+ * renders (the planner's rewritten query, the judge's per-document verdicts, …).
+ */
+export interface PhaseRecord {
+  phase: SearchPhase;
+  label: string;
+  detail: Record<string, unknown>;
+  tokens: TokenUsage | null;
+  cost: Cost | null;
+  ms: number;
+}
+
+/** The ordered per-phase trace assembled during a search. Mirrors `SearchTraceResponse`. */
+export interface SearchTrace {
+  phases: PhaseRecord[];
+}
+
+/**
+ * Whole-query token + dollar-cost totals. Mirrors `CostSummaryResponse`.
+ *
+ * `usd` is `null` when any LLM call was unpriced-and-not-local (no honest
+ * total); `local` is `true` when every billed call was local.
+ */
+export interface CostSummary {
+  tokens: TokenUsage;
+  usd: number | null;
+  local: boolean;
+  llm_calls: number;
+}
+
+// ---------------------------------------------------------------------------
+// NDJSON stream events — one JSON object per line from POST /api/search/stream
+// ---------------------------------------------------------------------------
+
+/** A phase has begun, emitted before its work runs (`type: "phase_start"`). */
+export interface PhaseStartEvent {
+  type: 'phase_start';
+  seq: number;
+  phase: SearchPhase;
+  label: string;
+}
+
+/**
+ * A phase has completed (`type: "phase_done"`). Carries the full `PhaseRecord`
+ * fields inline alongside the frame discriminator and sequence number.
+ */
+export interface PhaseDoneEvent extends PhaseRecord {
+  type: 'phase_done';
+  seq: number;
+}
+
+/** The terminal success frame carrying the full search response (`type: "result"`). */
+export interface ResultEvent {
+  type: 'result';
+  seq: number;
+  result: SearchResponse;
+}
+
+/** A terminal failure frame (`type: "error"`). `kind` is a coarse machine code. */
+export interface ErrorEvent {
+  type: 'error';
+  seq: number;
+  kind: string;
+  message: string;
+}
+
+/** One decoded NDJSON frame from the search stream. Branch on `type`. */
+export type StreamEvent =
+  | PhaseStartEvent
+  | PhaseDoneEvent
+  | ResultEvent
+  | ErrorEvent;
+
+// ---------------------------------------------------------------------------
 // Top-level search response types
 // ---------------------------------------------------------------------------
 
@@ -134,6 +254,16 @@ export interface SearchResponse {
   sources: SourceDocument[];
   plan: QueryPlan;
   stats: SearchStats;
+  /**
+   * The ordered per-phase reasoning trace (mirrors `SearchResponse.trace`).
+   * Always present now — empty `phases` for a Layer-1 clarify short-circuit.
+   */
+  trace: SearchTrace;
+  /**
+   * Whole-query token + cost totals (mirrors `SearchResponse.cost`). Always
+   * present now; `usd` is `null` when the spend cannot be honestly priced.
+   */
+  cost: CostSummary;
   /** Discriminator for the result type — branch on this in the UI. */
   outcome_kind: OutcomeKind;
 }

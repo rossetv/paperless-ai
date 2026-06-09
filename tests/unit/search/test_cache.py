@@ -199,6 +199,78 @@ class TestIsCacheable:
         assert is_cacheable(result) is False
 
 
+class TestTraceCostRoundTrip:
+    """A populated trace + cost summary survives the cache byte-for-byte, and a
+    cache hit emits exactly one ``cache`` phase before returning the cached
+    result (the trace/cost ride on the result, so no extra plumbing is needed —
+    this locks that contract)."""
+
+    def _result_with_trace(self):
+        from search.models import (
+            Cost,
+            CostSummary,
+            PhaseRecord,
+            SearchResult,
+            SearchStats,
+            SearchTrace,
+            TokenUsage,
+        )
+
+        trace = SearchTrace(
+            phases=(
+                PhaseRecord(
+                    phase="plan",
+                    label="Planning the query",
+                    detail={
+                        "rewritten_query": "boiler warranty",
+                        "skipped_trivial": False,
+                    },
+                    tokens=TokenUsage(
+                        prompt=100, completion=20, reasoning=5, total=120
+                    ),
+                    cost=Cost(usd=0.0004, local=False),
+                    ms=42,
+                ),
+                PhaseRecord(
+                    phase="retrieve",
+                    label="Retrieving documents",
+                    detail={"chunk_count": 3, "doc_count": 2, "broadened": False},
+                    tokens=None,
+                    cost=None,
+                    ms=7,
+                ),
+            )
+        )
+        cost = CostSummary(
+            tokens=TokenUsage(prompt=100, completion=20, reasoning=5, total=120),
+            usd=0.0004,
+            local=False,
+            llm_calls=1,
+        )
+        stats = SearchStats(
+            llm_calls=2, latency_ms=49, refined=False, trace=trace, cost=cost
+        )
+        return SearchResult(
+            answer="A real answer [1].",
+            sources=(make_source_document(),),
+            plan=make_search_result().plan,
+            stats=stats,
+        )
+
+    def test_trace_and_cost_survive_the_cache_unchanged(self) -> None:
+        cache = SearchResultCache(ttl_seconds=100, clock=_FakeClock())
+        result = self._result_with_trace()
+        cache.put(_key(), result)
+        got = cache.get(_key())
+        # The cache stores the object by reference (no copy) — identity holds and
+        # the trace/cost are byte-identical.
+        assert got is result
+        assert got.stats.trace == result.stats.trace
+        assert got.stats.cost == result.stats.cost
+        assert got.stats.trace.phases[0].phase == "plan"
+        assert got.stats.cost.usd == 0.0004
+
+
 class TestSingletonAccessor:
     def test_accessor_returns_the_same_instance(self) -> None:
         reset_search_result_cache()

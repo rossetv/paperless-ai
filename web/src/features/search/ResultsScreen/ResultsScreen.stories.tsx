@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import type { SearchResponse } from '../../../api/types';
+import { EMPTY_TELEMETRY } from '../../../api/types/__fixtures__/searchResponse';
 import { ResultsScreen } from './ResultsScreen';
 
 const RESPONSE: SearchResponse = {
@@ -40,6 +41,7 @@ const RESPONSE: SearchResponse = {
     sub_questions: [],
   },
   stats: { llm_calls: 3, latency_ms: 1842, refined: true },
+  ...EMPTY_TELEMETRY,
   outcome_kind: 'answered',
 };
 

@@ -213,4 +213,32 @@ describe('AnswerCard retry states', () => {
     expect(screen.getByText(/1 source/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /view source 1/i })).toBeInTheDocument();
   });
+
+  it('renders the whole-query cost chip from the cost summary', () => {
+    render(
+      <AnswerCard
+        answer="The boiler was installed in 2021 [1]."
+        sources={[makeSource(1)]}
+        stats={stats}
+        cost={{
+          tokens: { prompt: 3000, completion: 400, reasoning: 0, total: 3400 },
+          usd: 0.012,
+          local: false,
+          llm_calls: 3,
+        }}
+      />,
+    );
+    expect(screen.getByText('3.4k tok · $0.012')).toBeInTheDocument();
+  });
+
+  it('omits the cost chip when no cost summary is given', () => {
+    render(
+      <AnswerCard
+        answer="The boiler was installed in 2021 [1]."
+        sources={[makeSource(1)]}
+        stats={stats}
+      />,
+    );
+    expect(screen.queryByText(/tok/)).not.toBeInTheDocument();
+  });
 });

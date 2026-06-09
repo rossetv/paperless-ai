@@ -55,6 +55,13 @@ def make_chat_completion(content: str | None) -> MagicMock:
     The shape ``OpenAIChatMixin._create_completion`` returns:
     ``completion.choices[0].message.content``.
 
+    ``usage`` is pinned to ``None`` so the ``usage_sink`` capture path in
+    ``_complete_with_model_fallback`` records honest zeros (the Ollama/older-
+    provider case) rather than reading a truthy auto-``MagicMock`` for every
+    token field — which would poison the telemetry's token sums and pricing
+    arithmetic with mock objects. A test that needs real token counts sets
+    ``completion.usage`` itself (see ``tests/unit/common/test_llm_usage_sink``).
+
     Args:
         content: The assistant message content, or ``None`` to model an empty
             completion.
@@ -63,6 +70,7 @@ def make_chat_completion(content: str | None) -> MagicMock:
     choice.message.content = content
     completion = MagicMock()
     completion.choices = [choice]
+    completion.usage = None
     return completion
 
 
@@ -108,9 +116,27 @@ def needs_more_response_json(adjustment: str) -> str:
     return json.dumps({"outcome": "needs_more", "adjustment": adjustment})
 
 
-def judge_response_json(relevant_document_ids: list[int]) -> str:
-    """Return a well-formed relevance-judge JSON response."""
-    return json.dumps({"relevant_document_ids": relevant_document_ids})
+def judge_response_json(
+    relevant_document_ids: list[int],
+    dropped_document_ids: list[int] | None = None,
+) -> str:
+    """Return a well-formed relevance-judge JSON response (per-document verdicts).
+
+    Each id in *relevant_document_ids* produces a ``keep: true`` verdict. Each
+    id in *dropped_document_ids* (optional) produces an explicit ``keep: false``
+    verdict. Callers that need explicit drop verdicts (so the new judge does not
+    default-keep omitted ids) should pass both lists.
+    """
+    verdicts = [
+        {"document_id": doc_id, "keep": True, "reason": ""}
+        for doc_id in relevant_document_ids
+    ]
+    if dropped_document_ids:
+        verdicts += [
+            {"document_id": doc_id, "keep": False, "reason": "not relevant"}
+            for doc_id in dropped_document_ids
+        ]
+    return json.dumps({"verdicts": verdicts})
 
 
 class ScriptedLLMClient:

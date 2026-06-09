@@ -56,11 +56,14 @@ def _core(llm_client, **overrides):
 
 
 def test_judge_empty_verdict_bails_without_synthesis() -> None:
+    """Explicit keep=false for every candidate → no_match without synthesis."""
     reset_search_result_cache()
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("unreachable", citations=[])],
-        judge_response=judge_response_json([]),  # nothing relevant
+        # Explicit drop of every candidate — the new per-document judge requires
+        # explicit verdicts to drop; an empty list would default to keep=True.
+        judge_response=judge_response_json([], dropped_document_ids=[1, 2]),
     )
     result = _core(llm_client).answer("anything")
     assert result.outcome_kind == "no_match"
@@ -76,7 +79,9 @@ def test_judge_filters_to_relevant_documents() -> None:
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        judge_response=judge_response_json([1]),  # keep doc 1, drop doc 2
+        judge_response=judge_response_json(
+            [1], dropped_document_ids=[2]
+        ),  # keep doc 1, drop doc 2
     )
     result = _core(llm_client).answer("warranty?")
     assert result.outcome_kind == "answered"
