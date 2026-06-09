@@ -2,25 +2,25 @@
 
 This module holds the static prompt templates for the two LLM stages:
 
-1. **Planner** (``build_planner_system_prompt`` + ``build_planner_user_message``)
+1. **Planner** (``PLANNER_SYSTEM_PROMPT`` + ``build_planner_user_message``)
    — analyses a user query and emits structured JSON that drives hybrid
    retrieval.  The system prompt is byte-stable (no per-call variable) so the
    provider can cache it; today's date lives in the *user* turn so the model can
    still resolve relative temporal language (RAG-09).
 
-2. **Synthesiser** (``build_synthesiser_user_message``) — assembles the user's
-   question and retrieved chunks into a single user-role message.  The control
-   plane (the question and any instructions) is placed *first*; the untrusted
-   chunk content follows, wrapped in a data block fenced by an unpredictable
-   per-message nonce (SRCH-01, CODE_GUIDELINES.md §10.2).  A document chunk
-   cannot reproduce the nonce, so it cannot forge the data-block boundary or
-   smuggle a control marker that reads as being outside the data region.
+2. **Synthesiser** (``SYNTHESISER_SYSTEM_PROMPT`` + ``build_synthesiser_user_message``)
+   — assembles the user's question and retrieved chunks into a single user-role
+   message.  The control plane (the question and any instructions) is placed
+   *first*; the untrusted chunk content follows, wrapped in a data block fenced
+   by an unpredictable per-message nonce (SRCH-01, CODE_GUIDELINES.md §10.2).
+   A document chunk cannot reproduce the nonce, so it cannot forge the
+   data-block boundary or smuggle a control marker that reads as being outside
+   the data region.
 
 Usage pattern::
 
-    from search.prompts import build_planner_system_prompt, build_planner_user_message
-    system_prompt = build_planner_system_prompt()
-    user_message  = build_planner_user_message(query=query, today="2026-05-20")
+    from search.prompts import PLANNER_SYSTEM_PROMPT, build_planner_user_message
+    user_message = build_planner_user_message(query=query, today="2026-05-20")
 
 Security note: these prompts embed no retrieved document content in the system
 prompt; they are control-plane prompts only.  Document chunks arrive in the
@@ -130,7 +130,10 @@ def _synthesiser_response_format(settings: Settings) -> dict[str, object] | None
 # Planner prompt
 # ---------------------------------------------------------------------------
 
-_PLANNER_SYSTEM_PROMPT_TEMPLATE: str = """
+#: The byte-stable planner system prompt — no per-call variable, so it is a
+#: stable, cacheable prefix across every query and every day (RAG-09, spec §4.3).
+#: Today's date lives in the user turn (:func:`build_planner_user_message`).
+PLANNER_SYSTEM_PROMPT: str = """
 You are a search-query planning engine.  Your sole job is to analyse the user's
 search query and produce a structured JSON object that will drive a hybrid
 retrieval pipeline over a personal document archive (Paperless-ngx).
@@ -194,19 +197,6 @@ discrete sub-questions.  Leave the list empty for a straightforward query.
 """.strip()
 
 
-def build_planner_system_prompt() -> str:
-    """Return the byte-stable planner system prompt.
-
-    The prompt contains no per-call variable — today's date lives in the user
-    turn (:func:`build_planner_user_message`) so this system prompt is a stable,
-    cacheable prefix across every query and every day (RAG-09, spec §4.3).
-
-    Returns:
-        The static system prompt string.
-    """
-    return _PLANNER_SYSTEM_PROMPT_TEMPLATE
-
-
 def build_planner_user_message(query: str, today: str) -> str:
     """Assemble the planner user-role message: today's date, then the query.
 
@@ -241,7 +231,9 @@ _FINAL_MODE_TRIGGER: str = "FINAL — you must answer"
 # prompt tells the model that everything between the two nonce fences is data,
 # never instructions — the injection-safe pattern required by
 # CODE_GUIDELINES.md §10.2.
-_SYNTHESISER_SYSTEM_PROMPT: str = """
+#: The static synthesiser system prompt.  Referenced directly by the synthesiser;
+#: exposed as a public constant because it is intentionally used by importers.
+SYNTHESISER_SYSTEM_PROMPT: str = """
 You are an answer-synthesis engine for a personal document archive.
 Your job is to read the user's question and the retrieved document chunks,
 then produce either a prose answer or a signal that more context is needed.
@@ -303,15 +295,6 @@ Use British English throughout.  Be concise; avoid padding.
 # is far beyond any chunk's ability to guess or reproduce, so a chunk cannot
 # forge the closing fence and break out of the data region.
 _DATA_FENCE_LABEL: str = "DATA"
-
-
-def build_synthesiser_system_prompt() -> str:
-    """Return the static synthesiser system prompt.
-
-    Returns:
-        The system prompt string.
-    """
-    return _SYNTHESISER_SYSTEM_PROMPT
 
 
 def build_synthesiser_user_message(

@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from search.prompts import (
     PLANNER_JSON_SCHEMA,
+    PLANNER_SYSTEM_PROMPT,
     SYNTHESISER_JSON_SCHEMA,
     _planner_response_format,
     _synthesiser_response_format,
-    build_planner_system_prompt,
     build_planner_user_message,
     build_synthesiser_user_message,
 )
@@ -89,18 +89,16 @@ class TestResponseFormatGating:
 class TestPlannerSystemPromptByteStable:
     """The planner system prompt no longer interpolates {today} (RAG-09)."""
 
-    def test_system_prompt_takes_no_argument(self) -> None:
-        prompt = build_planner_system_prompt()
-        assert "search-query planning engine" in prompt
+    def test_system_prompt_contains_expected_content(self) -> None:
+        assert "search-query planning engine" in PLANNER_SYSTEM_PROMPT
 
     def test_system_prompt_has_no_date_placeholder(self) -> None:
-        prompt = build_planner_system_prompt()
-        assert "{today}" not in prompt
+        assert "{today}" not in PLANNER_SYSTEM_PROMPT
         # No concrete date leaked in either — it lives in the user turn now.
-        assert "Today's date is 20" not in prompt
+        assert "Today's date is 20" not in PLANNER_SYSTEM_PROMPT
 
-    def test_system_prompt_is_identical_across_calls(self) -> None:
-        assert build_planner_system_prompt() == build_planner_system_prompt()
+    def test_system_prompt_is_a_non_empty_string(self) -> None:
+        assert isinstance(PLANNER_SYSTEM_PROMPT, str) and PLANNER_SYSTEM_PROMPT
 
 
 class TestPlannerUserMessageCarriesDate:

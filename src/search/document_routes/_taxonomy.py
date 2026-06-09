@@ -28,7 +28,7 @@ from search.deps import require_api_scope, require_api_scope_member
 from search.wire import (
     TaxonomyCreateRequest,
     TaxonomyItemResponse,
-    _paperless_item_to_response,
+    paperless_item_to_response,
 )
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ def register_taxonomy_routes(
             items = await loop.run_in_executor(None, paperless.list_correspondents)
         finally:
             paperless.close()
-        return [_paperless_item_to_response(i) for i in items]
+        return [paperless_item_to_response(i) for i in items]
 
     @router.post(
         "/api/correspondents",
@@ -88,7 +88,7 @@ def register_taxonomy_routes(
             )
         finally:
             paperless.close()
-        return _paperless_item_to_response(created)
+        return paperless_item_to_response(created)
 
     @router.get(
         "/api/document-types",
@@ -105,7 +105,7 @@ def register_taxonomy_routes(
             items = await loop.run_in_executor(None, paperless.list_document_types)
         finally:
             paperless.close()
-        return [_paperless_item_to_response(i) for i in items]
+        return [paperless_item_to_response(i) for i in items]
 
     @router.post(
         "/api/document-types",
@@ -125,7 +125,7 @@ def register_taxonomy_routes(
             )
         finally:
             paperless.close()
-        return _paperless_item_to_response(created)
+        return paperless_item_to_response(created)
 
     @router.get(
         "/api/tags",
@@ -142,7 +142,7 @@ def register_taxonomy_routes(
             items = await loop.run_in_executor(None, paperless.list_tags)
         finally:
             paperless.close()
-        return [_paperless_item_to_response(i) for i in items]
+        return [paperless_item_to_response(i) for i in items]
 
     @router.post(
         "/api/tags",
@@ -162,4 +162,4 @@ def register_taxonomy_routes(
             )
         finally:
             paperless.close()
-        return _paperless_item_to_response(created)
+        return paperless_item_to_response(created)

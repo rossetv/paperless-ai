@@ -48,8 +48,8 @@ from search.models import (
     SearchMode,
 )
 from search.prompts import (
+    SYNTHESISER_SYSTEM_PROMPT,
     _synthesiser_response_format,
-    build_synthesiser_system_prompt,
     build_synthesiser_user_message,
 )
 from search.text import ADJUSTMENT_LOG_PREFIX_CHARS, QUERY_LOG_PREFIX_CHARS
@@ -123,7 +123,7 @@ class Synthesizer(OpenAIChatMixin):
         labelled_chunks = [(chunk.document_id, chunk.text) for chunk in chunks]
         is_final = mode == "final"
 
-        system_prompt = build_synthesiser_system_prompt()
+        system_prompt = SYNTHESISER_SYSTEM_PROMPT
         user_message = build_synthesiser_user_message(
             query=query,
             labelled_chunks=labelled_chunks,
