@@ -32,3 +32,26 @@ def test_search_trace_and_cost_summary_compose():
     trace = SearchTrace(phases=(pr,))
     cs = CostSummary(tokens=TokenUsage(1, 2, 0, 3), usd=0.001, local=False, llm_calls=2)
     assert trace.phases[0].phase == "judge" and cs.llm_calls == 2
+
+
+def test_search_stats_carries_trace_and_cost():
+    from search.models import CostSummary, SearchStats, SearchTrace, TokenUsage
+
+    stats = SearchStats(
+        llm_calls=2,
+        latency_ms=10,
+        refined=False,
+        trace=SearchTrace(()),
+        cost=CostSummary(TokenUsage(0, 0, 0, 0), None, False, 0),
+    )
+    assert stats.trace.phases == () and stats.cost.llm_calls == 0
+
+
+def test_search_stats_trace_and_cost_default_to_empty():
+    from search.models import SearchStats
+
+    stats = SearchStats(llm_calls=0, latency_ms=0, refined=False)
+    assert stats.trace.phases == ()
+    assert stats.cost.llm_calls == 0
+    assert stats.cost.tokens == TokenUsage(0, 0, 0, 0)
+    assert stats.cost.usd is None and stats.cost.local is False
