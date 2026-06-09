@@ -75,7 +75,6 @@ export function DocumentPreviewScreen({
               <Stack direction="horizontal" gap={8} align="center">
                 <CitationMark
                   index={searchContext.sourceIndex}
-                  onActivate={() => {}}
                 />
                 <Text as="span" variant="micro" tone="tertiary">
                   Source {searchContext.sourceIndex} of {searchContext.sourceCount}

@@ -224,7 +224,7 @@ export function UserEditDrawer({
             id="user-role"
             label="Role"
             value={form.role}
-            options={ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            options={ROLE_OPTIONS}
             onChange={(value) => setField('role', value as RoleValue)}
           />
           <div className={styles['full']}>

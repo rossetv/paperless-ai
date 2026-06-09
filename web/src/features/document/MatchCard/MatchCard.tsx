@@ -76,7 +76,7 @@ export function MatchCard({
   return (
     <Card className={`${styles['card'] ?? ''} ${styles['card-match'] ?? ''}`}>
       <div className={styles['header']}>
-        <CitationMark index={idx + 1} onActivate={() => {}} />
+        <CitationMark index={idx + 1} />
         <span className={styles['meta']}>
           <strong>Source {idx + 1} of {sources.length}</strong>
           {' · relevance '}{src.score.toFixed(2)}

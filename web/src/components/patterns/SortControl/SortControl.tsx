@@ -17,7 +17,7 @@ export interface SortControlProps<T extends string = string> {
   /** The muted prefix label on the trigger, e.g. "Sort". */
   label: string;
   /** The available sort options. */
-  options: Array<SortOption<T>>;
+  options: ReadonlyArray<SortOption<T>>;
   /** The currently selected value (controlled). */
   value: T;
   /** Called with the chosen value when the user picks a menu item. */

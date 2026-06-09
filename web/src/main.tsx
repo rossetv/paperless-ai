@@ -4,11 +4,9 @@
  * Wires the provider stack around `App`:
  *   1. `QueryClientProvider` — TanStack Query server state
  *   2. `BrowserRouter`       — React Router
- *   3. `AuthProvider`        — client-side auth state (useAuth hook)
  *
- * The `BrowserRouter` sits outside `AuthProvider` so the router is available
- * to both auth-gated pages. `AuthProvider` sits inside `QueryClientProvider`
- * so auth-aware mutations (the login form) have access to the query client.
+ * The `BrowserRouter` sits inside `QueryClientProvider` so auth-aware
+ * mutations (the login form) have access to the query client.
  */
 
 import React from 'react';
@@ -20,7 +18,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
 import './styles/global.css';
-import { AuthProvider } from './hooks/useAuth';
 import App from './App';
 
 const queryClient = new QueryClient({
@@ -46,9 +43,7 @@ ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <App />
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>,
