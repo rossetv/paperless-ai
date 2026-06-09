@@ -20,18 +20,21 @@ Forbidden: direct LLM/HTTP calls, imports from indexer/.
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 
 from appdb import recent_searches as recent_search_store
 from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
+from search.errors import LlmBudgetExceededError
 from search.identity import resolve_asker
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import CurrentUser
@@ -52,6 +55,7 @@ from search.wire import (
     to_search_response,
     to_stats_response,
 )
+from search.wire.stream import error_line, event_line, result_line
 from store import SchemaNotReadyError, StoreError
 
 if TYPE_CHECKING:
@@ -264,6 +268,45 @@ def build_api_router(
         await run_blocking(lambda: _record_recent_search(app_db, user, body.query))
         return result
 
+    @router.post("/api/search/stream", response_model=None)
+    async def search_stream(
+        body: SearchRequest,
+        state: AppState = Depends(get_app_state),
+        _role: object = Depends(require_reader),
+        user: CurrentUser = Depends(get_current_user),
+        app_db: sqlite3.Connection = Depends(get_app_db),
+    ) -> StreamingResponse:
+        """Run the search pipeline and stream its live trace as NDJSON.
+
+        The streaming twin of ``POST /api/search``: identical auth, core
+        resolution, and concurrency bound, but instead of one JSON body it
+        sends a sequence of newline-delimited JSON frames — a ``phase_start``
+        then a ``phase_done`` per executed pipeline phase, then a terminal
+        ``result`` (the full :class:`SearchResponse`) or ``error``. The SPA
+        renders the phases live and folds them into a trace when the answer
+        lands.
+
+        ``response_model=None`` because the handler returns a hand-built
+        :class:`StreamingResponse`, not a model FastAPI should derive a schema
+        from. A successful search records the caller's recent search inside the
+        worker thread (see :func:`_search_stream`), since the response body has
+        already begun streaming by the time the pipeline finishes.
+        """
+        core = await run_blocking(lambda: resolve_core(state.app_db_path))
+        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        asker = resolve_asker(
+            user.display_name,
+            identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
+        )
+        return await _search_stream(
+            body,
+            core,
+            search_semaphore,
+            asker=asker,
+            app_db=app_db,
+            user=user,
+        )
+
     @router.get("/api/facets", dependencies=[reader_auth])
     async def facets() -> FacetsResponse:
         """Return taxonomy facets for the search UI filter panel."""
@@ -369,6 +412,134 @@ async def _search(
             lambda: core.answer(query=body.query, ui_filters=ui_filters, asker=asker)
         )
     return to_search_response(result)
+
+
+async def _search_stream(
+    body: SearchRequest,
+    core: SearchCore,
+    semaphore: LazySemaphore,
+    *,
+    asker: str | None = None,
+    app_db: sqlite3.Connection | None = None,
+    user: CurrentUser | None = None,
+) -> StreamingResponse:
+    """Stream-search handler body: bridge the sync pipeline to an NDJSON stream.
+
+    The pipeline (``core.answer``) is synchronous and blocking, but it emits
+    live phase events through an ``on_event`` callback. To stream those without
+    stalling the event loop, the pipeline runs on a worker thread while a
+    bounded :class:`asyncio.Queue` carries its events back to the loop, which
+    serialises each to an NDJSON line:
+
+    - ``on_event`` (called on the worker thread) pushes each event onto the
+      queue via :meth:`loop.call_soon_threadsafe` — the only thread-safe way to
+      hand work to an asyncio object from another thread.
+    - The worker (:func:`run`) runs ``core.answer``, then enqueues the result;
+      a budget breach becomes a ``budget`` error frame, any other failure an
+      ``internal`` one (logged with its traceback). A ``finally`` **always**
+      enqueues the sentinel, so the drain loop is guaranteed to terminate even
+      if the pipeline raises before emitting anything.
+    - :func:`frames` drains the queue under the concurrency semaphore, assigning
+      each frame a monotonically increasing ``seq``, and ``await``\\ s the worker
+      in a ``finally`` so a client disconnect still reaps the thread.
+
+    Recent-search recording happens **inside the worker**, on the success path
+    only: the response body has already begun streaming by the time the
+    pipeline finishes, so the ``/api/search`` pattern of recording after the
+    call in the handler is impossible here. The blocking SQLite write is fine on
+    the worker thread; the per-request ``app_db`` connection
+    (``check_same_thread=False``) is used strictly sequentially — the loop
+    thread only ever reads the queue, never touches ``app_db`` — so there is no
+    concurrent-use hazard. It is wrapped in best-effort try/except exactly like
+    the synchronous path, and skipped (with no write) when ``app_db``/``user``
+    are absent, as in the unit tests that drive this body directly.
+
+    Args:
+        body: The validated search request.
+        core: The resolved :class:`SearchCore`.
+        semaphore: The shared concurrency bound (caps simultaneous LLM spend).
+        asker: The identity-aware asker name, or ``None``.
+        app_db: The per-request ``app.db`` connection for recent-search
+            recording, or ``None`` to skip recording (tests).
+        user: The authenticated caller whose history the search is recorded
+            against, or ``None`` to skip recording (tests).
+
+    Returns:
+        A :class:`StreamingResponse` of ``application/x-ndjson`` frames.
+    """
+    ui_filters = to_search_filters(body.filters)
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+    sentinel = object()
+
+    def on_event(event: object) -> None:
+        """Forward one live phase event from the worker thread to the queue."""
+        loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
+
+    def run() -> None:
+        """Run the blocking pipeline on a worker thread, feeding the queue."""
+        try:
+            result = core.answer(
+                query=body.query,
+                ui_filters=ui_filters,
+                asker=asker,
+                on_event=on_event,
+            )
+            loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
+            # Record the recent search only on success, mirroring /api/search.
+            # Skipped when app_db/user are absent (the body is unit-tested
+            # directly without a DB); _record_recent_search is itself
+            # best-effort, but guard here too so a failure never breaks the
+            # already-streaming response.
+            if app_db is not None and user is not None:
+                try:
+                    _record_recent_search(app_db, user, body.query)
+                except Exception:
+                    # rationale: a recent-search write failure must never break
+                    # the stream — the result frame is already enqueued. The
+                    # inner helper logs the traceback; this outer guard only
+                    # ensures the sentinel still fires.
+                    log.exception("api.search_stream_record_failed")
+        except LlmBudgetExceededError as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", ("budget", str(exc))))
+        except Exception:
+            # A streamed search cannot fail with an HTTP status once the body
+            # has begun, so surface any pipeline fault as a terminal error
+            # frame. log.exception attaches the traceback (§7.5).
+            log.exception("api.search_stream_failed")
+            loop.call_soon_threadsafe(
+                queue.put_nowait, ("error", ("internal", "search failed"))
+            )
+        finally:
+            # ALWAYS signal completion so the drain loop terminates, even if the
+            # pipeline raised before emitting a single event.
+            loop.call_soon_threadsafe(queue.put_nowait, ("sentinel", sentinel))
+
+    async def frames() -> AsyncIterator[str]:
+        """Drain the queue into ordered NDJSON lines until the sentinel."""
+        async with semaphore.acquire():
+            worker = loop.run_in_executor(None, run)
+            seq = 0
+            try:
+                while True:
+                    kind, payload = await queue.get()
+                    if kind == "sentinel":
+                        break
+                    seq += 1
+                    if kind == "event":
+                        yield event_line(payload, seq)  # type: ignore[arg-type]
+                    elif kind == "result":
+                        yield result_line(to_search_response(payload), seq)  # type: ignore[arg-type]
+                    elif kind == "error":
+                        kind_msg = payload  # (kind, message)
+                        yield error_line(kind_msg[0], kind_msg[1], seq)  # type: ignore[index]
+            finally:
+                # Reap the worker so a client disconnect (generator close) does
+                # not leak the thread; run() swallows its own exceptions, so
+                # this await never raises.
+                await worker
+
+    return StreamingResponse(frames(), media_type="application/x-ndjson")
 
 
 def _reconcile(settings: Settings) -> Response:
