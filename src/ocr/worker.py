@@ -260,12 +260,6 @@ class OcrProcessor:
             except OSError:
                 log.warning("Failed to close image", doc_id=self.doc_id, exc_info=True)
 
-    def _has_ocr_errors(self, text: str) -> bool:
-        """Return True if the OCR output contains error/refusal/redacted markers."""
-        return OCR_ERROR_MARKER in text or is_error_content(
-            text, self.settings.OCR_REFUSAL_MARKERS
-        )
-
     def _update_paperless_document(
         self, full_text: str, models_used: set[str]
     ) -> WriteBackOutcome | None:
@@ -283,7 +277,11 @@ class OcrProcessor:
         failure streak) — the same neutral treatment the classifier gives an
         empty result.
         """
-        if not full_text.strip() or self._has_ocr_errors(full_text):
+        if (
+            not full_text.strip()
+            or OCR_ERROR_MARKER in full_text
+            or is_error_content(full_text, self.settings.OCR_REFUSAL_MARKERS)
+        ):
             reason = (
                 "no text" if not full_text.strip() else "error/refusal/redacted markers"
             )

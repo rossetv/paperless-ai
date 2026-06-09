@@ -95,7 +95,7 @@ class OcrProvider(OpenAIChatMixin):
         ]
 
         models_to_try = unique_models(self.settings.AI_MODELS)
-        primary_model = models_to_try[0] if models_to_try else ""
+        primary_model = models_to_try[0]
 
         for model in models_to_try:
             params = {
