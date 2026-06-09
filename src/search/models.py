@@ -305,17 +305,36 @@ class JudgeCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class JudgeVerdict:
-    """The relevance judge's verdict.
+class DocVerdict:
+    """The judge's per-document verdict: keep/drop + a one-line reason.
 
-    ``relevant_document_ids`` are the documents to keep. An empty set with
-    ``degraded=False`` means "nothing is relevant" → the core bails. On any judge
-    failure the verdict carries the full candidate set with ``degraded=True``
-    (fail-open: keep everything), so a broken judge never suppresses an answer.
+    ``reason`` is empty when SEARCH_JUDGE_RATIONALES is off, or a short
+    (length-capped) justification when on. It is model-generated text, rendered
+    as escaped text on the client.
     """
 
-    relevant_document_ids: frozenset[int]
+    document_id: int
+    keep: bool
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgeVerdict:
+    """The relevance judge's verdict — one :class:`DocVerdict` per candidate.
+
+    ``relevant_document_ids`` (the documents to keep) is derived from the kept
+    verdicts. An all-drop verdict with ``degraded=False`` means "nothing
+    relevant" → the core bails. On any judge failure the verdict carries every
+    candidate as kept with ``degraded=True`` (fail-open).
+    """
+
+    verdicts: tuple[DocVerdict, ...]
     degraded: bool = False
+
+    @property
+    def relevant_document_ids(self) -> frozenset[int]:
+        """Derive the set of kept document ids from the per-document verdicts."""
+        return frozenset(v.document_id for v in self.verdicts if v.keep)
 
 
 # ---------------------------------------------------------------------------

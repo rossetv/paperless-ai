@@ -26,6 +26,7 @@ from typing import Any
 
 from search.models import (
     Answered,
+    DocVerdict,
     FilterCandidates,
     JudgeCandidate,
     JudgeVerdict,
@@ -351,9 +352,19 @@ def make_judge_candidate(
 def make_judge_verdict(
     *, relevant_document_ids: set[int] | None = None, degraded: bool = False
 ) -> JudgeVerdict:
-    """Build a JudgeVerdict; defaults to keeping document 1."""
+    """Build a JudgeVerdict from a set of kept ids; defaults to keeping document 1.
+
+    Constructs one :class:`~search.models.DocVerdict` per kept id (keep=True,
+    empty reason). Tests that care about per-document verdict details should
+    build :class:`~search.models.JudgeVerdict` directly.
+    """
     ids = frozenset(relevant_document_ids if relevant_document_ids is not None else {1})
-    return JudgeVerdict(relevant_document_ids=ids, degraded=degraded)
+    return JudgeVerdict(
+        verdicts=tuple(
+            DocVerdict(document_id=i, keep=True, reason="") for i in sorted(ids)
+        ),
+        degraded=degraded,
+    )
 
 
 def make_search_settings(**overrides: Any) -> Any:
