@@ -227,10 +227,12 @@ class TestSearchFailFastGateDefaults:
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_MIN_QUERY_CHARS == 2
 
-    def test_relevance_min_similarity_defaults_to_lenient_floor(self, mocker) -> None:
-        """SEARCH_RELEVANCE_MIN_SIMILARITY defaults to a lenient 0.50 gate floor."""
+    def test_relevance_min_similarity_defaults_to_calibrated_floor(
+        self, mocker
+    ) -> None:
+        """SEARCH_RELEVANCE_MIN_SIMILARITY defaults to 0.60 — between off-topic and real."""
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.50
+        assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.60
 
 
 class TestSearchFailFastGateOverrides:
