@@ -204,6 +204,32 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ],
       },
       {
+        id: 'judge',
+        title: 'Relevance judge',
+        subtitle:
+          'A cheap model screens retrieved documents before the answer model runs — bailing to "no matches" when nothing fits and filtering to the relevant documents. Recall-biased and fail-open. Hot-loaded.',
+        fields: [
+          {
+            key: 'SEARCH_GATE_JUDGE',
+            label: 'Enable judge',
+            hint: 'Screen documents on the cheap judge model before the expensive answer model. Default on.',
+            control: { kind: 'toggle' },
+          },
+          {
+            key: 'SEARCH_JUDGE_MODEL',
+            label: 'Judge model',
+            hint: 'The model that screens retrieved documents. Defaults to the planner model.',
+            control: { kind: 'select', options: MODEL_OPTIONS },
+          },
+          {
+            key: 'SEARCH_JUDGE_REASONING_EFFORT',
+            label: 'Judge reasoning effort',
+            hint: 'How hard the judge thinks: minimal / low / medium / high. OpenAI only. Default low.',
+            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
+          },
+        ],
+      },
+      {
         id: 'search-models',
         title: 'Models',
         subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',
