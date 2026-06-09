@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 
 from appdb import recent_searches as recent_search_store
+from appdb.connection import connect
 from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
 from search.errors import LlmBudgetExceededError
@@ -274,7 +275,6 @@ def build_api_router(
         state: AppState = Depends(get_app_state),
         _role: object = Depends(require_reader),
         user: CurrentUser = Depends(get_current_user),
-        app_db: sqlite3.Connection = Depends(get_app_db),
     ) -> StreamingResponse:
         """Run the search pipeline and stream its live trace as NDJSON.
 
@@ -303,7 +303,7 @@ def build_api_router(
             core,
             search_semaphore,
             asker=asker,
-            app_db=app_db,
+            app_db_path=state.app_db_path,
             user=user,
         )
 
@@ -420,7 +420,7 @@ async def _search_stream(
     semaphore: LazySemaphore,
     *,
     asker: str | None = None,
-    app_db: sqlite3.Connection | None = None,
+    app_db_path: str | None = None,
     user: CurrentUser | None = None,
 ) -> StreamingResponse:
     """Stream-search handler body: bridge the sync pipeline to an NDJSON stream.
@@ -446,12 +446,15 @@ async def _search_stream(
     Recent-search recording happens **inside the worker**, on the success path
     only: the response body has already begun streaming by the time the
     pipeline finishes, so the ``/api/search`` pattern of recording after the
-    call in the handler is impossible here. The blocking SQLite write is fine on
-    the worker thread; the per-request ``app_db`` connection
-    (``check_same_thread=False``) is used strictly sequentially — the loop
-    thread only ever reads the queue, never touches ``app_db`` — so there is no
-    concurrent-use hazard. It is wrapped in best-effort try/except exactly like
-    the synchronous path, and skipped (with no write) when ``app_db``/``user``
+    call in the handler is impossible here. The write uses a **short-lived
+    connection the worker opens from** ``app_db_path`` **and closes itself** —
+    never the request's per-request ``app.db`` connection. That is what makes it
+    race-free: on a client disconnect (the SPA aborts the stream on every new
+    query) the event loop tears the request down and closes its own connection
+    while this detached worker may still be finishing, but the two touch
+    *different* connections, so there is no concurrent-use hazard on a
+    ``check_same_thread=False`` connection. The write is best-effort
+    (try/except, logged and swallowed) and skipped when ``app_db_path``/``user``
     are absent, as in the unit tests that drive this body directly.
 
     Args:
@@ -459,8 +462,9 @@ async def _search_stream(
         core: The resolved :class:`SearchCore`.
         semaphore: The shared concurrency bound (caps simultaneous LLM spend).
         asker: The identity-aware asker name, or ``None``.
-        app_db: The per-request ``app.db`` connection for recent-search
-            recording, or ``None`` to skip recording (tests).
+        app_db_path: The filesystem path to ``app.db`` for recent-search
+            recording (the worker opens its own connection), or ``None`` to skip
+            recording (tests).
         user: The authenticated caller whose history the search is recorded
             against, or ``None`` to skip recording (tests).
 
@@ -487,18 +491,21 @@ async def _search_stream(
             )
             loop.call_soon_threadsafe(queue.put_nowait, ("result", result))
             # Record the recent search only on success, mirroring /api/search.
-            # Skipped when app_db/user are absent (the body is unit-tested
-            # directly without a DB); _record_recent_search is itself
-            # best-effort, but guard here too so a failure never breaks the
-            # already-streaming response.
-            if app_db is not None and user is not None:
+            # The worker opens, uses, and closes its OWN short-lived app.db
+            # connection here (never the request's per-request connection), so a
+            # client disconnect that closes the request connection on the loop
+            # thread cannot race this write — they touch different connections.
+            # Skipped when app_db_path/user are absent (the body is unit-tested
+            # directly without a DB). Best-effort: any failure is logged and
+            # swallowed so it never affects the already-streamed result.
+            if app_db_path is not None and user is not None:
                 try:
-                    _record_recent_search(app_db, user, body.query)
+                    record_conn = connect(app_db_path)
+                    try:
+                        _record_recent_search(record_conn, user, body.query)
+                    finally:
+                        record_conn.close()
                 except Exception:
-                    # rationale: a recent-search write failure must never break
-                    # the stream — the result frame is already enqueued. The
-                    # inner helper logs the traceback; this outer guard only
-                    # ensures the sentinel still fires.
                     log.exception("api.search_stream_record_failed")
         except LlmBudgetExceededError as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", ("budget", str(exc))))
