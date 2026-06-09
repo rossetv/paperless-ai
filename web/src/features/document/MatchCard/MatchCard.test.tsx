@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MatchCard } from './MatchCard';
 import * as client from '../../../api/client';
 import type { FilterRequest } from '../../../api/types';
+import { EMPTY_TELEMETRY } from '../../../api/types/__fixtures__/searchResponse';
 
 function wrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
     });
     const fetchStub = vi.spyOn(client, 'search');
@@ -78,6 +80,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
     });
     render(
@@ -108,6 +111,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
     });
     render(
