@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from common.llm import LlmCallUsage as LlmCallUsage  # re-exported for consumers
 from search.relevance import RelevanceTier
 
 #: The synthesiser's two operating modes (spec §6.3).  ``"exploratory"`` lets
