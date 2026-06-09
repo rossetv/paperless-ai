@@ -17,7 +17,13 @@
  */
 
 import React from 'react';
-import type { Cost, PhaseRecord, SearchPhase, TokenUsage } from '../../../api/types';
+import type {
+  Cost,
+  CostSummary,
+  PhaseRecord,
+  SearchPhase,
+  TokenUsage,
+} from '../../../api/types';
 import type {
   PipelineStage,
   PipelineStageState,
@@ -127,6 +133,24 @@ export function formatCostLabel(
     costPart = formatUsd(cost.usd);
   }
   return `${tokensPart} · ${costPart}`;
+}
+
+/**
+ * The whole-query "tokens · cost" label from a `CostSummary` (the answer-card
+ * footer and the trace-panel summary). Shows "$0" for an all-local query and
+ * "—" when the spend cannot be honestly priced; returns undefined when no LLM
+ * call was made (zero tokens AND zero calls — nothing worth showing).
+ */
+export function formatSummaryCostLabel(
+  summary: CostSummary,
+): string | undefined {
+  if (summary.tokens.total === 0 && summary.llm_calls === 0) {
+    return undefined;
+  }
+  return formatCostLabel(summary.tokens, {
+    usd: summary.usd,
+    local: summary.local,
+  });
 }
 
 // ---------------------------------------------------------------------------
