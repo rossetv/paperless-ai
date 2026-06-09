@@ -44,6 +44,12 @@ export interface SettingItem {
  */
 export interface SettingsResponse {
   settings: SettingItem[];
+  /**
+   * Set by PUT when the save changed a re-index key (embedding model or
+   * chunking) and therefore forced a full index rebuild — re-embedding every
+   * document. Always false on GET. The Settings screen surfaces it as a toast.
+   */
+  reindex_triggered: boolean;
 }
 
 /**

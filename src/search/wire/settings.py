@@ -65,9 +65,14 @@ class SettingsResponse(BaseModel):
     The full list of config keys and their state. ``PUT`` returns this same
     shape — the re-read configuration — so the Settings screen refreshes
     itself from the one response with no second fetch.
+
+    ``reindex_triggered`` is set by ``PUT`` when the save changed a
+    :data:`common.config.REINDEX_KEYS` key and therefore forced a full index
+    rebuild (re-embedding every document). It is always ``false`` on ``GET``.
     """
 
     settings: list[SettingItemResponse]
+    reindex_triggered: bool = False
 
 
 class UpdateSettingsRequest(BaseModel):
