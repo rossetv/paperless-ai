@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import openai
 import structlog
@@ -27,6 +28,20 @@ from .model_compat import model_compat_cache
 from .retry import retry
 
 log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class LlmCallUsage:
+    """Token usage for one successful LLM call, naming the model that actually
+    served it (post-fallback). Produced by the shared completion helper and
+    consumed by callers that pass a ``usage_sink`` (the search telemetry)."""
+
+    model: str
+    prompt: int
+    completion: int
+    reasoning: int
+    total: int
+
 
 RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.APIConnectionError,
@@ -283,6 +298,7 @@ class OpenAIChatMixin:
         reasoning_effort: str | None = None,
         response_format: dict[str, object] | None = None,
         timeout: float | None = None,
+        usage_sink: list[LlmCallUsage] | None = None,
     ) -> str | None:
         """Run one chat completion, falling back through a chain of models.
 
@@ -326,6 +342,10 @@ class OpenAIChatMixin:
                 ``json_schema`` block); omitted when ``None``.
             timeout: Optional per-call timeout in seconds; omitted when ``None``
                 so the SDK/client default applies (CODE_GUIDELINES §8.7).
+            usage_sink: Optional list to which a :class:`LlmCallUsage` record is
+                appended on each successful call. Absent usage fields default to
+                zero (guarding Ollama/older providers that omit them). When
+                ``None`` (the default), no capture occurs.
 
         Returns:
             The raw text content of the first successful completion, or
@@ -351,6 +371,18 @@ class OpenAIChatMixin:
                     "llm.fallback_model_failed", stage=log_event_prefix, model=model
                 )
                 continue
+            if usage_sink is not None:
+                usage = getattr(completion, "usage", None)
+                details = getattr(usage, "completion_tokens_details", None)
+                usage_sink.append(
+                    LlmCallUsage(
+                        model=model,
+                        prompt=getattr(usage, "prompt_tokens", 0) or 0,
+                        completion=getattr(usage, "completion_tokens", 0) or 0,
+                        reasoning=getattr(details, "reasoning_tokens", 0) or 0,
+                        total=getattr(usage, "total_tokens", 0) or 0,
+                    )
+                )
             return completion.choices[0].message.content or ""
 
         return None
