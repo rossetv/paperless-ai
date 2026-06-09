@@ -238,6 +238,33 @@ PlanOutcome = QueryPlan | ClarifyNeeded
 
 
 # ---------------------------------------------------------------------------
+# Relevance judge shapes (Layer 3) — spec §7.3
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class JudgeCandidate:
+    """One document offered to the relevance judge: its id and a best-chunk snippet."""
+
+    document_id: int
+    snippet: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgeVerdict:
+    """The relevance judge's verdict.
+
+    ``relevant_document_ids`` are the documents to keep. An empty set with
+    ``degraded=False`` means "nothing is relevant" → the core bails. On any judge
+    failure the verdict carries the full candidate set with ``degraded=True``
+    (fail-open: keep everything), so a broken judge never suppresses an answer.
+    """
+
+    relevant_document_ids: frozenset[int]
+    degraded: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Retrieval quality signal (Layer 2) — spec §7.2
 # ---------------------------------------------------------------------------
 
