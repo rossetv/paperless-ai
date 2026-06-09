@@ -7,9 +7,9 @@ import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
 import { PipelineStages } from '../../../components/primitives/PipelineStages/PipelineStages';
-import type { PipelineStage } from '../../../components/primitives/PipelineStages/PipelineStages';
 import { FilterControls } from '../FilterControls/FilterControls';
-import type { FilterRequest } from '../../../api/types';
+import { phaseToStages } from '../trace/phaseStages';
+import type { FilterRequest, PhaseRecord, SearchPhase } from '../../../api/types';
 import styles from './LoadingScreen.module.css';
 
 export interface LoadingScreenProps {
@@ -19,64 +19,42 @@ export interface LoadingScreenProps {
   filters: FilterRequest;
   /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
+  /**
+   * The phases the stream has completed so far, in order. Each becomes a
+   * `done` rail row with its rewritten query / counts / verdicts and a cost
+   * chip. Empty until the first `phase_done` lands.
+   */
+  phaseRecords: PhaseRecord[];
+  /** The phase currently running — shown as the "in progress" rail row. */
+  activePhase: SearchPhase | null;
 }
 
 /**
- * Build the pipeline-stage rail from the elapsed search time.
- *
- * `POST /api/search` is a single round-trip — the browser cannot observe the
- * server's real stage boundaries — so this is a time-based ESTIMATE, not a
- * measured progress meter. Planning is shown working for the first couple of
- * seconds, then retrieval, then synthesis (the long tail, where most of a
- * search's wall-clock goes). It exists so the rail visibly advances instead of
- * sitting frozen on a hard-coded snapshot; the counter beside it shows the real
- * measured elapsed time. A truly live rail would need the server to stream
- * per-stage events, which the single-round-trip API does not.
- */
-function pipelineStages(elapsedSeconds: number): PipelineStage[] {
-  const planningDone = elapsedSeconds >= 2;
-  const retrievingDone = elapsedSeconds >= 5;
-  return [
-    {
-      label: 'Planning the query',
-      detail: 'Semantic queries and keyword terms',
-      state: planningDone ? 'done' : 'active',
-    },
-    {
-      label: 'Embedding & retrieving',
-      detail: 'Vector + keyword search, RRF fusion',
-      state: !planningDone ? 'pending' : retrievingDone ? 'done' : 'active',
-    },
-    {
-      label: 'Synthesising the answer',
-      detail: 'Final answer with citations',
-      state: retrievingDone ? 'active' : 'pending',
-    },
-  ];
-}
-
-/**
- * The search loading screen.
+ * The search loading screen — a LIVE pipeline rail.
  *
  * The rail+content layout: the filter rail, then a recap of the query, a card
- * carrying the spinner, a live elapsed counter and the `PipelineStages` rail,
- * and two skeleton source placeholders. The counter ticks the real measured
- * elapsed time; the rail advances on a time estimate (see `pipelineStages`) —
- * the search request is a single round-trip, so true per-stage progress is not
- * observable from the browser.
+ * carrying the spinner, a real elapsed counter and the `PipelineStages` rail,
+ * and two skeleton source placeholders. The rail now renders the REAL phases
+ * streamed from `POST /api/search/stream` (planner rewrite, retrieval counts,
+ * vector-gate outcome, per-document judge verdicts, synthesis), each with a
+ * token/cost chip — not a time-based estimate. The counter still ticks the
+ * measured wall-clock since the screen mounted.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Card, Spinner, Text,
- * Skeleton, PipelineStages, FilterControls.
+ * Skeleton, PipelineStages, FilterControls; the phase→stage mapping lives in
+ * `trace/phaseStages` (shared with `SearchTracePanel`).
  * Own CSS module provides the spacer class used in the spinner row.
  */
 export function LoadingScreen({
   query,
   filters,
   onFiltersChange,
+  phaseRecords,
+  activePhase,
 }: LoadingScreenProps): React.ReactElement {
-  // Real elapsed seconds since this screen mounted — drives the visible counter
-  // and the estimated stage progression. The interval is cleared on unmount,
-  // which happens as soon as the search resolves and results replace this view.
+  // Real elapsed seconds since this screen mounted — drives the visible
+  // counter. The interval is cleared on unmount, which happens as soon as the
+  // search resolves and results replace this view.
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   useEffect(() => {
     const startedAt = Date.now();
@@ -85,6 +63,8 @@ export function LoadingScreen({
     }, 500);
     return () => window.clearInterval(id);
   }, []);
+
+  const stages = phaseToStages(phaseRecords, activePhase);
 
   return (
     <SearchScreenLayout
@@ -116,7 +96,7 @@ export function LoadingScreen({
                 {elapsedSeconds}s
               </Text>
             </Stack>
-            <PipelineStages stages={pipelineStages(elapsedSeconds)} />
+            {stages.length > 0 && <PipelineStages stages={stages} />}
           </Stack>
         </Card>
 
