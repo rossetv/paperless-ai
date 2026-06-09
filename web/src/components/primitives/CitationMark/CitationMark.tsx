@@ -5,8 +5,12 @@ import styles from './CitationMark.module.css';
 export interface CitationMarkProps {
   /** 1-based citation index — matches the [n] markers in the answer text. */
   index: number;
-  /** Called with the index when the mark is activated (click or keyboard). */
-  onActivate: (index: number) => void;
+  /**
+   * Called with the index when the mark is activated (click or keyboard).
+   * Optional — omit at display-only call sites where no scroll-to-source
+   * behaviour is needed (e.g. the document preview sidebar).
+   */
+  onActivate?: (index: number) => void;
   /**
    * Optional document title for the cited source. When provided, the
    * accessible name becomes "View source N: <title>" instead of "View source N".
@@ -23,7 +27,8 @@ export interface CitationMarkProps {
  * accessible name is "View source N" (with an optional title suffix when the
  * source title is known). Rendered inline in the synthesised-answer prose; the
  * parent wires `onActivate` to open the document preview and highlight the
- * corresponding source card.
+ * corresponding source card. When `onActivate` is omitted the button is
+ * still rendered (for visual consistency) but activation is a no-op.
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
  */
@@ -43,7 +48,7 @@ export function CitationMark({
       type="button"
       aria-label={accessibleName}
       className={cn(styles['citation-mark'], className)}
-      onClick={() => onActivate(index)}
+      onClick={() => onActivate?.(index)}
     >
       <span aria-hidden="true">{index}</span>
     </button>

@@ -8,7 +8,7 @@
 import { renderHook } from '@testing-library/react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { MeResponse } from '../api/types';
-import { useAuth, AuthProvider } from './useAuth';
+import { useAuth } from './useAuth';
 
 vi.mock('../api/hooks', () => ({
   useMe: vi.fn(),
@@ -71,16 +71,5 @@ describe('useAuth', () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.user).toBeNull();
     expect(result.current.role).toBeNull();
-  });
-
-  it('AuthProvider renders its children unchanged', () => {
-    mockUseMe.mockReturnValue(meResult({ isError: true }));
-    const { result } = renderHook(() => useAuth(), {
-      wrapper: ({ children }: { children: React.ReactNode }) => (
-        <AuthProvider>{children}</AuthProvider>
-      ),
-    });
-    // Smoke: the hook still works inside the provider.
-    expect(result.current.isAuthenticated).toBe(false);
   });
 });

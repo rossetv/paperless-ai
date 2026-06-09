@@ -15,14 +15,9 @@
  * re-resolves. A 401 from any call surfaces as `useMe` error → this hook
  * reports `isAuthenticated: false` and the router routes to `/login`.
  *
- * `AuthProvider` is retained as a transparent pass-through so existing
- * provider wiring in `main.tsx` and tests need not be torn out; it adds no
- * behaviour. New code does not need to wrap anything in it.
- *
  * Allowed deps: api/ + react (CODE_GUIDELINES §12.3 — hooks may import api).
  */
 
-import React from 'react';
 import type { User } from '../api/types';
 import { useMe } from '../api/hooks';
 
@@ -40,23 +35,6 @@ export interface AuthState {
   isAuthenticated: boolean;
   /** True while the first `me` request is in flight (auth state unknown). */
   isLoading: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Provider — transparent pass-through (kept for wiring compatibility)
-// ---------------------------------------------------------------------------
-
-export interface AuthProviderProps {
-  children: React.ReactNode;
-}
-
-/**
- * Transparent wrapper kept so existing `main.tsx` / test wiring still
- * compiles. It holds no state and adds no behaviour — auth state lives in
- * react-query. New code need not use it.
- */
-export function AuthProvider({ children }: AuthProviderProps): React.ReactElement {
-  return <>{children}</>;
 }
 
 // ---------------------------------------------------------------------------

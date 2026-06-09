@@ -17,7 +17,7 @@ export interface SelectProps<T extends string = string> {
   /** Visible label rendered above the control. */
   label?: string;
   /** The available options. */
-  options: Array<SelectOption<T>>;
+  options: ReadonlyArray<SelectOption<T>>;
   /** Currently selected value (controlled). */
   value?: T;
   /** Text shown when no option is selected. */

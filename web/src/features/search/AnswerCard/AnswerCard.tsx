@@ -75,10 +75,6 @@ export function AnswerCard({
 }: AnswerCardProps): React.ReactElement {
   const segments = parseAnswer(answer);
 
-  function handleCitationActivate(index: number): void {
-    onCitationActivate?.(index);
-  }
-
   return (
     <AnswerSurface
       sourceCount={sources.length}
@@ -106,7 +102,7 @@ export function AnswerCard({
           <CitationMark
             key={i}
             index={oneBasedIndex}
-            onActivate={handleCitationActivate}
+            {...(onCitationActivate !== undefined ? { onActivate: onCitationActivate } : {})}
             sourceTitle={source?.title ?? null}
           />
         );

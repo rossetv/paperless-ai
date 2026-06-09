@@ -4,7 +4,7 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
-import { DocumentSnippet } from '../../document/DocumentSnippet/DocumentSnippet';
+import { SnippetText } from '../../../components/primitives/SnippetText/SnippetText';
 import { documentThumbUrl } from '../../../api/client';
 import type { SourceDocument } from '../../../api/types';
 import { thumbKindForDocumentType } from '../../document/thumbKind';
@@ -34,9 +34,8 @@ export interface SourceCardProps {
  *
  * Composes the `SourceCardSurface` shell (the two-column grid with the
  * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
- * display-font title, the highlighted `DocumentSnippet`, a "Preview" button
- * that opens the in-app viewer, and the relevance score. The metadata and
- * snippet are the shared `document` features — not re-implemented here.
+ * display-font title, the highlighted matched-content snippet, a "Preview"
+ * button that opens the in-app viewer, and the relevance score.
  *
  * Note: `source.paperless_url` is present on the wire type but intentionally
  * not rendered — all document access goes through the in-app
@@ -47,7 +46,7 @@ export interface SourceCardProps {
  * sibling card whose props haven't changed.
  *
  * Composed from: SourceCardSurface, Text, Button, Stack, DocumentMeta,
- * DocumentSnippet. No own CSS module (§12.5 — features layer is
+ * SnippetText. No own CSS module (§12.5 — features layer is
  * composition-only).
  */
 function SourceCardInner({
@@ -76,7 +75,7 @@ function SourceCardInner({
         )}
 
         {/* Highlighted matched-content snippet */}
-        <DocumentSnippet snippet={source.snippet} />
+        <SnippetText text={source.snippet} />
 
         {/* Actions row — preview + relevance */}
         <Stack direction="horizontal" gap={6} align="center" wrap>

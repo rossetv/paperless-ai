@@ -81,10 +81,6 @@ export function SearchPage(): React.ReactElement {
     setHighlightedIndex(undefined);
   }
 
-  function handleFiltersChange(updated: typeof EMPTY_FILTERS): void {
-    setFilters(updated);
-  }
-
   function clearFilters(): void {
     setFilters(EMPTY_FILTERS);
   }
@@ -116,7 +112,7 @@ export function SearchPage(): React.ReactElement {
         <LoadingScreen
           query={query}
           filters={filters}
-          onFiltersChange={handleFiltersChange}
+          onFiltersChange={setFilters}
         />
       );
     }
@@ -148,12 +144,10 @@ export function SearchPage(): React.ReactElement {
           <NoResultsScreen
             query={query}
             filters={filters}
-            onFiltersChange={handleFiltersChange}
+            onFiltersChange={setFilters}
             onSearch={runSearch}
             onClearFilters={clearFilters}
-            onSearchWithoutFilters={() => {
-              clearFilters();
-            }}
+            onSearchWithoutFilters={clearFilters}
           />
         );
       }
@@ -163,7 +157,7 @@ export function SearchPage(): React.ReactElement {
           filters={filters}
           result={searchResult.data}
           docCount={searchResult.data.sources.length}
-          onFiltersChange={handleFiltersChange}
+          onFiltersChange={setFilters}
           onSearch={runSearch}
           onClearFilters={clearFilters}
           onCitationActivate={handleCitationActivate}

@@ -222,7 +222,7 @@ export function LibraryScreen(): React.ReactElement {
             <SortControl
               id="library-sort"
               label="Sort"
-              options={[...SORT_OPTIONS]}
+              options={SORT_OPTIONS}
               value={query.sort}
               onChange={changeSort}
             />
