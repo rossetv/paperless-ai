@@ -63,6 +63,14 @@ _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("verbosity", "verbosity", "verbosity_retries"),
 )
 
+# Param → stat-key lookup built once from the registry. Multiple rows may share
+# the same param_key (e.g. response_format); the first entry wins, which is
+# consistent with the linear scan it replaces (registry ordering is stable).
+_PARAM_TO_STAT: dict[str, str] = {}
+for _param, _matcher, _stat in _STRIPPABLE_PARAMS:
+    _PARAM_TO_STAT.setdefault(_param, _stat)
+del _param, _matcher, _stat  # clean up loop variables from module namespace
+
 
 def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:
     """Return the strippable parameter a 400 names as unsupported, or ``None``.
@@ -160,10 +168,9 @@ class OpenAIChatMixin:
         synthesiser — silently skip the count, so the shared layer stays
         agnostic of any provider's stat schema (spec §4.1).
         """
-        for param, _matcher, stat_key in _STRIPPABLE_PARAMS:
-            if param == param_key:
-                self._increment_stat_if_declared(stat_key)
-                return
+        stat_key = _PARAM_TO_STAT.get(param_key)
+        if stat_key is not None:
+            self._increment_stat_if_declared(stat_key)
 
     def _increment_stat_if_declared(self, stat_key: str) -> None:
         """Increment *stat_key* only when this provider declared it in ``_STAT_KEYS``."""

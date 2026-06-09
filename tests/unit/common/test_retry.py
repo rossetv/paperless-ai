@@ -10,7 +10,7 @@ from common.retry import _sleep_backoff, retry
 
 
 class _FakeSettings:
-    """Minimal object satisfying the ``RetrySettings`` protocol."""
+    """Minimal settings object satisfying the ``@retry`` decorator's duck-type contract."""
 
     def __init__(self, max_retries: int = 3, max_backoff: int = 30):
         self.MAX_RETRIES = max_retries

@@ -168,26 +168,73 @@ def _resolve_ocr_image_detail(
     return detail  # type: ignore[return-value]
 
 
+# Allowed reasoning-effort values. Matches the installed OpenAI SDK's
+# ``ReasoningEffort`` literal (openai 1.109.1,
+# openai/types/shared/reasoning_effort.py): all four of minimal/low/medium/high.
+# "none" is intentionally excluded — it is not in that literal.
+_REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(
+    {"minimal", "low", "medium", "high"}
+)
+
+
+def _resolve_reasoning_effort(
+    source: Mapping[str, str], var_name: str, default: str = "medium"
+) -> str:
+    """Resolve and validate a reasoning-effort knob, returning a normalised string.
+
+    Shared by OCR, classify, and search-stage resolvers. ``medium`` is the
+    models' own default effort, so the default is a deliberate zero-cost no-op:
+    the operator tunes *down* (to ``low`` / ``minimal``) per stage to capture
+    the saving. A model that does not accept the parameter has it stripped and
+    cached by the shared adaptive-compat layer rather than failing the call
+    (foundation-llm-plumbing-design §4.1, spec §4.8).
+
+    Raises ``ValueError`` naming *var_name* on an unrecognised value so that
+    typos fail loud at startup rather than silently sending a wrong effort
+    (CODE_GUIDELINES §1.11).
+
+    Args:
+        source: The environment mapping.
+        var_name: The setting key — named in the error message on a bad value.
+        default: The coded default effort (``"medium"`` unless specified).
+    """
+    effort = source.get(var_name, default).strip().lower()
+    if effort not in _REASONING_EFFORT_CHOICES:
+        raise ValueError(
+            f"{var_name} must be one of "
+            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
+        )
+    return effort
+
+
 def _resolve_ocr_reasoning_effort(
     source: Mapping[str, str],
 ) -> Literal["minimal", "low", "medium", "high"]:
     """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``medium``).
 
-    Shares the classifier's ``_REASONING_EFFORT_CHOICES`` set and fail-closed
-    contract (the OpenAI 1.109.1 ``ReasoningEffort`` literal). ``medium`` is the
-    models' own default effort, so the default value keeps the OCR request
-    behaviourally identical to before this setting existed; an operator opts into
-    the cheaper ``minimal`` / ``low`` tiers explicitly to cut the reasoning-token
-    premium on the highest-volume call.
+    ``medium`` is the models' own default effort, keeping the OCR request
+    behaviourally identical to before this setting existed. An operator opts
+    into the cheaper ``minimal`` / ``low`` tiers explicitly to cut the
+    reasoning-token premium on the highest-volume call.
     """
-    effort = source.get("OCR_REASONING_EFFORT", "medium").strip().lower()
-    if effort not in _REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            "OCR_REASONING_EFFORT must be one of "
-            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
-        )
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
-    return effort  # type: ignore[return-value]
+    # rationale: validated by shared helper; mypy cannot narrow `str` → `Literal[...]`.
+    return _resolve_reasoning_effort(source, "OCR_REASONING_EFFORT")  # type: ignore[return-value]
+
+
+def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
+    """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``medium``)."""
+    return _resolve_reasoning_effort(source, "CLASSIFY_REASONING_EFFORT")
+
+
+def _resolve_search_reasoning_effort(source: Mapping[str, str], var_name: str) -> str:
+    """Resolve and validate a search-stage reasoning-effort knob (defaults ``medium``).
+
+    Args:
+        source: The environment mapping.
+        var_name: The setting key (``SEARCH_PLANNER_REASONING_EFFORT`` or
+            ``SEARCH_ANSWER_REASONING_EFFORT``) — named in the error on a typo.
+    """
+    return _resolve_reasoning_effort(source, var_name)
 
 
 def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
@@ -224,58 +271,6 @@ def _resolve_server_port(source: Mapping[str, str]) -> int:
     if not 1 <= port <= 65535:
         raise ValueError(f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}.")
     return port
-
-
-# Allowed reasoning-effort values for the classifier. Matches the installed
-# OpenAI SDK's ``ReasoningEffort`` literal (openai 1.109.1,
-# openai/types/shared/reasoning_effort.py): all four of minimal/low/medium/high.
-# "none" is intentionally excluded — it is not in that literal.
-_REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(
-    {"minimal", "low", "medium", "high"}
-)
-
-
-def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
-    """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``medium``).
-
-    ``medium`` is the models' own default effort, so the default is a deliberate,
-    zero-cost no-op: it pins the knob and lets each environment tune *down* (to
-    ``low``/``minimal``) to capture the saving. A model that does not accept the
-    parameter never has it forced on it: the shared adaptive-compat layer strips
-    ``reasoning_effort`` on a 400 and caches the rejection per model
-    (foundation-llm-plumbing-design §4.1).
-    """
-    effort = source.get("CLASSIFY_REASONING_EFFORT", "medium").strip().lower()
-    if effort not in _REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            "CLASSIFY_REASONING_EFFORT must be one of "
-            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
-        )
-    return effort
-
-
-def _resolve_search_reasoning_effort(source: Mapping[str, str], var_name: str) -> str:
-    """Resolve and validate a search-stage reasoning-effort knob (defaults ``medium``).
-
-    Shares the classifier's ``_REASONING_EFFORT_CHOICES`` set and fail-closed
-    contract: an unrecognised value raises a ``ValueError`` naming *var_name* at
-    startup rather than silently sending a wrong (or, once the adaptive-compat
-    layer strips it, no) effort. ``medium`` is the models' own default effort, so
-    the default is a deliberate, zero-cost no-op the operator tunes *down* (to
-    ``low``/``minimal``) per stage to capture the saving (spec §4.8).
-
-    Args:
-        source: The environment mapping.
-        var_name: The setting key (``SEARCH_PLANNER_REASONING_EFFORT`` or
-            ``SEARCH_ANSWER_REASONING_EFFORT``) — named in the error on a typo.
-    """
-    effort = source.get(var_name, "medium").strip().lower()
-    if effort not in _REASONING_EFFORT_CHOICES:
-        raise ValueError(
-            f"{var_name} must be one of "
-            f"{sorted(_REASONING_EFFORT_CHOICES)}, got {effort!r}."
-        )
-    return effort
 
 
 def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:
