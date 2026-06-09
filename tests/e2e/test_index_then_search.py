@@ -179,6 +179,12 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_GATE_ADEQUACY = True
     settings.SEARCH_GATE_RELEVANCE = True
     settings.SEARCH_RELEVANCE_MIN_SIMILARITY = 0.0  # inert; offtopic test sets 0.9
+    # Relevance-badge cut-points — pin real floats so source assembly builds a
+    # well-formed RelevanceThresholds (a bare MagicMock attribute would break the
+    # similarity comparison).
+    settings.SEARCH_RELEVANCE_TIER_STRONG = 0.70
+    settings.SEARCH_RELEVANCE_TIER_GOOD = 0.66
+    settings.SEARCH_RELEVANCE_TIER_PARTIAL = 0.60
     settings.SEARCH_MIN_QUERY_CHARS = 2
     return settings
 

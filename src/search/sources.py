@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from search.models import RetrievedChunk, SourceDocument
-from search.relevance import RelevanceTier, relevance_tier
+from search.relevance import RelevanceThresholds, RelevanceTier, relevance_tier
 
 if TYPE_CHECKING:
     from store.models import IndexedDocument
@@ -39,6 +39,7 @@ def assemble_sources(
     chunks: list[RetrievedChunk],
     store_reader: StoreReader,
     paperless_public_url: str,
+    thresholds: RelevanceThresholds,
 ) -> tuple[SourceDocument, ...]:
     """Build ranked SourceDocuments from the retrieved chunks.
 
@@ -55,6 +56,8 @@ def assemble_sources(
             taxonomy-resolved metadata.
         paperless_public_url: The browser-facing Paperless base URL, already
             stripped of any trailing slash, used to build each deep-link.
+        thresholds: The operator-configured relevance-badge cut-points, applied
+            to each document's best vector similarity.
 
     Returns:
         The ranked source documents, highest score first.
@@ -72,7 +75,7 @@ def assemble_sources(
             document_id=document_id,
             score=best_score[document_id],
             snippet=snippet[document_id],
-            tier=relevance_tier(best_similarity.get(document_id)),
+            tier=relevance_tier(best_similarity.get(document_id), thresholds),
             indexed=indexed_by_id.get(document_id),
             paperless_public_url=paperless_public_url,
         )

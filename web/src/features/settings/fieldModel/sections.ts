@@ -172,6 +172,38 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         ],
       },
       {
+        id: 'relevance',
+        title: 'Relevance',
+        subtitle:
+          'The gate floor decides what is shown; the tier cut-points label how good each shown result is. All are absolute vector similarities in 0–1, hot-loaded on the next search.',
+        fields: [
+          {
+            key: 'SEARCH_RELEVANCE_MIN_SIMILARITY',
+            label: 'Gate floor',
+            hint: 'Results whose best similarity falls below this — and that have no keyword hit — are rejected as "no matches" before synthesis. 0 shows everything; default 0.60.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_STRONG',
+            label: 'Strong match ≥',
+            hint: 'A shown result at or above this similarity badges "Strong match". Default 0.70.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_GOOD',
+            label: 'Good match ≥',
+            hint: 'Badges "Good match" at or above this. Must sit between the Partial and Strong cut-points. Default 0.66.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_PARTIAL',
+            label: 'Partial match ≥',
+            hint: 'Badges "Partial match" at or above this; anything lower badges "Weak match". Default 0.60.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+        ],
+      },
+      {
         id: 'search-models',
         title: 'Models',
         subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',
