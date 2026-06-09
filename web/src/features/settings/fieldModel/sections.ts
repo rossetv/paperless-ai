@@ -216,6 +216,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             control: { kind: 'toggle' },
           },
           {
+            key: 'SEARCH_JUDGE_RATIONALES',
+            label: 'Judge rationales',
+            hint: 'Have the relevance judge write a one-line reason per document. Costs a few extra tokens per query; turn off to save them.',
+            control: { kind: 'toggle' },
+          },
+          {
             key: 'SEARCH_JUDGE_MODEL',
             label: 'Judge model',
             hint: 'The model that screens retrieved documents. Defaults to the planner model.',
