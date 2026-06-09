@@ -4,8 +4,14 @@ import { Card } from '../../../components/primitives/Card/Card';
 import { Icon } from '../../../components/primitives/Icon/Icon';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { Text } from '../../../components/primitives/Text/Text';
-import type { OutcomeKind, SourceDocument, SearchStats } from '../../../api/types';
+import type {
+  CostSummary,
+  OutcomeKind,
+  SourceDocument,
+  SearchStats,
+} from '../../../api/types';
 import { CitationMark } from '../../../components/primitives/CitationMark/CitationMark';
+import { formatSummaryCostLabel } from '../trace/phaseStages';
 
 export interface AnswerCardProps {
   /** The synthesised answer text, with `[document_id]` inline citation markers
@@ -17,6 +23,12 @@ export interface AnswerCardProps {
   sources: SourceDocument[];
   /** Execution statistics — drives the provenance footer. */
   stats: SearchStats;
+  /**
+   * Whole-query token + cost totals — rendered as a chip in the answer
+   * footer. Optional so retry-state callers (clarify/no_match) and older tests
+   * need not supply it; omitted ⇒ no cost chip.
+   */
+  cost?: CostSummary;
   /**
    * Discriminator for the result type.
    * ``"answered"``  → normal answer + citations.
@@ -104,6 +116,7 @@ export function AnswerCard({
   answer,
   sources,
   stats,
+  cost,
   outcomeKind = 'answered',
   onCitationActivate,
 }: AnswerCardProps): React.ReactElement {
@@ -129,12 +142,15 @@ export function AnswerCard({
 
   // ── Normal answered state ─────────────────────────────────────────────────
   const segments = parseAnswer(answer);
+  const costLabel =
+    cost !== undefined ? formatSummaryCostLabel(cost) : undefined;
 
   return (
     <AnswerSurface
       sourceCount={sources.length}
       latencyMs={stats.latency_ms}
       refined={stats.refined}
+      {...(costLabel !== undefined ? { costLabel } : {})}
     >
       {segments.map((segment, i) => {
         if (segment.type === 'text') {

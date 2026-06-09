@@ -12,6 +12,12 @@ export interface AnswerSurfaceProps {
   latencyMs: number;
   /** Whether the pipeline ran a refinement pass. Defaults to false. */
   refined?: boolean;
+  /**
+   * A compact "tokens · cost" label for the whole query (e.g.
+   * "3.4k tok · $0.012"). Rendered as a chip in the footer when present;
+   * omitted entirely when undefined (e.g. a cache hit with no spend).
+   */
+  costLabel?: string;
   /** Additional class names to merge. */
   className?: string;
 }
@@ -35,6 +41,7 @@ export function AnswerSurface({
   sourceCount,
   latencyMs,
   refined = false,
+  costLabel,
   className,
 }: AnswerSurfaceProps): React.ReactElement {
   const latencySeconds = (latencyMs / 1000).toFixed(1);
@@ -61,6 +68,9 @@ export function AnswerSurface({
             <span className={styles['refined-dot']} aria-hidden="true" />
             Refined once
           </span>
+        )}
+        {costLabel !== undefined && (
+          <span className={styles['cost']}>{costLabel}</span>
         )}
       </div>
     </article>

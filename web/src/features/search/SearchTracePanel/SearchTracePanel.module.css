@@ -1,0 +1,24 @@
+/*
+ * SearchTracePanel — screen-level layout for the trace disclosure summary row.
+ *
+ * Composition-only feature CSS (§11.2): structural layout and a small monospace
+ * cost chip, all values from design tokens.
+ */
+
+/* Summary row — headline, then the whole-query cost chip. */
+.summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+/* Whole-query token/cost chip in the summary row. */
+.cost {
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-bg);
+  color: var(--colour-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  white-space: nowrap;
+}

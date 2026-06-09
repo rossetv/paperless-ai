@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SearchResponse } from '../../../api/types';
-import { EMPTY_TELEMETRY } from '../../../api/types/__fixtures__/searchResponse';
 import { ResultsScreen } from './ResultsScreen';
 
 vi.mock('../FilterControls/FilterControls', () => ({
@@ -46,7 +45,24 @@ const RESPONSE: SearchResponse = {
     sub_questions: [],
   },
   stats: { llm_calls: 3, latency_ms: 1842, refined: true },
-  ...EMPTY_TELEMETRY,
+  trace: {
+    phases: [
+      {
+        phase: 'plan',
+        label: 'Planning the query',
+        detail: { rewritten_query: 'Npower 2024 payments', skipped_trivial: false },
+        tokens: { prompt: 1100, completion: 40, reasoning: 0, total: 1140 },
+        cost: { usd: 0.004, local: false },
+        ms: 300,
+      },
+    ],
+  },
+  cost: {
+    tokens: { prompt: 2000, completion: 100, reasoning: 0, total: 2100 },
+    usd: 0.006,
+    local: false,
+    llm_calls: 3,
+  },
   outcome_kind: 'answered',
 };
 
@@ -115,9 +131,16 @@ describe('ResultsScreen', () => {
     expect(screen.getByText('Annual energy statement')).toBeInTheDocument();
   });
 
-  it('renders the query-plan disclosure', () => {
+  it('renders the reasoning-trace disclosure', () => {
     renderResults();
-    expect(screen.getByText(/how this answer was built/i)).toBeInTheDocument();
+    expect(screen.getByText(/how this answer was found/i)).toBeInTheDocument();
+  });
+
+  it('renders the whole-query cost chip', () => {
+    renderResults();
+    // The same whole-query cost appears in both the answer footer and the
+    // trace-panel summary — assert at least one is present.
+    expect(screen.getAllByText('2.1k tok · $0.006').length).toBeGreaterThan(0);
   });
 
   it('fires onCitationActivate when a citation is clicked', async () => {

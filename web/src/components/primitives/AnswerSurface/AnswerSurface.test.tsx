@@ -73,4 +73,22 @@ describe('AnswerSurface', () => {
     );
     expect(container.querySelector('article')).toBeInTheDocument();
   });
+
+  it('renders the cost chip when a costLabel is given', () => {
+    render(
+      <AnswerSurface sourceCount={4} latencyMs={1842} costLabel="3.4k tok · $0.012">
+        <span>x</span>
+      </AnswerSurface>,
+    );
+    expect(screen.getByText('3.4k tok · $0.012')).toBeInTheDocument();
+  });
+
+  it('omits the cost chip by default', () => {
+    render(
+      <AnswerSurface sourceCount={4} latencyMs={1842}>
+        <span>x</span>
+      </AnswerSurface>,
+    );
+    expect(screen.queryByText(/tok/)).not.toBeInTheDocument();
+  });
 });
