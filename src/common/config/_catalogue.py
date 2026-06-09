@@ -102,6 +102,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_GATE_JUDGE",
         "SEARCH_JUDGE_MODEL",
         "SEARCH_JUDGE_REASONING_EFFORT",
+        "SEARCH_IDENTITY_AWARE",
     }
 )
 

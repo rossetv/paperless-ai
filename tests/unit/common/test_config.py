@@ -600,14 +600,22 @@ def test_relevance_tier_keys_are_config_only() -> None:
         assert key not in REINDEX_KEYS
 
 
-def test_config_keys_has_sixty_nine_entries() -> None:
-    """CONFIG_KEYS is the 69-key config-table universe.
+def test_identity_aware_is_config_only() -> None:
+    """SEARCH_IDENTITY_AWARE is persisted via the Settings API but is neither a
+    secret nor a reindex key — it changes only the next search."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
-    The relevance-judge feature added three keys (gate toggle + model +
-    reasoning effort) over the previous 66."""
+    assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
+    assert "SEARCH_IDENTITY_AWARE" not in SECRET_KEYS
+    assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
+
+
+def test_config_keys_has_seventy_entries() -> None:
+    """CONFIG_KEYS is the 70-key universe (identity awareness added one)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 69
+    assert len(CONFIG_KEYS) == 70
+    assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
     assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS

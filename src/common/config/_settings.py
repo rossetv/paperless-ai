@@ -283,6 +283,17 @@ class Settings:
     Floored at ``≥ 0``; negative values are clamped to ``0``.
     """
 
+    SEARCH_IDENTITY_AWARE: bool
+    """Resolve the asker's account display name into the planner + answer prompts.
+
+    When ``True`` (the default), a logged-in user's ``display_name`` is sanitised
+    and passed as an ``asker`` so the planner resolves first-person queries
+    ("my passport" -> the asker) and the answer model addresses them as "you".
+    The cache key includes the asker, so personalised answers never leak across
+    users. Set ``False`` to disable — prompts and cache key become identical to
+    the pre-identity behaviour. Inert until an account has a display name.
+    """
+
     @classmethod
     def from_environment(cls) -> Settings:
         """Build a :class:`Settings` from the process environment alone.
@@ -536,4 +547,5 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_MIN_QUERY_CHARS=max(
             0, _get_int_env(source, "SEARCH_MIN_QUERY_CHARS", 2)
         ),
+        SEARCH_IDENTITY_AWARE=_get_bool_env(source, "SEARCH_IDENTITY_AWARE", True),
     )
