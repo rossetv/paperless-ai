@@ -658,8 +658,13 @@ def test_run_loop_rebuilds_when_the_rebuild_sentinel_is_present(
             sentinel_path=sentinel,
         )
 
-    # The rebuild ran, and the sentinel was consumed.
-    assert store_writer.rebuild_index.called
+    # The rebuild ran with the cycle's live settings — the model/dims the
+    # re-embed will use are stamped into meta. Regression: a rebuild after a UI
+    # model switch must not leave stale meta that re-embeds twice on next boot.
+    store_writer.rebuild_index.assert_called_once_with(
+        embedding_model=settings.EMBEDDING_MODEL,
+        embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
+    )
     assert not rebuild_sentinel.exists()
     # The sync ran after the rebuild.
     assert reconciler.incremental_sync.called
