@@ -69,6 +69,8 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
+from search.judge import RelevanceJudge
+from search.models import JudgeCandidate
 from search.refinement import (
     adjust_plan,
     broaden_plan,
@@ -77,7 +79,7 @@ from search.refinement import (
 )
 from search.retriever import resolve_filters
 from search.relevance import RelevanceThresholds
-from search.sources import assemble_sources
+from search.sources import _snippet, assemble_sources
 from search.text import (
     ADJUSTMENT_LOG_PREFIX_CHARS,
     QUERY_LOG_PREFIX_CHARS,
@@ -183,6 +185,7 @@ class SearchCore:
         planner: The query-planning stage (LLM call #1).
         retriever: The hybrid retrieval stage (no LLM call).
         synthesizer: The answer-synthesis stage (LLM calls #2 and #3).
+        judge: The document-relevance screen (Layer 3, one cheap LLM call).
     """
 
     def __init__(
@@ -192,12 +195,14 @@ class SearchCore:
         planner: QueryPlanner,
         retriever: Retriever,
         synthesizer: Synthesizer,
+        judge: RelevanceJudge,
     ) -> None:
         self._settings = settings
         self._store_reader = store_reader
         self._planner = planner
         self._retriever = retriever
         self._synthesizer = synthesizer
+        self._judge = judge
 
     @property
     def settings(self) -> Settings:
@@ -298,7 +303,10 @@ class SearchCore:
           proceeds to synthesis.
         """
         started = time.monotonic()
-        budget = _LlmBudget(max_calls=2 + self._settings.SEARCH_MAX_REFINEMENTS)
+        judge_call = 1 if self._settings.SEARCH_GATE_JUDGE else 0
+        budget = _LlmBudget(
+            max_calls=2 + judge_call + self._settings.SEARCH_MAX_REFINEMENTS
+        )
 
         # --- Layer 0: degenerate-input guard (spec §7.0) ---
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
@@ -332,6 +340,13 @@ class SearchCore:
                 has_keyword_hit=signal.has_keyword_hit,
             )
             return self._no_match_result(plan, budget, started)
+
+        # --- Layer 3: document-relevance judge (cheap pre-synthesis screen) ---
+        filtered = self._judge_and_filter(query, chunks, budget)
+        if filtered is None:
+            log.info("search.judge_bailed", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
+            return self._no_match_result(plan, budget, started)
+        chunks = filtered
 
         outcome = self._synthesise(query, chunks, mode="exploratory", budget=budget)
 
@@ -504,6 +519,65 @@ class SearchCore:
         log.info("search.retrieval_broadened")
         chunks, signal = self._retriever.retrieve(broadened_plan, broadened_filters)
         return chunks, signal
+
+    def _judge_candidates(
+        self, chunks: list[RetrievedChunk]
+    ) -> list[JudgeCandidate]:
+        """Reduce chunks to one document-level candidate each (best-chunk snippet).
+
+        Keeps each document's highest-rrf_score chunk's text as the snippet —
+        the most relevant slice for a relevance call — reusing the same snippet
+        trimmer as source assembly (no duplication).
+        """
+        best_score: dict[int, float] = {}
+        snippet: dict[int, str] = {}
+        for chunk in chunks:
+            current = best_score.get(chunk.document_id)
+            if current is None or chunk.rrf_score > current:
+                best_score[chunk.document_id] = chunk.rrf_score
+                snippet[chunk.document_id] = _snippet(chunk.text)
+        return [
+            JudgeCandidate(document_id=document_id, snippet=snippet[document_id])
+            for document_id in best_score
+        ]
+
+    def _judge_and_filter(
+        self,
+        query: str,
+        chunks: list[RetrievedChunk],
+        budget: _LlmBudget,
+    ) -> list[RetrievedChunk] | None:
+        """Judge the retrieved documents; return filtered chunks, or None to bail.
+
+        Returns chunks unchanged when the judge is disabled. Otherwise records
+        one budget call, asks the judge which documents are relevant, and:
+        bails (None) only on an explicit empty verdict; filters to surviving
+        documents otherwise; fails open (all chunks) if filtering keeps nothing.
+        """
+        if not self._settings.SEARCH_GATE_JUDGE:
+            return chunks
+        candidates = self._judge_candidates(chunks)
+        budget.record()
+        verdict = self._judge.judge(query, candidates)
+        if not verdict.relevant_document_ids and not verdict.degraded:
+            return None
+        kept = [c for c in chunks if c.document_id in verdict.relevant_document_ids]
+        if not kept:
+            return chunks
+        if not verdict.degraded:
+            dropped = sorted(
+                {c.document_id for c in chunks} - verdict.relevant_document_ids
+            )
+            if dropped:
+                log.info(
+                    "search.judge_filtered",
+                    query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+                    kept=len(verdict.relevant_document_ids),
+                    dropped=dropped,
+                )
+        else:
+            log.info("search.judge_degraded", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
+        return kept
 
     def _synthesise(
         self,
