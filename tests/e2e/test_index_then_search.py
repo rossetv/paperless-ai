@@ -174,11 +174,11 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_PLANNER_REASONING_EFFORT = "medium"
     settings.SEARCH_ANSWER_REASONING_EFFORT = "medium"
     settings.LLM_PROVIDER = "openai"
-    # Fail-fast gate knobs (Task 6): pin to production defaults so the e2e
-    # assertions are not silently bypassed by MagicMock thresholds.
+    # Fail-fast gate knobs (Task 6): pin explicitly so the e2e assertions are
+    # not silently bypassed by MagicMock thresholds. Gates on, floor inert.
     settings.SEARCH_GATE_ADEQUACY = True
     settings.SEARCH_GATE_RELEVANCE = True
-    settings.SEARCH_RELEVANCE_MIN_SIMILARITY = 0.0  # inert until Task 4 calibrates
+    settings.SEARCH_RELEVANCE_MIN_SIMILARITY = 0.0  # inert here; offtopic test overrides to 0.9
     settings.SEARCH_MIN_QUERY_CHARS = 2
     return settings
 

@@ -585,9 +585,11 @@ def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
 
 
 def test_config_keys_has_sixty_three_entries() -> None:
-    """CONFIG_KEYS is the 63-key config-table universe (the 66-key count after
-    the fail-fast gate knobs were added, minus the three retired weak-retrieval
-    knobs superseded by the Layer-2 relevance gate)."""
+    """CONFIG_KEYS is the 63-key config-table universe.
+
+    The fail-fast feature added four gate knobs and retired three weak-retrieval
+    knobs (superseded by the Layer-2 relevance gate), a net gain of one over the
+    previous 62."""
     from common.config import CONFIG_KEYS
 
     assert len(CONFIG_KEYS) == 63

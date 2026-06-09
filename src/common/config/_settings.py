@@ -212,9 +212,15 @@ class Settings:
     SEARCH_RELEVANCE_MIN_SIMILARITY: float
     """Minimum absolute vector similarity required to proceed to synthesis.
 
-    An interim value of ``0.0`` (the default) effectively disables the floor
-    until Task 4 calibrates it against the live index. Floored at ``≥ 0.0``;
-    negative values are clamped to ``0.0``.
+    similarity = ``1 / (1 + best_cosine_distance)`` — higher is closer. The
+    default ``0.60`` was calibrated against the live index: known-good queries
+    scored 0.666–0.713, blatantly off-topic queries as low as 0.567 (e.g.
+    ``Popcorn``). 0.60 sits below the worst good score, so a real query is never
+    rejected, while still catching off-topic noise. It deliberately does *not*
+    catch near-miss queries (a document the library genuinely lacks scores like
+    a good one, because it shares tokens with real documents) — those are the
+    synthesiser's job, not this gate's. Floored at ``≥ 0.0``; negative values
+    are clamped to ``0.0``.
     """
     SEARCH_MIN_QUERY_CHARS: int
     """Minimum number of non-whitespace characters for a search query (Layer 0).
@@ -450,10 +456,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
-        # Floored at 0.0 — a negative floor would never reject anything, same
-        # as 0.0, so clamping is more forgiving than raising.
+        # Default 0.60 — calibrated below the worst known-good similarity
+        # (0.666) and above off-topic noise (Popcorn ≈ 0.567). Floored at 0.0:
+        # a negative floor would never reject anything, same as 0.0, so clamping
+        # is more forgiving than raising.
         SEARCH_RELEVANCE_MIN_SIMILARITY=max(
-            0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.0)
+            0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.60)
         ),
         # Floored at 0 — a negative char floor disables the Layer-0 guard, same
         # as 0, so clamping matches the intent without refusing the daemon start.
