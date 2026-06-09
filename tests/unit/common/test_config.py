@@ -610,11 +610,11 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_entries() -> None:
-    """CONFIG_KEYS is the 70-key universe (identity awareness added one)."""
+def test_config_keys_has_seventy_one_entries() -> None:
+    """CONFIG_KEYS is the 71-key universe (judge rationales toggle added one)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 70
+    assert len(CONFIG_KEYS) == 71
     assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
@@ -628,6 +628,7 @@ def test_config_keys_has_seventy_entries() -> None:
     assert "SEARCH_GATE_JUDGE" in CONFIG_KEYS
     assert "SEARCH_JUDGE_MODEL" in CONFIG_KEYS
     assert "SEARCH_JUDGE_REASONING_EFFORT" in CONFIG_KEYS
+    assert "SEARCH_JUDGE_RATIONALES" in CONFIG_KEYS
 
 
 def test_judge_keys_are_config_only() -> None:
@@ -639,10 +640,20 @@ def test_judge_keys_are_config_only() -> None:
         "SEARCH_GATE_JUDGE",
         "SEARCH_JUDGE_MODEL",
         "SEARCH_JUDGE_REASONING_EFFORT",
+        "SEARCH_JUDGE_RATIONALES",
     ):
         assert key in CONFIG_KEYS
         assert key not in SECRET_KEYS
         assert key not in REINDEX_KEYS
+
+
+def test_search_judge_rationales_defaults_true_and_parses_false(mocker) -> None:
+    """SEARCH_JUDGE_RATIONALES defaults to True and parses the string "false"."""
+    settings_default = _build(mocker, _MINIMAL_ENV)
+    assert settings_default.SEARCH_JUDGE_RATIONALES is True
+
+    settings_off = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_RATIONALES": "false"})
+    assert settings_off.SEARCH_JUDGE_RATIONALES is False
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:
