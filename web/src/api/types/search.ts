@@ -39,6 +39,14 @@ export interface TaxonomyEntry {
 }
 
 /**
+ * Qualitative relevance of a search hit, from the backend's absolute vector
+ * similarity. Rendered as the `RelevanceMeter` badge (a 4-dot meter + label)
+ * in place of the raw rank-based score, which read as a misleadingly tiny
+ * number even for a perfect match.
+ */
+export type RelevanceTier = 'strong' | 'good' | 'partial' | 'weak';
+
+/**
  * The superset document shape accepted by the preview viewer.
  *
  * Library and Index screens fabricate a local object to open the viewer —
@@ -65,6 +73,11 @@ export interface PreviewableDocument {
    */
   paperless_url: string | null;
   score: number;
+  /**
+   * Qualitative match strength, present on search results (`SourceDocument`)
+   * and absent on locally-fabricated Library/Index documents.
+   */
+  relevance_tier?: RelevanceTier;
 }
 
 /**
@@ -80,6 +93,8 @@ export interface PreviewableDocument {
  */
 export interface SourceDocument extends PreviewableDocument {
   paperless_url: string;
+  /** A search result always carries a relevance tier (required override). */
+  relevance_tier: RelevanceTier;
   /** Tag names attached to this document, as returned by the search API. */
   tags: string[];
 }

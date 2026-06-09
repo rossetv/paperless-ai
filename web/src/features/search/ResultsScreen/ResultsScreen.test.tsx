@@ -35,6 +35,7 @@ const RESPONSE: SearchResponse = {
       snippet: 'Total charges were **£1,847.32**.',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.92,
+      relevance_tier: 'strong',
       tags: [],
     },
   ],

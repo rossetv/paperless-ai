@@ -108,7 +108,13 @@ class SearchRequest(BaseModel):
 
 
 class SourceDocumentResponse(BaseModel):
-    """One ranked source document in the search response."""
+    """One ranked source document in the search response.
+
+    ``score`` is the rank-based RRF score, kept for ranking/MCP consumers but
+    not shown in the web UI (it reads as a misleadingly tiny number);
+    ``relevance_tier`` is the qualitative match strength the UI renders as a
+    badge.
+    """
 
     document_id: int
     title: str | None
@@ -118,6 +124,7 @@ class SourceDocumentResponse(BaseModel):
     snippet: str
     paperless_url: str
     score: float
+    relevance_tier: str
 
 
 class QueryPlanResponse(BaseModel):
@@ -210,6 +217,7 @@ def to_search_response(result: SearchResult) -> SearchResponse:
             snippet=src.snippet,
             paperless_url=src.paperless_url,
             score=src.score,
+            relevance_tier=src.relevance_tier,
         )
         for src in result.sources
     ]
