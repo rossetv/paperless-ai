@@ -303,3 +303,21 @@ class TestPromptInjectionSafety:
         user_content = self._user_message(synthesiser)
         # The document id must appear as a label in the chunk section.
         assert "[99]" in user_content or "99" in user_content
+
+    def test_asker_appears_in_control_plane_of_user_message(self) -> None:
+        """When asker is set, the name appears before the data fence."""
+        chunks = [_chunk(1, "passport doc")]
+        synthesiser = build_synthesizer(
+            make_search_settings(),
+            answered_response_json("answer [1].", citations=[1]),
+        )
+        synthesiser.synthesise(
+            "when does my passport expire?",
+            chunks,
+            mode="exploratory",
+            asker="Vilmar Rosset",
+        )
+        user_content = self._user_message(synthesiser)
+        assert "Vilmar Rosset" in user_content
+        # Identity must be in the control plane — before the data fence.
+        assert user_content.index("Vilmar Rosset") < user_content.index("<<<DATA ")

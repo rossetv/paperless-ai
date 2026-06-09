@@ -249,3 +249,23 @@ class TestPlannerIdentity:
         with_none = build_planner_user_message(query="my passport", today="2026-06-09")
         assert "asked by" not in with_none.lower()
         assert "Vilmar" not in with_none
+
+
+class TestSynthesiserIdentity:
+    """Synthesiser user message carries the asker identity in the control plane."""
+
+    def test_synth_message_identity_is_control_plane_when_asker_set(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="when does my passport expire?",
+            labelled_chunks=[(1, "passport doc")],
+            asker="Vilmar Rosset",
+        )
+        # Identity is in the control plane: before the data fence, name present.
+        assert "Vilmar Rosset" in msg
+        assert msg.index("Vilmar Rosset") < msg.index("<<<DATA ")
+
+    def test_synth_message_unchanged_when_no_asker(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="q", labelled_chunks=[(1, "doc")]
+        )
+        assert "Vilmar" not in msg
