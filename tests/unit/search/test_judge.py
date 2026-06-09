@@ -11,7 +11,11 @@ from search.prompts import (
     _judge_response_format,
     build_judge_user_message,
 )
-from tests.helpers.factories import make_search_settings
+from tests.helpers.factories import (
+    make_judge_candidate,
+    make_judge_verdict,
+    make_search_settings,
+)
 from tests.helpers.llm import make_chat_completion
 
 
@@ -71,15 +75,15 @@ def _judge_with(content: str | None) -> RelevanceJudge:
 
 
 _CANDIDATES = [
-    JudgeCandidate(document_id=1, snippet="boiler warranty"),
-    JudgeCandidate(document_id=2, snippet="holiday photos"),
+    make_judge_candidate(document_id=1, snippet="boiler warranty"),
+    make_judge_candidate(document_id=2, snippet="holiday photos"),
 ]
 
 
 def test_judge_keeps_the_named_documents() -> None:
     judge = _judge_with('{"relevant_document_ids": [1]}')
     verdict = judge.judge("warranty?", _CANDIDATES)
-    assert verdict == JudgeVerdict(relevant_document_ids=frozenset({1}), degraded=False)
+    assert verdict == make_judge_verdict(relevant_document_ids={1})
 
 
 def test_empty_list_is_an_explicit_bail_not_degraded() -> None:
