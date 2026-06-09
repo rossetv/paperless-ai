@@ -54,9 +54,12 @@ from search.cache import build_cache_key, get_search_result_cache, is_cacheable
 from search.errors import LlmBudgetExceededError
 from search.models import (
     Answered,
+    ClarifyNeeded,
+    EMPTY_FILTER_CANDIDATES,
     NeedsMore,
     QueryPlan,
     RetrievedChunk,
+    RetrievalSignal,
     SearchMode,
     SearchResult,
     SearchStats,
@@ -65,7 +68,6 @@ from search.models import (
 from search.refinement import (
     adjust_plan,
     broaden_plan,
-    is_weak_retrieval,
     merge_chunks,
     trivial_plan,
 )
@@ -95,9 +97,24 @@ log = structlog.get_logger(__name__)
 # billable endpoint.
 _MAX_LLM_CALLS = 3
 
-# Shown as the answer when retrieval yields nothing (spec §6.3): a no-hits
-# query short-circuits before any synthesis call, so there is no model prose.
-_NO_MATCHES_ANSWER = "No matching documents were found in the archive for this query."
+# Shown as the answer when retrieval yields nothing or Layer 2 rejects the
+# signal (spec §6.3, §11).  A no-hits or irrelevant-signal query
+# short-circuits before any synthesis call, so there is no model prose.  The
+# exact wording is the spec §11 canonical message — changing it here changes
+# every no_match path simultaneously.
+_NO_MATCHES_ANSWER = (
+    "I couldn't find any documents matching that. "
+    "Try rephrasing, or broaden your search."
+)
+
+# Fixed user-facing answer for the Layer-1 adequacy gate (spec §11).  The
+# model's reason is logged for triage but NEVER shown to the user — consistent
+# UX requires a single, stable message regardless of which model phrased the
+# rejection.
+_CLARIFY_ANSWER = (
+    "That search is a bit too broad for me to answer well. "
+    "Add a detail or two, or use the filters to pick a correspondent or document type."
+)
 
 
 class _LlmBudget:
@@ -240,12 +257,37 @@ class SearchCore:
         refinement budget allows — adjust, retrieve again, merge, and synthesise
         a final time. At most three LLM calls are ever made (see the module
         docstring).
+
+        Three fail-fast gates sit at the front of the pipeline (spec §7):
+
+        * **Layer 0** — degenerate-input guard: a query shorter than
+          ``SEARCH_MIN_QUERY_CHARS`` characters (after stripping) is rejected
+          immediately with ``outcome_kind='clarify'`` and **zero** LLM calls.
+        * **Layer 1** — adequacy gate: the planner may return
+          :class:`~search.models.ClarifyNeeded` for an obviously-vague query;
+          the core short-circuits before retrieval or synthesis.
+        * **Layer 2** — relevance gate: when ``SEARCH_GATE_RELEVANCE`` is set,
+          retrieved chunks whose best absolute vector similarity is below
+          ``SEARCH_RELEVANCE_MIN_SIMILARITY`` *and* that have no keyword hit
+          are discarded without synthesis (``outcome_kind='no_match'``).  The
+          gate is fail-open: a ``None`` similarity (no vector pass ran) always
+          proceeds to synthesis.
         """
         started = time.monotonic()
         budget = _LlmBudget()
 
-        plan = self._plan(query, budget)
-        chunks = self._retrieve_with_broaden(plan, ui_filters)
+        # --- Layer 0: degenerate-input guard (spec §7.0) ---
+        if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
+            return self._clarify_result(
+                "query below SEARCH_MIN_QUERY_CHARS", budget, started
+            )
+
+        plan_outcome = self._plan(query, budget)
+        if isinstance(plan_outcome, ClarifyNeeded):
+            return self._clarify_result(plan_outcome.reason, budget, started)
+        plan = plan_outcome
+
+        chunks, signal = self._retrieve_with_broaden(plan, ui_filters)
 
         if not chunks:
             log.info(
@@ -254,19 +296,16 @@ class SearchCore:
             )
             return self._no_match_result(plan, budget, started)
 
-        if self._settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL and is_weak_retrieval(
-            chunks,
-            min_chunks=self._settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS,
-            min_score=self._settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE,
+        # --- Layer 2: relevance gate (spec §7.2) ---
+        if self._settings.SEARCH_GATE_RELEVANCE and _is_irrelevant(
+            signal,
+            min_similarity=self._settings.SEARCH_RELEVANCE_MIN_SIMILARITY,
         ):
             log.info(
-                "search.synth_skipped_weak_retrieval",
+                "search.synth_skipped_no_relevance",
                 query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
-                chunk_count=len(chunks),
-                # chunks is sorted by rrf_score descending, so the head is the
-                # best score in O(1); the empty case is excluded by the guard
-                # above (§1.3, SRCH-07).
-                best_score=chunks[0].rrf_score,
+                best_vector_similarity=signal.best_vector_similarity,
+                has_keyword_hit=signal.has_keyword_hit,
             )
             return self._no_match_result(plan, budget, started)
 
@@ -341,8 +380,20 @@ class SearchCore:
         started = time.monotonic()
         budget = _LlmBudget()
 
-        plan = self._plan(query, budget)
-        chunks = self._retrieve_with_broaden(plan, ui_filters)
+        # Layer 0: degenerate-input guard (spec §7.0) — same check as
+        # _answer_uncached so callers always get consistent behaviour.
+        if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
+            return self._clarify_result(
+                "query below SEARCH_MIN_QUERY_CHARS", budget, started
+            )
+
+        plan_outcome = self._plan(query, budget)
+        if isinstance(plan_outcome, ClarifyNeeded):
+            return self._clarify_result(plan_outcome.reason, budget, started)
+        plan = plan_outcome
+
+        # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
+        chunks, _signal = self._retrieve_with_broaden(plan, ui_filters)
         sources = assemble_sources(
             chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
         )
@@ -352,7 +403,7 @@ class SearchCore:
     # Pipeline stages
     # ------------------------------------------------------------------
 
-    def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan:
+    def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
         When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
@@ -360,6 +411,9 @@ class SearchCore:
         the fallback-shaped trivial plan is used — retrieval still runs vector +
         FTS on the raw query, so nothing is lost (spec §4.6). The flag defaults
         off, preserving today's always-plan behaviour.
+
+        Returns a ``QueryPlan`` in all normal and fallback cases, or a
+        ``ClarifyNeeded`` when the planner's adequacy gate fires (Layer 1).
         """
         if self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query):
             log.info(
@@ -374,7 +428,7 @@ class SearchCore:
         self,
         plan: QueryPlan,
         ui_filters: SearchFilters | None,
-    ) -> list[RetrievedChunk]:
+    ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
         """Retrieve for *plan*; broaden and retry once if nothing is found.
 
         Resolves the plan's free-text filter candidates against the live
@@ -383,12 +437,18 @@ class SearchCore:
         a mis-resolved or hallucinated filter is the most common cause of an
         otherwise-answerable query returning nothing.  Neither call is an LLM
         call.
+
+        Returns:
+            A 2-tuple ``(chunks, signal)`` where *signal* is from whichever
+            retrieval pass found chunks (or the broadened pass when the first
+            was empty).  The signal is forwarded to Layer 2 in
+            ``_answer_uncached``.
         """
         facets = self._store_reader.list_facets()
         filters = resolve_filters(plan.filter_candidates, facets, ui_filters=ui_filters)
-        chunks = self._retriever.retrieve(plan, filters)
+        chunks, signal = self._retriever.retrieve(plan, filters)
         if chunks:
-            return chunks
+            return chunks, signal
 
         # Empty retrieval — drop the filters and try once more.
         broadened_plan = broaden_plan(plan)
@@ -396,7 +456,8 @@ class SearchCore:
             broadened_plan.filter_candidates, facets, ui_filters=None
         )
         log.info("search.retrieval_broadened")
-        return self._retriever.retrieve(broadened_plan, broadened_filters)
+        chunks, signal = self._retriever.retrieve(broadened_plan, broadened_filters)
+        return chunks, signal
 
     def _synthesise(
         self,
@@ -444,7 +505,7 @@ class SearchCore:
             adjustment=needs_more.adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
         )
         adjusted_plan = adjust_plan(plan, needs_more.adjustment)
-        new_chunks = self._retrieve_with_broaden(adjusted_plan, ui_filters)
+        new_chunks, _signal = self._retrieve_with_broaden(adjusted_plan, ui_filters)
         merged = merge_chunks(previous_chunks, new_chunks)
         outcome = self._synthesise(query, merged, mode="final", budget=budget)
         return outcome, merged
@@ -477,9 +538,74 @@ class SearchCore:
         budget: _LlmBudget,
         started: float,
     ) -> SearchResult:
-        """Build the no-hits SearchResult — no sources, no synthesis call."""
-        return self._build_result(
-            _NO_MATCHES_ANSWER, (), plan, budget, started, refined=False
+        """Build the no-hits SearchResult — no sources, no synthesis call.
+
+        Used for both the empty-retrieval case (no chunks found at all) and the
+        Layer-2 relevance-gate rejection (chunks found but signal too weak).
+        The ``outcome_kind`` is ``"no_match"`` in both cases so callers and the
+        SPA can render a consistent "try rephrasing" state.
+        """
+        stats = SearchStats(
+            llm_calls=budget.count,
+            latency_ms=_elapsed_ms(started),
+            refined=False,
+        )
+        return SearchResult(
+            answer=_NO_MATCHES_ANSWER,
+            sources=(),
+            plan=plan,
+            stats=stats,
+            outcome_kind="no_match",
+        )
+
+    def _clarify_result(
+        self,
+        reason: str,
+        budget: _LlmBudget,
+        started: float,
+    ) -> SearchResult:
+        """Build the Layer-1 adequacy-gate SearchResult.
+
+        The model's ``reason`` is logged for operator triage; the user-facing
+        ``answer`` is the FIXED ``_CLARIFY_ANSWER`` message (spec §11) — the
+        model's phrasing is never surfaced directly to preserve consistent UX.
+
+        A minimal QueryPlan whose sole semantic query is the constant clarify
+        message string is used as the plan (no retrieval ran, so there is no
+        real plan to report; this satisfies the non-null plan contract).
+
+        Args:
+            reason: The model's reason for the clarify signal (logged only).
+            budget: The LLM budget tracker (reflects the one planner call).
+            started: The monotonic timestamp when the request began.
+
+        Returns:
+            A SearchResult with outcome_kind='clarify', the fixed answer, empty
+            sources, and stats reflecting the single planner call.
+        """
+        log.info(
+            "search.clarify_needed",
+            reason=reason,
+        )
+        # Minimal plan: a single semantic query so callers always get a non-null
+        # plan; empty rest because no retrieval ran.
+        minimal_plan = QueryPlan(
+            semantic_queries=(_CLARIFY_ANSWER,),
+            keyword_terms=(),
+            filter_candidates=EMPTY_FILTER_CANDIDATES,
+            sub_questions=(),
+        )
+        stats = SearchStats(
+            llm_calls=budget.count,
+            latency_ms=_elapsed_ms(started),
+            refined=False,
+        )
+        return SearchResult(
+            answer=_CLARIFY_ANSWER,
+            sources=(),
+            plan=minimal_plan,
+            stats=stats,
+            outcome_kind="clarify",
         )
 
 
@@ -491,6 +617,36 @@ class SearchCore:
 def _elapsed_ms(started: float) -> int:
     """Return whole milliseconds elapsed since the monotonic timestamp *started*."""
     return int((time.monotonic() - started) * 1000)
+
+
+def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:
+    """Return True when the retrieval signal is too weak to be worth synthesising.
+
+    Conservative and fail-open (spec §7.2):
+
+    * **Reject only when BOTH signals are poor** — the best vector similarity is
+      below *min_similarity* AND there is no keyword hit.  An exact-term keyword
+      match or a strong semantic match is always allowed through.
+    * **Fail-open when similarity is unavailable** — when ``best_vector_similarity``
+      is ``None`` (no vector search ran or returned results), the function returns
+      ``False`` so synthesis proceeds.  Missing information is not evidence of
+      irrelevance.
+
+    Args:
+        signal: The :class:`~search.models.RetrievalSignal` from the retriever.
+        min_similarity: The absolute vector similarity floor below which retrieval
+            is considered irrelevant.  ``0.0`` makes this function always return
+            ``False`` (the production interim default until Task 4 calibrates it).
+
+    Returns:
+        ``True`` only when both the similarity is known AND is below the floor AND
+        there is no keyword hit; ``False`` in every other case (including when
+        similarity is unknown).
+    """
+    if signal.best_vector_similarity is None:
+        # No vector data — fail-open, do not reject.
+        return False
+    return signal.best_vector_similarity < min_similarity and not signal.has_keyword_hit
 
 
 def _cited_sources(

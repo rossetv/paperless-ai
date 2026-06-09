@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS
-from search.models import FilterCandidates, QueryPlan, RetrievedChunk
+from search.models import FilterCandidates, QueryPlan, RetrievedChunk, RetrievalSignal
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
 from store.reader import SearchFilters, StoreReader
 
@@ -307,8 +307,8 @@ class Retriever:
         self,
         plan: QueryPlan,
         filters: SearchFilters,
-    ) -> list[RetrievedChunk]:
-        """Run hybrid retrieval and return top-K documents' chunks.
+    ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
+        """Run hybrid retrieval and return top-K documents' chunks with a quality signal.
 
         Embeds all semantic queries and sub-questions in a single batch call
         (one round-trip to the embedding API), then runs vector search for each
@@ -322,14 +322,19 @@ class Retriever:
         highest-scoring chunk.  Returns the top ``SEARCH_TOP_K`` documents'
         chunks, ordered by fused score descending.
 
+        Also returns a :class:`~search.models.RetrievalSignal` carrying absolute
+        quality signals that RRF discards: the best raw vector similarity
+        (computed before fusion) and whether keyword search returned any rows.
+
         Args:
             plan: The query plan produced by the planner.
             filters: Pre-resolved SearchFilters to narrow the candidate set.
 
         Returns:
-            A list of RetrievedChunk objects, one per chunk from the top-K
-            documents, sorted by rrf_score descending.  Empty if no chunks are
-            found.
+            A 2-tuple ``(chunks, signal)`` where *chunks* is a list of
+            RetrievedChunk objects sorted by rrf_score descending (empty when
+            nothing was found), and *signal* is a :class:`RetrievalSignal`
+            capturing pre-fusion quality.
         """
         top_k = self._settings.SEARCH_TOP_K
         ranked_lists: list[list[ChunkHit]] = []
@@ -339,28 +344,57 @@ class Retriever:
             plan.sub_questions
         )
 
+        # best_vector_distance tracks the smallest cosine distance seen across
+        # all vector passes (lower = closer); converted to similarity below.
+        best_vector_distance: float | None = None
+
         if texts_to_embed:
             embeddings = self._embed_queries(texts_to_embed)
             for embedding in embeddings:
                 hits = self._store_reader.vector_search(embedding, top_k, filters)
                 if hits:
                     ranked_lists.append(hits)
+                    # ChunkHit.score is cosine distance for vector hits (lower =
+                    # closer).  vector_search returns rows ordered ascending, so
+                    # hits[0] is the nearest, but we scan all to be safe across
+                    # multiple passes.
+                    pass_min = min(h.score for h in hits)
+                    if best_vector_distance is None or pass_min < best_vector_distance:
+                        best_vector_distance = pass_min
+
+        # rationale: similarity = 1/(1+distance) maps [0, ∞) → (0, 1] and is
+        # monotonically decreasing with distance — the closest possible hit
+        # (distance=0) gives similarity=1.0.  The formula is numerically stable
+        # at any finite distance and produces a consistent scale that later
+        # calibration can interpret without knowing the absolute distance range.
+        best_vector_similarity: float | None = (
+            1.0 / (1.0 + best_vector_distance)
+            if best_vector_distance is not None
+            else None
+        )
 
         # Keyword search over all keyword terms combined.
+        has_keyword_hit = False
         if plan.keyword_terms:
             keyword_hits = self._store_reader.keyword_search(
                 list(plan.keyword_terms), top_k, filters
             )
             if keyword_hits:
+                has_keyword_hit = True
                 ranked_lists.append(keyword_hits)
 
+        signal = RetrievalSignal(
+            best_vector_similarity=best_vector_similarity,
+            has_keyword_hit=has_keyword_hit,
+        )
+
         if not ranked_lists:
-            return []
+            return [], signal
 
         fused_score, first_hit = _fuse_with_rrf(ranked_lists)
 
         if not fused_score:
-            return []
+            return [], signal
 
         top_doc_ids = _top_document_ids(fused_score, first_hit, top_k)
 
@@ -388,4 +422,4 @@ class Retriever:
             returned_chunks=len(chunks),
         )
 
-        return chunks
+        return chunks, signal

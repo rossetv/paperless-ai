@@ -11,8 +11,6 @@ These pure functions serve the branches of the refinement loop in core.py:
   rounds' retrieved chunks so the final synthesise sees both.
 - ``trivial_plan`` — the RAG-08 short-circuit: build the planner-fallback-shaped
   plan in code when a trivial query lets the core skip the planner LLM call.
-- ``is_weak_retrieval`` — the RAG-10 threshold test: whether the retrieved
-  chunks are too few / too low-scoring to be worth the exploratory synth call.
 
 Every function is pure (no I/O, no LLM calls).  The plan helpers return new
 ``QueryPlan`` instances via ``dataclasses.replace``; the frozen-dataclass
@@ -73,37 +71,6 @@ def trivial_plan(query: str) -> QueryPlan:
         filter_candidates=EMPTY_FILTER_CANDIDATES,
         sub_questions=(),
     )
-
-
-def is_weak_retrieval(
-    chunks: list[RetrievedChunk], *, min_chunks: int, min_score: float
-) -> bool:
-    """Return whether retrieval is too weak to be worth a synth call (RAG-10).
-
-    Weak when fewer than *min_chunks* chunks were found, or the best fused (RRF)
-    score is below *min_score*. The thresholds are passed in (not read off
-    Settings) so this stays a pure helper with no config dependency — the core
-    reads ``SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS`` / ``SEARCH_WEAK_RETRIEVAL_MIN_SCORE``
-    and passes them. With the defaults (1 and 0.0) this is inert; the whole gate
-    sits behind the default-off ``SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL`` flag
-    (spec §4.7).
-
-    Args:
-        chunks: The retrieved chunks (assumed non-empty by the caller).
-        min_chunks: The minimum chunk count below which retrieval is weak.
-        min_score: The minimum best-fused-score below which retrieval is weak.
-
-    Returns:
-        True when retrieval is below either floor.
-    """
-    if len(chunks) < min_chunks:
-        return True
-    # chunks is sorted by rrf_score descending (retriever.retrieve / merge_chunks),
-    # so the head is the best score in O(1) — no scan needed (§1.3). The caller
-    # guarantees a non-empty list, and the min_chunks guard above already returns
-    # for any list shorter than the (>= 1) floor.
-    best_score = chunks[0].rrf_score
-    return best_score < min_score
 
 
 def adjust_plan(plan: QueryPlan, adjustment: str) -> QueryPlan:

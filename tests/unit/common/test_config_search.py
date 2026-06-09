@@ -35,7 +35,7 @@ def _build(mocker, env: dict[str, str]) -> Settings:
 _SEARCH_DEFAULTS_OPENAI = [
     ("SEARCH_TOP_K", 10),
     ("SEARCH_MAX_REFINEMENTS", 1),
-    ("SEARCH_PLANNER_MODEL", "gpt-5.4-nano"),
+    ("SEARCH_PLANNER_MODEL", "gpt-5.4-mini"),
     ("SEARCH_ANSWER_MODEL", "gpt-5.5"),
     ("SEARCH_SERVER_HOST", "0.0.0.0"),
     ("SEARCH_SERVER_PORT", 8080),
@@ -165,7 +165,7 @@ class TestSearchSettingsBounds:
 
 
 class TestSearchRagCostSettings:
-    """The seven Area-3 SEARCH_* settings resolve with the documented defaults."""
+    """The four Area-3 SEARCH_* settings resolve with the documented defaults."""
 
     def test_reasoning_effort_defaults(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
@@ -173,9 +173,6 @@ class TestSearchRagCostSettings:
         assert settings.SEARCH_ANSWER_REASONING_EFFORT == "medium"
         assert settings.SEARCH_CACHE_TTL_SECONDS == 14400
         assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is False
-        assert settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL is False
-        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS == 1
-        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.0
 
     def test_overrides_win(self, mocker) -> None:
         # "high"/"low" (not the "medium" default) so the override genuinely bites.
@@ -187,14 +184,12 @@ class TestSearchRagCostSettings:
                 "SEARCH_ANSWER_REASONING_EFFORT": "low",
                 "SEARCH_CACHE_TTL_SECONDS": "0",
                 "SEARCH_SKIP_PLANNER_FOR_TRIVIAL": "true",
-                "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "0.02",
             },
         )
         assert settings.SEARCH_PLANNER_REASONING_EFFORT == "high"
         assert settings.SEARCH_ANSWER_REASONING_EFFORT == "low"
         assert settings.SEARCH_CACHE_TTL_SECONDS == 0
         assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is True
-        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.02
 
     def test_invalid_reasoning_effort_fails_closed(self, mocker) -> None:
         """An unrecognised reasoning_effort raises at startup, naming the key."""
@@ -208,18 +203,93 @@ class TestSearchRagCostSettings:
         settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_CACHE_TTL_SECONDS": "-5"})
         assert settings.SEARCH_CACHE_TTL_SECONDS == 0
 
-    def test_negative_min_chunks_clamps_to_zero(self, mocker) -> None:
-        settings = _build(
-            mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS": "-3"}
-        )
-        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS == 0
 
-    def test_negative_min_score_clamps_to_zero(self, mocker) -> None:
-        settings = _build(
-            mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "-0.5"}
-        )
-        assert settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE == 0.0
+class TestSearchFailFastGateDefaults:
+    """The four fail-fast gate knobs have the correct coded defaults."""
 
-    def test_non_numeric_min_score_raises(self, mocker) -> None:
-        with pytest.raises(ValueError, match="SEARCH_WEAK_RETRIEVAL_MIN_SCORE"):
-            _build(mocker, {**_MINIMAL_ENV, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": "lots"})
+    def test_planner_model_defaults_to_gpt_5_4_mini_for_openai(self, mocker) -> None:
+        """OpenAI provider: SEARCH_PLANNER_MODEL defaults to gpt-5.4-mini."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.4-mini"
+
+    def test_gate_adequacy_defaults_true(self, mocker) -> None:
+        """SEARCH_GATE_ADEQUACY defaults to True — the gate is on by default."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_GATE_ADEQUACY is True
+
+    def test_gate_relevance_defaults_true(self, mocker) -> None:
+        """SEARCH_GATE_RELEVANCE defaults to True — the gate is on by default."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_GATE_RELEVANCE is True
+
+    def test_min_query_chars_defaults_to_two(self, mocker) -> None:
+        """SEARCH_MIN_QUERY_CHARS defaults to 2 (the Layer-0 degenerate-input floor)."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_MIN_QUERY_CHARS == 2
+
+    def test_relevance_min_similarity_defaults_to_calibrated_floor(self, mocker) -> None:
+        """SEARCH_RELEVANCE_MIN_SIMILARITY defaults to 0.60 (calibrated against the live index)."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.60
+
+
+class TestSearchFailFastGateOverrides:
+    """Every fail-fast knob can be overridden from the environment."""
+
+    def test_gate_adequacy_overridden_to_false(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_ADEQUACY": "false"})
+        assert settings.SEARCH_GATE_ADEQUACY is False
+
+    def test_gate_relevance_overridden_to_false(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_RELEVANCE": "false"})
+        assert settings.SEARCH_GATE_RELEVANCE is False
+
+    def test_gate_adequacy_truthy_strings_accepted(self, mocker) -> None:
+        for val in ("true", "1", "yes"):
+            settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_ADEQUACY": val})
+            assert settings.SEARCH_GATE_ADEQUACY is True
+
+    def test_min_query_chars_overridden(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "5"})
+        assert settings.SEARCH_MIN_QUERY_CHARS == 5
+
+    def test_relevance_min_similarity_overridden(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_MIN_SIMILARITY": "0.15"}
+        )
+        assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.15
+
+
+class TestSearchFailFastGateClamping:
+    """Floor clamping keeps out-of-range values safe."""
+
+    def test_negative_min_query_chars_clamped_to_zero(self, mocker) -> None:
+        """A negative SEARCH_MIN_QUERY_CHARS is clamped to 0, not rejected."""
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "-3"})
+        assert settings.SEARCH_MIN_QUERY_CHARS == 0
+
+    def test_zero_min_query_chars_accepted(self, mocker) -> None:
+        """Zero is a valid floor — the caller opts out of the char check."""
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "0"})
+        assert settings.SEARCH_MIN_QUERY_CHARS == 0
+
+    def test_negative_relevance_min_similarity_clamped_to_zero(self, mocker) -> None:
+        """A negative SEARCH_RELEVANCE_MIN_SIMILARITY is clamped to 0.0."""
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_MIN_SIMILARITY": "-0.5"}
+        )
+        assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.0
+
+    def test_non_numeric_relevance_min_similarity_raises(self, mocker) -> None:
+        """A non-numeric SEARCH_RELEVANCE_MIN_SIMILARITY fails closed at startup."""
+        with pytest.raises(ValueError, match="SEARCH_RELEVANCE_MIN_SIMILARITY"):
+            _build(
+                mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_MIN_SIMILARITY": "quite_low"}
+            )
+
+    def test_non_integer_min_query_chars_raises(self, mocker) -> None:
+        """A non-integer SEARCH_MIN_QUERY_CHARS fails closed at startup."""
+        with pytest.raises(
+            ValueError, match="SEARCH_MIN_QUERY_CHARS must be an integer"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "two"})

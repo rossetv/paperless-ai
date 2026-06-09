@@ -47,21 +47,33 @@ The ceiling is enforced two ways:
 1. **Structurally** — `answer` makes the planner call once, the exploratory synthesise once, and the refinement synthesise at most once. There is no loop that can issue a fourth call.
 2. **Defensively** — every LLM stage is recorded through an `_LlmBudget` counter that raises `LlmBudgetExceededError` if the total would exceed `_MAX_LLM_CALLS` (3). A plain `raise` (not `assert`, which `python -O` would strip) means a logic regression attempting a fourth call fails loudly on the billable endpoint. `SearchStats.llm_calls` reports calls *attempted*, which on a fully successful query equals calls billed.
 
-Several optional knobs spend **fewer** calls without ever exceeding the ceiling: a result cache serves a repeated query with **zero** LLM calls; a trivial keyword query can skip the planner; and a weak retrieval can skip synthesis entirely (see below).
+Several optional knobs spend **fewer** calls without ever exceeding the ceiling: a result cache serves a repeated query with **zero** LLM calls; a degenerate or too-vague query is rejected before synthesis; a trivial keyword query can skip the planner; and an irrelevant retrieval skips synthesis entirely (see [Fail-fast gates](#fail-fast-gates) below).
 
 ### Pipeline stages
 
 ```
 (result cache hit? → return, 0 LLM calls)
+(query shorter than SEARCH_MIN_QUERY_CHARS? → "be more specific", 0 LLM calls)   ← Layer 0
 plan  (skipped for a trivial query if SEARCH_SKIP_PLANNER_FOR_TRIVIAL)
+ ├─ too vague? planner returns clarify (SEARCH_GATE_ADEQUACY) → "be more specific", no synth   ← Layer 1
  └─ retrieve (vector + keyword → RRF fusion)
       ├─ empty? → broaden plan (drop filters), retrieve once → still empty? → "no matches" (no synth call)
-      ├─ weak? (SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL) → "no matches" (no synth call)
+      ├─ irrelevant? best similarity < SEARCH_RELEVANCE_MIN_SIMILARITY AND no keyword hit (SEARCH_GATE_RELEVANCE) → "no matches"   ← Layer 2
       └─ synthesise (exploratory)
            └─ NeedsMore AND refinement budget remains (SEARCH_MAX_REFINEMENTS, default 1)?
                 → adjust plan, retrieve again, MERGE results
                 → synthesise (final)  ← must answer or explicitly say "not found"
 ```
+
+### Fail-fast gates
+
+Three cheap checks short-circuit queries that cannot be answered well — cheapest first, each individually toggle-able:
+
+- **Layer 0 — degenerate input** (`SEARCH_MIN_QUERY_CHARS`, default 2, no LLM call). A query that is empty or shorter than the floor after trimming returns a "be more specific" clarify outcome before anything runs.
+- **Layer 1 — adequacy** (`SEARCH_GATE_ADEQUACY`, default on, no *extra* call). The planner's existing call returns *either* a `QueryPlan` *or* a `ClarifyNeeded`. A query too vague to search a personal library (a bare generic word, a name with no question) is sent back for clarification before retrieval.
+- **Layer 2 — relevance** (`SEARCH_GATE_RELEVANCE` + `SEARCH_RELEVANCE_MIN_SIMILARITY`, default 0.60). After retrieval, if the best **absolute** vector similarity is below the floor **and** there is no keyword hit, synthesis is skipped and a "no matches" outcome is returned. Requiring *both* signals to fail is what keeps it conservative: an exact-term search is protected by its keyword hit, a strong semantic match by its vector signal.
+
+All three are **recall-first**. Layer 1 errs toward producing a plan, and Layer 2 **fails open** — a similarity that cannot be read never causes a rejection. The floor is calibrated against the live index (good queries ≥ 0.666, off-topic ≈ 0.567), so it catches blatantly off-topic queries but deliberately leaves near-miss "I don't hold that specific document" cases to the synthesiser, which reads the documents and says so.
 
 ### Result cache
 
@@ -69,7 +81,7 @@ A successful answer is written to a process-local result cache keyed on the norm
 
 ### Stage 1 — Planner (`search/planner.py`)
 
-One LLM call (`SEARCH_PLANNER_MODEL`, default `gpt-5.4-nano` / `gemma3:12b`). Structured JSON output, parsed manually into a frozen `QueryPlan` dataclass — no Pydantic in the pipeline:
+One LLM call (`SEARCH_PLANNER_MODEL`, default `gpt-5.4-mini` / `gemma3:12b`). Structured JSON output, parsed manually into a frozen `QueryPlan` — or a `ClarifyNeeded`, when the adequacy gate (Layer 1) fires. No Pydantic in the pipeline:
 
 ```python
 QueryPlan(
@@ -114,6 +126,7 @@ SearchResult(
     sources: list[SourceDocument],
     plan: QueryPlan,
     stats: SearchStats,         # llm_calls, latency_ms, refined
+    outcome_kind: str,          # "answered" | "clarify" | "no_match" (fail-fast gates)
 )
 
 SourceDocument(
@@ -298,15 +311,15 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 
 | File | Purpose |
 |:---|:---|
-| `core.py` | `SearchCore` — orchestrates the bounded agentic pipeline, `_LlmBudget`, result-cache wiring |
-| `planner.py` | `QueryPlanner` — one LLM call → `QueryPlan` |
-| `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion (`_RRF_K = 60`) |
+| `core.py` | `SearchCore` — orchestrates the bounded agentic pipeline, the three fail-fast gates, `_LlmBudget`, result-cache wiring |
+| `planner.py` | `QueryPlanner` — one LLM call → `QueryPlan` or `ClarifyNeeded` (Layer 1) |
+| `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion (`_RRF_K = 60`), `RetrievalSignal` |
 | `synthesizer.py` | `Synthesizer` — one LLM call → `Answered` or `NeedsMore` |
-| `refinement.py` | `adjust_plan` / `broaden_plan` / `merge_chunks` / `is_weak_retrieval` — plan mutation and the weak-retrieval predicate |
+| `refinement.py` | `adjust_plan` / `broaden_plan` / `merge_chunks` — plan mutation and chunk merging |
 | `sources.py` | `assemble_sources` — fuse chunks into `SourceDocument`s with resolved names and deep-links |
 | `cache.py` | The process-local result cache and its index-version key |
 | `text.py` | Query-normalisation and trivial-query helpers |
-| `models.py` | Frozen dataclasses: `QueryPlan`, `FilterCandidates`, `RetrievedChunk`, `SourceDocument`, `SearchStats`, `SearchResult`, `Answered`, `NeedsMore` |
+| `models.py` | Frozen dataclasses: `QueryPlan`, `FilterCandidates`, `RetrievedChunk`, `SourceDocument`, `SearchStats`, `SearchResult`, `Answered`, `NeedsMore`, `ClarifyNeeded`, `RetrievalSignal` (and the `PlanOutcome` alias) |
 | `prompts.py` | System prompts and the per-request nonce data-fence layout |
 | `errors.py` | `SearchError` / `LlmBudgetExceededError` |
 

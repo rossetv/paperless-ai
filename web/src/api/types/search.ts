@@ -102,12 +102,25 @@ export interface SearchStats {
 // Top-level search response types
 // ---------------------------------------------------------------------------
 
+/**
+ * Discriminator for the search result type (spec §7.1).
+ *
+ * ``"answered"``  — the synthesiser produced a full answer with sources.
+ * ``"clarify"``   — the query was too vague (Layer 1 fail-fast); `answer`
+ *                   carries a nudge message and `sources` is empty.
+ * ``"no_match"``  — retrieval was too weak (Layer 2 fail-fast); `answer`
+ *                   carries a nudge message and `sources` is empty.
+ */
+export type OutcomeKind = 'answered' | 'clarify' | 'no_match';
+
 /** Response body for POST /api/search. */
 export interface SearchResponse {
   answer: string;
   sources: SourceDocument[];
   plan: QueryPlan;
   stats: SearchStats;
+  /** Discriminator for the result type — branch on this in the UI. */
+  outcome_kind: OutcomeKind;
 }
 
 /** Response body for GET /api/facets. */

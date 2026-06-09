@@ -116,6 +116,7 @@ describe('every request sends credentials: include', () => {
       sources: [],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 1, latency_ms: 100, refined: false },
+      outcome_kind: 'answered',
     };
     mockFetch(200, body);
     const req: SearchRequest = { query: 'test' };
@@ -260,6 +261,7 @@ describe('successful responses parse into typed shapes', () => {
         sub_questions: [],
       },
       stats: { llm_calls: 2, latency_ms: 450, refined: false },
+      outcome_kind: 'answered',
     };
     mockFetch(200, body);
     const result = await search({ query: 'When does the boiler warranty expire?' });
@@ -370,6 +372,7 @@ describe('correct HTTP methods and endpoint paths', () => {
       sources: [],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      outcome_kind: 'answered',
     });
     await search({ query: 'q' });
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];

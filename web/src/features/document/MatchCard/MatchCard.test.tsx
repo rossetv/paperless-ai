@@ -45,6 +45,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      outcome_kind: 'answered',
     });
     const fetchStub = vi.spyOn(client, 'search');
     render(
@@ -75,6 +76,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      outcome_kind: 'answered',
     });
     render(
       <MatchCard documentId={42} query="invoice" filters={EMPTY_FILTERS} />,
@@ -103,6 +105,7 @@ describe('MatchCard', () => {
       ],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
+      outcome_kind: 'answered',
     });
     render(
       <MatchCard documentId={42} query="invoice" filters={EMPTY_FILTERS} />,

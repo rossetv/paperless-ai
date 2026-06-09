@@ -20,7 +20,14 @@ from tests.helpers.factories import make_search_settings
 
 
 class TestPlannerSchema:
-    """The planner schema is a strict json_schema mirroring QueryPlan."""
+    """The planner schema is a strict json_schema mirroring the plan-or-clarify union.
+
+    The schema uses a required-superset strategy (matching the synthesiser): all
+    fields required, ``clarify`` is ``object | null`` and is null for a normal
+    plan; ``semantic_queries`` etc. are present for a plan and empty for a
+    clarify response.  This preserves OpenAI strict mode (required == properties)
+    while letting the parser discriminate at runtime.
+    """
 
     def test_schema_is_strict(self) -> None:
         assert PLANNER_JSON_SCHEMA["strict"] is True
@@ -29,9 +36,10 @@ class TestPlannerSchema:
         assert PLANNER_JSON_SCHEMA["schema"]["additionalProperties"] is False
 
     def test_schema_requires_every_property(self) -> None:
+        """OpenAI strict mode: required must equal properties (superset pattern)."""
         props = set(PLANNER_JSON_SCHEMA["schema"]["properties"])
         required = set(PLANNER_JSON_SCHEMA["schema"]["required"])
-        assert props == required  # OpenAI strict mode: required == properties
+        assert props == required
 
     def test_schema_models_the_query_plan_keys(self) -> None:
         props = PLANNER_JSON_SCHEMA["schema"]["properties"]
@@ -41,6 +49,11 @@ class TestPlannerSchema:
             "filter_candidates",
             "sub_questions",
         } <= set(props)
+
+    def test_schema_includes_clarify_field(self) -> None:
+        """The schema must include a 'clarify' field for the adequacy gate."""
+        props = PLANNER_JSON_SCHEMA["schema"]["properties"]
+        assert "clarify" in props
 
     def test_nested_filter_candidates_is_also_strict(self) -> None:
         fc = PLANNER_JSON_SCHEMA["schema"]["properties"]["filter_candidates"]
@@ -99,6 +112,27 @@ class TestPlannerSystemPromptByteStable:
 
     def test_system_prompt_is_a_non_empty_string(self) -> None:
         assert isinstance(PLANNER_SYSTEM_PROMPT, str) and PLANNER_SYSTEM_PROMPT
+
+    def test_system_prompt_covers_adequacy_clarify_contract(self) -> None:
+        """The prompt must describe when to return a clarify response (Layer 1)."""
+        # The adequacy instruction must mention the clarify shape and signal when
+        # to use it — vague or bare-entity queries with no search intent.
+        assert "clarify" in PLANNER_SYSTEM_PROMPT.lower()
+
+    def test_system_prompt_mentions_conservative_clarify_bias(self) -> None:
+        """The prompt must instruct the model to be conservative about clarify.
+
+        The gate is fail-open: the model should only reject when the query is
+        OBVIOUSLY inadequate (bare generic word, bare entity name). Anything
+        with real search intent must get a plan.
+        """
+        # The prompt should convey conservatism — "only when", "obvious", or similar.
+        prompt_lower = PLANNER_SYSTEM_PROMPT.lower()
+        # At least one of these signals conservative framing.
+        assert any(
+            phrase in prompt_lower
+            for phrase in ("only", "obvious", "bare", "no question", "no intent")
+        )
 
 
 class TestPlannerUserMessageCarriesDate:
