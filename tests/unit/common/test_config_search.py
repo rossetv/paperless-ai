@@ -317,7 +317,9 @@ class TestJudgeSettings:
         assert settings.SEARCH_JUDGE_MODEL == "gemma3:12b"
 
     def test_judge_model_overridable(self, mocker) -> None:
-        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_MODEL": "gpt-5.4-nano"})
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_MODEL": "gpt-5.4-nano"}
+        )
         assert settings.SEARCH_JUDGE_MODEL == "gpt-5.4-nano"
 
     def test_reasoning_effort_defaults_to_low(self, mocker) -> None:

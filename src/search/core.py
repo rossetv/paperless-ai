@@ -520,9 +520,7 @@ class SearchCore:
         chunks, signal = self._retriever.retrieve(broadened_plan, broadened_filters)
         return chunks, signal
 
-    def _judge_candidates(
-        self, chunks: list[RetrievedChunk]
-    ) -> list[JudgeCandidate]:
+    def _judge_candidates(self, chunks: list[RetrievedChunk]) -> list[JudgeCandidate]:
         """Reduce chunks to one document-level candidate each (best-chunk snippet).
 
         Keeps each document's highest-rrf_score chunk's text as the snippet —
@@ -576,7 +574,9 @@ class SearchCore:
                     dropped=dropped,
                 )
         else:
-            log.info("search.judge_degraded", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
+            log.info(
+                "search.judge_degraded", query_prefix=query[:QUERY_LOG_PREFIX_CHARS]
+            )
         return kept
 
     def _synthesise(

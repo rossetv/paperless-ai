@@ -55,9 +55,7 @@ class RelevanceJudge(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def judge(
-        self, query: str, candidates: Sequence[JudgeCandidate]
-    ) -> JudgeVerdict:
+    def judge(self, query: str, candidates: Sequence[JudgeCandidate]) -> JudgeVerdict:
         """Return the relevant-document verdict for *query* over *candidates*.
 
         One LLM call on SEARCH_JUDGE_MODEL. Fail-open on every failure path:
