@@ -15,6 +15,7 @@ import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
 import { TestConnectionAction } from '../TestConnectionAction/TestConnectionAction';
 import { SaveBar } from '../SaveBar/SaveBar';
+import { Toast } from '../../../components/patterns/Toast/Toast';
 
 /**
  * Parse the server's `SettingItem[]` into the typed draft the screen edits.
@@ -67,6 +68,9 @@ function SettingsContent({
   const { draft, setValue, changedKeys, isDirty, changedValues, discard } =
     useUnsavedSettings(baseline);
   const save = useUpdateSettings();
+  // A re-index-forcing save (embedding model / chunking) surfaces a toast so
+  // the operator knows their whole library is being re-embedded server-side.
+  const [reindexNotice, setReindexNotice] = React.useState(false);
 
   /**
    * Apply a field change. A secret field reports `null` when the user is NOT
@@ -84,7 +88,16 @@ function SettingsContent({
     for (const [key, value] of Object.entries(changedValues())) {
       changes[key] = serialiseValue(value);
     }
-    save.mutate({ changes });
+    save.mutate(
+      { changes },
+      {
+        onSuccess: (data) => {
+          // The server forces a full rebuild when a re-index key changed; let
+          // the operator know their library is being re-embedded.
+          if (data.reindex_triggered) setReindexNotice(true);
+        },
+      },
+    );
   };
 
   // The masked-token flag: the token is still the server mask while the draft
@@ -127,6 +140,14 @@ function SettingsContent({
         onDiscard={discard}
         onSave={handleSave}
       />
+      {reindexNotice && (
+        <Toast
+          message="Settings saved. Re-indexing all documents — re-embedding your library, which may take a few minutes."
+          variant="info"
+          onDismiss={() => setReindexNotice(false)}
+          dismissAfterMs={8000}
+        />
+      )}
     </>
   );
 }
