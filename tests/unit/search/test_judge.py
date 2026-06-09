@@ -2,7 +2,22 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+from search.judge import RelevanceJudge
 from search.models import JudgeCandidate, JudgeVerdict
+from search.prompts import (
+    JUDGE_SYSTEM_PROMPT,
+    _judge_response_format,
+    build_judge_user_message,
+)
+from tests.helpers.factories import make_search_settings
+from tests.helpers.llm import make_chat_completion
+
+
+# ---------------------------------------------------------------------------
+# Data-shape tests (Task 2)
+# ---------------------------------------------------------------------------
 
 
 def test_judge_candidate_holds_id_and_snippet() -> None:
@@ -17,13 +32,9 @@ def test_judge_verdict_defaults_not_degraded() -> None:
     assert v.degraded is False
 
 
-from search.models import JudgeCandidate  # noqa: E402 (below the shape tests)
-from search.prompts import (  # noqa: E402
-    JUDGE_SYSTEM_PROMPT,
-    _judge_response_format,
-    build_judge_user_message,
-)
-from tests.helpers.factories import make_search_settings  # noqa: E402
+# ---------------------------------------------------------------------------
+# Prompt tests (Task 3)
+# ---------------------------------------------------------------------------
 
 
 def test_judge_system_prompt_is_recall_biased_and_routable() -> None:
@@ -48,11 +59,9 @@ def test_judge_response_format_is_openai_only() -> None:
     assert _judge_response_format(ollama_settings) is None
 
 
-from unittest.mock import MagicMock  # noqa: E402
-
-from search.judge import RelevanceJudge  # noqa: E402
-from search.models import JudgeVerdict  # noqa: E402
-from tests.helpers.llm import make_chat_completion  # noqa: E402
+# ---------------------------------------------------------------------------
+# RelevanceJudge stage tests (Task 4)
+# ---------------------------------------------------------------------------
 
 
 def _judge_with(content: str | None) -> RelevanceJudge:
