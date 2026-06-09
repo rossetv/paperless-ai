@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
 from unittest.mock import MagicMock
 
 from search.judge import RelevanceJudge
-from search.models import JudgeCandidate, JudgeVerdict
+from search.models import DocVerdict, JudgeCandidate, JudgeVerdict
 from search.prompts import (
     JUDGE_SYSTEM_PROMPT,
     _judge_response_format,
@@ -13,14 +14,13 @@ from search.prompts import (
 )
 from tests.helpers.factories import (
     make_judge_candidate,
-    make_judge_verdict,
     make_search_settings,
 )
 from tests.helpers.llm import make_chat_completion
 
 
 # ---------------------------------------------------------------------------
-# Data-shape tests (Task 2)
+# Data-shape tests
 # ---------------------------------------------------------------------------
 
 
@@ -31,13 +31,18 @@ def test_judge_candidate_holds_id_and_snippet() -> None:
 
 
 def test_judge_verdict_defaults_not_degraded() -> None:
-    v = JudgeVerdict(relevant_document_ids=frozenset({1, 2}))
+    v = JudgeVerdict(
+        verdicts=(
+            DocVerdict(document_id=1, keep=True, reason=""),
+            DocVerdict(document_id=2, keep=True, reason=""),
+        )
+    )
     assert v.relevant_document_ids == frozenset({1, 2})
     assert v.degraded is False
 
 
 # ---------------------------------------------------------------------------
-# Prompt tests (Task 3)
+# Prompt tests
 # ---------------------------------------------------------------------------
 
 
@@ -64,7 +69,7 @@ def test_judge_response_format_is_openai_only() -> None:
 
 
 # ---------------------------------------------------------------------------
-# RelevanceJudge stage tests (Task 4)
+# RelevanceJudge stage tests (fixture helper)
 # ---------------------------------------------------------------------------
 
 
@@ -74,6 +79,22 @@ def _judge_with(content: str | None) -> RelevanceJudge:
     return judge
 
 
+@pytest.fixture()
+def judge_with_response(monkeypatch):
+    """Fixture: build a RelevanceJudge whose completion is monkeypatched."""
+
+    def _factory(content: str | None) -> RelevanceJudge:
+        judge = RelevanceJudge(make_search_settings())
+        monkeypatch.setattr(
+            judge,
+            "_create_completion",
+            MagicMock(return_value=make_chat_completion(content)),
+        )
+        return judge
+
+    return _factory
+
+
 _CANDIDATES = [
     make_judge_candidate(document_id=1, snippet="boiler warranty"),
     make_judge_candidate(document_id=2, snippet="holiday photos"),
@@ -81,24 +102,39 @@ _CANDIDATES = [
 
 
 def test_judge_keeps_the_named_documents() -> None:
-    judge = _judge_with('{"relevant_document_ids": [1]}')
+    judge = _judge_with(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": true, "reason": ""},'
+        '{"document_id": 2, "keep": false, "reason": "unrelated"}]}'
+    )
     verdict = judge.judge("warranty?", _CANDIDATES)
-    assert verdict == make_judge_verdict(relevant_document_ids={1})
+    assert verdict.relevant_document_ids == frozenset({1})
 
 
-def test_empty_list_is_an_explicit_bail_not_degraded() -> None:
-    judge = _judge_with('{"relevant_document_ids": []}')
+def test_empty_verdicts_list_keeps_all_by_default() -> None:
+    """An empty verdicts list → no explicit drops → all candidates default to keep=True.
+
+    This is the new recall-biased behaviour: the judge must explicitly drop a
+    document (``keep: false``) for it to be excluded. An omitted document is
+    assumed relevant.
+    """
+    judge = _judge_with('{"verdicts": []}')
     verdict = judge.judge("warranty?", _CANDIDATES)
-    assert verdict.relevant_document_ids == frozenset()
+    # No explicit drops → both candidates default to keep=True.
+    assert verdict.relevant_document_ids == frozenset({1, 2})
     assert verdict.degraded is False
 
 
-def test_unknown_ids_are_ignored_and_an_all_unknown_list_fails_open() -> None:
-    judge = _judge_with('{"relevant_document_ids": [99]}')
+def test_explicit_all_drop_is_a_bail() -> None:
+    """Explicit keep=false for every candidate → bail (empty relevant ids, not degraded)."""
+    judge = _judge_with(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": false, "reason": "no"},'
+        '{"document_id": 2, "keep": false, "reason": "no"}]}'
+    )
     verdict = judge.judge("warranty?", _CANDIDATES)
-    # The model named documents but none matched → ambiguous → fail open (keep all).
-    assert verdict.relevant_document_ids == frozenset({1, 2})
-    assert verdict.degraded is True
+    assert verdict.relevant_document_ids == frozenset()
+    assert verdict.degraded is False
 
 
 def test_bad_json_fails_open_keeping_all() -> None:
@@ -116,6 +152,75 @@ def test_none_content_fails_open() -> None:
 
 
 def test_empty_candidates_never_bails() -> None:
-    judge = _judge_with('{"relevant_document_ids": []}')
+    judge = _judge_with('{"verdicts": []}')
     verdict = judge.judge("warranty?", [])
     assert verdict.degraded is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 7 — per-document verdict tests
+# ---------------------------------------------------------------------------
+
+
+def test_judge_parses_per_document_verdicts(judge_with_response) -> None:
+    judge = judge_with_response(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": true, "reason": "matches"},'
+        '{"document_id": 2, "keep": false, "reason": "unrelated"}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    assert v.relevant_document_ids == frozenset({1})
+    reasons = {dv.document_id: dv.reason for dv in v.verdicts}
+    assert reasons == {1: "matches", 2: "unrelated"}
+    assert v.degraded is False
+
+
+def test_judge_fail_open_keeps_all_with_reason(judge_with_response) -> None:
+    judge = judge_with_response("not json")
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    assert v.degraded is True
+    assert {dv.document_id for dv in v.verdicts} == {1, 2}
+    assert all(dv.keep for dv in v.verdicts)
+
+
+def test_judge_all_drop_is_an_explicit_bail(judge_with_response) -> None:
+    judge = judge_with_response(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": false, "reason": "no"},'
+        '{"document_id": 2, "keep": false, "reason": "no"}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    assert v.relevant_document_ids == frozenset() and v.degraded is False
+
+
+def test_judge_reason_is_length_capped(judge_with_response) -> None:
+    long = "x" * 500
+    judge = judge_with_response(
+        '{"verdicts": [{"document_id": 1, "keep": true, "reason": "%s"}]}' % long
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a")])
+    assert len(v.verdicts[0].reason) <= 200
+
+
+def test_judge_omitted_candidate_defaults_to_keep(judge_with_response) -> None:
+    """The judge omits doc 2 — default recall-biased keep=True should apply."""
+    judge = judge_with_response(
+        '{"verdicts": [{"document_id": 1, "keep": true, "reason": "matches"}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    assert 2 in v.relevant_document_ids
+    assert v.degraded is False
+
+
+def test_judge_usage_sink_receives_token_record(judge_with_response) -> None:
+    """When usage_sink is passed, it receives an LlmCallUsage after a successful call."""
+    from common.llm import LlmCallUsage
+
+    judge = judge_with_response(
+        '{"verdicts": [{"document_id": 1, "keep": true, "reason": "ok"}]}'
+    )
+    sink: list[LlmCallUsage] = []
+    judge.judge("q", [JudgeCandidate(1, "a")], usage_sink=sink)
+    # The mock completion has no real usage, so zeros are recorded.
+    assert len(sink) == 1
+    assert isinstance(sink[0], LlmCallUsage)
