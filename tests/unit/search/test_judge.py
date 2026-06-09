@@ -46,3 +46,63 @@ def test_judge_response_format_is_openai_only() -> None:
     ollama_settings = make_search_settings(LLM_PROVIDER="ollama")
     assert _judge_response_format(openai_settings)["type"] == "json_schema"
     assert _judge_response_format(ollama_settings) is None
+
+
+from unittest.mock import MagicMock  # noqa: E402
+
+from search.judge import RelevanceJudge  # noqa: E402
+from search.models import JudgeVerdict  # noqa: E402
+from tests.helpers.llm import make_chat_completion  # noqa: E402
+
+
+def _judge_with(content: str | None) -> RelevanceJudge:
+    judge = RelevanceJudge(make_search_settings())
+    judge._create_completion = MagicMock(return_value=make_chat_completion(content))  # type: ignore[method-assign]
+    return judge
+
+
+_CANDIDATES = [
+    JudgeCandidate(document_id=1, snippet="boiler warranty"),
+    JudgeCandidate(document_id=2, snippet="holiday photos"),
+]
+
+
+def test_judge_keeps_the_named_documents() -> None:
+    judge = _judge_with('{"relevant_document_ids": [1]}')
+    verdict = judge.judge("warranty?", _CANDIDATES)
+    assert verdict == JudgeVerdict(relevant_document_ids=frozenset({1}), degraded=False)
+
+
+def test_empty_list_is_an_explicit_bail_not_degraded() -> None:
+    judge = _judge_with('{"relevant_document_ids": []}')
+    verdict = judge.judge("warranty?", _CANDIDATES)
+    assert verdict.relevant_document_ids == frozenset()
+    assert verdict.degraded is False
+
+
+def test_unknown_ids_are_ignored_and_an_all_unknown_list_fails_open() -> None:
+    judge = _judge_with('{"relevant_document_ids": [99]}')
+    verdict = judge.judge("warranty?", _CANDIDATES)
+    # The model named documents but none matched → ambiguous → fail open (keep all).
+    assert verdict.relevant_document_ids == frozenset({1, 2})
+    assert verdict.degraded is True
+
+
+def test_bad_json_fails_open_keeping_all() -> None:
+    judge = _judge_with("not json")
+    verdict = judge.judge("warranty?", _CANDIDATES)
+    assert verdict.relevant_document_ids == frozenset({1, 2})
+    assert verdict.degraded is True
+
+
+def test_none_content_fails_open() -> None:
+    judge = _judge_with(None)
+    verdict = judge.judge("warranty?", _CANDIDATES)
+    assert verdict.relevant_document_ids == frozenset({1, 2})
+    assert verdict.degraded is True
+
+
+def test_empty_candidates_never_bails() -> None:
+    judge = _judge_with('{"relevant_document_ids": []}')
+    verdict = judge.judge("warranty?", [])
+    assert verdict.degraded is True
