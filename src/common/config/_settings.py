@@ -191,9 +191,6 @@ class Settings:
     SEARCH_ANSWER_REASONING_EFFORT: str
     SEARCH_CACHE_TTL_SECONDS: int
     SEARCH_SKIP_PLANNER_FOR_TRIVIAL: bool
-    SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL: bool
-    SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS: int
-    SEARCH_WEAK_RETRIEVAL_MIN_SCORE: float
 
     # Fail-fast gate knobs (search fail-fast spec §3)
     SEARCH_GATE_ADEQUACY: bool
@@ -450,15 +447,6 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_SKIP_PLANNER_FOR_TRIVIAL=_get_bool_env(
             source, "SEARCH_SKIP_PLANNER_FOR_TRIVIAL", False
-        ),
-        SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL=_get_bool_env(
-            source, "SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL", False
-        ),
-        SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS=max(
-            0, _get_int_env(source, "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS", 1)
-        ),
-        SEARCH_WEAK_RETRIEVAL_MIN_SCORE=max(
-            0.0, _get_float_env(source, "SEARCH_WEAK_RETRIEVAL_MIN_SCORE", 0.0)
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),

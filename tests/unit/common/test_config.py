@@ -584,15 +584,13 @@ def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
         assert key not in REINDEX_KEYS
 
 
-def test_config_keys_has_sixty_six_entries() -> None:
-    """CONFIG_KEYS is the 66-key config-table universe (the 62-key post-Wave-3
-    base, plus the four search fail-fast gate knobs added by the fail-fast
-    feature: SEARCH_GATE_ADEQUACY, SEARCH_GATE_RELEVANCE,
-    SEARCH_RELEVANCE_MIN_SIMILARITY, SEARCH_MIN_QUERY_CHARS). The final
-    cross-area count is reconciled at integration — sibling areas add keys too."""
+def test_config_keys_has_sixty_three_entries() -> None:
+    """CONFIG_KEYS is the 63-key config-table universe (the 66-key count after
+    the fail-fast gate knobs were added, minus the three retired weak-retrieval
+    knobs superseded by the Layer-2 relevance gate)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 66
+    assert len(CONFIG_KEYS) == 63
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
     assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS

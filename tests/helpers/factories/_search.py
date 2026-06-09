@@ -368,9 +368,6 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_ANSWER_REASONING_EFFORT": "medium",
         "SEARCH_CACHE_TTL_SECONDS": 0,
         "SEARCH_SKIP_PLANNER_FOR_TRIVIAL": False,
-        "SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL": False,
-        "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS": 1,
-        "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": 0.0,
         # Fail-fast gate knobs (Task 1). Mirror the production defaults so tests
         # are explicit about what they get rather than relying on MagicMock's
         # auto-truthy behaviour (CODE_GUIDELINES §11.5).
