@@ -54,6 +54,8 @@ from search.cache import build_cache_key, get_search_result_cache, is_cacheable
 from search.errors import LlmBudgetExceededError
 from search.models import (
     Answered,
+    ClarifyNeeded,
+    EMPTY_FILTER_CANDIDATES,
     NeedsMore,
     QueryPlan,
     RetrievedChunk,
@@ -98,6 +100,15 @@ _MAX_LLM_CALLS = 3
 # Shown as the answer when retrieval yields nothing (spec §6.3): a no-hits
 # query short-circuits before any synthesis call, so there is no model prose.
 _NO_MATCHES_ANSWER = "No matching documents were found in the archive for this query."
+
+# Fixed user-facing answer for the Layer-1 adequacy gate (spec §11).  The
+# model's reason is logged for triage but NEVER shown to the user — consistent
+# UX requires a single, stable message regardless of which model phrased the
+# rejection.
+_CLARIFY_ANSWER = (
+    "That search is a bit too broad for me to answer well. "
+    "Add a detail or two, or use the filters to pick a correspondent or document type."
+)
 
 
 class _LlmBudget:
@@ -244,7 +255,11 @@ class SearchCore:
         started = time.monotonic()
         budget = _LlmBudget()
 
-        plan = self._plan(query, budget)
+        plan_outcome = self._plan(query, budget)
+        if isinstance(plan_outcome, ClarifyNeeded):
+            return self._clarify_result(plan_outcome.reason, budget, started)
+        plan = plan_outcome
+
         chunks = self._retrieve_with_broaden(plan, ui_filters)
 
         if not chunks:
@@ -341,7 +356,11 @@ class SearchCore:
         started = time.monotonic()
         budget = _LlmBudget()
 
-        plan = self._plan(query, budget)
+        plan_outcome = self._plan(query, budget)
+        if isinstance(plan_outcome, ClarifyNeeded):
+            return self._clarify_result(plan_outcome.reason, budget, started)
+        plan = plan_outcome
+
         chunks = self._retrieve_with_broaden(plan, ui_filters)
         sources = assemble_sources(
             chunks, self._store_reader, self._settings.PAPERLESS_PUBLIC_URL
@@ -352,7 +371,7 @@ class SearchCore:
     # Pipeline stages
     # ------------------------------------------------------------------
 
-    def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan:
+    def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
         When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
@@ -360,6 +379,9 @@ class SearchCore:
         the fallback-shaped trivial plan is used — retrieval still runs vector +
         FTS on the raw query, so nothing is lost (spec §4.6). The flag defaults
         off, preserving today's always-plan behaviour.
+
+        Returns a ``QueryPlan`` in all normal and fallback cases, or a
+        ``ClarifyNeeded`` when the planner's adequacy gate fires (Layer 1).
         """
         if self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query):
             log.info(
@@ -481,6 +503,56 @@ class SearchCore:
         """Build the no-hits SearchResult — no sources, no synthesis call."""
         return self._build_result(
             _NO_MATCHES_ANSWER, (), plan, budget, started, refined=False
+        )
+
+    def _clarify_result(
+        self,
+        reason: str,
+        budget: _LlmBudget,
+        started: float,
+    ) -> SearchResult:
+        """Build the Layer-1 adequacy-gate SearchResult.
+
+        The model's ``reason`` is logged for operator triage; the user-facing
+        ``answer`` is the FIXED ``_CLARIFY_ANSWER`` message (spec §11) — the
+        model's phrasing is never surfaced directly to preserve consistent UX.
+
+        A minimal QueryPlan whose sole semantic query is the constant clarify
+        message string is used as the plan (no retrieval ran, so there is no
+        real plan to report; this satisfies the non-null plan contract).
+
+        Args:
+            reason: The model's reason for the clarify signal (logged only).
+            budget: The LLM budget tracker (reflects the one planner call).
+            started: The monotonic timestamp when the request began.
+
+        Returns:
+            A SearchResult with outcome_kind='clarify', the fixed answer, empty
+            sources, and stats reflecting the single planner call.
+        """
+        log.info(
+            "search.clarify_needed",
+            reason=reason,
+        )
+        # Minimal plan: a single semantic query so callers always get a non-null
+        # plan; empty rest because no retrieval ran.
+        minimal_plan = QueryPlan(
+            semantic_queries=(_CLARIFY_ANSWER,),
+            keyword_terms=(),
+            filter_candidates=EMPTY_FILTER_CANDIDATES,
+            sub_questions=(),
+        )
+        stats = SearchStats(
+            llm_calls=budget.count,
+            latency_ms=_elapsed_ms(started),
+            refined=False,
+        )
+        return SearchResult(
+            answer=_CLARIFY_ANSWER,
+            sources=(),
+            plan=minimal_plan,
+            stats=stats,
+            outcome_kind="clarify",
         )
 
 

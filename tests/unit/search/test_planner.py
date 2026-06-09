@@ -23,10 +23,22 @@ from unittest.mock import patch
 
 import pytest
 
-from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
+import json as _json
+
+from search.models import (
+    EMPTY_FILTER_CANDIDATES,
+    ClarifyNeeded,
+    FilterCandidates,
+    QueryPlan,
+)
 from tests.helpers.factories import make_search_settings
 from tests.helpers.llm import planner_response_json
 from tests.unit.search.conftest import build_planner
+
+
+def _clarify_json(reason: str = "Query is too vague.") -> str:
+    """Return a well-formed clarify JSON response (the new planner shape)."""
+    return _json.dumps({"clarify": {"reason": reason}})
 
 
 # ---------------------------------------------------------------------------
@@ -471,3 +483,114 @@ class TestPlannerDateInUserTurn:
         import re
 
         assert re.search(r"\d{4}-\d{2}-\d{2}", user) is not None
+
+
+# ---------------------------------------------------------------------------
+# Adequacy gate (Layer 1) — ClarifyNeeded vs QueryPlan, fail-open
+# ---------------------------------------------------------------------------
+
+
+class TestAdequacyGate:
+    """The planner returns ClarifyNeeded when the LLM signals the query is too
+    vague, but degrades safely to a QueryPlan on every failure path.
+
+    Governed by SEARCH_GATE_ADEQUACY (default True). When False, a clarify
+    JSON still produces a QueryPlan (the gate is bypassed).
+    """
+
+    def test_clarify_json_with_gate_on_returns_clarify_needed(self) -> None:
+        """A valid clarify response → ClarifyNeeded when SEARCH_GATE_ADEQUACY=True."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            _clarify_json("Too vague — add more detail."),
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, ClarifyNeeded)
+        assert outcome.reason == "Too vague — add more detail."
+
+    def test_clarify_json_carries_the_models_reason(self) -> None:
+        """The ClarifyNeeded.reason is the model's reason verbatim."""
+        reason = "A bare entity name gives me nothing to search for."
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            _clarify_json(reason),
+        )
+        outcome = planner.plan("HMRC")
+
+        assert isinstance(outcome, ClarifyNeeded)
+        assert outcome.reason == reason
+
+    def test_normal_plan_json_still_returns_query_plan(self) -> None:
+        """A normal plan response → QueryPlan regardless of gate setting."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            planner_response_json(semantic_queries=["boiler warranty letter"]),
+        )
+        outcome = planner.plan("find my boiler warranty")
+
+        assert isinstance(outcome, QueryPlan)
+
+    def test_gate_off_ignores_clarify_json(self) -> None:
+        """When SEARCH_GATE_ADEQUACY=False a clarify JSON produces a QueryPlan."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=False),
+            _clarify_json("Too vague."),
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)
+        # The fallback plan uses the raw query as the sole semantic query.
+        assert outcome.semantic_queries == ("life",)
+
+    def test_malformed_json_never_returns_clarify_needed(self) -> None:
+        """A garbled LLM response degrades to a QueryPlan, never ClarifyNeeded."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            "this is not valid json at all",
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)
+
+    def test_empty_response_never_returns_clarify_needed(self) -> None:
+        """An empty LLM response → QueryPlan fallback, not ClarifyNeeded."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            "",
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)
+
+    def test_clarify_with_empty_reason_falls_back_to_plan(self) -> None:
+        """An empty clarify.reason is not a valid clarify — degrade to a plan."""
+        payload = _json.dumps({"clarify": {"reason": ""}})
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            payload,
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)
+
+    def test_clarify_with_missing_reason_field_falls_back_to_plan(self) -> None:
+        """A clarify object missing the reason key falls back to a QueryPlan."""
+        payload = _json.dumps({"clarify": {}})
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            payload,
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)
+
+    def test_none_content_with_gate_on_produces_fallback_plan(self) -> None:
+        """None LLM content → QueryPlan fallback even with the gate on."""
+        planner = build_planner(
+            make_search_settings(SEARCH_GATE_ADEQUACY=True),
+            None,
+        )
+        outcome = planner.plan("life")
+
+        assert isinstance(outcome, QueryPlan)

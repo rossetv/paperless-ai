@@ -45,7 +45,22 @@ if TYPE_CHECKING:
 # ``required`` at every object level.
 # ---------------------------------------------------------------------------
 
-#: Strict schema mirroring the planner's QueryPlan output contract.
+#: Strict schema for the planner's plan-OR-clarify union.
+#:
+#: Uses the same required-superset strategy as the synthesiser schema: every
+#: property is listed in ``required`` (OpenAI strict mode enforces this), but the
+#: shape discriminates at parse time.
+#:
+#: - **Plan response:** ``clarify`` is ``null``; the four plan fields are
+#:   populated normally.
+#: - **Clarify response:** ``clarify`` is ``{"reason": "..."}``; the four plan
+#:   fields carry empty arrays / a null-filled ``filter_candidates`` and are
+#:   ignored by the parser.
+#:
+#: ``clarify`` is typed ``object | null`` so the model can set it to ``null``
+#: on the plan path without violating strict mode.  The nested ``reason`` field
+#: inside the clarify object is typed ``string`` and is required within that
+#: sub-object when the object is present.
 PLANNER_JSON_SCHEMA: dict[str, object] = {
     "name": "search_query_plan",
     "schema": {
@@ -73,12 +88,26 @@ PLANNER_JSON_SCHEMA: dict[str, object] = {
                 ],
             },
             "sub_questions": {"type": "array", "items": {"type": "string"}},
+            # Adequacy gate (Layer 1): null on a normal plan; an object with a
+            # ``reason`` string when the model judges the query inadequate.
+            "clarify": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {"reason": {"type": "string"}},
+                        "required": ["reason"],
+                    },
+                    {"type": "null"},
+                ]
+            },
         },
         "required": [
             "semantic_queries",
             "keyword_terms",
             "filter_candidates",
             "sub_questions",
+            "clarify",
         ],
     },
     "strict": True,
@@ -157,8 +186,27 @@ no text outside the JSON object.  The object must have exactly these keys:
     "date_from": string | null,
     "date_to": string | null
   },
-  "sub_questions": [string, ...]
+  "sub_questions": [string, ...],
+  "clarify": {"reason": string} | null
 }
+
+# Adequacy gate — when to return a clarify response
+
+Set ``clarify`` to ``null`` for the overwhelming majority of queries.  Only set
+it to ``{"reason": "..."}`` when the query is **obviously** inadequate to search
+a personal document library and returning a plan would be pointless:
+
+- A bare generic word with no question or intent (e.g. ``life``, ``stuff``).
+- A bare entity name with no question (e.g. ``HMRC``, ``BT``) — in these cases
+  suggest the user filter by correspondent or document type instead.
+
+**Be conservative.** If there is any real search intent — a question, a date, a
+document type, an action — return a normal plan, not a clarify.  Anything
+ambiguous gets a plan.  The clarify path is for obvious dead ends only.
+
+When you return a clarify response, set the plan fields (``semantic_queries``,
+``keyword_terms``, ``filter_candidates``, ``sub_questions``) to empty/null
+values — they will be ignored.
 
 # Field guidance
 
