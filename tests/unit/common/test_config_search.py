@@ -295,3 +295,64 @@ class TestSearchFailFastGateClamping:
             ValueError, match="SEARCH_MIN_QUERY_CHARS must be an integer"
         ):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "two"})
+
+
+class TestRelevanceTierThresholds:
+    """The three relevance-badge cut-points parse, default, and validate."""
+
+    def test_defaults_are_the_calibrated_cut_points(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_RELEVANCE_TIER_STRONG == 0.70
+        assert settings.SEARCH_RELEVANCE_TIER_GOOD == 0.66
+        assert settings.SEARCH_RELEVANCE_TIER_PARTIAL == 0.60
+
+    def test_tiers_are_overridable(self, mocker) -> None:
+        settings = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_RELEVANCE_TIER_STRONG": "0.8",
+                "SEARCH_RELEVANCE_TIER_GOOD": "0.7",
+                "SEARCH_RELEVANCE_TIER_PARTIAL": "0.5",
+            },
+        )
+        assert settings.SEARCH_RELEVANCE_TIER_STRONG == 0.8
+        assert settings.SEARCH_RELEVANCE_TIER_GOOD == 0.7
+        assert settings.SEARCH_RELEVANCE_TIER_PARTIAL == 0.5
+
+    def test_equal_adjacent_cut_points_are_allowed(self, mocker) -> None:
+        """Equal bands collapse a tier rather than corrupt the ordering."""
+        settings = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_RELEVANCE_TIER_STRONG": "0.70",
+                "SEARCH_RELEVANCE_TIER_GOOD": "0.70",
+            },
+        )
+        assert settings.SEARCH_RELEVANCE_TIER_GOOD == 0.70
+
+    def test_partial_above_good_raises(self, mocker) -> None:
+        """A partial cut-point above good breaks the ordering invariant."""
+        with pytest.raises(ValueError, match="Relevance tiers must be ordered"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_PARTIAL": "0.95"})
+
+    def test_good_above_strong_raises(self, mocker) -> None:
+        with pytest.raises(ValueError, match="Relevance tiers must be ordered"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_GOOD": "0.99"})
+
+    def test_above_range_raises_naming_the_key(self, mocker) -> None:
+        with pytest.raises(
+            ValueError, match="SEARCH_RELEVANCE_TIER_STRONG must be between"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_STRONG": "1.5"})
+
+    def test_negative_tier_raises_naming_the_key(self, mocker) -> None:
+        with pytest.raises(
+            ValueError, match="SEARCH_RELEVANCE_TIER_PARTIAL must be between"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_PARTIAL": "-0.1"})
+
+    def test_non_numeric_tier_raises(self, mocker) -> None:
+        with pytest.raises(ValueError, match="SEARCH_RELEVANCE_TIER_GOOD"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_GOOD": "high"})

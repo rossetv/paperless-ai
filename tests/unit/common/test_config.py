@@ -584,20 +584,40 @@ def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
         assert key not in REINDEX_KEYS
 
 
-def test_config_keys_has_sixty_three_entries() -> None:
-    """CONFIG_KEYS is the 63-key config-table universe.
+def test_relevance_tier_keys_are_config_only() -> None:
+    """The three tier cut-points are persisted via the Settings API but are
+    neither secrets nor reindex keys — they change only how the next search
+    badges its results, never how documents are chunked or embedded."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
+
+    for key in (
+        "SEARCH_RELEVANCE_TIER_STRONG",
+        "SEARCH_RELEVANCE_TIER_GOOD",
+        "SEARCH_RELEVANCE_TIER_PARTIAL",
+    ):
+        assert key in CONFIG_KEYS
+        assert key not in SECRET_KEYS
+        assert key not in REINDEX_KEYS
+
+
+def test_config_keys_has_sixty_six_entries() -> None:
+    """CONFIG_KEYS is the 66-key config-table universe.
 
     The fail-fast feature added four gate knobs and retired three weak-retrieval
-    knobs (superseded by the Layer-2 relevance gate), a net gain of one over the
-    previous 62."""
+    knobs (net +1 over the previous 62, to 63); promoting the three
+    relevance-badge tier cut-points to editable config keys added three more, to
+    66."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 63
+    assert len(CONFIG_KEYS) == 66
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
     assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS
     assert "SEARCH_GATE_RELEVANCE" in CONFIG_KEYS
     assert "SEARCH_RELEVANCE_MIN_SIMILARITY" in CONFIG_KEYS
+    assert "SEARCH_RELEVANCE_TIER_STRONG" in CONFIG_KEYS
+    assert "SEARCH_RELEVANCE_TIER_GOOD" in CONFIG_KEYS
+    assert "SEARCH_RELEVANCE_TIER_PARTIAL" in CONFIG_KEYS
     assert "SEARCH_MIN_QUERY_CHARS" in CONFIG_KEYS
 
 
