@@ -191,8 +191,19 @@ def _serialise_result(result: SearchResult) -> str:
     Uses :func:`dataclasses.asdict` to convert the frozen-dataclass tree to a
     plain dict, then serialises to JSON.  Tuples become lists in the output,
     which is fine for a wire format consumed by JSON clients.
+
+    The verbose per-phase reasoning ``trace`` is dropped before serialising: it
+    is a SPA-only affordance (the live search view) and carries the relevance
+    judge's per-document rationales.  MCP/agent callers get the curated answer,
+    sources, plan, and the lightweight ``cost`` summary, but not the heavy
+    phase-by-phase trace — keeping the tool contract lean and intentional rather
+    than leaking the SPA's trace surface.
     """
-    return json.dumps(dataclasses.asdict(result))
+    payload = dataclasses.asdict(result)
+    stats = payload.get("stats")
+    if isinstance(stats, dict):
+        stats.pop("trace", None)
+    return json.dumps(payload)
 
 
 def _to_search_filters(raw: dict[str, Any] | None) -> SearchFilters | None:

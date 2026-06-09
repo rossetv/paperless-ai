@@ -226,6 +226,11 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
     assert len(payload["sources"]) == 1
     assert payload["sources"][0]["document_id"] == 42
     assert payload["stats"]["llm_calls"] == 2
+    # The verbose per-phase reasoning trace is a SPA-only affordance and must
+    # NOT leak through the MCP tool contract; the lightweight cost summary is
+    # the intended free by-product (see _serialise_result).
+    assert "trace" not in payload["stats"]
+    assert "cost" in payload["stats"]
 
 
 @pytest.mark.anyio
