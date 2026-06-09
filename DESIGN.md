@@ -478,9 +478,9 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `SnippetText` | primitives | `text` | Renders `**bold**` runs as `<mark>` highlight chips |
 | `DocThumb` | primitives | `kind` (invoice/letter/statement), `matched` (row indices) | SVG document thumbnail |
 | `SourceCardSurface` | primitives | `index`, `thumbKind`, `matched`, `highlighted` | Two-column card shell (content + DocThumb + citation badge) |
-| `AnswerSurface` | primitives | `children` (the answer prose), `sourceCount`, `latencyMs`, `refined` | Synthesised-answer card |
+| `AnswerSurface` | primitives | `children` (the answer prose), `sourceCount`, `latencyMs`, `refined`, optional `costLabel` | Synthesised-answer card; `costLabel` renders a cost chip in the provenance footer (e.g. `"1.2k tok · $0.004"`; `"$0"` for local; `"—"` for unpriced) |
 | `CitationMark` | primitives | `index`, `onActivate` | Inline citation chip `[n]` button |
-| `PipelineStages` | primitives | `stages` (StageStatus[]) | Search progress rail |
+| `PipelineStages` | primitives | `stages` (StageStatus[]), optional per-stage `detailNode` (React.ReactNode), `costLabel` (string), `verdicts` ({ docId, title, keep, reason }[]) | Search progress rail; `detailNode` renders beneath the stage label; `costLabel` is a cost chip; `verdicts` renders a keep/drop sublist under the judge stage |
 | `Disclosure` | primitives | `summary`, `children`, `open` | `<details>` collapsible panel |
 | `RecentSearchStrip` | primitives | `searches`, `onSelect`, `onClear` | Idle-screen recent-search list |
 | `IndexStatusFooter` | primitives | `documentCount`, `ready` | Idle-screen index-status summary |
@@ -610,7 +610,7 @@ module the access-control `UserEditDrawer` uses, so the rules never diverge.
 ### 13.3 `features/search`
 
 - `IdleScreen` — hero with `RecentSearchStrip` and `IndexStatusFooter`.
-- `LoadingScreen` — `PipelineStages` progress rail during a search.
+- `LoadingScreen` — live `PipelineStages` progress rail driven by the streamed `phaseRecords` from `useStreamingSearch` (no time-based estimate). Each phase shows per-phase token/cost detail and, for the judge stage, per-document keep/drop verdicts with rationales.
 - `ResultsScreen` — `AnswerCard` + `FilterControls` + `SourceList`.
 - `NoResultsScreen`, `SearchErrorScreen`, `IndexNotReadyScreen` — error/empty states.
 - `AnswerCard` — wraps `AnswerSurface` with citation-mark interaction.
@@ -618,6 +618,7 @@ module the access-control `UserEditDrawer` uses, so the rules never diverge.
 - `SourceList` — ordered list of `SourceCard`s.
 - `FilterControls` — filter rail (reused in Library).
 - `QueryPlanSummary` — `Disclosure` wrapping the agentic query plan.
+- `SearchTracePanel` — "How this answer was found" folded `Disclosure` showing the per-phase trace (labels, token counts, cost chips) plus per-document judge rationales (kept/dropped with one-line reasons). Rendered beneath `ResultsScreen` once a search completes. Accepts `trace: SearchTrace` and `cost: CostSummary` from the wire response.
 - `DocumentPreviewScreen` — the in-app PDF viewer overlay (see §12.3).
 
 ### 13.4 `features/library`

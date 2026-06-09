@@ -39,6 +39,7 @@ import {
   useReconcile,
 } from './hooks';
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
+import { EMPTY_TELEMETRY } from './types/__fixtures__/searchResponse';
 import { Unauthenticated, ApiError } from './client';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ const SEARCH_RESPONSE: SearchResponse = {
   sources: [],
   plan: { semantic_queries: ['boiler'], keyword_terms: ['warranty'], sub_questions: [] },
   stats: { llm_calls: 1, latency_ms: 200, refined: false },
+  ...EMPTY_TELEMETRY,
   outcome_kind: 'answered',
 };
 

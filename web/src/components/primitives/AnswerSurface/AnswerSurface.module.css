@@ -82,3 +82,16 @@
   border-radius: var(--radius-circle);
   background-color: var(--colour-accent);
 }
+
+/* Whole-query token/cost chip — a monospace read-out pinned to the right. */
+.cost {
+  margin-left: auto;
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-bg);
+  color: var(--colour-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  letter-spacing: normal;
+  white-space: nowrap;
+}

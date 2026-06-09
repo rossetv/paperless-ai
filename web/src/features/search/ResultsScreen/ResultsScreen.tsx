@@ -6,7 +6,7 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { FilterControls } from '../FilterControls/FilterControls';
 import { AnswerCard } from '../AnswerCard/AnswerCard';
 import { SourceList } from '../SourceList/SourceList';
-import { QueryPlanSummary } from '../QueryPlanSummary/QueryPlanSummary';
+import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import type { FilterRequest, SearchResponse } from '../../../api/types';
 import styles from './ResultsScreen.module.css';
@@ -48,12 +48,14 @@ export interface ResultsScreenProps {
  * The search results screen.
  *
  * The rail+content layout: the filter rail, then a query recap, the
- * `AnswerCard` with its inline citations, a "Sources" header, the list of
- * `SourceCard`s, and the `QueryPlanSummary` disclosure. Citation activation
- * and document preview are delegated to the parent via callbacks.
+ * `AnswerCard` with its inline citations (and a whole-query cost chip), a
+ * "Sources" header, the list of `SourceCard`s, and the `SearchTracePanel`
+ * disclosure (the folded per-phase reasoning trace with token/dollar cost).
+ * Citation activation and document preview are delegated to the parent via
+ * callbacks.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Text, FilterControls,
- * AnswerCard, SourceList, QueryPlanSummary, ActiveFiltersStrip.
+ * AnswerCard, SourceList, SearchTracePanel, ActiveFiltersStrip.
  * Own CSS module resets heading margin so the Sources heading fits the Stack gap.
  */
 export function ResultsScreen({
@@ -68,7 +70,7 @@ export function ResultsScreen({
   onPreview,
   highlightedIndex,
 }: ResultsScreenProps): React.ReactElement {
-  const { answer, sources, plan, stats, outcome_kind } = result;
+  const { answer, sources, stats, cost, trace, outcome_kind } = result;
   const isAnswered = outcome_kind === 'answered';
 
   /**
@@ -114,6 +116,7 @@ export function ResultsScreen({
           answer={answer}
           sources={sources}
           stats={stats}
+          cost={cost}
           outcomeKind={outcome_kind}
           onCitationActivate={handleCitationActivate}
         />
@@ -145,8 +148,10 @@ export function ResultsScreen({
           </>
         )}
 
-        {/* Query-plan transparency. */}
-        <QueryPlanSummary plan={plan} stats={stats} />
+        {/* Reasoning-trace transparency — the folded per-phase trace with
+            per-step and total token/dollar cost. Supersedes the old query-plan
+            summary: the plan's rewritten query is the trace's first phase. */}
+        <SearchTracePanel phases={trace.phases} cost={cost} />
       </Stack>
     </SearchScreenLayout>
   );

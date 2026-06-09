@@ -205,6 +205,16 @@ class Settings:
     relevant documents. Recall-biased and fail-open — any judge failure proceeds
     to synthesis over all chunks. Set ``False`` to restore the pre-judge path.
     """
+    SEARCH_JUDGE_RATIONALES: bool
+    """Instruct the relevance judge to write a one-line reason per document.
+
+    When ``True`` (the default), each document verdict carries a short
+    justification (``≤ 200`` characters) from the judge — visible in the live
+    trace UI. The rationale adds a few extra tokens per query but provides
+    transparency about why a document was kept or dropped. Set ``False`` to
+    suppress rationales (the ``reason`` field will be an empty string) and save
+    those tokens.
+    """
     SEARCH_JUDGE_MODEL: str
     """The model for the relevance judge. Defaults to the planner model for the
     provider (``gpt-5.4-mini`` / ``gemma3:12b``); set independently to run the
@@ -523,6 +533,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             source, "SEARCH_SKIP_PLANNER_FOR_TRIVIAL", False
         ),
         SEARCH_GATE_JUDGE=_get_bool_env(source, "SEARCH_GATE_JUDGE", True),
+        SEARCH_JUDGE_RATIONALES=_get_bool_env(source, "SEARCH_JUDGE_RATIONALES", True),
         SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
         SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
             source, "SEARCH_JUDGE_REASONING_EFFORT", default="low"

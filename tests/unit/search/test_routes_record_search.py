@@ -186,3 +186,37 @@ def test_record_failure_logs_the_traceback(conn, tmp_path, monkeypatch) -> None:
     response = client.post("/api/search", json={"query": "logged"})
     assert response.status_code == 200
     assert captured == [True]
+
+
+def test_stream_search_records_a_recent_search(conn, tmp_path) -> None:
+    """A successful streamed search records the recent search end-to-end.
+
+    Exercises the real ``/api/search/stream`` route through ``TestClient`` so
+    the worker-thread recording fires against the per-request ``app_db``
+    connection while the ``StreamingResponse`` is still open — the lifecycle
+    the direct-body unit test cannot cover.
+    """
+    user = create_user(conn, username="erin", password_hash="h", role="readonly")
+    token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
+    client = _client(tmp_path, _mock_core())
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+
+    response = client.post("/api/search/stream", json={"query": "stream me"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    # The terminal frame must be the result (the stream closed cleanly).
+    frames = [line for line in response.text.splitlines() if line.strip()]
+    assert frames, "the stream must emit at least one frame"
+    import json as _json
+
+    assert _json.loads(frames[-1])["type"] == "result"
+
+    history = list_for_user(conn, user.id)
+    assert [r.query for r in history] == ["stream me"]
+
+
+def test_stream_search_unauthenticated_is_rejected(tmp_path) -> None:
+    """The stream route is auth-gated identically to /api/search (401 anon)."""
+    client = _client(tmp_path, _mock_core())
+    response = client.post("/api/search/stream", json={"query": "no auth"})
+    assert response.status_code == 401

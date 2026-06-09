@@ -48,6 +48,7 @@ import type {
   IndexFailedResponse,
   RebuildResponse,
 } from './types';
+import { EMPTY_TELEMETRY } from './types/__fixtures__/searchResponse';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -116,6 +117,7 @@ describe('every request sends credentials: include', () => {
       sources: [],
       plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
       stats: { llm_calls: 1, latency_ms: 100, refined: false },
+      ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
     };
     mockFetch(200, body);
@@ -262,6 +264,7 @@ describe('successful responses parse into typed shapes', () => {
         sub_questions: [],
       },
       stats: { llm_calls: 2, latency_ms: 450, refined: false },
+      ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
     };
     mockFetch(200, body);

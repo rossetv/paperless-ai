@@ -14,17 +14,23 @@
   padding: 0;
 }
 
-/* One stage row. */
+/* One stage — a column: the main row, then an optional verdict sublist. */
 .stage {
   display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-10);
+  flex-direction: column;
   padding: var(--spacing-10) 0;
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
 .stage:first-child {
   border-top: none;
+}
+
+/* The main stage row: dot, text column, optional cost chip / progress pill. */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-10);
 }
 
 /* A pending stage is dimmed. */
@@ -122,4 +128,91 @@
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro-bold);
+}
+
+/* Token/cost chip — a compact monospace read-out on an LLM stage. */
+.cost-chip {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-bg);
+  color: var(--colour-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  white-space: nowrap;
+}
+
+/* Judge per-document verdict sublist — indented under the stage row. */
+.verdicts {
+  list-style: none;
+  margin: var(--spacing-6) 0 0;
+
+  /* Indent to align under the stage text column (dot width + the row gap). */
+  padding: 0 0 0 calc(var(--size-stage-dot) + var(--spacing-10));
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-6);
+}
+
+.verdict-dot {
+  flex-shrink: 0;
+  width: var(--spacing-4);
+  height: var(--spacing-4);
+  margin-top: var(--spacing-3);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-status-ready);
+}
+
+.verdict[data-keep="false"] .verdict-dot {
+  background-color: var(--colour-text-tertiary);
+}
+
+.verdict-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.verdict-title {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+}
+
+.verdict[data-keep="false"] .verdict-title {
+  color: var(--colour-text-tertiary);
+}
+
+.verdict-reason {
+  margin-top: var(--spacing-1);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+.verdict-tag {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-pill);
+  background-color: var(--colour-bg);
+  color: var(--colour-text-tertiary);
+  font-family: var(--font-text);
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-micro-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-micro);
+}
+
+.verdict[data-keep="true"] .verdict-tag {
+  background-color: var(--colour-accent-wash);
+  color: var(--colour-link);
 }

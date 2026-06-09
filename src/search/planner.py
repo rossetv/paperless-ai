@@ -48,6 +48,7 @@ from search.text import QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from common.llm import LlmCallUsage
 
 log = structlog.get_logger(__name__)
 
@@ -87,7 +88,12 @@ class QueryPlanner(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def plan(self, query: str, asker: str | None = None) -> QueryPlan | ClarifyNeeded:
+    def plan(
+        self,
+        query: str,
+        asker: str | None = None,
+        usage_sink: list[LlmCallUsage] | None = None,
+    ) -> QueryPlan | ClarifyNeeded:
         """Analyse *query* and return a QueryPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
@@ -105,6 +111,10 @@ class QueryPlanner(OpenAIChatMixin):
                 :func:`~search.identity.resolve_asker`), or None for an
                 anonymous query. When set, the planner user message includes an
                 identity line so first-person references resolve to the asker.
+            usage_sink: Optional list to receive one
+                :class:`~common.llm.LlmCallUsage` record capturing the token
+                usage for the planner call (the search telemetry). ``None``
+                (the default) skips capture and keeps behaviour unchanged.
 
         Returns:
             A frozen QueryPlan or ClarifyNeeded.  Never raises.
@@ -127,6 +137,7 @@ class QueryPlanner(OpenAIChatMixin):
             log_event_prefix="planner",
             reasoning_effort=self.settings.SEARCH_PLANNER_REASONING_EFFORT,
             response_format=_planner_response_format(self.settings),
+            usage_sink=usage_sink,
         )
         if raw_content is None:
             return self._fallback_plan(

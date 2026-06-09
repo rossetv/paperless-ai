@@ -232,6 +232,42 @@ class TestMalformedResponseExploratory:
 # ---------------------------------------------------------------------------
 
 
+class TestSynthesiserUsageSink:
+    """synthesise forwards a usage_sink into the shared completion helper."""
+
+    def test_synthesise_forwards_usage_sink_into_completion_helper(self) -> None:
+        synthesiser = build_synthesizer(
+            make_search_settings(), answered_response_json("a [1].", citations=[1])
+        )
+        seen: dict[str, object] = {}
+
+        def _spy(**kwargs: object) -> str:
+            seen.update(kwargs)
+            return answered_response_json("a [1].", citations=[1])
+
+        synthesiser._complete_with_model_fallback = _spy  # type: ignore[method-assign]
+        sink: list = []
+        synthesiser.synthesise(
+            "q", [_chunk(1, "t")], mode="exploratory", usage_sink=sink
+        )
+        assert seen.get("usage_sink") is sink
+
+    def test_synthesise_populates_the_sink_end_to_end(self) -> None:
+        from common.llm import LlmCallUsage
+
+        synthesiser = build_synthesizer(
+            make_search_settings(), answered_response_json("a [1].", citations=[1])
+        )
+        sink: list[LlmCallUsage] = []
+        synthesiser.synthesise(
+            "q", [_chunk(1, "t")], mode="exploratory", usage_sink=sink
+        )
+        assert len(sink) == 1
+        assert sink[0] == LlmCallUsage(
+            model="gpt-5.4", prompt=0, completion=0, reasoning=0, total=0
+        )
+
+
 class TestPromptInjectionSafety:
     """Chunk text is fenced inside a nonce-delimited data block, after the
     question — the control-plane-first structure of CODE_GUIDELINES.md §10.2
