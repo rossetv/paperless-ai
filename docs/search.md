@@ -38,14 +38,14 @@ The pipeline is a pure library. `SearchCore` wires the planner, retriever, and s
 
 Every stage takes its LLM client and store reader by injection, so the pipeline is testable offline.
 
-### Hard LLM-call ceiling
+### Per-query LLM-call budget
 
-The guaranteed ceiling is **three LLM chat calls per query**: one planner call + at most two synthesiser calls. The query embedding is not a chat call and is not counted.
+The number of LLM chat calls per query is **`2 + SEARCH_MAX_REFINEMENTS`**: one planner call + one exploratory synthesise + one synthesise per refinement pass. There is no hard cap — the operator sets `SEARCH_MAX_REFINEMENTS` from the UI, so cost and latency scale linearly with it. The query embedding is not a chat call and is not counted.
 
-The ceiling is enforced two ways:
+The budget is enforced two ways:
 
-1. **Structurally** — `answer` makes the planner call once, the exploratory synthesise once, and the refinement synthesise at most once. There is no loop that can issue a fourth call.
-2. **Defensively** — every LLM stage is recorded through an `_LlmBudget` counter that raises `LlmBudgetExceededError` if the total would exceed `_MAX_LLM_CALLS` (3). A plain `raise` (not `assert`, which `python -O` would strip) means a logic regression attempting a fourth call fails loudly on the billable endpoint. `SearchStats.llm_calls` reports calls *attempted*, which on a fully successful query equals calls billed.
+1. **Structurally** — `answer` makes the planner call once, the exploratory synthesise once, then loops the refinement synthesise at most `SEARCH_MAX_REFINEMENTS` times; the loop counter bounds it.
+2. **Defensively** — every LLM stage is recorded through an `_LlmBudget` counter, constructed per query with a limit of `2 + SEARCH_MAX_REFINEMENTS`, that raises `LlmBudgetExceededError` if the total would exceed it. A plain `raise` (not `assert`, which `python -O` would strip) means a logic regression attempting an extra call fails loudly on the billable endpoint. `SearchStats.llm_calls` reports calls *attempted*, which on a fully successful query equals calls billed.
 
 Several optional knobs spend **fewer** calls without ever exceeding the ceiling: a result cache serves a repeated query with **zero** LLM calls; a degenerate or too-vague query is rejected before synthesis; a trivial keyword query can skip the planner; and an irrelevant retrieval skips synthesis entirely (see [Fail-fast gates](#fail-fast-gates) below).
 
@@ -60,9 +60,10 @@ plan  (skipped for a trivial query if SEARCH_SKIP_PLANNER_FOR_TRIVIAL)
       ├─ empty? → broaden plan (drop filters), retrieve once → still empty? → "no matches" (no synth call)
       ├─ irrelevant? best similarity < SEARCH_RELEVANCE_MIN_SIMILARITY AND no keyword hit (SEARCH_GATE_RELEVANCE) → "no matches"   ← Layer 2
       └─ synthesise (exploratory)
-           └─ NeedsMore AND refinement budget remains (SEARCH_MAX_REFINEMENTS, default 1)?
+           └─ loop while NeedsMore, up to SEARCH_MAX_REFINEMENTS times (default 1):
                 → adjust plan, retrieve again, MERGE results
-                → synthesise (final)  ← must answer or explicitly say "not found"
+                → synthesise (exploratory; the last allowed pass is final)
+                                          ← final must answer or say "not found"
 ```
 
 ### Fail-fast gates
@@ -116,7 +117,7 @@ Structured output is a discriminated result — `Answered(answer, citations)` or
 
 ### Refinement (`search/refinement.py`)
 
-If the synthesiser returns `NeedsMore` and the refinement budget remains, `SearchCore` adjusts or broadens the query plan and retrieves once more, merging the new results with the original set. A final synthesise call produces the answer. `SEARCH_MAX_REFINEMENTS` defaults to 1; at most one refinement ever runs.
+If the synthesiser returns `NeedsMore` and the refinement budget remains, `SearchCore` folds the adjustment hint into the query plan, retrieves again, and merges the new results with the accumulated set. This loops up to `SEARCH_MAX_REFINEMENTS` times: intermediate passes synthesise in exploratory mode (and may ask for more), and the last allowed pass runs in final mode (must answer or say "not found"), so the loop always terminates. `SEARCH_MAX_REFINEMENTS` defaults to 1 (one refinement), but the operator can set any number — each pass is one extra LLM call.
 
 ### Result shape
 
@@ -190,7 +191,7 @@ The SPA is served by a catch-all that returns `index.html` for client-router dee
 
 The store, the LLM client, and the per-request SQLite connections all do **blocking** I/O. Both the FastAPI routes and the MCP layer run that work off the event loop through one shared helper, `run_blocking` (`search/offload.py`), which dispatches the call to the loop's default executor. This includes the document routes — every `StoreReader`, Paperless, and PDF/thumbnail call in `search/document_routes/` is awaited through `run_blocking`, so a slow upstream never stalls the single loop and serialises every concurrent caller behind it.
 
-A `LazySemaphore` (also in `offload.py`) bounds in-flight `/api/search` work to `SEARCH_MAX_CONCURRENT` (default 4); the MCP tools share the same primitive with the same ceiling. The semaphore is created lazily on first use (so it binds to the serving loop) and is hot-reloadable — a changed cap takes effect on the next request. A ceiling of 0 means unbounded. Combined with the hard 3-LLM-call ceiling, this caps both per-request and aggregate cost on an exposed, billable endpoint.
+A `LazySemaphore` (also in `offload.py`) bounds in-flight `/api/search` work to `SEARCH_MAX_CONCURRENT` (default 4); the MCP tools share the same primitive with the same ceiling. The semaphore is created lazily on first use (so it binds to the serving loop) and is hot-reloadable — a changed cap takes effect on the next request. A ceiling of 0 means unbounded. Combined with the per-query LLM-call budget (`2 + SEARCH_MAX_REFINEMENTS`), this bounds aggregate cost on an exposed, billable endpoint — though raising `SEARCH_MAX_REFINEMENTS` raises the per-request cost.
 
 A separate per-username login throttle (`search/login_throttle.py`) bounds password-guessing attempts on `POST /api/auth/login`.
 

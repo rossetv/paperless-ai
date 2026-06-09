@@ -256,47 +256,49 @@ class TestRefinement:
 # ---------------------------------------------------------------------------
 
 
-class TestHardCeiling:
-    """No code path may make a 4th LLM call (spec §6.3 / CODE_GUIDELINES §14.3)."""
+class TestPerQueryBudget:
+    """The pipeline never exceeds 2 + SEARCH_MAX_REFINEMENTS LLM calls, and the
+    refinement loop genuinely runs that many passes (spec §6.3)."""
 
-    def test_call_count_never_exceeds_three_with_inflated_budget(self) -> None:
-        """Even with the budget raised absurdly high, the cap holds at 3.
-
-        Every synthesiser response is NeedsMore, which would drive an unbounded
-        refine loop if the ceiling were not enforced.  The pipeline must stop
-        at 3 LLM calls regardless of the configured budget.
+    def test_call_count_equals_two_plus_max_refinements(self) -> None:
+        """With an always-NeedsMore synth, the loop runs exactly the configured
+        number of refinements and stops at 2 + SEARCH_MAX_REFINEMENTS — the
+        budget backstop bounds it (it would loop forever otherwise).
         """
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
-            # Always NeedsMore — an unbounded loop without the hard cap.
+            # Always NeedsMore — would loop forever without the bound.
             synthesiser_responses=[needs_more_response_json("more, always more")],
         )
         core = build_search_core(
-            settings=make_search_settings(SEARCH_MAX_REFINEMENTS=99),
+            settings=make_search_settings(SEARCH_MAX_REFINEMENTS=3),
             llm_client=llm_client,
             store_reader=_store_reader_with_hits(),
             embedding_client=_embedding_client(),
         )
         result = core.answer("a query that always needs more")
 
-        assert llm_client.total_calls <= 3
-        assert result.stats.llm_calls <= 3
+        # planner + exploratory + 3 refinements = 5 = 2 + SEARCH_MAX_REFINEMENTS.
+        assert llm_client.total_calls == 5
+        assert result.stats.llm_calls == 5
 
-    def test_worst_case_makes_exactly_three_calls(self) -> None:
-        """The worst case — plan, exploratory, one refine — is exactly 3."""
+    def test_worst_case_makes_two_plus_max_refinements_calls(self) -> None:
+        """A lower setting bounds the calls lower: plan + exploratory + one
+        synthesise per refinement pass."""
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[needs_more_response_json("more")],
         )
         core = build_search_core(
-            settings=make_search_settings(SEARCH_MAX_REFINEMENTS=99),
+            settings=make_search_settings(SEARCH_MAX_REFINEMENTS=2),
             llm_client=llm_client,
             store_reader=_store_reader_with_hits(),
             embedding_client=_embedding_client(),
         )
         core.answer("worst case query")
 
-        assert llm_client.total_calls == 3
+        # plan + exploratory + 2 refinements = 4.
+        assert llm_client.total_calls == 4
 
     def test_stats_llm_calls_matches_actual_calls_made(self) -> None:
         """SearchStats.llm_calls is the TRUE total, not a hardcoded constant."""
