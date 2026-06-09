@@ -33,7 +33,12 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
-from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
+from search.models import (
+    EMPTY_FILTER_CANDIDATES,
+    ClarifyNeeded,
+    FilterCandidates,
+    QueryPlan,
+)
 from search.prompts import (
     PLANNER_SYSTEM_PROMPT,
     _planner_response_format,
@@ -82,18 +87,23 @@ class QueryPlanner(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def plan(self, query: str) -> QueryPlan:
-        """Analyse *query* and return a QueryPlan for the retrieval stages.
+    def plan(self, query: str) -> QueryPlan | ClarifyNeeded:
+        """Analyse *query* and return a QueryPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
-        AI_MODELS on any API error.  On any parse failure or exhausted
-        fallback, returns a minimal safe plan containing only the raw query.
+        AI_MODELS on any API error.  The response is **either** a normal plan
+        **or** a clarify signal (when ``SEARCH_GATE_ADEQUACY`` is True and the
+        model judges the query obviously inadequate).
+
+        **Fail-open guarantee:** any parse failure, empty/malformed response, or
+        ``SEARCH_GATE_ADEQUACY=False`` → returns a QueryPlan (the existing safe
+        fallback).  A degraded LLM response NEVER becomes a false clarify.
 
         Args:
             query: The raw user search query.
 
         Returns:
-            A frozen QueryPlan.  Never raises.
+            A frozen QueryPlan or ClarifyNeeded.  Never raises.
         """
         today = date.today().isoformat()
         messages = [
@@ -123,15 +133,21 @@ class QueryPlanner(OpenAIChatMixin):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _parse_response(self, query: str, raw: str) -> QueryPlan:
-        """Parse *raw* into a QueryPlan, falling back gracefully on any error.
+    def _parse_response(self, query: str, raw: str) -> QueryPlan | ClarifyNeeded:
+        """Parse *raw* into a QueryPlan or ClarifyNeeded.
+
+        Fail-open: any malformed, empty, or unparseable response falls back to a
+        QueryPlan — a degraded LLM response must NEVER become a false clarify.
+        The clarify branch is only taken when SEARCH_GATE_ADEQUACY is True and
+        the response carries a non-empty ``clarify.reason``.
 
         Args:
             query: Original user query — used as the fallback semantic query.
             raw: Raw text returned by the LLM.
 
         Returns:
-            A fully-populated QueryPlan, or the safe fallback plan.
+            A QueryPlan (the normal or fallback case) or ClarifyNeeded (when the
+            model signals the query is obviously inadequate and the gate is on).
         """
         stripped = raw.strip()
         if not stripped:
@@ -146,6 +162,19 @@ class QueryPlanner(OpenAIChatMixin):
             return self._fallback_plan(
                 query, reason="LLM response was not a JSON object"
             )
+
+        # Adequacy gate (Layer 1): check for a clarify signal BEFORE the plan path.
+        # Fail-open: only return ClarifyNeeded when the gate is on AND the model
+        # provided a non-empty reason.  Any other shape falls through to the plan.
+        if self.settings.SEARCH_GATE_ADEQUACY:
+            clarify_outcome = _extract_clarify(data)
+            if clarify_outcome is not None:
+                log.info(
+                    "planner.clarify_needed",
+                    query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
+                    reason=clarify_outcome.reason,
+                )
+                return clarify_outcome
 
         if "semantic_queries" not in data:
             return self._fallback_plan(
@@ -189,6 +218,36 @@ class QueryPlanner(OpenAIChatMixin):
 # ---------------------------------------------------------------------------
 # Module-level parsing helpers (no side effects, no class state)
 # ---------------------------------------------------------------------------
+
+
+def _extract_clarify(data: dict[str, object]) -> ClarifyNeeded | None:
+    """Extract a ClarifyNeeded from *data* if it carries a valid clarify signal.
+
+    Returns ``None`` (fall through to the plan path) when:
+    - ``clarify`` is absent or null.
+    - ``clarify`` is present but not a dict.
+    - ``clarify.reason`` is absent, not a string, or empty / whitespace-only.
+
+    This is the fail-open guard: an ambiguous or malformed clarify shape must
+    never silently become a false rejection of a valid query.
+
+    Args:
+        data: A dict parsed from the LLM JSON response.
+
+    Returns:
+        A ClarifyNeeded if the signal is well-formed and non-empty, else None.
+    """
+    raw_clarify = data.get("clarify")
+    if not isinstance(raw_clarify, dict):
+        # Null, absent, or wrong type → not a clarify response.
+        return None
+    reason = raw_clarify.get("reason")
+    if not isinstance(reason, str):
+        return None
+    reason_stripped = reason.strip()
+    if not reason_stripped:
+        return None
+    return ClarifyNeeded(reason=reason_stripped)
 
 
 def _build_query_plan(data: dict[str, object]) -> QueryPlan:

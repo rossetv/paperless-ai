@@ -75,6 +75,7 @@ const SEARCH_RESPONSE: SearchResponse = {
   sources: [],
   plan: { semantic_queries: ['boiler'], keyword_terms: ['warranty'], sub_questions: [] },
   stats: { llm_calls: 1, latency_ms: 200, refined: false },
+  outcome_kind: 'answered',
 };
 
 const FACETS_RESPONSE: FacetsResponse = {

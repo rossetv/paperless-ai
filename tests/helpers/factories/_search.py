@@ -368,9 +368,16 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_ANSWER_REASONING_EFFORT": "medium",
         "SEARCH_CACHE_TTL_SECONDS": 0,
         "SEARCH_SKIP_PLANNER_FOR_TRIVIAL": False,
-        "SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL": False,
-        "SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS": 1,
-        "SEARCH_WEAK_RETRIEVAL_MIN_SCORE": 0.0,
+        # Fail-fast gate knobs (Task 1). Mirror the production defaults so tests
+        # are explicit about what they get rather than relying on MagicMock's
+        # auto-truthy behaviour (CODE_GUIDELINES §11.5).
+        "SEARCH_GATE_ADEQUACY": True,
+        "SEARCH_GATE_RELEVANCE": True,
+        # 0.0 keeps Layer 2 inert by default (the production default is 0.60, but
+        # a real floor against a synthetic test index is brittle).  Tests that
+        # exercise Layer 2 override with an explicit non-zero value.
+        "SEARCH_RELEVANCE_MIN_SIMILARITY": 0.0,
+        "SEARCH_MIN_QUERY_CHARS": 2,
     }
     defaults.update(overrides)
     settings = MagicMock()

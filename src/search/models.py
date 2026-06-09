@@ -145,12 +145,19 @@ class SearchResult:
         sources: Ranked source documents cited in the answer.
         plan: The query plan produced by the planner, for UI transparency.
         stats: Execution statistics, for UI transparency and debugging.
+        outcome_kind: Discriminator for the result type — ``"answered"`` (the
+            synthesiser produced an answer), ``"clarify"`` (the planner judged
+            the query too vague, Layer 1 fail-fast), or ``"no_match"`` (the
+            retrieved chunks were too weak to synthesise from, Layer 2
+            fail-fast).  Defaults to ``"answered"`` so all existing
+            constructions stay valid without changes.
     """
 
     answer: str
     sources: tuple[SourceDocument, ...]
     plan: QueryPlan
     stats: SearchStats
+    outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
 
 
 # ---------------------------------------------------------------------------
@@ -188,3 +195,53 @@ class NeedsMore:
 #: Discriminated union returned by the synthesiser.
 #: Use isinstance(outcome, Answered) / isinstance(outcome, NeedsMore) to narrow.
 AnswerOutcome = Answered | NeedsMore
+
+
+# ---------------------------------------------------------------------------
+# Planner fail-fast signal (Layer 1) — spec §7.1
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ClarifyNeeded:
+    """The planner judged the query too vague/insufficient to search (Layer 1).
+
+    Returned by the planner *instead of* a :class:`QueryPlan`; the core
+    surfaces it as a 'be more specific' result without retrieving or
+    synthesising.
+
+    Attributes:
+        reason: A human-readable explanation of why the query was rejected.
+    """
+
+    reason: str
+
+
+#: Discriminated union returned by the planner stage.
+#: Use isinstance(outcome, QueryPlan) / isinstance(outcome, ClarifyNeeded) to narrow.
+PlanOutcome = QueryPlan | ClarifyNeeded
+
+
+# ---------------------------------------------------------------------------
+# Retrieval quality signal (Layer 2) — spec §7.2
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalSignal:
+    """Absolute relevance signals the RRF score discards (Layer 2).
+
+    The retriever attaches this to its output so the core can decide whether
+    the retrieved chunks are strong enough to synthesise from without an
+    additional LLM call.
+
+    Attributes:
+        best_vector_similarity: Best raw vector similarity across the retrieved
+            chunks (higher = closer), or ``None`` when no vector search ran or
+            returned results.
+        has_keyword_hit: ``True`` when the FTS5 keyword search returned a
+            genuine match.
+    """
+
+    best_vector_similarity: float | None
+    has_keyword_hit: bool

@@ -584,17 +584,21 @@ def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
         assert key not in REINDEX_KEYS
 
 
-def test_config_keys_has_sixty_two_entries() -> None:
-    """CONFIG_KEYS is the 62-key config-table universe (the 59-key post-Wave-3
-    base, plus OCR_IMAGE_DETAIL + OCR_REASONING_EFFORT added by the OCR
-    token-cost area, plus SEARCH_FORWARDED_ALLOW_IPS added by the proxy-trust
-    hardening). The final cross-area count is reconciled at integration —
-    sibling areas add keys too."""
+def test_config_keys_has_sixty_three_entries() -> None:
+    """CONFIG_KEYS is the 63-key config-table universe.
+
+    The fail-fast feature added four gate knobs and retired three weak-retrieval
+    knobs (superseded by the Layer-2 relevance gate), a net gain of one over the
+    previous 62."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 62
+    assert len(CONFIG_KEYS) == 63
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
+    assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS
+    assert "SEARCH_GATE_RELEVANCE" in CONFIG_KEYS
+    assert "SEARCH_RELEVANCE_MIN_SIMILARITY" in CONFIG_KEYS
+    assert "SEARCH_MIN_QUERY_CHARS" in CONFIG_KEYS
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:
