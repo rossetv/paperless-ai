@@ -55,7 +55,8 @@ the reference for every setting.
 
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
-| `PAPERLESS_URL` | URL of your Paperless-ngx instance | `http://paperless:8000` | No |
+| `PAPERLESS_URL` | URL of your Paperless-ngx instance, as the daemons reach the API (often an internal address). Stored stripped of any trailing slash. | `http://paperless:8000` | No |
+| `PAPERLESS_PUBLIC_URL` | Browser-facing base URL for the document deep-links the search UI renders. Set this when the API is reached over an internal address the user's browser cannot resolve. Falls back to `PAPERLESS_URL` when unset. | Value of `PAPERLESS_URL` | No |
 | `PAPERLESS_TOKEN` | Paperless-ngx API authentication token | — | **Yes** |
 
 ---
@@ -87,10 +88,10 @@ set will see no effect — the variable is silently ignored.
 
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
-| `LLM_PROVIDER` | AI provider: `openai` or `ollama` | `openai` | No |
-| `OPENAI_API_KEY` | OpenAI API key | — | Yes if `openai` |
-| `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`) | `http://localhost:11434/v1/` | Yes if `ollama` |
-| `AI_MODELS` | Comma-separated model fallback chain. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
+| `LLM_PROVIDER` | AI provider for OCR and classification: `openai` or `ollama` | `openai` | No |
+| `OPENAI_API_KEY` | OpenAI API key. **Required regardless of `LLM_PROVIDER`** — the embedding step (used by the indexer) always uses OpenAI. | — | **Yes** |
+| `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`). Used only when `LLM_PROVIDER=ollama`. | `http://localhost:11434/v1/` | No |
+| `AI_MODELS` | Comma-separated model fallback chain for OCR and classification. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
 
 ---
 
@@ -98,8 +99,10 @@ set will see no effect — the variable is silently ignored.
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `OCR_DPI` | DPI for rasterizing PDF pages to images. Higher = better accuracy, larger images. | `300` |
+| `OCR_DPI` | DPI for rasterising PDF pages to images. Higher = better accuracy, larger images. | `300` |
 | `OCR_MAX_SIDE` | Max pixel dimension of the longest side. Images are thumbnailed to fit within this before being sent to the vision API. | `1600` |
+| `OCR_IMAGE_DETAIL` | The OpenAI vision `image_url.detail` level: `high`, `auto`, or `low`. `high` keeps the request identical to before this setting existed; `auto`/`low` are cheaper. | `high` |
+| `OCR_REASONING_EFFORT` | Reasoning effort for the OCR call (OpenAI only): `minimal`, `low`, `medium`, `high`. `medium` is the model's own default; tune *down* to cut the reasoning-token premium on this high-volume call. | `medium` |
 | `OCR_REFUSAL_MARKERS` | Comma-separated phrases (case-insensitive) that indicate a model refused to transcribe. If detected, the next model in the chain is tried. | `i can't assist, i cannot assist, i can't help with transcrib, i cannot help with transcrib, CHATGPT REFUSED TO TRANSCRIBE` |
 | `OCR_INCLUDE_PAGE_MODELS` | If `true`, page headers include the model name (e.g. `--- Page 2 (gpt-5.5) ---`). | `false` |
 
@@ -115,7 +118,8 @@ set will see no effect — the variable is silently ignored.
 | `CLASSIFY_MAX_CHARS` | Hard character cap on OCR text sent to classifier. Applied after page truncation. `0` = no limit. | `0` |
 | `CLASSIFY_MAX_TOKENS` | Max output tokens for the LLM response. `0` = use provider default. | `0` |
 | `CLASSIFY_TAG_LIMIT` | Max number of **optional** tags to keep after enrichment. Required tags (year, country, model markers) don't count toward this. | `5` |
-| `CLASSIFY_TAXONOMY_LIMIT` | Max number of existing correspondents, document types, and tags included in the LLM prompt as context. Sorted by usage. `0` = no limit. | `100` |
+| `CLASSIFY_TAXONOMY_LIMIT` | Max number of existing correspondents, document types, and tags included in the LLM prompt as context. Sorted by usage. `0` = no limit. | `40` |
+| `CLASSIFY_REASONING_EFFORT` | Reasoning effort for the classification call (OpenAI only): `minimal`, `low`, `medium`, `high`. `medium` is the model's own default. | `medium` |
 | `CLASSIFY_PERSON_FIELD_ID` | Paperless custom field ID (integer) for storing the person/subject name. Must be a text-type custom field. Leave unset to skip. | — |
 | `CLASSIFY_DEFAULT_COUNTRY_TAG` | Country tag name always added to every classified document (e.g. `Ireland`). Leave empty to skip. | — |
 
@@ -165,19 +169,74 @@ flowchart TD
 | Variable | Description | Default |
 |:---|:---|:---|
 | `DOCUMENT_WORKERS` | Number of documents processed in parallel per daemon | `4` |
-| `PAGE_WORKERS` | Number of pages OCR'd in parallel within a single document | `8` |
-| `POLL_INTERVAL` | Seconds between polling Paperless for new work | `15` |
-| `MAX_RETRIES` | Maximum retry attempts for network/API errors | `20` |
+| `PAGE_WORKERS` | Number of pages OCR'd in parallel within a single document (OCR daemon) | `8` |
+| `POLL_INTERVAL` | Seconds between polling Paperless for new work (tag daemons) | `15` |
+| `MAX_RETRIES` | Total attempts for a retryable network/API error before giving up (1 = no retry) | `3` |
 | `MAX_RETRY_BACKOFF_SECONDS` | Maximum sleep duration between retries (exponential backoff is capped here) | `30` |
 | `REQUEST_TIMEOUT` | HTTP request timeout in seconds for model API calls | `180` |
-| `LLM_MAX_CONCURRENT` | Max concurrent LLM API calls across all threads. `0` = unlimited. | `0` |
+| `LLM_MAX_CONCURRENT` | Max concurrent LLM API calls across all threads of a process. `0` = unlimited. | `4` |
+
+> `POLL_INTERVAL` and `DOCUMENT_WORKERS` are the one class of setting that does
+> **not** hot-load on the tag daemons — the polling loop fixes its cadence and
+> pool size for its lifetime, so a change to either needs a restart. Every other
+> setting hot-loads.
 
 ### Tuning Recommendations
 
-- The total number of concurrent vision API calls is `DOCUMENT_WORKERS x PAGE_WORKERS`. With defaults (4 x 8 = 32), this works well for OpenAI's rate limits.
-- For **Ollama on a single GPU**, lower `PAGE_WORKERS` to `1` or `2` since Ollama processes sequentially.
-- For **high-throughput OpenAI** deployments, you can increase `DOCUMENT_WORKERS` but watch your rate limits.
-- Use `LLM_MAX_CONCURRENT` to cap total LLM calls if you need finer control than `DOCUMENT_WORKERS x PAGE_WORKERS` provides.
+- The theoretical ceiling on concurrent vision API calls is `DOCUMENT_WORKERS × PAGE_WORKERS` (defaults 4 × 8 = 32), **but `LLM_MAX_CONCURRENT` (default 4) is the real cap** — it bounds total concurrent LLM calls across all threads. Raise it, or set it to `0`, to let the worker pools run wider.
+- For **Ollama on a single GPU**, keep concurrency low — set `LLM_MAX_CONCURRENT` to `1` or `2` (or lower `PAGE_WORKERS`), since Ollama processes sequentially.
+- For **high-throughput OpenAI** deployments, raise `LLM_MAX_CONCURRENT` (and `DOCUMENT_WORKERS`) together while watching your rate limits.
+
+---
+
+## Embedding & Indexing
+
+These drive the indexer daemon, which builds the search index. The **embedding
+step always uses OpenAI**, so `OPENAI_API_KEY` is required even when
+`LLM_PROVIDER=ollama`.
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `EMBEDDING_MODEL` | OpenAI embedding model used to vectorise chunks. **Changing this requires a full re-index** (see [Re-indexing](#how-configuration-works)). | `text-embedding-3-small` |
+| `EMBEDDING_DIMENSIONS` | Vector dimensionality. Locked to the embedding model and pinned in the index schema on first reconcile — a lone change is rejected, not warned. | `1536` |
+| `EMBEDDING_MAX_CONCURRENT` | Max concurrent embedding API calls. `0` = unlimited. | `4` |
+| `CHUNK_SIZE` | Target characters per text chunk. **Changing this requires a full re-index.** | `2000` |
+| `CHUNK_OVERLAP` | Characters of overlap between adjacent chunks. Must be `≥ 0` and `< CHUNK_SIZE`. **Changing this requires a full re-index.** | `256` |
+| `RECONCILE_INTERVAL` | Seconds between incremental reconciliation cycles. | `300` |
+| `DELETION_SWEEP_INTERVAL` | Seconds between deletion sweeps (pruning documents removed from Paperless). | `3600` |
+
+---
+
+## Search Server
+
+These drive the search server (HTTP API, web UI, MCP endpoint).
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `SEARCH_SERVER_HOST` | Interface to bind. `0.0.0.0` is deliberate — the server is auth-gated; restrict exposure at the reverse proxy. | `0.0.0.0` |
+| `SEARCH_SERVER_PORT` | TCP port to listen on (1–65535). | `8080` |
+| `SEARCH_FORWARDED_ALLOW_IPS` | Which peers uvicorn trusts `X-Forwarded-For/-Proto` from. Pin to the proxy CIDR if the uvicorn port is directly reachable. | `*` |
+| `SEARCH_SESSION_TTL` | Session lifetime in seconds (the "keep me signed in" cookie). Default is 7 days. | `604800` |
+| `SEARCH_MAX_CONCURRENT` | Max in-flight `/api/search` requests (abuse/cost guard). `0` = unlimited. | `4` |
+| `SEARCH_TOP_K` | Number of documents returned from retrieval to synthesis. | `10` |
+| `SEARCH_MAX_REFINEMENTS` | Refinement passes the agentic pipeline may run (0–3). Capped to keep the hard 3-LLM-call budget. | `1` |
+| `SEARCH_PLANNER_MODEL` | LLM model for the query planner. | OpenAI: `gpt-5.4-nano`; Ollama: `gemma3:12b` |
+| `SEARCH_ANSWER_MODEL` | LLM model for the synthesiser. | OpenAI: `gpt-5.5`; Ollama: `gemma3:27b` |
+| `SEARCH_PLANNER_REASONING_EFFORT` | Reasoning effort for the planner call: `minimal`/`low`/`medium`/`high`. | `medium` |
+| `SEARCH_ANSWER_REASONING_EFFORT` | Reasoning effort for the synthesiser call. | `medium` |
+
+### Search cost controls
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `SEARCH_CACHE_TTL_SECONDS` | Result-cache lifetime. `0` disables the cache entirely (the kill-switch). Default is 4 hours. | `14400` |
+| `SEARCH_SKIP_PLANNER_FOR_TRIVIAL` | If `true`, skip the planner LLM call for trivial queries (saves one call). | `false` |
+| `SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL` | If `true`, skip synthesis when retrieval is too weak to be worth answering. | `false` |
+| `SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS` | Minimum retrieved chunks below which retrieval counts as "weak". | `1` |
+| `SEARCH_WEAK_RETRIEVAL_MIN_SCORE` | Minimum fused score below which retrieval counts as "weak". | `0.0` |
+
+For how the pipeline uses these — the hard three-LLM-call ceiling, RRF fusion,
+filter resolution — see [The Search Server](search.md).
 
 ---
 

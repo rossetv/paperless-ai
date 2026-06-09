@@ -1,9 +1,18 @@
 # Development
 
-## Local Setup
+This is the guide to building, testing, and shipping `paperless-ai` locally and
+in CI. The standards every change is held to live in
+[`CODE_GUIDELINES.md`](../CODE_GUIDELINES.md).
+
+The repository is two halves: the Python backend (`src/`) and the React frontend
+(`web/`). They are tested, linted, and type-checked separately and built together
+into one Docker image.
+
+---
+
+## Local setup — backend
 
 ```bash
-# Clone the repository
 git clone https://github.com/rossetv/paperless-ai.git
 cd paperless-ai
 
@@ -11,153 +20,204 @@ cd paperless-ai
 python3 -m venv venv
 source venv/bin/activate
 
-# Install the project and dev dependencies
+# Install the project and the dev toolchain
 pip install -e . -r requirements-dev.txt
 
-# Run the test suite
-pytest
-
-# Run a daemon locally (requires env vars to be set)
-export PAPERLESS_URL="http://localhost:8000"
-export PAPERLESS_TOKEN="your-token"
-export OPENAI_API_KEY="sk-your-key"
-python3 -m src.ocr.daemon         # OCR daemon
-python3 -m src.classifier.daemon  # Classification daemon
+# Run the test suite (parallel across cores)
+pytest -n auto
 ```
 
-### Runtime Dependencies
+### Runtime dependencies
 
-Outside Docker, you need:
+Outside Docker you need:
+
 - **Python 3.11+**
-- **Poppler** (`poppler-utils`) — required for PDF to image conversion
-
-On macOS: `brew install poppler`
-On Ubuntu/Debian: `apt-get install poppler-utils`
-
-### Python Dependencies
-
-Production dependencies (from `pyproject.toml`):
-
-| Package | Version | Purpose |
-|:---|:---|:---|
-| `httpx` | ~0.28 | HTTP client for Paperless API |
-| `openai` | ~1.35 | OpenAI SDK (also used for Ollama via compatible API) |
-| `Pillow` | ~10.4 | Image processing (PIL) |
-| `pdf2image` | ~1.17 | PDF to image conversion (wraps Poppler) |
-| `structlog` | ~24.2 | Structured logging |
-
----
-
-## Running Tests
-
-The test suite is organized into three categories: unit, integration, and end-to-end.
+- **Poppler** (`poppler-utils`) — for PDF-to-image conversion (the OCR daemon)
 
 ```bash
-# Run all tests
-pytest
-
-# Run by category
-pytest tests/unit/                    # Unit tests only (~750 tests, <5s)
-pytest tests/integration/             # Integration tests (~30 tests)
-pytest tests/e2e/                     # End-to-end tests (~20 tests)
-
-# Run by module
-pytest tests/unit/common/             # All common module tests
-pytest tests/unit/classifier/         # All classifier module tests
-pytest tests/unit/ocr/                # All OCR module tests
-
-# Run a single file or test
-pytest tests/unit/common/test_config.py
-pytest tests/unit/common/test_config.py::TestDefaultValues::test_default_paperless_url
-
-# Generate coverage report
-pytest --cov=src --cov-report=term-missing --cov-branch
-
-# Generate HTML coverage report
-pytest --cov=src --cov-report=html --cov-branch
-open htmlcov/index.html
+# macOS
+brew install poppler
+# Ubuntu / Debian
+apt-get install poppler-utils
 ```
 
-### Coverage Requirements
+### Python runtime dependencies
 
-CI enforces a minimum of **70% branch coverage**. The coverage report is generated automatically in the GitHub Actions pipeline.
+From `pyproject.toml`:
+
+| Package | Constraint | Purpose |
+|:---|:---|:---|
+| `httpx` | `~=0.28` | HTTP client for the Paperless API |
+| `openai` | `~=1.35` | OpenAI SDK — chat + embeddings (also drives Ollama via its compatible API) |
+| `Pillow` | `~=12.2` | Image processing (PIL) |
+| `pdf2image` | `~=1.17` | PDF → image (wraps Poppler) |
+| `structlog` | `~=24.2` | Structured logging |
+| `sqlite-vec` | `~=0.1` | Vector search extension for the index |
+| `fastapi` | `~=0.136` | The search server's HTTP framework |
+| `uvicorn[standard]` | `~=0.47` | ASGI server for the search server |
+| `mcp` | `~=1.27` | The MCP endpoint |
+| `argon2-cffi` | `~=23.1` | Password hashing for `app.db` accounts |
 
 ---
 
-## Test Organization
+## Running a process locally
 
-Tests mirror the source layout:
+Configuration is read from `app.db`'s config table layered over the environment,
+so for a bare local run the environment alone is enough. The four entry points
+(from `pyproject.toml` `[project.scripts]`):
 
+```bash
+export PAPERLESS_URL="http://localhost:8000"
+export PAPERLESS_TOKEN="your-token"
+export OPENAI_API_KEY="sk-your-key"   # required even with Ollama — embeddings always use OpenAI
+
+# Tag daemons
+python3 -m ocr.daemon            # or: paperless-ai
+python3 -m classifier.daemon     # or: paperless-classifier-daemon
+
+# Search subsystem (needs a built frontend for the UI — see below)
+python3 -m indexer.daemon        # or: paperless-indexer-daemon
+python3 -m search.api            # or: paperless-search-server
 ```
-tests/
-├── conftest.py             Root fixtures, markers, path setup
-├── helpers/
-│   ├── factories.py        Test data factories
-│   └── mocks.py            Mock builders
-├── unit/                   Unit tests (mirrors src/ layout)
-│   ├── common/             Tests for src/common/
-│   ├── classifier/         Tests for src/classifier/
-│   └── ocr/                Tests for src/ocr/
-├── integration/            Cross-module integration tests
-└── e2e/                    Full workflow end-to-end tests
+
+The daemons run against a live Paperless and a live model provider; for tests
+those boundaries are always mocked (see below).
+
+---
+
+## Local setup — frontend
+
+```bash
+cd web
+npm ci
+npm run dev        # Vite dev server with hot reload
 ```
 
-### Test Markers
+The frontend talks to the search API; point it at a running
+`paperless-search-server` (or its mock handlers in tests). The package scripts
+(`web/package.json`):
 
-Tests are auto-marked by directory:
-- `@pytest.mark.unit` — Fast, no I/O, module-level isolation
-- `@pytest.mark.integration` — Pipeline validation with real image/text processing
-- `@pytest.mark.e2e` — Full workflow simulation with mocked APIs
+| Script | Command | Purpose |
+|:---|:---|:---|
+| `npm run dev` | `vite` | Dev server |
+| `npm run typecheck` | `tsc --noEmit` | Type-check only |
+| `npm run lint` | `eslint . && stylelint …` | Boundary + style lint |
+| `npm run test` | `vitest run` | Component / hook tests |
+| `npm run build` | `tsc --noEmit && vite build` | Type-check then build `web/dist` |
+| `npm run storybook` | `storybook dev` | The component catalogue |
 
-### Adding New Tests
+---
 
-- **Directory structure**: Tests mirror the source layout. For `src/classifier/foo.py`, create `tests/unit/classifier/test_foo.py`.
-- **Naming**: Use `test_<function>_<scenario>_<expected>` (e.g. `test_parse_date_empty_string_returns_none`).
-- **Factories**: Use `make_settings_obj()`, `make_document()`, `make_classification_result()` from `tests/helpers/factories.py`.
-- **Mocks**: Use `make_mock_paperless()`, `make_mock_ocr_provider()` from `tests/helpers/mocks.py`.
+## Running the tests
+
+The backend suite is split into unit, integration, and end-to-end tiers (the
+pyramid — `CODE_GUIDELINES.md` §11). No test touches a live Paperless, OpenAI,
+or Ollama; the LLM, the embeddings, and Paperless are always mocked.
+
+```bash
+# Everything, parallel across cores (pytest-xdist)
+pytest -n auto
+
+# By tier
+pytest tests/unit/            # fast, no I/O
+pytest tests/integration/     # module boundaries (real temp store, mock LLM/Paperless)
+pytest tests/e2e/             # full workflows against mocks
+
+# By package
+pytest tests/unit/search/
+pytest tests/unit/indexer/
+
+# A single file or test
+pytest tests/unit/common/test_config.py
+pytest "tests/unit/common/test_config.py::TestDefaults::test_classify_pre_tag_id_defaults_to_post_tag_id"
+
+# Coverage (CI gate is 70%)
+pytest -n auto --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search \
+  --cov-report=term-missing --cov-fail-under=70
+```
+
+### Test markers
+
+Markers are declared in `pyproject.toml` and applied by directory:
+
+- `unit` — fast, no I/O, one cohesive unit
+- `integration` — module boundaries, real temporary store
+- `e2e` — full workflow against mocks
+- `anyio` — async tests on the anyio loop (the search API and MCP)
+
+### Test layout
+
+Tests mirror the source tree one-to-one (`src/indexer/chunker.py` ↔
+`tests/unit/indexer/test_chunker.py`); a moved function moves its test in the
+same change. Use the shared builders in `tests/helpers/` (`make_document`,
+`make_settings_obj`, `make_classification_result`, the mock-Paperless builders)
+rather than hand-building objects.
 
 ### Known gap — no real-frontend → real-backend e2e test
 
-There is currently no test that wires a real React build against a real running
-FastAPI server. Each side is tested independently: the backend via FastAPI's
-`TestClient` (integration tests), and the frontend against MSW mock handlers (Vitest
-component and hook tests). The wire contract between them is policed by static
-contract sweeps — TypeScript types in `web/src/api/types.ts` are kept in deliberate
-correspondence with the Pydantic models in `src/search/wire.py`, and divergences
-are caught by manual per-wave reviews.
-
-This is an intentional, tracked limitation. The cost of a real e2e harness
-(Playwright or Cypress, real `app.db` seeding, frontend build orchestration, CI
-fixture management) is high relative to the classes of bug it would catch beyond
-what the static sweeps and per-side tests already find. The most valuable initial
-Playwright scenario — login → search → preview — is tracked as a follow-up but is
-not required to unblock the current release.
+There is no test that wires a real React build against a real running FastAPI
+server. Each side is tested independently — the backend via FastAPI's
+`TestClient`, the frontend against MSW mock handlers under Vitest — and the wire
+contract between them is held by keeping the TypeScript types in
+`web/src/api/types/` in deliberate correspondence with the Pydantic models in
+`src/search/wire/`, policed by per-wave review. A Playwright login → search →
+preview scenario is tracked as a follow-up but is not required for release.
 
 ---
 
-## CI/CD Pipeline
+## Quality gates (run them before pushing)
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request:
+CI runs these, so run them locally first:
 
-### Tests Job
+```bash
+# Backend
+pytest -n auto
+mypy src/store src/indexer src/search   # the type-checked packages
+ruff check src tests
+ruff format --check src tests
+bandit -r src/ -ll                       # MEDIUM+ severity
+pip-audit                                # dependency CVEs
 
-1. Sets up Python 3.11 with pip caching
-2. Installs project + dev dependencies
-3. Runs `pytest` with 70% coverage requirement
-4. Fails the build if coverage is below threshold
+# Frontend (from web/)
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
 
-### Docker Job (runs after tests pass)
+`mypy` is enforced on `store`, `indexer`, and `search` (the subsystems held to
+full typing from their first commit). `bandit -ll` reports MEDIUM severity and
+above; `pip-audit` scans the installed environment (there is no lockfile).
 
-- **Pull requests**: Builds the Docker image for validation only (no push)
-- **Main branch**: Builds a multi-platform image (`linux/amd64`, `linux/arm64`) and pushes to Docker Hub as `rossetv/paperless-ai:latest`
+---
 
-### Docker Image
+## CI/CD pipeline
 
-The Dockerfile uses a multi-stage build:
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request
+to `main`. An in-flight run for the same ref is cancelled when a new one starts.
 
-1. **Builder stage**: Installs all dependencies, runs the full test suite, builds the wheel
-2. **Production stage**: Lean image with only runtime dependencies, non-root user (`appuser`), minimal attack surface
+| Job | What it does |
+|:---|:---|
+| **Tests** | Python 3.11, install project + dev deps, `pytest -n auto` with `--cov-fail-under=70`, then `mypy src/store src/indexer src/search` |
+| **Lint (ruff)** | `ruff check` and `ruff format --check` over `src tests` |
+| **Security scan (bandit)** | `bandit -r src/ -ll` |
+| **Dependency audit (pip-audit)** | Install the project, audit the resolved environment |
+| **Frontend** | Node 22, `npm ci`, then `typecheck` → `lint` → `test` → `build` |
+| **Docker** | Builds the image; gated on **all** the check jobs above |
+| **Docker manifest** | (push only) Assembles the multi-arch manifest from the per-arch digests |
 
-System dependencies in the production image:
-- `poppler-utils` — PDF to image conversion
-- `libgl1`, `libglib2.0-0` — Image processing libraries
+### The image build
+
+The `Docker` job builds **each architecture on its native runner** — `amd64` on
+`ubuntu-latest`, `arm64` on `ubuntu-24.04-arm` — no QEMU emulation. On a pull
+request each arch is built to validate the Dockerfile and nothing is pushed; on a
+push each arch is built and pushed *by digest*, and `Docker manifest` then
+assembles the tagged multi-arch manifest (`:latest`, `:sha-<sha>`) on Docker Hub.
+
+CI passes `RUN_TESTS=0` to the image build because the dedicated `Tests` job
+already ran `pytest` once, natively — re-running it inside the emulated build per
+architecture would be slow and redundant. A plain local `docker build` defaults
+to `RUN_TESTS=1` and keeps the in-image test gate.
+
+See [Deployment](deployment.md) for the Dockerfile's stages and how to run the
+image.
