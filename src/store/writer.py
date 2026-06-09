@@ -351,16 +351,16 @@ class StoreWriter:
     def check_embedding_model(self) -> bool:
         """Compare the configured embedding model against the stored meta.
 
-        On a mismatch (or first run):
-        - Wipes chunks and chunks_fts (vectors from a different model are
-          incomparable — SPEC §4.6).
-        - Keeps documents and taxonomy intact.
-        - Clears the modified_watermark meta key so the next reconciliation
-          re-indexes everything from scratch.
-        - Writes the new model name and dimensions into meta.
-        - Returns True (a rebuild is needed).
+        On a mismatch (or first run) it calls :meth:`_wipe_and_stamp_model`,
+        which empties chunks, chunks_fts, documents, and taxonomy, clears the
+        modified_watermark, and stamps the new model/dimensions — so the next
+        reconciliation re-indexes and re-embeds everything from scratch — then
+        returns True. Documents MUST be wiped along with the chunks: keeping
+        them lets the reconcile's content-hash check skip re-embedding (a
+        metadata-only pass), which would leave the index permanently empty after
+        a model change.
 
-        If the model and dimensions already match, returns False.
+        If the model and dimensions already match, returns False (no wipe).
 
         Returns:
             True if a rebuild is needed (model or dimensions changed or first
@@ -395,28 +395,55 @@ class StoreWriter:
         )
 
         try:
-            with self._write_lock:
-                with self._conn:
-                    # Wipe all chunk data — vectors from the old model cannot be
-                    # compared with vectors from the new model (SPEC §4.6).
-                    self._conn.execute("DELETE FROM chunks_fts")
-                    self._conn.execute("DELETE FROM chunks")
-                    # Clear the watermark so the reconciler re-embeds all docs.
-                    self._conn.execute(
-                        "DELETE FROM meta WHERE key = 'modified_watermark'"
-                    )
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                        ("embedding_model", configured_model),
-                    )
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                        ("embedding_dimensions", configured_dims),
-                    )
+            self._wipe_and_stamp_model(
+                embedding_model=configured_model,
+                embedding_dimensions=self._settings.EMBEDDING_DIMENSIONS,
+            )
         except sqlite3.Error as exc:
             raise StoreError("failed to apply embedding model change") from exc
 
         return True
+
+    def _wipe_and_stamp_model(
+        self, *, embedding_model: str, embedding_dimensions: int
+    ) -> None:
+        """Empty every indexed table and stamp the model the next reconcile uses.
+
+        The shared wipe behind :meth:`rebuild_index` (the operator "Rebuild
+        index") and :meth:`check_embedding_model` (a model change detected on
+        boot). Both must leave the index FULLY empty so the next incremental
+        sync re-indexes and re-embeds everything.
+
+        Deleting ``documents`` is load-bearing and the subtle part: keeping the
+        document rows lets the reconcile's content-hash check classify every
+        document as unchanged and take a metadata-only pass — which leaves the
+        index permanently chunk-less (an empty search index) after a model
+        change. ``taxonomy`` is wiped too; the next cycle refreshes it. The
+        ``modified_watermark`` is cleared so the sync runs with no server-side
+        filter and re-fetches every document.
+
+        The model/dims meta is stamped in the SAME transaction as the wipe, so a
+        crash leaves meta and chunks consistent and the stored model can never
+        disagree with the (now empty) chunk set.
+
+        Acquires the write lock. Propagates ``sqlite3.Error``; callers wrap it
+        in :class:`StoreError` with their own context.
+        """
+        with self._write_lock:
+            with self._conn:
+                self._conn.execute("DELETE FROM chunks_fts")
+                self._conn.execute("DELETE FROM chunks")
+                self._conn.execute("DELETE FROM documents")
+                self._conn.execute("DELETE FROM taxonomy")
+                self._conn.execute("DELETE FROM meta WHERE key = 'modified_watermark'")
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                    ("embedding_model", embedding_model),
+                )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                    ("embedding_dimensions", str(embedding_dimensions)),
+                )
 
     def rebuild_index(self, *, embedding_model: str, embedding_dimensions: int) -> None:
         """Wipe the entire index so the next reconcile rebuilds it from scratch.
@@ -453,29 +480,13 @@ class StoreWriter:
         log.warning("store.index_rebuild_started")
         # LLM-11 / IDX-04: a "Rebuild index" wipes every chunk and forces a full
         # re-embed on the next reconcile — log the projected scope at CRITICAL
-        # before the wipe.  The wipe transaction below is unchanged.
+        # before the wipe.
         log_reembed_projection(self._conn, trigger="index_rebuild")
         try:
-            with self._write_lock:
-                with self._conn:
-                    self._conn.execute("DELETE FROM chunks_fts")
-                    self._conn.execute("DELETE FROM chunks")
-                    self._conn.execute("DELETE FROM documents")
-                    self._conn.execute("DELETE FROM taxonomy")
-                    self._conn.execute(
-                        "DELETE FROM meta WHERE key = 'modified_watermark'"
-                    )
-                    # Stamp the model the re-embed will use, in the same
-                    # transaction as the wipe so meta can never disagree with the
-                    # (now empty) chunk set.
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                        ("embedding_model", embedding_model),
-                    )
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                        ("embedding_dimensions", str(embedding_dimensions)),
-                    )
+            self._wipe_and_stamp_model(
+                embedding_model=embedding_model,
+                embedding_dimensions=embedding_dimensions,
+            )
         except sqlite3.Error as exc:
             raise StoreError("failed to rebuild the index") from exc
         log.warning("store.index_rebuild_completed")
