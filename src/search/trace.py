@@ -106,7 +106,9 @@ class _Telemetry:
         phase_local = True
         for call in sink:
             self._call_count += 1
-            call_tokens = TokenUsage(call.prompt, call.completion, call.reasoning, call.total)
+            call_tokens = TokenUsage(
+                call.prompt, call.completion, call.reasoning, call.total
+            )
             cost = price_call(call.model, self._provider, call_tokens)
             if not cost.local:
                 phase_local = False
