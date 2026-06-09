@@ -118,6 +118,15 @@ class DocumentIndexer:
             # Paperless (IDX-01). A document that was never indexed (no existing
             # row) is a pure no-op skip. The prune is one transaction in the
             # StoreWriter; a crash mid-delete rolls back to the prior version.
+            #
+            # Both branches return SKIPPED intentionally: the stale-prune path
+            # (existing is not None) and the pure no-op skip path share the same
+            # outcome so SyncReport tallies remain simple.  The log event
+            # distinguishes them — ``worker.stale_document_pruned`` vs
+            # ``worker.document_skipped`` — for operators who need to tell the
+            # two apart.  A dedicated PRUNED variant would require a separate
+            # SyncReport counter, which is an observable behaviour change out of
+            # scope for this refactor; defer if per-path tallying becomes needed.
             if existing is not None:
                 self._store_writer.delete_documents((document_id,))
                 log.info(

@@ -187,15 +187,26 @@ def _fetch_full_documents(
     return fetched
 
 
-def _fold_one_modified(
-    latest: datetime | None, raw: str | None, document_id: int
+def _fold_modified(
+    latest: datetime | None, raw: str | None, document_id: int | None
 ) -> datetime | None:
-    """Fold one ``modified`` value into the running maximum.
+    """Fold one raw ``modified`` string into the running maximum.
 
-    The per-row counterpart of
-    :func:`indexer.reconciler._incremental._fold_latest_modified` (which folds a
-    whole batch of full documents).  An unparseable value is logged and skipped
-    rather than aborting the watermark advance.
+    The single implementation shared by the per-row steady-state diff
+    (:func:`_fold_one_modified`) and the batch full-document path
+    (:func:`~indexer.reconciler._incremental._fold_latest_modified`).
+
+    If *raw* is absent or empty the running *latest* is returned unchanged (the
+    document simply does not advance the watermark).  An unparseable value is
+    logged at WARNING and skipped, so a malformed upstream timestamp never
+    aborts the watermark advance.  Returns the new running maximum.
+
+    Args:
+        latest: The running maximum so far (``None`` if nothing parseable has
+            been seen yet).
+        raw: The ``modified`` string from the Paperless API row, or ``None``.
+        document_id: The Paperless document id — included in the warning log so
+            the operator can identify the offending document.
     """
     if not raw:
         return latest
@@ -208,3 +219,15 @@ def _fold_one_modified(
     if latest is None or parsed > latest:
         return parsed
     return latest
+
+
+def _fold_one_modified(
+    latest: datetime | None, raw: str | None, document_id: int
+) -> datetime | None:
+    """Fold one ``modified`` value into the running maximum.
+
+    Thin wrapper around :func:`_fold_modified` for the per-row steady-state
+    diff path.  An unparseable value is logged and skipped rather than
+    aborting the watermark advance.
+    """
+    return _fold_modified(latest, raw, document_id)
