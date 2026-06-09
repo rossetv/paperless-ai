@@ -78,7 +78,7 @@ class QueryPlanner(OpenAIChatMixin):
 
     def __init__(self, settings: Settings) -> None:
         # ``self.settings`` is the attribute name the @retry decorator reads
-        # via the HasRetrySettings protocol — it must not be renamed.
+        # via duck-typing — it must not be renamed.
         self.settings = settings
         self._init_stats()
 

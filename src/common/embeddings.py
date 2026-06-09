@@ -113,7 +113,7 @@ class EmbeddingClient:
 
     def __init__(self, settings: Settings) -> None:
         # ``self.settings`` must be the attribute name; the @retry decorator
-        # reads it via the HasRetrySettings protocol.
+        # reads it via duck-typing — it must not be renamed.
         self.settings = settings
         # Pin to OpenAI explicitly: api_key from OPENAI_API_KEY, default
         # base_url. Embeddings never go to Ollama (CODE_GUIDELINES §10.8).
