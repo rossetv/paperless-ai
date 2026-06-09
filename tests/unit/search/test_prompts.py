@@ -233,3 +233,19 @@ class TestSynthesiserUserMessageInjectionSafety:
             "The final-mode directive is an instruction — it must sit in the "
             "control plane, above the untrusted data."
         )
+
+
+class TestPlannerIdentity:
+    """Planner user message carries the asker identity when set."""
+
+    def test_planner_message_includes_identity_when_asker_set(self) -> None:
+        msg = build_planner_user_message(
+            query="my passport", today="2026-06-09", asker="Vilmar Rosset"
+        )
+        assert "Vilmar Rosset" in msg
+        assert "first-person" in msg.lower() or "my" in msg.lower()
+
+    def test_planner_message_unchanged_when_no_asker(self) -> None:
+        with_none = build_planner_user_message(query="my passport", today="2026-06-09")
+        assert "asked by" not in with_none.lower()
+        assert "Vilmar" not in with_none

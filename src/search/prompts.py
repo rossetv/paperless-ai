@@ -269,21 +269,34 @@ discrete sub-questions.  Leave the list empty for a straightforward query.
 """.strip()
 
 
-def build_planner_user_message(query: str, today: str) -> str:
-    """Assemble the planner user-role message: today's date, then the query.
+def build_planner_user_message(
+    query: str, today: str, asker: str | None = None
+) -> str:
+    """Assemble the planner user-role message: date, optional asker, then query.
 
-    The date is placed in the user turn (not the system prompt) so the system
-    prompt stays byte-stable and cacheable. The model is told, in the system
-    prompt, to read the date from here to resolve relative temporal language.
+    When *asker* is set, an identity line tells the planner who is asking so it
+    can resolve first-person references; it sits in the user turn (the system
+    prompt stays byte-stable/cacheable). When *asker* is None the message is
+    byte-identical to the pre-identity behaviour.
 
     Args:
         query: The raw user search query.
         today: Today's date in YYYY-MM-DD form.
+        asker: The sanitised asker identity, or None for anonymous queries.
 
     Returns:
         The formatted user message string.
     """
-    return f"Today's date is {today}.\n\nUser query: {query}"
+    identity = (
+        f"\nThe person asking is {asker}. Resolve first-person references "
+        "(my, mine, I, our) to this person where it sharpens the search — "
+        "rewrite a semantic query and/or set the correspondent filter candidate "
+        "to their name. Do not force the name where the documents would not "
+        "carry it.\n"
+        if asker
+        else ""
+    )
+    return f"Today's date is {today}.\n{identity}\nUser query: {query}"
 
 
 # ---------------------------------------------------------------------------
