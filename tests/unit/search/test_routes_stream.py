@@ -16,6 +16,7 @@ bridge depends on ``loop.call_soon_threadsafe`` from the worker thread).
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -126,11 +127,15 @@ async def test_stream_emits_budget_error_frame() -> None:
 
 
 @pytest.mark.anyio
-async def test_stream_records_recent_search_on_success() -> None:
-    """On success the body records the caller's recent search via the worker."""
+async def test_stream_records_recent_search_on_success(tmp_path: Path) -> None:
+    """On success the body records the caller's recent search via the worker.
+
+    The worker opens its OWN short-lived connection from ``app_db_path`` (a real
+    temp file here); the actual ``record`` write is faked so no schema is needed,
+    which still exercises the open-use-close path the production worker runs.
+    """
     recorded: list[tuple[int, str]] = []
 
-    app_db = MagicMock()
     user = MagicMock()
     user.id = 7
 
@@ -147,7 +152,7 @@ async def test_stream_records_recent_search_on_success() -> None:
             _emitting_core(),
             _noop_semaphore(),
             asker=None,
-            app_db=app_db,
+            app_db_path=str(tmp_path / "app.db"),
             user=user,
         )
         lines = await _lines(resp)
@@ -159,9 +164,10 @@ async def test_stream_records_recent_search_on_success() -> None:
 
 
 @pytest.mark.anyio
-async def test_stream_recording_failure_does_not_break_the_stream() -> None:
+async def test_stream_recording_failure_does_not_break_the_stream(
+    tmp_path: Path,
+) -> None:
     """A recent-search write failure is swallowed; the result frame still lands."""
-    app_db = MagicMock()
     user = MagicMock()
     user.id = 9
 
@@ -178,7 +184,7 @@ async def test_stream_recording_failure_does_not_break_the_stream() -> None:
             _emitting_core(),
             _noop_semaphore(),
             asker=None,
-            app_db=app_db,
+            app_db_path=str(tmp_path / "app.db"),
             user=user,
         )
         lines = await _lines(resp)
