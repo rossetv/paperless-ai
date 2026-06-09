@@ -1,12 +1,14 @@
-"""Tests for the default-off RAG-08 (planner skip) and RAG-10 (synth skip).
+"""Tests for the default-off RAG-08 (planner skip), RAG-10 (synth skip), and
+Layer 1 adequacy gate (Task 5: planner returns ClarifyNeeded).
 
-Both kill-switches default OFF, so the suite proves the gates only fire when an
+Kill-switches default OFF, so the suite proves the gates only fire when an
 operator opts in, and the 3-LLM-call ceiling holds on the skip paths. The LLM
 is the ScriptedLLMClient; no real token is spent.
 """
 
 from __future__ import annotations
 
+import json as _json
 from unittest.mock import MagicMock
 
 from search.cache import reset_search_result_cache
@@ -179,3 +181,134 @@ class TestWeakRetrievalSkipWhenEnabled:
         result = core.answer("a query")
         assert llm_client.synthesiser_calls == 0
         assert result.sources == ()
+
+
+# ---------------------------------------------------------------------------
+# Layer 1 adequacy gate — planner returns ClarifyNeeded → core short-circuits
+# ---------------------------------------------------------------------------
+
+
+def _clarify_planner_response() -> str:
+    """Return a clarify JSON that the planner will parse into ClarifyNeeded."""
+    return _json.dumps({"clarify": {"reason": "Query is too vague."}})
+
+
+class TestAdequacyGateInCore:
+    """When the planner returns ClarifyNeeded the core short-circuits before
+    retrieval and synthesis, returning outcome_kind='clarify'.
+
+    Tests here use the ScriptedLLMClient so the planner is a real QueryPlanner
+    that receives the clarify JSON and returns ClarifyNeeded, exercising the
+    full core→planner→core path (not just a mocked planner).
+    """
+
+    def test_clarify_planner_response_produces_clarify_outcome_kind(self) -> None:
+        """A planner clarify response → SearchResult.outcome_kind == 'clarify'."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("life")
+
+        assert result.outcome_kind == "clarify"
+
+    def test_clarify_result_has_the_fixed_user_facing_message(self) -> None:
+        """The clarify SearchResult carries the fixed UX message, not the model's reason."""
+        reset_search_result_cache()
+        _FIXED_MSG = (
+            "That search is a bit too broad for me to answer well. "
+            "Add a detail or two, or use the filters to pick a correspondent or document type."
+        )
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("life")
+
+        assert result.answer == _FIXED_MSG
+
+    def test_clarify_result_has_no_sources(self) -> None:
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("life")
+
+        assert result.sources == ()
+
+    def test_clarify_response_does_not_call_the_retriever(self) -> None:
+        """The retriever must NOT be called when the planner returns ClarifyNeeded."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        store_reader = _store_reader()
+        core = _core(llm_client, store_reader, SEARCH_GATE_ADEQUACY=True)
+        core.answer("life")
+
+        # Neither vector_search nor keyword_search should be called.
+        store_reader.vector_search.assert_not_called()
+        store_reader.keyword_search.assert_not_called()
+
+    def test_clarify_response_makes_exactly_one_llm_call(self) -> None:
+        """ClarifyNeeded short-circuits: only the planner call, no synth."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("life")
+
+        assert llm_client.synthesiser_calls == 0
+        assert llm_client.planner_calls == 1
+        assert result.stats.llm_calls == 1
+
+    def test_normal_query_with_gate_on_follows_answered_path(self) -> None:
+        """The clarify gate must NOT fire for a query with real search intent."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Found it [1].", citations=[1])
+            ],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("when does my boiler warranty expire?")
+
+        assert result.outcome_kind == "answered"
+        assert llm_client.synthesiser_calls == 1
+
+    def test_retrieve_method_also_returns_clarify_for_vague_query(self) -> None:
+        """The MCP retrieve() path also short-circuits on ClarifyNeeded."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        store_reader = _store_reader()
+        core = _core(llm_client, store_reader, SEARCH_GATE_ADEQUACY=True)
+        result = core.retrieve("life")
+
+        assert result.outcome_kind == "clarify"
+        store_reader.vector_search.assert_not_called()
+        store_reader.keyword_search.assert_not_called()
+
+    def test_clarify_result_stats_reflect_one_planner_call(self) -> None:
+        """SearchStats.llm_calls == 1 on the clarify path (planner only)."""
+        reset_search_result_cache()
+        llm_client = ScriptedLLMClient(
+            planner_response=_clarify_planner_response(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = _core(llm_client, _store_reader(), SEARCH_GATE_ADEQUACY=True)
+        result = core.answer("life")
+
+        assert result.stats.llm_calls == 1
+        assert result.stats.refined is False
