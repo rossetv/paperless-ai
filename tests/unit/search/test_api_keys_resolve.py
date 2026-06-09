@@ -113,3 +113,24 @@ def test_resolve_reflects_a_changed_owner_role(conn) -> None:
     resolved = resolve_api_key(conn, raw)
     assert resolved is not None
     assert resolved.owner_role == "admin"
+
+
+def test_resolved_key_carries_owner_display_name(tmp_path) -> None:
+    """resolve_api_key propagates the owner's display_name onto ResolvedKey."""
+    from appdb.connection import connect
+    from appdb.schema import ensure_schema
+
+    c = connect(str(tmp_path / "app.db"))
+    ensure_schema(c)
+    create_user(
+        c,
+        username="display-owner",
+        password_hash="h",
+        role="member",
+        display_name="Vilmar Rosset",
+    )
+    raw = _mint(c, owner_user_id=1)
+    resolved = resolve_api_key(c, raw)
+    assert resolved is not None
+    assert resolved.owner_display_name == "Vilmar Rosset"
+    c.close()

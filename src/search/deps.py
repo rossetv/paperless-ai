@@ -158,6 +158,7 @@ def resolve_caller(
                 id=resolved.owner_user_id,
                 username=resolved.owner_username,
                 role=resolved.owner_role,
+                display_name=resolved.owner_display_name,
             ),
             scopes=resolved.scopes,
             api_key_id=resolved.api_key_id,

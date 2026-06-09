@@ -48,17 +48,21 @@ class CurrentUser:
 
     A deliberately small projection of the full :class:`appdb.users.User`:
     the route layer needs the id (for self-action guards), the username (for
-    logging and display), and the role (for RBAC) — and nothing else.
+    logging and display), and the role (for RBAC) — plus the display name that
+    the identity-aware search uses as the "who is asking" signal.
 
     Attributes:
         id: The user's ``users`` row id.
         username: The user's login name.
         role: The role driving RBAC.
+        display_name: The user's optional human-friendly name (the search "who
+            is asking" signal), or None when the account has no display name.
     """
 
     id: int
     username: str
     role: str
+    display_name: str | None = None
 
 
 def new_token() -> str:
@@ -204,7 +208,12 @@ def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser 
         # The user was deleted or suspended — fail closed.
         return None
 
-    return CurrentUser(id=user.id, username=user.username, role=user.role)
+    return CurrentUser(
+        id=user.id,
+        username=user.username,
+        role=user.role,
+        display_name=user.display_name,
+    )
 
 
 def end_session(conn: sqlite3.Connection, token: str | None) -> None:

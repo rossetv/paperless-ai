@@ -163,3 +163,18 @@ def test_should_touch_last_seen_false_when_recent() -> None:
 def test_should_touch_last_seen_true_for_an_unparseable_value() -> None:
     """A malformed last_seen is treated as stale (write to repair it)."""
     assert should_touch_last_seen("not-a-timestamp") is True
+
+
+def test_resolve_session_carries_display_name(conn) -> None:
+    """resolve_session propagates the user's display_name onto CurrentUser."""
+    user = create_user(
+        conn,
+        username="displaytest",
+        password_hash="h",
+        role="member",
+        display_name="Vilmar Rosset",
+    )
+    issued = begin_session(conn, user_id=user.id, ttl_seconds=3600)
+    resolved = resolve_session(conn, issued.token)
+    assert resolved is not None
+    assert resolved.display_name == "Vilmar Rosset"
