@@ -87,7 +87,9 @@ class QueryPlanner(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def plan(self, query: str) -> QueryPlan | ClarifyNeeded:
+    def plan(
+        self, query: str, asker: str | None = None
+    ) -> QueryPlan | ClarifyNeeded:
         """Analyse *query* and return a QueryPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
@@ -101,6 +103,10 @@ class QueryPlanner(OpenAIChatMixin):
 
         Args:
             query: The raw user search query.
+            asker: The sanitised asker identity (from
+                :func:`~search.identity.resolve_asker`), or None for an
+                anonymous query. When set, the planner user message includes an
+                identity line so first-person references resolve to the asker.
 
         Returns:
             A frozen QueryPlan or ClarifyNeeded.  Never raises.
@@ -110,7 +116,9 @@ class QueryPlanner(OpenAIChatMixin):
             {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": build_planner_user_message(query=query, today=today),
+                "content": build_planner_user_message(
+                    query=query, today=today, asker=asker
+                ),
             },
         ]
 
