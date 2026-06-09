@@ -56,10 +56,12 @@ import structlog
 
 from search.cache import build_cache_key, get_search_result_cache, is_cacheable
 from search.errors import LlmBudgetExceededError
+from search.judge import RelevanceJudge
 from search.models import (
     Answered,
     ClarifyNeeded,
     EMPTY_FILTER_CANDIDATES,
+    JudgeCandidate,
     NeedsMore,
     QueryPlan,
     RetrievedChunk,
@@ -69,8 +71,6 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
-from search.judge import RelevanceJudge
-from search.models import JudgeCandidate
 from search.refinement import (
     adjust_plan,
     broaden_plan,
