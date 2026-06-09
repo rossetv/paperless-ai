@@ -18,7 +18,7 @@ This project adds **AI-powered OCR, document classification, and semantic search
 
 **Indexer Daemon** — Reconciles Paperless-ngx into a local SQLite search index: chunks and embeds document text, keeps the index in sync with new, changed, and deleted documents.
 
-**Search Server** — Serves a JSON API, a React Web UI, and an MCP endpoint (`search_documents`, `ask_documents`) backed by an agentic search pipeline (plan → hybrid retrieve → synthesise), with a hard ceiling of three LLM calls per query.
+**Search Server** — Serves a JSON API, a React Web UI, and an MCP endpoint (`search_documents`, `ask_documents`) backed by an agentic search pipeline (plan → hybrid retrieve → synthesise); refinement depth is operator-configurable (`SEARCH_MAX_REFINEMENTS`).
 
 The OCR and classification daemons use a **tag-driven pipeline** (no external database), support **model fallback chains**, and work with both **OpenAI** and **Ollama**. The search subsystem keeps two SQLite databases on the shared volume: the **search index** (`index.db`, a derived artefact, rebuildable from Paperless) and the **application database** (`app.db`, holding accounts, sessions, API keys, and hot-loaded config) — kept separate so rebuilding the index never touches your accounts.
 
@@ -241,7 +241,7 @@ These variables are read by the indexer daemon and the search server, in additio
 | Variable | Type | Default | Purpose |
 |:---|:---|:---|:---|
 | `SEARCH_TOP_K` | int | `10` | Documents fed to the synthesiser |
-| `SEARCH_MAX_REFINEMENTS` | int | `1` | Maximum agentic refinement steps (hard ceiling: 3 LLM calls per query) |
+| `SEARCH_MAX_REFINEMENTS` | int | `1` | Agentic refinement passes; no hard cap. Each adds one LLM call (per-query budget = 2 + this) |
 | `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Query-planning + adequacy-judging model (cheap, structured extraction) |
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.5` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |

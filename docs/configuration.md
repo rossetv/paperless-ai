@@ -219,7 +219,7 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 | `SEARCH_SESSION_TTL` | Session lifetime in seconds (the "keep me signed in" cookie). Default is 7 days. | `604800` |
 | `SEARCH_MAX_CONCURRENT` | Max in-flight `/api/search` requests (abuse/cost guard). `0` = unlimited. | `4` |
 | `SEARCH_TOP_K` | Number of documents returned from retrieval to synthesis. | `10` |
-| `SEARCH_MAX_REFINEMENTS` | Refinement passes the agentic pipeline may run (0–3). Capped to keep the hard 3-LLM-call budget. | `1` |
+| `SEARCH_MAX_REFINEMENTS` | Agentic refinement passes (≥ 0, no hard cap). Each adds one LLM call; the per-query budget is 2 + this. Cost and latency scale with it. | `1` |
 | `SEARCH_PLANNER_MODEL` | LLM model for the query planner (also judges query adequacy for Layer 1). | OpenAI: `gpt-5.4-mini`; Ollama: `gemma3:12b` |
 | `SEARCH_ANSWER_MODEL` | LLM model for the synthesiser. | OpenAI: `gpt-5.5`; Ollama: `gemma3:27b` |
 | `SEARCH_PLANNER_REASONING_EFFORT` | Reasoning effort for the planner call: `minimal`/`low`/`medium`/`high`. | `medium` |
@@ -236,7 +236,7 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 | `SEARCH_GATE_RELEVANCE` | Layer 2: skip synthesis and return "no matches" when retrieval is clearly irrelevant. | `true` |
 | `SEARCH_RELEVANCE_MIN_SIMILARITY` | Layer 2 floor: reject only when the best vector similarity is below this **and** there is no keyword hit. Calibrated (good ≥ 0.666, off-topic ≈ 0.567). | `0.60` |
 
-For how the pipeline uses these — the hard three-LLM-call ceiling, RRF fusion,
+For how the pipeline uses these — the per-query LLM-call budget, RRF fusion,
 filter resolution — see [The Search Server](search.md).
 
 ---
