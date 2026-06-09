@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from appdb import recent_searches as recent_search_store
 from search.appstate import AppState, get_app_state
 from search.deps import get_app_db
+from search.identity import resolve_asker
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import CurrentUser
 from search.wire import (
@@ -253,7 +254,11 @@ def build_api_router(
         # semaphore. set_limit is a no-op when nothing changed, and ignores
         # non-int values so a stub core in tests does not crash the handler.
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
-        result = await _search(body, core, search_semaphore)
+        asker = resolve_asker(
+            user.display_name,
+            identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
+        )
+        result = await _search(body, core, search_semaphore, asker=asker)
         # The recent-search write is a blocking multi-statement SQLite
         # transaction (delete+insert+trim); keep it off the loop too.
         await run_blocking(lambda: _record_recent_search(app_db, user, body.query))
@@ -345,7 +350,11 @@ def _healthz(settings: Settings, store_reader: StoreReader) -> Response:
 
 
 async def _search(
-    body: SearchRequest, core: SearchCore, semaphore: LazySemaphore
+    body: SearchRequest,
+    core: SearchCore,
+    semaphore: LazySemaphore,
+    *,
+    asker: str | None = None,
 ) -> SearchResponse:
     """Search handler body: bound concurrency, convert filters, run off the loop.
 
@@ -357,7 +366,7 @@ async def _search(
 
     async with semaphore.acquire():
         result = await run_blocking(
-            lambda: core.answer(query=body.query, ui_filters=ui_filters)
+            lambda: core.answer(query=body.query, ui_filters=ui_filters, asker=asker)
         )
     return to_search_response(result)
 
