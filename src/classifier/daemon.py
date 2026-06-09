@@ -127,7 +127,6 @@ def _process_and_record(
 def _iter_docs_to_classify(
     list_client: PaperlessClient, settings: Settings
 ) -> Iterable[dict]:
-    """Yield documents that should be classified."""
     return iter_documents_by_pipeline_tag(
         list_client,
         pre_tag_id=settings.CLASSIFY_PRE_TAG_ID,

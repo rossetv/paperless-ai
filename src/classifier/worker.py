@@ -156,12 +156,11 @@ class ClassificationProcessor:
 
             input_text, truncation_notes = self._truncate_content(content)
 
+            truncation_note = "\n".join(truncation_notes) if truncation_notes else None
             result, model = self.classifier.classify_text(
                 input_text,
                 self.taxonomy_cache.taxonomy_context(),
-                truncation_note="\n".join(truncation_notes)
-                if truncation_notes
-                else None,
+                truncation_note=truncation_note,
             )
 
             usable = self._usable_result(result, current_tags)
@@ -368,6 +367,9 @@ class ClassificationProcessor:
         language = normalise_language(result.language)
         title = result.title.strip() if result.title else ""
 
+        # why: Paperless treats an empty-string title identically to None (no
+        # update), so collapse "" → None at this API boundary to make the intent
+        # explicit and avoid a redundant PATCH field.
         self.paperless_client.update_document_metadata(
             self.doc_id,
             title=title or None,
