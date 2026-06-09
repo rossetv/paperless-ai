@@ -51,6 +51,7 @@ from appdb.connection import connect
 from search.api_keys import SCOPE_MCP, resolve_api_key
 from search.auth import SESSION_COOKIE_NAME, extract_bearer
 from search.deps import refresh_last_seen
+from search.identity import mcp_asker, resolve_asker
 from search.models import SearchResult
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import resolve_session
@@ -111,16 +112,14 @@ class _BearerAuthMiddleware:
         bearer = extract_bearer(request.headers.get("authorization"))
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
-        # _is_authenticated opens its own app.db connection and runs blocking
-        # SQLite (resolve_session / resolve_api_key). This is raw ASGI
-        # middleware, so — unlike a FastAPI sync dependency, which FastAPI
-        # offloads automatically — nothing moves it off the loop for us. Offload
-        # it explicitly so MCP auth never blocks the event loop per request.
-        authenticated = await run_blocking(
-            lambda: self._is_authenticated(bearer, cookie)
+        # _resolve_caller resolves the credential, runs blocking SQLite, and
+        # returns (authenticated, display_name). Offloaded so MCP auth never
+        # blocks the event loop per request (raw ASGI, no FastAPI auto-offload).
+        auth_result = await run_blocking(
+            lambda: self._resolve_caller(bearer, cookie)
         )
 
-        if not authenticated:
+        if not auth_result[0]:
             log.warning(
                 "mcp.auth_rejected",
                 has_auth_header=bearer is not None,
@@ -134,10 +133,21 @@ class _BearerAuthMiddleware:
             await response(scope, receive, send)
             return
 
-        await self._app(scope, receive, send)
+        # Set the caller's display name on the contextvar so the tool handlers
+        # downstream in the same async context can read it. Reset in a finally
+        # so the contextvar is restored even if the inner app raises — prevents
+        # state leaking to the next request sharing this async context.
+        display_name = auth_result[1]
+        token = mcp_asker.set(display_name)
+        try:
+            await self._app(scope, receive, send)
+        finally:
+            mcp_asker.reset(token)
 
-    def _is_authenticated(self, bearer: str | None, cookie: str | None) -> bool:
-        """Return whether the request carries a valid credential.
+    def _resolve_caller(
+        self, bearer: str | None, cookie: str | None
+    ) -> tuple[bool, str | None]:
+        """Authenticate the request and return the caller's raw display name.
 
         Authenticated when EITHER a browser ``search_session`` cookie resolves
         to an active user (a human, not scope-limited) OR an API key resolves
@@ -150,18 +160,24 @@ class _BearerAuthMiddleware:
             cookie: The raw ``search_session`` cookie value, or ``None``.
 
         Returns:
-            ``True`` when the request is authorised, ``False`` otherwise.
+            A ``(authenticated, display_name)`` pair. When unauthenticated,
+            both ``False`` and ``None`` are returned. The display name is the
+            raw (unsanitised) value from the database — sanitisation happens
+            in :func:`~search.identity.resolve_asker` at call time.
         """
         app_db = connect(self._app_db_path)
         try:
-            if resolve_session(app_db, cookie) is not None:
+            user = resolve_session(app_db, cookie)
+            if user is not None:
                 # Refresh last_seen_at so MCP-only users do not have a frozen
                 # timestamp — mirrors what search.deps.resolve_caller does for
                 # the REST surface (CODE_GUIDELINES §10).
                 refresh_last_seen(app_db, cookie)
-                return True
+                return True, user.display_name
             resolved = resolve_api_key(app_db, bearer)
-            return resolved is not None and SCOPE_MCP in resolved.scopes
+            if resolved is not None and SCOPE_MCP in resolved.scopes:
+                return True, resolved.owner_display_name
+            return False, None
         finally:
             app_db.close()
 
@@ -206,8 +222,9 @@ def _run_search_tool(
     *,
     query: str,
     filters: dict[str, Any] | None,
-    core_call: Callable[[str, SearchFilters | None], SearchResult],
+    core_call: Callable[[str, SearchFilters | None, str | None], SearchResult],
     error_event: str,
+    asker: str | None = None,
 ) -> str:
     """Run one search-tool body: validate, convert, invoke core, serialise.
 
@@ -225,6 +242,8 @@ def _run_search_tool(
             ``retrieve`` for ``search_documents``, ``answer`` for
             ``ask_documents``.
         error_event: The structured-log event name for a failure.
+        asker: Optional sanitised display name of the requesting user,
+            forwarded to the core so first-person references resolve correctly.
 
     Returns:
         The serialised :class:`~search.models.SearchResult` as a JSON string.
@@ -246,7 +265,7 @@ def _run_search_tool(
     # full traceback is logged server-side instead.
     try:
         ui_filters = _to_search_filters(filters)
-        result = core_call(query, ui_filters)
+        result = core_call(query, ui_filters, asker)
         return _serialise_result(result)
     except Exception:
         log.exception(error_event)
@@ -311,7 +330,7 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         *,
         query: str,
         filters: dict[str, Any] | None,
-        core_call: Callable[[str, SearchFilters | None], SearchResult],
+        core_call: Callable[[str, SearchFilters | None, str | None], SearchResult],
         error_event: str,
     ) -> str:
         """Run one tool body off the loop, under the shared concurrency bound.
@@ -319,7 +338,16 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         ``core.settings`` is re-read each call so a hot-reloaded
         ``SEARCH_MAX_CONCURRENT`` takes effect without a restart; a ceiling of
         0 (unbounded) makes the acquire a no-op (see :class:`LazySemaphore`).
+
+        The caller's identity is read from :data:`~search.identity.mcp_asker`
+        (set by the auth middleware for this request context) and resolved via
+        :func:`~search.identity.resolve_asker` before being forwarded to the
+        core, so the SEARCH_IDENTITY_AWARE gate is honoured here.
         """
+        asker = resolve_asker(
+            mcp_asker.get(),
+            identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
+        )
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         async with search_semaphore.acquire():
             return await run_blocking(
@@ -329,6 +357,7 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
                     filters=filters,
                     core_call=core_call,
                     error_event=error_event,
+                    asker=asker,
                 )
             )
 
@@ -348,8 +377,8 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         return await _dispatch(
             query=query,
             filters=filters,
-            core_call=lambda text, ui_filters: core.retrieve(
-                query=text, ui_filters=ui_filters
+            core_call=lambda text, ui_filters, asker: core.retrieve(
+                query=text, ui_filters=ui_filters, asker=asker
             ),
             error_event="mcp.search_documents_error",
         )
@@ -370,8 +399,8 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         return await _dispatch(
             query=question,
             filters=filters,
-            core_call=lambda text, ui_filters: core.answer(
-                query=text, ui_filters=ui_filters
+            core_call=lambda text, ui_filters, asker: core.answer(
+                query=text, ui_filters=ui_filters, asker=asker
             ),
             error_event="mcp.ask_documents_error",
         )
