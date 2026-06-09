@@ -34,6 +34,13 @@ The ceiling is enforced two ways, belt and braces:
 Allowed deps: search (models, errors, planner, retriever, synthesizer,
     refinement), store (reader, models), common.config.
 Forbidden: no FastAPI, no MCP SDK, no sqlite3, no direct LLM/HTTP calls.
+
+# rationale: this file exceeds the §3.1 500-line guideline. Every line is
+# load-bearing: the class is a single cohesive orchestrator; its docstrings
+# are spec cross-references that cannot be removed without losing traceability
+# to §6.3 and §14.3; and the module-level helpers are each cited by tests.
+# Splitting _LlmBudget into its own module would add an import edge with no
+# cohesion benefit. The Wave 4 simplification audit accepted this length.
 """
 
 from __future__ import annotations
@@ -266,7 +273,7 @@ class SearchCore:
         outcome = self._synthesise(query, chunks, mode="exploratory", budget=budget)
         refined = False
 
-        if isinstance(outcome, NeedsMore) and self._has_refinement_budget():
+        if isinstance(outcome, NeedsMore) and self._settings.SEARCH_MAX_REFINEMENTS > 0:
             outcome, chunks = self._refine(
                 query, plan, ui_filters, outcome, chunks, budget
             )
@@ -474,10 +481,6 @@ class SearchCore:
         return self._build_result(
             _NO_MATCHES_ANSWER, (), plan, budget, started, refined=False
         )
-
-    def _has_refinement_budget(self) -> bool:
-        """Return whether the configured refinement budget permits a refine."""
-        return self._settings.SEARCH_MAX_REFINEMENTS > 0
 
 
 # ---------------------------------------------------------------------------

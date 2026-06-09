@@ -55,7 +55,7 @@ from search.wire.facets import (
     TaxonomyCreateRequest,
     TaxonomyEntryResponse,
     TaxonomyItemResponse,
-    _paperless_item_to_response,
+    paperless_item_to_response,
     to_facets_response,
     to_stats_response,
 )
@@ -155,7 +155,7 @@ __all__ = [
     "UserEnvelope",
     "UserListResponse",
     "UserResponse",
-    "_paperless_item_to_response",
+    "paperless_item_to_response",
     "normalise_query",
     "to_api_key_response",
     "to_document_browse_query",

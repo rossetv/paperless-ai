@@ -127,7 +127,7 @@ def to_stats_response(stats: IndexStats) -> StatsResponse:
     )
 
 
-def _paperless_item_to_response(item: PaperlessItem) -> TaxonomyItemResponse:
+def paperless_item_to_response(item: PaperlessItem) -> TaxonomyItemResponse:
     """Convert one Paperless taxonomy item to the wire shape.
 
     The Paperless API exposes the usage count under one of three field names

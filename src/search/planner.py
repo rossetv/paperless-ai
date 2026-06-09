@@ -35,8 +35,8 @@ import structlog
 from common.llm import OpenAIChatMixin, extract_json_object
 from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
 from search.prompts import (
+    PLANNER_SYSTEM_PROMPT,
     _planner_response_format,
-    build_planner_system_prompt,
     build_planner_user_message,
 )
 from search.text import QUERY_LOG_PREFIX_CHARS
@@ -97,7 +97,7 @@ class QueryPlanner(OpenAIChatMixin):
         """
         today = date.today().isoformat()
         messages = [
-            {"role": "system", "content": build_planner_system_prompt()},
+            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": build_planner_user_message(query=query, today=today),

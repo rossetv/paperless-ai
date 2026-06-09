@@ -126,11 +126,6 @@ def build_api_key_router() -> APIRouter:
 # ---------------------------------------------------------------------------
 
 
-def _is_admin(caller: CurrentUser) -> bool:
-    """Return whether *caller* has the admin role."""
-    return caller.role == "admin"
-
-
 def _owner_name(app_db: sqlite3.Connection, owner_user_id: int) -> str:
     """Resolve a key owner's display name from the ``users`` table.
 
@@ -162,7 +157,7 @@ def _list_api_keys(
     Each key is mapped to its wire shape with the owner's display name
     resolved from the ``users`` table.
     """
-    if _is_admin(caller):
+    if caller.role == "admin":
         keys = key_store.list_all(app_db)
     else:
         keys = key_store.list_for_user(app_db, caller.id)
@@ -250,13 +245,14 @@ def _update_api_key(
     # Return 404 to a non-owner even when the key exists — a non-owner must
     # not be able to distinguish "key not found" from "key found but not yours"
     # (MINOR-1 id-enumeration defence).
-    if record is None or record.owner_user_id != caller.id:
-        if record is not None and record.owner_user_id != caller.id:
-            log.warning(
-                "search.api_key_update_forbidden",
-                api_key_id=api_key_id,
-                actor_user_id=caller.id,
-            )
+    if record is None:
+        raise HTTPException(status_code=404, detail="API key not found.")
+    if record.owner_user_id != caller.id:
+        log.warning(
+            "search.api_key_update_forbidden",
+            api_key_id=api_key_id,
+            actor_user_id=caller.id,
+        )
         raise HTTPException(status_code=404, detail="API key not found.")
 
     # Build the partial update from only the fields the client sent.
@@ -306,17 +302,14 @@ def _delete_api_key(
     # A non-admin who does not own the key gets 404 regardless of whether
     # the key exists, so they cannot enumerate key ids by observing the
     # difference between 404 and 403 (MINOR-1 id-enumeration defence).
-    if record is None or (not _is_admin(caller) and record.owner_user_id != caller.id):
-        if (
-            record is not None
-            and not _is_admin(caller)
-            and record.owner_user_id != caller.id
-        ):
-            log.warning(
-                "search.api_key_delete_forbidden",
-                api_key_id=api_key_id,
-                actor_user_id=caller.id,
-            )
+    if record is None:
+        raise HTTPException(status_code=404, detail="API key not found.")
+    if caller.role != "admin" and record.owner_user_id != caller.id:
+        log.warning(
+            "search.api_key_delete_forbidden",
+            api_key_id=api_key_id,
+            actor_user_id=caller.id,
+        )
         raise HTTPException(status_code=404, detail="API key not found.")
 
     key_store.revoke(
