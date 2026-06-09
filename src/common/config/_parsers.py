@@ -220,15 +220,19 @@ def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
     return _resolve_reasoning_effort(source, "CLASSIFY_REASONING_EFFORT")
 
 
-def _resolve_search_reasoning_effort(source: Mapping[str, str], var_name: str) -> str:
-    """Resolve and validate a search-stage reasoning-effort knob (defaults ``medium``).
+def _resolve_search_reasoning_effort(
+    source: Mapping[str, str], var_name: str, default: str = "medium"
+) -> str:
+    """Resolve and validate a search-stage reasoning-effort knob.
 
     Args:
         source: The environment mapping.
-        var_name: The setting key (``SEARCH_PLANNER_REASONING_EFFORT`` or
-            ``SEARCH_ANSWER_REASONING_EFFORT``) — named in the error on a typo.
+        var_name: The setting key (planner / answer / judge effort) — named in
+            the error on a typo.
+        default: The coded default effort (``"medium"`` unless specified; the
+            judge passes ``"low"``).
     """
-    return _resolve_reasoning_effort(source, var_name)
+    return _resolve_reasoning_effort(source, var_name, default)
 
 
 def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
