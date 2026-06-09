@@ -18,12 +18,6 @@ from typing import Literal
 # it; kept beside the parsers that share the "coded default" role.
 _DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1/"
 
-# Hard ceiling on SEARCH_MAX_REFINEMENTS. The agentic pipeline's three-LLM-call
-# budget (CODE_GUIDELINES §14.3) is a correctness and cost property, not a
-# tuning knob: planner (1) + retrieve + refine. SEARCH_MAX_REFINEMENTS counts
-# refinement steps, so it is capped here rather than left unbounded.
-_SEARCH_MAX_REFINEMENTS_CEILING = 3
-
 # ---------------------------------------------------------------------------
 # String-mapping parsing helpers (pure functions)
 # ---------------------------------------------------------------------------
@@ -253,15 +247,16 @@ def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
 
 
 def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
-    """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` against the §14.3 ceiling."""
+    """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` — any non-negative count.
+
+    There is no hard cap: the operator sets the number of agentic refinement
+    passes from the UI. Each pass adds one LLM call (the per-query budget is
+    ``2 + SEARCH_MAX_REFINEMENTS``), so cost and latency scale linearly — that
+    is the operator's call. Only a negative value is rejected.
+    """
     value = _get_int_env(source, "SEARCH_MAX_REFINEMENTS", 1)
-    if not 0 <= value <= _SEARCH_MAX_REFINEMENTS_CEILING:
-        # The three-LLM-call budget is a hard correctness property, not a knob.
-        raise ValueError(
-            f"SEARCH_MAX_REFINEMENTS must be between 0 and "
-            f"{_SEARCH_MAX_REFINEMENTS_CEILING} (the §14.3 three-LLM-call "
-            f"budget), got {value}."
-        )
+    if value < 0:
+        raise ValueError(f"SEARCH_MAX_REFINEMENTS must be >= 0, got {value}.")
     return value
 
 

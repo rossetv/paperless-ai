@@ -166,8 +166,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             key: 'SEARCH_MAX_REFINEMENTS',
             label: 'Max refinements',
-            hint: 'Agentic refinement steps. A hard ceiling of 3 is always enforced.',
-            control: { kind: 'number', min: 0, max: 3 },
+            hint: 'Agentic refinement passes. Each adds one LLM call per query, so cost and latency scale with it. No hard cap; default 1.',
+            control: { kind: 'number', min: 0 },
           },
         ],
       },

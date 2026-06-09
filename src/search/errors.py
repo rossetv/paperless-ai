@@ -47,12 +47,13 @@ class RowVanishedError(SearchError):
 
 
 class LlmBudgetExceededError(SearchError):
-    """The pipeline attempted more LLM chat calls than the hard ceiling allows.
+    """The pipeline attempted more LLM chat calls than the per-query budget allows.
 
-    The agentic pipeline guarantees at most three LLM calls per query (spec
-    §6.3, ``CODE_GUIDELINES.md`` §14.3): one planner call plus at most two
-    synthesiser calls.  ``SearchCore``'s own loop logic cannot breach that
-    bound; this error is the defensive guard (``CODE_GUIDELINES.md`` §1.11) —
-    it is raised only if a future regression introduces a fourth call, so the
-    cost overrun fails loud rather than silently billing the operator.
+    The per-query budget is ``2 + SEARCH_MAX_REFINEMENTS`` (spec §6.3,
+    ``CODE_GUIDELINES.md`` §14.3): one planner call, one exploratory
+    synthesise, and one synthesise per refinement pass.  ``SearchCore``'s own
+    loop logic cannot breach that bound; this error is the defensive guard
+    (``CODE_GUIDELINES.md`` §1.11) — it is raised only if a future regression
+    introduces an extra call, so the cost overrun fails loud rather than
+    silently billing the operator.
     """
