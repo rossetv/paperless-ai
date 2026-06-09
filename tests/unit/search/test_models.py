@@ -4,24 +4,36 @@ Verifies:
 - Every dataclass is frozen (mutation raises FrozenInstanceError).
 - Every dataclass can be constructed with the documented fields.
 - AnswerOutcome discriminated union narrows correctly with isinstance checks.
+- ClarifyNeeded, RetrievalSignal, and PlanOutcome (Task 2 additions) behave
+  correctly.
+- SearchResult.outcome_kind defaults to "answered" and accepts explicit values.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 
 from search.models import (
     AnswerOutcome,
     Answered,
+    ClarifyNeeded,
     FilterCandidates,
     NeedsMore,
+    PlanOutcome,
     QueryPlan,
+    RetrievalSignal,
     RetrievedChunk,
     SearchResult,
     SearchStats,
     SourceDocument,
 )
-from tests.helpers.factories import make_query_plan, make_source_document
+from tests.helpers.factories import (
+    make_query_plan,
+    make_search_stats,
+    make_source_document,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -330,3 +342,104 @@ class TestAnswerOutcome:
         outcome: AnswerOutcome = NeedsMore(adjustment="include earlier documents")
         assert isinstance(outcome, NeedsMore)
         assert outcome.adjustment == "include earlier documents"
+
+
+# ---------------------------------------------------------------------------
+# ClarifyNeeded (Layer 1 fail-fast signal)
+# ---------------------------------------------------------------------------
+
+
+class TestClarifyNeeded:
+    def test_construction(self) -> None:
+        cn = ClarifyNeeded(reason="Query is too vague to produce a useful search plan.")
+        assert cn.reason == "Query is too vague to produce a useful search plan."
+
+    def test_is_frozen(self) -> None:
+        cn = ClarifyNeeded(reason="original reason")
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            cn.reason = "changed"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# RetrievalSignal (Layer 2 fail-fast signal)
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalSignal:
+    def test_construction_with_vector_similarity(self) -> None:
+        sig = RetrievalSignal(best_vector_similarity=0.42, has_keyword_hit=True)
+        assert sig.best_vector_similarity == pytest.approx(0.42)
+        assert sig.has_keyword_hit is True
+
+    def test_construction_without_vector_search(self) -> None:
+        sig = RetrievalSignal(best_vector_similarity=None, has_keyword_hit=False)
+        assert sig.best_vector_similarity is None
+        assert sig.has_keyword_hit is False
+
+    def test_is_frozen(self) -> None:
+        sig = RetrievalSignal(best_vector_similarity=0.5, has_keyword_hit=True)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            sig.has_keyword_hit = False  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# PlanOutcome discriminated union narrowing
+# ---------------------------------------------------------------------------
+
+
+class TestPlanOutcome:
+    def test_query_plan_is_a_valid_plan_outcome(self) -> None:
+        outcome: PlanOutcome = make_query_plan()
+        assert isinstance(outcome, QueryPlan)
+        assert not isinstance(outcome, ClarifyNeeded)
+
+    def test_clarify_needed_is_a_valid_plan_outcome(self) -> None:
+        outcome: PlanOutcome = ClarifyNeeded(reason="too vague")
+        assert isinstance(outcome, ClarifyNeeded)
+        assert not isinstance(outcome, QueryPlan)
+
+
+# ---------------------------------------------------------------------------
+# SearchResult.outcome_kind discriminator field
+# ---------------------------------------------------------------------------
+
+
+class TestSearchResultOutcomeKind:
+    def test_defaults_to_answered(self) -> None:
+        result = SearchResult(
+            answer="The answer.",
+            sources=(make_source_document(),),
+            plan=make_query_plan(),
+            stats=make_search_stats(),
+        )
+        assert result.outcome_kind == "answered"
+
+    def test_explicit_clarify_round_trips(self) -> None:
+        result = SearchResult(
+            answer="Please clarify your query.",
+            sources=(),
+            plan=make_query_plan(),
+            stats=make_search_stats(),
+            outcome_kind="clarify",
+        )
+        assert result.outcome_kind == "clarify"
+
+    def test_explicit_no_match_round_trips(self) -> None:
+        result = SearchResult(
+            answer="No documents matched your query.",
+            sources=(),
+            plan=make_query_plan(),
+            stats=make_search_stats(),
+            outcome_kind="no_match",
+        )
+        assert result.outcome_kind == "no_match"
+
+    def test_outcome_kind_field_is_frozen(self) -> None:
+        result = SearchResult(
+            answer="answer",
+            sources=(),
+            plan=make_query_plan(),
+            stats=make_search_stats(),
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            result.outcome_kind = "clarify"  # type: ignore[misc]
