@@ -242,7 +242,7 @@ These variables are read by the indexer daemon and the search server, in additio
 |:---|:---|:---|:---|
 | `SEARCH_TOP_K` | int | `10` | Documents fed to the synthesiser |
 | `SEARCH_MAX_REFINEMENTS` | int | `1` | Maximum agentic refinement steps (hard ceiling: 3 LLM calls per query) |
-| `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-nano` / `gemma3:12b` | Query-planning model (cheap, structured extraction) |
+| `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Query-planning + adequacy-judging model (cheap, structured extraction) |
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.5` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |
@@ -253,9 +253,10 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_ANSWER_REASONING_EFFORT` | string | `medium` | Synthesiser `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on synthesis. Invalid values are rejected at startup; stripped automatically for unsupporting models |
 | `SEARCH_CACHE_TTL_SECONDS` | int | `14400` | TTL (seconds) for the in-process result cache; `0` disables it. Busted automatically when the index changes |
 | `SEARCH_SKIP_PLANNER_FOR_TRIVIAL` | bool | `false` | When true, skip the planner LLM call for short, signal-free keyword queries |
-| `SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL` | bool | `false` | When true, return "no matches" (no synth call) when retrieval is below the weak-retrieval thresholds |
-| `SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS` | int | `1` | Retrieval is "weak" below this chunk count (used only when the flag above is true) |
-| `SEARCH_WEAK_RETRIEVAL_MIN_SCORE` | float | `0.0` | Retrieval is "weak" when the best fused RRF score is below this (RRF scores are ~`1/(60+rank)`, so a single top hit ≈ 0.016) |
+| `SEARCH_MIN_QUERY_CHARS` | int | `2` | **Layer 0** — reject queries shorter than this (after trimming whitespace) before any LLM call; `0` disables it |
+| `SEARCH_GATE_ADEQUACY` | bool | `true` | **Layer 1** — let the planner return a "too vague, please clarify" outcome instead of a plan (folded into the existing planner call, no extra spend) |
+| `SEARCH_GATE_RELEVANCE` | bool | `true` | **Layer 2** — skip synthesis and return "no matches" when retrieval is clearly irrelevant |
+| `SEARCH_RELEVANCE_MIN_SIMILARITY` | float | `0.60` | Absolute vector-similarity floor for Layer 2. Reject only when the best match is below this **and** there is no keyword hit. Calibrated against the live index (good queries ≥ 0.666, off-topic ≈ 0.567) |
 
 ---
 

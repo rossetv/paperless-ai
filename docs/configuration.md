@@ -220,7 +220,7 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 | `SEARCH_MAX_CONCURRENT` | Max in-flight `/api/search` requests (abuse/cost guard). `0` = unlimited. | `4` |
 | `SEARCH_TOP_K` | Number of documents returned from retrieval to synthesis. | `10` |
 | `SEARCH_MAX_REFINEMENTS` | Refinement passes the agentic pipeline may run (0–3). Capped to keep the hard 3-LLM-call budget. | `1` |
-| `SEARCH_PLANNER_MODEL` | LLM model for the query planner. | OpenAI: `gpt-5.4-nano`; Ollama: `gemma3:12b` |
+| `SEARCH_PLANNER_MODEL` | LLM model for the query planner (also judges query adequacy for Layer 1). | OpenAI: `gpt-5.4-mini`; Ollama: `gemma3:12b` |
 | `SEARCH_ANSWER_MODEL` | LLM model for the synthesiser. | OpenAI: `gpt-5.5`; Ollama: `gemma3:27b` |
 | `SEARCH_PLANNER_REASONING_EFFORT` | Reasoning effort for the planner call: `minimal`/`low`/`medium`/`high`. | `medium` |
 | `SEARCH_ANSWER_REASONING_EFFORT` | Reasoning effort for the synthesiser call. | `medium` |
@@ -231,9 +231,10 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 |:---|:---|:---|
 | `SEARCH_CACHE_TTL_SECONDS` | Result-cache lifetime. `0` disables the cache entirely (the kill-switch). Default is 4 hours. | `14400` |
 | `SEARCH_SKIP_PLANNER_FOR_TRIVIAL` | If `true`, skip the planner LLM call for trivial queries (saves one call). | `false` |
-| `SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL` | If `true`, skip synthesis when retrieval is too weak to be worth answering. | `false` |
-| `SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS` | Minimum retrieved chunks below which retrieval counts as "weak". | `1` |
-| `SEARCH_WEAK_RETRIEVAL_MIN_SCORE` | Minimum fused score below which retrieval counts as "weak". | `0.0` |
+| `SEARCH_MIN_QUERY_CHARS` | Layer 0: reject queries shorter than this (after trimming) before any LLM call. `0` disables it. | `2` |
+| `SEARCH_GATE_ADEQUACY` | Layer 1: let the planner return a "too vague, please clarify" outcome instead of a plan (no extra LLM call). | `true` |
+| `SEARCH_GATE_RELEVANCE` | Layer 2: skip synthesis and return "no matches" when retrieval is clearly irrelevant. | `true` |
+| `SEARCH_RELEVANCE_MIN_SIMILARITY` | Layer 2 floor: reject only when the best vector similarity is below this **and** there is no keyword hit. Calibrated (good ≥ 0.666, off-topic ≈ 0.567). | `0.60` |
 
 For how the pipeline uses these — the hard three-LLM-call ceiling, RRF fusion,
 filter resolution — see [The Search Server](search.md).
