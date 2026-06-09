@@ -52,6 +52,12 @@ export interface StreamFailure {
 /** The reducer state exposed to the page. */
 export interface StreamingSearchState {
   status: StreamStatus;
+  /**
+   * The query the current state is for — set when a run starts. Lets the page
+   * tell a fresh stream apart from a superseded one's lingering result, so a
+   * new query never flashes the previous query's answer.
+   */
+  query: string | null;
   /** Completed phases, in order — drives the live rail and the trace panel. */
   phaseRecords: PhaseRecord[];
   /** The phase currently running, or null when none is mid-flight. */
@@ -64,6 +70,7 @@ export interface StreamingSearchState {
 
 const INITIAL_STATE: StreamingSearchState = {
   status: 'idle',
+  query: null,
   phaseRecords: [],
   activePhase: null,
   result: null,
@@ -71,7 +78,7 @@ const INITIAL_STATE: StreamingSearchState = {
 };
 
 type Action =
-  | { type: 'start' }
+  | { type: 'start'; query: string }
   | { type: 'phaseStart'; phase: SearchPhase }
   | { type: 'phaseDone'; record: PhaseRecord }
   | { type: 'result'; result: SearchResponse }
@@ -83,9 +90,11 @@ function reducer(
 ): StreamingSearchState {
   switch (action.type) {
     case 'start':
-      // A fresh run wipes the prior trace so a stale rail never lingers.
+      // A fresh run wipes the prior trace so a stale rail never lingers, and
+      // records the query this stream is for.
       return {
         status: 'streaming',
+        query: action.query,
         phaseRecords: [],
         activePhase: null,
         result: null,
@@ -169,7 +178,7 @@ export function useStreamingSearch(): UseStreamingSearch {
     const isCurrent = (): boolean =>
       runId === runIdRef.current && !controller.signal.aborted;
 
-    dispatch({ type: 'start' });
+    dispatch({ type: 'start', query });
 
     void (async () => {
       try {
