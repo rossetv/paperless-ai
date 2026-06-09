@@ -425,6 +425,10 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_GATE_JUDGE": False,
         "SEARCH_JUDGE_MODEL": "gpt-5.4-mini",
         "SEARCH_JUDGE_REASONING_EFFORT": "low",
+        # Identity-awareness (Task 10). Defaults ON in production; pinned here
+        # so make_search_settings always returns a real bool, not a truthy mock,
+        # and tests that need it off can override with SEARCH_IDENTITY_AWARE=False.
+        "SEARCH_IDENTITY_AWARE": True,
     }
     defaults.update(overrides)
     settings = MagicMock()
