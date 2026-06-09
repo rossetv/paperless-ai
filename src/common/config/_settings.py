@@ -71,6 +71,7 @@ class _ProviderDefaults:
     ai_models: list[str]
     planner_model: str
     answer_model: str
+    judge_model: str
 
 
 def _resolve_provider_defaults(
@@ -90,12 +91,14 @@ def _resolve_provider_defaults(
             ai_models=["gemma3:27b", "gemma3:12b"],
             planner_model="gemma3:12b",
             answer_model="gemma3:27b",
+            judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
         ollama_base_url=None,
         ai_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
         planner_model="gpt-5.4-mini",
         answer_model="gpt-5.5",
+        judge_model="gpt-5.4-mini",
     )
 
 
@@ -192,6 +195,24 @@ class Settings:
     SEARCH_ANSWER_REASONING_EFFORT: str
     SEARCH_CACHE_TTL_SECONDS: int
     SEARCH_SKIP_PLANNER_FOR_TRIVIAL: bool
+
+    SEARCH_GATE_JUDGE: bool
+    """Enable the document-relevance judge (Layer 3, a cheap pre-synthesis call).
+
+    When ``True`` (the default), a cheap ``SEARCH_JUDGE_MODEL`` call screens the
+    retrieved documents before the expensive answer model: it bails to
+    ``no_match`` when nothing is relevant, otherwise filters the chunk set to the
+    relevant documents. Recall-biased and fail-open — any judge failure proceeds
+    to synthesis over all chunks. Set ``False`` to restore the pre-judge path.
+    """
+    SEARCH_JUDGE_MODEL: str
+    """The model for the relevance judge. Defaults to the planner model for the
+    provider (``gpt-5.4-mini`` / ``gemma3:12b``); set independently to run the
+    judge on a cheaper or sharper model than the planner."""
+    SEARCH_JUDGE_REASONING_EFFORT: str
+    """Reasoning effort for the judge (``minimal``/``low``/``medium``/``high``).
+    Defaults to ``low`` — a coarse on-topic classification that does not need
+    deep reasoning; raise it if the judge bails or filters too aggressively."""
 
     # Fail-fast gate knobs (search fail-fast spec §3)
     SEARCH_GATE_ADEQUACY: bool
@@ -340,6 +361,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     default_ai_models = provider_defaults.ai_models
     default_planner_model = provider_defaults.planner_model
     default_answer_model = provider_defaults.answer_model
+    default_judge_model = provider_defaults.judge_model
 
     # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
     # int default and treats blank as unset, so it returns a plain int — no
@@ -488,6 +510,11 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_SKIP_PLANNER_FOR_TRIVIAL=_get_bool_env(
             source, "SEARCH_SKIP_PLANNER_FOR_TRIVIAL", False
+        ),
+        SEARCH_GATE_JUDGE=_get_bool_env(source, "SEARCH_GATE_JUDGE", True),
+        SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
+        SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
+            source, "SEARCH_JUDGE_REASONING_EFFORT", default="low"
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),

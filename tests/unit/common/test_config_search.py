@@ -297,6 +297,46 @@ class TestSearchFailFastGateClamping:
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "two"})
 
 
+class TestJudgeSettings:
+    """The relevance-judge gate + model knobs parse, default, and validate."""
+
+    def test_gate_defaults_on(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_GATE_JUDGE is True
+
+    def test_gate_overridable_off(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_JUDGE": "false"})
+        assert settings.SEARCH_GATE_JUDGE is False
+
+    def test_judge_model_defaults_to_planner_model_openai(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_JUDGE_MODEL == "gpt-5.4-mini"
+
+    def test_judge_model_defaults_to_planner_model_ollama(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_OLLAMA_ENV)
+        assert settings.SEARCH_JUDGE_MODEL == "gemma3:12b"
+
+    def test_judge_model_overridable(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_MODEL": "gpt-5.4-nano"}
+        )
+        assert settings.SEARCH_JUDGE_MODEL == "gpt-5.4-nano"
+
+    def test_reasoning_effort_defaults_to_low(self, mocker) -> None:
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.SEARCH_JUDGE_REASONING_EFFORT == "low"
+
+    def test_reasoning_effort_overridable(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "high"}
+        )
+        assert settings.SEARCH_JUDGE_REASONING_EFFORT == "high"
+
+    def test_invalid_reasoning_effort_raises(self, mocker) -> None:
+        with pytest.raises(ValueError, match="SEARCH_JUDGE_REASONING_EFFORT"):
+            _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "lots"})
+
+
 class TestRelevanceTierThresholds:
     """The three relevance-badge cut-points parse, default, and validate."""
 

@@ -600,16 +600,14 @@ def test_relevance_tier_keys_are_config_only() -> None:
         assert key not in REINDEX_KEYS
 
 
-def test_config_keys_has_sixty_six_entries() -> None:
-    """CONFIG_KEYS is the 66-key config-table universe.
+def test_config_keys_has_sixty_nine_entries() -> None:
+    """CONFIG_KEYS is the 69-key config-table universe.
 
-    The fail-fast feature added four gate knobs and retired three weak-retrieval
-    knobs (net +1 over the previous 62, to 63); promoting the three
-    relevance-badge tier cut-points to editable config keys added three more, to
-    66."""
+    The relevance-judge feature added three keys (gate toggle + model +
+    reasoning effort) over the previous 66."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 66
+    assert len(CONFIG_KEYS) == 69
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
     assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS
@@ -619,6 +617,24 @@ def test_config_keys_has_sixty_six_entries() -> None:
     assert "SEARCH_RELEVANCE_TIER_GOOD" in CONFIG_KEYS
     assert "SEARCH_RELEVANCE_TIER_PARTIAL" in CONFIG_KEYS
     assert "SEARCH_MIN_QUERY_CHARS" in CONFIG_KEYS
+    assert "SEARCH_GATE_JUDGE" in CONFIG_KEYS
+    assert "SEARCH_JUDGE_MODEL" in CONFIG_KEYS
+    assert "SEARCH_JUDGE_REASONING_EFFORT" in CONFIG_KEYS
+
+
+def test_judge_keys_are_config_only() -> None:
+    """The judge gate + model knobs are persisted via the Settings API but are
+    neither secrets nor reindex keys — they change only the next search."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
+
+    for key in (
+        "SEARCH_GATE_JUDGE",
+        "SEARCH_JUDGE_MODEL",
+        "SEARCH_JUDGE_REASONING_EFFORT",
+    ):
+        assert key in CONFIG_KEYS
+        assert key not in SECRET_KEYS
+        assert key not in REINDEX_KEYS
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:
