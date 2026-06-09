@@ -61,25 +61,37 @@ class _CacheKey:
         filters: The authoritative UI filters, or None for an unfiltered query.
         index_version: A cheap stable signal of the indexed corpus state
             (``document_count:chunk_count``); a change invalidates prior keys.
+        asker: The sanitised asker identity, or None. Included so a personalised
+            answer for one user is never served to another (cross-user-leak
+            guard). Two users sending the identical query key to different entries
+            when an asker is set; None callers share one namespace.
     """
 
     normalised_query: str
     filters: SearchFilters | None
     index_version: str
+    asker: str | None = None
 
 
 def build_cache_key(
-    *, query: str, filters: SearchFilters | None, index_version: str
+    *,
+    query: str,
+    filters: SearchFilters | None,
+    index_version: str,
+    asker: str | None = None,
 ) -> _CacheKey:
     """Build a :class:`_CacheKey`, normalising the query.
 
     The query is whitespace-collapsed and case-folded so "Show My  Invoices"
-    and "show my invoices" share one entry.
+    and "show my invoices" share one entry. The *asker* is included verbatim so
+    a personalised answer for one user is never served to another — two users
+    sending the identical query map to different entries when an asker is set.
 
     Args:
         query: The raw user query.
         filters: The authoritative UI filters, or None.
         index_version: The ``document_count:chunk_count`` signal.
+        asker: The sanitised asker identity, or None for an anonymous query.
 
     Returns:
         The cache key.
@@ -89,6 +101,7 @@ def build_cache_key(
         normalised_query=normalised_query,
         filters=filters,
         index_version=index_version,
+        asker=asker,
     )
 
 
