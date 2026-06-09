@@ -12,6 +12,7 @@ const makeSource = (id: number, title: string): SourceDocument => ({
   snippet: `Snippet for document ${id}`,
   paperless_url: `https://paperless.example.com/documents/${id}/`,
   score: 0.9,
+  relevance_tier: 'strong',
   tags: [],
 });
 
@@ -71,6 +72,7 @@ describe('SourceList', () => {
         snippet: 'snippet',
         paperless_url: 'https://paperless.example.com/documents/11/',
         score: 0.9,
+        relevance_tier: 'strong' as const,
         tags: [],
       },
     ];

@@ -12,6 +12,7 @@ const SOURCE: SourceDocument = {
   snippet: 'Twelve direct debits of **£153.94** were collected.',
   paperless_url: 'https://paperless.example.com/documents/9823/',
   score: 0.92,
+  relevance_tier: 'strong',
   tags: ['Utilities', 'Energy'],
 };
 
@@ -72,9 +73,10 @@ describe('DocumentPreviewScreen', () => {
     expect(container.querySelectorAll('mark')).toHaveLength(1);
   });
 
-  it('shows the relevance score', () => {
+  it('shows the relevance badge', () => {
     renderPreview();
-    expect(screen.getByText(/0\.92/)).toBeInTheDocument();
+    // SOURCE has relevance_tier: 'strong' → RelevanceMeter renders "Strong match"
+    expect(screen.getByText('Strong match')).toBeInTheDocument();
   });
 
   it('offers a download link to the PDF proxy', () => {

@@ -13,7 +13,8 @@ Every function here is pure given its arguments: the store reader and the
 public base URL are passed in, not reached for, so the assembly is trivially
 testable and ``core`` keeps ownership of the collaborators.
 
-Allowed deps: search.models, store.models, store.reader, standard library.
+Allowed deps: search.models, search.relevance, store.models, store.reader,
+    standard library.
 Forbidden: no FastAPI, no MCP, no LLM/HTTP calls.
 """
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from search.models import RetrievedChunk, SourceDocument
+from search.relevance import RelevanceTier, relevance_tier
 
 if TYPE_CHECKING:
     from store.models import IndexedDocument
@@ -40,11 +42,12 @@ def assemble_sources(
 ) -> tuple[SourceDocument, ...]:
     """Build ranked SourceDocuments from the retrieved chunks.
 
-    Groups chunks by document (keeping each document's best fused score and a
-    snippet from its highest-scoring chunk), resolves correspondent and
-    document-type names via one ``get_documents`` look-up, and builds a
-    Paperless deep-link per document. Documents are ordered by score, highest
-    first.
+    Groups chunks by document (keeping each document's best fused score, a
+    snippet from its highest-scoring chunk, and its best absolute vector
+    similarity), resolves correspondent and document-type names via one
+    ``get_documents`` look-up, builds a Paperless deep-link, and derives the
+    qualitative relevance tier from the similarity. Documents are ordered by
+    score, highest first.
 
     Args:
         chunks: The fused chunks from retrieval (may be empty).
@@ -59,7 +62,7 @@ def assemble_sources(
     if not chunks:
         return ()
 
-    best_score, snippet = _best_chunk_per_document(chunks)
+    best_score, snippet, best_similarity = _best_chunk_per_document(chunks)
     document_ids = list(best_score.keys())
     indexed = store_reader.get_documents(document_ids)
     indexed_by_id = {document.id: document for document in indexed}
@@ -69,6 +72,7 @@ def assemble_sources(
             document_id=document_id,
             score=best_score[document_id],
             snippet=snippet[document_id],
+            tier=relevance_tier(best_similarity.get(document_id)),
             indexed=indexed_by_id.get(document_id),
             paperless_public_url=paperless_public_url,
         )
@@ -83,6 +87,7 @@ def _build_source(
     document_id: int,
     score: float,
     snippet: str,
+    tier: RelevanceTier,
     indexed: IndexedDocument | None,
     paperless_public_url: str,
 ) -> SourceDocument:
@@ -101,6 +106,7 @@ def _build_source(
         snippet=snippet,
         paperless_url=_paperless_url(paperless_public_url, document_id),
         score=score,
+        relevance_tier=tier,
     )
 
 
@@ -118,25 +124,38 @@ def _paperless_url(paperless_public_url: str, document_id: int) -> str:
 
 def _best_chunk_per_document(
     chunks: list[RetrievedChunk],
-) -> tuple[dict[int, float], dict[int, str]]:
-    """Reduce chunks to each document's best score and a display snippet.
+) -> tuple[dict[int, float], dict[int, str], dict[int, float | None]]:
+    """Reduce chunks to each document's best score, snippet, and similarity.
 
     A document may contribute several chunks; its source score is the highest
-    fused score among them and its snippet is drawn from that best chunk.
-    Iteration order does not matter — only a strict score comparison decides the
-    winner, so the reduction is deterministic.
+    fused score among them and its snippet is drawn from that best chunk. Its
+    similarity is the highest absolute vector similarity across its chunks —
+    tracked independently of the rrf_score winner, and ``None`` only when every
+    contributing chunk was keyword-only. Iteration order does not matter — only
+    strict comparisons decide the winners, so the reduction is deterministic.
 
     Returns:
-        A pair of ``{document_id: best_score}`` and ``{document_id: snippet}``.
+        A triple of ``{document_id: best_score}``, ``{document_id: snippet}``,
+        and ``{document_id: best_vector_similarity | None}``.
     """
     best_score: dict[int, float] = {}
     snippet: dict[int, str] = {}
+    best_similarity: dict[int, float | None] = {}
     for chunk in chunks:
         current = best_score.get(chunk.document_id)
         if current is None or chunk.rrf_score > current:
             best_score[chunk.document_id] = chunk.rrf_score
             snippet[chunk.document_id] = _snippet(chunk.text)
-    return best_score, snippet
+        sim = chunk.vector_similarity
+        if sim is not None:
+            prior = best_similarity.get(chunk.document_id)
+            if prior is None or sim > prior:
+                best_similarity[chunk.document_id] = sim
+        else:
+            # Ensure a keyword-only document still has an entry (None → the
+            # keyword-only tier default), without clobbering a real similarity.
+            best_similarity.setdefault(chunk.document_id, None)
+    return best_score, snippet, best_similarity
 
 
 def _snippet(text: str) -> str:

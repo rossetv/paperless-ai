@@ -5,6 +5,7 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { DocumentMeta } from '../../document/DocumentMeta/DocumentMeta';
 import { SnippetText } from '../../../components/primitives/SnippetText/SnippetText';
+import { RelevanceMeter } from '../../../components/primitives/RelevanceMeter/RelevanceMeter';
 import { documentThumbUrl } from '../../../api/client';
 import type { SourceDocument } from '../../../api/types';
 import { thumbKindForDocumentType } from '../../document/thumbKind';
@@ -77,7 +78,7 @@ function SourceCardInner({
         {/* Highlighted matched-content snippet */}
         <SnippetText text={source.snippet} />
 
-        {/* Actions row — preview + relevance */}
+        {/* Actions row — preview + the relevance badge */}
         <Stack direction="horizontal" gap={6} align="center" wrap>
           <Button
             variant="primary"
@@ -86,9 +87,7 @@ function SourceCardInner({
           >
             Preview
           </Button>
-          <Text as="span" variant="micro" tone="tertiary">
-            relevance · {source.score.toFixed(2)}
-          </Text>
+          <RelevanceMeter tier={source.relevance_tier} />
         </Stack>
       </Stack>
     </SourceCardSurface>
