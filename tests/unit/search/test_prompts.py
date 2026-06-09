@@ -265,7 +265,5 @@ class TestSynthesiserIdentity:
         assert msg.index("Vilmar Rosset") < msg.index("<<<DATA ")
 
     def test_synth_message_unchanged_when_no_asker(self) -> None:
-        msg = build_synthesiser_user_message(
-            query="q", labelled_chunks=[(1, "doc")]
-        )
+        msg = build_synthesiser_user_message(query="q", labelled_chunks=[(1, "doc")])
         assert "Vilmar" not in msg

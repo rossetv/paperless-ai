@@ -12,7 +12,6 @@ Verifies:
 from __future__ import annotations
 
 import atexit
-import json
 import os
 import tempfile
 
@@ -133,7 +132,7 @@ def test_mcp_middleware_sets_mcp_asker_from_api_key_owner() -> None:
     reset in the finally block and confirming contextvar state does not leak
     across requests.
     """
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import patch
 
     from starlette.testclient import TestClient
 
