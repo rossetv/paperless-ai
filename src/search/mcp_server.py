@@ -115,9 +115,7 @@ class _BearerAuthMiddleware:
         # _resolve_caller resolves the credential, runs blocking SQLite, and
         # returns (authenticated, display_name). Offloaded so MCP auth never
         # blocks the event loop per request (raw ASGI, no FastAPI auto-offload).
-        auth_result = await run_blocking(
-            lambda: self._resolve_caller(bearer, cookie)
-        )
+        auth_result = await run_blocking(lambda: self._resolve_caller(bearer, cookie))
 
         if not auth_result[0]:
             log.warning(

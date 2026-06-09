@@ -269,9 +269,7 @@ discrete sub-questions.  Leave the list empty for a straightforward query.
 """.strip()
 
 
-def build_planner_user_message(
-    query: str, today: str, asker: str | None = None
-) -> str:
+def build_planner_user_message(query: str, today: str, asker: str | None = None) -> str:
     """Assemble the planner user-role message: date, optional asker, then query.
 
     When *asker* is set, an identity line tells the planner who is asking so it
@@ -443,7 +441,7 @@ def build_synthesiser_user_message(
     # pre-identity behaviour (no identity injection).
     identity_directive = (
         f"\n\nThe person asking is {asker}. Resolve first-person references in "
-        "the question to them, and you may address them as \"you\". Do not "
+        'the question to them, and you may address them as "you". Do not '
         "gratuitously insert their name into the answer."
         if asker
         else ""

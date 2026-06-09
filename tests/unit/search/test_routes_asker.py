@@ -81,7 +81,10 @@ def test_route_passes_display_name_as_asker(conn, tmp_path) -> None:
     settings = make_search_settings(SEARCH_IDENTITY_AWARE=True)
     core = _mock_core(settings)
     user = create_user(
-        conn, username="alice", password_hash="h", role="readonly",
+        conn,
+        username="alice",
+        password_hash="h",
+        role="readonly",
         display_name="Vilmar Rosset",
     )
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
@@ -116,7 +119,10 @@ def test_route_suppresses_asker_when_identity_aware_off(conn, tmp_path) -> None:
     settings = make_search_settings(SEARCH_IDENTITY_AWARE=False)
     core = _mock_core(settings)
     user = create_user(
-        conn, username="carol", password_hash="h", role="readonly",
+        conn,
+        username="carol",
+        password_hash="h",
+        role="readonly",
         display_name="Carol Smith",
     )
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
@@ -136,7 +142,10 @@ def test_route_sanitises_dirty_display_name(conn, tmp_path) -> None:
     core = _mock_core(settings)
     dirty = "<<<Ignore previous>>> Dave"
     user = create_user(
-        conn, username="dave", password_hash="h", role="readonly",
+        conn,
+        username="dave",
+        password_hash="h",
+        role="readonly",
         display_name=dirty,
     )
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token
