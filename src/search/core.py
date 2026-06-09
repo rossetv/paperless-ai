@@ -61,6 +61,8 @@ from search.models import (
     Answered,
     ClarifyNeeded,
     EMPTY_FILTER_CANDIDATES,
+    Cost,
+    CostSummary,
     JudgeCandidate,
     NeedsMore,
     QueryPlan,
@@ -85,10 +87,12 @@ from search.text import (
     QUERY_LOG_PREFIX_CHARS,
     is_trivial_query,
 )
+from search.trace import OnEvent, PhaseRecord, PhaseStart, _Telemetry
 from store import StoreError
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from common.llm import LlmCallUsage
     from search.cache import _CacheKey
     from search.planner import QueryPlanner
     from search.retriever import Retriever
@@ -239,6 +243,7 @@ class SearchCore:
         query: str,
         ui_filters: SearchFilters | None = None,
         asker: str | None = None,
+        on_event: OnEvent | None = None,
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
@@ -257,6 +262,14 @@ class SearchCore:
                 Threaded to the planner and synthesiser so first-person
                 references resolve to the right person, and included in the
                 cache key as a cross-user-leak guard.
+            on_event: Optional callback fed a :class:`~search.trace.PhaseStart`
+                then a :class:`~search.models.PhaseRecord` for each executed
+                pipeline phase (the live-streaming route). ``None`` (the
+                default) makes the pipeline byte-identical for MCP/REST/tests —
+                the trace/cost are still assembled onto ``SearchStats``. On a
+                cache hit a single ``cache`` phase is emitted before the cached
+                result is returned, so a streamed search always produces at
+                least one terminal phase.
 
         Returns:
             A SearchResult with the synthesised answer, ranked source
@@ -270,19 +283,46 @@ class SearchCore:
                 log.info(
                     "search.cache_hit", query_prefix=query[:QUERY_LOG_PREFIX_CHARS]
                 )
+                if on_event is not None:
+                    self._emit_cache_phase(on_event, cached)
                 return cached
 
-        result = self._answer_uncached(query, ui_filters, asker)
+        result = self._answer_uncached(query, ui_filters, asker, on_event=on_event)
 
         if cache_key is not None and is_cacheable(result):
             cache.put(cache_key, result)
         return result
+
+    @staticmethod
+    def _emit_cache_phase(on_event: OnEvent, cached: SearchResult) -> None:
+        """Emit the synthetic ``cache`` phase for a cache hit.
+
+        A cache hit does no pipeline work, but a streamed search still needs a
+        terminal phase. This emits a ``PhaseStart`` then a zero-cost
+        ``PhaseRecord`` whose detail surfaces the *original* (now-saved) cost so
+        the SPA can show "served from cache (saved $X)".
+        """
+        on_event(PhaseStart(phase="cache", label="Served from cache"))
+        on_event(
+            PhaseRecord(
+                phase="cache",
+                label="Served from cache",
+                detail={
+                    "from_cache": True,
+                    "original_cost": _cost_dict(cached.stats.cost),
+                },
+                tokens=None,
+                cost=Cost(0.0, cached.stats.cost.local),
+                ms=0,
+            )
+        )
 
     def _answer_uncached(
         self,
         query: str,
         ui_filters: SearchFilters | None,
         asker: str | None = None,
+        on_event: OnEvent | None = None,
     ) -> SearchResult:
         """Run the bounded pipeline once, ignoring the cache.
 
@@ -309,35 +349,37 @@ class SearchCore:
           proceeds to synthesis.
         """
         started = time.monotonic()
+        tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
         judge_call = 1 if self._settings.SEARCH_GATE_JUDGE else 0
         budget = _LlmBudget(
             max_calls=2 + judge_call + self._settings.SEARCH_MAX_REFINEMENTS
         )
 
         # --- Layer 0: degenerate-input guard (spec §7.0) ---
+        # Emitted before any phase, so the trace is empty (no work was done).
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
             return self._clarify_result(
-                "query below SEARCH_MIN_QUERY_CHARS", budget, started
+                "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        plan_outcome = self._plan(query, budget, asker)
+        # --- Plan (Layer 1 lives inside the planner) ---
+        plan_outcome = self._plan_phase(query, budget, asker, tele)
         if isinstance(plan_outcome, ClarifyNeeded):
-            return self._clarify_result(plan_outcome.reason, budget, started)
+            return self._clarify_result(plan_outcome.reason, budget, started, tele)
         plan = plan_outcome
 
-        chunks, signal = self._retrieve_with_broaden(plan, ui_filters)
-
+        # --- Retrieve (broaden-and-retry once) ---
+        chunks, signal = self._retrieve_phase(plan, ui_filters, tele)
         if not chunks:
             log.info(
                 "search.no_matches",
                 query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
             )
-            return self._no_match_result(plan, budget, started)
+            return self._no_match_result(plan, budget, started, tele)
 
         # --- Layer 2: relevance gate (spec §7.2) ---
-        if self._settings.SEARCH_GATE_RELEVANCE and _is_irrelevant(
-            signal,
-            min_similarity=self._settings.SEARCH_RELEVANCE_MIN_SIMILARITY,
+        if self._settings.SEARCH_GATE_RELEVANCE and self._gate_rejects(
+            signal, chunks, tele
         ):
             log.info(
                 "search.synth_skipped_no_relevance",
@@ -345,17 +387,17 @@ class SearchCore:
                 best_vector_similarity=signal.best_vector_similarity,
                 has_keyword_hit=signal.has_keyword_hit,
             )
-            return self._no_match_result(plan, budget, started)
+            return self._no_match_result(plan, budget, started, tele)
 
         # --- Layer 3: document-relevance judge (cheap pre-synthesis screen) ---
-        filtered = self._judge_and_filter(query, chunks, budget)
+        filtered = self._judge_and_filter(query, chunks, budget, tele)
         if filtered is None:
             log.info("search.judge_bailed", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
-            return self._no_match_result(plan, budget, started)
+            return self._no_match_result(plan, budget, started, tele)
         chunks = filtered
 
         outcome = self._synthesise(
-            query, chunks, mode="exploratory", budget=budget, asker=asker
+            query, chunks, mode="exploratory", budget=budget, asker=asker, tele=tele
         )
 
         # Refine while the synthesiser still wants more context, up to the
@@ -378,6 +420,8 @@ class SearchCore:
                 budget,
                 mode="final" if is_last else "exploratory",
                 asker=asker,
+                tele=tele,
+                pass_number=refinements + 1,
             )
             refinements += 1
         refined = refinements > 0
@@ -391,7 +435,7 @@ class SearchCore:
         )
         sources = _cited_sources(sources, outcome)
         return self._build_result(
-            answer_text, sources, plan, budget, started, refined=refined
+            answer_text, sources, plan, budget, started, tele, refined=refined
         )
 
     def _cache_key(
@@ -434,6 +478,7 @@ class SearchCore:
         query: str,
         ui_filters: SearchFilters | None = None,
         asker: str | None = None,
+        on_event: OnEvent | None = None,
     ) -> SearchResult:
         """Plan and retrieve only — ranked sources, no synthesised answer.
 
@@ -447,42 +492,92 @@ class SearchCore:
             asker: Optional sanitised display name of the requesting user,
                 threaded to the planner so first-person references resolve
                 correctly in the query plan.
+            on_event: Optional per-phase event callback (plan + retrieve only,
+                no synthesis here). ``None`` keeps behaviour unchanged; the
+                trace/cost are assembled onto the result either way.
 
         Returns:
             A SearchResult whose ``answer`` is an empty string and whose
             ``sources`` are the ranked retrieved documents.
         """
         started = time.monotonic()
+        tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
         budget = _LlmBudget(max_calls=2 + self._settings.SEARCH_MAX_REFINEMENTS)
 
         # Layer 0: degenerate-input guard (spec §7.0) — same check as
         # _answer_uncached so callers always get consistent behaviour.
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
             return self._clarify_result(
-                "query below SEARCH_MIN_QUERY_CHARS", budget, started
+                "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        plan_outcome = self._plan(query, budget, asker)
+        plan_outcome = self._plan_phase(query, budget, asker, tele)
         if isinstance(plan_outcome, ClarifyNeeded):
-            return self._clarify_result(plan_outcome.reason, budget, started)
+            return self._clarify_result(plan_outcome.reason, budget, started, tele)
         plan = plan_outcome
 
         # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
-        chunks, _signal = self._retrieve_with_broaden(plan, ui_filters)
+        chunks, _signal = self._retrieve_phase(plan, ui_filters, tele)
         sources = assemble_sources(
             chunks,
             self._store_reader,
             self._settings.PAPERLESS_PUBLIC_URL,
             self._relevance_thresholds(),
         )
-        return self._build_result("", sources, plan, budget, started, refined=False)
+        return self._build_result(
+            "", sources, plan, budget, started, tele, refined=False
+        )
 
     # ------------------------------------------------------------------
     # Pipeline stages
     # ------------------------------------------------------------------
 
+    def _plan_phase(
+        self,
+        query: str,
+        budget: _LlmBudget,
+        asker: str | None,
+        tele: _Telemetry,
+    ) -> QueryPlan | ClarifyNeeded:
+        """Run the plan stage, emitting the ``plan`` phase with its detail.
+
+        Wraps :meth:`_plan` with the telemetry start/done pair, capturing the
+        planner call's token usage in a fresh sink (empty for the trivial-skip
+        path, which makes no LLM call). The detail carries the rewritten query,
+        the planner's resolved filter-candidate names, and whether the trivial
+        skip fired — the SPA renders these as the "Planning" step.
+        """
+        tele.start("plan", "Planning the query")
+        started = time.monotonic()
+        sink: list[LlmCallUsage] = []
+        skipped_trivial = (
+            self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query)
+        )
+        outcome = self._plan(query, budget, asker, usage_sink=sink)
+        plan = outcome if isinstance(outcome, QueryPlan) else None
+        tele.done(
+            "plan",
+            "Planning the query",
+            {
+                "rewritten_query": (
+                    plan.semantic_queries[0]
+                    if plan is not None and plan.semantic_queries
+                    else query
+                ),
+                "filters": _filter_detail(plan) if plan is not None else {},
+                "skipped_trivial": skipped_trivial,
+            },
+            usage_sink=sink,
+            started=started,
+        )
+        return outcome
+
     def _plan(
-        self, query: str, budget: _LlmBudget, asker: str | None = None
+        self,
+        query: str,
+        budget: _LlmBudget,
+        asker: str | None = None,
+        usage_sink: list[LlmCallUsage] | None = None,
     ) -> QueryPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
@@ -491,6 +586,9 @@ class SearchCore:
         the fallback-shaped trivial plan is used — retrieval still runs vector +
         FTS on the raw query, so nothing is lost (spec §4.6). The flag defaults
         off, preserving today's always-plan behaviour.
+
+        ``usage_sink``, when given, receives the planner call's token usage; the
+        trivial-skip path makes no LLM call and leaves it empty.
 
         Returns a ``QueryPlan`` in all normal and fallback cases, or a
         ``ClarifyNeeded`` when the planner's adequacy gate fires (Layer 1).
@@ -502,13 +600,74 @@ class SearchCore:
             )
             return trivial_plan(query)
         budget.record()
-        return self._planner.plan(query, asker=asker)
+        return self._planner.plan(query, asker=asker, usage_sink=usage_sink)
+
+    def _retrieve_phase(
+        self,
+        plan: QueryPlan,
+        ui_filters: SearchFilters | None,
+        tele: _Telemetry,
+    ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
+        """Run the retrieve stage, emitting the ``retrieve`` phase with counts.
+
+        Retrieval is not an LLM call, so the phase carries no tokens. The detail
+        reports the chunk and distinct-document counts and whether the broadened
+        (filter-dropped) second pass ran.
+        """
+        tele.start("retrieve", "Retrieving documents")
+        started = time.monotonic()
+        chunks, signal, broadened = self._retrieve_with_broaden(plan, ui_filters)
+        tele.done(
+            "retrieve",
+            "Retrieving documents",
+            {
+                "chunk_count": len(chunks),
+                "doc_count": len({c.document_id for c in chunks}),
+                "broadened": broadened,
+            },
+            usage_sink=[],
+            started=started,
+        )
+        return chunks, signal
+
+    def _gate_rejects(
+        self,
+        signal: RetrievalSignal,
+        chunks: list[RetrievedChunk],
+        tele: _Telemetry,
+    ) -> bool:
+        """Run the Layer-2 relevance gate, emitting the ``gate`` phase.
+
+        The gate is a BINARY aggregate decision over the retrieval signal — it
+        does not drop individual documents — so the detail reports the signal
+        and a single ``rejected`` boolean, never a per-document drop list (those
+        happen at the judge). Returns True when the signal is too weak to
+        synthesise from.
+        """
+        tele.start("gate", "Relevance gate")
+        started = time.monotonic()
+        min_similarity = self._settings.SEARCH_RELEVANCE_MIN_SIMILARITY
+        rejected = _is_irrelevant(signal, min_similarity=min_similarity)
+        tele.done(
+            "gate",
+            "Relevance gate",
+            {
+                "evaluated": len({c.document_id for c in chunks}),
+                "min_similarity": min_similarity,
+                "best_similarity": signal.best_vector_similarity,
+                "has_keyword_hit": signal.has_keyword_hit,
+                "rejected": rejected,
+            },
+            usage_sink=[],
+            started=started,
+        )
+        return rejected
 
     def _retrieve_with_broaden(
         self,
         plan: QueryPlan,
         ui_filters: SearchFilters | None,
-    ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
+    ) -> tuple[list[RetrievedChunk], RetrievalSignal, bool]:
         """Retrieve for *plan*; broaden and retry once if nothing is found.
 
         Resolves the plan's free-text filter candidates against the live
@@ -519,16 +678,17 @@ class SearchCore:
         call.
 
         Returns:
-            A 2-tuple ``(chunks, signal)`` where *signal* is from whichever
-            retrieval pass found chunks (or the broadened pass when the first
-            was empty).  The signal is forwarded to Layer 2 in
-            ``_answer_uncached``.
+            A 3-tuple ``(chunks, signal, broadened)`` where *signal* is from
+            whichever retrieval pass found chunks (or the broadened pass when
+            the first was empty) and *broadened* is True iff the second
+            (filter-dropped) pass ran. The signal is forwarded to Layer 2 and
+            *broadened* feeds the retrieve-phase detail.
         """
         facets = self._store_reader.list_facets()
         filters = resolve_filters(plan.filter_candidates, facets, ui_filters=ui_filters)
         chunks, signal = self._retriever.retrieve(plan, filters)
         if chunks:
-            return chunks, signal
+            return chunks, signal, False
 
         # Empty retrieval — drop the filters and try once more.
         broadened_plan = broaden_plan(plan)
@@ -537,7 +697,7 @@ class SearchCore:
         )
         log.info("search.retrieval_broadened")
         chunks, signal = self._retriever.retrieve(broadened_plan, broadened_filters)
-        return chunks, signal
+        return chunks, signal, True
 
     def _judge_candidates(self, chunks: list[RetrievedChunk]) -> list[JudgeCandidate]:
         """Reduce chunks to one document-level candidate each (best-chunk snippet).
@@ -563,20 +723,50 @@ class SearchCore:
         query: str,
         chunks: list[RetrievedChunk],
         budget: _LlmBudget,
+        tele: _Telemetry,
     ) -> list[RetrievedChunk] | None:
         """Judge the retrieved documents; return filtered chunks, or None to bail.
 
-        Returns chunks unchanged when the judge is disabled. Otherwise records
-        one budget call, asks the judge which documents are relevant, and:
-        bails (None) only on an explicit empty verdict; filters to surviving
-        documents otherwise; fails open (all chunks) if filtering keeps nothing.
+        Returns chunks unchanged when the judge is disabled (no ``judge`` phase
+        is emitted then). Otherwise records one budget call, asks the judge
+        which documents are relevant, emits the ``judge`` phase carrying the
+        per-document verdicts (capturing the call's token usage), and: bails
+        (None) only on an explicit empty verdict; filters to surviving documents
+        otherwise; fails open (all chunks) if filtering keeps nothing.
         """
         if not self._settings.SEARCH_GATE_JUDGE:
             return chunks
         candidates = self._judge_candidates(chunks)
+        tele.start("judge", "Judging relevance")
+        started = time.monotonic()
+        sink: list[LlmCallUsage] = []
         budget.record()
-        verdict = self._judge.judge(query, candidates)
-        if not verdict.relevant_document_ids and not verdict.degraded:
+        verdict = self._judge.judge(query, candidates, usage_sink=sink)
+        bailed = not verdict.relevant_document_ids and not verdict.degraded
+        tele.done(
+            "judge",
+            "Judging relevance",
+            {
+                "degraded": verdict.degraded,
+                "bailed": bailed,
+                "verdicts": [
+                    {
+                        "doc_id": dv.document_id,
+                        # Titles are not carried on RetrievedChunk; resolving
+                        # them here would cost an extra store read. The client
+                        # falls back to the source list for the title, so None
+                        # is the honest cheap value (plan §Task 10).
+                        "title": None,
+                        "keep": dv.keep,
+                        "reason": dv.reason,
+                    }
+                    for dv in verdict.verdicts
+                ],
+            },
+            usage_sink=sink,
+            started=started,
+        )
+        if bailed:
             return None
         kept = [c for c in chunks if c.document_id in verdict.relevant_document_ids]
         if not kept:
@@ -606,10 +796,29 @@ class SearchCore:
         mode: SearchMode,
         budget: _LlmBudget,
         asker: str | None = None,
+        tele: _Telemetry,
     ) -> Answered | NeedsMore:
-        """Run one synthesiser LLM call, recording it against the budget."""
+        """Run one synthesiser LLM call, emit the ``synthesise`` phase, budget it.
+
+        One ``synthesise`` phase is emitted per call (the exploratory pass and
+        each refinement pass), carrying the mode and whether the model asked for
+        more context, plus the call's token usage.
+        """
+        tele.start("synthesise", "Synthesising the answer")
+        started = time.monotonic()
+        sink: list[LlmCallUsage] = []
         budget.record()
-        return self._synthesizer.synthesise(query, chunks, mode=mode, asker=asker)
+        outcome = self._synthesizer.synthesise(
+            query, chunks, mode=mode, asker=asker, usage_sink=sink
+        )
+        tele.done(
+            "synthesise",
+            "Synthesising the answer",
+            {"mode": mode, "needs_more": isinstance(outcome, NeedsMore)},
+            usage_sink=sink,
+            started=started,
+        )
+        return outcome
 
     def _refine(
         self,
@@ -619,8 +828,11 @@ class SearchCore:
         needs_more: NeedsMore,
         previous_chunks: list[RetrievedChunk],
         budget: _LlmBudget,
+        *,
         mode: SearchMode,
         asker: str | None = None,
+        tele: _Telemetry,
+        pass_number: int,
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk]]:
         """Run one bounded refinement pass (spec §6.3).
 
@@ -630,6 +842,12 @@ class SearchCore:
         (which may return another ``NeedsMore`` to continue the loop) and the
         last allowed pass in ``"final"`` mode (which must answer or explicitly
         say "not found"), so the refinement loop always terminates.
+
+        Emits a ``refine`` marker phase (the 1-based pass number and the
+        adjustment hint; no tokens of its own) before re-synthesising — the
+        inner :meth:`_synthesise` emits its own ``synthesise`` phase with that
+        pass's token cost. The intra-pass retrieval is folded into the refine
+        marker rather than emitting a second ``retrieve`` phase.
 
         Args:
             query: The raw user query.
@@ -642,6 +860,8 @@ class SearchCore:
                 the last allowed pass.
             asker: Optional sanitised display name of the requesting user,
                 forwarded to the synthesiser for first-person resolution.
+            tele: The per-request telemetry accumulator.
+            pass_number: The 1-based refinement pass index, for the detail.
 
         Returns:
             A pair of the synthesiser outcome and the merged chunk list used as
@@ -652,10 +872,23 @@ class SearchCore:
             query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
             adjustment=needs_more.adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
         )
+        tele.start("refine", "Refining")
+        started = time.monotonic()
         adjusted_plan = adjust_plan(plan, needs_more.adjustment)
-        new_chunks, _signal = self._retrieve_with_broaden(adjusted_plan, ui_filters)
+        new_chunks, _signal, _broadened = self._retrieve_with_broaden(
+            adjusted_plan, ui_filters
+        )
         merged = merge_chunks(previous_chunks, new_chunks)
-        outcome = self._synthesise(query, merged, mode=mode, budget=budget, asker=asker)
+        tele.done(
+            "refine",
+            "Refining",
+            {"pass": pass_number, "adjustment": needs_more.adjustment},
+            usage_sink=[],
+            started=started,
+        )
+        outcome = self._synthesise(
+            query, merged, mode=mode, budget=budget, asker=asker, tele=tele
+        )
         return outcome, merged
 
     # ------------------------------------------------------------------
@@ -669,14 +902,22 @@ class SearchCore:
         plan: QueryPlan,
         budget: _LlmBudget,
         started: float,
+        tele: _Telemetry,
         *,
         refined: bool,
     ) -> SearchResult:
-        """Assemble the final SearchResult with execution statistics."""
+        """Assemble the final SearchResult with execution statistics.
+
+        The assembled per-phase trace and the whole-query cost summary from
+        *tele* ride on the :class:`SearchStats` so they are cacheable and reach
+        every consumer.
+        """
         stats = SearchStats(
             llm_calls=budget.count,
             latency_ms=_elapsed_ms(started),
             refined=refined,
+            trace=tele.trace(),
+            cost=tele.cost_summary(),
         )
         return SearchResult(answer=answer, sources=sources, plan=plan, stats=stats)
 
@@ -685,18 +926,22 @@ class SearchCore:
         plan: QueryPlan,
         budget: _LlmBudget,
         started: float,
+        tele: _Telemetry,
     ) -> SearchResult:
         """Build the no-hits SearchResult — no sources, no synthesis call.
 
         Used for both the empty-retrieval case (no chunks found at all) and the
         Layer-2 relevance-gate rejection (chunks found but signal too weak).
         The ``outcome_kind`` is ``"no_match"`` in both cases so callers and the
-        SPA can render a consistent "try rephrasing" state.
+        SPA can render a consistent "try rephrasing" state. The trace/cost
+        accumulated up to the short-circuit ride on the stats.
         """
         stats = SearchStats(
             llm_calls=budget.count,
             latency_ms=_elapsed_ms(started),
             refined=False,
+            trace=tele.trace(),
+            cost=tele.cost_summary(),
         )
         return SearchResult(
             answer=_NO_MATCHES_ANSWER,
@@ -711,6 +956,7 @@ class SearchCore:
         reason: str,
         budget: _LlmBudget,
         started: float,
+        tele: _Telemetry,
     ) -> SearchResult:
         """Build the Layer-1 adequacy-gate SearchResult.
 
@@ -726,6 +972,9 @@ class SearchCore:
             reason: The model's reason for the clarify signal (logged only).
             budget: The LLM budget tracker (reflects the one planner call).
             started: The monotonic timestamp when the request began.
+            tele: The per-request telemetry accumulator. For the Layer-0
+                degenerate-input clarify this has no phases (empty trace, zero
+                cost); for the Layer-1 planner clarify it carries the plan phase.
 
         Returns:
             A SearchResult with outcome_kind='clarify', the fixed answer, empty
@@ -747,6 +996,8 @@ class SearchCore:
             llm_calls=budget.count,
             latency_ms=_elapsed_ms(started),
             refined=False,
+            trace=tele.trace(),
+            cost=tele.cost_summary(),
         )
         return SearchResult(
             answer=_CLARIFY_ANSWER,
@@ -765,6 +1016,48 @@ class SearchCore:
 def _elapsed_ms(started: float) -> int:
     """Return whole milliseconds elapsed since the monotonic timestamp *started*."""
     return int((time.monotonic() - started) * 1000)
+
+
+def _cost_dict(cs: CostSummary) -> dict[str, object]:
+    """Flatten a :class:`CostSummary` to a JSON-friendly dict for a phase detail.
+
+    Used for the cache-hit phase's ``original_cost`` so the SPA can show what
+    the cached answer originally cost (and therefore what the cache hit saved).
+    """
+    return {
+        "tokens": {
+            "prompt": cs.tokens.prompt,
+            "completion": cs.tokens.completion,
+            "reasoning": cs.tokens.reasoning,
+            "total": cs.tokens.total,
+        },
+        "usd": cs.usd,
+        "local": cs.local,
+        "llm_calls": cs.llm_calls,
+    }
+
+
+def _filter_detail(plan: QueryPlan) -> dict[str, object]:
+    """Build the plan phase's ``filters`` detail from a plan's candidates.
+
+    Reports the planner's non-empty free-text filter-candidate *names* (the
+    human-readable guesses available at plan time), not the resolved taxonomy
+    ids — resolution to ids happens later, inside retrieval. Empty / None
+    candidates are omitted, so a plan with no filters yields ``{}``.
+    """
+    fc = plan.filter_candidates
+    detail: dict[str, object] = {}
+    if fc.correspondent is not None:
+        detail["correspondent"] = fc.correspondent
+    if fc.document_type is not None:
+        detail["document_type"] = fc.document_type
+    if fc.tags:
+        detail["tags"] = list(fc.tags)
+    if fc.date_from is not None:
+        detail["date_from"] = fc.date_from
+    if fc.date_to is not None:
+        detail["date_to"] = fc.date_to
+    return detail
 
 
 def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:
