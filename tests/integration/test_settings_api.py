@@ -203,6 +203,30 @@ def test_put_settings_rejects_an_invalid_value(admin_client) -> None:
     assert config_store.get(app_db, "CHUNK_SIZE") is None
 
 
+def test_put_settings_rejects_out_of_order_relevance_tiers(admin_client) -> None:
+    """A partial cut-point above the good cut-point breaks the badge ordering
+    invariant: 400, the message names the constraint, and nothing is persisted."""
+    client, app_db = admin_client
+    response = client.put(
+        "/api/settings",
+        json={"changes": {"SEARCH_RELEVANCE_TIER_PARTIAL": "0.95"}},
+    )
+    assert response.status_code == 400
+    assert "Relevance tiers must be ordered" in response.json()["detail"]
+    assert config_store.get(app_db, "SEARCH_RELEVANCE_TIER_PARTIAL") is None
+
+
+def test_put_settings_persists_a_valid_relevance_tier(admin_client) -> None:
+    """A valid tier change writes through and hot-loads like any config key."""
+    client, app_db = admin_client
+    response = client.put(
+        "/api/settings",
+        json={"changes": {"SEARCH_RELEVANCE_TIER_STRONG": "0.8"}},
+    )
+    assert response.status_code == 200
+    assert config_store.get(app_db, "SEARCH_RELEVANCE_TIER_STRONG") == "0.8"
+
+
 def test_put_settings_with_no_changes_is_a_clean_noop(admin_client) -> None:
     """An empty change set is a clean no-op: 200, the re-read list, and the
     config_version is not bumped (nothing was written)."""

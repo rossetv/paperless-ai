@@ -260,6 +260,44 @@ def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
     return value
 
 
+def _resolve_relevance_tiers(source: Mapping[str, str]) -> tuple[float, float, float]:
+    """Resolve and validate the three relevance-badge cut-points together.
+
+    Parses ``SEARCH_RELEVANCE_TIER_STRONG`` / ``_GOOD`` / ``_PARTIAL`` (defaults
+    0.70 / 0.66 / 0.60, calibrated against the live ``text-embedding-3-large`` @
+    3072-dim index) and enforces the badge invariant
+    ``0 ≤ partial ≤ good ≤ strong ≤ 1`` — each value is a vector similarity in
+    [0, 1], and the bands must not cross or a tier becomes unreachable. A value
+    outside the range, or one that breaks the ordering, raises ``ValueError``
+    naming the offending key so the Settings API surfaces a precise message
+    (fail-closed at config-build time, CODE_GUIDELINES §1.11). Equal adjacent
+    cut-points are allowed (they collapse a band rather than corrupt it).
+
+    Returns:
+        ``(strong, good, partial)`` — ready to unpack into the Settings fields.
+    """
+    strong = _get_float_env(source, "SEARCH_RELEVANCE_TIER_STRONG", 0.70)
+    good = _get_float_env(source, "SEARCH_RELEVANCE_TIER_GOOD", 0.66)
+    partial = _get_float_env(source, "SEARCH_RELEVANCE_TIER_PARTIAL", 0.60)
+
+    for key, value in (
+        ("SEARCH_RELEVANCE_TIER_STRONG", strong),
+        ("SEARCH_RELEVANCE_TIER_GOOD", good),
+        ("SEARCH_RELEVANCE_TIER_PARTIAL", partial),
+    ):
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"{key} must be between 0.0 and 1.0, got {value}.")
+
+    if not partial <= good <= strong:
+        raise ValueError(
+            "Relevance tiers must be ordered "
+            "SEARCH_RELEVANCE_TIER_PARTIAL <= SEARCH_RELEVANCE_TIER_GOOD <= "
+            f"SEARCH_RELEVANCE_TIER_STRONG, got partial={partial}, good={good}, "
+            f"strong={strong}."
+        )
+    return strong, good, partial
+
+
 def _resolve_server_port(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_SERVER_PORT`` to the valid TCP port range."""
     port = _get_int_env(source, "SEARCH_SERVER_PORT", 8080)

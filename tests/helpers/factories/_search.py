@@ -34,7 +34,7 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
-from search.relevance import RelevanceTier
+from search.relevance import RelevanceThresholds, RelevanceTier
 from store.models import (
     ChunkHit,
     FacetSet,
@@ -327,6 +327,18 @@ def _unique_app_db_path() -> str:
     return str(_APP_DB_TMP_DIR / f"app-{_app_db_counter}.db")
 
 
+def make_relevance_thresholds(
+    *, strong: float = 0.70, good: float = 0.66, partial: float = 0.60
+) -> RelevanceThresholds:
+    """Build a :class:`RelevanceThresholds` with the calibrated defaults.
+
+    Centralises the badge cut-points the source-assembly and relevance tests
+    pass, so the default triple lives in one place. Override a band to exercise
+    a custom configuration.
+    """
+    return RelevanceThresholds(strong=strong, good=good, partial=partial)
+
+
 def make_search_settings(**overrides: Any) -> Any:
     """Create a Settings-like MagicMock with every search-pipeline field set.
 
@@ -382,6 +394,12 @@ def make_search_settings(**overrides: Any) -> Any:
         # a real floor against a synthetic test index is brittle).  Tests that
         # exercise Layer 2 override with an explicit non-zero value.
         "SEARCH_RELEVANCE_MIN_SIMILARITY": 0.0,
+        # Relevance-badge cut-points — mirror the production defaults so the core
+        # builds a well-formed RelevanceThresholds (a bare MagicMock attribute
+        # would be a truthy mock, not a float, and break the comparison).
+        "SEARCH_RELEVANCE_TIER_STRONG": 0.70,
+        "SEARCH_RELEVANCE_TIER_GOOD": 0.66,
+        "SEARCH_RELEVANCE_TIER_PARTIAL": 0.60,
         "SEARCH_MIN_QUERY_CHARS": 2,
     }
     defaults.update(overrides)

@@ -55,6 +55,17 @@ export function NumberStepper({
 
   const clamp = (n: number): number => Math.min(max, Math.max(min, n));
 
+  // Snap to the step's decimal precision so repeated − / + on a fractional step
+  // (e.g. 0.01) cannot accumulate IEEE-754 dust like 0.7000000000000001 — which
+  // would display as 0.70 yet fail an exact downstream comparison. A no-op for
+  // integer steps (the default), so the existing whole-number fields are
+  // unaffected. Applied only to the button arithmetic; a typed value keeps the
+  // user's exact input.
+  const snapToStep = (n: number): number => {
+    const decimals = (String(step).split('.')[1] ?? '').length;
+    return decimals > 0 ? Number(n.toFixed(decimals)) : n;
+  };
+
   const emit = (n: number): void => {
     const clamped = clamp(n);
     onChange(clamped);
@@ -76,7 +87,7 @@ export function NumberStepper({
         type="button"
         aria-label={`Decrease ${label}`}
         disabled={disabled || value <= min}
-        onClick={() => emit(value - step)}
+        onClick={() => emit(snapToStep(value - step))}
         className={styles['button']}
       >
         −
@@ -106,7 +117,7 @@ export function NumberStepper({
         type="button"
         aria-label={`Increase ${label}`}
         disabled={disabled || value >= max}
-        onClick={() => emit(value + step)}
+        onClick={() => emit(snapToStep(value + step))}
         className={styles['button']}
       >
         +

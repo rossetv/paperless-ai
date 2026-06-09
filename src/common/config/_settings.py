@@ -38,6 +38,7 @@ from ._parsers import (
     _resolve_log_format,
     _resolve_ocr_image_detail,
     _resolve_ocr_reasoning_effort,
+    _resolve_relevance_tiers,
     _resolve_search_max_refinements,
     _resolve_search_reasoning_effort,
     _resolve_server_port,
@@ -224,6 +225,34 @@ class Settings:
     badges by its own similarity. Floored at ``≥ 0.0``; negative values are
     clamped to ``0.0``.
     """
+    SEARCH_RELEVANCE_TIER_STRONG: float
+    """Minimum absolute vector similarity for the "strong match" badge.
+
+    The relevance badge buckets a shown result by its best vector similarity
+    into one of four tiers: a similarity ``≥`` this value badges "strong",
+    ``≥ SEARCH_RELEVANCE_TIER_GOOD`` badges "good", ``≥
+    SEARCH_RELEVANCE_TIER_PARTIAL`` badges "partial", and anything lower badges
+    "weak". The defaults (0.70 / 0.66 / 0.60) are calibrated against the
+    ``text-embedding-3-large`` @ 3072-dim index. These cut-points are the
+    *badge* thresholds — deliberately independent of
+    ``SEARCH_RELEVANCE_MIN_SIMILARITY`` (the gate floor that decides what is
+    *shown*): the badge describes how good a shown result is. Validated as
+    ``0 ≤ partial ≤ good ≤ strong ≤ 1`` at config-build time; a violating value
+    is rejected naming the offending key.
+    """
+    SEARCH_RELEVANCE_TIER_GOOD: float
+    """Minimum absolute vector similarity for the "good match" badge.
+
+    See :attr:`SEARCH_RELEVANCE_TIER_STRONG`. Default ``0.66``. Must satisfy
+    ``SEARCH_RELEVANCE_TIER_PARTIAL ≤ this ≤ SEARCH_RELEVANCE_TIER_STRONG``.
+    """
+    SEARCH_RELEVANCE_TIER_PARTIAL: float
+    """Minimum absolute vector similarity for the "partial match" badge.
+
+    See :attr:`SEARCH_RELEVANCE_TIER_STRONG`. Default ``0.60``. A shown result
+    below this similarity badges "weak". Must satisfy ``0 ≤ this ≤
+    SEARCH_RELEVANCE_TIER_GOOD``.
+    """
     SEARCH_MIN_QUERY_CHARS: int
     """Minimum number of non-whitespace characters for a search query (Layer 0).
 
@@ -324,6 +353,10 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     # any trailing slash so callers can append paths cleanly.
     paperless_url = source.get("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
     paperless_public_url = source.get("PAPERLESS_PUBLIC_URL", paperless_url).rstrip("/")
+
+    # The three relevance-badge cut-points are validated together (range and
+    # ordering) so a misconfigured tier fails closed at config-build time.
+    tier_strong, tier_good, tier_partial = _resolve_relevance_tiers(source)
 
     return Settings(
         PAPERLESS_URL=paperless_url,
@@ -466,6 +499,11 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_RELEVANCE_MIN_SIMILARITY=max(
             0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.60)
         ),
+        # Badge cut-points (calibrated, validated together above). Independent of
+        # the gate floor: they describe how good a *shown* result is.
+        SEARCH_RELEVANCE_TIER_STRONG=tier_strong,
+        SEARCH_RELEVANCE_TIER_GOOD=tier_good,
+        SEARCH_RELEVANCE_TIER_PARTIAL=tier_partial,
         # Floored at 0 — a negative char floor disables the Layer-0 guard, same
         # as 0, so clamping matches the intent without refusing the daemon start.
         SEARCH_MIN_QUERY_CHARS=max(

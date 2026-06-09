@@ -235,6 +235,9 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 | `SEARCH_GATE_ADEQUACY` | Layer 1: let the planner return a "too vague, please clarify" outcome instead of a plan (no extra LLM call). | `true` |
 | `SEARCH_GATE_RELEVANCE` | Layer 2: skip synthesis and return "no matches" when retrieval is clearly irrelevant. | `true` |
 | `SEARCH_RELEVANCE_MIN_SIMILARITY` | Layer 2 floor: reject only when the best vector similarity is below this **and** there is no keyword hit. Calibrated (good ≥ 0.666, off-topic ≈ 0.567). | `0.60` |
+| `SEARCH_RELEVANCE_TIER_STRONG` | Relevance-badge cut-point: a shown result with similarity at or above this is labelled "Strong match". Independent of the gate floor; validated `partial ≤ good ≤ strong`. | `0.70` |
+| `SEARCH_RELEVANCE_TIER_GOOD` | Relevance-badge cut-point for "Good match". | `0.66` |
+| `SEARCH_RELEVANCE_TIER_PARTIAL` | Relevance-badge cut-point for "Partial match"; below it a shown result is labelled "Weak match". | `0.60` |
 
 For how the pipeline uses these — the per-query LLM-call budget, RRF fusion,
 filter resolution — see [The Search Server](search.md).

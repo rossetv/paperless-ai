@@ -72,6 +72,7 @@ function FieldControl({
           value={typeof value === 'number' ? value : 0}
           min={control.min}
           {...(control.max !== undefined ? { max: control.max } : {})}
+          {...(control.step !== undefined ? { step: control.step } : {})}
           {...(control.suffix !== undefined ? { suffix: control.suffix } : {})}
           onChange={(next) => onChange(next)}
         />

@@ -11,11 +11,16 @@
 // Control kinds
 // ---------------------------------------------------------------------------
 
-/** A − / + numeric control. `min`/`max` clamp; `suffix` is an optional unit. */
+/**
+ * A − / + numeric control. `min`/`max` clamp; `suffix` is an optional unit;
+ * `step` is the − / + increment (defaults to 1 — set a fraction like 0.01 for
+ * the [0, 1] similarity-threshold fields).
+ */
 export interface NumberControl {
   kind: 'number';
   min: number;
   max?: number;
+  step?: number;
   suffix?: string;
 }
 
