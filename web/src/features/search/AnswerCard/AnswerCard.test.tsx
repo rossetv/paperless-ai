@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SourceDocument, SearchStats } from '../../../api/types';
+import type { OutcomeKind } from '../../../api/types';
 import { AnswerCard } from './AnswerCard';
 
 const makeSource = (id: number): SourceDocument => ({
@@ -130,5 +131,85 @@ describe('AnswerCard', () => {
       />,
     );
     expect(screen.getByText(/refined once/i)).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Retry states — clarify and no_match
+// ---------------------------------------------------------------------------
+
+describe('AnswerCard retry states', () => {
+  const retryStats: SearchStats = { llm_calls: 1, latency_ms: 50, refined: false };
+
+  function renderRetry(outcomeKind: OutcomeKind, message: string) {
+    return render(
+      <AnswerCard
+        answer={message}
+        sources={[]}
+        stats={retryStats}
+        outcomeKind={outcomeKind}
+      />,
+    );
+  }
+
+  it('renders the nudge message for a clarify result', () => {
+    renderRetry(
+      'clarify',
+      'Could you be more specific? Try including a document type or date range.',
+    );
+    expect(
+      screen.getByText(/could you be more specific/i),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the what-to-try hint for a clarify result', () => {
+    renderRetry('clarify', 'Please be more specific.');
+    expect(
+      screen.getByText(/document type, date range, or correspondent/i),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT render a citations block for a clarify result', () => {
+    renderRetry('clarify', 'Please be more specific.');
+    // No "Synthesised from N sources" footer, no citation marks.
+    expect(screen.queryByText(/synthesised from/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /view source/i })).not.toBeInTheDocument();
+  });
+
+  it('renders the nudge message for a no_match result', () => {
+    renderRetry(
+      'no_match',
+      'No relevant documents were found. Try rephrasing your question.',
+    );
+    expect(
+      screen.getByText(/no relevant documents were found/i),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the what-to-try hint for a no_match result', () => {
+    renderRetry('no_match', 'No relevant documents found.');
+    expect(
+      screen.getByText(/rephrasing with different keywords/i),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT render a citations block for a no_match result', () => {
+    renderRetry('no_match', 'No relevant documents found.');
+    expect(screen.queryByText(/synthesised from/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /view source/i })).not.toBeInTheDocument();
+  });
+
+  it('still renders the answered state normally when outcomeKind is answered', () => {
+    render(
+      <AnswerCard
+        answer="The boiler was installed in 2021 [1]."
+        sources={[makeSource(1)]}
+        stats={retryStats}
+        outcomeKind="answered"
+      />,
+    );
+    // Normal AnswerSurface renders the provenance footer.
+    expect(screen.getByText(/1 source/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /view source 1/i })).toBeInTheDocument();
   });
 });

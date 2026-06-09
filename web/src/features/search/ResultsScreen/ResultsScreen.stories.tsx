@@ -38,6 +38,7 @@ const RESPONSE: SearchResponse = {
     sub_questions: [],
   },
   stats: { llm_calls: 3, latency_ms: 1842, refined: true },
+  outcome_kind: 'answered',
 };
 
 /**

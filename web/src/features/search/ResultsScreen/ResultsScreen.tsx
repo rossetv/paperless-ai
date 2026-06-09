@@ -68,7 +68,8 @@ export function ResultsScreen({
   onPreview,
   highlightedIndex,
 }: ResultsScreenProps): React.ReactElement {
-  const { answer, sources, plan, stats } = result;
+  const { answer, sources, plan, stats, outcome_kind } = result;
+  const isAnswered = outcome_kind === 'answered';
 
   /**
    * Handles a citation activation: highlights the source card AND opens its
@@ -108,33 +109,41 @@ export function ResultsScreen({
           onClearAll={onClearFilters}
         />
 
-        {/* Synthesised answer. */}
+        {/* Synthesised answer — or a retry nudge for clarify/no_match. */}
         <AnswerCard
           answer={answer}
           sources={sources}
           stats={stats}
+          outcomeKind={outcome_kind}
           onCitationActivate={handleCitationActivate}
         />
 
-        {/* Sources — a real heading carries the role; sub-heading is the
-            22 px display variant matching the design (MAJOR 2). The caption
-            sits alongside as a sibling, not inside the <h2>. */}
-        <Stack direction="horizontal" gap={6} align="baseline">
-          <h2 className={styles['sources-heading']}>
-            <Text as="span" variant="sub-heading">
-              Sources
-            </Text>
-          </h2>
-          <Text as="span" variant="caption" tone="tertiary">
-            the documents that grounded the answer above
-          </Text>
-        </Stack>
+        {/* Sources block — only when the pipeline actually answered. For
+            clarify/no_match the sources array is empty and the nudge card
+            already explains what to do, so the section would be meaningless. */}
+        {isAnswered && (
+          <>
+            {/* Sources — a real heading carries the role; sub-heading is the
+                22 px display variant matching the design (MAJOR 2). The caption
+                sits alongside as a sibling, not inside the <h2>. */}
+            <Stack direction="horizontal" gap={6} align="baseline">
+              <h2 className={styles['sources-heading']}>
+                <Text as="span" variant="sub-heading">
+                  Sources
+                </Text>
+              </h2>
+              <Text as="span" variant="caption" tone="tertiary">
+                the documents that grounded the answer above
+              </Text>
+            </Stack>
 
-        <SourceList
-          sources={sources}
-          onPreview={onPreview}
-          {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}
-        />
+            <SourceList
+              sources={sources}
+              onPreview={onPreview}
+              {...(highlightedIndex !== undefined ? { highlightedIndex } : {})}
+            />
+          </>
+        )}
 
         {/* Query-plan transparency. */}
         <QueryPlanSummary plan={plan} stats={stats} />

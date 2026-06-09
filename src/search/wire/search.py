@@ -11,7 +11,7 @@ Forbidden: FastAPI, sqlite3, any I/O.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -143,6 +143,16 @@ class SearchResponse(BaseModel):
     sources: list[SourceDocumentResponse]
     plan: QueryPlanResponse
     stats: SearchStatsResponse
+    outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
+    """Discriminator for the result type (spec §7.1).
+
+    ``"answered"`` — the synthesiser produced a full answer with sources.
+    ``"clarify"``  — the query was too vague; the answer carries a nudge
+                     message and sources is empty (Layer 1 fail-fast).
+    ``"no_match"`` — retrieval was too weak to synthesise from; the answer
+                     carries a nudge message and sources is empty (Layer 2
+                     fail-fast).
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -213,4 +223,10 @@ def to_search_response(result: SearchResult) -> SearchResponse:
         latency_ms=result.stats.latency_ms,
         refined=result.stats.refined,
     )
-    return SearchResponse(answer=result.answer, sources=sources, plan=plan, stats=stats)
+    return SearchResponse(
+        answer=result.answer,
+        sources=sources,
+        plan=plan,
+        stats=stats,
+        outcome_kind=result.outcome_kind,
+    )
