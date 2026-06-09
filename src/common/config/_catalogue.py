@@ -99,6 +99,9 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_RELEVANCE_TIER_GOOD",
         "SEARCH_RELEVANCE_TIER_PARTIAL",
         "SEARCH_MIN_QUERY_CHARS",
+        "SEARCH_GATE_JUDGE",
+        "SEARCH_JUDGE_MODEL",
+        "SEARCH_JUDGE_REASONING_EFFORT",
     }
 )
 

@@ -289,6 +289,7 @@ def _resolve_components(
 
     from common.embeddings import EmbeddingClient
     from search.core import SearchCore
+    from search.judge import RelevanceJudge
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
@@ -305,6 +306,7 @@ def _resolve_components(
             QueryPlanner(settings),
             retriever,
             Synthesizer(settings),
+            RelevanceJudge(settings),
         )
     return core, store_reader
 

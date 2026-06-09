@@ -39,6 +39,7 @@ from unittest.mock import MagicMock
 
 from indexer.reconciler import Reconciler
 from search.core import SearchCore
+from search.judge import RelevanceJudge
 from search.planner import QueryPlanner
 from search.retriever import Retriever
 from search.synthesizer import Synthesizer
@@ -186,6 +187,11 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_RELEVANCE_TIER_GOOD = 0.66
     settings.SEARCH_RELEVANCE_TIER_PARTIAL = 0.60
     settings.SEARCH_MIN_QUERY_CHARS = 2
+    # Judge OFF by default in e2e (a real extra LLM call); the judge-specific
+    # e2e test opts in explicitly.
+    settings.SEARCH_GATE_JUDGE = False
+    settings.SEARCH_JUDGE_MODEL = "gpt-5.4-mini"
+    settings.SEARCH_JUDGE_REASONING_EFFORT = "low"
     return settings
 
 
@@ -310,12 +316,15 @@ def _build_search_core(
     retriever = Retriever(settings, store_reader, query_embedding_client)
     synthesizer = Synthesizer(settings)
     synthesizer._create_completion = llm_client.route  # type: ignore[method-assign]
+    judge = RelevanceJudge(settings)
+    judge._create_completion = llm_client.route  # type: ignore[method-assign]
     return SearchCore(
         settings=settings,
         store_reader=store_reader,
         planner=planner,
         retriever=retriever,
         synthesizer=synthesizer,
+        judge=judge,
     )
 
 
