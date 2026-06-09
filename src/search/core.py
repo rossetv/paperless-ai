@@ -386,7 +386,7 @@ class SearchCore:
         """
         facets = self._store_reader.list_facets()
         filters = resolve_filters(plan.filter_candidates, facets, ui_filters=ui_filters)
-        chunks = self._retriever.retrieve(plan, filters)
+        chunks, _signal = self._retriever.retrieve(plan, filters)
         if chunks:
             return chunks
 
@@ -396,7 +396,8 @@ class SearchCore:
             broadened_plan.filter_candidates, facets, ui_filters=None
         )
         log.info("search.retrieval_broadened")
-        return self._retriever.retrieve(broadened_plan, broadened_filters)
+        chunks, _signal = self._retriever.retrieve(broadened_plan, broadened_filters)
+        return chunks
 
     def _synthesise(
         self,
