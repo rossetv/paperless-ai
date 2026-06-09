@@ -186,6 +186,11 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_RELEVANCE_TIER_GOOD = 0.66
     settings.SEARCH_RELEVANCE_TIER_PARTIAL = 0.60
     settings.SEARCH_MIN_QUERY_CHARS = 2
+    # Judge OFF by default in e2e (a real extra LLM call); the judge-specific
+    # e2e test opts in explicitly.
+    settings.SEARCH_GATE_JUDGE = False
+    settings.SEARCH_JUDGE_MODEL = "gpt-5.4-mini"
+    settings.SEARCH_JUDGE_REASONING_EFFORT = "low"
     return settings
 
 

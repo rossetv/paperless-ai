@@ -27,6 +27,8 @@ from typing import Any
 from search.models import (
     Answered,
     FilterCandidates,
+    JudgeCandidate,
+    JudgeVerdict,
     NeedsMore,
     QueryPlan,
     RetrievedChunk,
@@ -339,6 +341,21 @@ def make_relevance_thresholds(
     return RelevanceThresholds(strong=strong, good=good, partial=partial)
 
 
+def make_judge_candidate(
+    *, document_id: int = 1, snippet: str = "candidate snippet"
+) -> JudgeCandidate:
+    """Build a JudgeCandidate for judge/core tests."""
+    return JudgeCandidate(document_id=document_id, snippet=snippet)
+
+
+def make_judge_verdict(
+    *, relevant_document_ids: set[int] | None = None, degraded: bool = False
+) -> JudgeVerdict:
+    """Build a JudgeVerdict; defaults to keeping document 1."""
+    ids = frozenset(relevant_document_ids if relevant_document_ids is not None else {1})
+    return JudgeVerdict(relevant_document_ids=ids, degraded=degraded)
+
+
 def make_search_settings(**overrides: Any) -> Any:
     """Create a Settings-like MagicMock with every search-pipeline field set.
 
@@ -401,6 +418,13 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_RELEVANCE_TIER_GOOD": 0.66,
         "SEARCH_RELEVANCE_TIER_PARTIAL": 0.60,
         "SEARCH_MIN_QUERY_CHARS": 2,
+        # The judge defaults ON in production, but OFF here so existing core
+        # tests keep their exact LLM-call-count assertions (it is a real extra
+        # LLM call). Judge tests opt in with SEARCH_GATE_JUDGE=True and a scripted
+        # judge_response, mirroring SEARCH_RELEVANCE_MIN_SIMILARITY=0.0.
+        "SEARCH_GATE_JUDGE": False,
+        "SEARCH_JUDGE_MODEL": "gpt-5.4-mini",
+        "SEARCH_JUDGE_REASONING_EFFORT": "low",
     }
     defaults.update(overrides)
     settings = MagicMock()
