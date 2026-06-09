@@ -108,6 +108,11 @@ def needs_more_response_json(adjustment: str) -> str:
     return json.dumps({"outcome": "needs_more", "adjustment": adjustment})
 
 
+def judge_response_json(relevant_document_ids: list[int]) -> str:
+    """Return a well-formed relevance-judge JSON response."""
+    return json.dumps({"relevant_document_ids": relevant_document_ids})
+
+
 class ScriptedLLMClient:
     """A scripted driver for ``_create_completion`` across both LLM stages.
 
@@ -131,16 +136,19 @@ class ScriptedLLMClient:
         self,
         planner_response: str,
         synthesiser_responses: list[str],
+        judge_response: str | None = None,
     ) -> None:
         self._planner_response = planner_response
         self._synthesiser_responses = synthesiser_responses
+        self._judge_response = judge_response
         self.planner_calls = 0
         self.synthesiser_calls = 0
+        self.judge_calls = 0
 
     @property
     def total_calls(self) -> int:
-        """Total LLM chat calls made — planner plus synthesiser."""
-        return self.planner_calls + self.synthesiser_calls
+        """Total LLM chat calls — planner plus judge plus synthesiser."""
+        return self.planner_calls + self.judge_calls + self.synthesiser_calls
 
     def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
         """Stand-in for ``OpenAIChatMixin._create_completion``.
@@ -153,6 +161,14 @@ class ScriptedLLMClient:
         if "search-query planning engine" in system:
             self.planner_calls += 1
             return make_chat_completion(self._planner_response)
+
+        if "document-relevance judge" in system:
+            self.judge_calls += 1
+            if self._judge_response is None:
+                raise AssertionError(
+                    "judge call made but no judge_response was scripted"
+                )
+            return make_chat_completion(self._judge_response)
 
         # Anything else is a synthesiser call.
         self.synthesiser_calls += 1

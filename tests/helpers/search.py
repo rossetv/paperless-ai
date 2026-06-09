@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from search.core import SearchCore
+from search.judge import RelevanceJudge
 from search.planner import QueryPlanner
 from search.retriever import Retriever
 from search.synthesizer import Synthesizer
@@ -50,12 +51,15 @@ def build_search_core(
     retriever = Retriever(settings, store_reader, embedding_client)
     synthesizer = Synthesizer(settings)
     synthesizer._create_completion = llm_client.route  # type: ignore[method-assign]
+    judge = RelevanceJudge(settings)
+    judge._create_completion = llm_client.route  # type: ignore[method-assign]
     return SearchCore(
         settings=settings,
         store_reader=store_reader,
         planner=planner,
         retriever=retriever,
         synthesizer=synthesizer,
+        judge=judge,
     )
 
 
