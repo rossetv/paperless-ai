@@ -17,7 +17,6 @@ Allowed deps: fastapi, structlog, common (paperless, config), search (deps,
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -25,6 +24,7 @@ import structlog
 from fastapi import APIRouter, Depends
 
 from search.deps import require_api_scope, require_api_scope_member
+from search.offload import run_blocking
 from search.wire import (
     TaxonomyCreateRequest,
     TaxonomyItemResponse,
@@ -62,10 +62,9 @@ def register_taxonomy_routes(
 
         Auth: Read-only or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            items = await loop.run_in_executor(None, paperless.list_correspondents)
+            items = await run_blocking(paperless.list_correspondents)
         finally:
             paperless.close()
         return [paperless_item_to_response(i) for i in items]
@@ -80,11 +79,10 @@ def register_taxonomy_routes(
 
         Auth: Member or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            created = await loop.run_in_executor(
-                None, lambda: paperless.create_correspondent(body.name)
+            created = await run_blocking(
+                lambda: paperless.create_correspondent(body.name)
             )
         finally:
             paperless.close()
@@ -99,10 +97,9 @@ def register_taxonomy_routes(
 
         Auth: Read-only or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            items = await loop.run_in_executor(None, paperless.list_document_types)
+            items = await run_blocking(paperless.list_document_types)
         finally:
             paperless.close()
         return [paperless_item_to_response(i) for i in items]
@@ -117,11 +114,10 @@ def register_taxonomy_routes(
 
         Auth: Member or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            created = await loop.run_in_executor(
-                None, lambda: paperless.create_document_type(body.name)
+            created = await run_blocking(
+                lambda: paperless.create_document_type(body.name)
             )
         finally:
             paperless.close()
@@ -136,10 +132,9 @@ def register_taxonomy_routes(
 
         Auth: Read-only or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            items = await loop.run_in_executor(None, paperless.list_tags)
+            items = await run_blocking(paperless.list_tags)
         finally:
             paperless.close()
         return [paperless_item_to_response(i) for i in items]
@@ -154,12 +149,9 @@ def register_taxonomy_routes(
 
         Auth: Member or above.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            created = await loop.run_in_executor(
-                None, lambda: paperless.create_tag(body.name)
-            )
+            created = await run_blocking(lambda: paperless.create_tag(body.name))
         finally:
             paperless.close()
         return paperless_item_to_response(created)

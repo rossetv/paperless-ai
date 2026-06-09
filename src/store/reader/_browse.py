@@ -26,6 +26,7 @@ import structlog
 from store.migrations import StoreError
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 from store.reader._filters import build_browse_where
+from store.reader._lookups import _names_for_tag_ids
 
 log = structlog.get_logger(__name__)
 
@@ -164,9 +165,7 @@ def list_documents(
                 tag_ids = []
         else:
             tag_ids = []
-        tag_names = tuple(
-            tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
-        )
+        tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)
         documents.append(
             DocumentSummary(
                 id=row["id"],

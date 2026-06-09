@@ -6,7 +6,6 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
-import { cn } from '../../../lib/cn';
 import { useApiKeys, useDeleteApiKey } from '../../../api/hooks';
 import { useAuth } from '../../../hooks/useAuth';
 import type { ApiKey } from '../../../api/types';
@@ -227,7 +226,7 @@ export function APIKeysScreen(): React.ReactElement {
             isRowMuted={(k) => keyStateOf(k) !== 'active'}
             emptyMessage="No API keys match the current filter."
           />
-          <p className={cn(styles['note'])}>
+          <p className={styles['note']}>
             The full key is shown once at creation. After that only the prefix
             is stored. {'Pass an active key as Authorization: Bearer <key>.'}
           </p>

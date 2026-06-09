@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { IconButton } from '../../primitives/IconButton/IconButton';
 import { FormField } from '../../primitives/FormField/FormField';
@@ -68,10 +68,7 @@ export function SearchField({
   const isControlled = value !== undefined;
   const currentValue = isControlled ? value : internalValue;
 
-  // Auto-generate an id for the label association when not passed a stable one.
-  // In practice the caller always passes id, but the hook makes the code safe.
-  const autoId = useId();
-  const inputId = id ?? autoId;
+  const inputId = id;
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>): void {
     if (!isControlled) {

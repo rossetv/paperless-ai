@@ -18,7 +18,6 @@ import type {
   FilterRequest,
   TaxonomyEntry,
 } from '../../../api/types';
-import { cn } from '../../../lib/cn';
 import styles from './LibraryScreen.module.css';
 
 /**
@@ -106,14 +105,12 @@ export function LibraryScreen(): React.ReactElement {
   }
 
   function clearAllFilters(): void {
-    setQuery({
-      ...query,
+    applyFilters({
       correspondent_id: null,
       document_type_id: null,
       tag_ids: [],
       date_from: null,
       date_to: null,
-      page: 1,
     });
   }
 
@@ -284,7 +281,7 @@ export function LibraryScreen(): React.ReactElement {
         ) : (
           <>
             <div
-              className={cn(view === 'grid' ? styles['grid'] : styles['list'])}
+              className={view === 'grid' ? styles['grid'] : styles['list']}
               data-view={view}
             >
               {(documents.data?.documents ?? []).map((doc) => (
