@@ -14,22 +14,26 @@ Two public methods, both pure-library (no FastAPI, no MCP — CODE_GUIDELINES
   synthesised answer.  Used by the MCP ``search_documents`` tool, where the
   calling agent does its own synthesis and the saved LLM call matters.
 
-The hard LLM-call ceiling
--------------------------
-Spec §6.3 and CODE_GUIDELINES §14.3 mandate a guaranteed ceiling of **three**
-LLM (chat) calls per query: one planner call plus at most two synthesiser
-calls.  The query embedding is not a chat call and is not counted (spec §6.5).
+The per-query LLM-call budget
+-----------------------------
+The number of LLM (chat) calls per query is not a fixed ceiling: it follows
+``SEARCH_MAX_REFINEMENTS`` — one planner call, one exploratory synthesise, and
+one synthesise per refinement pass, i.e. ``2 + SEARCH_MAX_REFINEMENTS``. The
+operator sets the refinement count from the UI with no hard cap, so cost and
+latency scale linearly with it. The query embedding is not a chat call and is
+not counted (spec §6.5).
 
-The ceiling is enforced two ways, belt and braces:
+The budget is enforced two ways, belt and braces:
 
 1. *Structurally* — ``answer`` makes the planner call once, the exploratory
-   synthesise once, and the refinement's final synthesise at most once; there
-   is no loop that can issue a fourth call.
+   synthesise once, and then loops the refinement synthesise at most
+   ``SEARCH_MAX_REFINEMENTS`` times; the loop counter bounds it.
 2. *Defensively* — every LLM stage is invoked through :class:`_LlmBudget`,
    whose ``record`` increments a counter and raises
-   :class:`~search.errors.LlmBudgetExceededError` if it ever exceeds
-   ``_MAX_LLM_CALLS``.  A logic regression that tried a fourth call would fail
-   loudly here rather than silently overspending (CODE_GUIDELINES §1.11).
+   :class:`~search.errors.LlmBudgetExceededError` if it ever exceeds the
+   per-query limit (``2 + SEARCH_MAX_REFINEMENTS``).  A logic regression that
+   tried an extra call would fail loudly here rather than silently overspending
+   (CODE_GUIDELINES §1.11).
 
 Allowed deps: search (models, errors, planner, retriever, synthesizer,
     refinement), store (reader, models), common.config.
@@ -90,12 +94,13 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The guaranteed per-query LLM-call ceiling (spec §6.3, CODE_GUIDELINES §14.3):
-# 1 planner + 1 exploratory synthesise + 1 refinement synthesise; answer()
-# performs at most one refinement regardless of SEARCH_MAX_REFINEMENTS.
-# Raising this is a security-review point — it bounds per-request cost on a
-# billable endpoint.
-_MAX_LLM_CALLS = 3
+# The per-query LLM-call budget is NOT a fixed ceiling — it follows
+# SEARCH_MAX_REFINEMENTS: 1 planner + 1 exploratory synthesise + one synthesise
+# per refinement pass = 2 + SEARCH_MAX_REFINEMENTS. The operator sets the
+# refinement count from the UI with no hard cap; _LlmBudget still enforces the
+# resulting per-request limit as a defensive backstop against a logic
+# regression overspending on a billable endpoint. Cost and latency scale
+# linearly with the setting.
 
 # Shown as the answer when retrieval yields nothing or Layer 2 rejects the
 # signal (spec §6.3, §11).  A no-hits or irrelevant-signal query
@@ -118,23 +123,26 @@ _CLARIFY_ANSWER = (
 
 
 class _LlmBudget:
-    """A monotonically-increasing counter enforcing the 3-LLM-call ceiling.
+    """A monotonically-increasing counter enforcing the per-query LLM-call limit.
 
-    Every LLM chat call in the pipeline is recorded here *before* it is made —
-    recording first is what lets ``record`` refuse a call that would breach the
-    ceiling, the defensive half of the guarantee (see the module docstring).
-    A consequence is that ``count`` is the number of calls *attempted*, not
-    necessarily billed: a stage that degrades to its fallback because every
-    model failed (returning no content, with no successful API call) is still
-    counted. ``SearchStats.llm_calls`` therefore reports attempts; on a fully
-    successful query attempts equal billable calls.
+    The limit is not fixed: it is ``2 + SEARCH_MAX_REFINEMENTS`` (1 planner +
+    1 exploratory synthesise + one synthesise per refinement pass), passed in at
+    construction. Every LLM chat call in the pipeline is recorded here *before*
+    it is made — recording first is what lets ``record`` refuse a call that
+    would breach the limit, the defensive backstop against a logic regression
+    overspending on a billable endpoint. ``count`` is the number of calls
+    *attempted*, not necessarily billed: a stage that degrades to its fallback
+    because every model failed (returning no content, with no successful API
+    call) is still counted. ``SearchStats.llm_calls`` therefore reports
+    attempts; on a fully successful query attempts equal billable calls.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_calls: int) -> None:
         self.count = 0
+        self.max_calls = max_calls
 
     def record(self) -> None:
-        """Register one LLM chat call; fail loud if the ceiling is breached.
+        """Register one LLM chat call; fail loud if the limit is breached.
 
         An explicit ``raise`` is used rather than ``assert`` — an ``assert`` is
         stripped under ``python -O``, which would silently disable this cost
@@ -143,16 +151,17 @@ class _LlmBudget:
 
         Raises:
             LlmBudgetExceededError: If recording this call would exceed the
-                hard ceiling of three LLM calls per query.  This is
+                per-query limit (``2 + SEARCH_MAX_REFINEMENTS``). This is
                 unreachable by ``SearchCore``'s own loop logic; it guards
                 against a future regression silently overspending
                 (CODE_GUIDELINES §1.11).
         """
         self.count += 1
-        if self.count > _MAX_LLM_CALLS:
+        if self.count > self.max_calls:
             raise LlmBudgetExceededError(
-                f"LLM-call ceiling breached: {self.count} calls made, "
-                f"the hard limit is {_MAX_LLM_CALLS} (spec §6.3)."
+                f"LLM-call limit breached: {self.count} calls made, "
+                f"the per-query limit is {self.max_calls} "
+                f"(2 + SEARCH_MAX_REFINEMENTS)."
             )
 
 
@@ -251,12 +260,12 @@ class SearchCore:
     ) -> SearchResult:
         """Run the bounded pipeline once, ignoring the cache.
 
-        The original ``answer`` body — the hard-bounded loop of spec §6.3: plan,
+        The original ``answer`` body — the bounded loop of spec §6.3: plan,
         resolve filters, retrieve, broaden-and-retry once if retrieval is empty,
-        synthesise once, and — if the synthesiser asks for more and the
-        refinement budget allows — adjust, retrieve again, merge, and synthesise
-        a final time. At most three LLM calls are ever made (see the module
-        docstring).
+        synthesise once, and — while the synthesiser asks for more and the
+        refinement budget allows — adjust, retrieve again, merge, and
+        re-synthesise. At most ``2 + SEARCH_MAX_REFINEMENTS`` LLM calls are made
+        (see the module docstring).
 
         Three fail-fast gates sit at the front of the pipeline (spec §7):
 
@@ -274,7 +283,7 @@ class SearchCore:
           proceeds to synthesis.
         """
         started = time.monotonic()
-        budget = _LlmBudget()
+        budget = _LlmBudget(max_calls=2 + self._settings.SEARCH_MAX_REFINEMENTS)
 
         # --- Layer 0: degenerate-input guard (spec §7.0) ---
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
@@ -310,13 +319,29 @@ class SearchCore:
             return self._no_match_result(plan, budget, started)
 
         outcome = self._synthesise(query, chunks, mode="exploratory", budget=budget)
-        refined = False
 
-        if isinstance(outcome, NeedsMore) and self._settings.SEARCH_MAX_REFINEMENTS > 0:
+        # Refine while the synthesiser still wants more context, up to the
+        # configured number of passes. Each pass folds the latest hint into the
+        # plan, retrieves again, merges into the growing chunk set, and
+        # re-synthesises. Intermediate passes stay "exploratory" (may ask for
+        # more); the last allowed pass runs in "final" mode (must answer or say
+        # not-found), so the loop always terminates with an Answered outcome.
+        # The budget (2 + SEARCH_MAX_REFINEMENTS) bounds the calls regardless.
+        max_refinements = self._settings.SEARCH_MAX_REFINEMENTS
+        refinements = 0
+        while isinstance(outcome, NeedsMore) and refinements < max_refinements:
+            is_last = refinements + 1 >= max_refinements
             outcome, chunks = self._refine(
-                query, plan, ui_filters, outcome, chunks, budget
+                query,
+                plan,
+                ui_filters,
+                outcome,
+                chunks,
+                budget,
+                mode="final" if is_last else "exploratory",
             )
-            refined = True
+            refinements += 1
+        refined = refinements > 0
 
         answer_text = outcome.answer if isinstance(outcome, Answered) else ""
         sources = assemble_sources(
@@ -378,7 +403,7 @@ class SearchCore:
             ``sources`` are the ranked retrieved documents.
         """
         started = time.monotonic()
-        budget = _LlmBudget()
+        budget = _LlmBudget(max_calls=2 + self._settings.SEARCH_MAX_REFINEMENTS)
 
         # Layer 0: degenerate-input guard (spec §7.0) — same check as
         # _answer_uncached so callers always get consistent behaviour.
@@ -479,25 +504,30 @@ class SearchCore:
         needs_more: NeedsMore,
         previous_chunks: list[RetrievedChunk],
         budget: _LlmBudget,
+        mode: SearchMode,
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk]]:
-        """Run the single bounded refinement pass (spec §6.3).
+        """Run one bounded refinement pass (spec §6.3).
 
-        Folds the synthesiser's adjustment hint into the plan, retrieves
-        again, merges the new chunks with the previous round's, and runs the
-        final-mode synthesise (which must answer or explicitly say "not
-        found").  This is LLM call #3 — the last call the pipeline may make.
+        Folds the synthesiser's adjustment hint into the plan, retrieves again,
+        merges the new chunks with the previous round's, and re-synthesises in
+        *mode*. The caller runs intermediate passes in ``"exploratory"`` mode
+        (which may return another ``NeedsMore`` to continue the loop) and the
+        last allowed pass in ``"final"`` mode (which must answer or explicitly
+        say "not found"), so the refinement loop always terminates.
 
         Args:
             query: The raw user query.
             plan: The original query plan.
             ui_filters: The authoritative UI filters, if any.
-            needs_more: The exploratory synthesiser's NeedsMore signal.
-            previous_chunks: The chunks from the first retrieval round.
-            budget: The LLM-call budget; the final synthesise is recorded here.
+            needs_more: The previous synthesise's NeedsMore signal.
+            previous_chunks: The chunks accumulated so far.
+            budget: The LLM-call budget; this synthesise is recorded here.
+            mode: ``"exploratory"`` for an intermediate pass, ``"final"`` for
+                the last allowed pass.
 
         Returns:
-            A pair of the final synthesiser outcome and the merged chunk list
-            used as its context (and as the result's source set).
+            A pair of the synthesiser outcome and the merged chunk list used as
+            its context (and as the result's source set).
         """
         log.info(
             "search.refined",
@@ -507,7 +537,7 @@ class SearchCore:
         adjusted_plan = adjust_plan(plan, needs_more.adjustment)
         new_chunks, _signal = self._retrieve_with_broaden(adjusted_plan, ui_filters)
         merged = merge_chunks(previous_chunks, new_chunks)
-        outcome = self._synthesise(query, merged, mode="final", budget=budget)
+        outcome = self._synthesise(query, merged, mode=mode, budget=budget)
         return outcome, merged
 
     # ------------------------------------------------------------------

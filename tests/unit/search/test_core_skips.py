@@ -2,8 +2,8 @@
 Layer 1 adequacy gate (Task 5: planner returns ClarifyNeeded).
 
 Kill-switches default OFF, so the suite proves the gates only fire when an
-operator opts in, and the 3-LLM-call ceiling holds on the skip paths. The LLM
-is the ScriptedLLMClient; no real token is spent.
+operator opts in, and the skip paths spend fewer LLM calls. The LLM is the
+ScriptedLLMClient; no real token is spent.
 """
 
 from __future__ import annotations
@@ -93,10 +93,11 @@ class TestPlannerSkipWhenEnabled:
         core.answer("invoices from last year")  # temporal → not trivial
         assert llm_client.planner_calls == 1
 
-    def test_skip_path_keeps_the_three_call_ceiling(self) -> None:
+    def test_skip_path_skips_the_planner_call(self) -> None:
         reset_search_result_cache()
-        # Trivial query, planner skipped, synth always NeedsMore: at most 2 synth
-        # calls (exploratory + 1 refine). Total ≤ 2, never a 4th call.
+        # Trivial query, planner skipped. With the default 1 refinement and a
+        # synth that always wants more, the calls are exploratory + 1 refine = 2
+        # synthesise calls and zero planner calls.
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[needs_more_response_json("more")],
@@ -105,7 +106,7 @@ class TestPlannerSkipWhenEnabled:
             llm_client,
             _store_reader(),
             SEARCH_SKIP_PLANNER_FOR_TRIVIAL=True,
-            SEARCH_MAX_REFINEMENTS=99,
+            SEARCH_MAX_REFINEMENTS=1,
         )
         result = core.answer("invoices")
         assert llm_client.planner_calls == 0

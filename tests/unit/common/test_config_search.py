@@ -128,18 +128,18 @@ class TestSearchSettingsBounds:
         with pytest.raises(ValueError, match="SEARCH_TOP_K must be >= 1"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_TOP_K": value})
 
-    def test_search_max_refinements_ceiling_value_is_accepted(self, mocker):
-        # 3 is the §14.3 three-LLM-call ceiling — the boundary, still valid.
-        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "3"})
-        assert s.SEARCH_MAX_REFINEMENTS == 3
+    def test_search_max_refinements_high_value_is_accepted(self, mocker):
+        # No hard cap any more — the operator may set any non-negative count.
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "20"})
+        assert s.SEARCH_MAX_REFINEMENTS == 20
 
     def test_search_max_refinements_zero_is_accepted(self, mocker):
         s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "0"})
         assert s.SEARCH_MAX_REFINEMENTS == 0
 
-    @pytest.mark.parametrize("value", ["4", "10", "-1"])
-    def test_search_max_refinements_out_of_range_raises(self, mocker, value):
-        # Above the §14.3 ceiling (or negative) — a hard correctness bound.
+    @pytest.mark.parametrize("value", ["-1", "-5"])
+    def test_search_max_refinements_negative_raises(self, mocker, value):
+        # Only a negative count is rejected; there is no upper cap.
         with pytest.raises(ValueError, match="SEARCH_MAX_REFINEMENTS must be"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": value})
 

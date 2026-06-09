@@ -2,9 +2,10 @@
 
 The companion to :mod:`test_search_pipeline`.  These exercise the real
 :class:`~search.core.SearchCore` refinement branch end to end against a real
-``tmp_path`` store: an exploratory ``NeedsMore`` triggers exactly one refined
-retrieval round, the hard 3-LLM-call ceiling holds even with the refinement
-budget inflated, and the refined round's chunks merge with the first round's.
+``tmp_path`` store: an exploratory ``NeedsMore`` triggers a refined retrieval
+round, the loop runs exactly ``SEARCH_MAX_REFINEMENTS`` passes (bounded by the
+``2 + SEARCH_MAX_REFINEMENTS`` per-query budget), and the refined round's chunks
+merge with the first round's.
 
 Split from :mod:`test_search_pipeline` for the 500-line ceiling
 (CODE_GUIDELINES §3.1).  Shared store-seeding helpers and the embedding
@@ -34,11 +35,9 @@ from tests.integration.conftest import (
 
 
 class TestBoundedRefinementEndToEnd:
-    """The refinement loop runs through the real store and is capped at 3."""
+    """The refinement loop runs through the real store, bounded by 2 + SEARCH_MAX_REFINEMENTS."""
 
-    def test_needs_more_triggers_one_refinement_capped_at_three_calls(
-        self, tmp_path: Any
-    ) -> None:
+    def test_one_refinement_makes_three_calls(self, tmp_path: Any) -> None:
         settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=1)
         store_writer = StoreWriter(settings)
         try:
@@ -84,10 +83,11 @@ class TestBoundedRefinementEndToEnd:
         finally:
             store_reader.close()
 
-    def test_inflated_budget_still_capped_at_three_calls(self, tmp_path: Any) -> None:
-        """Even with the refinement budget raised, the hard 3-call ceiling
-        holds when every synthesise returns NeedsMore."""
-        settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=99)
+    def test_call_count_follows_max_refinements_end_to_end(self, tmp_path: Any) -> None:
+        """End to end, the loop runs exactly SEARCH_MAX_REFINEMENTS passes when
+        every synthesise returns NeedsMore: 2 + SEARCH_MAX_REFINEMENTS calls,
+        bounded by the per-query budget."""
+        settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=4)
         store_writer = StoreWriter(settings)
         try:
             seed_pipeline_document(
@@ -114,8 +114,9 @@ class TestBoundedRefinementEndToEnd:
             )
             result = core.answer("a query that always needs more")
 
-            assert llm_client.total_calls <= 3
-            assert result.stats.llm_calls <= 3
+            # planner + exploratory + 4 refinements = 6 = 2 + SEARCH_MAX_REFINEMENTS.
+            assert llm_client.total_calls == 6
+            assert result.stats.llm_calls == 6
         finally:
             store_reader.close()
 
