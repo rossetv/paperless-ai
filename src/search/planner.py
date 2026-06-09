@@ -87,9 +87,7 @@ class QueryPlanner(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def plan(
-        self, query: str, asker: str | None = None
-    ) -> QueryPlan | ClarifyNeeded:
+    def plan(self, query: str, asker: str | None = None) -> QueryPlan | ClarifyNeeded:
         """Analyse *query* and return a QueryPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
