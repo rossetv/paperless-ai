@@ -14,13 +14,21 @@ def test_cost_carries_optional_usd_and_local_flag():
 
 
 def test_phase_record_allows_none_tokens_for_non_llm_phase():
-    pr = PhaseRecord(phase="retrieve", label="Retrieving", detail={"chunk_count": 3},
-                     tokens=None, cost=None, ms=12)
+    pr = PhaseRecord(
+        phase="retrieve",
+        label="Retrieving",
+        detail={"chunk_count": 3},
+        tokens=None,
+        cost=None,
+        ms=12,
+    )
     assert pr.tokens is None and pr.detail["chunk_count"] == 3
 
 
 def test_search_trace_and_cost_summary_compose():
-    pr = PhaseRecord(phase="judge", label="Judging", detail={}, tokens=None, cost=None, ms=1)
+    pr = PhaseRecord(
+        phase="judge", label="Judging", detail={}, tokens=None, cost=None, ms=1
+    )
     trace = SearchTrace(phases=(pr,))
     cs = CostSummary(tokens=TokenUsage(1, 2, 0, 3), usd=0.001, local=False, llm_calls=2)
     assert trace.phases[0].phase == "judge" and cs.llm_calls == 2
