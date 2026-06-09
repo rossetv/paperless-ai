@@ -10,7 +10,7 @@ AI-powered document transcription, classification, and semantic search for [Pape
 
 ## What This Project Does
 
-This project adds **AI-powered OCR, document classification, and semantic search** to your Paperless-ngx instance. It ships as a single Docker image containing four processes:
+This project adds **AI-powered OCR, document classification, and semantic search** to your Paperless-ngx instance. It ships as **one Docker image** that runs as any of four daemons — pick the command, run as many as you need:
 
 **OCR Daemon** — Polls Paperless for documents tagged for OCR, converts pages to images, transcribes them using a vision AI model, and uploads the text back into Paperless.
 
@@ -18,13 +18,15 @@ This project adds **AI-powered OCR, document classification, and semantic search
 
 **Indexer Daemon** — Reconciles Paperless-ngx into a local SQLite search index: chunks and embeds document text, keeps the index in sync with new, changed, and deleted documents.
 
-**Search Server** — Serves a JSON API, a React Web UI, and an MCP endpoint backed by an agentic search pipeline (plan → hybrid retrieve → synthesise).
+**Search Server** — Serves a JSON API, a React Web UI, and an MCP endpoint (`search_documents`, `ask_documents`) backed by an agentic search pipeline (plan → hybrid retrieve → synthesise), with a hard ceiling of three LLM calls per query.
 
-The OCR and classification daemons use a **tag-driven pipeline** (no external database), support **model fallback chains**, and work with both **OpenAI** and **Ollama**.
+The OCR and classification daemons use a **tag-driven pipeline** (no external database), support **model fallback chains**, and work with both **OpenAI** and **Ollama**. The search subsystem keeps two SQLite databases on the shared volume: the **search index** (`index.db`, a derived artefact, rebuildable from Paperless) and the **application database** (`app.db`, holding accounts, sessions, API keys, and hot-loaded config) — kept separate so rebuilding the index never touches your accounts.
 
 ---
 
 ## How It Works
+
+The OCR and classification daemons run a **tag-driven state machine** — a document's tags are the only state, so there is no database or queue between them. Once a document is classified, the indexer picks it up and the search server makes it searchable.
 
 ```mermaid
 flowchart LR
@@ -37,11 +39,16 @@ flowchart LR
     G -- Yes --> H["Enriched document\nTitle, tags, metadata set\nPipeline tags removed"]
     D -- No --> I["Add ERROR_TAG_ID\nRemove pipeline tags"]
     G -- No --> I
+    H --> J["Indexer Daemon\nchunks + embeds\ninto the search index"]
+    J --> K["Search Server\nHTTP API + Web UI + MCP"]
 
     style A fill:#f0f0f0,stroke:#333
     style H fill:#d4edda,stroke:#28a745
     style I fill:#f8d7da,stroke:#dc3545
+    style K fill:#cfe2ff,stroke:#0071e3
 ```
+
+You can run any subset of the four daemons. OCR + classification alone enriches documents in Paperless; add the indexer and search server to get semantic search and the web UI. All four share one `/data` volume.
 
 ---
 
@@ -189,6 +196,28 @@ volumes:
 
 ---
 
+## Accessing the Web UI
+
+There is no shared-secret env var — the search server has **no `SEARCH_API_KEY`**. Access is created on first run:
+
+1. Start the search server. With no accounts yet, it enters **setup mode** and prints a one-off **setup token** to the container logs:
+   ```bash
+   docker logs paperless-search 2>&1 | grep "SETUP TOKEN"
+   ```
+2. Open `http://your-host:8080/setup` and complete the first-run setup form, pasting that token to create the first **admin** account. The token is invalidated the moment setup completes.
+3. From then on, sign in with username and password. A successful login sets a signed, `HttpOnly` session cookie (lifetime `SEARCH_SESSION_TTL`, default 7 days).
+
+**Two credential types:**
+
+| Surface | Credential |
+|:---|:---|
+| Web UI (browser) | Username/password login → session cookie |
+| REST API and MCP | A minted `sk-pls-…` API key, created in the UI under **Settings → API Keys**, sent as `Authorization: Bearer <key>`. Each key carries a subset of the `api` / `mcp` / `admin` scopes |
+
+Admins manage further accounts and API keys from the web UI. Configuration changed in the UI is written to `app.db` and **hot-loads across all four daemons** with no restart. See [docs/search.md](docs/search.md) for the full authentication model.
+
+---
+
 ## Semantic Search — Environment Variables
 
 These variables are read by the indexer daemon and the search server, in addition to the shared variables (`PAPERLESS_URL`, `PAPERLESS_TOKEN`, `OPENAI_API_KEY`, `LLM_PROVIDER`, `OLLAMA_BASE_URL`, `DOCUMENT_WORKERS`, `LOG_LEVEL`, `LOG_FORMAT`).
@@ -269,4 +298,8 @@ The three health states:
 | [Development](docs/development.md) | Local setup, tests, CI/CD |
 | [Resilience](docs/resilience.md) | Retry strategy, fallback chains, error isolation, graceful shutdown |
 
-For AI agents, see [AGENTS.md](AGENTS.md) for a structured codebase guide with file index and common task lookup.
+**Contributing & internals:**
+
+- [AGENTS.md](AGENTS.md) — a structured codebase guide with a file index and common-task lookup (written for AI agents, useful to humans too).
+- [DESIGN.md](DESIGN.md) — the frontend design system: tokens, the component library, and screen patterns.
+- [CODE_GUIDELINES.md](CODE_GUIDELINES.md) — the house coding rules, cited by section number throughout the source.

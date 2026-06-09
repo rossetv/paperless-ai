@@ -10,21 +10,22 @@ The search server is **read-only**. It accesses the store exclusively through `S
 
 ## Process Layout
 
-One uvicorn process serves everything:
+One uvicorn process serves everything, composed from several routers (each in its own module) plus the MCP mount and the SPA:
 
-| Path | Purpose |
+| Router / mount | Surface |
 |:---|:---|
-| `GET /` and static assets | The built React SPA (from `web/dist`) |
-| `POST /api/setup` | First-run setup — create the first admin account |
-| `POST /api/auth/login` | Username/password sign-in — sets the session cookie |
-| `GET /api/healthz` | Liveness; unauthenticated |
-| `POST /api/search` | Full agentic search pipeline |
-| `GET /api/facets` | Taxonomy facets for the filter panel |
-| `GET /api/stats` | Index statistics |
-| `POST /api/reconcile` | Manual reconciliation trigger |
-| `/mcp` | MCP streamable-HTTP ASGI app |
+| `routes.py` | Core search API: `healthz`, `search`, `facets`, `stats`, the Library browse (`GET /api/documents`), `reconcile` |
+| `account_routes.py` | First-run setup, login/logout/me, the public splash stats, user CRUD |
+| `settings_routes.py` | Read and update runtime config (`/api/settings`), connection test |
+| `api_key_routes.py` | Mint, list, edit, and revoke API keys (`/api/api-keys`) |
+| `document_routes/` | Single-document summary, metadata PATCH, delete, reclassify/retranscribe re-queue, taxonomy CRUD, and the PDF/thumbnail streaming proxy |
+| `index_routes.py` | The Index operations dashboard: daemon status, reconcile activity, failed documents, and the destructive `rebuild` |
+| `mcp_server.py` (`/mcp`) | MCP streamable-HTTP ASGI app — two tools |
+| `spa.py` (`/`) | The built React SPA with a deep-link catch-all |
 
-The MCP ASGI app is mounted into the same uvicorn instance at `/mcp` before any catch-all routes — no second process, no additional port.
+The MCP ASGI app and every `/api` router are mounted **before** the SPA catch-all, so they take precedence over static serving — no second process, no additional port.
+
+Each request opens its own short-lived `app.db` connection (a `sqlite3.Connection` cannot be safely shared across the threads FastAPI serves on); the index `StoreReader` is a single shared instance. A daemon thread writes a periodic `daemon_status` heartbeat to `app.db` so the dashboard's "search" tile stays fresh.
 
 ---
 
@@ -44,19 +45,27 @@ The guaranteed ceiling is **three LLM chat calls per query**: one planner call +
 The ceiling is enforced two ways:
 
 1. **Structurally** — `answer` makes the planner call once, the exploratory synthesise once, and the refinement synthesise at most once. There is no loop that can issue a fourth call.
-2. **Defensively** — every LLM stage is recorded in an `_LlmBudget` counter that asserts the total never exceeds `_MAX_LLM_CALLS` (3). A logic regression attempting a fourth call fails loudly.
+2. **Defensively** — every LLM stage is recorded through an `_LlmBudget` counter that raises `LlmBudgetExceededError` if the total would exceed `_MAX_LLM_CALLS` (3). A plain `raise` (not `assert`, which `python -O` would strip) means a logic regression attempting a fourth call fails loudly on the billable endpoint. `SearchStats.llm_calls` reports calls *attempted*, which on a fully successful query equals calls billed.
+
+Several optional knobs spend **fewer** calls without ever exceeding the ceiling: a result cache serves a repeated query with **zero** LLM calls; a trivial keyword query can skip the planner; and a weak retrieval can skip synthesis entirely (see below).
 
 ### Pipeline stages
 
 ```
-plan
+(result cache hit? → return, 0 LLM calls)
+plan  (skipped for a trivial query if SEARCH_SKIP_PLANNER_FOR_TRIVIAL)
  └─ retrieve (vector + keyword → RRF fusion)
-      ├─ empty? → broaden plan, retrieve once → still empty? → "no matches" (no LLM call)
+      ├─ empty? → broaden plan (drop filters), retrieve once → still empty? → "no matches" (no synth call)
+      ├─ weak? (SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL) → "no matches" (no synth call)
       └─ synthesise (exploratory)
-           └─ NeedsMore AND refinement budget remains (SEARCH_MAX_REFINEMENTS)?
+           └─ NeedsMore AND refinement budget remains (SEARCH_MAX_REFINEMENTS, default 1)?
                 → adjust plan, retrieve again, MERGE results
                 → synthesise (final)  ← must answer or explicitly say "not found"
 ```
+
+### Result cache
+
+A successful answer is written to a process-local result cache keyed on the normalised query, the UI filters, and a cheap index-version signal (`document_count:chunk_count`). A cache hit makes zero LLM calls and returns the prior `SearchResult` directly. The cache is bypassed (fail-open) when the index version cannot be read, and a no-match or degraded result is never cached. A corpus change moves the index-version key and invalidates prior entries; a config change drops the cache singleton so the next query recomputes. `SEARCH_CACHE_TTL_SECONDS` of 0 disables it (default 14400 = 4 h).
 
 ### Stage 1 — Planner (`search/planner.py`)
 
@@ -87,9 +96,11 @@ No cross-encoder re-ranker. At the project's target scale (≤~50k chunks), brut
 
 ### Stage 3 — Synthesiser (`search/synthesizer.py`)
 
-One LLM call (`SEARCH_ANSWER_MODEL`, default `gpt-5.5` / `gemma3:27b`). The question and retrieved chunks are passed together, each chunk labelled with its source document. Retrieved chunks are **untrusted input** — the prompt places them below an explicit delimiter and instructs the model to treat everything below as data, never as instructions (prompt-injection defence).
+One LLM call (`SEARCH_ANSWER_MODEL`, default `gpt-5.5` / `gemma3:27b`). The message is laid out **control plane first**: the question and instructions come first, then the retrieved chunks (each labelled with its source `[document_id]`) as untrusted data.
 
-Structured output is a discriminated result — `Answered(answer, citations)` or `NeedsMore(adjustment)`.
+Retrieved chunks are **untrusted input** — a document can contain text that reads as an instruction. The prompt wraps the chunks in a data block fenced by an **unpredictable per-request nonce** (`<<<DATA {nonce}>>>` … `<<<END DATA {nonce}>>>`, built by `common.prompt_fences.build_data_fence`) and tells the model that everything between the two fences is data, never instructions. Because the nonce is a fresh random token per message, a chunk cannot reproduce the closing fence to break out of the data region — a stronger guarantee than the static delimiter it replaced.
+
+Structured output is a discriminated result — `Answered(answer, citations)` or `NeedsMore(adjustment)`. `SearchResult.sources` is narrowed to the documents the answer actually **cited** (the frontend resolves each `[n]` marker by `document_id`); a citation-shy or degraded answer falls back to the full retrieved set rather than showing no sources.
 
 ### Refinement (`search/refinement.py`)
 
@@ -127,6 +138,8 @@ FastAPI + uvicorn. Pydantic models validate requests and responses at this bound
 
 ### Endpoints
 
+The "Auth" column maps to the FastAPI dependencies in `search/deps.py`: **None** (unauthenticated), **Session** (a signed-in cookie), **Read-only+** = `require_api_scope` (Read-only role or above; an API-key caller must also hold the `api` scope), **Member+** = `require_api_scope_member`, **Admin** = `require_admin` (admin role and, for keys, the `admin` scope).
+
 | Endpoint | Auth | Purpose |
 |:---|:---|:---|
 | `GET /api/setup/status` | None | `{ needed }` — is first-run setup still required? |
@@ -134,28 +147,39 @@ FastAPI + uvicorn. Pydantic models validate requests and responses at this bound
 | `POST /api/auth/login` | None | `{username, password, remember}` → session cookie + `{user}` |
 | `POST /api/auth/logout` | Session | Destroy the current session |
 | `GET /api/auth/me` | Session | The current user and role; `401` if unauthenticated |
-| `GET /api/users` | Admin | List user accounts |
-| `POST /api/users` | Admin | Create a user account |
-| `PATCH /api/users/{id}` | Admin | Edit role / status / display name / reset password |
-| `DELETE /api/users/{id}` | Admin | Delete a user account |
 | `GET /api/healthz` | None | Liveness; 503 if index is not ready or corrupt |
 | `GET /api/stats/public` | None | Minimal splash counts — `{document_count, chunk_count}` |
 | `POST /api/search` | Read-only+ | `{query, filters?}` → `SearchResult` |
 | `GET /api/facets` | Read-only+ | Correspondents, document types, tags, date range |
 | `GET /api/stats` | Read-only+ | Index size, last reconcile timestamp, embedding model |
+| `GET /api/documents` | Read-only+ | Paginated Library browse (sort, text, filters) |
+| `GET /api/documents/{id}` | Read-only+ | One document's summary |
+| `GET /api/documents/{id}/pdf` · `…/thumb` | Read-only+ | Stream the PDF / thumbnail proxied from Paperless |
+| `GET /api/recent-searches` | Read-only+ | The caller's own recent-search history |
+| `PATCH /api/documents/{id}` | Member+ | Edit document metadata (forwarded to Paperless) |
+| `POST /api/documents/{id}/reclassify` · `…/retranscribe` | Member+ | Re-queue for classification / OCR |
+| `GET·POST /api/correspondents` · `/document-types` · `/tags` | Read-only+ (GET) / Member+ (POST) | Taxonomy list and create |
+| `DELETE /api/documents/{id}` | Admin | Delete the document from Paperless |
 | `POST /api/reconcile` | Member+ | Trigger an immediate reconciliation cycle (202 Accepted) |
+| `GET·PUT /api/settings`, `POST /api/settings/test-connection` | Read-only+ (GET) / Admin (PUT) | Read and update runtime config |
+| `GET·POST·PATCH·DELETE /api/api-keys[/{id}]` | Session / owner / Admin | Mint, list, edit, revoke API keys |
+| `GET /api/users` · `POST` · `PATCH /{id}` · `DELETE /{id}` | Admin | User account CRUD |
+| `GET /api/index/{status,activity,failed}` | Read-only+ | The Index operations dashboard |
+| `POST /api/index/rebuild` | Admin | Wipe and re-index the whole archive (202 Accepted) |
 | `GET /` and assets | None | Serve the built React SPA (with a deep-link catch-all) |
 | `/mcp` | API key (`mcp` scope) / session | MCP streamable-HTTP ASGI app |
 
-The SPA is served by a catch-all that returns `index.html` for client-router
-deep links (`/login`, `/setup`) while leaving real assets and every `/api`
-and `/mcp` path untouched. Static serving is rooted **only** at the built
-frontend directory (`web/dist`); the `/data` volume is under no served path,
-so the index and application databases are never web-reachable.
+The `POST /api/search` handler resolves the `SearchCore` **per request** (a cheap one-row `SELECT` on `app.db`, rebuilding the config-derived component graph only when `config_version` has changed), so a saved configuration change — answer model, top-k, prompts, concurrency cap — takes effect on the next query with no restart. A successful search by an authenticated caller is recorded in that caller's recent-search history.
 
-### Abuse protection
+The SPA is served by a catch-all that returns `index.html` for client-router deep links (`/login`, `/setup`) while leaving real assets and every `/api` and `/mcp` path untouched. Static serving is rooted **only** at the built frontend directory (`web/dist`); the `/data` volume is under no served path, so the index and application databases are never web-reachable. Any `httpx` error escaping a Paperless-proxying route is mapped to a meaningful status (404/409/502) by a centralised exception handler rather than leaking a 500.
 
-A global asyncio `Semaphore` (`SEARCH_MAX_CONCURRENT`, default 4) bounds in-flight `/api/search` work. Combined with the hard 3-LLM-call ceiling, this caps both per-request cost and aggregate cost on an exposed endpoint.
+### Keeping the event loop free, and abuse protection
+
+The store, the LLM client, and the per-request SQLite connections all do **blocking** I/O. Both the FastAPI routes and the MCP layer run that work off the event loop through one shared helper, `run_blocking` (`search/offload.py`), which dispatches the call to the loop's default executor. This includes the document routes — every `StoreReader`, Paperless, and PDF/thumbnail call in `search/document_routes/` is awaited through `run_blocking`, so a slow upstream never stalls the single loop and serialises every concurrent caller behind it.
+
+A `LazySemaphore` (also in `offload.py`) bounds in-flight `/api/search` work to `SEARCH_MAX_CONCURRENT` (default 4); the MCP tools share the same primitive with the same ceiling. The semaphore is created lazily on first use (so it binds to the serving loop) and is hot-reloadable — a changed cap takes effect on the next request. A ceiling of 0 means unbounded. Combined with the hard 3-LLM-call ceiling, this caps both per-request and aggregate cost on an exposed, billable endpoint.
+
+A separate per-username login throttle (`search/login_throttle.py`) bounds password-guessing attempts on `POST /api/auth/login`.
 
 ---
 
@@ -168,9 +192,9 @@ The MCP server uses the `FastMCP` streamable-HTTP transport (an ASGI app mounted
 | `search_documents(query, filters?)` | `core.retrieve()` | Ranked source documents with snippets and Paperless deep-links; no synthesised answer |
 | `ask_documents(question, filters?)` | `core.answer()` | Full result including the synthesised answer |
 
-`search_documents` saves one LLM call — the calling agent synthesises its own answer. `ask_documents` is appropriate when the agent wants a direct prose response.
+`search_documents` saves one LLM call — the calling agent synthesises its own answer. `ask_documents` is appropriate when the agent wants a direct prose response. Both tool bodies are dispatched through `run_blocking` under a shared `LazySemaphore` (the same `SEARCH_MAX_CONCURRENT` bound as `/api/search`) — FastMCP 1.27 would otherwise run a sync tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration. The query is normalised at the boundary (trimmed, non-empty, length-bounded); any core failure is logged server-side with its traceback and returned to the client as a sanitised error carrying no internal detail.
 
-An ASGI bearer-token middleware wraps the MCP app: every request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential returns HTTP 401 without reaching the MCP handler. Credentials are never logged.
+An ASGI bearer-token middleware wraps the MCP app: every request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential returns HTTP 401 without reaching the MCP handler. The middleware opens a fresh `app.db` connection per request (off the loop, via `run_blocking`); a successful cookie auth also refreshes `last_seen_at`. Credentials are never logged — a rejection records only whether a header or cookie was present.
 
 ---
 
@@ -188,8 +212,10 @@ admin. Once any user exists, `/api/setup` returns `409`.
 
 **Sign-in.** `POST /api/auth/login` verifies the username and password
 (argon2id) and, on success, inserts a row in the `sessions` table and sets an
-opaque `search_session` cookie. The cookie is `HttpOnly`, `Secure`,
-`SameSite=Strict`, `Path=/`; its `Max-Age` is seven days when "keep me signed
+opaque `search_session` cookie. The cookie is `HttpOnly`, `SameSite=Strict`,
+`Path=/`, and `Secure` over HTTPS (the flag is set when `request.url.scheme`
+is `https` — correct behind the documented proxy that runs uvicorn with
+`proxy_headers=True`); its `Max-Age` is seven days when "keep me signed
 in" is ticked, eight hours otherwise. The database stores only the SHA-256 of
 the token — the raw token is never persisted. `SameSite=Strict` is the CSRF
 defence; no separate CSRF token is needed.
@@ -202,13 +228,15 @@ session row; suspending or deleting a user deletes **all** that user's
 sessions, so access is revoked instantly — the key advantage of server-side
 sessions over a stateless token.
 
-**RBAC.** Three roles rank `readonly` < `member` < `admin`. The dependency
-`require_role(...)` raises `403` on an insufficient role; `require_admin` is
-the common admin gate. Search, facets and stats require Read-only or above;
-reconcile requires Member or above; user management requires Admin. Two
-guards protect administration: a user cannot delete, suspend or demote
-themselves, and the last remaining admin cannot be deleted, suspended or
-demoted.
+**RBAC.** Three roles rank `readonly` < `member` < `admin`. The dependencies
+`require_api_scope` (Read-only+) and `require_api_scope_member` (Member+) raise
+`403` on an insufficient role, and additionally require the `api` scope when the
+caller is an API key; `require_admin` is the admin gate (admin role and, for
+keys, the `admin` scope). Search, facets, stats and browse require Read-only or
+above; reconcile, metadata edits and re-queues require Member or above; user
+management, settings writes and rebuild require Admin. Two guards protect
+administration: a user cannot delete, suspend or demote themselves, and the last
+remaining admin cannot be deleted, suspended or demoted.
 
 **API keys.** Programmatic and MCP access uses **API keys** minted in the web
 UI (Settings → API Keys), not a shared secret. A key looks like
@@ -235,12 +263,14 @@ there is no default credential.
 
 ## React Web UI
 
-The frontend (`web/`) is a React + Vite + TypeScript SPA, built in a Node stage of the multi-stage Dockerfile and copied into the final image. The server serves `web/dist` at `/`.
+The frontend (`web/`) is a React + Vite + TypeScript SPA, built in a Node stage of the multi-stage Dockerfile and copied into the final image. The server serves `web/dist` at `/`. It is structured as a strict layer stack (`components/` → `features/` → `pages/`) with all design values in `tokens.css` — see `CODE_GUIDELINES.md` §12. All API state goes through the typed `web/src/api/` layer, which sends `credentials: 'include'` so the `HttpOnly` session cookie carries authentication; the JS bundle never sees a credential.
 
-Key pages:
+Representative pages:
 
-- **Login page** — handles the §7.3 key-exchange handshake; routes to the search page on success.
-- **Search page** — `SearchBar` (query input) + `FilterControls` (populated from `/api/facets`) + `AnswerCard` (synthesised answer, clickable `[n]` citations) + `SourceList` of `SourceCard`s. A transparency line renders the `plan` and `stats` fields from `SearchResult`.
+- **Setup / Login** — first-run setup against the printed token, then plain username/password sign-in that sets the session cookie (no client-side key handling).
+- **Search** — `SearchBar` + `FilterControls` (populated from `/api/facets`) + `AnswerCard` (synthesised answer, clickable `[n]` citations) + `SourceList` of `SourceCard`s, with a transparency line rendering the `plan` and `stats` from `SearchResult`.
+- **Library** — paginated document browse (`/api/documents`) with a document detail view (summary, PDF/thumbnail proxy, reclassify/retranscribe/delete).
+- **Settings** — runtime config and connection test; **API Keys**; **Users**; and the **Index** operations dashboard (daemon status, reconcile activity, failed documents, rebuild).
 
 The SPA and the API ship inside the same image — there is no version drift and no API negotiation needed.
 
@@ -248,15 +278,15 @@ The SPA and the API ship inside the same image — there is no version drift and
 
 ## Health States
 
-`GET /api/healthz` is unauthenticated and is the Docker healthcheck endpoint.
+`GET /api/healthz` is unauthenticated and is the Docker healthcheck endpoint. The three-state verdict is computed by `evaluate_index_health` in `search/routes.py` (the file check plus a `get_stats` and a `quick_check`, run off the loop):
 
 | HTTP status | `status` field | Meaning |
 |:---|:---|:---|
 | 200 | `ok` | Schema present, reconciliation has run at least once, `PRAGMA quick_check` passed |
-| 503 | `index-not-ready` | DB absent, or schema not yet applied, or reconciliation has never completed |
+| 503 | `index-not-ready` | DB absent, or schema not yet applied (surfaced as `SchemaNotReadyError`), or reconciliation has never completed |
 | 503 | `index-corrupt` | DB exists with schema and a reconcile timestamp, but `quick_check` failed |
 
-The server never crash-loops on an absent or initialising index — it starts, serves `healthz`, and waits. `depends_on` in Docker Compose handles startup ordering.
+The handler never raises — any unexpected error becomes a clean 503. The server never crash-loops on an absent or initialising index — it starts, serves `healthz`, and waits. `depends_on` in Docker Compose handles startup ordering.
 
 For the corruption recovery runbook, see [Store — Corruption Recovery](store.md#corruption-recovery).
 
@@ -264,21 +294,46 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 
 ## File Index
 
+**Pipeline (pure library).**
+
 | File | Purpose |
 |:---|:---|
-| `api.py` | FastAPI app — all HTTP endpoints, SPA static mount, uvicorn entry |
-| `mcp_server.py` | MCP server — two tools over `SearchCore`, bearer-token middleware |
-| `core.py` | `SearchCore` — orchestrates the bounded agentic pipeline |
+| `core.py` | `SearchCore` — orchestrates the bounded agentic pipeline, `_LlmBudget`, result-cache wiring |
 | `planner.py` | `QueryPlanner` — one LLM call → `QueryPlan` |
-| `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion |
+| `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion (`_RRF_K = 60`) |
 | `synthesizer.py` | `Synthesizer` — one LLM call → `Answered` or `NeedsMore` |
-| `refinement.py` | `adjust_plan` / `broaden_plan` — plan mutation for the refinement step |
-| `auth.py` | Bearer extraction, role ranking |
+| `refinement.py` | `adjust_plan` / `broaden_plan` / `merge_chunks` / `is_weak_retrieval` — plan mutation and the weak-retrieval predicate |
+| `sources.py` | `assemble_sources` — fuse chunks into `SourceDocument`s with resolved names and deep-links |
+| `cache.py` | The process-local result cache and its index-version key |
+| `text.py` | Query-normalisation and trivial-query helpers |
+| `models.py` | Frozen dataclasses: `QueryPlan`, `FilterCandidates`, `RetrievedChunk`, `SourceDocument`, `SearchStats`, `SearchResult`, `Answered`, `NeedsMore` |
+| `prompts.py` | System prompts and the per-request nonce data-fence layout |
+| `errors.py` | `SearchError` / `LlmBudgetExceededError` |
+
+**Interfaces and HTTP plumbing.**
+
+| File | Purpose |
+|:---|:---|
+| `api.py` | FastAPI app factory — router/MCP/SPA wiring, per-request core cache, uvicorn entry |
+| `routes.py` | Core `/api` router: search, facets, stats, browse, reconcile, healthz |
+| `account_routes.py` · `accounts.py` | Setup, login/logout/me, public stats, user CRUD; the self / last-admin guards |
+| `settings_routes.py` · `settings_service.py` | Read/update runtime config and connection test |
+| `api_key_routes.py` | Mint / list / edit / revoke API keys |
+| `document_routes/` | `_documents` (summary, PATCH, delete, re-queue), `_taxonomy` (CRUD), `_proxy` (PDF/thumb) |
+| `index_routes.py` · `index_service.py` | The Index operations dashboard and `rebuild` |
+| `mcp_server.py` | MCP server — two tools over `SearchCore`, bearer-token middleware |
+| `spa.py` | SPA static mount with the deep-link catch-all |
+| `wire/` | Pydantic request/response models and mapping functions (HTTP boundary only) |
+| `offload.py` | `run_blocking` (event-loop offload) and `LazySemaphore` (concurrency bound) |
+
+**Auth.**
+
+| File | Purpose |
+|:---|:---|
+| `auth.py` | Bearer extraction, role ranking, the session-cookie name |
 | `sessions.py` | Opaque session tokens, SHA-256 hashing, the DB-backed session lifecycle |
-| `deps.py` | FastAPI auth dependencies — `get_current_user`, `require_role`, `require_admin` |
+| `api_keys.py` | API-key scopes, hashing, and resolution |
+| `deps.py` | FastAPI dependencies — `get_current_user`, `require_api_scope`, `require_api_scope_member`, `require_admin`, `get_app_db` |
 | `setup.py` | First-run setup token generation, comparison, and setup-mode detection |
-| `account_routes.py` | The account `/api` router — setup, login/logout/me, user CRUD |
-| `accounts.py` | The self and last-admin account guards |
-| `models.py` | Frozen dataclasses: `QueryPlan`, `SearchResult`, `SourceDocument`, `SearchStats`, `Answered`, `NeedsMore`, `RetrievedChunk` |
-| `wire.py` | Pydantic request/response models and mapping functions (HTTP boundary only) |
-| `prompts.py` | System prompts for the planner and synthesiser |
+| `login_throttle.py` | Per-username login-attempt throttle |
+| `cookies.py` | Session-cookie attributes (`HttpOnly`, `Secure`, `SameSite=Strict`) |

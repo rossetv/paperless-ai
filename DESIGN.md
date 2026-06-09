@@ -388,7 +388,7 @@ Every design value is a `var(--…)` reference. Stylelint enforces this — a li
 | Accent variants | `--colour-accent-wash`, `--colour-accent-ring` | Translucent accent for highlights |
 | Font families | `--font-display`, `--font-text`, `--font-mono` | SF Pro stack |
 | Type scale | `--font-size-*`, `--font-weight-*`, etc. | Per-role size/weight/leading/tracking |
-| Spacing | `--spacing-1` … `--spacing-14` | 8px-base dense scale |
+| Spacing | `--spacing-1` … `--spacing-16` | 8px-base dense scale (2px → 32px) |
 | Radii | `--radius-micro` … `--radius-pill` | The six-rung border-radius ladder |
 | Shadows | `--shadow-card`, `--shadow-answer`, etc. | Soft, diffused — sparingly used |
 | Motion | `--duration-*`, `--easing-*` | Transition durations and curves |
@@ -451,9 +451,9 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `TextArea` | primitives | `label`, `surface`, `error`, `disabled` | Multi-line companion to Input |
 | `Link` | primitives | `href`, `variant` (default/inline/on-dark), `external` | External links open in new tab, `rel="noopener"` |
 | `Badge` | primitives | `variant` (neutral/accent) | Inline label chip |
-| `RoleBadge` | primitives | `role` (admin/member/readonly) | Maps role to semantic colour token |
-| `StatusBadge` | primitives | `tone` (ok/warn/danger/info/neutral/violet) | Leading status dot + label |
-| `ScopePill` | primitives | `scope` (read/write/mcp) | API-key scope pill |
+| `RoleBadge` | primitives | `role` (admin/member/readonly/service) | Maps role to semantic colour token; `service` is the non-human API-key identity |
+| `StatusBadge` | primitives | `tone` (ok/warn/danger/info) | Leading status dot + label |
+| `ScopePill` | primitives | `scope` (api/mcp/admin) | API-key scope pill |
 | `Chip` | primitives | `selected`, `onRemove`, `removeLabel` | Filter chip with remove × |
 | `Card` | primitives | `as` (div/article/section/aside), `surface` (default/dark), `elevated` (boolean), `children`, `className` | Surface container; `elevated` applies `--shadow-card`; `surface="dark"` uses `--colour-surface-dark` |
 | `Icon` | primitives | `name` (closed union), `size` (small/medium/large/xlarge) | SVG icon set |
@@ -478,8 +478,8 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `SnippetText` | primitives | `text` | Renders `**bold**` runs as `<mark>` highlight chips |
 | `DocThumb` | primitives | `kind` (invoice/letter/statement), `matched` (row indices) | SVG document thumbnail |
 | `SourceCardSurface` | primitives | `index`, `thumbKind`, `matched`, `highlighted` | Two-column card shell (content + DocThumb + citation badge) |
-| `AnswerSurface` | primitives | `answer`, `sourceCount`, `latencyMs`, `refined`, `children` | Synthesised-answer card |
-| `CitationMark` | primitives | `index`, `onClick` | Inline citation chip `[n]` button |
+| `AnswerSurface` | primitives | `children` (the answer prose), `sourceCount`, `latencyMs`, `refined` | Synthesised-answer card |
+| `CitationMark` | primitives | `index`, `onActivate` | Inline citation chip `[n]` button |
 | `PipelineStages` | primitives | `stages` (StageStatus[]) | Search progress rail |
 | `Disclosure` | primitives | `summary`, `children`, `open` | `<details>` collapsible panel |
 | `RecentSearchStrip` | primitives | `searches`, `onSelect`, `onClear` | Idle-screen recent-search list |
@@ -602,7 +602,10 @@ primitives. Key feature groups:
 
 - `LoginScreen` — dark-island two-column sign-in screen.
 - `FirstRunSetupScreen` — dark-island first-admin creation screen.
-- `credentials.ts` — shared username/password validation rules.
+
+Both screens import their shared username/password validation rules from
+`web/src/lib/credentials.ts` (`validateUsername` / `validatePassword`) — the same
+module the access-control `UserEditDrawer` uses, so the rules never diverge.
 
 ### 13.3 `features/search`
 
@@ -636,8 +639,8 @@ primitives. Key feature groups:
 - `SettingsScreen` — settings form with sections; uses `SettingsLayout`.
 - `SettingsSection` — one section card (uses `SettingsBlock` / `SettingsCard` primitives).
 - `SecretField` — masked secret input with reveal toggle.
-- `TestConnectionRow` — Paperless API connection test action row.
-- `fieldModel.ts` — typed field definitions for every settings key.
+- `TestConnectionAction` — Paperless API connection-test action row.
+- `fieldModel.ts` — typed field definitions for every settings key (re-exports the `fieldModel/` package: `sections.ts`, `helpers.ts`, `types.ts`).
 - `useUnsavedSettings.ts` — dirty-tracking hook for the settings form.
 
 ### 13.7 `features/access`
@@ -649,8 +652,26 @@ primitives. Key feature groups:
 
 ### 13.8 `features/document`
 
+The **full-page**, editable document view (the `/document/:id` route) — distinct
+from the read-only `DocumentPreviewScreen` overlay in `features/search` (§13.3).
+
+- `DocumentScreen` — the page composition: breadcrumb, title row, meta line, and
+  a two-column PDF-viewer / sidebar grid.
+- `DocumentTitle`, `SaveStatusPill` — inline-editable title heading and the
+  save-state pill ("Saved" / "Saving…" / "Error").
 - `DocumentMeta` — single-line correspondent · type · date meta row.
-- `DocumentSnippet` — matched snippet text with highlight marks.
+- `MetadataCard` — sidebar card of editable Correspondent / Type / Date rows,
+  built from `EditableField` and `TaxonomyCombobox`.
+- `EditableField` — generic label + value row with click-to-edit input.
+- `TaxonomyCombobox` — searchable single-select with a create-new option
+  (correspondent and document-type pickers).
+- `TagEditor` — multi-select tag chips with inline add / remove / create.
+- `PdfViewerCard` — embeds the PDF for the document.
+- `ActionsCard` — AI re-classify / re-transcribe and (admins only) delete;
+  renders nothing for read-only users.
+- `DeleteConfirmModal` — accessible deletion confirmation dialog.
+- `MatchCard` — when arriving from a search result (`?q=…`), shows the matched
+  search context.
 
 ---
 
@@ -685,24 +706,24 @@ Wave 7 consolidation removed `StatCard`; all stat displays use `StatTile`.
 
 ### 14.5 Badge family
 
-Three badge components serve distinct semantic roles:
+Four small label components serve distinct semantic roles. This is a documented
+family, not duplication — each carries its own semantic colour tokens and renders
+a different information shape:
 
 | Component | Role |
 |-----------|------|
 | `Badge` | Generic neutral or accent label chip |
-| `RoleBadge` | Admin/member/readonly role indicator |
-| `StatusBadge` | Account status, health state, count indicator |
-| `ScopePill` | API key scope (read/write/mcp) |
-
-This is a documented family, not duplication — each carries distinct semantic
-colour tokens and renders different information shapes.
+| `RoleBadge` | Account role indicator — `admin` / `member` / `readonly`, plus `service` for an API-key identity |
+| `StatusBadge` | Status pill with a leading colour dot — tone `ok` / `warn` / `danger` / `info` |
+| `ScopePill` | API-key scope — `api` / `mcp` / `admin` |
 
 ### 14.6 Authentication model
 
-The frontend uses a signed `HttpOnly` session cookie (set by `POST /api/auth/login`).
-The `SEARCH_API_KEY` never appears in the bundle. A `401` response from any
-protected endpoint triggers `me`-query invalidation → `ProtectedRoute` redirect
-to `/login`. API keys (REST/MCP) are a separate credential and cannot authenticate
+The frontend authenticates with a signed `HttpOnly` session cookie, set by
+`POST /api/auth/login`. No shared-secret key exists in the bundle (the legacy
+`SEARCH_API_KEY` was retired server-side). A `401` from any protected endpoint
+triggers `me`-query invalidation → `ProtectedRoute` redirect to `/login`. The
+`sk-pls-…` API keys (REST/MCP) are a separate credential and cannot authenticate
 the browser session.
 
 ### 14.7 `DocumentPreviewScreen` interface
