@@ -134,6 +134,59 @@ class SourceDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class TokenUsage:
+    """Token counts for one or more LLM calls. ``reasoning`` is a subset of
+    ``completion`` (reasoning tokens bill as output); ``total`` == prompt +
+    completion (the API's ``total_tokens``)."""
+
+    prompt: int
+    completion: int
+    reasoning: int
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class Cost:
+    """A priced cost. ``usd`` is None for an unknown/unpriced model; ``local`` is
+    True for a local (Ollama) provider, where cost is genuinely zero."""
+
+    usd: float | None
+    local: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PhaseRecord:
+    """One completed pipeline phase, for the trace. ``tokens``/``cost`` are None
+    for non-LLM phases (retrieve, gate, cache)."""
+
+    phase: str
+    label: str
+    detail: dict[str, object]
+    tokens: TokenUsage | None
+    cost: Cost | None
+    ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class SearchTrace:
+    """The ordered per-phase trace assembled during a search."""
+
+    phases: tuple[PhaseRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CostSummary:
+    """Whole-query token + cost totals. ``usd`` is None when any LLM call was
+    unpriced-and-not-local (no honest total). ``local`` is True when every billed
+    call was local."""
+
+    tokens: TokenUsage
+    usd: float | None
+    local: bool
+    llm_calls: int
+
+
+@dataclass(frozen=True, slots=True)
 class SearchStats:
     """Pipeline execution statistics returned with every SearchResult.
 
