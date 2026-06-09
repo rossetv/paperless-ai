@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import structlog
 
-from common.clock import parse_paperless_timestamp, utc_now_iso
+from common.clock import utc_now_iso
 from common.paperless import PaperlessDocument, PaperlessItem
 from indexer.reconciler import _failed_documents
 from indexer.reconciler._fanout import _WORKER_THREAD_PREFIX, _index_documents
@@ -49,6 +49,7 @@ from indexer.reconciler._light_diff import (
     _LIGHT_DIFF_FIELDS,
     _LightDocumentRow,
     _diff_light_page,
+    _fold_modified,
 )
 from indexer.worker import IndexOutcome
 from store.models import TaxonomyEntry
@@ -404,27 +405,14 @@ def _fold_latest_modified(
     Folds the newest parseable ``modified`` timestamp across *documents* into
     *latest* (the running maximum carried across batches), so the watermark's
     maximum is computed without ever holding more than one batch of documents
-    in memory.  Each ``modified`` value is run through
-    :func:`common.clock.parse_paperless_timestamp` — the shared Paperless-
-    timestamp normaliser — so the maximum is over UTC-aware datetimes.  An
-    unparseable value is logged and skipped rather than aborting the watermark
-    advance; when neither *latest* nor any document carries a parseable value
-    the result is ``None`` and the watermark is left unchanged by the caller.
+    in memory.  Delegates per-document folding to
+    :func:`~indexer.reconciler._light_diff._fold_modified` — the shared
+    implementation used by both the batch full-document path (here) and the
+    per-row steady-state diff.  An unparseable value is logged and skipped
+    rather than aborting the watermark advance.
     """
     for doc in documents:
-        raw = doc.get("modified")
-        if not raw:
-            continue
-        parsed = parse_paperless_timestamp(raw)
-        if parsed is None:
-            log.warning(
-                "reconcile.unparseable_modified",
-                document_id=doc.get("id"),
-                modified=raw,
-            )
-            continue
-        if latest is None or parsed > latest:
-            latest = parsed
+        latest = _fold_modified(latest, doc.get("modified"), doc.get("id"))
     return latest
 
 
