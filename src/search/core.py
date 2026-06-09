@@ -238,27 +238,32 @@ class SearchCore:
         self,
         query: str,
         ui_filters: SearchFilters | None = None,
+        asker: str | None = None,
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
         A successful answer is served from / written to the process result
-        cache (RAG-05) keyed on the normalised query, the UI filters, and a
-        cheap index-version signal. A cache hit makes zero LLM calls. The cache
-        is bypassed (fail-open) when the index version cannot be read, and a
-        no-match or degraded result is never cached. ``SEARCH_CACHE_TTL_SECONDS``
-        of 0 disables the cache entirely.
+        cache (RAG-05) keyed on the normalised query, the UI filters, a cheap
+        index-version signal, and the asker identity. A cache hit makes zero
+        LLM calls. The cache is bypassed (fail-open) when the index version
+        cannot be read, and a no-match or degraded result is never cached.
+        ``SEARCH_CACHE_TTL_SECONDS`` of 0 disables the cache entirely.
 
         Args:
             query: The raw user search query.
             ui_filters: Explicit user-set filters; when provided they are
                 authoritative and bypass free-text filter resolution.
+            asker: Optional sanitised display name of the requesting user.
+                Threaded to the planner and synthesiser so first-person
+                references resolve to the right person, and included in the
+                cache key as a cross-user-leak guard.
 
         Returns:
             A SearchResult with the synthesised answer, ranked source
             documents, the query plan, and execution statistics.
         """
         cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
-        cache_key = self._cache_key(query, ui_filters)
+        cache_key = self._cache_key(query, ui_filters, asker)
         if cache_key is not None:
             cached = cache.get(cache_key)
             if cached is not None:
@@ -267,7 +272,7 @@ class SearchCore:
                 )
                 return cached
 
-        result = self._answer_uncached(query, ui_filters)
+        result = self._answer_uncached(query, ui_filters, asker)
 
         if cache_key is not None and is_cacheable(result):
             cache.put(cache_key, result)
@@ -277,6 +282,7 @@ class SearchCore:
         self,
         query: str,
         ui_filters: SearchFilters | None,
+        asker: str | None = None,
     ) -> SearchResult:
         """Run the bounded pipeline once, ignoring the cache.
 
@@ -314,7 +320,7 @@ class SearchCore:
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started
             )
 
-        plan_outcome = self._plan(query, budget)
+        plan_outcome = self._plan(query, budget, asker)
         if isinstance(plan_outcome, ClarifyNeeded):
             return self._clarify_result(plan_outcome.reason, budget, started)
         plan = plan_outcome
@@ -348,7 +354,9 @@ class SearchCore:
             return self._no_match_result(plan, budget, started)
         chunks = filtered
 
-        outcome = self._synthesise(query, chunks, mode="exploratory", budget=budget)
+        outcome = self._synthesise(
+            query, chunks, mode="exploratory", budget=budget, asker=asker
+        )
 
         # Refine while the synthesiser still wants more context, up to the
         # configured number of passes. Each pass folds the latest hint into the
@@ -369,6 +377,7 @@ class SearchCore:
                 chunks,
                 budget,
                 mode="final" if is_last else "exploratory",
+                asker=asker,
             )
             refinements += 1
         refined = refinements > 0
@@ -386,19 +395,23 @@ class SearchCore:
         )
 
     def _cache_key(
-        self, query: str, ui_filters: SearchFilters | None
+        self,
+        query: str,
+        ui_filters: SearchFilters | None,
+        asker: str | None = None,
     ) -> _CacheKey | None:
         """Build the result-cache key, or None when the index version is unreadable.
 
         Returning None makes ``answer`` bypass the cache for this request
         (fail-open) — a search must never fail because the cache could not key
-        itself (spec §6).
+        itself (spec §6). The asker is included so two users with different
+        identities never share each other's cached answer (cross-user-leak guard).
         """
         index_version = self._index_version()
         if index_version is None:
             return None
         return build_cache_key(
-            query=query, filters=ui_filters, index_version=index_version
+            query=query, filters=ui_filters, index_version=index_version, asker=asker
         )
 
     def _index_version(self) -> str | None:
@@ -420,6 +433,7 @@ class SearchCore:
         self,
         query: str,
         ui_filters: SearchFilters | None = None,
+        asker: str | None = None,
     ) -> SearchResult:
         """Plan and retrieve only — ranked sources, no synthesised answer.
 
@@ -430,6 +444,9 @@ class SearchCore:
         Args:
             query: The raw user search query.
             ui_filters: Explicit user-set filters; authoritative when set.
+            asker: Optional sanitised display name of the requesting user,
+                threaded to the planner so first-person references resolve
+                correctly in the query plan.
 
         Returns:
             A SearchResult whose ``answer`` is an empty string and whose
@@ -445,7 +462,7 @@ class SearchCore:
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started
             )
 
-        plan_outcome = self._plan(query, budget)
+        plan_outcome = self._plan(query, budget, asker)
         if isinstance(plan_outcome, ClarifyNeeded):
             return self._clarify_result(plan_outcome.reason, budget, started)
         plan = plan_outcome
@@ -464,7 +481,9 @@ class SearchCore:
     # Pipeline stages
     # ------------------------------------------------------------------
 
-    def _plan(self, query: str, budget: _LlmBudget) -> QueryPlan | ClarifyNeeded:
+    def _plan(
+        self, query: str, budget: _LlmBudget, asker: str | None = None
+    ) -> QueryPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
         When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
@@ -483,7 +502,7 @@ class SearchCore:
             )
             return trivial_plan(query)
         budget.record()
-        return self._planner.plan(query)
+        return self._planner.plan(query, asker=asker)
 
     def _retrieve_with_broaden(
         self,
@@ -586,10 +605,11 @@ class SearchCore:
         *,
         mode: SearchMode,
         budget: _LlmBudget,
+        asker: str | None = None,
     ) -> Answered | NeedsMore:
         """Run one synthesiser LLM call, recording it against the budget."""
         budget.record()
-        return self._synthesizer.synthesise(query, chunks, mode=mode)
+        return self._synthesizer.synthesise(query, chunks, mode=mode, asker=asker)
 
     def _refine(
         self,
@@ -600,6 +620,7 @@ class SearchCore:
         previous_chunks: list[RetrievedChunk],
         budget: _LlmBudget,
         mode: SearchMode,
+        asker: str | None = None,
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk]]:
         """Run one bounded refinement pass (spec §6.3).
 
@@ -619,6 +640,8 @@ class SearchCore:
             budget: The LLM-call budget; this synthesise is recorded here.
             mode: ``"exploratory"`` for an intermediate pass, ``"final"`` for
                 the last allowed pass.
+            asker: Optional sanitised display name of the requesting user,
+                forwarded to the synthesiser for first-person resolution.
 
         Returns:
             A pair of the synthesiser outcome and the merged chunk list used as
@@ -632,7 +655,7 @@ class SearchCore:
         adjusted_plan = adjust_plan(plan, needs_more.adjustment)
         new_chunks, _signal = self._retrieve_with_broaden(adjusted_plan, ui_filters)
         merged = merge_chunks(previous_chunks, new_chunks)
-        outcome = self._synthesise(query, merged, mode=mode, budget=budget)
+        outcome = self._synthesise(query, merged, mode=mode, budget=budget, asker=asker)
         return outcome, merged
 
     # ------------------------------------------------------------------
