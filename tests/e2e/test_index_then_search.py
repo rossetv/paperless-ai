@@ -58,6 +58,11 @@ _DIMENSIONS = 4
 _AXIS_TARGET: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)  # boiler warranty doc
 _AXIS_OTHER: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)  # unrelated document
 _AXIS_TO_DELETE: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0)  # document to delete
+# An axis that is orthogonal to all indexed documents — a query embedded here
+# will have cosine distance ≈ 1.0 to every stored chunk, giving a best_vector_
+# similarity of ≈ 0.5.  When SEARCH_RELEVANCE_MIN_SIMILARITY is set to 0.9
+# this signal falls below the floor and Layer 2 short-circuits synthesis.
+_AXIS_OFFTOPIC: tuple[float, ...] = (0.0, 0.0, 0.0, 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +136,11 @@ def _answered_json(answer: str, citations: list[int]) -> str:
     return json.dumps({"outcome": "answered", "answer": answer, "citations": citations})
 
 
+def _clarify_json(reason: str) -> str:
+    """Return a well-formed planner clarify response string (Layer 1)."""
+    return json.dumps({"clarify": {"reason": reason}})
+
+
 # ---------------------------------------------------------------------------
 # Test-object builders
 # ---------------------------------------------------------------------------
@@ -161,9 +171,6 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     # and both kill-switches OFF mirror make_search_settings's test defaults.
     settings.SEARCH_CACHE_TTL_SECONDS = 0
     settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL = False
-    settings.SEARCH_SKIP_SYNTH_ON_WEAK_RETRIEVAL = False
-    settings.SEARCH_WEAK_RETRIEVAL_MIN_CHUNKS = 1
-    settings.SEARCH_WEAK_RETRIEVAL_MIN_SCORE = 0.0
     settings.SEARCH_PLANNER_REASONING_EFFORT = "medium"
     settings.SEARCH_ANSWER_REASONING_EFFORT = "medium"
     settings.LLM_PROVIDER = "openai"
@@ -504,3 +511,199 @@ class TestIndexThenSearch:
         assert 3 not in source_ids, (
             f"deleted document 3 appeared in results: {source_ids}"
         )
+
+
+class TestFailFastGates:
+    """End-to-end coverage of the three fail-fast gates (Layers 0, 1, 2).
+
+    All three tests use the same two-document store seeded via the real
+    Reconciler / StoreWriter.  Only the LLM stages (planner + synthesiser) are
+    mocked; the retriever and store are real, so the relevance signals are
+    genuine.
+
+    Layer 0 (degenerate-input guard) is validated in unit tests; these cases
+    cover Layers 1 and 2 plus the normal answered path at integration depth.
+    """
+
+    # ------------------------------------------------------------------
+    # Shared fixture helpers
+    # ------------------------------------------------------------------
+
+    def _seed_store(self, settings: MagicMock) -> None:
+        """Index two documents into the real store at *settings.INDEX_DB_PATH*.
+
+        Document 1 (boiler warranty) is embedded on ``_AXIS_TARGET``.
+        Document 2 (council tax) is embedded on ``_AXIS_OTHER``.
+        DOCUMENT_WORKERS=1 ensures sequential, deterministic axis assignment.
+        """
+        settings.DOCUMENT_WORKERS = 1
+        documents = [
+            _make_doc(
+                doc_id=1,
+                content="The boiler warranty certificate is valid until March 2028.",
+                title="Worcester Bosch Boiler Warranty",
+            ),
+            _make_doc(
+                doc_id=2,
+                content="Your council tax band is D for the 2024 financial year.",
+                title="Council Tax Letter",
+            ),
+        ]
+        doc_to_axis = {1: _AXIS_TARGET, 2: _AXIS_OTHER}
+        indexer_embedding_client = _make_indexer_embedding_client(doc_to_axis)
+        store_writer = StoreWriter(settings)
+        try:
+            paperless = _make_paperless(documents=documents)
+            report = Reconciler(
+                settings, paperless, store_writer, indexer_embedding_client
+            ).incremental_sync()
+            assert report.indexed == 2
+        finally:
+            store_writer.close()
+
+    # ------------------------------------------------------------------
+    # Layer 1: planner adequacy gate returns "clarify"
+    # ------------------------------------------------------------------
+
+    def test_vague_query_returns_clarify_outcome(self, tmp_path: Any) -> None:
+        """A query the planner judges too vague is returned as outcome_kind='clarify'.
+
+        The planner's scripted response carries a ``clarify`` payload.  The core
+        must surface ``outcome_kind='clarify'``, return no sources, and never
+        call the synthesiser — no synthesis call can occur before a clarify
+        short-circuit.
+
+        The real store is seeded (retrieval would succeed for an on-topic query)
+        to confirm the gate fires before any retrieval attempt.
+        """
+        settings = _make_settings(tmp_path)
+        self._seed_store(settings)
+
+        store_reader = StoreReader(settings)
+        try:
+            llm_client = _ScriptedLLMClient(
+                planner_response=_clarify_json(
+                    "Query is too vague — add a document type or correspondent."
+                ),
+                # Synthesiser responses should never be reached for a clarify result.
+                synthesiser_responses=["SHOULD NOT BE CALLED"],
+            )
+            core = _build_search_core(
+                settings,
+                store_reader,
+                llm_client,
+                _make_query_embedding_client(_AXIS_TARGET),
+            )
+            result = core.answer("life")
+        finally:
+            store_reader.close()
+
+        assert result.outcome_kind == "clarify", (
+            f"expected clarify, got {result.outcome_kind!r}"
+        )
+        assert len(result.sources) == 0, (
+            f"clarify result must have no sources; got {result.sources}"
+        )
+        # The synthesiser must never have been called.
+        assert llm_client.synthesiser_calls == 0, (
+            f"synthesiser was called {llm_client.synthesiser_calls} time(s); "
+            "expected 0 for a clarify short-circuit"
+        )
+
+    # ------------------------------------------------------------------
+    # Layer 2: relevance gate rejects weak retrieval signal
+    # ------------------------------------------------------------------
+
+    def test_offtopic_query_returns_no_match_outcome(self, tmp_path: Any) -> None:
+        """An off-topic query whose retrieval signal is too weak returns 'no_match'.
+
+        The query is embedded on ``_AXIS_OFFTOPIC``, which is orthogonal to
+        every indexed document's axis.  Cosine distance to every stored chunk
+        is therefore 1.0, giving best_vector_similarity ≈ 0.5.
+        ``SEARCH_RELEVANCE_MIN_SIMILARITY`` is set to 0.9, so the Layer-2 gate
+        fires: the core returns ``outcome_kind='no_match'`` with no sources and
+        skips synthesis entirely.
+
+        The planner returns a well-formed plan (not clarify) so only Layer 2
+        can produce the no_match outcome.
+        """
+        settings = _make_settings(tmp_path)
+        # Raise the relevance floor so the ≈0.5 off-topic signal falls below it.
+        settings.SEARCH_RELEVANCE_MIN_SIMILARITY = 0.9
+        self._seed_store(settings)
+
+        store_reader = StoreReader(settings)
+        try:
+            llm_client = _ScriptedLLMClient(
+                planner_response=_planner_json(["house deeds Spain"]),
+                # Synthesiser must not be reached when Layer 2 fires.
+                synthesiser_responses=["SHOULD NOT BE CALLED"],
+            )
+            core = _build_search_core(
+                settings,
+                store_reader,
+                llm_client,
+                # Off-topic axis: distance ≈ 1.0 to all stored chunks →
+                # similarity ≈ 0.5, below the 0.9 floor.
+                _make_query_embedding_client(_AXIS_OFFTOPIC),
+            )
+            result = core.answer("house deeds in Spain")
+        finally:
+            store_reader.close()
+
+        assert result.outcome_kind == "no_match", (
+            f"expected no_match, got {result.outcome_kind!r}"
+        )
+        assert len(result.sources) == 0, (
+            f"no_match result must have no sources; got {result.sources}"
+        )
+        # The synthesiser must not have been called — Layer 2 short-circuits
+        # before synthesis.
+        assert llm_client.synthesiser_calls == 0, (
+            f"synthesiser was called {llm_client.synthesiser_calls} time(s); "
+            "expected 0 for a Layer-2 no_match short-circuit"
+        )
+
+    # ------------------------------------------------------------------
+    # Normal path: on-topic query returns answered with sources
+    # ------------------------------------------------------------------
+
+    def test_ontopic_query_returns_answered_outcome_with_sources(
+        self, tmp_path: Any
+    ) -> None:
+        """An on-topic query produces outcome_kind='answered' with at least one source.
+
+        The query is embedded on ``_AXIS_TARGET`` so cosine distance to
+        document 1 (boiler warranty) is 0.0 — the best possible signal.
+        The planner returns a plan; the synthesiser returns an answered result.
+        """
+        settings = _make_settings(tmp_path)
+        self._seed_store(settings)
+
+        store_reader = StoreReader(settings)
+        try:
+            llm_client = _ScriptedLLMClient(
+                planner_response=_planner_json(["boiler warranty expiry"]),
+                synthesiser_responses=[
+                    _answered_json(
+                        "Your boiler warranty is valid until March 2028 [1].",
+                        citations=[1],
+                    )
+                ],
+            )
+            core = _build_search_core(
+                settings,
+                store_reader,
+                llm_client,
+                _make_query_embedding_client(_AXIS_TARGET),
+            )
+            result = core.answer("when does my boiler warranty expire?")
+        finally:
+            store_reader.close()
+
+        assert result.outcome_kind == "answered", (
+            f"expected answered, got {result.outcome_kind!r}"
+        )
+        assert len(result.sources) > 0, "answered result must have at least one source"
+        source_ids = {source.document_id for source in result.sources}
+        assert 1 in source_ids, f"expected document 1 in sources; got {source_ids}"
