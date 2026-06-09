@@ -31,7 +31,6 @@ store, store.reader.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -39,6 +38,7 @@ from fastapi import APIRouter, Depends
 
 from appdb import daemon_status, reconcile_activity
 from search.deps import get_app_db, require_admin, require_api_scope
+from search.index_sentinel import request_index_rebuild
 from search.index_service import overall_health, resolve_daemon_statuses
 from search.wire import (
     DaemonStatusResponse,
@@ -58,15 +58,6 @@ log = structlog.get_logger(__name__)
 
 # How many reconcile-activity rows GET /api/index/activity returns.
 _ACTIVITY_LIMIT = 50
-
-# The rebuild sentinel file name — written beside index.db, consumed by the
-# indexer's polling loop (web-redesign spec §5, Wave 6).
-_REBUILD_SENTINEL_NAME = "rebuild.request"
-
-# The reconcile sentinel file name — touching it wakes the indexer's
-# _interruptible_wait immediately so the rebuild sentinel is acted upon
-# within the wake-check interval rather than waiting a full RECONCILE_INTERVAL.
-_RECONCILE_SENTINEL_NAME = "reconcile.request"
 
 
 def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
@@ -199,16 +190,11 @@ def _index_rebuild(settings: Settings) -> RebuildResponse:
     """
     from fastapi import HTTPException
 
-    db_dir = Path(settings.INDEX_DB_PATH).parent
-    sentinel = db_dir / _REBUILD_SENTINEL_NAME
-    reconcile_sentinel = db_dir / _RECONCILE_SENTINEL_NAME
     try:
-        sentinel.touch()
-        reconcile_sentinel.touch()
+        request_index_rebuild(settings.INDEX_DB_PATH)
     except OSError as exc:
         log.error(
             "api.index_rebuild_sentinel_write_failed",
-            sentinel=str(sentinel),
             error=str(exc),
             error_type=type(exc).__name__,
         )
@@ -216,7 +202,6 @@ def _index_rebuild(settings: Settings) -> RebuildResponse:
             status_code=503,
             detail="cannot write sentinel: index data directory not writable",
         ) from exc
-    log.warning("api.index_rebuild_triggered", sentinel=str(sentinel))
     return RebuildResponse(
         accepted=True,
         detail=(

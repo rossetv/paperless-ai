@@ -123,6 +123,60 @@ def test_put_settings_flags_a_reindex_change(admin_client) -> None:
     assert items["OCR_DPI"]["requires_reindex"] is False
 
 
+def test_put_settings_changing_a_reindex_key_forces_a_rebuild(
+    admin_client, tmp_path
+) -> None:
+    """Saving a re-index key (CHUNK_SIZE) forces a full rebuild.
+
+    The whole point of the feature: changing the chunking (or the embedding
+    model) makes the existing vectors stale, so the save must drop the
+    indexer's rebuild.request + reconcile.request sentinels and flag
+    reindex_triggered, rather than leaving the operator to remember to rebuild.
+    """
+    client, _ = admin_client
+    response = client.put("/api/settings", json={"changes": {"CHUNK_SIZE": "1000"}})
+    assert response.status_code == 200
+    assert response.json()["reindex_triggered"] is True
+    # The sentinels land beside index.db — make_settings puts it at tmp_path.
+    assert (tmp_path / "rebuild.request").exists()
+    assert (tmp_path / "reconcile.request").exists()
+
+
+def test_put_settings_changing_the_embedding_model_forces_a_rebuild(
+    admin_client, tmp_path
+) -> None:
+    """The motivating case: switching EMBEDDING_MODEL forces a rebuild so old
+    and new vectors never coexist."""
+    client, _ = admin_client
+    response = client.put(
+        "/api/settings",
+        json={"changes": {"EMBEDDING_MODEL": "text-embedding-3-large"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["reindex_triggered"] is True
+    assert (tmp_path / "rebuild.request").exists()
+
+
+def test_put_settings_changing_an_ordinary_key_does_not_rebuild(
+    admin_client, tmp_path
+) -> None:
+    """An ordinary key (OCR_DPI) hot-loads with no rebuild: no flag, no sentinel."""
+    client, _ = admin_client
+    response = client.put("/api/settings", json={"changes": {"OCR_DPI": "200"}})
+    assert response.status_code == 200
+    assert response.json()["reindex_triggered"] is False
+    assert not (tmp_path / "rebuild.request").exists()
+
+
+def test_put_settings_no_change_does_not_rebuild(admin_client, tmp_path) -> None:
+    """An empty change set triggers no rebuild — nothing changed."""
+    client, _ = admin_client
+    response = client.put("/api/settings", json={"changes": {}})
+    assert response.status_code == 200
+    assert response.json()["reindex_triggered"] is False
+    assert not (tmp_path / "rebuild.request").exists()
+
+
 def test_put_settings_bumps_the_config_version(admin_client) -> None:
     """A PUT bumps config_version so every process hot-loads the change."""
     client, app_db = admin_client
