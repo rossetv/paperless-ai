@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from store import SearchFilters
 
 if TYPE_CHECKING:
-    from search.models import SearchResult
+    from search.models import Cost, PhaseRecord, SearchResult, TokenUsage
 
 # The documented maximum length of a search query / question (§10.4).  Long
 # enough for any reasonable natural-language question; short enough to bound
@@ -143,6 +143,72 @@ class SearchStatsResponse(BaseModel):
     refined: bool
 
 
+class TokenUsageResponse(BaseModel):
+    """Token counts for one or more LLM calls (spec §Telemetry).
+
+    Mirrors :class:`~search.models.TokenUsage`: ``reasoning`` is a subset of
+    ``completion`` (reasoning tokens bill as output) and must never be added to
+    the cost separately; ``total`` is the API's ``total_tokens``.
+    """
+
+    prompt: int
+    completion: int
+    reasoning: int
+    total: int
+
+
+class CostResponse(BaseModel):
+    """A priced cost for a phase (spec §Telemetry).
+
+    ``usd`` is ``None`` for an unknown/unpriced model (the UI shows "—") and
+    ``local`` is ``True`` for a local (Ollama) provider, where the cost is
+    genuinely zero. Mirrors :class:`~search.models.Cost`.
+    """
+
+    usd: float | None
+    local: bool
+
+
+class PhaseRecordResponse(BaseModel):
+    """One completed pipeline phase, for the live trace (spec §Telemetry).
+
+    ``tokens``/``cost`` are ``None`` for the non-LLM phases (retrieve, gate,
+    cache). ``detail`` is a per-phase free-form map the SPA renders (the
+    planner's rewritten query, the judge's per-document verdicts, …). Mirrors
+    :class:`~search.models.PhaseRecord`.
+    """
+
+    phase: str
+    label: str
+    detail: dict[str, object]
+    tokens: TokenUsageResponse | None
+    cost: CostResponse | None
+    ms: int
+
+
+class SearchTraceResponse(BaseModel):
+    """The ordered per-phase trace assembled during a search (spec §Telemetry).
+
+    Mirrors :class:`~search.models.SearchTrace`.
+    """
+
+    phases: list[PhaseRecordResponse]
+
+
+class CostSummaryResponse(BaseModel):
+    """Whole-query token + dollar-cost totals (spec §Telemetry).
+
+    ``usd`` is ``None`` when any LLM call was unpriced-and-not-local (there is
+    no honest total to show); ``local`` is ``True`` when every billed call was
+    local. Mirrors :class:`~search.models.CostSummary`.
+    """
+
+    tokens: TokenUsageResponse
+    usd: float | None
+    local: bool
+    llm_calls: int
+
+
 class SearchResponse(BaseModel):
     """Response body for POST /api/search."""
 
@@ -150,6 +216,19 @@ class SearchResponse(BaseModel):
     sources: list[SourceDocumentResponse]
     plan: QueryPlanResponse
     stats: SearchStatsResponse
+    trace: SearchTraceResponse
+    """The ordered per-phase reasoning trace (spec §Telemetry).
+
+    Always produced now — the core assembles it on every result (empty for a
+    Layer-1 clarify short-circuit). The SPA folds it into the "How this answer
+    was found" disclosure; MCP/REST consumers may ignore it.
+    """
+    cost: CostSummaryResponse
+    """Whole-query token + dollar-cost totals (spec §Telemetry).
+
+    Always produced now. ``usd`` is ``None`` when the spend cannot be honestly
+    priced (an unknown, non-local model); zero tokens price to ``$0.0``.
+    """
     outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
     """Discriminator for the result type (spec §7.1).
 
@@ -194,6 +273,43 @@ def to_search_filters(filters: FilterRequest | None) -> SearchFilters | None:
     )
 
 
+def _to_token_usage(usage: TokenUsage | None) -> TokenUsageResponse | None:
+    """Map a pipeline :class:`~search.models.TokenUsage` to the wire shape.
+
+    ``None`` passes straight through — a non-LLM phase carries no token usage.
+    """
+    if usage is None:
+        return None
+    return TokenUsageResponse(
+        prompt=usage.prompt,
+        completion=usage.completion,
+        reasoning=usage.reasoning,
+        total=usage.total,
+    )
+
+
+def _to_cost(cost: Cost | None) -> CostResponse | None:
+    """Map a pipeline :class:`~search.models.Cost` to the wire shape.
+
+    ``None`` passes straight through — a non-LLM phase carries no cost.
+    """
+    if cost is None:
+        return None
+    return CostResponse(usd=cost.usd, local=cost.local)
+
+
+def _to_phase_record(record: PhaseRecord) -> PhaseRecordResponse:
+    """Map one pipeline :class:`~search.models.PhaseRecord` to the wire shape."""
+    return PhaseRecordResponse(
+        phase=record.phase,
+        label=record.label,
+        detail=record.detail,
+        tokens=_to_token_usage(record.tokens),
+        cost=_to_cost(record.cost),
+        ms=record.ms,
+    )
+
+
 def to_search_response(result: SearchResult) -> SearchResponse:
     """Convert a :class:`~search.models.SearchResult` to the wire model.
 
@@ -231,10 +347,27 @@ def to_search_response(result: SearchResult) -> SearchResponse:
         latency_ms=result.stats.latency_ms,
         refined=result.stats.refined,
     )
+    trace = SearchTraceResponse(
+        phases=[_to_phase_record(phase) for phase in result.stats.trace.phases]
+    )
+    cost_summary = result.stats.cost
+    cost = CostSummaryResponse(
+        tokens=TokenUsageResponse(
+            prompt=cost_summary.tokens.prompt,
+            completion=cost_summary.tokens.completion,
+            reasoning=cost_summary.tokens.reasoning,
+            total=cost_summary.tokens.total,
+        ),
+        usd=cost_summary.usd,
+        local=cost_summary.local,
+        llm_calls=cost_summary.llm_calls,
+    )
     return SearchResponse(
         answer=result.answer,
         sources=sources,
         plan=plan,
         stats=stats,
+        trace=trace,
+        cost=cost,
         outcome_kind=result.outcome_kind,
     )
