@@ -1,0 +1,130 @@
+"""LLM document-relevance judge — the Layer-3 pre-synthesis screen.
+
+The judge makes one LLM call on the cheap SEARCH_JUDGE_MODEL (falling back
+through AI_MODELS) and returns the ids of the documents worth synthesising over.
+It is recall-biased and fail-open: any failure — malformed, empty, unparseable,
+all-models-failed — returns a verdict that keeps EVERY candidate document
+(degraded=True), so a broken judge can only ever reduce the answer model's
+context when it is confident, never block a real answer. ``judge()`` never
+raises.
+
+All LLM calls go through ``OpenAIChatMixin._create_completion``
+(CODE_GUIDELINES.md §8.1): the judge subclasses the mixin and inherits the
+shared OpenAI singleton, the ``@retry`` backoff, and the ``llm_limiter``.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+import structlog
+
+from common.llm import OpenAIChatMixin, extract_json_object
+from search.models import JudgeCandidate, JudgeVerdict
+from search.prompts import (
+    JUDGE_SYSTEM_PROMPT,
+    _judge_response_format,
+    build_judge_user_message,
+)
+
+if TYPE_CHECKING:
+    from common.config import Settings
+
+log = structlog.get_logger(__name__)
+
+
+class RelevanceJudge(OpenAIChatMixin):
+    """Decide which retrieved documents could plausibly answer the query.
+
+    A pure function wrapped in a class for dependency injection; all state is in
+    the injected ``settings``, so instances are safe to share across threads.
+
+    Args:
+        settings: Supplies SEARCH_JUDGE_MODEL and AI_MODELS for the fallback
+            chain, SEARCH_JUDGE_REASONING_EFFORT, and MAX_RETRIES /
+            MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
+    """
+
+    _STAT_KEYS: tuple[str, ...] = ()
+
+    def __init__(self, settings: Settings) -> None:
+        # ``self.settings`` is the attribute the @retry decorator reads via
+        # duck-typing — it must not be renamed.
+        self.settings = settings
+        self._init_stats()
+
+    def judge(
+        self, query: str, candidates: Sequence[JudgeCandidate]
+    ) -> JudgeVerdict:
+        """Return the relevant-document verdict for *query* over *candidates*.
+
+        One LLM call on SEARCH_JUDGE_MODEL. Fail-open on every failure path:
+        the returned verdict then keeps all candidate ids with ``degraded=True``.
+        Never raises.
+        """
+        all_ids = frozenset(c.document_id for c in candidates)
+        if not all_ids:
+            # Nothing to judge — fail-open rather than emit an accidental bail.
+            return JudgeVerdict(relevant_document_ids=all_ids, degraded=True)
+
+        messages = [
+            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": build_judge_user_message(query, list(candidates)),
+            },
+        ]
+        raw_content = self._complete_with_model_fallback(
+            primary_model=self.settings.SEARCH_JUDGE_MODEL,
+            messages=messages,
+            fallback_models=self.settings.AI_MODELS,
+            log_event_prefix="judge",
+            reasoning_effort=self.settings.SEARCH_JUDGE_REASONING_EFFORT,
+            response_format=_judge_response_format(self.settings),
+        )
+        if raw_content is None:
+            return self._fail_open(
+                all_ids, reason="all models failed or returned empty content"
+            )
+        return self._parse_response(raw_content, all_ids)
+
+    def _parse_response(self, raw: str, all_ids: frozenset[int]) -> JudgeVerdict:
+        """Parse *raw* into a JudgeVerdict, failing open on any malformed shape.
+
+        Bail (empty set, not degraded) ONLY when the model returned an explicit
+        empty list. A non-empty list whose ids do not match any candidate is
+        ambiguous, not an explicit "nothing relevant", so it fails open.
+        """
+        stripped = raw.strip()
+        if not stripped:
+            return self._fail_open(all_ids, reason="LLM returned empty content")
+        try:
+            data = extract_json_object(stripped)
+        except json.JSONDecodeError:
+            return self._fail_open(all_ids, reason="LLM response was not valid JSON")
+        if not isinstance(data, dict):
+            return self._fail_open(all_ids, reason="LLM response was not a JSON object")
+
+        raw_ids = data.get("relevant_document_ids")
+        if not isinstance(raw_ids, list):
+            return self._fail_open(
+                all_ids, reason="missing or non-list relevant_document_ids"
+            )
+
+        kept = frozenset(
+            int(i)
+            for i in raw_ids
+            if isinstance(i, int) and not isinstance(i, bool) and i in all_ids
+        )
+        if raw_ids and not kept:
+            return self._fail_open(
+                all_ids, reason="verdict ids did not match any candidate"
+            )
+        return JudgeVerdict(relevant_document_ids=kept, degraded=False)
+
+    def _fail_open(self, all_ids: frozenset[int], reason: str) -> JudgeVerdict:
+        """Return a keep-everything verdict and log a warning."""
+        log.warning("judge.degraded_to_fail_open", reason=reason)
+        return JudgeVerdict(relevant_document_ids=all_ids, degraded=True)
