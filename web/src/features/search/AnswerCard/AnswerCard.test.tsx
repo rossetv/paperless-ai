@@ -13,6 +13,7 @@ const makeSource = (id: number): SourceDocument => ({
   snippet: 'Some text snippet',
   paperless_url: `https://paperless.example.com/documents/${id}/`,
   score: 0.9,
+  relevance_tier: 'strong',
   tags: [],
 });
 

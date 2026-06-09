@@ -34,6 +34,7 @@ from search.models import (
     SearchStats,
     SourceDocument,
 )
+from search.relevance import RelevanceTier
 from store.models import (
     ChunkHit,
     FacetSet,
@@ -102,6 +103,7 @@ def make_retrieved_chunk(
     text: str = "Retrieved chunk text.",
     page_hint: int | None = 1,
     rrf_score: float = 0.5,
+    vector_similarity: float | None = None,
 ) -> RetrievedChunk:
     """Create a RetrievedChunk — one fused chunk as the retriever returns it."""
     return RetrievedChunk(
@@ -110,6 +112,7 @@ def make_retrieved_chunk(
         text=text,
         page_hint=page_hint,
         rrf_score=rrf_score,
+        vector_similarity=vector_similarity,
     )
 
 
@@ -149,6 +152,7 @@ def make_source_document(
     snippet: str = "A representative snippet.",
     paperless_url: str | None = None,
     score: float = 0.9,
+    relevance_tier: RelevanceTier = "good",
 ) -> SourceDocument:
     """Create a SourceDocument — one ranked source in a SearchResult.
 
@@ -168,6 +172,7 @@ def make_source_document(
             else f"http://paperless.example:8000/documents/{document_id}/"
         ),
         score=score,
+        relevance_tier=relevance_tier,
     )
 
 

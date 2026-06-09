@@ -12,6 +12,7 @@ const source: SourceDocument = {
     'Total electricity & gas charges for the period: **£1,847.32**. Twelve direct debits of **£153.94** were collected.',
   paperless_url: 'https://paperless.example.com/documents/9823/',
   score: 0.92,
+  relevance_tier: 'strong',
   tags: [],
 };
 

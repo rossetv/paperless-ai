@@ -1,0 +1,45 @@
+/*
+ * RelevanceMeter primitive — CSS Module.
+ *
+ * A monochrome relevance badge: a row of four dots (filled = match strength)
+ * and a label. Per DESIGN.md the chromatic accent is reserved for interactive
+ * elements, so the dots use only neutral tokens — filled dots are the primary
+ * ink, empty dots the faint border tone.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.meter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.dot {
+  width: var(--spacing-4);
+  height: var(--spacing-4);
+  border-radius: var(--radius-circle);
+}
+
+/* Filled dot — the primary ink. */
+.filled {
+  background-color: var(--colour-text-primary);
+}
+
+/* Empty dot — the faint border tone, the same neutral used for inactive
+   status dots in PipelineStages. No colour. */
+.empty {
+  background-color: var(--colour-border);
+}
+
+.label {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
