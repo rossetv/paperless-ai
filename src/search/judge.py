@@ -1,12 +1,12 @@
 """LLM document-relevance judge — the Layer-3 pre-synthesis screen.
 
 The judge makes one LLM call on the cheap SEARCH_JUDGE_MODEL (falling back
-through AI_MODELS) and returns the ids of the documents worth synthesising over.
-It is recall-biased and fail-open: any failure — malformed, empty, unparseable,
-all-models-failed — returns a verdict that keeps EVERY candidate document
-(degraded=True), so a broken judge can only ever reduce the answer model's
-context when it is confident, never block a real answer. ``judge()`` never
-raises.
+through AI_MODELS) and returns one :class:`~search.models.DocVerdict` per
+candidate. It is recall-biased and fail-open: any failure — malformed, empty,
+unparseable, all-models-failed — returns a verdict that keeps EVERY candidate
+document (degraded=True), so a broken judge can only ever reduce the answer
+model's context when it is confident, never block a real answer.
+``judge()`` never raises.
 
 All LLM calls go through ``OpenAIChatMixin._create_completion``
 (CODE_GUIDELINES.md §8.1): the judge subclasses the mixin and inherits the
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
-from search.models import JudgeCandidate, JudgeVerdict
+from search.models import DocVerdict, JudgeCandidate, JudgeVerdict
 from search.prompts import (
     JUDGE_SYSTEM_PROMPT,
     _judge_response_format,
@@ -31,8 +31,12 @@ from search.prompts import (
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from common.llm import LlmCallUsage
 
 log = structlog.get_logger(__name__)
+
+#: Maximum length (characters) for a model-generated rationale string.
+_MAX_REASON_CHARS = 200
 
 
 class RelevanceJudge(OpenAIChatMixin):
@@ -43,8 +47,9 @@ class RelevanceJudge(OpenAIChatMixin):
 
     Args:
         settings: Supplies SEARCH_JUDGE_MODEL and AI_MODELS for the fallback
-            chain, SEARCH_JUDGE_REASONING_EFFORT, and MAX_RETRIES /
-            MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
+            chain, SEARCH_JUDGE_REASONING_EFFORT, SEARCH_JUDGE_RATIONALES, and
+            MAX_RETRIES / MAX_RETRY_BACKOFF_SECONDS for the inherited retry
+            decorator.
     """
 
     _STAT_KEYS: tuple[str, ...] = ()
@@ -55,23 +60,39 @@ class RelevanceJudge(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
-    def judge(self, query: str, candidates: Sequence[JudgeCandidate]) -> JudgeVerdict:
+    def judge(
+        self,
+        query: str,
+        candidates: Sequence[JudgeCandidate],
+        *,
+        usage_sink: list[LlmCallUsage] | None = None,
+    ) -> JudgeVerdict:
         """Return the relevant-document verdict for *query* over *candidates*.
 
         One LLM call on SEARCH_JUDGE_MODEL. Fail-open on every failure path:
         the returned verdict then keeps all candidate ids with ``degraded=True``.
         Never raises.
+
+        Args:
+            query: The user's original search query.
+            candidates: The document-level candidates (id + best-chunk snippet).
+            usage_sink: Optional list to receive one
+                :class:`~common.llm.LlmCallUsage` record capturing the token
+                usage for this call. Pass ``None`` to skip capture.
         """
         all_ids = frozenset(c.document_id for c in candidates)
         if not all_ids:
             # Nothing to judge — fail-open rather than emit an accidental bail.
-            return JudgeVerdict(relevant_document_ids=all_ids, degraded=True)
+            return JudgeVerdict(verdicts=(), degraded=True)
 
+        include_reasons = self.settings.SEARCH_JUDGE_RATIONALES
         messages = [
             {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
             {
                 "role": "user",
-                "content": build_judge_user_message(query, list(candidates)),
+                "content": build_judge_user_message(
+                    query, list(candidates), include_reasons=include_reasons
+                ),
             },
         ]
         raw_content = self._complete_with_model_fallback(
@@ -81,19 +102,28 @@ class RelevanceJudge(OpenAIChatMixin):
             log_event_prefix="judge",
             reasoning_effort=self.settings.SEARCH_JUDGE_REASONING_EFFORT,
             response_format=_judge_response_format(self.settings),
+            usage_sink=usage_sink,
         )
         if raw_content is None:
             return self._fail_open(
                 all_ids, reason="all models failed or returned empty content"
             )
-        return self._parse_response(raw_content, all_ids)
+        return self._parse_response(raw_content, all_ids, list(candidates))
 
-    def _parse_response(self, raw: str, all_ids: frozenset[int]) -> JudgeVerdict:
+    def _parse_response(
+        self,
+        raw: str,
+        all_ids: frozenset[int],
+        candidates: list[JudgeCandidate],
+    ) -> JudgeVerdict:
         """Parse *raw* into a JudgeVerdict, failing open on any malformed shape.
 
-        Bail (empty set, not degraded) ONLY when the model returned an explicit
-        empty list. A non-empty list whose ids do not match any candidate is
-        ambiguous, not an explicit "nothing relevant", so it fails open.
+        Bail (empty kept, not degraded) ONLY when the model returned an explicit
+        verdict list AND every candidate's resolved ``keep`` is ``False``.
+
+        Missing candidates (the model omitted a document id) default to
+        ``keep=True`` with an empty reason — recall-biased safe default. Reason
+        strings are capped at :data:`_MAX_REASON_CHARS`.
         """
         stripped = raw.strip()
         if not stripped:
@@ -105,24 +135,59 @@ class RelevanceJudge(OpenAIChatMixin):
         if not isinstance(data, dict):
             return self._fail_open(all_ids, reason="LLM response was not a JSON object")
 
-        raw_ids = data.get("relevant_document_ids")
-        if not isinstance(raw_ids, list):
-            return self._fail_open(
-                all_ids, reason="missing or non-list relevant_document_ids"
+        raw_verdicts = data.get("verdicts")
+        if not isinstance(raw_verdicts, list):
+            return self._fail_open(all_ids, reason="missing or non-list verdicts field")
+
+        # Build a lookup from the model's verdicts, validating each entry.
+        model_verdicts: dict[int, tuple[bool, str]] = {}
+        for item in raw_verdicts:
+            if not isinstance(item, dict):
+                continue
+            doc_id = item.get("document_id")
+            keep = item.get("keep")
+            reason = item.get("reason", "")
+            if not isinstance(doc_id, int) or isinstance(doc_id, bool):
+                continue
+            if not isinstance(keep, bool):
+                continue
+            if not isinstance(reason, str):
+                reason = ""
+            # Cap reason length; never trust raw model text unchecked.
+            reason = reason[:_MAX_REASON_CHARS]
+            if doc_id in all_ids:
+                model_verdicts[doc_id] = (bool(keep), reason)
+
+        # Build a DocVerdict for EVERY candidate. An omitted id defaults to
+        # keep=True, "" reason — recall-biased: the judge not mentioning a doc
+        # is not an explicit drop.
+        doc_verdicts: list[DocVerdict] = []
+        for candidate in candidates:
+            if candidate.document_id in model_verdicts:
+                keep_flag, reason_str = model_verdicts[candidate.document_id]
+            else:
+                keep_flag, reason_str = True, ""
+            doc_verdicts.append(
+                DocVerdict(
+                    document_id=candidate.document_id,
+                    keep=keep_flag,
+                    reason=reason_str,
+                )
             )
 
-        kept = frozenset(
-            int(i)
-            for i in raw_ids
-            if isinstance(i, int) and not isinstance(i, bool) and i in all_ids
-        )
-        if raw_ids and not kept:
-            return self._fail_open(
-                all_ids, reason="verdict ids did not match any candidate"
-            )
-        return JudgeVerdict(relevant_document_ids=kept, degraded=False)
+        return JudgeVerdict(verdicts=tuple(doc_verdicts), degraded=False)
 
     def _fail_open(self, all_ids: frozenset[int], reason: str) -> JudgeVerdict:
         """Return a keep-everything verdict and log a warning."""
         log.warning("judge.degraded_to_fail_open", reason=reason)
-        return JudgeVerdict(relevant_document_ids=all_ids, degraded=True)
+        return JudgeVerdict(
+            verdicts=tuple(
+                DocVerdict(
+                    document_id=i,
+                    keep=True,
+                    reason="(judge unavailable — kept by fail-open)",
+                )
+                for i in sorted(all_ids)
+            ),
+            degraded=True,
+        )
