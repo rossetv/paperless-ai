@@ -44,6 +44,28 @@ from store.models import (
 log = structlog.get_logger(__name__)
 
 
+def _names_for_tag_ids(
+    tag_ids: list[int], tag_name_by_id: dict[int, str]
+) -> tuple[str, ...]:
+    """Resolve a list of tag ids to a tuple of names using a pre-built map.
+
+    Returns only the names whose ids are present in *tag_name_by_id*; ids with
+    no entry are silently dropped (a tag deleted from Paperless after indexing
+    simply disappears rather than causing a KeyError).
+
+    Args:
+        tag_ids: The ordered list of tag ids to resolve.
+        tag_name_by_id: The ``{id: name}`` map to look each id up in.
+
+    Returns:
+        A tuple of display names in the same order as *tag_ids*, with
+        unresolvable ids omitted.
+    """
+    return tuple(
+        tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
+    )
+
+
 def get_documents(
     conn: sqlite3.Connection,
     query_lock: threading.Lock,
@@ -102,9 +124,7 @@ def get_documents(
     documents: list[IndexedDocument] = []
     for row in rows:
         tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
-        tag_names = tuple(
-            tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
-        )
+        tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)
         documents.append(
             IndexedDocument(
                 id=row["id"],
@@ -492,9 +512,7 @@ def get_document_summary(
     except sqlite3.Error as exc:
         raise StoreError("get_document_summary query failed") from exc
 
-    tag_names = tuple(
-        tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
-    )
+    tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)
     return DocumentSummary(
         id=row["id"],
         title=row["title"],

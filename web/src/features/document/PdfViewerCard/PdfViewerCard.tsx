@@ -38,9 +38,9 @@ export function PdfViewerCard({
 
   return (
     <Card as="section" className={cn(styles['card'])}>
-      <div className={cn(styles['toolbar'])}>
+      <div className={styles['toolbar']}>
         <a
-          className={cn(styles['action'])}
+          className={styles['action']}
           href={pdfUrl}
           download
         >

@@ -180,7 +180,7 @@ export function SettingsSection({
             const hint = needsReindex ? (
               <>
                 {field.hint}
-                <span className={styles['reindex-note']!}>
+                <span className={styles['reindex-note']}>
                   Changing this requires re-indexing all documents.
                 </span>
               </>

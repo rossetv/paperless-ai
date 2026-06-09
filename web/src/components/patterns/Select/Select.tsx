@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
 import styles from './Select.module.css';
@@ -61,8 +61,7 @@ export function Select<T extends string = string>({
   // Index into `options` that is currently keyboard-highlighted (-1 = none)
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
-  const autoId = useId();
-  const listboxId = `${id ?? autoId}-listbox`;
+  const listboxId = `${id}-listbox`;
 
   const triggerRef = useRef<HTMLButtonElement>(null);
 

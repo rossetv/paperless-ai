@@ -136,7 +136,7 @@ def _diff_light_page(
     for row in light_rows:
         document_id = row["id"]
         page_ids.add(document_id)
-        latest_modified = _fold_one_modified(
+        latest_modified = _fold_modified(
             latest_modified, row.get("modified"), document_id
         )
         if _is_unchanged(index_state.get(document_id), row.get("modified")):
@@ -193,7 +193,7 @@ def _fold_modified(
     """Fold one raw ``modified`` string into the running maximum.
 
     The single implementation shared by the per-row steady-state diff
-    (:func:`_fold_one_modified`) and the batch full-document path
+    (:func:`_diff_light_page`) and the batch full-document path
     (:func:`~indexer.reconciler._incremental._fold_latest_modified`).
 
     If *raw* is absent or empty the running *latest* is returned unchanged (the
@@ -219,15 +219,3 @@ def _fold_modified(
     if latest is None or parsed > latest:
         return parsed
     return latest
-
-
-def _fold_one_modified(
-    latest: datetime | None, raw: str | None, document_id: int
-) -> datetime | None:
-    """Fold one ``modified`` value into the running maximum.
-
-    Thin wrapper around :func:`_fold_modified` for the per-row steady-state
-    diff path.  An unparseable value is logged and skipped rather than
-    aborting the watermark advance.
-    """
-    return _fold_modified(latest, raw, document_id)

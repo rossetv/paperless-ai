@@ -21,7 +21,6 @@ Allowed deps: fastapi, starlette, sqlite3, structlog, appdb (recent_searches),
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -32,6 +31,7 @@ from starlette.responses import Response
 
 from appdb import recent_searches as recent_search_store
 from common.paperless_types import DocumentMetadataUpdate
+from search.offload import run_blocking
 from search.deps import (
     get_app_db,
     require_admin,
@@ -88,9 +88,8 @@ def register_document_routes(
         caller. A 404 is returned when *document_id* is not present in the
         store.
         """
-        loop = asyncio.get_event_loop()
-        summary = await loop.run_in_executor(
-            None, store_reader.get_document_summary, document_id
+        summary = await run_blocking(
+            lambda: store_reader.get_document_summary(document_id)
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
@@ -194,12 +193,9 @@ def register_document_routes(
 
         Auth: Admin only.
         """
-        loop = asyncio.get_event_loop()
         paperless = paperless_factory(settings)
         try:
-            await loop.run_in_executor(
-                None, lambda: paperless.delete_document(document_id)
-            )
+            await run_blocking(lambda: paperless.delete_document(document_id))
         finally:
             paperless.close()
         return Response(status_code=204)
@@ -251,19 +247,15 @@ async def _patch_document(
     if "archive_serial_number" in fields_set:
         kwargs["archive_serial_number"] = body.archive_serial_number
 
-    loop = asyncio.get_event_loop()
     paperless = paperless_factory(settings)
     try:
-        await loop.run_in_executor(
-            None,
-            lambda: paperless.update_document_metadata(document_id, **kwargs),
+        await run_blocking(
+            lambda: paperless.update_document_metadata(document_id, **kwargs)
         )
     finally:
         paperless.close()
 
-    summary = await loop.run_in_executor(
-        None, lambda: store_reader.get_document_summary(document_id)
-    )
+    summary = await run_blocking(lambda: store_reader.get_document_summary(document_id))
     if summary is None:
         raise HTTPException(status_code=404, detail="document not found")
     return to_document_summary_response(
@@ -294,19 +286,15 @@ async def _swap_pipeline_tag(
         remove_tag: The tag id to remove, or ``None`` to skip removal.
         add_tag: The tag id to add.
     """
-    loop = asyncio.get_event_loop()
     paperless = paperless_factory(settings)
     try:
-        doc = await loop.run_in_executor(
-            None, lambda: paperless.get_document(document_id)
-        )
+        doc = await run_blocking(lambda: paperless.get_document(document_id))
         current: set[int] = set(doc.get("tags") or [])
         if remove_tag is not None:
             current.discard(remove_tag)
         current.add(add_tag)
-        await loop.run_in_executor(
-            None,
-            lambda: paperless.update_document_metadata(document_id, tags=current),
+        await run_blocking(
+            lambda: paperless.update_document_metadata(document_id, tags=current)
         )
     finally:
         paperless.close()

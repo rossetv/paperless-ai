@@ -25,7 +25,6 @@ Allowed deps: fastapi, starlette, httpx, structlog, common (paperless, config),
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
@@ -35,6 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from starlette.responses import StreamingResponse
 
 from search.deps import require_api_scope
+from search.offload import run_blocking
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -153,10 +153,9 @@ async def _stream_document_pdf(
             Paperless is unreachable or returns a server error.
     """
     client = paperless_factory(settings)
-    loop = asyncio.get_event_loop()
     try:
-        _content_type, chunks = await loop.run_in_executor(
-            None, client.download_stream, document_id
+        _content_type, chunks = await run_blocking(
+            lambda: client.download_stream(document_id)
         )
     except httpx.HTTPStatusError as exc:
         # download_stream failed before returning a body; nothing will drain
@@ -230,10 +229,9 @@ async def _stream_document_thumb(
             a non-image content type.
     """
     client = paperless_factory(settings)
-    loop = asyncio.get_event_loop()
     try:
-        content_type, chunks = await loop.run_in_executor(
-            None, client.thumb_stream, document_id
+        content_type, chunks = await run_blocking(
+            lambda: client.thumb_stream(document_id)
         )
     except httpx.HTTPStatusError as exc:
         client.close()

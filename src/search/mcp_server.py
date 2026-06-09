@@ -389,8 +389,9 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
     Args:
         core: The :class:`~search.core.SearchCore` orchestrating the search
             pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
-        settings: Application settings passed to FastMCP itself; the auth
-            middleware no longer reads any setting directly.
+        settings: Application settings; currently unused (reserved for future
+            middleware configuration — the auth middleware reads no setting
+            directly).
         app_db_path: The filesystem path to ``app.db``, passed to the auth
             middleware so a session cookie or an API key can authenticate an
             MCP request. The middleware opens a fresh connection per request.
