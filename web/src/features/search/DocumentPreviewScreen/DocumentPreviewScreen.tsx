@@ -5,6 +5,7 @@ import { PdfFrame } from '../../../components/primitives/PdfFrame/PdfFrame';
 import { Card } from '../../../components/primitives/Card/Card';
 import { SnippetText } from '../../../components/primitives/SnippetText/SnippetText';
 import { Text } from '../../../components/primitives/Text/Text';
+import { RelevanceMeter } from '../../../components/primitives/RelevanceMeter/RelevanceMeter';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { CitationMark } from '../../../components/primitives/CitationMark/CitationMark';
 import { Chip } from '../../../components/primitives/Chip/Chip';
@@ -90,9 +91,11 @@ export function DocumentPreviewScreen({
               <Card>
                 <Stack direction="vertical" gap={4}>
                   <Text as="span" variant="micro" tone="tertiary">
-                    Matched in this document · relevance{' '}
-                    {source.score.toFixed(2)}
+                    Matched in this document
                   </Text>
+                  {source.relevance_tier !== undefined && (
+                    <RelevanceMeter tier={source.relevance_tier} />
+                  )}
                   <SnippetText text={source.snippet} />
                 </Stack>
               </Card>

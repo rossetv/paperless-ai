@@ -12,6 +12,7 @@ const makeSource = (overrides: Partial<SourceDocument> = {}): SourceDocument => 
   snippet: 'Total charges were **£1,847.32** for the year.',
   paperless_url: 'https://paperless.example.com/documents/9823/',
   score: 0.92,
+  relevance_tier: 'strong',
   tags: [],
   ...overrides,
 });
@@ -50,15 +51,16 @@ describe('SourceCard', () => {
     expect(onPreview).toHaveBeenCalledWith(9823);
   });
 
-  it('shows the relevance score', () => {
+  it('shows the relevance badge', () => {
     render(
       <SourceCard
-        source={makeSource({ score: 0.92 })}
+        source={makeSource({ score: 0.92, relevance_tier: 'strong' })}
         index={1}
         onPreview={() => {}}
       />,
     );
-    expect(screen.getByText(/0\.92/)).toBeInTheDocument();
+    // RelevanceMeter renders the tier label in place of the raw numeric score
+    expect(screen.getByText('Strong match')).toBeInTheDocument();
   });
 
   it('omits the title block gracefully when title is null', () => {

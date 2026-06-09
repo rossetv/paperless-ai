@@ -13,6 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from search.relevance import RelevanceTier
+
 #: The synthesiser's two operating modes (spec §6.3).  ``"exploratory"`` lets
 #: the model return :class:`NeedsMore`; ``"final"`` coerces it to
 #: :class:`Answered`.  A :data:`~typing.Literal` makes a typo at any of the
@@ -84,6 +86,11 @@ class RetrievedChunk:
         text: The chunk text, passed to the synthesiser as context.
         page_hint: Source page number for citations, or None.
         rrf_score: Reciprocal Rank Fusion score (higher is better).
+        vector_similarity: Best absolute vector similarity
+            (``1 / (1 + cosine_distance)``) for this chunk across the vector
+            passes, or None when it was retrieved by keyword search alone.
+            Feeds the per-document relevance tier; unlike ``rrf_score`` it is an
+            absolute signal, not a rank-based one.
     """
 
     chunk_id: int
@@ -91,6 +98,7 @@ class RetrievedChunk:
     text: str
     page_hint: int | None
     rrf_score: float
+    vector_similarity: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +113,13 @@ class SourceDocument:
         created: Document creation date in UTC ISO-8601, or None.
         snippet: Representative text excerpt for display in the UI.
         paperless_url: Deep-link URL to the document in Paperless-ngx.
-        score: Relevance score (higher is better).
+        score: RRF fused score, used for ranking (higher is better). Not shown
+            in the UI — it is rank-based and reads as a misleadingly tiny number
+            even for a perfect hit; the qualitative ``relevance_tier`` is
+            displayed instead.
+        relevance_tier: Qualitative match strength — "strong" / "good" /
+            "partial" / "weak" — derived from the document's absolute vector
+            similarity. What the UI renders as the relevance badge.
     """
 
     document_id: int
@@ -116,6 +130,7 @@ class SourceDocument:
     snippet: str
     paperless_url: str
     score: float
+    relevance_tier: RelevanceTier = "good"
 
 
 @dataclass(frozen=True, slots=True)

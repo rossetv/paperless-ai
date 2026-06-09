@@ -15,6 +15,7 @@ const RESPONSE: SearchResponse = {
       snippet: 'Total charges for the period: **£1,847.32**.',
       paperless_url: 'https://paperless.example.com/documents/9823/',
       score: 0.92,
+      relevance_tier: 'strong',
       tags: [],
     },
     {
@@ -26,6 +27,7 @@ const RESPONSE: SearchResponse = {
       snippet: '**£153.94 was collected** on 5 December 2024.',
       paperless_url: 'https://paperless.example.com/documents/9120/',
       score: 0.86,
+      relevance_tier: 'good',
       tags: [],
     },
   ],

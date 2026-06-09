@@ -242,6 +242,19 @@ def _top_document_ids(
     return {document_id for document_id, _ in ranked_doc_ids[:top_k]}
 
 
+def _distance_to_similarity(distance: float | None) -> float | None:
+    """Map a cosine distance to a similarity in (0, 1], passing None through.
+
+    ``similarity = 1 / (1 + distance)`` maps [0, ∞) → (0, 1], is monotonically
+    decreasing in distance (the closest possible hit, distance 0, gives 1.0),
+    and is numerically stable at any finite distance — a consistent scale that
+    later calibration can interpret without knowing the absolute distance range.
+    """
+    if distance is None:
+        return None
+    return 1.0 / (1.0 + distance)
+
+
 # ---------------------------------------------------------------------------
 # Retriever
 # ---------------------------------------------------------------------------
@@ -347,6 +360,11 @@ class Retriever:
         # best_vector_distance tracks the smallest cosine distance seen across
         # all vector passes (lower = closer); converted to similarity below.
         best_vector_distance: float | None = None
+        # Per-chunk best (smallest) cosine distance across all vector passes —
+        # the absolute, per-document signal RRF discards. Keyword hits never
+        # enter here, so a chunk absent from this map was found by keyword search
+        # alone (its tier falls back to the keyword-only default).
+        vector_distance_by_chunk: dict[int, float] = {}
 
         if texts_to_embed:
             embeddings = self._embed_queries(texts_to_embed)
@@ -361,17 +379,12 @@ class Retriever:
                     pass_min = min(h.score for h in hits)
                     if best_vector_distance is None or pass_min < best_vector_distance:
                         best_vector_distance = pass_min
+                    for h in hits:
+                        prior = vector_distance_by_chunk.get(h.chunk_id)
+                        if prior is None or h.score < prior:
+                            vector_distance_by_chunk[h.chunk_id] = h.score
 
-        # rationale: similarity = 1/(1+distance) maps [0, ∞) → (0, 1] and is
-        # monotonically decreasing with distance — the closest possible hit
-        # (distance=0) gives similarity=1.0.  The formula is numerically stable
-        # at any finite distance and produces a consistent scale that later
-        # calibration can interpret without knowing the absolute distance range.
-        best_vector_similarity: float | None = (
-            1.0 / (1.0 + best_vector_distance)
-            if best_vector_distance is not None
-            else None
-        )
+        best_vector_similarity = _distance_to_similarity(best_vector_distance)
 
         # Keyword search over all keyword terms combined.
         has_keyword_hit = False
@@ -406,6 +419,9 @@ class Retriever:
                 text=first_hit[chunk_id].text,
                 page_hint=first_hit[chunk_id].page_hint,
                 rrf_score=score,
+                vector_similarity=_distance_to_similarity(
+                    vector_distance_by_chunk.get(chunk_id)
+                ),
             )
             for chunk_id, score in fused_score.items()
             if first_hit[chunk_id].document_id in top_doc_ids
