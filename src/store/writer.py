@@ -418,20 +418,34 @@ class StoreWriter:
 
         return True
 
-    def rebuild_index(self) -> None:
+    def rebuild_index(self, *, embedding_model: str, embedding_dimensions: int) -> None:
         """Wipe the entire index so the next reconcile rebuilds it from scratch.
 
         The destructive "Rebuild index" operation (web-redesign spec §5, Wave 6).
         Deletes every chunk, document, and taxonomy row and clears the
         ``modified_watermark`` meta key — all in one transaction, so a crash
         mid-wipe leaves the index either wholly intact or wholly empty, never
-        half-wiped. The embedding-model meta is deliberately preserved: the model
-        has not changed, only the data is being rebuilt, so the next reconcile
-        re-embeds with the same model.
+        half-wiped.
+
+        The embedding-model meta is stamped with *embedding_model* /
+        *embedding_dimensions* — the model the next reconcile will re-embed
+        with. The caller passes the **live** (hot-reloaded) config, not the
+        writer's boot settings: a "Rebuild index" triggered after the operator
+        switches the embedding model in the UI re-embeds with the NEW model, so
+        leaving the stored meta on the old model would make the next boot's
+        ``check_embedding_model`` detect a false drift and redundantly re-embed
+        the whole corpus. When the model is unchanged the write is a harmless
+        no-op (same value).
 
         After this returns the index has no documents; the indexer's next
         incremental sync (watermark cleared → no server-side filter) re-indexes
         the whole Paperless archive.
+
+        Args:
+            embedding_model: The model the next reconcile will embed with — the
+                live resolved ``EMBEDDING_MODEL`` (stamped into meta).
+            embedding_dimensions: The matching ``EMBEDDING_DIMENSIONS`` (stamped
+                into meta as a string, mirroring ``check_embedding_model``).
 
         Raises:
             StoreError: On SQLite error — the transaction is rolled back.
@@ -450,6 +464,17 @@ class StoreWriter:
                     self._conn.execute("DELETE FROM taxonomy")
                     self._conn.execute(
                         "DELETE FROM meta WHERE key = 'modified_watermark'"
+                    )
+                    # Stamp the model the re-embed will use, in the same
+                    # transaction as the wipe so meta can never disagree with the
+                    # (now empty) chunk set.
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                        ("embedding_model", embedding_model),
+                    )
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                        ("embedding_dimensions", str(embedding_dimensions)),
                     )
         except sqlite3.Error as exc:
             raise StoreError("failed to rebuild the index") from exc

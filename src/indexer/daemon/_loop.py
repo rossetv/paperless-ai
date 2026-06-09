@@ -274,7 +274,7 @@ def _run_one_cycle(
 
     try:
         if needs_rebuild:
-            _run_rebuild(store_writer, cycle_recorder)
+            _run_rebuild(store_writer, cycle_recorder, settings=settings)
         # Run incremental sync every cycle.
         sync_started = utc_now_iso()
         sync_report = reconciler.incremental_sync()
@@ -331,6 +331,8 @@ def _run_one_cycle(
 def _run_rebuild(
     store_writer: StoreWriter,
     cycle_recorder: IndexerActivityRecorder | None,
+    *,
+    settings: Settings,
 ) -> None:
     """Wipe the index in response to a consumed rebuild sentinel.
 
@@ -340,11 +342,19 @@ def _run_rebuild(
     the daemon; the operator can re-trigger it. The cycle's normal
     incremental sync runs next regardless: on a successful wipe it re-indexes
     everything; on a failed wipe it is an ordinary incremental sync.
+
+    *settings* is the cycle's **live** (hot-reloaded) config — not the
+    store_writer's boot settings, which the loop never replaces. Passing it
+    through means a rebuild triggered after a UI model switch stamps the new
+    model into meta, matching what the incremental sync will re-embed with.
     """
     log.warning("indexer.rebuild_triggered")
     rebuild_started = utc_now_iso()
     try:
-        store_writer.rebuild_index()
+        store_writer.rebuild_index(
+            embedding_model=settings.EMBEDDING_MODEL,
+            embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
+        )
     except StoreError:
         # rationale: a rebuild failure is a recoverable operational error —
         # logged with its traceback, not fatal. The operator re-triggers it.
