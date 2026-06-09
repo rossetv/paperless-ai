@@ -198,11 +198,23 @@ class SearchStats:
             number of calls actually billed; on a successful query they match.
         latency_ms: Wall-clock time for the full pipeline in milliseconds.
         refined: Whether the bounded refinement loop was triggered.
+        trace: The ordered per-phase reasoning trace assembled during the
+            search (planner rewrite, retrieve, gate, per-document judge
+            verdicts, synthesis, refinement). Defaults to an empty trace so
+            pre-telemetry constructions stay valid; the core populates it.
+        cost: Whole-query token + dollar-cost totals. Defaults to a zero-token,
+            unpriced summary; the core populates it from the per-phase usage.
+            Both ride on ``SearchStats`` so they are cacheable and reach every
+            consumer (REST, MCP, the SPA) uniformly.
     """
 
     llm_calls: int
     latency_ms: int
     refined: bool
+    trace: SearchTrace = SearchTrace(phases=())
+    cost: CostSummary = CostSummary(
+        tokens=TokenUsage(0, 0, 0, 0), usd=None, local=False, llm_calls=0
+    )
 
 
 @dataclass(frozen=True, slots=True)
