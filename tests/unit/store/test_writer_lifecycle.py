@@ -3,7 +3,8 @@
 Covers the writer behaviours outside the per-document write path:
 - construction creates the schema
 - get_index_state / get_all_document_ids report indexed documents
-- check_embedding_model wipes chunks on a model change but keeps documents
+- check_embedding_model wipes everything (incl. documents) on a model change,
+  so the next reconcile actually re-embeds rather than a metadata-only pass
 - refresh_taxonomy replaces the taxonomy wholesale
 - read_meta / write_meta round-trip
 - checkpoint runs without error
@@ -126,8 +127,17 @@ class TestCheckEmbeddingModel:
         writer2.close()
         assert result is True
 
-    def test_model_change_wipes_chunks_keeps_documents(self, db_path: str) -> None:
-        """On a model change, chunks and chunks_fts must be wiped; documents kept."""
+    def test_model_change_wipes_everything_so_the_reembed_runs(
+        self, db_path: str
+    ) -> None:
+        """A model change must wipe documents too, not just chunks.
+
+        Regression (IDX): keeping the document rows lets the reconcile's
+        content-hash check classify each document as unchanged and take a
+        metadata-only pass — re-embedding nothing and leaving the index
+        permanently empty. Documents, chunks, and chunks_fts must all be wiped
+        so the next sync re-fetches and re-embeds the whole archive.
+        """
         writer = open_writer(db_path, model="model-a", dimensions=4)
         writer.check_embedding_model()
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
@@ -143,7 +153,7 @@ class TestCheckEmbeddingModel:
         fts_count = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
         conn.close()
 
-        assert doc_count == 1, "documents must survive a model change"
+        assert doc_count == 0, "documents must be wiped so the re-embed runs"
         assert chunk_count == 0, "chunks must be wiped on a model change"
         assert fts_count == 0, "chunks_fts must be wiped on a model change"
 

@@ -22,7 +22,8 @@ set of secret keys whose values were revealed — the trail makes a leak
 attributable.
 
 Allowed deps: fastapi, structlog, os, sqlite3, appdb (config, connection),
-common (config, paperless), search (deps, wire, settings_service).
+common (config, paperless), search (deps, index_sentinel, wire,
+settings_service).
 """
 
 from __future__ import annotations
@@ -36,9 +37,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from appdb import config as config_store
 from appdb.connection import transaction
-from common.config import REINDEX_KEYS, SECRET_KEYS, build_settings
+from common.config import REINDEX_KEYS, SECRET_KEYS, Settings, build_settings
 from common.paperless import PaperlessClient
 from search.deps import get_app_db, require_admin
+from search.index_sentinel import request_index_rebuild
 from search.sessions import CurrentUser
 from search.settings_service import (
     reindex_required,
@@ -60,12 +62,17 @@ log = structlog.get_logger(__name__)
 _SECRET_MASK = "********"
 
 
-def build_settings_router() -> APIRouter:
+def build_settings_router(settings: Settings) -> APIRouter:
     """Build the admin Settings ``/api`` router (web-redesign §5).
 
     The handlers reach the ``app.db`` connection through the per-request
-    :func:`~search.deps.get_app_db` dependency; nothing is closed over, so
-    the router is built once and is request-state-free.
+    :func:`~search.deps.get_app_db` dependency. Only the static *settings* is
+    closed over — its ``INDEX_DB_PATH`` is where a re-index-forcing save drops
+    the rebuild sentinel (the path never changes at runtime).
+
+    Args:
+        settings: Application settings; ``INDEX_DB_PATH`` locates the index
+            data directory the rebuild sentinels are written into.
 
     Returns:
         A configured :class:`~fastapi.APIRouter`. Every route is gated by
@@ -98,9 +105,10 @@ def build_settings_router() -> APIRouter:
         400 when a key is unknown, a value is invalid, or a secret key
         carries the masked placeholder — the ``config`` table is left
         untouched in that case. On success the response is the full re-read
-        settings list, so the UI refreshes from one response.
+        settings list, so the UI refreshes from one response. When the change
+        touches a re-index key the response's ``reindex_triggered`` is true.
         """
-        return _put_settings(body, app_db)
+        return _put_settings(body, app_db, settings)
 
     @router.post(
         "/api/settings/test-connection",
@@ -121,6 +129,7 @@ def _read_settings(
     *,
     reveal: bool,
     admin: CurrentUser | None = None,
+    reindex_triggered: bool = False,
 ) -> SettingsResponse:
     """Build the settings list from the config table and the environment.
 
@@ -165,11 +174,11 @@ def _read_settings(
             username=admin.username,
             keys=sorted(revealed_keys),
         )
-    return SettingsResponse(settings=items)
+    return SettingsResponse(settings=items, reindex_triggered=reindex_triggered)
 
 
 def _put_settings(
-    body: UpdateSettingsRequest, app_db: sqlite3.Connection
+    body: UpdateSettingsRequest, app_db: sqlite3.Connection, settings: Settings
 ) -> SettingsResponse:
     """Validate and persist a change set; return the re-read settings list.
 
@@ -181,6 +190,12 @@ def _put_settings(
     :func:`appdb.config.set_many`, in the same transaction), so every daemon
     and the search server hot-load the change on their next check — no
     restart. The response is the full re-read list.
+
+    When the change touches a re-index key (the embedding model or chunking),
+    the save forces a full index rebuild — the indexer wipes every chunk and
+    re-embeds the archive with the new config — because old and new vectors
+    cannot coexist. ``reindex_triggered`` in the response reports whether that
+    rebuild was scheduled.
 
     The masked sentinel (``********``) is *never* accepted as a secret value:
     the frontend correctly omits an unchanged secret, but a buggy or
@@ -235,13 +250,34 @@ def _put_settings(
                 app_db, {k: body.changes[k] for k in changed}
             )
 
+    # A change to a re-index key (the embedding model or the chunking) makes the
+    # existing vectors stale, so force a full rebuild: the indexer wipes every
+    # chunk and re-embeds the archive with the new config. Without it the old
+    # and new vectors coexist and search silently degrades. We only drop the
+    # sentinel; the indexer (sole writer) does the wipe. Best-effort: a save
+    # that already persisted must not 500 because the data dir is unwritable —
+    # log it and report reindex_triggered=False so the UI can prompt a manual
+    # rebuild from the Index page.
+    reindex_triggered = False
+    if reindex_required(changed):
+        try:
+            request_index_rebuild(settings.INDEX_DB_PATH)
+            reindex_triggered = True
+        except OSError as exc:
+            log.error(
+                "search.settings_reindex_trigger_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
     log.info(
         "search.settings_updated",
         changed_count=len(changed),
         requires_reindex=reindex_required(changed),
+        reindex_triggered=reindex_triggered,
     )
     # Re-read so the response reflects exactly what was persisted.
-    return _read_settings(app_db, reveal=False)
+    return _read_settings(app_db, reveal=False, reindex_triggered=reindex_triggered)
 
 
 def _test_connection(

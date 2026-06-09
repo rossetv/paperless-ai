@@ -247,6 +247,53 @@ describe('SettingsScreen', () => {
     });
   });
 
+  it('shows a re-indexing toast when the save response flags reindex_triggered', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      {
+        status: 200,
+        body: {
+          ...toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }),
+          reindex_triggered: true,
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    // The server forced a rebuild; the screen surfaces a re-indexing toast.
+    // Match the toast-unique phrase, not the per-field "requires re-indexing"
+    // notes that are always present for the re-index keys.
+    expect(
+      await screen.findByText(/re-embedding your library/i),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no re-indexing toast when the save does not trigger one', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody(SETTINGS) },
+      {
+        status: 200,
+        body: {
+          ...toSettingsBody({ ...SETTINGS, SEARCH_TOP_K: 11 }),
+          reindex_triggered: false,
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => {
+      const put = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => (c[1] as RequestInit).method === 'PUT',
+      );
+      expect(put).toBeDefined();
+    });
+    expect(screen.queryByText(/re-embedding your library/i)).toBeNull();
+  });
+
   it('renders the Paperless test-connection button in the card header', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();

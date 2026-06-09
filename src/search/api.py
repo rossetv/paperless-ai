@@ -254,7 +254,7 @@ def create_app(
     # precedence over static serving.
     app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
     app.include_router(build_account_router(store_reader))
-    app.include_router(build_settings_router())
+    app.include_router(build_settings_router(settings))
     app.include_router(build_api_key_router())
     app.include_router(build_document_router(settings, store_reader=store_reader))
     app.include_router(build_index_router(settings, store_reader))
