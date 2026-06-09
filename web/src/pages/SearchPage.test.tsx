@@ -103,11 +103,18 @@ vi.mock('../api/hooks', () => ({
 import { useStreamingSearch } from '../features/search/useStreamingSearch';
 const mockUseStreamingSearch = useStreamingSearch as ReturnType<typeof vi.fn>;
 
-/** Build a useStreamingSearch return value in the requested state. */
+/**
+ * Build a useStreamingSearch return value in the requested state.
+ *
+ * `query` defaults to 'npower bills' — the query the mocked IdleScreen submits
+ * — so a done/error state is treated as current after the idle click. Tests
+ * that drive a different query (e.g. mounting at /?q=invoice) override it.
+ */
 function streamState(overrides: Record<string, unknown> = {}) {
   return {
     state: {
       status: 'streaming',
+      query: 'npower bills',
       phaseRecords: [],
       activePhase: null,
       result: null,
@@ -224,6 +231,22 @@ describe('SearchPage', () => {
     expect(screen.getByTestId('results')).toBeInTheDocument();
   });
 
+  it('does not flash a stale result when the state is for a different query', async () => {
+    // A done state whose `query` is a PREVIOUS query must not render as the
+    // current query's result — the page shows loading until the new stream
+    // lands. (mount at /?q=invoice, but state still holds the old query.)
+    mockUseStreamingSearch.mockReturnValue(
+      streamState({
+        query: 'a stale earlier query',
+        status: 'done',
+        result: SUCCESS_DATA,
+      }),
+    );
+    renderPage('/?q=invoice');
+    expect(screen.getByTestId('loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('results')).not.toBeInTheDocument();
+  });
+
   it('renders the NoResultsScreen when a done search has zero sources', async () => {
     mockUseStreamingSearch.mockReturnValue(
       streamState({
@@ -282,6 +305,7 @@ describe('SearchPage', () => {
   it('invalidates the me query on a 401 stream error', async () => {
     mockUseStreamingSearch.mockReturnValue(
       streamState({
+        query: 'invoice',
         status: 'error',
         error: { status: 401, message: 'unauthorised' },
       }),
@@ -304,6 +328,7 @@ describe('SearchPage', () => {
   it('shows the idle hero (not an error) while a 401 redirect resolves', async () => {
     mockUseStreamingSearch.mockReturnValue(
       streamState({
+        query: 'invoice',
         status: 'error',
         error: { status: 401, message: 'unauthorised' },
       }),
@@ -314,7 +339,7 @@ describe('SearchPage', () => {
     expect(screen.queryByTestId('search-error')).not.toBeInTheDocument();
   });
 
-  it('runs a second, different search from the results view', async () => {
+  it('re-runs the search when a second query is submitted from the results view', async () => {
     // Regression: once a search ran, `query` never reset and only the idle
     // screen had an editable field — the user was stranded on the results
     // screen with no way to start a fresh search short of a full reload.
@@ -323,7 +348,7 @@ describe('SearchPage', () => {
     );
     renderPage();
 
-    // First search — from the idle hero.
+    // First search — from the idle hero — renders the results.
     await userEvent.click(screen.getByTestId('idle'));
     expect(screen.getByTestId('results-query')).toHaveTextContent(
       'npower bills',
@@ -332,10 +357,9 @@ describe('SearchPage', () => {
     // Second search — from the editable recap field on the results screen.
     await userEvent.click(screen.getByTestId('results-new-search'));
 
-    // The page re-runs the search with the NEW query, no reload needed.
-    expect(screen.getByTestId('results-query')).toHaveTextContent(
-      'rolling-blackout refunds',
-    );
+    // The page re-runs the search with the NEW query, no reload needed. (With
+    // the live stream the new results land once it completes; the contract
+    // tested here is that the page is not stranded — it dispatches the run.)
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith(
         'rolling-blackout refunds',
@@ -346,7 +370,7 @@ describe('SearchPage', () => {
 
   it('mounting at /?q=invoice triggers the search', async () => {
     mockUseStreamingSearch.mockReturnValue(
-      streamState({ status: 'done', result: SUCCESS_DATA }),
+      streamState({ query: 'invoice', status: 'done', result: SUCCESS_DATA }),
     );
     renderPage('/?q=invoice');
     // The results screen renders immediately — no interaction needed.
@@ -381,7 +405,7 @@ describe('SearchPage', () => {
 
   it('opening a preview navigates to /document/<id> with the search context preserved', async () => {
     mockUseStreamingSearch.mockReturnValue(
-      streamState({ status: 'done', result: SUCCESS_DATA }),
+      streamState({ query: 'invoice', status: 'done', result: SUCCESS_DATA }),
     );
     const { locationRef } = renderPage('/?q=invoice');
     await waitFor(() => {

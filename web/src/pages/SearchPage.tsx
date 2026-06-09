@@ -86,16 +86,18 @@ export function SearchPage(): React.ReactElement {
 
   // A 401 from the stream's initial response means the session expired.
   // Invalidate the `me` query so `useAuth` re-resolves and ProtectedRoute
-  // redirects. Preserves the pre-streaming auth behaviour exactly.
+  // redirects. Preserves the pre-streaming auth behaviour exactly. Guarded on
+  // the error belonging to the current query so a stale 401 cannot fire.
   React.useEffect(() => {
     if (
       query.trim().length > 0 &&
+      state.query === query.trim() &&
       state.status === 'error' &&
       state.error?.status === 401
     ) {
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
     }
-  }, [query, state.status, state.error, queryClient]);
+  }, [query, state.query, state.status, state.error, queryClient]);
 
   function runSearch(submitted: string): void {
     setQuery(submitted.trim());
@@ -127,8 +129,15 @@ export function SearchPage(): React.ReactElement {
       return <IdleScreen onSearch={runSearch} />;
     }
 
+    // A terminal state (done/error) is authoritative only when it belongs to
+    // the CURRENT query. Between the URL changing to a new query and the
+    // trigger effect firing `run`, the state still holds the previous query's
+    // result — showing it would flash a stale answer. Until the new stream's
+    // `start` lands, treat such a state as still loading.
+    const stateIsCurrent = state.query === query.trim();
+
     // Error states — mapped from the initial-response HTTP status.
-    if (state.status === 'error' && state.error !== null) {
+    if (stateIsCurrent && state.status === 'error' && state.error !== null) {
       if (state.error.status === 503) {
         return <IndexNotReadyScreen onRetry={() => run(query.trim(), filters)} />;
       }
@@ -149,7 +158,7 @@ export function SearchPage(): React.ReactElement {
     }
 
     // Done — render results (or a no-results nudge), plus the trace panel.
-    if (state.status === 'done' && state.result !== null) {
+    if (stateIsCurrent && state.status === 'done' && state.result !== null) {
       const result = state.result;
       if (result.sources.length === 0) {
         return (
