@@ -608,6 +608,7 @@ class TestPlannerAsker:
                 if m.get("role") == "user":
                     captured.append(m["content"])
             from tests.helpers.llm import make_chat_completion, planner_response_json
+
             return make_chat_completion(planner_response_json())
 
         planner = build_planner(make_search_settings(), planner_response_json())

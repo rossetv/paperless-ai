@@ -38,22 +38,32 @@ def _key(
     version: str = "1:1",
     asker: str | None = None,
 ):
-    return build_cache_key(query=query, filters=filters, index_version=version, asker=asker)
+    return build_cache_key(
+        query=query, filters=filters, index_version=version, asker=asker
+    )
 
 
 def test_different_asker_makes_a_different_key() -> None:
     from search.cache import build_cache_key
 
-    a = build_cache_key(query="my passport", filters=None, index_version="1:1", asker="Alice")
-    b = build_cache_key(query="my passport", filters=None, index_version="1:1", asker="Bob")
+    a = build_cache_key(
+        query="my passport", filters=None, index_version="1:1", asker="Alice"
+    )
+    b = build_cache_key(
+        query="my passport", filters=None, index_version="1:1", asker="Bob"
+    )
     assert a != b
 
 
 def test_same_asker_makes_the_same_key() -> None:
     from search.cache import build_cache_key
 
-    a = build_cache_key(query="my passport", filters=None, index_version="1:1", asker="Alice")
-    b = build_cache_key(query="my passport", filters=None, index_version="1:1", asker="Alice")
+    a = build_cache_key(
+        query="my passport", filters=None, index_version="1:1", asker="Alice"
+    )
+    b = build_cache_key(
+        query="my passport", filters=None, index_version="1:1", asker="Alice"
+    )
     assert a == b
 
 
