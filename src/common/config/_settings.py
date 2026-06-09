@@ -213,15 +213,16 @@ class Settings:
     """Minimum absolute vector similarity required to proceed to synthesis.
 
     similarity = ``1 / (1 + best_cosine_distance)`` — higher is closer. The
-    default ``0.50`` is deliberately lenient: on the ``text-embedding-3-large``
-    index even off-topic queries score ~0.54–0.58, so a 0.50 floor rejects
-    almost nothing and leans recall-first (the synthesiser, and the per-result
-    relevance badge, carry the quality signal instead of a hard reject). Raise
-    it to make the Layer-2 gate bite harder. This is the *gate* cut-off only —
-    it is independent of the relevance-badge tier cut-points in
-    :mod:`search.relevance`, which stay calibrated so off-topic results still
-    badge as "weak" no matter how lenient the gate is. Floored at ``≥ 0.0``;
-    negative values are clamped to ``0.0``.
+    default ``0.60`` sits between off-topic noise and real matches on the
+    ``text-embedding-3-large`` index: off-topic / unanswerable queries score
+    ~0.54–0.58 (e.g. "popcorn recipe" in a personal-document library), while
+    genuine matches score ~0.65+. A 0.60 floor rejects the former (fail fast →
+    "no matches") without touching the latter. Lower it toward recall-first if
+    too much is being rejected; raise it to bite harder. This is the *gate*
+    cut-off only — it is independent of the relevance-badge tier cut-points in
+    :mod:`search.relevance`, which stay calibrated so a shown result still
+    badges by its own similarity. Floored at ``≥ 0.0``; negative values are
+    clamped to ``0.0``.
     """
     SEARCH_MIN_QUERY_CHARS: int
     """Minimum number of non-whitespace characters for a search query (Layer 0).
@@ -457,13 +458,13 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
-        # Default 0.50 — a lenient gate that rejects almost nothing on the
-        # large-embedding index (off-topic ~0.54-0.58); the relevance badge,
-        # not a hard reject, carries the quality signal. Floored at 0.0: a
-        # negative floor would never reject anything, same as 0.0, so clamping
-        # is more forgiving than raising.
+        # Default 0.60 — sits between off-topic noise (~0.54-0.58 on the large
+        # index, e.g. "popcorn recipe") and real matches (~0.65+), so blatantly
+        # off-topic queries fail fast instead of synthesising over junk. Floored
+        # at 0.0: a negative floor would never reject anything, same as 0.0, so
+        # clamping is more forgiving than raising.
         SEARCH_RELEVANCE_MIN_SIMILARITY=max(
-            0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.50)
+            0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.60)
         ),
         # Floored at 0 — a negative char floor disables the Layer-0 guard, same
         # as 0, so clamping matches the intent without refusing the daemon start.
