@@ -31,7 +31,12 @@ export type IconName =
   | 'key'
   | 'library'
   | 'index'
-  | 'settings';
+  | 'settings'
+  | 'tags'
+  | 'gears'
+  | 'arrows-rotate'
+  | 'arrow-up'
+  | 'arrow-down';
 
 /** Size scale — icons inherit currentColor and scale via token-based font-size. */
 export type IconSize = 'small' | 'medium' | 'large' | 'xlarge';
@@ -85,6 +90,11 @@ const FA_CLASS: Record<IconName, string> = {
   library: 'fa-book',
   index: 'fa-database',
   settings: 'fa-gear',
+  tags: 'fa-tags',
+  gears: 'fa-gears',
+  'arrows-rotate': 'fa-arrows-rotate',
+  'arrow-up': 'fa-arrow-up',
+  'arrow-down': 'fa-arrow-down',
 };
 
 /**

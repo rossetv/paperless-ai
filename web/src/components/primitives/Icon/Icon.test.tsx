@@ -61,6 +61,11 @@ describe('Icon', () => {
       'library',
       'index',
       'settings',
+      'tags',
+      'gears',
+      'arrows-rotate',
+      'arrow-up',
+      'arrow-down',
     ] as const;
 
     for (const name of names) {
