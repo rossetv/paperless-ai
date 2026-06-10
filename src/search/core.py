@@ -17,22 +17,28 @@ Two public methods, both pure-library (no FastAPI, no MCP — CODE_GUIDELINES
 The per-query LLM-call budget
 -----------------------------
 The number of LLM (chat) calls per query is not a fixed ceiling: it follows
-``SEARCH_MAX_REFINEMENTS`` — one planner call, one exploratory synthesise, and
-one synthesise per refinement pass, i.e. ``2 + SEARCH_MAX_REFINEMENTS``. The
-operator sets the refinement count from the UI with no hard cap, so cost and
-latency scale linearly with it. The query embedding is not a chat call and is
-not counted (spec §6.5).
+``SEARCH_MAX_REFINEMENTS`` and the judge gate. The base is one planner call, an
+optional judge call, and one exploratory synthesise. Each refinement pass
+(Phase 2) re-plans from the synthesiser's gap hint and re-synthesises — and,
+unless the re-plan is a no-op, re-judges the merged set — so a pass costs one
+re-plan + one synthesise (+ one re-judge when the judge gate is on). The upper
+bound is therefore ``2 + j + R * (2 + j)`` where ``j`` is 1 iff the judge gate
+is on and ``R`` is ``SEARCH_MAX_REFINEMENTS`` (see :func:`_max_llm_calls`). A
+no-op-guard pass skips the re-retrieve and re-judge, so the *actual* count is at
+or below this ceiling. The operator sets the refinement count from the UI with
+no hard cap, so cost and latency scale with it. The query embedding is not a
+chat call and is not counted (spec §6.5).
 
 The budget is enforced two ways, belt and braces:
 
 1. *Structurally* — ``answer`` makes the planner call once, the exploratory
-   synthesise once, and then loops the refinement synthesise at most
+   synthesise once, and then loops the refinement (re-plan + synthesise) at most
    ``SEARCH_MAX_REFINEMENTS`` times; the loop counter bounds it.
 2. *Defensively* — every LLM stage is invoked through :class:`_LlmBudget`,
    whose ``record`` increments a counter and raises
    :class:`~search.errors.LlmBudgetExceededError` if it ever exceeds the
-   per-query limit (``2 + SEARCH_MAX_REFINEMENTS``).  A logic regression that
-   tried an extra call would fail loudly here rather than silently overspending
+   per-query limit (:func:`_max_llm_calls`).  A logic regression that tried an
+   extra call would fail loudly here rather than silently overspending
    (CODE_GUIDELINES §1.11).
 
 Allowed deps: search (models, errors, planner, retriever, synthesizer,
@@ -50,6 +56,7 @@ Forbidden: no FastAPI, no MCP SDK, no sqlite3, no direct LLM/HTTP calls.
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -104,12 +111,12 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 # The per-query LLM-call budget is NOT a fixed ceiling — it follows
-# SEARCH_MAX_REFINEMENTS: 1 planner + 1 exploratory synthesise + one synthesise
-# per refinement pass = 2 + SEARCH_MAX_REFINEMENTS. The operator sets the
-# refinement count from the UI with no hard cap; _LlmBudget still enforces the
-# resulting per-request limit as a defensive backstop against a logic
-# regression overspending on a billable endpoint. Cost and latency scale
-# linearly with the setting.
+# SEARCH_MAX_REFINEMENTS and the judge gate (see _max_llm_calls): 1 planner +
+# optional judge + 1 exploratory synthesise, plus one (re-plan + synthesise [+
+# re-judge]) per refinement pass. The operator sets the refinement count from
+# the UI with no hard cap; _LlmBudget still enforces the resulting per-request
+# limit as a defensive backstop against a logic regression overspending on a
+# billable endpoint. Cost and latency scale with the setting.
 
 # Shown as the answer when retrieval yields nothing or Layer 2 rejects the
 # signal (spec §6.3, §11).  A no-hits or irrelevant-signal query
@@ -134,9 +141,9 @@ _CLARIFY_ANSWER = (
 class _LlmBudget:
     """A monotonically-increasing counter enforcing the per-query LLM-call limit.
 
-    The limit is not fixed: it is ``2 + SEARCH_MAX_REFINEMENTS`` (1 planner +
-    1 exploratory synthesise + one synthesise per refinement pass), passed in at
-    construction. Every LLM chat call in the pipeline is recorded here *before*
+    The limit is not fixed: it follows ``SEARCH_MAX_REFINEMENTS`` and the judge
+    gate (see :func:`_max_llm_calls`), passed in at construction as *max_calls*.
+    Every LLM chat call in the pipeline is recorded here *before*
     it is made — recording first is what lets ``record`` refuse a call that
     would breach the limit, the defensive backstop against a logic regression
     overspending on a billable endpoint. ``count`` is the number of calls
@@ -160,18 +167,34 @@ class _LlmBudget:
 
         Raises:
             LlmBudgetExceededError: If recording this call would exceed the
-                per-query limit (``2 + SEARCH_MAX_REFINEMENTS``). This is
-                unreachable by ``SearchCore``'s own loop logic; it guards
-                against a future regression silently overspending
-                (CODE_GUIDELINES §1.11).
+                per-query limit (:func:`_max_llm_calls`). This is unreachable by
+                ``SearchCore``'s own loop logic; it guards against a future
+                regression silently overspending (CODE_GUIDELINES §1.11).
         """
         self.count += 1
         if self.count > self.max_calls:
             raise LlmBudgetExceededError(
                 f"LLM-call limit breached: {self.count} calls made, "
-                f"the per-query limit is {self.max_calls} "
-                f"(2 + SEARCH_MAX_REFINEMENTS)."
+                f"the per-query limit is {self.max_calls}."
             )
+
+
+@dataclass(frozen=True, slots=True)
+class _RetrievalPhaseResult:
+    """The output of :meth:`SearchCore._retrieve_phase`.
+
+    Carries the retrieved chunks and signal alongside the resolved pass-1 specs
+    and the facets used to resolve them, so the refinement pass can re-plan
+    against the same taxonomy and run its no-op guard (does the re-plan resolve
+    to the same specs?) without a second ``list_facets`` round-trip. A small
+    frozen carrier beats a 4-tuple the caller would have to unpack positionally
+    (CODE_GUIDELINES §5.8).
+    """
+
+    chunks: list[RetrievedChunk]
+    signal: RetrievalSignal
+    specs: tuple[RetrievalSpec, ...]
+    facets: FacetSet
 
 
 class SearchCore:
@@ -352,10 +375,7 @@ class SearchCore:
         """
         started = time.monotonic()
         tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
-        judge_call = 1 if self._settings.SEARCH_GATE_JUDGE else 0
-        budget = _LlmBudget(
-            max_calls=2 + judge_call + self._settings.SEARCH_MAX_REFINEMENTS
-        )
+        budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
         # --- Layer 0: degenerate-input guard (spec §7.0) ---
         # Emitted before any phase, so the trace is empty (no work was done).
@@ -371,7 +391,9 @@ class SearchCore:
         plan = plan_outcome
 
         # --- Retrieve (broaden-and-retry once) ---
-        chunks, signal = self._retrieve_phase(plan, ui_filters, tele)
+        retrieved = self._retrieve_phase(plan, ui_filters, tele)
+        chunks, signal = retrieved.chunks, retrieved.signal
+        current_specs = retrieved.specs
         if not chunks:
             log.info(
                 "search.no_matches",
@@ -403,22 +425,24 @@ class SearchCore:
         )
 
         # Refine while the synthesiser still wants more context, up to the
-        # configured number of passes. Each pass folds the latest hint into the
-        # plan, retrieves again, merges into the growing chunk set, and
-        # re-synthesises. Intermediate passes stay "exploratory" (may ask for
-        # more); the last allowed pass runs in "final" mode (must answer or say
-        # not-found), so the loop always terminates with an Answered outcome.
-        # The budget (2 + SEARCH_MAX_REFINEMENTS) bounds the calls regardless.
+        # configured number of passes. Each pass re-plans from the synthesiser's
+        # gap hint (Phase 2), resolves the new specs, and — unless they are a
+        # no-op repeat of what was already tried — retrieves again, merges into
+        # the growing chunk set, re-judges, and re-synthesises. Intermediate
+        # passes stay "exploratory" (may ask for more); the last allowed pass
+        # runs in "final" mode (must answer or say not-found), so the loop always
+        # terminates with an Answered outcome. The budget bounds the calls.
         max_refinements = self._settings.SEARCH_MAX_REFINEMENTS
         refinements = 0
         while isinstance(outcome, NeedsMore) and refinements < max_refinements:
             is_last = refinements + 1 >= max_refinements
-            outcome, chunks = self._refine(
+            outcome, chunks, current_specs = self._refine(
                 query,
-                plan,
-                ui_filters,
                 outcome,
                 chunks,
+                current_specs,
+                retrieved.facets,
+                ui_filters,
                 budget,
                 mode="final" if is_last else "exploratory",
                 asker=asker,
@@ -504,7 +528,7 @@ class SearchCore:
         """
         started = time.monotonic()
         tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
-        budget = _LlmBudget(max_calls=2 + self._settings.SEARCH_MAX_REFINEMENTS)
+        budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
         # Layer 0: degenerate-input guard (spec §7.0) — same check as
         # _answer_uncached so callers always get consistent behaviour.
@@ -519,9 +543,9 @@ class SearchCore:
         plan = plan_outcome
 
         # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
-        chunks, _signal = self._retrieve_phase(plan, ui_filters, tele)
+        retrieved = self._retrieve_phase(plan, ui_filters, tele)
         sources = assemble_sources(
-            chunks,
+            retrieved.chunks,
             self._store_reader,
             self._settings.PAPERLESS_PUBLIC_URL,
             self._relevance_thresholds(),
@@ -607,7 +631,7 @@ class SearchCore:
         plan: RetrievalPlan,
         ui_filters: SearchFilters | None,
         tele: _Telemetry,
-    ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
+    ) -> _RetrievalPhaseResult:
         """Resolve the plan's specs then retrieve, emitting both phases.
 
         Fetches the live taxonomy once, emits the non-LLM ``resolve`` phase (the
@@ -616,6 +640,11 @@ class SearchCore:
         broadened (filter-dropped) second pass ran.  Neither phase is an LLM
         call, so neither carries tokens.  The facets are fetched here and reused
         across both the first and the broadened retrieval pass.
+
+        The resolved pass-1 specs and the fetched facets ride on the returned
+        :class:`_RetrievalPhaseResult` so the refinement pass can re-plan against
+        the same taxonomy and run the no-op guard without a second
+        ``list_facets`` round-trip.
         """
         facets = self._store_reader.list_facets()
         today = date.today()
@@ -638,7 +667,9 @@ class SearchCore:
             usage_sink=[],
             started=started,
         )
-        return chunks, signal
+        return _RetrievalPhaseResult(
+            chunks=chunks, signal=signal, specs=specs, facets=facets
+        )
 
     @staticmethod
     def _emit_resolve_phase(
@@ -872,80 +903,230 @@ class SearchCore:
     def _refine(
         self,
         query: str,
-        plan: RetrievalPlan,
-        ui_filters: SearchFilters | None,
         needs_more: NeedsMore,
         previous_chunks: list[RetrievedChunk],
+        prior_specs: tuple[RetrievalSpec, ...],
+        facets: FacetSet,
+        ui_filters: SearchFilters | None,
         budget: _LlmBudget,
         *,
         mode: SearchMode,
         asker: str | None = None,
         tele: _Telemetry,
         pass_number: int,
-    ) -> tuple[Answered | NeedsMore, list[RetrievedChunk]]:
-        """Run one bounded refinement pass (spec §6.3).
+    ) -> tuple[Answered | NeedsMore, list[RetrievedChunk], tuple[RetrievalSpec, ...]]:
+        """Run one bounded refinement pass driven by the synth's gap hint (Phase 2).
 
-        Retrieves again with the plan broadened (filters dropped), merges the
-        new chunks with the previous round's, and re-synthesises in *mode*. The
-        caller runs intermediate passes in ``"exploratory"`` mode (which may
-        return another ``NeedsMore`` to continue the loop) and the last allowed
-        pass in ``"final"`` mode (which must answer or explicitly say "not
-        found"), so the refinement loop always terminates.
+        Rather than blindly broadening, the pass RE-PLANS: it asks the planner
+        for DIFFERENT specs that target ``needs_more.adjustment``, given the
+        specs already tried (*prior_specs*) and the documents already found. The
+        re-plan output is resolved against the cached *facets* and compared to
+        the prior specs:
 
-        # rationale: Phase 1 broadens on refine because the planner-driven
-        # replan is a Phase 2 item; the synthesiser's adjustment hint is logged
-        # and surfaced in the refine-phase detail but does not yet steer
-        # retrieval. Phase 2 will replace the broaden with a planner replan that
-        # consumes ``needs_more.adjustment``.
+        - **No-op guard.** When the re-plan resolves to the *same* specs already
+          tried (a re-plan that changed nothing), the pass does NOT retrieve or
+          re-judge again — those would be a redundant, billable round-trip for an
+          identical result. It runs exactly one final :meth:`_synthesise` on the
+          existing evidence and returns. (The exploratory pass already returned
+          NeedsMore, so a final answer is still owed.)
+        - **Otherwise.** It retrieves for the new specs, merges with the previous
+          round's chunks, re-judges the merged set, and re-synthesises in *mode*.
 
-        Emits a ``refine`` marker phase (the 1-based pass number and the
-        adjustment hint; no tokens of its own) before re-synthesising — the
-        inner :meth:`_synthesise` emits its own ``synthesise`` phase with that
-        pass's token cost. The intra-pass retrieval is folded into the refine
-        marker rather than emitting a second ``retrieve`` phase.
+        A re-plan that returns :class:`ClarifyNeeded` is ignored — refinement is
+        a best-effort improvement, never a place to start asking the user to
+        clarify — and the pass falls through to a single final synthesise on the
+        existing chunks, exactly like the no-op path.
+
+        The re-plan LLM call's token usage is captured and attributed to its own
+        ``replan`` phase (mirroring the ``plan`` phase); the ``refine`` marker
+        phase that follows carries no tokens of its own — the inner
+        :meth:`_synthesise` emits the synthesise phase with that pass's cost.
 
         Args:
             query: The raw user query.
-            plan: The original multi-spec plan.
-            ui_filters: The authoritative UI filters, if any.
-            needs_more: The previous synthesise's NeedsMore signal.
+            needs_more: The previous synthesise's NeedsMore signal (the gap hint).
             previous_chunks: The chunks accumulated so far.
-            budget: The LLM-call budget; this synthesise is recorded here.
+            prior_specs: The resolved specs already tried (pass 1, or the prior
+                refinement pass), fed to the re-plan and the no-op comparison.
+            facets: The taxonomy, cached from the first retrieve, reused to
+                resolve the re-plan with no extra ``list_facets`` round-trip.
+            ui_filters: The authoritative UI filters, if any.
+            budget: The LLM-call budget; the re-plan and synthesise are recorded.
             mode: ``"exploratory"`` for an intermediate pass, ``"final"`` for
                 the last allowed pass.
-            asker: Optional sanitised display name of the requesting user,
-                forwarded to the synthesiser for first-person resolution.
+            asker: Optional sanitised display name of the requesting user.
             tele: The per-request telemetry accumulator.
             pass_number: The 1-based refinement pass index, for the detail.
 
         Returns:
-            A pair of the synthesiser outcome and the merged chunk list used as
-            its context (and as the result's source set).
+            A triple of the synthesiser outcome, the chunk list used as its
+            context (and the result's source set), and the resolved specs now in
+            effect (the new specs, or *prior_specs* on a no-op / clarify) — so
+            the next pass re-plans against what was actually tried.
         """
         log.info(
             "search.refined",
             query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
             adjustment=needs_more.adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
         )
+        prior_findings = self._finding_titles(previous_chunks)
+        replan_outcome = self._replan_phase(
+            query,
+            needs_more.adjustment,
+            prior_specs,
+            prior_findings,
+            budget,
+            asker,
+            tele,
+        )
+
+        # A clarify on a re-plan is ignored: finalise on the existing evidence.
+        if isinstance(replan_outcome, ClarifyNeeded):
+            self._emit_refine_marker(
+                needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
+            )
+            outcome = self._synthesise(
+                query, previous_chunks, mode=mode, budget=budget, asker=asker, tele=tele
+            )
+            return outcome, previous_chunks, prior_specs
+
+        new_specs = resolve_specs(
+            replan_outcome, facets, ui_filters=ui_filters, today=date.today()
+        )
+
+        # No-op guard: a re-plan that resolves to the same specs already tried
+        # must not pay for a redundant retrieve + judge — just finalise.
+        if _specs_equal(new_specs, prior_specs):
+            self._emit_refine_marker(
+                needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
+            )
+            outcome = self._synthesise(
+                query, previous_chunks, mode=mode, budget=budget, asker=asker, tele=tele
+            )
+            return outcome, previous_chunks, prior_specs
+
+        new_chunks, _signal = self._retriever.retrieve(new_specs)
+        merged = merge_chunks(previous_chunks, new_chunks)
+        self._emit_refine_marker(
+            needs_more.adjustment,
+            _spec_detail_for_resolved(new_specs),
+            len(previous_chunks),
+            noop=False,
+            tele=tele,
+        )
+        # Re-judge the merged set; a bail here falls back to the merged chunks —
+        # mid-refine we already had relevant evidence, so we never downgrade to
+        # no_match, we just answer from what we have.
+        judged = self._judge_and_filter(query, merged, budget, tele)
+        kept = judged if judged is not None else merged
+        outcome = self._synthesise(
+            query, kept, mode=mode, budget=budget, asker=asker, tele=tele
+        )
+        return outcome, kept, new_specs
+
+    def _finding_titles(self, chunks: list[RetrievedChunk]) -> tuple[str, ...]:
+        """Return the titles of the documents in *chunks*, for the re-plan turn.
+
+        Resolves each distinct document id to its indexed title via
+        ``get_documents`` (the same look-up source assembly uses). A document
+        with no title, or one no longer in the index, is dropped — the re-plan
+        only needs the titles it can name. Order follows first appearance in
+        *chunks* (descending fused score), so the strongest findings lead.
+        """
+        seen: list[int] = []
+        for chunk in chunks:
+            if chunk.document_id not in seen:
+                seen.append(chunk.document_id)
+        if not seen:
+            return ()
+        by_id = {doc.id: doc for doc in self._store_reader.get_documents(seen)}
+        titles: list[str] = []
+        for document_id in seen:
+            doc = by_id.get(document_id)
+            if doc is not None and doc.title:
+                titles.append(doc.title)
+        return tuple(titles)
+
+    def _replan_phase(
+        self,
+        query: str,
+        hint: str,
+        prior_specs: tuple[RetrievalSpec, ...],
+        prior_findings: tuple[str, ...],
+        budget: _LlmBudget,
+        asker: str | None,
+        tele: _Telemetry,
+    ) -> RetrievalPlan | ClarifyNeeded:
+        """Run the re-plan stage, emitting the ``replan`` phase with its usage.
+
+        Mirrors :meth:`_plan_phase`: records one budget call, captures the
+        re-plan call's token usage in a fresh sink, and emits a ``replan`` phase
+        carrying the gap hint and the human-readable new specs (or the clarify
+        reason). The token cost is attributed here, never folded into the
+        ``refine`` marker, so per-phase accounting stays honest.
+        """
+        tele.start("replan", "Re-planning")
+        started = time.monotonic()
+        sink: list[LlmCallUsage] = []
+        budget.record()
+        outcome = self._planner.replan(
+            query,
+            hint=hint,
+            prior_specs=prior_specs,
+            prior_findings=prior_findings,
+            asker=asker,
+            usage_sink=sink,
+        )
+        plan = outcome if isinstance(outcome, RetrievalPlan) else None
+        tele.done(
+            "replan",
+            "Re-planning",
+            {
+                "hint": hint,
+                "specs": _spec_detail(plan),
+                "clarify": isinstance(outcome, ClarifyNeeded),
+            },
+            usage_sink=sink,
+            started=started,
+        )
+        return outcome
+
+    @staticmethod
+    def _emit_refine_marker(
+        adjustment: str,
+        new_specs_detail: list[dict[str, object]],
+        carried_over: int,
+        *,
+        noop: bool,
+        tele: _Telemetry,
+    ) -> None:
+        """Emit the non-LLM ``refine`` marker phase describing the pass's action.
+
+        Carries the gap that prompted the pass, a human-readable ``action``, the
+        new specs (empty on a no-op), how many chunks were carried over from the
+        previous round, and the ``noop`` flag. No tokens — the re-plan and
+        synthesise carry their own.
+        """
+        action = (
+            "no new searches → finalising on current evidence"
+            if noop
+            else f"re-planned: {len(new_specs_detail)} new searches"
+        )
         tele.start("refine", "Refining")
         started = time.monotonic()
-        facets = self._store_reader.list_facets()
-        broadened_specs = resolve_specs(
-            broaden_plan(plan), facets, ui_filters=ui_filters, today=date.today()
-        )
-        new_chunks, _signal = self._retriever.retrieve(broadened_specs)
-        merged = merge_chunks(previous_chunks, new_chunks)
         tele.done(
             "refine",
             "Refining",
-            {"pass": pass_number, "adjustment": needs_more.adjustment},
+            {
+                "gap": adjustment,
+                "action": action,
+                "new_specs": new_specs_detail,
+                "carried_over": carried_over,
+                "noop": noop,
+            },
             usage_sink=[],
             started=started,
         )
-        outcome = self._synthesise(
-            query, merged, mode=mode, budget=budget, asker=asker, tele=tele
-        )
-        return outcome, merged
 
     # ------------------------------------------------------------------
     # Result construction
@@ -1069,6 +1250,30 @@ def _elapsed_ms(started: float) -> int:
     return int((time.monotonic() - started) * 1000)
 
 
+def _max_llm_calls(settings: Settings) -> int:
+    """Return the per-query LLM-call upper bound for the ``_LlmBudget`` backstop.
+
+    The bound is **not** fixed — it follows ``SEARCH_MAX_REFINEMENTS`` and
+    whether the judge gate is on:
+
+    - **1** planner call.
+    - **1** exploratory synthesise.
+    - **+1** judge call when ``SEARCH_GATE_JUDGE`` is on (the pass-1 screen).
+    - per refinement pass (Phase 2): **1** re-plan + **1** synthesise, plus
+      **1** re-judge when the judge gate is on. A no-op-guard pass skips the
+      re-retrieve and re-judge, so it costs strictly fewer than this bound — the
+      backstop is an *upper* bound, never an exact count.
+
+    So the limit is ``2 + j + R * (2 + j)`` where ``j`` is 1 iff the judge gate
+    is on and ``R`` is ``SEARCH_MAX_REFINEMENTS``. This is the defensive ceiling
+    ``_LlmBudget`` enforces; the loop's own structure keeps the actual count at
+    or below it.
+    """
+    judge_call = 1 if settings.SEARCH_GATE_JUDGE else 0
+    refinements = settings.SEARCH_MAX_REFINEMENTS
+    return 2 + judge_call + refinements * (2 + judge_call)
+
+
 def _cost_dict(cs: CostSummary) -> dict[str, object]:
     """Flatten a :class:`CostSummary` to a JSON-friendly dict for a phase detail.
 
@@ -1154,6 +1359,58 @@ def _spec_detail(plan: RetrievalPlan | None) -> list[dict[str, object]]:
         }
         for spec in plan.specs
     ]
+
+
+def _spec_detail_for_resolved(
+    specs: tuple[RetrievalSpec, ...],
+) -> list[dict[str, object]]:
+    """Render resolved specs for the ``refine`` phase's ``new_specs`` detail.
+
+    Each entry carries the spec's mode, a human-readable query (semantic text or
+    joined keywords), the resolved taxonomy ids / ISO date bounds, and the
+    rationale — all JSON-serialisable primitives the SPA renders as "the searches
+    the re-plan added".
+    """
+    return [
+        {
+            "mode": spec.mode,
+            "query": spec.semantic or " ".join(spec.keywords),
+            "filters": {
+                "correspondent_id": spec.filters.correspondent_id,
+                "document_type_id": spec.filters.document_type_id,
+                "tag_ids": list(spec.filters.tag_ids),
+                "date_from": spec.filters.date_from,
+                "date_to": spec.filters.date_to,
+            },
+            "rationale": spec.rationale,
+        }
+        for spec in specs
+    ]
+
+
+def _specs_equal(
+    left: tuple[RetrievalSpec, ...],
+    right: tuple[RetrievalSpec, ...],
+) -> bool:
+    """Return True when two resolved spec tuples are equivalent (no-op guard).
+
+    Frozen-dataclass equality compares every field, but ``SearchFilters.tag_ids``
+    is an order-sensitive tuple — two re-plans that resolve the same tags in a
+    different order are the *same* search. Each spec's ``tag_ids`` is normalised
+    to a sorted tuple before comparison so a mere re-ordering reads as a no-op
+    (and the pass skips a redundant, billable retrieve + judge).
+    """
+    if len(left) != len(right):
+        return False
+    return all(_normalise_spec(a) == _normalise_spec(b) for a, b in zip(left, right))
+
+
+def _normalise_spec(spec: RetrievalSpec) -> RetrievalSpec:
+    """Return *spec* with its filters' ``tag_ids`` sorted, for stable comparison."""
+    return replace(
+        spec,
+        filters=replace(spec.filters, tag_ids=tuple(sorted(spec.filters.tag_ids))),
+    )
 
 
 def _guess_dict(fg: FilterCandidates) -> dict[str, object]:

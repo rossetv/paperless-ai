@@ -66,6 +66,7 @@ def seed_pipeline_document(
     embedding: tuple[float, ...],
     correspondent_id: int | None = None,
     document_type_id: int | None = None,
+    created: str = "2024-01-15T00:00:00+00:00",
 ) -> None:
     """Upsert one document with a single chunk into the real store.
 
@@ -77,6 +78,8 @@ def seed_pipeline_document(
         embedding: The chunk's embedding vector (one of the AXIS_* constants).
         correspondent_id: An optional taxonomy correspondent id.
         document_type_id: An optional taxonomy document-type id.
+        created: The document's ISO-8601 ``created`` timestamp; lets a test seed
+            documents that only fall within a date-scoped retrieval filter.
     """
     meta = DocumentMeta(
         id=document_id,
@@ -84,7 +87,7 @@ def seed_pipeline_document(
         correspondent_id=correspondent_id,
         document_type_id=document_type_id,
         tag_ids=(),
-        created="2024-01-15T00:00:00+00:00",
+        created=created,
         modified="2024-06-01T12:00:00+00:00",
         content_hash=f"hash-{document_id}",
         page_count=1,

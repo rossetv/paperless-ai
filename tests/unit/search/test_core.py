@@ -183,9 +183,14 @@ class TestRefinement:
         )
         core.answer("when does my boiler warranty expire?")
 
+        # Phase 2: a refinement now re-plans before re-synthesising. With no
+        # scripted re-plan response the re-plan resolves to the same specs as
+        # pass 1 (the no-op path), so the pass is re-plan + one final synthesise:
+        # planner + exploratory synth + re-plan + final synth = 4.
         assert llm_client.planner_calls == 1
+        assert llm_client.replan_calls == 1
         assert llm_client.synthesiser_calls == 2
-        assert llm_client.total_calls == 3
+        assert llm_client.total_calls == 4
 
     def test_refinement_sets_refined_flag_true(self) -> None:
         llm_client = ScriptedLLMClient(
@@ -206,7 +211,8 @@ class TestRefinement:
         result = core.answer("a query needing refinement")
 
         assert result.stats.refined is True
-        assert result.stats.llm_calls == 3
+        # planner + exploratory synth + re-plan (no-op) + final synth = 4.
+        assert result.stats.llm_calls == 4
 
     def test_refinement_returns_the_final_pass_answer(self) -> None:
         """The result answer is the final synthesise, not the exploratory one."""
@@ -258,13 +264,20 @@ class TestRefinement:
 
 
 class TestPerQueryBudget:
-    """The pipeline never exceeds 2 + SEARCH_MAX_REFINEMENTS LLM calls, and the
-    refinement loop genuinely runs that many passes (spec §6.3)."""
+    """The pipeline never exceeds the per-query LLM-call ceiling, and the
+    refinement loop genuinely runs the configured number of passes (spec §6.3).
 
-    def test_call_count_equals_two_plus_max_refinements(self) -> None:
+    Phase 2: each refinement pass costs a re-plan plus a synthesise (plus a
+    re-judge when that gate is on). With the judge gate off, the ceiling is
+    ``2 + 2 * SEARCH_MAX_REFINEMENTS``. These tests script no re-plan response,
+    so every pass is a no-op (re-plan resolves to the same specs as pass 1) —
+    re-plan + synthesise, no second retrieve.
+    """
+
+    def test_call_count_equals_ceiling(self) -> None:
         """With an always-NeedsMore synth, the loop runs exactly the configured
-        number of refinements and stops at 2 + SEARCH_MAX_REFINEMENTS — the
-        budget backstop bounds it (it would loop forever otherwise).
+        number of refinements and stops at the per-query ceiling — the budget
+        backstop bounds it (it would loop forever otherwise).
         """
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
@@ -279,13 +292,13 @@ class TestPerQueryBudget:
         )
         result = core.answer("a query that always needs more")
 
-        # planner + exploratory + 3 refinements = 5 = 2 + SEARCH_MAX_REFINEMENTS.
-        assert llm_client.total_calls == 5
-        assert result.stats.llm_calls == 5
+        # planner + exploratory + 3 * (re-plan + synth) = 2 + 6 = 8.
+        assert llm_client.total_calls == 8
+        assert result.stats.llm_calls == 8
 
-    def test_worst_case_makes_two_plus_max_refinements_calls(self) -> None:
+    def test_worst_case_makes_ceiling_calls(self) -> None:
         """A lower setting bounds the calls lower: plan + exploratory + one
-        synthesise per refinement pass."""
+        (re-plan + synthesise) per refinement pass."""
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[needs_more_response_json("more")],
@@ -298,8 +311,8 @@ class TestPerQueryBudget:
         )
         core.answer("worst case query")
 
-        # plan + exploratory + 2 refinements = 4.
-        assert llm_client.total_calls == 4
+        # plan + exploratory + 2 * (re-plan + synth) = 2 + 4 = 6.
+        assert llm_client.total_calls == 6
 
     def test_stats_llm_calls_matches_actual_calls_made(self) -> None:
         """SearchStats.llm_calls is the TRUE total, not a hardcoded constant."""
