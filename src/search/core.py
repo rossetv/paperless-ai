@@ -50,6 +50,7 @@ Forbidden: no FastAPI, no MCP SDK, no sqlite3, no direct LLM/HTTP calls.
 from __future__ import annotations
 
 import time
+from datetime import date
 from typing import TYPE_CHECKING
 
 import structlog
@@ -60,12 +61,13 @@ from search.judge import RelevanceJudge
 from search.models import (
     Answered,
     ClarifyNeeded,
-    EMPTY_FILTER_CANDIDATES,
     Cost,
     CostSummary,
+    FilterCandidates,
     JudgeCandidate,
     NeedsMore,
-    QueryPlan,
+    RetrievalPlan,
+    RetrievalSpec,
     RetrievedChunk,
     RetrievalSignal,
     SearchMode,
@@ -74,12 +76,11 @@ from search.models import (
     SourceDocument,
 )
 from search.refinement import (
-    adjust_plan,
     broaden_plan,
     merge_chunks,
     trivial_plan,
 )
-from search.retriever import resolve_filters
+from search.retriever import resolve_specs
 from search.relevance import RelevanceThresholds
 from search.sources import _snippet, assemble_sources
 from search.text import (
@@ -97,6 +98,7 @@ if TYPE_CHECKING:
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
+    from store.models import FacetSet
     from store.reader import SearchFilters, StoreReader
 
 log = structlog.get_logger(__name__)
@@ -538,14 +540,15 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None,
         tele: _Telemetry,
-    ) -> QueryPlan | ClarifyNeeded:
+    ) -> RetrievalPlan | ClarifyNeeded:
         """Run the plan stage, emitting the ``plan`` phase with its detail.
 
         Wraps :meth:`_plan` with the telemetry start/done pair, capturing the
         planner call's token usage in a fresh sink (empty for the trivial-skip
         path, which makes no LLM call). The detail carries the rewritten query,
-        the planner's resolved filter-candidate names, and whether the trivial
-        skip fired — the SPA renders these as the "Planning" step.
+        the planner's per-spec filter guesses, the human-readable spec list, and
+        whether the trivial skip fired — the SPA renders these as the "Planning"
+        step.
         """
         tele.start("plan", "Planning the query")
         started = time.monotonic()
@@ -554,17 +557,14 @@ class SearchCore:
             self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query)
         )
         outcome = self._plan(query, budget, asker, usage_sink=sink)
-        plan = outcome if isinstance(outcome, QueryPlan) else None
+        plan = outcome if isinstance(outcome, RetrievalPlan) else None
         tele.done(
             "plan",
             "Planning the query",
             {
-                "rewritten_query": (
-                    plan.semantic_queries[0]
-                    if plan is not None and plan.semantic_queries
-                    else query
-                ),
-                "filters": _filter_detail(plan) if plan is not None else {},
+                "rewritten_query": _rewritten_query(plan, query),
+                "filters": _filter_detail(plan),
+                "specs": _spec_detail(plan),
                 "skipped_trivial": skipped_trivial,
             },
             usage_sink=sink,
@@ -578,7 +578,7 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
-    ) -> QueryPlan | ClarifyNeeded:
+    ) -> RetrievalPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
         When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
@@ -590,7 +590,7 @@ class SearchCore:
         ``usage_sink``, when given, receives the planner call's token usage; the
         trivial-skip path makes no LLM call and leaves it empty.
 
-        Returns a ``QueryPlan`` in all normal and fallback cases, or a
+        Returns a ``RetrievalPlan`` in all normal and fallback cases, or a
         ``ClarifyNeeded`` when the planner's adequacy gate fires (Layer 1).
         """
         if self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query):
@@ -604,19 +604,29 @@ class SearchCore:
 
     def _retrieve_phase(
         self,
-        plan: QueryPlan,
+        plan: RetrievalPlan,
         ui_filters: SearchFilters | None,
         tele: _Telemetry,
     ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
-        """Run the retrieve stage, emitting the ``retrieve`` phase with counts.
+        """Resolve the plan's specs then retrieve, emitting both phases.
 
-        Retrieval is not an LLM call, so the phase carries no tokens. The detail
-        reports the chunk and distinct-document counts and whether the broadened
-        (filter-dropped) second pass ran.
+        Fetches the live taxonomy once, emits the non-LLM ``resolve`` phase (the
+        per-spec resolved ids/dates and the guesses that did not resolve), then
+        the ``retrieve`` phase with the chunk/document counts and whether the
+        broadened (filter-dropped) second pass ran.  Neither phase is an LLM
+        call, so neither carries tokens.  The facets are fetched here and reused
+        across both the first and the broadened retrieval pass.
         """
+        facets = self._store_reader.list_facets()
+        today = date.today()
+        specs = resolve_specs(plan, facets, ui_filters=ui_filters, today=today)
+        self._emit_resolve_phase(plan, specs, tele)
+
         tele.start("retrieve", "Retrieving documents")
         started = time.monotonic()
-        chunks, signal, broadened = self._retrieve_with_broaden(plan, ui_filters)
+        chunks, signal, broadened = self._retrieve_with_broaden(
+            plan, specs, ui_filters, facets, today
+        )
         tele.done(
             "retrieve",
             "Retrieving documents",
@@ -629,6 +639,43 @@ class SearchCore:
             started=started,
         )
         return chunks, signal
+
+    @staticmethod
+    def _emit_resolve_phase(
+        plan: RetrievalPlan,
+        specs: tuple[RetrievalSpec, ...],
+        tele: _Telemetry,
+    ) -> None:
+        """Emit the non-LLM ``resolve`` phase: resolved ids/dates + dropped guesses.
+
+        ``resolved`` lists each spec's taxonomy ids and ISO date bounds after
+        resolution; ``dropped`` lists the name guesses that were present in the
+        plan but did not resolve to a real id (correspondent / document type /
+        each tag).  Both are JSON-serialisable primitives the SPA renders as the
+        "Resolving filters" step.
+        """
+        tele.start("resolve", "Resolving filters")
+        started = time.monotonic()
+        tele.done(
+            "resolve",
+            "Resolving filters",
+            {
+                "resolved": [
+                    {
+                        "spec_index": index,
+                        "correspondent_id": spec.filters.correspondent_id,
+                        "document_type_id": spec.filters.document_type_id,
+                        "tag_ids": list(spec.filters.tag_ids),
+                        "date_from": spec.filters.date_from,
+                        "date_to": spec.filters.date_to,
+                    }
+                    for index, spec in enumerate(specs)
+                ],
+                "dropped": _dropped_guesses(plan, specs),
+            },
+            usage_sink=[],
+            started=started,
+        )
 
     def _gate_rejects(
         self,
@@ -665,17 +712,22 @@ class SearchCore:
 
     def _retrieve_with_broaden(
         self,
-        plan: QueryPlan,
+        plan: RetrievalPlan,
+        specs: tuple[RetrievalSpec, ...],
         ui_filters: SearchFilters | None,
+        facets: FacetSet,
+        today: date,
     ) -> tuple[list[RetrievedChunk], RetrievalSignal, bool]:
-        """Retrieve for *plan*; broaden and retry once if nothing is found.
+        """Retrieve for the resolved *specs*; broaden and retry once if empty.
 
-        Resolves the plan's free-text filter candidates against the live
-        taxonomy (UI filters bypass resolution), then runs hybrid retrieval.
-        An empty result is retried once with the filters dropped (spec §6.3) —
-        a mis-resolved or hallucinated filter is the most common cause of an
-        otherwise-answerable query returning nothing.  Neither call is an LLM
-        call.
+        Runs hybrid retrieval over the already-resolved *specs*.  An empty
+        result is retried once with every spec's filters dropped (spec §6.3) — a
+        mis-resolved or hallucinated filter is the most common cause of an
+        otherwise-answerable query returning nothing.  The broadened pass
+        re-resolves :func:`~search.refinement.broaden_plan`'s output against the
+        same *facets* (no second ``list_facets`` round-trip) with no UI filters,
+        so a UI-set filter the user explicitly chose does not survive the
+        broaden.  Neither call is an LLM call.
 
         Returns:
             A 3-tuple ``(chunks, signal, broadened)`` where *signal* is from
@@ -684,19 +736,16 @@ class SearchCore:
             (filter-dropped) pass ran. The signal is forwarded to Layer 2 and
             *broadened* feeds the retrieve-phase detail.
         """
-        facets = self._store_reader.list_facets()
-        filters = resolve_filters(plan.filter_candidates, facets, ui_filters=ui_filters)
-        chunks, signal = self._retriever.retrieve(plan, filters)
+        chunks, signal = self._retriever.retrieve(specs)
         if chunks:
             return chunks, signal, False
 
-        # Empty retrieval — drop the filters and try once more.
-        broadened_plan = broaden_plan(plan)
-        broadened_filters = resolve_filters(
-            broadened_plan.filter_candidates, facets, ui_filters=None
+        # Empty retrieval — drop every spec's filters and try once more.
+        broadened_specs = resolve_specs(
+            broaden_plan(plan), facets, ui_filters=None, today=today
         )
         log.info("search.retrieval_broadened")
-        chunks, signal = self._retriever.retrieve(broadened_plan, broadened_filters)
+        chunks, signal = self._retriever.retrieve(broadened_specs)
         return chunks, signal, True
 
     def _judge_candidates(self, chunks: list[RetrievedChunk]) -> list[JudgeCandidate]:
@@ -823,7 +872,7 @@ class SearchCore:
     def _refine(
         self,
         query: str,
-        plan: QueryPlan,
+        plan: RetrievalPlan,
         ui_filters: SearchFilters | None,
         needs_more: NeedsMore,
         previous_chunks: list[RetrievedChunk],
@@ -836,12 +885,18 @@ class SearchCore:
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk]]:
         """Run one bounded refinement pass (spec §6.3).
 
-        Folds the synthesiser's adjustment hint into the plan, retrieves again,
-        merges the new chunks with the previous round's, and re-synthesises in
-        *mode*. The caller runs intermediate passes in ``"exploratory"`` mode
-        (which may return another ``NeedsMore`` to continue the loop) and the
-        last allowed pass in ``"final"`` mode (which must answer or explicitly
-        say "not found"), so the refinement loop always terminates.
+        Retrieves again with the plan broadened (filters dropped), merges the
+        new chunks with the previous round's, and re-synthesises in *mode*. The
+        caller runs intermediate passes in ``"exploratory"`` mode (which may
+        return another ``NeedsMore`` to continue the loop) and the last allowed
+        pass in ``"final"`` mode (which must answer or explicitly say "not
+        found"), so the refinement loop always terminates.
+
+        # rationale: Phase 1 broadens on refine because the planner-driven
+        # replan is a Phase 2 item; the synthesiser's adjustment hint is logged
+        # and surfaced in the refine-phase detail but does not yet steer
+        # retrieval. Phase 2 will replace the broaden with a planner replan that
+        # consumes ``needs_more.adjustment``.
 
         Emits a ``refine`` marker phase (the 1-based pass number and the
         adjustment hint; no tokens of its own) before re-synthesising — the
@@ -851,7 +906,7 @@ class SearchCore:
 
         Args:
             query: The raw user query.
-            plan: The original query plan.
+            plan: The original multi-spec plan.
             ui_filters: The authoritative UI filters, if any.
             needs_more: The previous synthesise's NeedsMore signal.
             previous_chunks: The chunks accumulated so far.
@@ -874,10 +929,11 @@ class SearchCore:
         )
         tele.start("refine", "Refining")
         started = time.monotonic()
-        adjusted_plan = adjust_plan(plan, needs_more.adjustment)
-        new_chunks, _signal, _broadened = self._retrieve_with_broaden(
-            adjusted_plan, ui_filters
+        facets = self._store_reader.list_facets()
+        broadened_specs = resolve_specs(
+            broaden_plan(plan), facets, ui_filters=ui_filters, today=date.today()
         )
+        new_chunks, _signal = self._retriever.retrieve(broadened_specs)
         merged = merge_chunks(previous_chunks, new_chunks)
         tele.done(
             "refine",
@@ -899,7 +955,7 @@ class SearchCore:
         self,
         answer: str,
         sources: tuple[SourceDocument, ...],
-        plan: QueryPlan,
+        plan: RetrievalPlan,
         budget: _LlmBudget,
         started: float,
         tele: _Telemetry,
@@ -923,7 +979,7 @@ class SearchCore:
 
     def _no_match_result(
         self,
-        plan: QueryPlan,
+        plan: RetrievalPlan,
         budget: _LlmBudget,
         started: float,
         tele: _Telemetry,
@@ -964,9 +1020,9 @@ class SearchCore:
         ``answer`` is the FIXED ``_CLARIFY_ANSWER`` message (spec §11) — the
         model's phrasing is never surfaced directly to preserve consistent UX.
 
-        A minimal QueryPlan whose sole semantic query is the constant clarify
-        message string is used as the plan (no retrieval ran, so there is no
-        real plan to report; this satisfies the non-null plan contract).
+        A minimal RetrievalPlan carrying its ``clarify`` signal and no specs is
+        used as the plan (no retrieval ran, so there is no real plan to report;
+        this satisfies the non-null plan contract).
 
         Args:
             reason: The model's reason for the clarify signal (logged only).
@@ -984,14 +1040,9 @@ class SearchCore:
             "search.clarify_needed",
             reason=reason,
         )
-        # Minimal plan: a single semantic query so callers always get a non-null
-        # plan; empty rest because no retrieval ran.
-        minimal_plan = QueryPlan(
-            semantic_queries=(_CLARIFY_ANSWER,),
-            keyword_terms=(),
-            filter_candidates=EMPTY_FILTER_CANDIDATES,
-            sub_questions=(),
-        )
+        # Minimal plan: no specs (no retrieval ran) carrying the clarify signal,
+        # so callers always get a non-null plan.
+        minimal_plan = RetrievalPlan(specs=(), clarify=ClarifyNeeded(reason=reason))
         stats = SearchStats(
             llm_calls=budget.count,
             latency_ms=_elapsed_ms(started),
@@ -1037,27 +1088,117 @@ def _cost_dict(cs: CostSummary) -> dict[str, object]:
     }
 
 
-def _filter_detail(plan: QueryPlan) -> dict[str, object]:
-    """Build the plan phase's ``filters`` detail from a plan's candidates.
+def _rewritten_query(plan: RetrievalPlan | None, query: str) -> str:
+    """Return the first spec's semantic text as the plan's "rewritten query".
 
-    Reports the planner's non-empty free-text filter-candidate *names* (the
-    human-readable guesses available at plan time), not the resolved taxonomy
-    ids — resolution to ids happens later, inside retrieval. Empty / None
-    candidates are omitted, so a plan with no filters yields ``{}``.
+    Falls back to the raw *query* when there is no plan (a clarify outcome) or
+    no spec carries semantic text (e.g. a keyword-only plan) — the SPA always
+    has a non-empty "Planning" label to show.
     """
-    fc = plan.filter_candidates
+    if plan is None:
+        return query
+    for spec in plan.specs:
+        if spec.semantic:
+            return spec.semantic
+    return query
+
+
+def _filter_detail(plan: RetrievalPlan | None) -> dict[str, object]:
+    """Build the plan phase's ``filters`` detail from the plan's filter guesses.
+
+    Reports the planner's non-empty free-text filter-guess *names* (the
+    human-readable guesses available at plan time), not the resolved taxonomy
+    ids — resolution to ids happens in the ``resolve`` phase. The guesses across
+    all specs are merged: the first non-None correspondent / document-type wins,
+    tags and date bounds are unioned. Empty / None guesses are omitted, so a
+    plan with no filters yields ``{}``.
+    """
+    if plan is None:
+        return {}
     detail: dict[str, object] = {}
-    if fc.correspondent is not None:
-        detail["correspondent"] = fc.correspondent
-    if fc.document_type is not None:
-        detail["document_type"] = fc.document_type
-    if fc.tags:
-        detail["tags"] = list(fc.tags)
-    if fc.date_from is not None:
-        detail["date_from"] = fc.date_from
-    if fc.date_to is not None:
-        detail["date_to"] = fc.date_to
+    tags: list[str] = []
+    for spec in plan.specs:
+        fg = spec.filter_guess
+        if "correspondent" not in detail and fg.correspondent is not None:
+            detail["correspondent"] = fg.correspondent
+        if "document_type" not in detail and fg.document_type is not None:
+            detail["document_type"] = fg.document_type
+        for tag in fg.tags:
+            if tag not in tags:
+                tags.append(tag)
+        if "date_from" not in detail and fg.date_from is not None:
+            detail["date_from"] = fg.date_from
+        if "date_to" not in detail and fg.date_to is not None:
+            detail["date_to"] = fg.date_to
+    if tags:
+        detail["tags"] = tags
     return detail
+
+
+def _spec_detail(plan: RetrievalPlan | None) -> list[dict[str, object]]:
+    """Build the plan phase's ``specs`` detail — one entry per planned spec.
+
+    Each entry carries the spec's mode, a human-readable query (the semantic
+    text, or the joined keywords for a keyword spec), the spec's pre-resolution
+    filter guesses, and its rationale — all JSON-serialisable primitives the SPA
+    renders. An absent plan (a clarify outcome) yields ``[]``.
+    """
+    if plan is None:
+        return []
+    return [
+        {
+            "mode": spec.mode,
+            "query": spec.semantic or " ".join(spec.keywords),
+            "filters": _guess_dict(spec.filter_guess),
+            "rationale": spec.rationale,
+        }
+        for spec in plan.specs
+    ]
+
+
+def _guess_dict(fg: FilterCandidates) -> dict[str, object]:
+    """Flatten a :class:`FilterCandidates` to a serialisable dict of guesses."""
+    return {
+        "correspondent": fg.correspondent,
+        "document_type": fg.document_type,
+        "tags": list(fg.tags),
+        "date_from": fg.date_from,
+        "date_to": fg.date_to,
+    }
+
+
+def _dropped_guesses(
+    plan: RetrievalPlan,
+    specs: tuple[RetrievalSpec, ...],
+) -> list[dict[str, object]]:
+    """List the name guesses that did not resolve to a taxonomy id, per spec.
+
+    A guess is "dropped" when the plan carried a name (correspondent / document
+    type / a tag) but the matching resolved id is ``None`` (or, for tags, the
+    resolved id set is smaller than the guess set). Dates are deterministic and
+    never reported here. The result is JSON-serialisable primitives.
+    """
+    dropped: list[dict[str, object]] = []
+    for index, (planned, resolved) in enumerate(zip(plan.specs, specs)):
+        guess = planned.filter_guess
+        names: list[str] = []
+        if (
+            guess.correspondent is not None
+            and resolved.filters.correspondent_id is None
+        ):
+            names.append(guess.correspondent)
+        if (
+            guess.document_type is not None
+            and resolved.filters.document_type_id is None
+        ):
+            names.append(guess.document_type)
+        # A tag guess is dropped when fewer ids resolved than tags were guessed;
+        # the ids are anonymous, so report the count rather than guess which.
+        if len(guess.tags) > len(resolved.filters.tag_ids):
+            names.extend(guess.tags[len(resolved.filters.tag_ids) :])
+        if names:
+            dropped.append({"spec_index": index, "names": names})
+    return dropped
 
 
 def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:

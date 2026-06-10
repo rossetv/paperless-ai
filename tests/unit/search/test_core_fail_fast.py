@@ -32,6 +32,7 @@ from tests.helpers.factories import (
 )
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     planner_response_json,
 )
@@ -308,7 +309,12 @@ class TestLayer2RelevanceGate:
         # Use a planner response with keyword_terms so the retriever runs
         # keyword_search and produces has_keyword_hit=True in the signal.
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(keyword_terms=["warranty"]),
+            planner_response=planner_response_json(
+                specs=[
+                    _make_spec(),
+                    _make_spec(mode="keyword", semantic=None, keywords=["warranty"]),
+                ]
+            ),
             synthesiser_responses=[
                 answered_response_json("Found it [1].", citations=[1])
             ],
@@ -327,7 +333,12 @@ class TestLayer2RelevanceGate:
         weak_hits = [make_chunk_hit(chunk_id=1, document_id=1, score=5.0)]
         keyword_hit = [make_chunk_hit(chunk_id=2, document_id=1, score=1.0)]
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(keyword_terms=["warranty"]),
+            planner_response=planner_response_json(
+                specs=[
+                    _make_spec(),
+                    _make_spec(mode="keyword", semantic=None, keywords=["warranty"]),
+                ]
+            ),
             synthesiser_responses=[
                 answered_response_json("Found it [1].", citations=[1])
             ],
@@ -347,7 +358,12 @@ class TestLayer2RelevanceGate:
         """When no vector search ran (sim is None), Layer 2 must NOT reject."""
         # No vector hits → best_vector_similarity is None.
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(keyword_terms=("warranty",)),
+            planner_response=planner_response_json(
+                specs=[
+                    _make_spec(),
+                    _make_spec(mode="keyword", semantic=None, keywords=["warranty"]),
+                ]
+            ),
             synthesiser_responses=[
                 answered_response_json("Found it [1].", citations=[1])
             ],
@@ -367,7 +383,12 @@ class TestLayer2RelevanceGate:
     def test_none_similarity_outcome_is_not_no_match(self) -> None:
         """Fail-open path: outcome_kind must not be 'no_match'."""
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(keyword_terms=("warranty",)),
+            planner_response=planner_response_json(
+                specs=[
+                    _make_spec(),
+                    _make_spec(mode="keyword", semantic=None, keywords=["warranty"]),
+                ]
+            ),
             synthesiser_responses=[
                 answered_response_json("Found it [1].", citations=[1])
             ],
