@@ -172,7 +172,9 @@ def test_test_connection_openai_bad_key(tmp_path) -> None:
                 response=httpx.Response(
                     401, request=httpx.Request("GET", "https://api.openai.com")
                 ),
-                body={"error": {"message": "invalid api key", "type": "invalid_api_key"}},
+                body={
+                    "error": {"message": "invalid api key", "type": "invalid_api_key"}
+                },
             ),
         ):
             response = client.post(

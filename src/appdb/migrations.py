@@ -202,16 +202,14 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
         return  # Nothing to migrate.
 
     legacy_value: str = row["value"]
-    now = conn.execute(
-        "SELECT STRFTIME('%Y-%m-%dT%H:%M:%S+00:00', 'now')"
-    ).fetchone()[0]
+    now = conn.execute("SELECT STRFTIME('%Y-%m-%dT%H:%M:%S+00:00', 'now')").fetchone()[
+        0
+    ]
 
     # Insert OCR_MODELS and CLASSIFY_MODELS only when they are absent so we
     # do not overwrite an operator who has already set one of them explicitly.
     for key in ("OCR_MODELS", "CLASSIFY_MODELS"):
-        existing = conn.execute(
-            "SELECT 1 FROM config WHERE key = ?", (key,)
-        ).fetchone()
+        existing = conn.execute("SELECT 1 FROM config WHERE key = ?", (key,)).fetchone()
         if existing is None:
             conn.execute(
                 "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",

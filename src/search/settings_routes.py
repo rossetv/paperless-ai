@@ -387,9 +387,7 @@ def _test_connection(
         try:
             _probe_openai(probe_settings)
         except Exception as exc:
-            return TestConnectionResponse(
-                ok=False, document_count=0, detail=str(exc)
-            )
+            return TestConnectionResponse(ok=False, document_count=0, detail=str(exc))
         return TestConnectionResponse(
             ok=True, document_count=0, detail="Connected to OpenAI successfully."
         )
@@ -398,9 +396,7 @@ def _test_connection(
         try:
             _probe_ollama(probe_settings)
         except Exception as exc:
-            return TestConnectionResponse(
-                ok=False, document_count=0, detail=str(exc)
-            )
+            return TestConnectionResponse(ok=False, document_count=0, detail=str(exc))
         return TestConnectionResponse(
             ok=True, document_count=0, detail="Connected to Ollama successfully."
         )
