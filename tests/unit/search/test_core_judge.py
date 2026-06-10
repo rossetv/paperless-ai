@@ -227,6 +227,68 @@ def test_zero_threshold_keeps_everything_kept_regardless_of_score() -> None:
     assert {s.document_id for s in result.sources} == {1, 2}
 
 
+def test_sources_are_ranked_by_judge_score_over_rrf() -> None:
+    """A higher judge score outranks a higher RRF score in the source order.
+
+    Doc 2 has the stronger RRF (vector) score but the weaker judge score; doc 1
+    has the weaker RRF but the stronger judge verdict. The final sources must
+    lead with doc 1 — the judge's relevance ranking wins over the rank-based RRF.
+    """
+    reset_search_result_cache()
+    store_reader = _store_reader()
+    # Doc 2 wins on RRF (higher vector score) so it would lead under the old
+    # score-only ordering.
+    store_reader.vector_search.return_value = [
+        make_chunk_hit(chunk_id=1, document_id=1, score=0.1),
+        make_chunk_hit(chunk_id=2, document_id=2, score=0.9),
+    ]
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        # Doc 1 is the stronger judge verdict (0.9 vs 0.6).
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.9},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.6},
+            ]
+        ),
+    )
+    core = build_search_core(
+        settings=make_search_settings(SEARCH_GATE_JUDGE=True),
+        llm_client=llm_client,
+        store_reader=store_reader,
+        embedding_client=_embedding_client(),
+    )
+    result = core.answer("warranty?")
+    ordered_ids = [s.document_id for s in result.sources]
+    assert ordered_ids == [1, 2]
+
+
+def test_sources_without_judge_scores_fall_back_to_rrf_order() -> None:
+    """With the judge off, sources keep the descending-RRF order (degraded path)."""
+    reset_search_result_cache()
+    store_reader = _store_reader()
+    store_reader.vector_search.return_value = [
+        make_chunk_hit(chunk_id=1, document_id=1, score=0.1),
+        make_chunk_hit(chunk_id=2, document_id=2, score=0.9),
+    ]
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+    )
+    core = build_search_core(
+        settings=make_search_settings(SEARCH_GATE_JUDGE=False),
+        llm_client=llm_client,
+        store_reader=store_reader,
+        embedding_client=_embedding_client(),
+    )
+    result = core.answer("warranty?")
+    # With no judge scores the order falls back entirely to the RRF/fused score,
+    # descending — exactly the pre-Phase-3B behaviour.
+    scores = [s.score for s in result.sources]
+    assert scores == sorted(scores, reverse=True)
+
+
 def test_judge_candidates_carry_resolved_metadata() -> None:
     """_judge_candidates populates title/date/correspondent/type from get_documents.
 

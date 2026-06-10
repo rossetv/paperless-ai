@@ -40,6 +40,7 @@ def assemble_sources(
     store_reader: StoreReader,
     paperless_public_url: str,
     thresholds: RelevanceThresholds,
+    judge_scores: dict[int, float] | None = None,
 ) -> tuple[SourceDocument, ...]:
     """Build ranked SourceDocuments from the retrieved chunks.
 
@@ -47,8 +48,15 @@ def assemble_sources(
     snippet from its highest-scoring chunk, and its best absolute vector
     similarity), resolves correspondent and document-type names via one
     ``get_documents`` look-up, builds a Paperless deep-link, and derives the
-    qualitative relevance tier from the similarity. Documents are ordered by
-    score, highest first.
+    qualitative relevance tier from the similarity.
+
+    Documents are ordered by the JUDGE's relevance score (descending) when one
+    is available (Phase 3B) — the judge has read each document's metadata +
+    snippet and scored its relevance to the question, a far stronger ranking
+    signal than the rank-based RRF score. A document with no judge score (the
+    judge was off, degraded, or did not score it) falls back to its RRF/fused
+    ``score``, and ties break on the RRF score too — so a degraded query keeps
+    its existing descending-RRF order.
 
     Args:
         chunks: The fused chunks from retrieval (may be empty).
@@ -58,9 +66,12 @@ def assemble_sources(
             stripped of any trailing slash, used to build each deep-link.
         thresholds: The operator-configured relevance-badge cut-points, applied
             to each document's best vector similarity.
+        judge_scores: Optional ``{document_id: judge_score}`` map used as the
+            primary sort key. Absent / ``None`` (no judge ran) leaves the order
+            on the RRF score, preserving the pre-Phase-3B behaviour.
 
     Returns:
-        The ranked source documents, highest score first.
+        The ranked source documents, strongest first (judge score, then RRF).
     """
     if not chunks:
         return ()
@@ -69,6 +80,7 @@ def assemble_sources(
     document_ids = list(best_score.keys())
     indexed = store_reader.get_documents(document_ids)
     indexed_by_id = {document.id: document for document in indexed}
+    scores = judge_scores or {}
 
     sources = [
         _build_source(
@@ -81,7 +93,13 @@ def assemble_sources(
         )
         for document_id in document_ids
     ]
-    sources.sort(key=lambda source: source.score, reverse=True)
+    # Primary key: the judge's relevance score (a document without one sorts on
+    # its RRF score alone); secondary key: the RRF score, which also breaks ties
+    # and is the sole key when no judge ran.
+    sources.sort(
+        key=lambda source: (scores.get(source.document_id, source.score), source.score),
+        reverse=True,
+    )
     return tuple(sources)
 
 

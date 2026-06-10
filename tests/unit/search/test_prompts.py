@@ -11,6 +11,7 @@ from search.prompts import (
     PLANNER_JSON_SCHEMA,
     PLANNER_SYSTEM_PROMPT,
     SYNTHESISER_JSON_SCHEMA,
+    SYNTHESISER_SYSTEM_PROMPT,
     _planner_response_format,
     _synthesiser_response_format,
     build_planner_user_message,
@@ -276,3 +277,85 @@ class TestSynthesiserIdentity:
     def test_synth_message_unchanged_when_no_asker(self) -> None:
         msg = build_synthesiser_user_message(query="q", labelled_chunks=[(1, "doc")])
         assert "Vilmar" not in msg
+
+
+class TestSynthesiserEvidenceGatingPrompt:
+    """The system prompt evidence-gates and instructs reconciliation (Phase 3B).
+
+    The synthesiser must assert only what the chunks state — refusing to
+    substitute the nearest available period/entity for the one asked — and must
+    attribute multiple relevant documents rather than blending them.
+    """
+
+    def test_system_prompt_keeps_the_answer_synthesis_opening(self) -> None:
+        assert "answer-synthesis engine" in SYNTHESISER_SYSTEM_PROMPT
+
+    def test_system_prompt_evidence_gates_against_substitution(self) -> None:
+        lower = SYNTHESISER_SYSTEM_PROMPT.lower()
+        assert "substitute" in lower or "nearest" in lower
+
+    def test_system_prompt_states_only_what_chunks_say(self) -> None:
+        lower = SYNTHESISER_SYSTEM_PROMPT.lower()
+        assert "only what" in lower or "assert only" in lower
+
+    def test_system_prompt_instructs_reconciliation(self) -> None:
+        lower = SYNTHESISER_SYSTEM_PROMPT.lower()
+        assert "compare" in lower or "attribute" in lower
+
+    def test_system_prompt_still_carries_the_final_mode_rule(self) -> None:
+        # The final-mode rule must survive the Phase-3B additions.
+        assert "FINAL" in SYNTHESISER_SYSTEM_PROMPT
+
+
+class TestSynthesiserUserMessageMetadataHeaders:
+    """Each labelled chunk header carries the document's title + date when known.
+
+    The metadata comes from our own store (``documents_by_id``), stays in the
+    control text of the labelled header (already our text, not chunk content),
+    and so adds no injection surface — a document missing metadata falls back to
+    the bare ``[id]`` label, preserving the pre-metadata behaviour.
+    """
+
+    def test_header_includes_title_and_date_when_supplied(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="q",
+            labelled_chunks=[(7, "chunk body")],
+            documents_by_id={7: ("April Payslip", "2025-04-25T00:00:00+00:00")},
+        )
+        assert "[7] April Payslip (2025-04-25)" in msg
+
+    def test_header_includes_title_without_date(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="q",
+            labelled_chunks=[(7, "chunk body")],
+            documents_by_id={7: ("April Payslip", None)},
+        )
+        assert "[7] April Payslip" in msg
+        assert "(" not in msg.split("April Payslip")[1].split("\n")[0]
+
+    def test_header_falls_back_to_bare_label_without_metadata(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="q",
+            labelled_chunks=[(7, "chunk body")],
+            documents_by_id={},
+        )
+        assert "[7]\nchunk body" in msg
+
+    def test_header_falls_back_to_bare_label_when_map_omitted(self) -> None:
+        msg = build_synthesiser_user_message(
+            query="q",
+            labelled_chunks=[(7, "chunk body")],
+        )
+        assert "[7]\nchunk body" in msg
+
+    def test_metadata_header_is_in_the_data_region(self) -> None:
+        """The labelled header is our control text but lives inside the fence."""
+        msg = build_synthesiser_user_message(
+            query="q",
+            labelled_chunks=[(7, "chunk body")],
+            documents_by_id={7: ("April Payslip", "2025-04-25T00:00:00+00:00")},
+        )
+        open_pos = msg.find("<<<DATA ")
+        close_pos = msg.find("<<<END DATA ")
+        header_pos = msg.find("[7] April Payslip")
+        assert open_pos < header_pos < close_pos

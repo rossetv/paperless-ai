@@ -90,7 +90,7 @@ from search.refinement import (
 )
 from search.retriever import resolve_specs
 from search.relevance import RelevanceThresholds
-from search.sources import _snippet, assemble_sources
+from search.sources import _paperless_url, _snippet, assemble_sources
 from search.text import (
     ADJUSTMENT_LOG_PREFIX_CHARS,
     QUERY_LOG_PREFIX_CHARS,
@@ -415,7 +415,10 @@ class SearchCore:
             return self._no_match_result(plan, budget, started, tele)
 
         # --- Layer 3: document-relevance judge (cheap pre-synthesis screen) ---
-        filtered = self._judge_and_filter(query, chunks, budget, tele)
+        # The judge's per-document scores are accumulated here (and updated by
+        # any re-judge in refinement) so the final sources rank by relevance.
+        judge_scores: dict[int, float] = {}
+        filtered = self._judge_and_filter(query, chunks, budget, tele, judge_scores)
         if filtered is None:
             log.info("search.judge_bailed", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
             return self._no_match_result(plan, budget, started, tele)
@@ -449,6 +452,7 @@ class SearchCore:
                 asker=asker,
                 tele=tele,
                 pass_number=refinements + 1,
+                judge_scores=judge_scores,
             )
             refinements += 1
         refined = refinements > 0
@@ -459,6 +463,7 @@ class SearchCore:
             self._store_reader,
             self._settings.PAPERLESS_PUBLIC_URL,
             self._relevance_thresholds(),
+            judge_scores,
         )
         sources = _cited_sources(sources, outcome)
         return self._build_result(
@@ -832,6 +837,7 @@ class SearchCore:
         chunks: list[RetrievedChunk],
         budget: _LlmBudget,
         tele: _Telemetry,
+        judge_scores: dict[int, float] | None = None,
     ) -> list[RetrievedChunk] | None:
         """Judge the retrieved documents; return filtered chunks, or None to bail.
 
@@ -841,6 +847,10 @@ class SearchCore:
         per-document verdicts (capturing the call's token usage), and: bails
         (None) only on an explicit empty verdict; filters to surviving documents
         otherwise; fails open (all chunks) if filtering keeps nothing.
+
+        When *judge_scores* is supplied it is populated with each verdict's
+        per-document score (the later, re-judge pass overwrites the earlier one),
+        so the caller can rank the final sources by relevance (Phase 3B).
         """
         if not self._settings.SEARCH_GATE_JUDGE:
             return chunks
@@ -863,6 +873,10 @@ class SearchCore:
         threshold = self._settings.SEARCH_JUDGE_KEEP_THRESHOLD
         kept_ids = _surviving_ids(verdict, threshold)
         bailed = not kept_ids and not verdict.degraded
+        if judge_scores is not None:
+            for dv in verdict.verdicts:
+                judge_scores[dv.document_id] = dv.score
+        public_url = self._settings.PAPERLESS_PUBLIC_URL
         tele.done(
             "judge",
             "Judging relevance",
@@ -881,6 +895,10 @@ class SearchCore:
                         "keep": dv.keep,
                         "reason": dv.reason,
                         "score": dv.score,
+                        # The Paperless deep-link, built via the same helper the
+                        # SourceDocument link uses, so the SPA can render a
+                        # Preview link per judged document (Phase 3B).
+                        "paperless_url": _paperless_url(public_url, dv.document_id),
                     }
                     for dv in verdict.verdicts
                 ],
@@ -929,7 +947,12 @@ class SearchCore:
         sink: list[LlmCallUsage] = []
         budget.record()
         outcome = self._synthesizer.synthesise(
-            query, chunks, mode=mode, asker=asker, usage_sink=sink
+            query,
+            chunks,
+            mode=mode,
+            asker=asker,
+            usage_sink=sink,
+            documents_by_id=self._synth_metadata(chunks),
         )
         tele.done(
             "synthesise",
@@ -939,6 +962,26 @@ class SearchCore:
             started=started,
         )
         return outcome
+
+    def _synth_metadata(
+        self, chunks: list[RetrievedChunk]
+    ) -> dict[int, tuple[str | None, str | None]]:
+        """Build the ``{document_id: (title, created)}`` map for the synthesiser.
+
+        Resolves each distinct document id in *chunks* to its indexed title and
+        creation date via the same ``get_documents`` look-up the judge and
+        source assembly use, so the synthesiser can attribute and reconcile
+        documents by title and date (Phase 3B). A document no longer in the
+        index (pruned mid-query) is simply absent, and the message builder falls
+        back to its bare ``[id]`` label.
+        """
+        document_ids = sorted({c.document_id for c in chunks})
+        if not document_ids:
+            return {}
+        return {
+            doc.id: (doc.title, doc.created)
+            for doc in self._store_reader.get_documents(document_ids)
+        }
 
     def _refine(
         self,
@@ -954,6 +997,7 @@ class SearchCore:
         asker: str | None = None,
         tele: _Telemetry,
         pass_number: int,
+        judge_scores: dict[int, float],
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk], tuple[RetrievalSpec, ...]]:
         """Run one bounded refinement pass driven by the synth's gap hint (Phase 2).
 
@@ -1056,8 +1100,10 @@ class SearchCore:
         )
         # Re-judge the merged set; a bail here falls back to the merged chunks —
         # mid-refine we already had relevant evidence, so we never downgrade to
-        # no_match, we just answer from what we have.
-        judged = self._judge_and_filter(query, merged, budget, tele)
+        # no_match, we just answer from what we have. The re-judge's scores
+        # overwrite the pass-1 scores so the final ranking reflects the latest
+        # verdict on the merged set.
+        judged = self._judge_and_filter(query, merged, budget, tele, judge_scores)
         kept = judged if judged is not None else merged
         outcome = self._synthesise(
             query, kept, mode=mode, budget=budget, asker=asker, tele=tele
