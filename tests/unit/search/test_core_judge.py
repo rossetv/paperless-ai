@@ -134,3 +134,143 @@ def test_judge_call_counts_against_the_budget() -> None:
     result = _core(llm_client, SEARCH_MAX_REFINEMENTS=1).answer("warranty?")
     # planner + judge + one synthesise (answered first pass).
     assert result.stats.llm_calls == 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 3A — scored keep-threshold tests
+# ---------------------------------------------------------------------------
+
+
+def test_judge_drops_a_kept_but_below_threshold_document() -> None:
+    """keep=true but score below the floor → the document is dropped."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        # Both kept, but doc 2's score (0.3) is below the 0.5 floor → dropped.
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.9},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.3},
+            ]
+        ),
+    )
+    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    assert result.outcome_kind == "answered"
+    assert {s.document_id for s in result.sources} == {1}
+
+
+def test_judge_keeps_a_document_exactly_on_the_threshold() -> None:
+    """score == threshold survives (the floor is inclusive)."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.5},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.5},
+            ]
+        ),
+    )
+    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    assert {s.document_id for s in result.sources} == {1, 2}
+
+
+def test_judge_all_below_threshold_bails_to_no_match() -> None:
+    """Every kept document scoring below the floor → no_match, no synthesis."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.2},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.1},
+            ]
+        ),
+    )
+    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    assert result.outcome_kind == "no_match"
+    assert llm_client.synthesiser_calls == 0
+
+
+def test_degraded_judge_ignores_the_threshold_and_keeps_all() -> None:
+    """A fail-open verdict keeps every document regardless of the keep floor."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        judge_response="not valid json",  # → degraded fail-open (score 1.0)
+    )
+    # A punishingly high floor would drop everything if it applied to a degraded
+    # verdict; it must not — degraded keeps all.
+    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.99).answer("warranty?")
+    assert result.outcome_kind == "answered"
+    assert {s.document_id for s in result.sources} == {1, 2}
+
+
+def test_zero_threshold_keeps_everything_kept_regardless_of_score() -> None:
+    """A 0.0 floor degrades to keep-only — any keep=true survives."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.0},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.01},
+            ]
+        ),
+    )
+    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.0).answer("warranty?")
+    assert {s.document_id for s in result.sources} == {1, 2}
+
+
+def test_judge_candidates_carry_resolved_metadata() -> None:
+    """_judge_candidates populates title/date/correspondent/type from get_documents.
+
+    The store look-up returns taxonomy-resolved IndexedDocuments, so the judge
+    candidate's correspondent/type are names, not ids. Asserted via the judge
+    user message the scripted client receives.
+    """
+    reset_search_result_cache()
+    captured: dict[str, str] = {}
+
+    class _CapturingClient(ScriptedLLMClient):
+        def route(self, *, model, messages, **kw):
+            system = next((m["content"] for m in messages if m["role"] == "system"), "")
+            if "document-relevance judge" in system:
+                captured["user"] = next(
+                    (m["content"] for m in messages if m["role"] == "user"), ""
+                )
+            return super().route(model=model, messages=messages, **kw)
+
+    llm_client = _CapturingClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1].", citations=[1])],
+        judge_response=judge_response_json([1, 2]),
+    )
+    store_reader = _store_reader()
+    store_reader.get_documents.return_value = [
+        make_indexed_document(
+            document_id=1,
+            title="Payslip April 2025",
+            correspondent="Acme Ltd",
+            document_type="Payslip",
+            created="2025-04-28T00:00:00+00:00",
+        ),
+        make_indexed_document(document_id=2, title="Holiday photos"),
+    ]
+    core = build_search_core(
+        settings=make_search_settings(SEARCH_GATE_JUDGE=True),
+        llm_client=llm_client,
+        store_reader=store_reader,
+        embedding_client=_embedding_client(),
+    )
+    core.answer("April salary?")
+    user = captured["user"]
+    assert "title: Payslip April 2025" in user
+    assert "from: Acme Ltd" in user
+    assert "type: Payslip" in user
+    assert "date: 2025-04-28T00:00:00+00:00" in user

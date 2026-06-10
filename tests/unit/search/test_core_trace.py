@@ -378,8 +378,12 @@ class TestJudgeDetail:
         assert verdicts[1]["keep"] is True
         assert verdicts[2]["keep"] is False
         assert verdicts[2]["reason"] == "not relevant"
-        # title resolves to None when not readily available from the chunks.
-        assert verdicts[1]["title"] is None
+        # The title is now resolved from the get_documents look-up that feeds
+        # the candidate metadata (the seeded IndexedDocument's title).
+        assert verdicts[1]["title"] == "A Document"
+        # Each verdict carries the judge's per-document score (kept 0.9 / dropped 0.1).
+        assert verdicts[1]["score"] == 0.9
+        assert verdicts[2]["score"] == 0.1
         # The judge made one LLM call → its phase carries tokens.
         assert rec.tokens is not None
 

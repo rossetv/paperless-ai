@@ -72,6 +72,7 @@ from search.models import (
     CostSummary,
     FilterCandidates,
     JudgeCandidate,
+    JudgeVerdict,
     NeedsMore,
     RetrievalPlan,
     RetrievalSpec,
@@ -105,7 +106,7 @@ if TYPE_CHECKING:
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
-    from store.models import FacetSet
+    from store.models import FacetSet, IndexedDocument
     from store.reader import SearchFilters, StoreReader
 
 log = structlog.get_logger(__name__)
@@ -779,12 +780,25 @@ class SearchCore:
         chunks, signal = self._retriever.retrieve(broadened_specs)
         return chunks, signal, True
 
-    def _judge_candidates(self, chunks: list[RetrievedChunk]) -> list[JudgeCandidate]:
-        """Reduce chunks to one document-level candidate each (best-chunk snippet).
+    def _judge_candidates(
+        self,
+        chunks: list[RetrievedChunk],
+        *,
+        documents_by_id: dict[int, IndexedDocument],
+    ) -> list[JudgeCandidate]:
+        """Reduce chunks to one document-level candidate each, with metadata.
 
         Keeps each document's highest-rrf_score chunk's text as the snippet —
         the most relevant slice for a relevance call — reusing the same snippet
-        trimmer as source assembly (no duplication).
+        trimmer as source assembly (no duplication), then attaches the
+        document's title, created date, correspondent, and type so the judge can
+        score relevance to the asked period/entity, not just the snippet.
+
+        The metadata is read from *documents_by_id* — the already-resolved
+        :class:`~store.models.IndexedDocument` look-up, which carries the
+        taxonomy-resolved correspondent and document-type *names* (no second
+        facet round-trip needed). A document missing from the look-up (pruned
+        between retrieval and the judge) keeps a snippet-only candidate.
         """
         best_score: dict[int, float] = {}
         snippet: dict[int, str] = {}
@@ -793,10 +807,24 @@ class SearchCore:
             if current is None or chunk.rrf_score > current:
                 best_score[chunk.document_id] = chunk.rrf_score
                 snippet[chunk.document_id] = _snippet(chunk.text)
-        return [
-            JudgeCandidate(document_id=document_id, snippet=snippet[document_id])
-            for document_id in best_score
-        ]
+        candidates: list[JudgeCandidate] = []
+        for document_id in best_score:
+            indexed = documents_by_id.get(document_id)
+            candidates.append(
+                JudgeCandidate(
+                    document_id=document_id,
+                    snippet=snippet[document_id],
+                    title=indexed.title if indexed is not None else None,
+                    created=indexed.created if indexed is not None else None,
+                    correspondent=(
+                        indexed.correspondent if indexed is not None else None
+                    ),
+                    document_type=(
+                        indexed.document_type if indexed is not None else None
+                    ),
+                )
+            )
+        return candidates
 
     def _judge_and_filter(
         self,
@@ -816,29 +844,43 @@ class SearchCore:
         """
         if not self._settings.SEARCH_GATE_JUDGE:
             return chunks
-        candidates = self._judge_candidates(chunks)
+        documents_by_id = {
+            doc.id: doc
+            for doc in self._store_reader.get_documents(
+                sorted({c.document_id for c in chunks})
+            )
+        }
+        candidates = self._judge_candidates(chunks, documents_by_id=documents_by_id)
         tele.start("judge", "Judging relevance")
         started = time.monotonic()
         sink: list[LlmCallUsage] = []
         budget.record()
         verdict = self._judge.judge(query, candidates, usage_sink=sink)
-        bailed = not verdict.relevant_document_ids and not verdict.degraded
+        # A document survives only when the judge keeps it AND its score clears
+        # the configured floor; a degraded (fail-open) verdict keeps everything
+        # (its scores are 1.0, so the floor never bites). An explicit non-degraded
+        # verdict that survives nothing is a bail (no_match, no synthesis).
+        threshold = self._settings.SEARCH_JUDGE_KEEP_THRESHOLD
+        kept_ids = _surviving_ids(verdict, threshold)
+        bailed = not kept_ids and not verdict.degraded
         tele.done(
             "judge",
             "Judging relevance",
             {
                 "degraded": verdict.degraded,
                 "bailed": bailed,
+                "threshold": threshold,
                 "verdicts": [
                     {
                         "doc_id": dv.document_id,
-                        # Titles are not carried on RetrievedChunk; resolving
-                        # them here would cost an extra store read. The client
-                        # falls back to the source list for the title, so None
-                        # is the honest cheap value (plan §Task 10).
-                        "title": None,
+                        # The title is resolved from the same get_documents
+                        # look-up that feeds the candidate metadata — no extra
+                        # store read. None when the document was pruned between
+                        # retrieval and the judge.
+                        "title": _title_for(documents_by_id, dv.document_id),
                         "keep": dv.keep,
                         "reason": dv.reason,
+                        "score": dv.score,
                     }
                     for dv in verdict.verdicts
                 ],
@@ -848,18 +890,16 @@ class SearchCore:
         )
         if bailed:
             return None
-        kept = [c for c in chunks if c.document_id in verdict.relevant_document_ids]
+        kept = [c for c in chunks if c.document_id in kept_ids]
         if not kept:
             return chunks
         if not verdict.degraded:
-            dropped = sorted(
-                {c.document_id for c in chunks} - verdict.relevant_document_ids
-            )
+            dropped = sorted({c.document_id for c in chunks} - kept_ids)
             if dropped:
                 log.info(
                     "search.judge_filtered",
                     query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
-                    kept=len(verdict.relevant_document_ids),
+                    kept=len(kept_ids),
                     dropped=dropped,
                 )
         else:
@@ -1248,6 +1288,29 @@ class SearchCore:
 def _elapsed_ms(started: float) -> int:
     """Return whole milliseconds elapsed since the monotonic timestamp *started*."""
     return int((time.monotonic() - started) * 1000)
+
+
+def _surviving_ids(verdict: JudgeVerdict, threshold: float) -> frozenset[int]:
+    """Return the document ids that survive the judge keep + score gate.
+
+    A document survives when its verdict is ``keep`` AND its ``score`` is at or
+    above *threshold*. A degraded (fail-open) verdict carries ``score=1.0`` on
+    every kept document, so the floor never bites — a broken judge keeps
+    everything regardless of the threshold (CODE_GUIDELINES §1.11). This is the
+    scored replacement for ``JudgeVerdict.relevant_document_ids`` (keep-only),
+    used by the core to filter chunks and decide the bail.
+    """
+    return frozenset(
+        v.document_id for v in verdict.verdicts if v.keep and v.score >= threshold
+    )
+
+
+def _title_for(
+    documents_by_id: dict[int, IndexedDocument], document_id: int
+) -> str | None:
+    """Return *document_id*'s indexed title, or None when it is not in the look-up."""
+    indexed = documents_by_id.get(document_id)
+    return indexed.title if indexed is not None else None
 
 
 def _max_llm_calls(settings: Settings) -> int:

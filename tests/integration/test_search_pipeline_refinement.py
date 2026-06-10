@@ -331,7 +331,7 @@ class TestRefineByReplan:
                     specs=[_make_spec(semantic="boiler details")]
                 ),
                 judge_response='{"verdicts": [{"document_id": 1, "keep": true, '
-                '"reason": ""}]}',
+                '"reason": "", "score": 0.9}]}',
                 synthesiser_responses=[
                     needs_more_response_json("look harder"),
                     answered_response_json("The boiler is a Worcester [1].", [1]),
