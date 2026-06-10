@@ -8,9 +8,9 @@ import { SettingsScreen } from './SettingsScreen';
 const SETTINGS = {
   PAPERLESS_URL: 'http://paperless.lan:8000',
   PAPERLESS_PUBLIC_URL: 'http://paperless.lan:8000',
-  PAPERLESS_TOKEN: '••••••••3f9b',
+  PAPERLESS_TOKEN: '********',
   LLM_PROVIDER: 'openai',
-  OPENAI_API_KEY: 'sk-••••H8w2',
+  OPENAI_API_KEY: '********',
   OLLAMA_BASE_URL: 'http://ollama.lan:11434/v1/',
   OCR_MODELS: ['gpt-5.4-mini', 'gpt-5.4'],
   OCR_REASONING_EFFORT: 'low',

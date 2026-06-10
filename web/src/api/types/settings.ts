@@ -64,6 +64,13 @@ export interface UpdateSettingsRequest {
   changes: Record<string, string>;
 }
 
+/**
+ * The sentinel the backend uses to mask a stored secret in API responses.
+ * Matches `_SECRET_MASK` in `src/search/settings_routes.py`.
+ * Compare with exact equality — never test for containment.
+ */
+export const SECRET_MASK = '********';
+
 /** Body for POST /api/settings/test-connection — the current form values. */
 export interface TestConnectionRequest {
   /** The Paperless server URL to probe — the live form value, not the saved one. */

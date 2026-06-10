@@ -10,13 +10,16 @@ const CONNECTIONS_SECTION = SETTINGS_SECTIONS.find(
   (s) => s.id === 'connections',
 )! as SettingsSection;
 
+// Real backend mask — matches SECRET_MASK in settings_routes.py.
+const MASK = '********';
+
 // Minimal draft values — just what's needed for credential checks
 const DRAFT_OPENAI: Record<string, string> = {
   LLM_PROVIDER: 'openai',
   PAPERLESS_URL: 'http://paperless.lan:8000',
   PAPERLESS_PUBLIC_URL: 'http://paperless.lan:8000',
-  PAPERLESS_TOKEN: '••••••••3f9b',
-  OPENAI_API_KEY: 'sk-••••H8w2',
+  PAPERLESS_TOKEN: MASK,
+  OPENAI_API_KEY: MASK,
   OLLAMA_BASE_URL: '',
 };
 
@@ -35,10 +38,13 @@ const DRAFT_EMPTY_CREDS: Record<string, string> = {
   OLLAMA_BASE_URL: '',
 };
 
-// Mock useTestConnection so no network calls happen
+// Mock useTestConnection so no network calls happen.
+// Individual tests can override the mock behaviour via vi.mocked().
+const mockMutateAsync = vi.fn().mockResolvedValue({ ok: true, document_count: 42, detail: 'ok' });
+
 vi.mock('../../../api/hooks/settings', () => ({
   useTestConnection: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({ ok: true, document_count: 42, detail: 'ok' }),
+    mutateAsync: mockMutateAsync,
     isPending: false,
     isError: false,
     isSuccess: false,
@@ -103,9 +109,6 @@ describe('ConnectionsPanel', () => {
   });
 
   it('does NOT call mutateAsync for a service with empty required credential', async () => {
-    // Import the mocked hook to check calls
-    const { useTestConnection } = await import('../../../api/hooks/settings');
-    const mockMutateAsync = (useTestConnection as ReturnType<typeof vi.fn>)().mutateAsync as ReturnType<typeof vi.fn>;
     mockMutateAsync.mockClear();
 
     renderPanel(DRAFT_EMPTY_CREDS);
@@ -138,5 +141,134 @@ describe('ConnectionsPanel', () => {
     renderPanel();
     expect(screen.getByRole('radio', { name: 'OpenAI' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Ollama' })).toBeInTheDocument();
+  });
+
+  // ── Failure-path tests (FIX 2) ──────────────────────────────────────────────
+
+  it('shows err tone + detail label when probe resolves ok:false', async () => {
+    mockMutateAsync.mockResolvedValue({ ok: false, document_count: 0, detail: 'bad key' });
+    renderPanel(DRAFT_OPENAI);
+    await waitFor(() => {
+      expect(screen.getByText('bad key')).toBeInTheDocument();
+    });
+  });
+
+  it('shows err/"Error" state when probe throws', async () => {
+    mockMutateAsync.mockRejectedValue(new Error('network failure'));
+    renderPanel(DRAFT_OPENAI);
+    await waitFor(() => {
+      // Expect the Error label to appear at least once
+      const errorLabels = screen.getAllByText('Error');
+      expect(errorLabels.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows "Connected" (not a document count) when OpenAI probe resolves ok:true', async () => {
+    // Use a draft with no Paperless URL so only the OpenAI probe fires.
+    const onlyOpenAI = {
+      ...DRAFT_OPENAI,
+      PAPERLESS_URL: '',
+      PAPERLESS_PUBLIC_URL: '',
+      PAPERLESS_TOKEN: '',
+    };
+    mockMutateAsync.mockResolvedValue({ ok: true, document_count: 99, detail: 'ok' });
+    renderPanel(onlyOpenAI);
+    await waitFor(() => {
+      expect(screen.getByText('Connected')).toBeInTheDocument();
+    });
+    // OpenAI must never show a doc-count string — only Paperless shows that.
+    expect(screen.queryByText('99 docs')).not.toBeInTheDocument();
+  });
+
+  // ── Masked-secret probe body (regression for FIX 1) ───────────────────────
+
+  it('paperless probe sends paperless_token:"" when draft token is the server mask', async () => {
+    mockMutateAsync.mockClear();
+    mockMutateAsync.mockResolvedValue({ ok: true, document_count: 5, detail: 'ok' });
+
+    // PAPERLESS_TOKEN is exactly the mask
+    const draft = { ...DRAFT_OPENAI, PAPERLESS_TOKEN: MASK };
+    renderPanel(draft);
+
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
+
+    const paperlessCall = (mockMutateAsync.mock.calls as unknown[][]).find(
+      (args) => (args[0] as { service: string }).service === 'paperless',
+    );
+    expect(paperlessCall).toBeDefined();
+    expect((paperlessCall![0] as { paperless_token: string }).paperless_token).toBe('');
+  });
+
+  it('openai probe omits openai_api_key when draft key is the server mask', async () => {
+    mockMutateAsync.mockClear();
+    mockMutateAsync.mockResolvedValue({ ok: true, document_count: 0, detail: 'ok' });
+
+    // OPENAI_API_KEY is exactly the mask; only OpenAI configured so only one probe fires.
+    const draft = {
+      LLM_PROVIDER: 'openai',
+      PAPERLESS_URL: '',
+      PAPERLESS_PUBLIC_URL: '',
+      PAPERLESS_TOKEN: '',
+      OPENAI_API_KEY: MASK,
+      OLLAMA_BASE_URL: '',
+    };
+    renderPanel(draft);
+
+    // Wait for the openai probe — it stagger-fires immediately (index=0 since paperless is skipped).
+    await waitFor(
+      () => {
+        const openaiCall = (mockMutateAsync.mock.calls as unknown[][]).find(
+          (args) => (args[0] as { service: string }).service === 'openai',
+        );
+        expect(openaiCall).toBeDefined();
+        // The key must be absent — backend uses its stored value.
+        expect(openaiCall![0]).not.toHaveProperty('openai_api_key');
+      },
+      { timeout: 1000 },
+    );
+  });
+
+  // ── Ollama auto-probe on visibility (FIX 4) ───────────────────────────────
+
+  it('auto-probes Ollama exactly once when provider switches from openai to ollama', async () => {
+    mockMutateAsync.mockClear();
+    mockMutateAsync.mockResolvedValue({ ok: true, document_count: 0, detail: 'ok' });
+
+    const { rerender } = render(
+      <ConnectionsPanel
+        section={CONNECTIONS_SECTION}
+        values={DRAFT_OPENAI}
+        onChange={() => undefined}
+        reindexKeys={new Set()}
+        defaultKeys={new Set()}
+      />,
+      { wrapper: makeWrapper() },
+    );
+
+    // Let mount probes settle
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
+    const callsAfterMount = mockMutateAsync.mock.calls.length;
+
+    // Switch to ollama
+    rerender(
+      <ConnectionsPanel
+        section={CONNECTIONS_SECTION}
+        values={DRAFT_OLLAMA}
+        onChange={() => undefined}
+        reindexKeys={new Set()}
+        defaultKeys={new Set()}
+      />,
+    );
+
+    await waitFor(() => {
+      const ollamaCalls = (mockMutateAsync.mock.calls as unknown[][]).filter(
+        (args) => (args[0] as { service: string }).service === 'ollama',
+      );
+      expect(ollamaCalls).toHaveLength(1);
+    });
+
+    // Total new calls = exactly 1 (ollama only; paperless + openai NOT re-probed)
+    const newCalls = mockMutateAsync.mock.calls.length - callsAfterMount;
+    expect(newCalls).toBe(1);
   });
 });

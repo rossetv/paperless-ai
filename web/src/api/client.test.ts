@@ -647,7 +647,7 @@ const SAMPLE_SETTINGS_RESPONSE = {
     },
     {
       key: 'PAPERLESS_TOKEN',
-      value: '••••••••••••',
+      value: '********',
       source: 'database',
       is_secret: true,
       requires_reindex: false,
