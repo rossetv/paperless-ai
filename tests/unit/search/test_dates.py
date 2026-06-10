@@ -49,3 +49,33 @@ def test_normalise_iso() -> None:
     assert normalise_iso_date("April 2025") is None
     assert normalise_iso_date("2025-04-25T00:00:00+00:00") == "2025-04-25"
     assert normalise_iso_date("2025-04-25") == "2025-04-25"
+
+
+# ---------------------------------------------------------------------------
+# M1: "sept" abbreviation
+# ---------------------------------------------------------------------------
+
+
+def test_sept_abbreviation() -> None:
+    """'sept' (4-letter informal abbreviation) resolves to September."""
+    assert extract_date_range("sept 2025", T) == ("2025-09-01", "2025-09-30")
+
+
+# ---------------------------------------------------------------------------
+# M2: malformed ISO must not widen to a year
+# ---------------------------------------------------------------------------
+
+
+def test_malformed_iso_returns_none_none() -> None:
+    """A malformed ISO literal (e.g. "2025-13-99") must not widen to the whole year."""
+    assert extract_date_range("2025-13-99", T) == (None, None)
+
+
+def test_bare_year_still_works_after_m2_fix() -> None:
+    """A bare 4-digit year with no following hyphen still resolves to the full year."""
+    assert extract_date_range("documents from 2024", T) == ("2024-01-01", "2024-12-31")
+
+
+def test_valid_iso_date_still_works_as_single_day() -> None:
+    """A valid ISO date in text resolves to a single-day range (Rule 1 wins)."""
+    assert extract_date_range("2025-04-25", T) == ("2025-04-25", "2025-04-25")

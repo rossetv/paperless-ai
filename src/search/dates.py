@@ -44,6 +44,7 @@ _MONTH_NAMES: dict[str, int] = {
     "jul": 7,
     "aug": 8,
     "sep": 9,
+    "sept": 9,
     "oct": 10,
     "nov": 11,
     "dec": 12,
@@ -69,8 +70,13 @@ _RE_MONTH_YEAR = re.compile(
     re.IGNORECASE,
 )
 
-# Rule 4: bare 4-digit year in the range 1900–2100
-_RE_YEAR = re.compile(r"\b((?:19|20|21)\d{2})\b")
+# Rule 4: bare 4-digit year in the range 1900–2100.  The negative lookahead
+# ``(?!-)`` prevents matching a year that is immediately followed by a hyphen,
+# which means it is part of a date token (e.g. "2025-13-99") rather than a
+# standalone year expression.  The ISO rule (Rule 1) handles valid date
+# literals; a malformed one must not fall through to this rule and widen the
+# range to the whole year.
+_RE_YEAR = re.compile(r"\b((?:19|20|21)\d{2})\b(?!-)")
 
 # Rule 5: relative temporal phrases
 _RE_LAST_MONTH = re.compile(r"\blast\s+month\b", re.IGNORECASE)
