@@ -7,32 +7,35 @@ import styles from './SettingsLayout.module.css';
 /**
  * The settings nav groups.
  *
- * Two groups: "Configuration" (the nine config sections — Wave 4) and
- * "Access Control" (Users, API Keys — Wave 3). The Configuration items are
- * in-page anchors: every section renders on the single `/settings` route, so
- * each link is `/settings#<anchor>` and the hash scrolls to that
- * `SettingsBlock`. Access-control items are their own routed pages.
+ * Three groups:
+ *   "Pipeline" — the seven pipeline config sections, each an in-page anchor
+ *     on the `/settings` route (links are `/settings#<anchor>`).
+ *   "Operations" — automation/daemons and logging, also in-page anchors.
+ *   "Access control" — Users and API Keys, each their own routed page.
  *
  * Icons are assigned here because this component owns the nav-group shape;
  * SettingsSideNav is purely presentational.
  */
 const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
   {
-    title: 'Configuration',
+    title: 'Pipeline',
     items: [
-      { id: 'paperless', label: 'Paperless Connection', to: '/settings#paperless', icon: 'link' },
-      { id: 'llm', label: 'LLM Provider', to: '/settings#llm', icon: 'sparkle' },
-      { id: 'search', label: 'Search Server', to: '/settings#search', icon: 'search' },
-      { id: 'embed', label: 'Embeddings & Index', to: '/settings#embed', icon: 'waves' },
+      { id: 'connections', label: 'Connections', to: '/settings#connections', icon: 'link' },
       { id: 'ocr', label: 'OCR', to: '/settings#ocr', icon: 'eye' },
-      { id: 'classify', label: 'Classification', to: '/settings#classify', icon: 'paragraph' },
-      { id: 'tags', label: 'Pipeline Tags', to: '/settings#tags', icon: 'tag' },
-      { id: 'perf', label: 'Performance', to: '/settings#perf', icon: 'lightning' },
-      { id: 'logs', label: 'Logging', to: '/settings#logs', icon: 'list-lines' },
+      { id: 'classification', label: 'Classification', to: '/settings#classification', icon: 'tags' },
+      { id: 'indexing', label: 'Indexing', to: '/settings#indexing', icon: 'index' },
+      { id: 'search', label: 'Search', to: '/settings#search', icon: 'search' },
     ],
   },
   {
-    title: 'Access Control',
+    title: 'Operations',
+    items: [
+      { id: 'automation', label: 'Automation & Daemons', to: '/settings#automation', icon: 'gears' },
+      { id: 'logging', label: 'Logging', to: '/settings#logging', icon: 'document' },
+    ],
+  },
+  {
+    title: 'Access control',
     items: [
       { id: 'users', label: 'Users', to: '/settings/users', icon: 'users' },
       { id: 'keys', label: 'API Keys', to: '/settings/keys', icon: 'key' },
