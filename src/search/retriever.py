@@ -1,20 +1,35 @@
 """Hybrid retriever with Reciprocal Rank Fusion for the search pipeline.
 
-Combines vector search and keyword search results from the store into a single
-ranked list of RetrievedChunk objects using Reciprocal Rank Fusion (RRF), then
-returns the top-K documents' chunks ordered by fused score.
+Searches each :class:`~search.models.RetrievalSpec` independently — vector
+search for a semantic spec, keyword search for a keyword spec, each with the
+spec's own resolved ``SearchFilters`` — then fuses every ranked list across all
+specs with Reciprocal Rank Fusion (RRF).  Returns the top-K documents' chunks,
+capped per document and ordered by fused score.
 
-Also exposes ``resolve_filters``, which translates free-text filter candidates
-(from the planner) into a ``SearchFilters`` instance by matching against the
-real taxonomy.  UI-supplied filters bypass resolution entirely and are
-authoritative (spec §6.1).
+Also exposes ``resolve_specs``, which turns a :class:`~search.models.RetrievalPlan`
+of free-text guesses into resolved ``RetrievalSpec``s (taxonomy ids + validated
+ISO dates), intersecting each with the user's global UI filters, and the older
+single-shape ``resolve_filters`` (retained until its last caller is migrated).
 
 Allowed deps: store.reader (SearchFilters, StoreReader), store.models (ChunkHit,
-    FacetSet, TaxonomyEntry), search.models (FilterCandidates, QueryPlan,
-    RetrievedChunk), common.config (Settings), common.embeddings (EmbeddingClient,
+    FacetSet, TaxonomyEntry), search.dates (extract_date_range,
+    normalise_iso_date), search.models (FilterCandidates, PlannedSpec,
+    RetrievalPlan, RetrievalSpec, RetrievedChunk, RetrievalSignal),
+    common.config (Settings), common.embeddings (EmbeddingClient,
     EMBEDDING_FAILURE_EXCEPTIONS).
 Forbidden: no sqlite3, no FastAPI, no direct openai calls or imports — the
     OpenAI SDK is an implementation detail of common.embeddings.
+
+# rationale: this file exceeds the §3.1 500-line guideline. It hosts two
+# closely-related concerns — turning the planner's free-text guesses into
+# resolved ``RetrievalSpec``s (``resolve_specs`` / ``resolve_filters``) and then
+# executing those specs (``Retriever``) — that share the taxonomy-matching
+# helpers (``_match_name`` / ``_normalise``) and the ``SearchFilters`` shape.
+# Both halves are the read side's "turn intent into ranked chunks" step and are
+# imported as one module by ``search.core``; splitting now would add a re-export
+# edge (forbidden by the project's no-barrel rule) or churn the deferred
+# ``core.py`` import of ``resolve_filters`` for no reader benefit. The length is
+# docstring-heavy (spec cross-references) rather than logic-heavy.
 """
 
 from __future__ import annotations
@@ -22,6 +37,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
@@ -31,7 +47,6 @@ from search.dates import extract_date_range, normalise_iso_date
 from search.models import (
     FilterCandidates,
     PlannedSpec,
-    QueryPlan,
     RetrievalPlan,
     RetrievalSignal,
     RetrievalSpec,
@@ -477,19 +492,50 @@ def _distance_to_similarity(distance: float | None) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-class Retriever:
-    """Hybrid retriever combining vector search, keyword search, and RRF.
+@dataclass(frozen=True, slots=True)
+class _RetrievalPasses:
+    """The accumulated results of running every spec's store search.
 
-    For each semantic query and sub-question in the plan, embeds the text and
-    runs ``StoreReader.vector_search``.  For the keyword terms, runs
-    ``StoreReader.keyword_search``.  All resulting ranked lists are fused with
-    Reciprocal Rank Fusion.  Chunks are grouped by document; each document's
-    score is its best chunk's fused score.  The top ``settings.SEARCH_TOP_K``
-    documents are returned as ``RetrievedChunk`` objects ordered by fused score
-    (highest first).
+    An internal carrier between :meth:`Retriever._run_passes` and
+    :meth:`Retriever.retrieve` — four related values that would otherwise be a
+    positional puzzle as a tuple (CODE_GUIDELINES §5.8).
+
+    Attributes:
+        ranked_lists: Every ranked ChunkHit list (vector and keyword) to fuse.
+        best_vector_distance: Smallest cosine distance across all vector passes
+            (lower = closer), or None when no vector pass returned a hit.
+        vector_distance_by_chunk: Per-chunk best (smallest) cosine distance; a
+            chunk absent from the map was found by keyword search alone.
+        has_keyword_hit: True when any keyword pass returned rows.
+    """
+
+    ranked_lists: list[list[ChunkHit]]
+    best_vector_distance: float | None
+    vector_distance_by_chunk: dict[int, float]
+    has_keyword_hit: bool
+
+
+class Retriever:
+    """Hybrid retriever: searches each spec independently, then fuses with RRF.
+
+    Each :class:`~search.models.RetrievalSpec` is searched on its own terms and
+    with its own resolved :class:`~store.models.SearchFilters`: a ``semantic``
+    spec is embedded and run through ``StoreReader.vector_search``; a ``keyword``
+    spec is run through ``StoreReader.keyword_search``.  Every semantic spec's
+    text is embedded in a single batch call, so multiple specs cost one
+    embedding round-trip.  All resulting ranked lists — across every spec — are
+    fused with Reciprocal Rank Fusion, so a document a spec found independently
+    and a document several specs agree on are ranked on the same scale.
+
+    Chunks are grouped by document; each document's rank is its best chunk's
+    fused score.  The top ``settings.SEARCH_TOP_K`` documents are returned, with
+    each document capped at ``settings.SEARCH_MAX_CHUNKS_PER_DOC`` of its
+    highest-scoring chunks, and the whole list sorted by fused score (highest
+    first).
 
     Args:
-        settings: Application settings; ``SEARCH_TOP_K`` is used.
+        settings: Application settings; ``SEARCH_TOP_K``, ``SEARCH_PER_SPEC_K``,
+            and ``SEARCH_MAX_CHUNKS_PER_DOC`` are used.
         store_reader: The read-side store interface.
         embedding_client: The embedding client for query vectorisation.
     """
@@ -535,101 +581,137 @@ class Retriever:
 
     def retrieve(
         self,
-        plan: QueryPlan,
-        filters: SearchFilters,
+        specs: tuple[RetrievalSpec, ...],
     ) -> tuple[list[RetrievedChunk], RetrievalSignal]:
-        """Run hybrid retrieval and return top-K documents' chunks with a quality signal.
+        """Search every spec independently, fuse across specs, return top-K chunks.
 
-        Embeds all semantic queries and sub-questions in a single batch call
-        (one round-trip to the embedding API), then runs vector search for each
-        resulting embedding.  The plan width is capped in the planner
-        (``_MAX_SEMANTIC_QUERIES`` + ``_MAX_SUB_QUESTIONS``), so this fan-out is
-        bounded at six KNN passes per query regardless of model output (SRCH-03).
-        Runs keyword search once for all keyword terms.  All ranked lists are
-        fused with RRF.
+        Each semantic spec's text is collected and embedded in a single batch
+        call (one round-trip), then each embedding is searched with *its own*
+        spec's ``filters`` at ``SEARCH_PER_SPEC_K`` candidates.  Each keyword
+        spec is searched likewise.  The fan-out is bounded upstream by
+        ``SEARCH_PLANNER_MAX_SPECS``, so no extra cap is needed here.
 
-        Groups fused chunks by document_id; each document is represented by its
-        highest-scoring chunk.  Returns the top ``SEARCH_TOP_K`` documents'
-        chunks, ordered by fused score descending.
+        Every ranked list — vector and keyword, across all specs — is fused with
+        RRF.  Fused chunks are grouped by document; each document ranks by its
+        best chunk's fused score.  The top ``SEARCH_TOP_K`` documents are kept,
+        each capped at ``SEARCH_MAX_CHUNKS_PER_DOC`` of its highest-scoring
+        chunks, and the result is sorted by fused score descending.
 
-        Also returns a :class:`~search.models.RetrievalSignal` carrying absolute
-        quality signals that RRF discards: the best raw vector similarity
-        (computed before fusion) and whether keyword search returned any rows.
+        A :class:`~search.models.RetrievalSignal` is returned alongside the
+        chunks: ``best_vector_similarity`` is the closest distance across all
+        vector passes (None when no vector pass returned a hit) and
+        ``has_keyword_hit`` is True when any keyword pass returned rows.
 
         Args:
-            plan: The query plan produced by the planner.
-            filters: Pre-resolved SearchFilters to narrow the candidate set.
+            specs: The resolved retrieval specs (from ``resolve_specs``).
 
         Returns:
-            A 2-tuple ``(chunks, signal)`` where *chunks* is a list of
-            RetrievedChunk objects sorted by rrf_score descending (empty when
-            nothing was found), and *signal* is a :class:`RetrievalSignal`
-            capturing pre-fusion quality.
+            A 2-tuple ``(chunks, signal)`` — *chunks* sorted by rrf_score
+            descending (empty when nothing was found), *signal* capturing
+            pre-fusion quality.
         """
-        top_k = self._settings.SEARCH_TOP_K
-        ranked_lists: list[list[ChunkHit]] = []
+        passes = self._run_passes(specs)
 
-        # Collect all texts that need embedding in one batch.
-        texts_to_embed: list[str] = list(plan.semantic_queries) + list(
-            plan.sub_questions
-        )
-
-        # best_vector_distance tracks the smallest cosine distance seen across
-        # all vector passes (lower = closer); converted to similarity below.
-        best_vector_distance: float | None = None
-        # Per-chunk best (smallest) cosine distance across all vector passes —
-        # the absolute, per-document signal RRF discards. Keyword hits never
-        # enter here, so a chunk absent from this map was found by keyword search
-        # alone (its tier falls back to the keyword-only default).
-        vector_distance_by_chunk: dict[int, float] = {}
-
-        if texts_to_embed:
-            embeddings = self._embed_queries(texts_to_embed)
-            for embedding in embeddings:
-                hits = self._store_reader.vector_search(embedding, top_k, filters)
-                if hits:
-                    ranked_lists.append(hits)
-                    # ChunkHit.score is cosine distance for vector hits (lower =
-                    # closer).  vector_search returns rows ordered ascending, so
-                    # hits[0] is the nearest, but we scan all to be safe across
-                    # multiple passes.
-                    pass_min = min(h.score for h in hits)
-                    if best_vector_distance is None or pass_min < best_vector_distance:
-                        best_vector_distance = pass_min
-                    for h in hits:
-                        prior = vector_distance_by_chunk.get(h.chunk_id)
-                        if prior is None or h.score < prior:
-                            vector_distance_by_chunk[h.chunk_id] = h.score
-
-        best_vector_similarity = _distance_to_similarity(best_vector_distance)
-
-        # Keyword search over all keyword terms combined.
-        has_keyword_hit = False
-        if plan.keyword_terms:
-            keyword_hits = self._store_reader.keyword_search(
-                list(plan.keyword_terms), top_k, filters
-            )
-            if keyword_hits:
-                has_keyword_hit = True
-                ranked_lists.append(keyword_hits)
-
+        best_vector_similarity = _distance_to_similarity(passes.best_vector_distance)
         signal = RetrievalSignal(
             best_vector_similarity=best_vector_similarity,
-            has_keyword_hit=has_keyword_hit,
+            has_keyword_hit=passes.has_keyword_hit,
         )
 
-        if not ranked_lists:
+        if not passes.ranked_lists:
             return [], signal
 
-        fused_score, first_hit = _fuse_with_rrf(ranked_lists)
-
+        fused_score, first_hit = _fuse_with_rrf(passes.ranked_lists)
         if not fused_score:
             return [], signal
 
-        top_doc_ids = _top_document_ids(fused_score, first_hit, top_k)
+        top_doc_ids = _top_document_ids(
+            fused_score, first_hit, self._settings.SEARCH_TOP_K
+        )
+        chunks = self._build_capped_chunks(
+            fused_score, first_hit, top_doc_ids, passes.vector_distance_by_chunk
+        )
 
-        # Collect all chunks from the top-K documents.
-        chunks: list[RetrievedChunk] = [
+        log.debug(
+            "retriever.retrieve.complete",
+            spec_count=len(specs),
+            ranked_lists_count=len(passes.ranked_lists),
+            fused_chunks=len(fused_score),
+            returned_chunks=len(chunks),
+        )
+        return chunks, signal
+
+    def _run_passes(self, specs: tuple[RetrievalSpec, ...]) -> _RetrievalPasses:
+        """Run each spec's store search and collect the ranked lists and signals.
+
+        Semantic specs are embedded together in one batch and each embedding is
+        searched with its own spec's filters; keyword specs are searched
+        directly.  Returns the accumulated ranked lists plus the absolute
+        vector signals RRF discards.
+        """
+        per_spec_k = self._settings.SEARCH_PER_SPEC_K
+        ranked_lists: list[list[ChunkHit]] = []
+        best_vector_distance: float | None = None
+        # Per-chunk best (smallest) cosine distance across all vector passes.  A
+        # chunk absent from this map was found by keyword search alone, so its
+        # vector_similarity is None.
+        vector_distance_by_chunk: dict[int, float] = {}
+
+        semantic_specs = [
+            spec for spec in specs if spec.mode == "semantic" and spec.semantic
+        ]
+        embeddings = (
+            self._embed_queries([spec.semantic for spec in semantic_specs])  # type: ignore[misc]
+            if semantic_specs
+            else []
+        )
+        # _embed_queries returns [] on failure; zip then yields nothing, so a
+        # dead embedding backend simply contributes no vector passes.
+        for spec, embedding in zip(semantic_specs, embeddings):
+            hits = self._store_reader.vector_search(embedding, per_spec_k, spec.filters)
+            if not hits:
+                continue
+            ranked_lists.append(hits)
+            pass_min = min(hit.score for hit in hits)
+            if best_vector_distance is None or pass_min < best_vector_distance:
+                best_vector_distance = pass_min
+            for hit in hits:
+                prior = vector_distance_by_chunk.get(hit.chunk_id)
+                if prior is None or hit.score < prior:
+                    vector_distance_by_chunk[hit.chunk_id] = hit.score
+
+        has_keyword_hit = False
+        for spec in specs:
+            if spec.mode != "keyword" or not spec.keywords:
+                continue
+            hits = self._store_reader.keyword_search(
+                list(spec.keywords), per_spec_k, spec.filters
+            )
+            if hits:
+                has_keyword_hit = True
+                ranked_lists.append(hits)
+
+        return _RetrievalPasses(
+            ranked_lists=ranked_lists,
+            best_vector_distance=best_vector_distance,
+            vector_distance_by_chunk=vector_distance_by_chunk,
+            has_keyword_hit=has_keyword_hit,
+        )
+
+    def _build_capped_chunks(
+        self,
+        fused_score: dict[int, float],
+        first_hit: dict[int, ChunkHit],
+        top_doc_ids: set[int],
+        vector_distance_by_chunk: dict[int, float],
+    ) -> list[RetrievedChunk]:
+        """Build the output chunks, capping each document at the per-doc ceiling.
+
+        Keeps only chunks whose document is in *top_doc_ids*, retains each
+        document's ``SEARCH_MAX_CHUNKS_PER_DOC`` highest-scoring chunks, and
+        sorts the whole result by fused score descending.
+        """
+        chunks = [
             RetrievedChunk(
                 chunk_id=chunk_id,
                 document_id=first_hit[chunk_id].document_id,
@@ -643,16 +725,17 @@ class Retriever:
             for chunk_id, score in fused_score.items()
             if first_hit[chunk_id].document_id in top_doc_ids
         ]
-
-        # Sort highest fused score first.
         chunks.sort(key=lambda chunk: chunk.rrf_score, reverse=True)
 
-        log.debug(
-            "retriever.retrieve.complete",
-            ranked_lists_count=len(ranked_lists),
-            fused_chunks=len(fused_score),
-            top_k=top_k,
-            returned_chunks=len(chunks),
-        )
-
-        return chunks, signal
+        # Cap per document, keeping the highest-scoring chunks (the list is
+        # already sorted descending, so a running per-doc count suffices).
+        max_per_doc = self._settings.SEARCH_MAX_CHUNKS_PER_DOC
+        kept_per_doc: dict[int, int] = {}
+        capped: list[RetrievedChunk] = []
+        for chunk in chunks:
+            count = kept_per_doc.get(chunk.document_id, 0)
+            if count >= max_per_doc:
+                continue
+            kept_per_doc[chunk.document_id] = count + 1
+            capped.append(chunk)
+        return capped

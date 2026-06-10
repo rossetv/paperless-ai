@@ -1,18 +1,20 @@
 """Tests for search.retriever — RRF fusion and the retrieve() entry point.
 
 Verifies:
+- The RRF smoothing constant is the canonical 60.
 - RRF fusion of two ranked lists produces hand-computed expected scores.
 - A chunk appearing in multiple lists ranks above one appearing in only one.
-- retrieve() returns the top-K documents' chunks ordered by fused score.
-- retrieve() returns [] when all ranked lists are empty.
-- retrieve() embeds sub-questions as well as semantic queries.
-- An embedding failure degrades the query to empty — retrieve() never raises
-  (finding C3).
+- retrieve() embeds every semantic spec in a single batch call.
+- An embedding failure degrades the affected query to empty — retrieve() never
+  raises (finding C3) — while keyword specs still contribute.
 - retrieve() returns a 2-tuple (chunks, RetrievalSignal) with correct signal
-  values from vector and keyword hits (Layer 2, Task 3).
+  values from vector and keyword hits (Layer 2).
 
-``resolve_filters`` — the retriever's other public surface — is covered in
-:mod:`test_retriever_filters` (split for the 500-line ceiling, §3.1).
+The multi-spec behaviours (per-spec filters, cross-spec fusion, the per-document
+chunk cap, top-K document selection) are covered in
+:mod:`test_retriever_multispec`; ``resolve_filters`` / ``resolve_specs`` in
+:mod:`test_retriever_filters` / :mod:`test_resolve_specs` (split for the
+500-line ceiling, §3.1).
 """
 
 from __future__ import annotations
@@ -23,14 +25,43 @@ import openai
 import pytest
 
 from common.embeddings import EmbeddingError
-from search.models import RetrievalSignal
+from search.models import RetrievalSignal, RetrievalSpec
 from search.retriever import _RRF_K, Retriever
-from tests.helpers.factories import (
-    make_chunk_hit,
-    make_query_plan,
-    make_search_filters,
-    make_search_settings,
-)
+from store.reader import SearchFilters
+from tests.helpers.factories import make_chunk_hit, make_search_settings
+
+
+def _no_filters() -> SearchFilters:
+    """An all-None SearchFilters — the "no restriction" candidate set."""
+    return SearchFilters(
+        date_from=None,
+        date_to=None,
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+
+
+def _semantic(text: str) -> RetrievalSpec:
+    """A semantic RetrievalSpec over the given query text, no filters."""
+    return RetrievalSpec(
+        mode="semantic",
+        semantic=text,
+        keywords=(),
+        filters=_no_filters(),
+        rationale="semantic",
+    )
+
+
+def _keyword(*terms: str) -> RetrievalSpec:
+    """A keyword RetrievalSpec over the given terms, no filters."""
+    return RetrievalSpec(
+        mode="keyword",
+        semantic=None,
+        keywords=terms,
+        filters=_no_filters(),
+        rationale="keyword",
+    )
 
 
 def _retriever(top_k: int = 5) -> tuple[Retriever, MagicMock, MagicMock]:
@@ -42,7 +73,9 @@ def _retriever(top_k: int = 5) -> tuple[Retriever, MagicMock, MagicMock]:
     store_reader = MagicMock()
     embedding_client = MagicMock()
     retriever = Retriever(
-        make_search_settings(SEARCH_TOP_K=top_k), store_reader, embedding_client
+        make_search_settings(SEARCH_TOP_K=top_k, SEARCH_PER_SPEC_K=top_k),
+        store_reader,
+        embedding_client,
     )
     return retriever, store_reader, embedding_client
 
@@ -84,10 +117,7 @@ def test_rrf_fusion_hand_computed_two_lists() -> None:
     ]
     embedding_client.embed.return_value = [[0.1, 0.2, 0.3]]
 
-    plan = make_query_plan(
-        semantic_queries=("find me something",), keyword_terms=("term",)
-    )
-    chunks, _ = retriever.retrieve(plan, make_search_filters())
+    chunks, _ = retriever.retrieve((_semantic("find me something"), _keyword("term")))
 
     score_by_chunk = {chunk.chunk_id: chunk.rrf_score for chunk in chunks}
     expected_chunk1 = 1 / (60 + 1)
@@ -111,59 +141,11 @@ def test_chunk_in_multiple_lists_ranks_above_single_list() -> None:
     ]
     embedding_client.embed.return_value = [[0.1, 0.2]]
 
-    plan = make_query_plan(semantic_queries=("query",), keyword_terms=("term",))
-    chunks, _ = retriever.retrieve(plan, make_search_filters())
+    chunks, _ = retriever.retrieve((_semantic("query"), _keyword("term")))
 
     score_by_chunk = {chunk.chunk_id: chunk.rrf_score for chunk in chunks}
     # chunk 2 is in both lists; chunk 1 is only in the vector list.
     assert score_by_chunk[2] > score_by_chunk[1]
-
-
-# ---------------------------------------------------------------------------
-# retrieve — top-K document selection
-# ---------------------------------------------------------------------------
-
-
-def test_retrieve_returns_top_k_documents_chunks() -> None:
-    """retrieve returns only chunks belonging to the top-K scoring documents."""
-    retriever, store_reader, embedding_client = _retriever(top_k=2)
-    # Three documents, each with one chunk; doc 10 ranks best, doc 30 worst.
-    store_reader.vector_search.return_value = [
-        make_chunk_hit(chunk_id=1, document_id=10),
-        make_chunk_hit(chunk_id=2, document_id=20),
-        make_chunk_hit(chunk_id=3, document_id=30),
-    ]
-    store_reader.keyword_search.return_value = []
-    embedding_client.embed.return_value = [[0.1, 0.2]]
-
-    chunks, _ = retriever.retrieve(
-        make_query_plan(semantic_queries=("query",)), make_search_filters()
-    )
-
-    document_ids = {chunk.document_id for chunk in chunks}
-    assert 30 not in document_ids
-    assert 10 in document_ids
-    assert 20 in document_ids
-
-
-def test_retrieve_results_ordered_by_fused_score_descending() -> None:
-    """retrieve returns chunks ordered by RRF score, highest first."""
-    retriever, store_reader, embedding_client = _retriever(top_k=10)
-    # chunk 1 is in both lists, so its fused score is higher than chunk 2's.
-    store_reader.vector_search.return_value = [
-        make_chunk_hit(chunk_id=1, document_id=10),
-    ]
-    store_reader.keyword_search.return_value = [
-        make_chunk_hit(chunk_id=2, document_id=20),
-        make_chunk_hit(chunk_id=1, document_id=10),
-    ]
-    embedding_client.embed.return_value = [[0.1]]
-
-    plan = make_query_plan(semantic_queries=("query",), keyword_terms=("term",))
-    chunks, _ = retriever.retrieve(plan, make_search_filters())
-
-    scores = [chunk.rrf_score for chunk in chunks]
-    assert scores == sorted(scores, reverse=True)
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +160,9 @@ def test_retrieve_empty_when_all_ranked_lists_are_empty() -> None:
     store_reader.keyword_search.return_value = []
     embedding_client.embed.return_value = [[0.0, 0.0]]
 
-    plan = make_query_plan(
-        semantic_queries=("obscure query",), keyword_terms=("unknown",)
+    chunks, signal = retriever.retrieve(
+        (_semantic("obscure query"), _keyword("unknown"))
     )
-    chunks, signal = retriever.retrieve(plan, make_search_filters())
 
     assert chunks == []
     assert signal.best_vector_similarity is None
@@ -189,26 +170,23 @@ def test_retrieve_empty_when_all_ranked_lists_are_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# retrieve — sub-questions also trigger vector search
+# retrieve — batch embedding of semantic specs
 # ---------------------------------------------------------------------------
 
 
-def test_retrieve_embeds_sub_questions_for_vector_search() -> None:
-    """retrieve calls embed() for sub_questions, not only semantic_queries."""
+def test_retrieve_embeds_all_semantic_specs_in_one_batch() -> None:
+    """retrieve embeds every semantic spec's text in a single embed() call."""
     retriever, store_reader, embedding_client = _retriever(top_k=10)
     store_reader.vector_search.return_value = []
     store_reader.keyword_search.return_value = []
     embedding_client.embed.return_value = [[0.1], [0.2]]
 
-    plan = make_query_plan(
-        semantic_queries=("main query",), sub_questions=("sub question",)
-    )
-    retriever.retrieve(plan, make_search_filters())
+    retriever.retrieve((_semantic("main query"), _semantic("second query")))
 
     embedding_client.embed.assert_called_once()
     texts_embedded = embedding_client.embed.call_args[0][0]
     assert "main query" in texts_embedded
-    assert "sub question" in texts_embedded
+    assert "second query" in texts_embedded
 
 
 # ---------------------------------------------------------------------------
@@ -237,17 +215,12 @@ class TestRetrieveEmbeddingFailure:
     """
 
     def test_embedding_error_degrades_to_empty(self) -> None:
-        """An EmbeddingError out of embed() yields [] — keyword-only plan, no hit."""
+        """An EmbeddingError out of embed() yields [] — keyword-less plan, no hit."""
         retriever, store_reader, embedding_client = _retriever(top_k=10)
         embedding_client.embed.side_effect = EmbeddingError("bad API key")
-        # No keyword terms, so with vector search dead there is nothing to fuse.
-        store_reader.keyword_search.return_value = []
 
         # Must NOT raise.
-        chunks, signal = retriever.retrieve(
-            make_query_plan(semantic_queries=("a query",)),
-            make_search_filters(),
-        )
+        chunks, signal = retriever.retrieve((_semantic("a query"),))
 
         assert chunks == []
         assert signal.best_vector_similarity is None
@@ -258,12 +231,8 @@ class TestRetrieveEmbeddingFailure:
         """A retry-exhausted retryable OpenAI error out of embed() also degrades."""
         retriever, store_reader, embedding_client = _retriever(top_k=10)
         embedding_client.embed.side_effect = _retryable_openai_error()
-        store_reader.keyword_search.return_value = []
 
-        chunks, _ = retriever.retrieve(
-            make_query_plan(semantic_queries=("a query",)),
-            make_search_filters(),
-        )
+        chunks, _ = retriever.retrieve((_semantic("a query"),))
 
         assert chunks == []
 
@@ -275,15 +244,14 @@ class TestRetrieveEmbeddingFailure:
             make_chunk_hit(chunk_id=1, document_id=10),
         ]
 
-        plan = make_query_plan(semantic_queries=("a query",), keyword_terms=("term",))
-        chunks, _ = retriever.retrieve(plan, make_search_filters())
+        chunks, _ = retriever.retrieve((_semantic("a query"), _keyword("term")))
 
         # The keyword hit survives even though vector embedding failed.
         assert {chunk.chunk_id for chunk in chunks} == {1}
 
 
 # ---------------------------------------------------------------------------
-# retrieve — RetrievalSignal (Layer 2, Task 3)
+# retrieve — RetrievalSignal (Layer 2)
 # ---------------------------------------------------------------------------
 
 
@@ -302,12 +270,9 @@ class TestRetrievalSignal:
         store_reader.vector_search.return_value = [
             make_chunk_hit(chunk_id=1, document_id=1, score=0.2)
         ]
-        store_reader.keyword_search.return_value = []
         embedding_client.embed.return_value = [[0.1]]
 
-        result = retriever.retrieve(
-            make_query_plan(semantic_queries=("q",)), make_search_filters()
-        )
+        result = retriever.retrieve((_semantic("q"),))
 
         assert isinstance(result, tuple)
         assert len(result) == 2
@@ -322,12 +287,9 @@ class TestRetrievalSignal:
         store_reader.vector_search.return_value = [
             make_chunk_hit(chunk_id=1, document_id=1, score=0.2),
         ]
-        store_reader.keyword_search.return_value = []
         embedding_client.embed.return_value = [[0.1]]
 
-        _, signal = retriever.retrieve(
-            make_query_plan(semantic_queries=("query",)), make_search_filters()
-        )
+        _, signal = retriever.retrieve((_semantic("query"),))
 
         assert signal.best_vector_similarity == pytest.approx(1.0 / (1.0 + 0.2))
 
@@ -335,42 +297,33 @@ class TestRetrievalSignal:
         """best_vector_similarity uses the hit with the smallest cosine distance.
 
         Two hits: distances 0.3 and 0.1.  Best similarity = 1/(1+0.1).
-        (Lower distance → higher similarity → best_vector_similarity is the
-        similarity of the closest hit.)
         """
         retriever, store_reader, embedding_client = _retriever(top_k=10)
         store_reader.vector_search.return_value = [
             make_chunk_hit(chunk_id=1, document_id=1, score=0.3),
             make_chunk_hit(chunk_id=2, document_id=2, score=0.1),
         ]
-        store_reader.keyword_search.return_value = []
         embedding_client.embed.return_value = [[0.1]]
 
-        _, signal = retriever.retrieve(
-            make_query_plan(semantic_queries=("query",)), make_search_filters()
-        )
+        _, signal = retriever.retrieve((_semantic("query"),))
 
         assert signal.best_vector_similarity == pytest.approx(1.0 / (1.0 + 0.1))
 
     def test_best_vector_similarity_across_multiple_vector_passes(self) -> None:
-        """When there are multiple embedding vectors (multi-query plan) each triggers
-        a separate vector_search call; best_vector_similarity is taken across ALL
-        vector passes.
+        """best_vector_similarity is taken across ALL vector passes.
 
+        Two semantic specs → two vector_search calls.
         Pass 1 returns distance 0.4; pass 2 returns distance 0.05.
         Expected best similarity = 1/(1+0.05).
         """
         retriever, store_reader, embedding_client = _retriever(top_k=10)
-        # Two embeddings → two vector_search calls.
         embedding_client.embed.return_value = [[0.1], [0.2]]
         store_reader.vector_search.side_effect = [
             [make_chunk_hit(chunk_id=1, document_id=1, score=0.4)],
             [make_chunk_hit(chunk_id=2, document_id=2, score=0.05)],
         ]
-        store_reader.keyword_search.return_value = []
 
-        plan = make_query_plan(semantic_queries=("q1", "q2"))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q1"), _semantic("q2")))
 
         assert signal.best_vector_similarity == pytest.approx(1.0 / (1.0 + 0.05))
 
@@ -383,23 +336,21 @@ class TestRetrievalSignal:
         ]
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("query",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("query"), _keyword("term")))
 
         assert signal.best_vector_similarity is None
 
-    def test_best_vector_similarity_none_when_no_semantic_queries(self) -> None:
-        """best_vector_similarity is None when the plan has no semantic queries.
+    def test_best_vector_similarity_none_when_no_semantic_specs(self) -> None:
+        """best_vector_similarity is None when there are no semantic specs.
 
-        No semantic queries means no embedding call, so no vector pass runs.
+        No semantic specs means no embedding call, so no vector pass runs.
         """
         retriever, store_reader, embedding_client = _retriever(top_k=10)
         store_reader.keyword_search.return_value = [
             make_chunk_hit(chunk_id=1, document_id=1),
         ]
 
-        plan = make_query_plan(semantic_queries=(), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_keyword("term"),))
 
         assert signal.best_vector_similarity is None
         embedding_client.embed.assert_not_called()
@@ -412,8 +363,7 @@ class TestRetrievalSignal:
             make_chunk_hit(chunk_id=1, document_id=1),
         ]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"), _keyword("term")))
 
         assert signal.best_vector_similarity is None
 
@@ -426,8 +376,7 @@ class TestRetrievalSignal:
         ]
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"), _keyword("term")))
 
         assert signal.has_keyword_hit is True
 
@@ -440,15 +389,14 @@ class TestRetrievalSignal:
         store_reader.keyword_search.return_value = []
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"), _keyword("term")))
 
         assert signal.has_keyword_hit is False
 
-    def test_has_keyword_hit_false_when_no_keyword_terms_in_plan(self) -> None:
-        """has_keyword_hit is False when the plan has no keyword terms.
+    def test_has_keyword_hit_false_when_no_keyword_specs(self) -> None:
+        """has_keyword_hit is False when there are no keyword specs.
 
-        No keyword terms means keyword_search is never called.
+        No keyword specs means keyword_search is never called.
         """
         retriever, store_reader, embedding_client = _retriever(top_k=10)
         store_reader.vector_search.return_value = [
@@ -456,8 +404,7 @@ class TestRetrievalSignal:
         ]
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=())
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"),))
 
         assert signal.has_keyword_hit is False
         store_reader.keyword_search.assert_not_called()
@@ -473,8 +420,7 @@ class TestRetrievalSignal:
         ]
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"), _keyword("term")))
 
         assert signal.best_vector_similarity == pytest.approx(1.0 / (1.0 + 0.15))
         assert signal.has_keyword_hit is True
@@ -486,8 +432,7 @@ class TestRetrievalSignal:
         store_reader.keyword_search.return_value = []
         embedding_client.embed.return_value = [[0.1]]
 
-        plan = make_query_plan(semantic_queries=("q",), keyword_terms=("term",))
-        _, signal = retriever.retrieve(plan, make_search_filters())
+        _, signal = retriever.retrieve((_semantic("q"), _keyword("term")))
 
         assert signal.best_vector_similarity is None
         assert signal.has_keyword_hit is False

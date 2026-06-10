@@ -448,6 +448,11 @@ def make_search_settings(**overrides: Any) -> Any:
         # the first element; pin to 8 (the production default) so multi-spec
         # tests get the full list without needing to override.
         "SEARCH_PLANNER_MAX_SPECS": 8,
+        # Multi-spec retriever knobs. A MagicMock auto-attribute used as an
+        # int comparison or slice index misbehaves, so pin both to their
+        # production defaults (SEARCH_PER_SPEC_K defaults to SEARCH_TOP_K=10).
+        "SEARCH_PER_SPEC_K": 10,
+        "SEARCH_MAX_CHUNKS_PER_DOC": 3,
     }
     defaults.update(overrides)
     settings = MagicMock()
