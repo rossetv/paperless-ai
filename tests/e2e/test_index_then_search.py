@@ -115,19 +115,26 @@ def _completion(content: str) -> Any:
 
 
 def _planner_json(semantic_queries: list[str]) -> str:
-    """Return a well-formed planner JSON response string."""
+    """Return a well-formed planner JSON response string (multi-spec shape)."""
     return json.dumps(
         {
-            "semantic_queries": semantic_queries,
-            "keyword_terms": [],
-            "filter_candidates": {
-                "correspondent": None,
-                "document_type": None,
-                "tags": [],
-                "date_from": None,
-                "date_to": None,
-            },
-            "sub_questions": [],
+            "specs": [
+                {
+                    "mode": "semantic",
+                    "semantic": q,
+                    "keywords": [],
+                    "filter_guess": {
+                        "correspondent": None,
+                        "document_type": None,
+                        "tags": [],
+                        "date_from": None,
+                        "date_to": None,
+                    },
+                    "rationale": "test spec",
+                }
+                for q in semantic_queries
+            ],
+            "clarify": None,
         }
     )
 

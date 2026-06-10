@@ -2,26 +2,26 @@
 
 The planner makes one LLM call using the configured SEARCH_PLANNER_MODEL
 (falling back through CLASSIFY_MODELS on failure) and parses the JSON response
-into a frozen QueryPlan dataclass.
+into a :class:`~search.models.RetrievalPlan` — a list of
+:class:`~search.models.PlannedSpec` objects.
 
 Design notes:
 - No Pydantic; parsing follows the manual pattern from classifier/result.py
   (CODE_GUIDELINES.md §5.6).
-- On any bad LLM response (malformed, empty, unparseable) the planner
-  degrades gracefully: it returns a minimal safe QueryPlan whose sole
-  semantic query is the raw user query, with empty keyword_terms,
-  sub_questions, and FilterCandidates.  A WARNING is logged.  The pipeline
-  never raises on a bad LLM response.
+- On any bad LLM response (malformed, empty, unparseable) the planner degrades
+  gracefully: it returns a ``RetrievalPlan`` whose sole spec is a broad semantic
+  search on the raw user query.  A WARNING is logged.  The pipeline never raises
+  on a bad LLM response.
 - All LLM calls go through ``OpenAIChatMixin._create_completion``
-  (CODE_GUIDELINES.md §8.1): the planner subclasses the mixin and inherits
-  the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
+  (CODE_GUIDELINES.md §8.1): the planner subclasses the mixin and inherits the
+  shared OpenAI singleton, the ``@retry`` exponential backoff, and the
   ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_PLANNER_MODEL
   then CLASSIFY_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
 - A failing model — whether a retry-exhausted retryable error or a
   non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
   ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
-  and the next model is tried.  When every model fails the planner degrades
-  to the safe fallback plan.  ``plan()`` therefore never raises.
+  and the next model is tried.  When every model fails the planner degrades to
+  the safe fallback plan.  ``plan()`` therefore never raises.
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ from search.models import (
     EMPTY_FILTER_CANDIDATES,
     ClarifyNeeded,
     FilterCandidates,
-    QueryPlan,
+    PlannedSpec,
+    RetrievalPlan,
 )
 from search.prompts import (
     PLANNER_SYSTEM_PROMPT,
@@ -52,18 +53,15 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The documented plan width (the planner prompt asks for these maxima). They are
-# enforced in code, not merely requested, so the per-query vector_search fan-out
-# is bounded regardless of model output: each semantic query and each
-# sub-question becomes one KNN pass holding the store reader lock, and this
-# endpoint is billable and network-facing (SRCH-03, CODE_GUIDELINES §14.6). The
-# JSON schema cannot bound array length, so the bound lives here.
-_MAX_SEMANTIC_QUERIES = 3
-_MAX_SUB_QUESTIONS = 3
+# The "search-query planning engine" opening phrase in PLANNER_SYSTEM_PROMPT is
+# the routing key the scripted test client keys off via ScriptedLLMClient.route.
+# Keep it as the opening words of the prompt.  This constant documents that
+# dependency so future prompt edits do not break the router silently.
+_PLANNER_ROUTING_PHRASE = "search-query planning engine"
 
 
 class QueryPlanner(OpenAIChatMixin):
-    """Converts a raw user query into a structured QueryPlan via one LLM call.
+    """Converts a raw user query into a structured RetrievalPlan via one LLM call.
 
     The planner is a pure function wrapped in a class for dependency injection.
     All state is in the injected ``settings``; QueryPlanner instances are safe
@@ -93,17 +91,19 @@ class QueryPlanner(OpenAIChatMixin):
         query: str,
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
-    ) -> QueryPlan | ClarifyNeeded:
-        """Analyse *query* and return a QueryPlan or ClarifyNeeded.
+    ) -> RetrievalPlan | ClarifyNeeded:
+        """Analyse *query* and return a RetrievalPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
-        CLASSIFY_MODELS on any API error.  The response is **either** a normal plan
-        **or** a clarify signal (when ``SEARCH_GATE_ADEQUACY`` is True and the
-        model judges the query obviously inadequate).
+        CLASSIFY_MODELS on any API error.  The response is **either** a normal
+        plan (a list of PlannedSpecs) **or** a clarify signal (when
+        ``SEARCH_GATE_ADEQUACY`` is True and the model judges the query
+        obviously inadequate).
 
         **Fail-open guarantee:** any parse failure, empty/malformed response, or
-        ``SEARCH_GATE_ADEQUACY=False`` → returns a QueryPlan (the existing safe
-        fallback).  A degraded LLM response NEVER becomes a false clarify.
+        ``SEARCH_GATE_ADEQUACY=False`` → returns a RetrievalPlan (the safe
+        fallback, containing a single broad semantic spec).  A degraded LLM
+        response NEVER becomes a false clarify.
 
         Args:
             query: The raw user search query.
@@ -117,7 +117,7 @@ class QueryPlanner(OpenAIChatMixin):
                 (the default) skips capture and keeps behaviour unchanged.
 
         Returns:
-            A frozen QueryPlan or ClarifyNeeded.  Never raises.
+            A frozen RetrievalPlan or ClarifyNeeded.  Never raises.
         """
         today = date.today().isoformat()
         messages = [
@@ -150,21 +150,21 @@ class QueryPlanner(OpenAIChatMixin):
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _parse_response(self, query: str, raw: str) -> QueryPlan | ClarifyNeeded:
-        """Parse *raw* into a QueryPlan or ClarifyNeeded.
+    def _parse_response(self, query: str, raw: str) -> RetrievalPlan | ClarifyNeeded:
+        """Parse *raw* into a RetrievalPlan or ClarifyNeeded.
 
         Fail-open: any malformed, empty, or unparseable response falls back to a
-        QueryPlan — a degraded LLM response must NEVER become a false clarify.
+        RetrievalPlan — a degraded LLM response must NEVER become a false clarify.
         The clarify branch is only taken when SEARCH_GATE_ADEQUACY is True and
         the response carries a non-empty ``clarify.reason``.
 
         Args:
-            query: Original user query — used as the fallback semantic query.
+            query: Original user query — used as the fallback semantic spec.
             raw: Raw text returned by the LLM.
 
         Returns:
-            A QueryPlan (the normal or fallback case) or ClarifyNeeded (when the
-            model signals the query is obviously inadequate and the gate is on).
+            A RetrievalPlan (the normal or fallback case) or ClarifyNeeded (when
+            the model signals the query is obviously inadequate and the gate is on).
         """
         stripped = raw.strip()
         if not stripped:
@@ -193,42 +193,48 @@ class QueryPlanner(OpenAIChatMixin):
                 )
                 return clarify_outcome
 
-        if "semantic_queries" not in data:
+        if "specs" not in data:
             return self._fallback_plan(
-                query, reason="LLM response missing required key 'semantic_queries'"
+                query, reason="LLM response missing required key 'specs'"
             )
 
         try:
-            return _build_query_plan(data)
+            return _build_retrieval_plan(data, self.settings.SEARCH_PLANNER_MAX_SPECS)
         except (KeyError, TypeError, ValueError) as exc:
             return self._fallback_plan(
                 query, reason=f"LLM response had unexpected structure: {exc}"
             )
 
-    def _fallback_plan(self, query: str, reason: str) -> QueryPlan:
+    def _fallback_plan(self, query: str, reason: str) -> RetrievalPlan:
         """Return the minimal safe fallback plan and log a warning.
 
-        The fallback plan contains the raw query as the sole semantic query and
-        empty values for every other field.  The pipeline can always proceed
-        with at least a single vector search on the original query text.
+        The fallback plan contains a single broad semantic spec on the raw query
+        with empty filters.  The pipeline can always proceed with at least a
+        single vector search on the original query text.
 
         Args:
             query: The raw user query.
             reason: Human-readable explanation for the fallback, for log triage.
 
         Returns:
-            A minimal safe QueryPlan.
+            A RetrievalPlan with one broad semantic spec.
         """
         log.warning(
             "planner.degraded_to_fallback",
             reason=reason,
             query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
         )
-        return QueryPlan(
-            semantic_queries=(query,),
-            keyword_terms=(),
-            filter_candidates=EMPTY_FILTER_CANDIDATES,
-            sub_questions=(),
+        return RetrievalPlan(
+            specs=(
+                PlannedSpec(
+                    mode="semantic",
+                    semantic=query,
+                    keywords=(),
+                    filter_guess=EMPTY_FILTER_CANDIDATES,
+                    rationale="fallback: broad semantic search",
+                ),
+            ),
+            clarify=None,
         )
 
 
@@ -267,57 +273,77 @@ def _extract_clarify(data: dict[str, object]) -> ClarifyNeeded | None:
     return ClarifyNeeded(reason=reason_stripped)
 
 
-def _build_query_plan(data: dict[str, object]) -> QueryPlan:
-    """Construct a QueryPlan from a validated dict.
+def _build_retrieval_plan(data: dict[str, object], max_specs: int) -> RetrievalPlan:
+    """Construct a RetrievalPlan from a validated dict.
+
+    Reads ``data["specs"]`` (a list), builds :class:`~search.models.PlannedSpec`
+    objects (coercing via :func:`_str_list` / :func:`_str_or_none`), caps the
+    list at *max_specs*, and returns a :class:`~search.models.RetrievalPlan`.
 
     Args:
-        data: A dict parsed from the LLM JSON response.  Must contain
-            ``semantic_queries``; all other keys are optional and default
-            to empty.
+        data: A dict parsed from the LLM JSON response.  Must contain ``specs``.
+        max_specs: Maximum number of specs to keep (``SEARCH_PLANNER_MAX_SPECS``).
 
     Returns:
-        A frozen QueryPlan dataclass.
+        A frozen RetrievalPlan dataclass.
 
     Raises:
         KeyError: If a required nested key is absent.
         TypeError: If a field has an unexpected type.
     """
-    # Cap the two lists that drive vector_search fan-out at their documented
-    # widths (SRCH-03): a model returning more than asked must not multiply the
-    # KNN passes (and the store-lock holds) on a billable endpoint.
-    semantic_queries = tuple(t for t in _str_list(data.get("semantic_queries")) if t)[
-        :_MAX_SEMANTIC_QUERIES
-    ]
-    keyword_terms = tuple(t for t in _str_list(data.get("keyword_terms")) if t)
-    sub_questions = tuple(t for t in _str_list(data.get("sub_questions")) if t)[
-        :_MAX_SUB_QUESTIONS
-    ]
+    raw_specs = data.get("specs")
+    if not isinstance(raw_specs, list):
+        raw_specs = []
 
-    raw_filter_candidates = data.get("filter_candidates")
-    fc_raw: dict[str, object] = (
-        raw_filter_candidates if isinstance(raw_filter_candidates, dict) else {}
-    )
-    filter_candidates = FilterCandidates(
-        correspondent=_str_or_none(fc_raw.get("correspondent")),
-        document_type=_str_or_none(fc_raw.get("document_type")),
-        tags=tuple(t for t in _str_list(fc_raw.get("tags")) if t),
-        date_from=_str_or_none(fc_raw.get("date_from")),
-        date_to=_str_or_none(fc_raw.get("date_to")),
-    )
+    planned_specs: list[PlannedSpec] = []
+    for item in raw_specs:
+        if not isinstance(item, dict):
+            continue
 
-    return QueryPlan(
-        semantic_queries=semantic_queries,
-        keyword_terms=keyword_terms,
-        filter_candidates=filter_candidates,
-        sub_questions=sub_questions,
-    )
+        # mode must be "semantic" or "keyword"; default malformed values to "semantic".
+        mode_raw = item.get("mode")
+        mode: str
+        if mode_raw in ("semantic", "keyword"):
+            mode = mode_raw
+        else:
+            mode = "semantic"
+
+        semantic = _str_or_none(item.get("semantic"))
+        keywords = tuple(t for t in _str_list(item.get("keywords")) if t)
+        rationale = _str_or_none(item.get("rationale")) or ""
+
+        raw_fg = item.get("filter_guess")
+        fg_raw: dict[str, object] = raw_fg if isinstance(raw_fg, dict) else {}
+        filter_guess = FilterCandidates(
+            correspondent=_str_or_none(fg_raw.get("correspondent")),
+            document_type=_str_or_none(fg_raw.get("document_type")),
+            tags=tuple(t for t in _str_list(fg_raw.get("tags")) if t),
+            date_from=_str_or_none(fg_raw.get("date_from")),
+            date_to=_str_or_none(fg_raw.get("date_to")),
+        )
+
+        planned_specs.append(
+            PlannedSpec(
+                mode=mode,  # type: ignore[arg-type]
+                semantic=semantic,
+                keywords=keywords,
+                filter_guess=filter_guess,
+                rationale=rationale,
+            )
+        )
+
+    # Cap at SEARCH_PLANNER_MAX_SPECS — a model returning more than asked must
+    # not multiply retrieval passes on a billable, network-facing endpoint.
+    capped = tuple(planned_specs[:max_specs])
+
+    return RetrievalPlan(specs=capped, clarify=None)
 
 
 def _str_list(value: object) -> list[str]:
     """Coerce an LLM-supplied list-shaped field into a list of strings.
 
     LLMs frequently emit a bare string where the schema asks for a list —
-    e.g. ``"keyword_terms": "invoice"`` instead of ``["invoice"]``.  Iterating
+    e.g. ``"keywords": "invoice"`` instead of ``["invoice"]``.  Iterating
     such a string character-by-character (``str(t) for t in value``) yields
     garbage (``['i', 'n', 'v', ...]``) that poisons retrieval.  This helper
     handles every shape:

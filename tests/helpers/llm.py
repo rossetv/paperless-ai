@@ -74,36 +74,72 @@ def make_chat_completion(content: str | None) -> MagicMock:
     return completion
 
 
-def planner_response_json(
+def _make_spec(
     *,
-    semantic_queries: list[str] | None = None,
-    keyword_terms: list[str] | None = None,
+    mode: str = "semantic",
+    semantic: str | None = "boiler warranty",
+    keywords: list[str] | None = None,
     correspondent: str | None = None,
     document_type: str | None = None,
     tags: list[str] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    sub_questions: list[str] | None = None,
-) -> str:
-    """Return a well-formed planner JSON response string.
+    rationale: str = "test spec",
+) -> dict[str, object]:
+    """Build a single spec dict in the new planner JSON shape.
 
-    Every argument defaults to an empty / null value, so a test spells out only
-    the part of the plan it cares about.
+    Convenience helper so tests can construct individual specs with sensible
+    defaults and pass them to :func:`planner_response_json`.
+
+    Args:
+        mode: ``"semantic"`` (default) or ``"keyword"``.
+        semantic: Text to embed; null for keyword specs.
+        keywords: Verbatim FTS terms; empty for semantic specs.
+        correspondent: Free-text correspondent guess, or None.
+        document_type: Free-text document-type guess, or None.
+        tags: Tag label guesses.
+        date_from: ISO date lower bound, or None.
+        date_to: ISO date upper bound, or None.
+        rationale: One-line explanation for this spec.
     """
-    return json.dumps(
-        {
-            "semantic_queries": semantic_queries or ["boiler warranty"],
-            "keyword_terms": keyword_terms or [],
-            "filter_candidates": {
-                "correspondent": correspondent,
-                "document_type": document_type,
-                "tags": tags or [],
-                "date_from": date_from,
-                "date_to": date_to,
-            },
-            "sub_questions": sub_questions or [],
-        }
+    return {
+        "mode": mode,
+        "semantic": semantic,
+        "keywords": keywords or [],
+        "filter_guess": {
+            "correspondent": correspondent,
+            "document_type": document_type,
+            "tags": tags or [],
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+        "rationale": rationale,
+    }
+
+
+def planner_response_json(
+    specs: list[dict[str, object]] | None = None,
+    clarify_reason: str | None = None,
+) -> str:
+    """Return a well-formed planner JSON response string (multi-spec shape).
+
+    When *specs* is None a single default semantic spec is used.  Pass
+    ``specs=[]`` (with a *clarify_reason*) to model a clarify-only response.
+    Each spec dict is typically built via :func:`_make_spec`.
+
+    Args:
+        specs: List of spec dicts in the new planner schema shape.  Defaults to
+            one broad semantic spec so existing call-sites that pass no args keep
+            working.
+        clarify_reason: When set, ``clarify`` is ``{"reason": clarify_reason}``;
+            otherwise ``clarify`` is null.
+    """
+    if specs is None:
+        specs = [_make_spec()]
+    clarify: dict[str, str] | None = (
+        {"reason": clarify_reason} if clarify_reason is not None else None
     )
+    return json.dumps({"specs": specs, "clarify": clarify})
 
 
 def answered_response_json(answer: str, citations: list[int]) -> str:

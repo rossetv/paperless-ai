@@ -1,9 +1,13 @@
 """Tests for search.planner — parsing the LLM planner response.
 
 Verifies the QueryPlanner parsing contract (spec §6.1):
-- A well-formed mock LLM response is parsed into the expected QueryPlan.
-- Relative-date language in the response produces date_from/date_to candidates.
+- A well-formed mock LLM response is parsed into the expected RetrievalPlan.
+- A multi-spec response produces multiple PlannedSpec objects with the right
+  modes, semantic/keywords, filter_guess fields, and rationale strings.
 - A malformed / empty / non-JSON response degrades to the safe fallback plan.
+- The fallback plan is a RetrievalPlan with a single broad semantic spec.
+- More than SEARCH_PLANNER_MAX_SPECS specs in the response → capped.
+- Clarify response → ClarifyNeeded when the gate is on.
 - String-valued list fields are not iterated character-by-character (I1).
 - A list/dict value for a scalar filter field becomes None, not its repr (I2).
 
@@ -18,179 +22,293 @@ mirroring ``tests/unit/classifier`` — never via constructor injection.
 
 from __future__ import annotations
 
-import json
+import json as _json
 from unittest.mock import patch
 
 import pytest
-
-import json as _json
 
 from search.models import (
     EMPTY_FILTER_CANDIDATES,
     ClarifyNeeded,
     FilterCandidates,
-    QueryPlan,
+    PlannedSpec,
+    RetrievalPlan,
 )
 from tests.helpers.factories import make_search_settings
-from tests.helpers.llm import planner_response_json
+from tests.helpers.llm import _make_spec, planner_response_json
 from tests.unit.search.conftest import build_planner
 
 
 def _clarify_json(reason: str = "Query is too vague.") -> str:
-    """Return a well-formed clarify JSON response (the new planner shape)."""
-    return _json.dumps({"clarify": {"reason": reason}})
+    """Return a well-formed clarify JSON response (new planner shape)."""
+    return _json.dumps({"specs": [], "clarify": {"reason": reason}})
+
+
+def _assert_is_fallback_plan(plan: RetrievalPlan, raw_query: str) -> None:
+    """Assert *plan* is the minimal safe fallback for *raw_query*."""
+    assert isinstance(plan, RetrievalPlan)
+    assert len(plan.specs) == 1
+    spec = plan.specs[0]
+    assert spec.mode == "semantic"
+    assert spec.semantic == raw_query
+    assert spec.keywords == ()
+    assert spec.filter_guess == EMPTY_FILTER_CANDIDATES
+    assert "fallback" in spec.rationale
 
 
 # ---------------------------------------------------------------------------
-# Well-formed response: full parse
+# Well-formed multi-spec response
 # ---------------------------------------------------------------------------
 
 
 class TestWellFormedResponse:
-    """A valid JSON response is parsed into a fully-populated QueryPlan."""
+    """A valid JSON response is parsed into a fully-populated RetrievalPlan."""
 
-    def test_semantic_queries_are_parsed(self) -> None:
+    def test_returns_retrieval_plan_dataclass(self) -> None:
+        plan = build_planner(make_search_settings(), planner_response_json()).plan(
+            "any query"
+        )
+
+        assert isinstance(plan, RetrievalPlan)
+
+    def test_single_spec_parsed_correctly(self) -> None:
         payload = planner_response_json(
-            semantic_queries=["boiler warranty letter", "heating system guarantee"]
+            specs=[
+                _make_spec(
+                    mode="semantic",
+                    semantic="boiler warranty letter",
+                    rationale="broad semantic search",
+                )
+            ]
         )
         plan = build_planner(make_search_settings(), payload).plan(
             "find my boiler warranty"
         )
 
-        assert "boiler warranty letter" in plan.semantic_queries
-        assert "heating system guarantee" in plan.semantic_queries
+        assert isinstance(plan, RetrievalPlan)
+        assert len(plan.specs) == 1
+        spec = plan.specs[0]
+        assert spec.mode == "semantic"
+        assert spec.semantic == "boiler warranty letter"
+        assert spec.rationale == "broad semantic search"
 
-    def test_keyword_terms_are_parsed(self) -> None:
+    def test_multiple_specs_are_all_parsed(self) -> None:
         payload = planner_response_json(
-            keyword_terms=["boiler", "warranty", "Worcester Bosch"]
+            specs=[
+                _make_spec(
+                    mode="semantic",
+                    semantic="boiler warranty letter",
+                    rationale="semantic spec",
+                ),
+                _make_spec(
+                    mode="keyword",
+                    semantic=None,
+                    keywords=["Worcester Bosch", "warranty"],
+                    rationale="keyword spec",
+                ),
+                _make_spec(
+                    mode="semantic",
+                    semantic="heating system guarantee",
+                    rationale="broad recall spec",
+                ),
+            ]
+        )
+        plan = build_planner(make_search_settings(), payload).plan(
+            "find my boiler warranty"
+        )
+
+        assert isinstance(plan, RetrievalPlan)
+        assert len(plan.specs) == 3
+        modes = [s.mode for s in plan.specs]
+        assert "semantic" in modes
+        assert "keyword" in modes
+
+    def test_semantic_field_is_parsed(self) -> None:
+        payload = planner_response_json(
+            specs=[
+                _make_spec(
+                    mode="semantic",
+                    semantic="boiler warranty letter",
+                )
+            ]
+        )
+        plan = build_planner(make_search_settings(), payload).plan(
+            "find my boiler warranty"
+        )
+
+        assert plan.specs[0].semantic == "boiler warranty letter"
+
+    def test_keywords_are_parsed(self) -> None:
+        payload = planner_response_json(
+            specs=[
+                _make_spec(
+                    mode="keyword",
+                    semantic=None,
+                    keywords=["boiler", "warranty", "Worcester Bosch"],
+                )
+            ]
         )
         plan = build_planner(make_search_settings(), payload).plan(
             "Worcester Bosch boiler warranty"
         )
 
-        assert "boiler" in plan.keyword_terms
-        assert "warranty" in plan.keyword_terms
-        assert "Worcester Bosch" in plan.keyword_terms
+        assert "boiler" in plan.specs[0].keywords
+        assert "warranty" in plan.specs[0].keywords
+        assert "Worcester Bosch" in plan.specs[0].keywords
 
-    def test_filter_candidates_correspondent_is_parsed(self) -> None:
-        payload = planner_response_json(correspondent="npower")
+    def test_filter_guess_correspondent_is_parsed(self) -> None:
+        payload = planner_response_json(specs=[_make_spec(correspondent="npower")])
         plan = build_planner(make_search_settings(), payload).plan(
             "npower electricity bill"
         )
 
-        assert plan.filter_candidates.correspondent == "npower"
+        assert plan.specs[0].filter_guess.correspondent == "npower"
 
-    def test_filter_candidates_document_type_is_parsed(self) -> None:
-        payload = planner_response_json(document_type="invoice")
+    def test_filter_guess_document_type_is_parsed(self) -> None:
+        payload = planner_response_json(specs=[_make_spec(document_type="invoice")])
         plan = build_planner(make_search_settings(), payload).plan("latest invoice")
 
-        assert plan.filter_candidates.document_type == "invoice"
+        assert plan.specs[0].filter_guess.document_type == "invoice"
 
-    def test_filter_candidates_tags_are_parsed(self) -> None:
-        payload = planner_response_json(tags=["electricity", "utility"])
+    def test_filter_guess_tags_are_parsed(self) -> None:
+        payload = planner_response_json(
+            specs=[_make_spec(tags=["electricity", "utility"])]
+        )
         plan = build_planner(make_search_settings(), payload).plan(
             "electricity utility bills"
         )
 
-        assert "electricity" in plan.filter_candidates.tags
-        assert "utility" in plan.filter_candidates.tags
+        assert "electricity" in plan.specs[0].filter_guess.tags
+        assert "utility" in plan.specs[0].filter_guess.tags
 
-    def test_sub_questions_are_parsed(self) -> None:
+    def test_filter_guess_dates_are_parsed(self) -> None:
         payload = planner_response_json(
-            sub_questions=[
-                "When was the boiler installed?",
-                "What is the expiry date?",
-            ]
+            specs=[_make_spec(date_from="2024-01-01", date_to="2024-12-31")]
         )
         plan = build_planner(make_search_settings(), payload).plan(
-            "boiler installation and warranty expiry"
+            "invoices from last year"
         )
 
-        assert "When was the boiler installed?" in plan.sub_questions
-        assert "What is the expiry date?" in plan.sub_questions
+        assert plan.specs[0].filter_guess.date_from == "2024-01-01"
+        assert plan.specs[0].filter_guess.date_to == "2024-12-31"
 
-    def test_returns_query_plan_dataclass(self) -> None:
+    def test_rationale_is_parsed(self) -> None:
+        payload = planner_response_json(
+            specs=[_make_spec(rationale="tight keyword + filter for precision")]
+        )
+        plan = build_planner(make_search_settings(), payload).plan("my query")
+
+        assert plan.specs[0].rationale == "tight keyword + filter for precision"
+
+    def test_filter_guess_is_frozen_dataclass(self) -> None:
         plan = build_planner(make_search_settings(), planner_response_json()).plan(
             "any query"
         )
 
-        assert isinstance(plan, QueryPlan)
-
-    def test_filter_candidates_is_frozen_dataclass(self) -> None:
-        plan = build_planner(make_search_settings(), planner_response_json()).plan(
-            "any query"
-        )
-
-        assert isinstance(plan.filter_candidates, FilterCandidates)
+        assert isinstance(plan.specs[0].filter_guess, FilterCandidates)
         with pytest.raises(Exception):  # FrozenInstanceError
-            plan.filter_candidates.correspondent = "changed"  # type: ignore[misc]
+            plan.specs[0].filter_guess.correspondent = "changed"  # type: ignore[misc]
+
+    def test_specs_is_frozen_tuple(self) -> None:
+        plan = build_planner(make_search_settings(), planner_response_json()).plan(
+            "any query"
+        )
+
+        assert isinstance(plan.specs, tuple)
+
+    def test_spec_is_planned_spec_dataclass(self) -> None:
+        plan = build_planner(make_search_settings(), planner_response_json()).plan(
+            "any query"
+        )
+
+        assert isinstance(plan.specs[0], PlannedSpec)
 
     def test_json_wrapped_in_markdown_fences_is_still_parsed(self) -> None:
         """The LLM may wrap JSON in triple-backtick fences — tolerate this."""
         payload = (
             "```json\n"
-            + planner_response_json(keyword_terms=["VAT", "invoice"])
+            + planner_response_json(
+                specs=[
+                    _make_spec(
+                        mode="keyword", semantic=None, keywords=["VAT", "invoice"]
+                    )
+                ]
+            )
             + "\n```"
         )
         plan = build_planner(make_search_settings(), payload).plan("VAT invoice")
 
-        assert "VAT" in plan.keyword_terms
+        assert "VAT" in plan.specs[0].keywords
+
+
+# ---------------------------------------------------------------------------
+# Plan-width cap
+# ---------------------------------------------------------------------------
 
 
 class TestPlanWidthIsCapped:
-    """The plan's search-driving lists are capped in code, not just the prompt.
+    """The number of specs is capped at SEARCH_PLANNER_MAX_SPECS.
 
-    The prompt asks for 1-3 semantic queries and 0-3 sub-questions, but a
-    misbehaving or adversarial model can return more. Each extra entry is an
-    extra vector_search pass holding the store reader lock on a billable,
-    network-facing endpoint, so the documented width is enforced as a code-level
-    guarantee (SRCH-03), bounding the fan-out regardless of model output.
+    A misbehaving or adversarial model returning more specs than asked must not
+    multiply the retrieval fan-out on a billable, network-facing endpoint.
     """
 
-    def test_semantic_queries_are_capped(self) -> None:
-        from search.planner import _MAX_SEMANTIC_QUERIES
-
+    def test_specs_are_capped_at_max(self) -> None:
+        max_specs = 4
         payload = planner_response_json(
-            semantic_queries=[f"rephrasing {i}" for i in range(10)]
+            specs=[
+                _make_spec(semantic=f"query {i}", rationale=f"spec {i}")
+                for i in range(10)
+            ]
         )
-        plan = build_planner(make_search_settings(), payload).plan("a query")
+        plan = build_planner(
+            make_search_settings(SEARCH_PLANNER_MAX_SPECS=max_specs), payload
+        ).plan("a query")
 
-        assert len(plan.semantic_queries) == _MAX_SEMANTIC_QUERIES
+        assert len(plan.specs) == max_specs
 
-    def test_sub_questions_are_capped(self) -> None:
-        from search.planner import _MAX_SUB_QUESTIONS
-
+    def test_cap_keeps_the_first_specs_in_order(self) -> None:
+        """The cap truncates the tail, preserving the model's leading specs."""
+        max_specs = 3
         payload = planner_response_json(
-            sub_questions=[f"sub-question {i}?" for i in range(10)]
+            specs=[
+                _make_spec(semantic=f"spec {i}", rationale=f"rationale {i}")
+                for i in range(5)
+            ]
         )
-        plan = build_planner(make_search_settings(), payload).plan("a query")
+        plan = build_planner(
+            make_search_settings(SEARCH_PLANNER_MAX_SPECS=max_specs), payload
+        ).plan("a query")
 
-        assert len(plan.sub_questions) == _MAX_SUB_QUESTIONS
+        assert len(plan.specs) == 3
+        assert plan.specs[0].semantic == "spec 0"
+        assert plan.specs[1].semantic == "spec 1"
+        assert plan.specs[2].semantic == "spec 2"
 
-    def test_cap_keeps_the_first_entries_in_order(self) -> None:
-        """The cap truncates the tail, preserving the model's leading entries."""
-        from search.planner import _MAX_SEMANTIC_QUERIES
-
+    def test_within_limit_specs_are_untouched(self) -> None:
+        """A compliant plan (≤ max_specs) is passed through unchanged."""
         payload = planner_response_json(
-            semantic_queries=["first", "second", "third", "fourth", "fifth"]
+            specs=[
+                _make_spec(semantic="spec one"),
+                _make_spec(semantic="spec two"),
+            ]
         )
-        plan = build_planner(make_search_settings(), payload).plan("a query")
+        plan = build_planner(
+            make_search_settings(SEARCH_PLANNER_MAX_SPECS=8), payload
+        ).plan("a query")
 
-        assert (
-            plan.semantic_queries
-            == ("first", "second", "third")[:_MAX_SEMANTIC_QUERIES]
-        )
+        assert len(plan.specs) == 2
 
-    def test_within_limit_lists_are_untouched(self) -> None:
-        """A compliant plan (≤3 each) is passed through unchanged."""
+    def test_default_max_specs_is_eight(self) -> None:
+        """The default SEARCH_PLANNER_MAX_SPECS is 8 — a model returning 8 is fine."""
         payload = planner_response_json(
-            semantic_queries=["one", "two"],
-            sub_questions=["q1?"],
+            specs=[_make_spec(semantic=f"q {i}") for i in range(8)]
         )
-        plan = build_planner(make_search_settings(), payload).plan("a query")
+        plan = build_planner(
+            make_search_settings(SEARCH_PLANNER_MAX_SPECS=8), payload
+        ).plan("a query")
 
-        assert plan.semantic_queries == ("one", "two")
-        assert plan.sub_questions == ("q1?",)
+        assert len(plan.specs) == 8
 
 
 # ---------------------------------------------------------------------------
@@ -199,32 +317,38 @@ class TestPlanWidthIsCapped:
 
 
 class TestRelativeDateLanguage:
-    """Date strings from the LLM end up in filter_candidates.date_from/date_to."""
+    """Date strings from the LLM end up in filter_guess.date_from/date_to."""
 
     def test_date_from_is_propagated(self) -> None:
-        payload = planner_response_json(date_from="2024-01-01", date_to="2024-12-31")
+        payload = planner_response_json(
+            specs=[_make_spec(date_from="2024-01-01", date_to="2024-12-31")]
+        )
         plan = build_planner(make_search_settings(), payload).plan(
             "invoices from last year"
         )
 
-        assert plan.filter_candidates.date_from == "2024-01-01"
-        assert plan.filter_candidates.date_to == "2024-12-31"
+        assert plan.specs[0].filter_guess.date_from == "2024-01-01"
+        assert plan.specs[0].filter_guess.date_to == "2024-12-31"
 
     def test_date_to_only_is_propagated(self) -> None:
-        payload = planner_response_json(date_to="2025-03-31")
+        payload = planner_response_json(
+            specs=[_make_spec(date_from=None, date_to="2025-03-31")]
+        )
         plan = build_planner(make_search_settings(), payload).plan(
             "documents since March"
         )
 
-        assert plan.filter_candidates.date_to == "2025-03-31"
-        assert plan.filter_candidates.date_from is None
+        assert plan.specs[0].filter_guess.date_to == "2025-03-31"
+        assert plan.specs[0].filter_guess.date_from is None
 
     def test_null_dates_produce_none(self) -> None:
-        payload = planner_response_json(date_from=None, date_to=None)
+        payload = planner_response_json(
+            specs=[_make_spec(date_from=None, date_to=None)]
+        )
         plan = build_planner(make_search_settings(), payload).plan("all documents")
 
-        assert plan.filter_candidates.date_from is None
-        assert plan.filter_candidates.date_to is None
+        assert plan.specs[0].filter_guess.date_from is None
+        assert plan.specs[0].filter_guess.date_to is None
 
 
 # ---------------------------------------------------------------------------
@@ -232,16 +356,8 @@ class TestRelativeDateLanguage:
 # ---------------------------------------------------------------------------
 
 
-def _assert_is_fallback_plan(plan: QueryPlan, raw_query: str) -> None:
-    """Assert *plan* is the minimal safe fallback for *raw_query*."""
-    assert plan.semantic_queries == (raw_query,)
-    assert plan.keyword_terms == ()
-    assert plan.sub_questions == ()
-    assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
-
-
 class TestFallbackOnBadResponse:
-    """A bad LLM response degrades to a safe single-query plan and logs a warning."""
+    """A bad LLM response degrades to a safe single-spec plan and logs a warning."""
 
     def test_empty_response_produces_fallback(self) -> None:
         planner = build_planner(make_search_settings(), "")
@@ -264,7 +380,7 @@ class TestFallbackOnBadResponse:
         _assert_is_fallback_plan(plan, "find boiler warranty")
 
     def test_json_missing_required_keys_produces_fallback(self) -> None:
-        """A JSON object that lacks 'semantic_queries' is treated as malformed."""
+        """A JSON object that lacks 'specs' is treated as malformed."""
         planner = build_planner(make_search_settings(), '{"something": "unexpected"}')
 
         with patch("search.planner.log") as mock_log:
@@ -294,11 +410,17 @@ class TestFallbackOnBadResponse:
         _assert_is_fallback_plan(plan, "none content query")
 
     def test_fallback_plan_raw_query_preserved(self) -> None:
-        """The raw query is always the sole semantic_query in the fallback."""
+        """The raw query is always the sole semantic spec in the fallback."""
         raw = "find my tax return from 2023"
         plan = build_planner(make_search_settings(), "not json at all").plan(raw)
 
-        assert plan.semantic_queries == (raw,)
+        assert plan.specs[0].semantic == raw
+
+    def test_fallback_plan_is_retrieval_plan(self) -> None:
+        """The fallback is a RetrievalPlan, not a QueryPlan or ClarifyNeeded."""
+        plan = build_planner(make_search_settings(), "").plan("any query")
+
+        assert isinstance(plan, RetrievalPlan)
 
 
 # ---------------------------------------------------------------------------
@@ -314,104 +436,83 @@ class TestStringValuedListFields:
     a single-element list instead.
     """
 
-    def test_string_keyword_terms_becomes_single_term(self) -> None:
-        """keyword_terms="invoice" → ("invoice",), not the characters of it."""
-        payload = json.dumps(
+    def test_string_keywords_becomes_single_keyword(self) -> None:
+        """keywords="invoice" → ("invoice",), not the characters of it."""
+        payload = _json.dumps(
             {
-                "semantic_queries": ["find the invoice"],
-                "keyword_terms": "invoice",  # WRONG shape: a bare string.
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": None,
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
+                "specs": [
+                    {
+                        "mode": "keyword",
+                        "semantic": None,
+                        "keywords": "invoice",  # WRONG shape: a bare string.
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": None,
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
             }
         )
         plan = build_planner(make_search_settings(), payload).plan("find the invoice")
 
-        assert plan.keyword_terms == ("invoice",)
-
-    def test_string_semantic_queries_becomes_single_query(self) -> None:
-        """semantic_queries as a bare string is wrapped, not exploded."""
-        payload = json.dumps(
-            {
-                "semantic_queries": "boiler warranty expiry",
-                "keyword_terms": [],
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": None,
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
-            }
-        )
-        plan = build_planner(make_search_settings(), payload).plan("the raw query")
-
-        assert plan.semantic_queries == ("boiler warranty expiry",)
-
-    def test_string_sub_questions_becomes_single_question(self) -> None:
-        payload = json.dumps(
-            {
-                "semantic_queries": ["q"],
-                "keyword_terms": [],
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": None,
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": "when was it installed?",
-            }
-        )
-        plan = build_planner(make_search_settings(), payload).plan("the raw query")
-
-        assert plan.sub_questions == ("when was it installed?",)
+        assert plan.specs[0].keywords == ("invoice",)
 
     def test_string_filter_tags_becomes_single_tag(self) -> None:
-        """filter_candidates.tags as a bare string is wrapped, not exploded."""
-        payload = json.dumps(
+        """filter_guess.tags as a bare string is wrapped, not exploded."""
+        payload = _json.dumps(
             {
-                "semantic_queries": ["q"],
-                "keyword_terms": [],
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": None,
-                    "tags": "electricity",  # WRONG shape: a bare string.
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
+                "specs": [
+                    {
+                        "mode": "semantic",
+                        "semantic": "q",
+                        "keywords": [],
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": None,
+                            "tags": "electricity",  # WRONG shape: a bare string.
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
             }
         )
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
-        assert plan.filter_candidates.tags == ("electricity",)
+        assert plan.specs[0].filter_guess.tags == ("electricity",)
 
     def test_non_string_scalar_list_field_becomes_empty(self) -> None:
         """A non-string scalar (e.g. an int) for a list field yields no terms."""
-        payload = json.dumps(
+        payload = _json.dumps(
             {
-                "semantic_queries": ["q"],
-                "keyword_terms": 12345,  # WRONG shape: an int.
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": None,
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
+                "specs": [
+                    {
+                        "mode": "keyword",
+                        "semantic": None,
+                        "keywords": 12345,  # WRONG shape: an int.
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": None,
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
             }
         )
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
-        assert plan.keyword_terms == ()
+        assert plan.specs[0].keywords == ()
 
 
 # ---------------------------------------------------------------------------
@@ -427,42 +528,118 @@ class TestStrOrNoneRejectsContainers:
     """
 
     def test_list_correspondent_becomes_none(self) -> None:
-        payload = json.dumps(
+        payload = _json.dumps(
             {
-                "semantic_queries": ["q"],
-                "keyword_terms": [],
-                "filter_candidates": {
-                    "correspondent": ["npower", "EDF"],  # WRONG shape: a list.
-                    "document_type": None,
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
+                "specs": [
+                    {
+                        "mode": "semantic",
+                        "semantic": "q",
+                        "keywords": [],
+                        "filter_guess": {
+                            "correspondent": ["npower", "EDF"],  # WRONG: a list.
+                            "document_type": None,
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
             }
         )
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
-        assert plan.filter_candidates.correspondent is None
+        assert plan.specs[0].filter_guess.correspondent is None
 
     def test_dict_document_type_becomes_none(self) -> None:
-        payload = json.dumps(
+        payload = _json.dumps(
             {
-                "semantic_queries": ["q"],
-                "keyword_terms": [],
-                "filter_candidates": {
-                    "correspondent": None,
-                    "document_type": {"name": "invoice"},  # WRONG shape: a dict.
-                    "tags": [],
-                    "date_from": None,
-                    "date_to": None,
-                },
-                "sub_questions": [],
+                "specs": [
+                    {
+                        "mode": "semantic",
+                        "semantic": "q",
+                        "keywords": [],
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": {"name": "invoice"},  # WRONG: a dict.
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
             }
         )
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
-        assert plan.filter_candidates.document_type is None
+        assert plan.specs[0].filter_guess.document_type is None
+
+
+# ---------------------------------------------------------------------------
+# Mode defaulting — malformed mode falls back to "semantic"
+# ---------------------------------------------------------------------------
+
+
+class TestModeCoercion:
+    """A malformed or absent mode value falls back to 'semantic' rather than crashing."""
+
+    def test_invalid_mode_defaults_to_semantic(self) -> None:
+        payload = _json.dumps(
+            {
+                "specs": [
+                    {
+                        "mode": "vector",  # not a valid mode
+                        "semantic": "some query",
+                        "keywords": [],
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": None,
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
+            }
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert plan.specs[0].mode == "semantic"
+
+    def test_null_mode_defaults_to_semantic(self) -> None:
+        payload = _json.dumps(
+            {
+                "specs": [
+                    {
+                        "mode": None,
+                        "semantic": "some query",
+                        "keywords": [],
+                        "filter_guess": {
+                            "correspondent": None,
+                            "document_type": None,
+                            "tags": [],
+                            "date_from": None,
+                            "date_to": None,
+                        },
+                        "rationale": "test",
+                    }
+                ],
+                "clarify": None,
+            }
+        )
+        plan = build_planner(make_search_settings(), payload).plan("a query")
+
+        assert plan.specs[0].mode == "semantic"
+
+
+# ---------------------------------------------------------------------------
+# System prompt byte-stability
+# ---------------------------------------------------------------------------
 
 
 class TestPlannerDateInUserTurn:
@@ -486,16 +663,16 @@ class TestPlannerDateInUserTurn:
 
 
 # ---------------------------------------------------------------------------
-# Adequacy gate (Layer 1) — ClarifyNeeded vs QueryPlan, fail-open
+# Adequacy gate (Layer 1) — ClarifyNeeded vs RetrievalPlan, fail-open
 # ---------------------------------------------------------------------------
 
 
 class TestAdequacyGate:
     """The planner returns ClarifyNeeded when the LLM signals the query is too
-    vague, but degrades safely to a QueryPlan on every failure path.
+    vague, but degrades safely to a RetrievalPlan on every failure path.
 
     Governed by SEARCH_GATE_ADEQUACY (default True). When False, a clarify
-    JSON still produces a QueryPlan (the gate is bypassed).
+    JSON still produces a RetrievalPlan (the gate is bypassed).
     """
 
     def test_clarify_json_with_gate_on_returns_clarify_needed(self) -> None:
@@ -521,79 +698,92 @@ class TestAdequacyGate:
         assert isinstance(outcome, ClarifyNeeded)
         assert outcome.reason == reason
 
-    def test_normal_plan_json_still_returns_query_plan(self) -> None:
-        """A normal plan response → QueryPlan regardless of gate setting."""
+    def test_normal_plan_json_still_returns_retrieval_plan(self) -> None:
+        """A normal plan response → RetrievalPlan regardless of gate setting."""
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
-            planner_response_json(semantic_queries=["boiler warranty letter"]),
+            planner_response_json(
+                specs=[_make_spec(semantic="boiler warranty letter")]
+            ),
         )
         outcome = planner.plan("find my boiler warranty")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
 
     def test_gate_off_ignores_clarify_json(self) -> None:
-        """When SEARCH_GATE_ADEQUACY=False a clarify JSON produces a QueryPlan."""
+        """When SEARCH_GATE_ADEQUACY=False a clarify JSON produces a RetrievalPlan.
+
+        _clarify_json emits specs=[] so the parser returns an empty-specs plan
+        (the gate is bypassed, so the clarify object is not extracted).  An
+        empty-specs plan is a valid RetrievalPlan — the clarify gate being off
+        means the pipeline proceeds rather than asking the user to clarify.
+        """
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=False),
             _clarify_json("Too vague."),
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
-        # The fallback plan uses the raw query as the sole semantic query.
-        assert outcome.semantic_queries == ("life",)
+        assert isinstance(outcome, RetrievalPlan)
+        # Gate is off: the clarify object is ignored, specs=[] → empty plan.
+        assert outcome.clarify is None
 
     def test_malformed_json_never_returns_clarify_needed(self) -> None:
-        """A garbled LLM response degrades to a QueryPlan, never ClarifyNeeded."""
+        """A garbled LLM response degrades to a RetrievalPlan, never ClarifyNeeded."""
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
             "this is not valid json at all",
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
 
     def test_empty_response_never_returns_clarify_needed(self) -> None:
-        """An empty LLM response → QueryPlan fallback, not ClarifyNeeded."""
+        """An empty LLM response → RetrievalPlan fallback, not ClarifyNeeded."""
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
             "",
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
 
     def test_clarify_with_empty_reason_falls_back_to_plan(self) -> None:
         """An empty clarify.reason is not a valid clarify — degrade to a plan."""
-        payload = _json.dumps({"clarify": {"reason": ""}})
+        payload = _json.dumps({"specs": [], "clarify": {"reason": ""}})
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
             payload,
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
 
     def test_clarify_with_missing_reason_field_falls_back_to_plan(self) -> None:
-        """A clarify object missing the reason key falls back to a QueryPlan."""
-        payload = _json.dumps({"clarify": {}})
+        """A clarify object missing the reason key falls back to a RetrievalPlan."""
+        payload = _json.dumps({"specs": [], "clarify": {}})
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
             payload,
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
 
     def test_none_content_with_gate_on_produces_fallback_plan(self) -> None:
-        """None LLM content → QueryPlan fallback even with the gate on."""
+        """None LLM content → RetrievalPlan fallback even with the gate on."""
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=True),
             None,
         )
         outcome = planner.plan("life")
 
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
+
+
+# ---------------------------------------------------------------------------
+# Usage sink forwarding
+# ---------------------------------------------------------------------------
 
 
 class TestPlannerUsageSink:
@@ -630,7 +820,12 @@ class TestPlannerUsageSink:
         """Omitting usage_sink (the default) leaves behaviour unchanged."""
         planner = build_planner(make_search_settings(), planner_response_json())
         outcome = planner.plan("a query")
-        assert isinstance(outcome, QueryPlan)
+        assert isinstance(outcome, RetrievalPlan)
+
+
+# ---------------------------------------------------------------------------
+# Asker forwarding
+# ---------------------------------------------------------------------------
 
 
 class TestPlannerAsker:

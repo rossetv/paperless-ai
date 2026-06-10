@@ -20,6 +20,7 @@ from store.reader import StoreReader
 from store.writer import StoreWriter
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     needs_more_response_json,
     planner_response_json,
@@ -55,7 +56,7 @@ class TestBoundedRefinementEndToEnd:
         try:
             llm_client = ScriptedLLMClient(
                 planner_response=planner_response_json(
-                    semantic_queries=["boiler details"]
+                    specs=[_make_spec(semantic="boiler details")]
                 ),
                 synthesiser_responses=[
                     needs_more_response_json(
@@ -103,7 +104,9 @@ class TestBoundedRefinementEndToEnd:
         store_reader = StoreReader(settings)
         try:
             llm_client = ScriptedLLMClient(
-                planner_response=planner_response_json(semantic_queries=["a query"]),
+                planner_response=planner_response_json(
+                    specs=[_make_spec(semantic="a query")]
+                ),
                 synthesiser_responses=[needs_more_response_json("always more")],
             )
             core = build_search_core(
@@ -151,7 +154,9 @@ class TestBoundedRefinementEndToEnd:
             # mock is fixed), so to exercise the merge we rely on the merge
             # carrying doc 1 through; the second synthesise cites doc 1.
             llm_client = ScriptedLLMClient(
-                planner_response=planner_response_json(semantic_queries=["boiler"]),
+                planner_response=planner_response_json(
+                    specs=[_make_spec(semantic="boiler")]
+                ),
                 synthesiser_responses=[
                     needs_more_response_json("Need the warranty document too."),
                     answered_response_json("Combined answer [1].", citations=[1]),
