@@ -27,6 +27,7 @@ from tests.helpers.factories import (
 )
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     judge_response_json,
     needs_more_response_json,
@@ -87,13 +88,26 @@ class TestPhaseEmission:
         events: list = []
         result = core.answer("a normal query", on_event=events.append)
 
-        assert _phases(events) == ["plan", "retrieve", "gate", "synthesise"]
+        assert _phases(events) == [
+            "plan",
+            "resolve",
+            "retrieve",
+            "gate",
+            "synthesise",
+        ]
         # Every PhaseRecord is preceded by its PhaseStart with the same phase.
         starts = [e for e in events if isinstance(e, PhaseStart)]
-        assert [s.phase for s in starts] == ["plan", "retrieve", "gate", "synthesise"]
+        assert [s.phase for s in starts] == [
+            "plan",
+            "resolve",
+            "retrieve",
+            "gate",
+            "synthesise",
+        ]
         # The result's trace mirrors the emitted records exactly.
         assert tuple(p.phase for p in result.stats.trace.phases) == (
             "plan",
+            "resolve",
             "retrieve",
             "gate",
             "synthesise",
@@ -136,6 +150,7 @@ class TestPhaseEmission:
         result = core.answer("a query")
         assert tuple(p.phase for p in result.stats.trace.phases) == (
             "plan",
+            "resolve",
             "retrieve",
             "gate",
             "synthesise",
@@ -153,8 +168,11 @@ class TestPlanDetail:
         reset_search_result_cache()
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(
-                semantic_queries=["rewritten boiler warranty"],
-                correspondent="npower",
+                specs=[
+                    _make_spec(
+                        semantic="rewritten boiler warranty", correspondent="npower"
+                    )
+                ]
             ),
             synthesiser_responses=[
                 answered_response_json("Answer [1].", citations=[1])
@@ -224,7 +242,9 @@ class TestRetrieveDetail:
     def test_retrieve_detail_marks_broadened_on_second_pass(self) -> None:
         reset_search_result_cache()
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(correspondent="npower"),
+            planner_response=planner_response_json(
+                specs=[_make_spec(correspondent="npower")]
+            ),
             synthesiser_responses=[
                 answered_response_json("Answer [1].", citations=[1])
             ],
@@ -318,7 +338,7 @@ class TestGateDetail:
         # The gate phase is present and marks the rejection; synthesis never ran.
         gate_rec = next(p for p in _records(events) if p.phase == "gate")
         assert gate_rec.detail["rejected"] is True
-        assert _phases(events) == ["plan", "retrieve", "gate"]
+        assert _phases(events) == ["plan", "resolve", "retrieve", "gate"]
         assert result.outcome_kind == "no_match"
         # The rejection short-circuits before synthesis.
         assert llm_client.synthesiser_calls == 0
@@ -412,10 +432,11 @@ class TestSynthesiseAndRefineDetail:
         events: list = []
         core.answer("a query", on_event=events.append)
         phases = _phases(events)
-        # plan, retrieve, gate (default-on), synthesise (exploratory),
+        # plan, resolve, retrieve, gate (default-on), synthesise (exploratory),
         # refine (pass 1), synthesise (final).
         assert phases == [
             "plan",
+            "resolve",
             "retrieve",
             "gate",
             "synthesise",
@@ -493,7 +514,11 @@ class TestClarifyAndNoMatchTrace:
         events: list = []
         result = core.answer("nothing matches", on_event=events.append)
         assert result.outcome_kind == "no_match"
-        assert tuple(p.phase for p in result.stats.trace.phases) == ("plan", "retrieve")
+        assert tuple(p.phase for p in result.stats.trace.phases) == (
+            "plan",
+            "resolve",
+            "retrieve",
+        )
 
 
 class TestRetrieveSourcesOnlyTrace:
@@ -511,8 +536,12 @@ class TestRetrieveSourcesOnlyTrace:
         )
         events: list = []
         result = core.retrieve("a query", on_event=events.append)
-        assert _phases(events) == ["plan", "retrieve"]
-        assert tuple(p.phase for p in result.stats.trace.phases) == ("plan", "retrieve")
+        assert _phases(events) == ["plan", "resolve", "retrieve"]
+        assert tuple(p.phase for p in result.stats.trace.phases) == (
+            "plan",
+            "resolve",
+            "retrieve",
+        )
         # Only the planner call is priced (no synthesis in sources-only mode).
         assert result.stats.cost.llm_calls == 1
 

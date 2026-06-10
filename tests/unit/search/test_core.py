@@ -33,6 +33,7 @@ from tests.helpers.factories import (
 )
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     needs_more_response_json,
     planner_response_json,
@@ -336,7 +337,9 @@ class TestEmptyRetrieval:
     def test_empty_retrieval_makes_no_synthesis_call(self) -> None:
         """Empty retrieval even after broadening: only the planner ran."""
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(correspondent="npower"),
+            planner_response=planner_response_json(
+                specs=[_make_spec(correspondent="npower")]
+            ),
             synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
         core = build_search_core(
@@ -402,7 +405,9 @@ class TestEmptyRetrieval:
         """A filtered retrieval that finds nothing is retried broadened; if
         the broadened retrieval finds chunks, synthesis proceeds normally."""
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(correspondent="npower"),
+            planner_response=planner_response_json(
+                specs=[_make_spec(correspondent="npower")]
+            ),
             synthesiser_responses=[
                 answered_response_json("Found after broadening [1].", citations=[1])
             ],

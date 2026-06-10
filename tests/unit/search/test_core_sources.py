@@ -26,6 +26,7 @@ from tests.helpers.factories import make_chunk_hit, make_facet_set, make_search_
 from tests.helpers.factories import make_indexed_document as _indexed
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     planner_response_json,
 )
@@ -332,7 +333,9 @@ class TestUiFilters:
 
     def test_ui_filters_are_passed_to_vector_search(self) -> None:
         llm_client = ScriptedLLMClient(
-            planner_response=planner_response_json(correspondent="npower"),
+            planner_response=planner_response_json(
+                specs=[_make_spec(correspondent="npower")]
+            ),
             synthesiser_responses=[
                 answered_response_json("Answer [1].", citations=[1])
             ],
@@ -353,10 +356,13 @@ class TestUiFilters:
         )
         core.answer("a query", ui_filters=ui_filters)
 
-        # With ui_filters set, free-text resolution is bypassed and the UI
-        # filters reach vector_search unchanged.
+        # The UI filters are the authoritative global constraint: a spec guess
+        # that does not resolve (the empty test taxonomy drops "npower") leaves
+        # the UI's correspondent_id=55 as the only filter reaching vector_search.
+        # resolve_specs intersects per spec, so the object is rebuilt but its
+        # values equal the UI filters exactly.
         passed_filters = store_reader.vector_search.call_args[0][2]
-        assert passed_filters is ui_filters
+        assert passed_filters == ui_filters
 
 
 # ---------------------------------------------------------------------------
