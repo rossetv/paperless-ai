@@ -19,8 +19,22 @@ const PHASES: PhaseRecord[] = [
       degraded: false,
       bailed: false,
       verdicts: [
-        { doc_id: 9823, title: 'Annual statement', keep: true, reason: 'matches' },
-        { doc_id: 4410, title: 'Old letter', keep: false, reason: 'wrong year' },
+        {
+          doc_id: 9823,
+          title: 'Annual statement',
+          keep: true,
+          reason: 'matches',
+          score: 0.91,
+          paperless_url: 'http://paperless/documents/9823/',
+        },
+        {
+          doc_id: 4410,
+          title: 'Old letter',
+          keep: false,
+          reason: 'wrong year',
+          score: 0.15,
+          paperless_url: 'http://paperless/documents/4410/',
+        },
       ],
     },
     tokens: { prompt: 800, completion: 60, reasoning: 0, total: 860 },
@@ -60,12 +74,17 @@ describe('SearchTracePanel', () => {
     expect(screen.getByText('1.2k tok · $0.004')).toBeInTheDocument();
   });
 
-  it('shows the judge per-document rationales', () => {
+  it('shows the judge per-document rationales, scores and keep/drop tags', () => {
     render(<SearchTracePanel phases={PHASES} cost={COST} />);
     expect(screen.getByText('Annual statement')).toBeInTheDocument();
     expect(screen.getByText('matches')).toBeInTheDocument();
     expect(screen.getByText('Old letter')).toBeInTheDocument();
     expect(screen.getByText('wrong year')).toBeInTheDocument();
+    // The judge score prefixes each verdict; keep/drop tags label the outcome.
+    expect(screen.getByText('0.91')).toBeInTheDocument();
+    expect(screen.getByText('0.15')).toBeInTheDocument();
+    expect(screen.getByText('keep')).toBeInTheDocument();
+    expect(screen.getByText('drop')).toBeInTheDocument();
   });
 
   it('starts collapsed', () => {

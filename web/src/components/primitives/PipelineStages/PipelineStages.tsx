@@ -10,12 +10,18 @@ export type PipelineStageState = 'done' | 'active' | 'pending';
  * A single document's keep/drop verdict from the relevance judge, rendered as
  * a sublist under the judge stage. `title` falls back to the doc id when null;
  * `reason` is model-generated text shown as escaped text (never HTML).
+ *
+ * `score` is the judge's 0–1 relevance score (null when the wire omitted it);
+ * `paperlessUrl` is the document's deep link, present so the row can offer a
+ * preview control. Both come from the judge phase's per-document detail.
  */
 export interface StageVerdict {
   docId: number;
   title: string | null;
   keep: boolean;
   reason: string;
+  score: number | null;
+  paperlessUrl: string | null;
 }
 
 /** One stage of the agentic-search pipeline. */
@@ -44,6 +50,15 @@ export interface PipelineStage {
    * the stage. Only the judge stage supplies these.
    */
   verdicts?: StageVerdict[];
+}
+
+/**
+ * Format a 0–1 judge relevance score as a two-decimal string (e.g. 0.87 →
+ * "0.87"). A score outside the expected range is still rendered as-is — the
+ * judge owns the scale; this is a display helper, not a validator.
+ */
+function formatScore(score: number): string {
+  return score.toFixed(2);
 }
 
 export interface PipelineStagesProps {
@@ -114,6 +129,11 @@ export function PipelineStages({
                   />
                   <span className={styles['verdict-text']}>
                     <span className={styles['verdict-title']}>
+                      {verdict.score !== null && (
+                        <span className={styles['verdict-score']}>
+                          {formatScore(verdict.score)}
+                        </span>
+                      )}
                       {verdict.title ?? `Document ${verdict.docId}`}
                     </span>
                     {verdict.reason !== '' && (
@@ -123,7 +143,7 @@ export function PipelineStages({
                     )}
                   </span>
                   <span className={styles['verdict-tag']}>
-                    {verdict.keep ? 'kept' : 'dropped'}
+                    {verdict.keep ? 'keep' : 'drop'}
                   </span>
                 </li>
               ))}
