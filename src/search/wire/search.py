@@ -127,12 +127,30 @@ class SourceDocumentResponse(BaseModel):
     relevance_tier: str
 
 
-class QueryPlanResponse(BaseModel):
-    """The query plan for UI transparency (spec §7.1)."""
+class SpecResponse(BaseModel):
+    """One planned search in the multi-spec plan, for UI transparency (spec §7.1).
 
-    semantic_queries: list[str]
-    keyword_terms: list[str]
-    sub_questions: list[str]
+    Mirrors a :class:`~search.models.PlannedSpec`: the planner's free-text filter
+    *guesses* (correspondent / document_type / tags / date bounds), not the
+    resolved taxonomy ids — resolution happens later in the pipeline. The SPA
+    renders one row per spec in the "How this answer was found" disclosure.
+    """
+
+    mode: str
+    semantic: str | None
+    keywords: list[str]
+    correspondent: str | None
+    document_type: str | None
+    tags: list[str]
+    date_from: str | None
+    date_to: str | None
+    rationale: str
+
+
+class QueryPlanResponse(BaseModel):
+    """The multi-spec query plan for UI transparency (spec §7.1)."""
+
+    specs: list[SpecResponse]
 
 
 class SearchStatsResponse(BaseModel):
@@ -338,9 +356,20 @@ def to_search_response(result: SearchResult) -> SearchResponse:
         for src in result.sources
     ]
     plan = QueryPlanResponse(
-        semantic_queries=list(result.plan.semantic_queries),
-        keyword_terms=list(result.plan.keyword_terms),
-        sub_questions=list(result.plan.sub_questions),
+        specs=[
+            SpecResponse(
+                mode=spec.mode,
+                semantic=spec.semantic,
+                keywords=list(spec.keywords),
+                correspondent=spec.filter_guess.correspondent,
+                document_type=spec.filter_guess.document_type,
+                tags=list(spec.filter_guess.tags),
+                date_from=spec.filter_guess.date_from,
+                date_to=spec.filter_guess.date_to,
+                rationale=spec.rationale,
+            )
+            for spec in result.plan.specs
+        ]
     )
     stats = SearchStatsResponse(
         llm_calls=result.stats.llm_calls,

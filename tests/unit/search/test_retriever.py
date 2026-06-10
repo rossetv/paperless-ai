@@ -12,9 +12,8 @@ Verifies:
 
 The multi-spec behaviours (per-spec filters, cross-spec fusion, the per-document
 chunk cap, top-K document selection) are covered in
-:mod:`test_retriever_multispec`; ``resolve_filters`` / ``resolve_specs`` in
-:mod:`test_retriever_filters` / :mod:`test_resolve_specs` (split for the
-500-line ceiling, §3.1).
+:mod:`test_retriever_multispec`; per-spec filter resolution (``resolve_specs``)
+in :mod:`test_resolve_specs` (split for the 500-line ceiling, §3.1).
 """
 
 from __future__ import annotations

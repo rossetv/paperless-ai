@@ -8,8 +8,7 @@ capped per document and ordered by fused score.
 
 Also exposes ``resolve_specs``, which turns a :class:`~search.models.RetrievalPlan`
 of free-text guesses into resolved ``RetrievalSpec``s (taxonomy ids + validated
-ISO dates), intersecting each with the user's global UI filters, and the older
-single-shape ``resolve_filters`` (retained until its last caller is migrated).
+ISO dates), intersecting each with the user's global UI filters.
 
 Allowed deps: store.reader (SearchFilters, StoreReader), store.models (ChunkHit,
     FacetSet, TaxonomyEntry), search.dates (extract_date_range,
@@ -22,14 +21,13 @@ Forbidden: no sqlite3, no FastAPI, no direct openai calls or imports — the
 
 # rationale: this file exceeds the §3.1 500-line guideline. It hosts two
 # closely-related concerns — turning the planner's free-text guesses into
-# resolved ``RetrievalSpec``s (``resolve_specs`` / ``resolve_filters``) and then
-# executing those specs (``Retriever``) — that share the taxonomy-matching
-# helpers (``_match_name`` / ``_normalise``) and the ``SearchFilters`` shape.
-# Both halves are the read side's "turn intent into ranked chunks" step and are
-# imported as one module by ``search.core``; splitting now would add a re-export
-# edge (forbidden by the project's no-barrel rule) or churn the deferred
-# ``core.py`` import of ``resolve_filters`` for no reader benefit. The length is
-# docstring-heavy (spec cross-references) rather than logic-heavy.
+# resolved ``RetrievalSpec``s (``resolve_specs``) and then executing those specs
+# (``Retriever``) — that share the taxonomy-matching helpers (``_match_name`` /
+# ``_normalise``) and the ``SearchFilters`` shape. Both halves are the read
+# side's "turn intent into ranked chunks" step and are imported as one module by
+# ``search.core``; splitting now would add a re-export edge (forbidden by the
+# project's no-barrel rule) for no reader benefit. The length is docstring-heavy
+# (spec cross-references) rather than logic-heavy.
 """
 
 from __future__ import annotations
@@ -116,81 +114,6 @@ def _match_name(
             return entry.id
 
     return None
-
-
-def resolve_filters(
-    candidates: FilterCandidates,
-    facets: FacetSet,
-    *,
-    ui_filters: SearchFilters | None,
-) -> SearchFilters:
-    """Resolve free-text planner candidates into a SearchFilters instance.
-
-    If ``ui_filters`` is provided, it is returned as-is — UI filters are
-    authoritative and bypass free-text resolution entirely (spec §6.1).
-
-    Otherwise, each non-None candidate is resolved against ``facets``:
-    - Exact name match is tried first.
-    - Normalised (case- and punctuation-folded) match is tried second.
-    - Anything that does NOT resolve to a real taxonomy id is dropped.
-
-    Date candidates (``date_from`` / ``date_to``) pass through unchanged
-    regardless of taxonomy resolution.
-
-    Args:
-        candidates: Free-text filter guesses from the planner.
-        facets: Current taxonomy from ``StoreReader.list_facets()``.
-        ui_filters: User-supplied explicit filters; overrides resolution when set.
-
-    Returns:
-        A SearchFilters instance ready to pass to StoreReader search methods.
-    """
-    # UI filters are authoritative — bypass resolution entirely.
-    if ui_filters is not None:
-        return ui_filters
-
-    # Resolve correspondent.
-    correspondent_id: int | None = None
-    if candidates.correspondent is not None:
-        correspondent_id = _match_name(candidates.correspondent, facets.correspondents)
-        if correspondent_id is None:
-            log.debug(
-                "retriever.filter_candidate_dropped",
-                kind="correspondent",
-                candidate=candidates.correspondent,
-            )
-
-    # Resolve document type.
-    document_type_id: int | None = None
-    if candidates.document_type is not None:
-        document_type_id = _match_name(candidates.document_type, facets.document_types)
-        if document_type_id is None:
-            log.debug(
-                "retriever.filter_candidate_dropped",
-                kind="document_type",
-                candidate=candidates.document_type,
-            )
-
-    # Resolve tags — keep only those that resolve; drop the rest.
-    resolved_tag_ids: list[int] = []
-    for tag_candidate in candidates.tags:
-        tag_id = _match_name(tag_candidate, facets.tags)
-        if tag_id is not None:
-            resolved_tag_ids.append(tag_id)
-        else:
-            log.debug(
-                "retriever.filter_candidate_dropped",
-                kind="tag",
-                candidate=tag_candidate,
-            )
-
-    return SearchFilters(
-        date_from=candidates.date_from,
-        date_to=candidates.date_to,
-        correspondent_id=correspondent_id,
-        document_type_id=document_type_id,
-        tag_ids=tuple(resolved_tag_ids),
-    )
 
 
 # ---------------------------------------------------------------------------

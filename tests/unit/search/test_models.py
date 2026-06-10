@@ -24,7 +24,6 @@ from search.models import (
     NeedsMore,
     PlanOutcome,
     PlannedSpec,
-    QueryPlan,
     RetrievalPlan,
     RetrievalSignal,
     RetrievalSpec,
@@ -35,7 +34,7 @@ from search.models import (
 )
 from store.models import SearchFilters
 from tests.helpers.factories import (
-    make_query_plan,
+    make_retrieval_plan,
     make_search_stats,
     make_source_document,
 )
@@ -85,49 +84,6 @@ class TestFilterCandidates:
         )
         with pytest.raises(Exception):  # FrozenInstanceError
             fc.correspondent = "changed"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# QueryPlan
-# ---------------------------------------------------------------------------
-
-
-class TestQueryPlan:
-    def test_construction_with_all_fields(self) -> None:
-        fc = FilterCandidates(
-            correspondent=None,
-            document_type=None,
-            tags=(),
-            date_from=None,
-            date_to=None,
-        )
-        plan = QueryPlan(
-            semantic_queries=("boiler warranty", "heating system guarantee"),
-            keyword_terms=("boiler", "warranty"),
-            filter_candidates=fc,
-            sub_questions=("When was the boiler installed?",),
-        )
-        assert plan.semantic_queries == ("boiler warranty", "heating system guarantee")
-        assert plan.keyword_terms == ("boiler", "warranty")
-        assert plan.filter_candidates is fc
-        assert plan.sub_questions == ("When was the boiler installed?",)
-
-    def test_is_frozen(self) -> None:
-        fc = FilterCandidates(
-            correspondent=None,
-            document_type=None,
-            tags=(),
-            date_from=None,
-            date_to=None,
-        )
-        plan = QueryPlan(
-            semantic_queries=(),
-            keyword_terms=(),
-            filter_candidates=fc,
-            sub_questions=(),
-        )
-        with pytest.raises(Exception):  # FrozenInstanceError
-            plan.semantic_queries = ("changed",)  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +209,7 @@ class TestSearchStats:
 
 
 class TestSearchResult:
-    """SearchResult composes a SourceDocument, a QueryPlan, and SearchStats.
+    """SearchResult composes a SourceDocument, a RetrievalPlan, and SearchStats.
 
     The composed parts are built via the shared factories (CODE_GUIDELINES
     §11.5) — only SearchResult itself is the shape under test here.
@@ -261,7 +217,7 @@ class TestSearchResult:
 
     def test_construction(self) -> None:
         doc = make_source_document()
-        plan = make_query_plan()
+        plan = make_retrieval_plan()
         stats = SearchStats(llm_calls=1, latency_ms=200, refined=False)
         search_result = SearchResult(
             answer="The boiler warranty expires in 2030.",
@@ -278,7 +234,7 @@ class TestSearchResult:
         search_result = SearchResult(
             answer="answer",
             sources=(make_source_document(),),
-            plan=make_query_plan(),
+            plan=make_retrieval_plan(),
             stats=SearchStats(llm_calls=1, latency_ms=200, refined=False),
         )
         with pytest.raises(Exception):  # FrozenInstanceError
@@ -393,15 +349,15 @@ class TestRetrievalSignal:
 
 
 class TestPlanOutcome:
-    def test_query_plan_is_a_valid_plan_outcome(self) -> None:
-        outcome: PlanOutcome = make_query_plan()
-        assert isinstance(outcome, QueryPlan)
+    def test_retrieval_plan_is_a_valid_plan_outcome(self) -> None:
+        outcome: PlanOutcome = make_retrieval_plan()
+        assert isinstance(outcome, RetrievalPlan)
         assert not isinstance(outcome, ClarifyNeeded)
 
     def test_clarify_needed_is_a_valid_plan_outcome(self) -> None:
         outcome: PlanOutcome = ClarifyNeeded(reason="too vague")
         assert isinstance(outcome, ClarifyNeeded)
-        assert not isinstance(outcome, QueryPlan)
+        assert not isinstance(outcome, RetrievalPlan)
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +370,7 @@ class TestSearchResultOutcomeKind:
         result = SearchResult(
             answer="The answer.",
             sources=(make_source_document(),),
-            plan=make_query_plan(),
+            plan=make_retrieval_plan(),
             stats=make_search_stats(),
         )
         assert result.outcome_kind == "answered"
@@ -423,7 +379,7 @@ class TestSearchResultOutcomeKind:
         result = SearchResult(
             answer="Please clarify your query.",
             sources=(),
-            plan=make_query_plan(),
+            plan=make_retrieval_plan(),
             stats=make_search_stats(),
             outcome_kind="clarify",
         )
@@ -433,7 +389,7 @@ class TestSearchResultOutcomeKind:
         result = SearchResult(
             answer="No documents matched your query.",
             sources=(),
-            plan=make_query_plan(),
+            plan=make_retrieval_plan(),
             stats=make_search_stats(),
             outcome_kind="no_match",
         )
@@ -443,7 +399,7 @@ class TestSearchResultOutcomeKind:
         result = SearchResult(
             answer="answer",
             sources=(),
-            plan=make_query_plan(),
+            plan=make_retrieval_plan(),
             stats=make_search_stats(),
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
