@@ -1,8 +1,7 @@
 """Tests for src/search/refinement.py.
 
-Verifies the contract of the four pure helpers:
-- broaden_plan: drops filter candidates, preserves the rest.
-- adjust_plan: incorporates an adjustment hint, preserves the original content.
+Verifies the contract of the three pure helpers:
+- broaden_plan: clears every spec's filter guess, preserves the rest.
 - merge_chunks: unions two retrieved-chunk rounds, de-duplicating by chunk id.
 - trivial_plan: builds the planner-fallback-shaped plan (RAG-08).
 All return new objects without mutating their inputs.
@@ -10,43 +9,48 @@ All return new objects without mutating their inputs.
 
 from __future__ import annotations
 
-from typing import Any
-
-from search.models import EMPTY_FILTER_CANDIDATES, FilterCandidates, QueryPlan
+from search.models import (
+    EMPTY_FILTER_CANDIDATES,
+    PlannedSpec,
+    RetrievalPlan,
+)
 from search.refinement import (
-    adjust_plan,
     broaden_plan,
     merge_chunks,
     trivial_plan,
 )
 from tests.helpers.factories import (
     make_filter_candidates,
-    make_query_plan,
     make_retrieved_chunk,
 )
 
 
-def _populated_filter_candidates() -> FilterCandidates:
-    """A FilterCandidates with every field set — the broaden_plan input."""
-    return make_filter_candidates(
-        correspondent="npower",
-        document_type="invoice",
-        tags=("electricity",),
-        date_from="2024-01-01",
-        date_to="2024-12-31",
+def _populated_spec(*, semantic: str = "boiler warranty letter") -> PlannedSpec:
+    """A PlannedSpec with a populated filter guess — the broaden_plan input."""
+    return PlannedSpec(
+        mode="semantic",
+        semantic=semantic,
+        keywords=("boiler", "warranty"),
+        filter_guess=make_filter_candidates(
+            correspondent="npower",
+            document_type="invoice",
+            tags=("electricity",),
+            date_from="2024-01-01",
+            date_to="2024-12-31",
+        ),
+        rationale="semantic pass for boiler warranty",
     )
 
 
-def _populated_plan(**overrides: Any) -> QueryPlan:
-    """A QueryPlan with populated queries, keywords, filters, and sub-questions."""
-    fields: dict[str, Any] = {
-        "semantic_queries": ("boiler warranty letter", "heating guarantee"),
-        "keyword_terms": ("boiler", "warranty"),
-        "filter_candidates": _populated_filter_candidates(),
-        "sub_questions": ("When does the boiler warranty expire?",),
-    }
-    fields.update(overrides)
-    return make_query_plan(**fields)
+def _populated_plan() -> RetrievalPlan:
+    """A RetrievalPlan with two populated specs and no clarify."""
+    return RetrievalPlan(
+        specs=(
+            _populated_spec(semantic="boiler warranty letter"),
+            _populated_spec(semantic="heating guarantee"),
+        ),
+        clarify=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -55,115 +59,67 @@ def _populated_plan(**overrides: Any) -> QueryPlan:
 
 
 class TestBroadenPlan:
-    def test_returns_a_new_query_plan_instance(self) -> None:
+    def test_returns_a_new_retrieval_plan_instance(self) -> None:
         original = _populated_plan()
         broadened = broaden_plan(original)
         assert broadened is not original
+        assert isinstance(broadened, RetrievalPlan)
 
     def test_original_plan_is_unchanged(self) -> None:
         original = _populated_plan()
-        original_filters = original.filter_candidates
         broaden_plan(original)
         # frozen dataclass — mutation is structurally impossible, but confirm
-        # the reference still points to the same object with same values.
-        assert original.filter_candidates is original_filters
-        assert original.filter_candidates.correspondent == "npower"
+        # the original spec still carries its filter guess.
+        assert original.specs[0].filter_guess.correspondent == "npower"
 
-    def test_filter_candidates_are_cleared(self) -> None:
+    def test_every_spec_filter_guess_is_cleared(self) -> None:
         broadened = broaden_plan(_populated_plan())
-        fc = broadened.filter_candidates
-        assert fc.correspondent is None
-        assert fc.document_type is None
-        assert fc.tags == ()
-        assert fc.date_from is None
-        assert fc.date_to is None
+        for spec in broadened.specs:
+            assert spec.filter_guess is EMPTY_FILTER_CANDIDATES
+            assert spec.filter_guess.correspondent is None
+            assert spec.filter_guess.document_type is None
+            assert spec.filter_guess.tags == ()
+            assert spec.filter_guess.date_from is None
+            assert spec.filter_guess.date_to is None
 
-    def test_semantic_queries_are_preserved(self) -> None:
+    def test_spec_count_and_order_are_preserved(self) -> None:
         original = _populated_plan()
         broadened = broaden_plan(original)
-        assert broadened.semantic_queries == original.semantic_queries
+        assert len(broadened.specs) == len(original.specs)
 
-    def test_keyword_terms_are_preserved(self) -> None:
+    def test_mode_semantic_keywords_rationale_are_preserved(self) -> None:
         original = _populated_plan()
         broadened = broaden_plan(original)
-        assert broadened.keyword_terms == original.keyword_terms
+        for original_spec, broadened_spec in zip(original.specs, broadened.specs):
+            assert broadened_spec.mode == original_spec.mode
+            assert broadened_spec.semantic == original_spec.semantic
+            assert broadened_spec.keywords == original_spec.keywords
+            assert broadened_spec.rationale == original_spec.rationale
 
-    def test_sub_questions_are_preserved(self) -> None:
-        original = _populated_plan()
+    def test_clarify_is_preserved(self) -> None:
+        original = RetrievalPlan(specs=(_populated_spec(),), clarify=None)
         broadened = broaden_plan(original)
-        assert broadened.sub_questions == original.sub_questions
+        assert broadened.clarify is None
 
     def test_already_empty_filters_stay_empty(self) -> None:
-        original = _populated_plan(filter_candidates=make_filter_candidates())
+        original = RetrievalPlan(
+            specs=(
+                PlannedSpec(
+                    mode="semantic",
+                    semantic="q",
+                    keywords=(),
+                    filter_guess=EMPTY_FILTER_CANDIDATES,
+                    rationale="r",
+                ),
+            ),
+            clarify=None,
+        )
         broadened = broaden_plan(original)
-        fc = broadened.filter_candidates
-        assert fc.correspondent is None
-        assert fc.document_type is None
-        assert fc.tags == ()
+        assert broadened.specs[0].filter_guess is EMPTY_FILTER_CANDIDATES
 
-
-# ---------------------------------------------------------------------------
-# adjust_plan
-# ---------------------------------------------------------------------------
-
-
-class TestAdjustPlan:
-    def test_returns_a_new_query_plan_instance(self) -> None:
-        original = _populated_plan()
-        adjusted = adjust_plan(original, "include documents from 2018–2022")
-        assert adjusted is not original
-
-    def test_original_plan_is_unchanged(self) -> None:
-        original = _populated_plan(
-            semantic_queries=("boiler warranty letter",),
-            keyword_terms=("boiler",),
-        )
-        adjust_plan(original, "broaden to all heating documents")
-        assert original.semantic_queries == ("boiler warranty letter",)
-        assert original.keyword_terms == ("boiler",)
-
-    def test_adjustment_text_appears_in_semantic_queries_or_keyword_terms(
-        self,
-    ) -> None:
-        adjustment = "include documents from 2018 to 2022"
-        adjusted = adjust_plan(_populated_plan(), adjustment)
-        all_search_terms = " ".join(adjusted.semantic_queries + adjusted.keyword_terms)
-        assert adjustment in all_search_terms
-
-    def test_original_semantic_queries_are_preserved(self) -> None:
-        original = _populated_plan(
-            semantic_queries=("boiler warranty letter", "heating guarantee")
-        )
-        adjusted = adjust_plan(original, "broaden to heating appliances generally")
-        for query in original.semantic_queries:
-            assert query in adjusted.semantic_queries
-
-    def test_original_keyword_terms_are_preserved(self) -> None:
-        original = _populated_plan(keyword_terms=("boiler", "warranty"))
-        adjusted = adjust_plan(original, "add gas safety certificate")
-        for term in original.keyword_terms:
-            assert term in adjusted.keyword_terms
-
-    def test_original_sub_questions_are_preserved(self) -> None:
-        original = _populated_plan(
-            sub_questions=("When does the boiler warranty expire?",)
-        )
-        adjusted = adjust_plan(original, "look at earlier documents")
-        assert original.sub_questions == adjusted.sub_questions
-
-    def test_original_filter_candidates_are_preserved(self) -> None:
-        original = _populated_plan()
-        adjusted = adjust_plan(original, "include more document types")
-        assert adjusted.filter_candidates.correspondent == "npower"
-
-    def test_adjusted_plan_has_more_queries_or_terms_than_original(self) -> None:
-        original = _populated_plan(
-            semantic_queries=("boiler warranty",), keyword_terms=("boiler",)
-        )
-        adjusted = adjust_plan(original, "also check heating service records")
-        total_original = len(original.semantic_queries) + len(original.keyword_terms)
-        total_adjusted = len(adjusted.semantic_queries) + len(adjusted.keyword_terms)
-        assert total_adjusted > total_original
+    def test_empty_plan_yields_empty_plan(self) -> None:
+        broadened = broaden_plan(RetrievalPlan(specs=(), clarify=None))
+        assert broadened.specs == ()
 
 
 # ---------------------------------------------------------------------------
@@ -201,17 +157,21 @@ class TestMergeChunks:
 
 
 class TestTrivialPlan:
-    """trivial_plan returns the planner-fallback shape: raw query only (RAG-08)."""
+    """trivial_plan returns one broad semantic spec on the raw query (RAG-08)."""
 
-    def test_sole_semantic_query_is_the_raw_query(self) -> None:
+    def test_sole_spec_is_a_semantic_search_on_the_raw_query(self) -> None:
         plan = trivial_plan("council tax")
-        assert plan.semantic_queries == ("council tax",)
+        assert len(plan.specs) == 1
+        spec = plan.specs[0]
+        assert spec.mode == "semantic"
+        assert spec.semantic == "council tax"
 
-    def test_all_other_fields_are_empty(self) -> None:
-        plan = trivial_plan("council tax")
-        assert plan.keyword_terms == ()
-        assert plan.sub_questions == ()
-        assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
+    def test_spec_has_empty_keywords_and_filters(self) -> None:
+        spec = trivial_plan("council tax").specs[0]
+        assert spec.keywords == ()
+        assert spec.filter_guess == EMPTY_FILTER_CANDIDATES
 
-    def test_returns_a_query_plan(self) -> None:
-        assert isinstance(trivial_plan("x"), QueryPlan)
+    def test_returns_a_retrieval_plan_with_no_clarify(self) -> None:
+        plan = trivial_plan("x")
+        assert isinstance(plan, RetrievalPlan)
+        assert plan.clarify is None

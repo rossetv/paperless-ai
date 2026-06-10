@@ -2,20 +2,17 @@
 
 These pure functions serve the branches of the refinement loop in core.py:
 
-- ``broaden_plan`` — used when filtered retrieval returns nothing: drop the
-  (possibly mis-resolved) filters and retry without them.
-- ``adjust_plan`` — used when the synthesiser returns ``NeedsMore``: fold the
-  adjustment hint into the plan as an additional semantic query so the next
-  retrieval round explores the suggested direction.
+- ``broaden_plan`` — used when filtered retrieval returns nothing: drop every
+  spec's (possibly mis-resolved) filter guess and retry without them.
 - ``merge_chunks`` — used after the refined retrieval round: union the two
   rounds' retrieved chunks so the final synthesise sees both.
 - ``trivial_plan`` — the RAG-08 short-circuit: build the planner-fallback-shaped
   plan in code when a trivial query lets the core skip the planner LLM call.
 
 Every function is pure (no I/O, no LLM calls).  The plan helpers return new
-``QueryPlan`` instances via ``dataclasses.replace``; the frozen-dataclass
-contract means the input is structurally immutable, and they make that
-immutability explicit by always returning a fresh instance.
+``RetrievalPlan`` instances; the frozen-dataclass contract means the input is
+structurally immutable, and they make that immutability explicit by always
+returning a fresh instance.
 
 Depends on: search/models.py only.
 """
@@ -24,11 +21,16 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from search.models import EMPTY_FILTER_CANDIDATES, QueryPlan, RetrievedChunk
+from search.models import (
+    EMPTY_FILTER_CANDIDATES,
+    PlannedSpec,
+    RetrievalPlan,
+    RetrievedChunk,
+)
 
 
-def broaden_plan(plan: QueryPlan) -> QueryPlan:
-    """Return a new QueryPlan with all filter candidates cleared.
+def broaden_plan(plan: RetrievalPlan) -> RetrievalPlan:
+    """Return a new RetrievalPlan with every spec's filter guess cleared.
 
     Used in the empty-retrieval branch: when a filtered search finds nothing,
     the filters may be the problem (e.g. the planner hallucinated a
@@ -36,26 +38,30 @@ def broaden_plan(plan: QueryPlan) -> QueryPlan:
     retrying gives the retriever the best chance of surfacing any relevant
     result.
 
-    The ``semantic_queries``, ``keyword_terms``, and ``sub_questions`` of the
-    original plan are preserved unchanged.
+    Each spec's mode, semantic text, keywords, and rationale are preserved
+    unchanged; only its ``filter_guess`` is reset to
+    :data:`~search.models.EMPTY_FILTER_CANDIDATES`.  The plan's ``clarify`` is
+    carried over verbatim.
 
     Args:
-        plan: The original query plan produced by the planner.
+        plan: The original multi-spec plan produced by the planner.
 
     Returns:
-        A new ``QueryPlan`` with an empty ``FilterCandidates`` and all other
-        fields taken from *plan*.
+        A new ``RetrievalPlan`` whose every spec carries empty filter guesses.
     """
-    return replace(plan, filter_candidates=EMPTY_FILTER_CANDIDATES)
+    broadened_specs = tuple(
+        replace(spec, filter_guess=EMPTY_FILTER_CANDIDATES) for spec in plan.specs
+    )
+    return RetrievalPlan(specs=broadened_specs, clarify=plan.clarify)
 
 
-def trivial_plan(query: str) -> QueryPlan:
+def trivial_plan(query: str) -> RetrievalPlan:
     """Build the planner-fallback-shaped plan for a trivial query (RAG-08).
 
-    Identical in shape to ``planner._fallback_plan``: the raw query is the sole
-    semantic query, every other field empty. Used by the core when the
-    ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` short-circuit fires — retrieval runs
-    vector + FTS on the raw query exactly as it would for the planner's own
+    Identical in shape to ``planner._fallback_plan``: a single broad semantic
+    spec on the raw query with empty filters.  Used by the core when the
+    ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` short-circuit fires — retrieval runs a
+    vector search on the raw query exactly as it would for the planner's own
     fallback, so skipping the planner LLM costs nothing for a query the planner
     would only have restated.
 
@@ -63,40 +69,19 @@ def trivial_plan(query: str) -> QueryPlan:
         query: The raw user search query.
 
     Returns:
-        A frozen ``QueryPlan`` containing only *query* as its semantic query.
+        A frozen ``RetrievalPlan`` containing one broad semantic spec.
     """
-    return QueryPlan(
-        semantic_queries=(query,),
-        keyword_terms=(),
-        filter_candidates=EMPTY_FILTER_CANDIDATES,
-        sub_questions=(),
-    )
-
-
-def adjust_plan(plan: QueryPlan, adjustment: str) -> QueryPlan:
-    """Return a new QueryPlan extended with the synthesiser's adjustment hint.
-
-    Used in the ``NeedsMore`` branch: the synthesiser has seen the retrieved
-    chunks and determined that a different angle is required.  The *adjustment*
-    string (``NeedsMore.adjustment``) is appended as an additional semantic
-    query so the retriever explores that direction on the next pass.
-
-    The original semantic queries and keyword terms are preserved; the
-    adjustment is *added*, never replacing existing content.  Filter candidates
-    and sub-questions are carried over unchanged.
-
-    Args:
-        plan: The original query plan to build upon.
-        adjustment: Free-text hint from the synthesiser describing how the
-            retrieval should change (e.g. "include documents from 2018–2022").
-
-    Returns:
-        A new ``QueryPlan`` with *adjustment* appended to ``semantic_queries``
-        and all other fields taken from *plan*.
-    """
-    return replace(
-        plan,
-        semantic_queries=(*plan.semantic_queries, adjustment),
+    return RetrievalPlan(
+        specs=(
+            PlannedSpec(
+                mode="semantic",
+                semantic=query,
+                keywords=(),
+                filter_guess=EMPTY_FILTER_CANDIDATES,
+                rationale="trivial: broad semantic search",
+            ),
+        ),
+        clarify=None,
     )
 
 
