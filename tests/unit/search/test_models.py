@@ -7,6 +7,7 @@ Verifies:
 - ClarifyNeeded, RetrievalSignal, and PlanOutcome (Task 2 additions) behave
   correctly.
 - SearchResult.outcome_kind defaults to "answered" and accepts explicit values.
+- PlannedSpec, RetrievalSpec, and RetrievalPlan (multi-spec plan dataclasses).
 """
 
 from __future__ import annotations
@@ -22,13 +23,17 @@ from search.models import (
     FilterCandidates,
     NeedsMore,
     PlanOutcome,
+    PlannedSpec,
     QueryPlan,
+    RetrievalPlan,
     RetrievalSignal,
+    RetrievalSpec,
     RetrievedChunk,
     SearchResult,
     SearchStats,
     SourceDocument,
 )
+from store.models import SearchFilters
 from tests.helpers.factories import (
     make_query_plan,
     make_search_stats,
@@ -443,3 +448,214 @@ class TestSearchResultOutcomeKind:
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             result.outcome_kind = "clarify"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# PlannedSpec (multi-spec plan dataclass — Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _make_filter_candidates(
+    *,
+    correspondent: str | None = None,
+    document_type: str | None = None,
+    tags: tuple[str, ...] = (),
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> FilterCandidates:
+    return FilterCandidates(
+        correspondent=correspondent,
+        document_type=document_type,
+        tags=tags,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+def _make_search_filters(
+    *,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    correspondent_id: int | None = None,
+    document_type_id: int | None = None,
+    tag_ids: tuple[int, ...] = (),
+) -> SearchFilters:
+    return SearchFilters(
+        date_from=date_from,
+        date_to=date_to,
+        correspondent_id=correspondent_id,
+        document_type_id=document_type_id,
+        tag_ids=tag_ids,
+    )
+
+
+class TestPlannedSpec:
+    def test_construction_semantic_mode(self) -> None:
+        fc = _make_filter_candidates(correspondent="npower")
+        spec = PlannedSpec(
+            mode="semantic",
+            semantic="electricity bill npower 2024",
+            keywords=(),
+            filter_guess=fc,
+            rationale="User asked about energy bills.",
+        )
+        assert spec.mode == "semantic"
+        assert spec.semantic == "electricity bill npower 2024"
+        assert spec.keywords == ()
+        assert spec.filter_guess is fc
+        assert spec.rationale == "User asked about energy bills."
+
+    def test_construction_keyword_mode(self) -> None:
+        fc = _make_filter_candidates()
+        spec = PlannedSpec(
+            mode="keyword",
+            semantic=None,
+            keywords=("invoice", "2024"),
+            filter_guess=fc,
+            rationale="Exact reference lookup.",
+        )
+        assert spec.mode == "keyword"
+        assert spec.semantic is None
+        assert spec.keywords == ("invoice", "2024")
+
+    def test_is_frozen(self) -> None:
+        spec = PlannedSpec(
+            mode="semantic",
+            semantic="query",
+            keywords=(),
+            filter_guess=_make_filter_candidates(),
+            rationale="r",
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            spec.semantic = "changed"  # type: ignore[misc]
+
+    def test_field_values_round_trip(self) -> None:
+        fc = _make_filter_candidates(tags=("utility", "electricity"))
+        spec = PlannedSpec(
+            mode="keyword",
+            semantic=None,
+            keywords=("npower", "direct debit"),
+            filter_guess=fc,
+            rationale="Keyword pass for exact account reference.",
+        )
+        assert spec.filter_guess.tags == ("utility", "electricity")
+        assert spec.keywords == ("npower", "direct debit")
+        assert spec.rationale == "Keyword pass for exact account reference."
+
+
+# ---------------------------------------------------------------------------
+# RetrievalSpec (resolved, ready-for-store search)
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalSpec:
+    def test_construction(self) -> None:
+        sf = _make_search_filters(correspondent_id=7, tag_ids=(3, 9))
+        spec = RetrievalSpec(
+            mode="semantic",
+            semantic="boiler warranty certificate",
+            keywords=(),
+            filters=sf,
+            rationale="Semantic pass on boiler warranty.",
+        )
+        assert spec.mode == "semantic"
+        assert spec.semantic == "boiler warranty certificate"
+        assert spec.keywords == ()
+        assert spec.filters is sf
+        assert spec.rationale == "Semantic pass on boiler warranty."
+
+    def test_construction_keyword_mode(self) -> None:
+        sf = _make_search_filters()
+        spec = RetrievalSpec(
+            mode="keyword",
+            semantic=None,
+            keywords=("boiler", "warranty"),
+            filters=sf,
+            rationale="FTS pass for boiler + warranty.",
+        )
+        assert spec.mode == "keyword"
+        assert spec.semantic is None
+        assert spec.keywords == ("boiler", "warranty")
+
+    def test_is_frozen(self) -> None:
+        sf = _make_search_filters()
+        spec = RetrievalSpec(
+            mode="semantic",
+            semantic="q",
+            keywords=(),
+            filters=sf,
+            rationale="r",
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            spec.mode = "keyword"  # type: ignore[misc]
+
+    def test_field_values_round_trip(self) -> None:
+        sf = _make_search_filters(
+            date_from="2023-01-01",
+            date_to="2023-12-31",
+            document_type_id=2,
+        )
+        spec = RetrievalSpec(
+            mode="semantic",
+            semantic="insurance renewal",
+            keywords=("renewal",),
+            filters=sf,
+            rationale="Annual insurance renewal lookup.",
+        )
+        assert spec.filters.date_from == "2023-01-01"
+        assert spec.filters.date_to == "2023-12-31"
+        assert spec.filters.document_type_id == 2
+
+
+# ---------------------------------------------------------------------------
+# RetrievalPlan (the planner's structured output)
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalPlan:
+    def test_construction_with_two_specs_and_no_clarify(self) -> None:
+        spec_a = PlannedSpec(
+            mode="semantic",
+            semantic="energy bill npower",
+            keywords=(),
+            filter_guess=_make_filter_candidates(correspondent="npower"),
+            rationale="Semantic pass for energy bills.",
+        )
+        spec_b = PlannedSpec(
+            mode="keyword",
+            semantic=None,
+            keywords=("npower", "direct debit"),
+            filter_guess=_make_filter_candidates(),
+            rationale="Keyword pass for exact reference.",
+        )
+        plan = RetrievalPlan(specs=(spec_a, spec_b), clarify=None)
+        assert len(plan.specs) == 2
+        assert plan.specs[0] is spec_a
+        assert plan.specs[1] is spec_b
+        assert plan.clarify is None
+
+    def test_clarify_defaults_to_none(self) -> None:
+        plan = RetrievalPlan(specs=())
+        assert plan.clarify is None
+
+    def test_construction_with_clarify_signal(self) -> None:
+        cn = ClarifyNeeded(reason="Query is too vague.")
+        plan = RetrievalPlan(specs=(), clarify=cn)
+        assert plan.clarify is cn
+        assert plan.specs == ()
+
+    def test_is_frozen(self) -> None:
+        plan = RetrievalPlan(specs=())
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            plan.clarify = ClarifyNeeded(reason="late")  # type: ignore[misc]
+
+    def test_specs_field_round_trips(self) -> None:
+        spec = PlannedSpec(
+            mode="semantic",
+            semantic="passport expiry",
+            keywords=(),
+            filter_guess=_make_filter_candidates(),
+            rationale="Single-spec plan.",
+        )
+        plan = RetrievalPlan(specs=(spec,))
+        assert plan.specs[0].semantic == "passport expiry"
