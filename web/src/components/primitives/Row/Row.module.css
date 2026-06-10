@@ -27,6 +27,15 @@
 }
 
 /* ── Left column — label + hint + env tag. ── */
+
+/* Flex row so the reindex pill sits inline beside the label title. */
+.label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
 .label {
   display: block;
   font-family: var(--font-text);
@@ -62,6 +71,20 @@
   align-items: flex-end;
   gap: var(--spacing-6);
   min-width: 0;
+}
+
+/* ── Amber pill warning that saving this setting triggers an index rebuild. ── */
+.reindex-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-2) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-warn-bg);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-status-warn-fg);
+  white-space: nowrap;
 }
 
 /* ── "default" badge shown when a key is on its coded default. ── */
