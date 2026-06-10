@@ -44,12 +44,14 @@ from search.prompts import (
     PLANNER_SYSTEM_PROMPT,
     _planner_response_format,
     build_planner_user_message,
+    build_replan_user_message,
 )
 from search.text import QUERY_LOG_PREFIX_CHARS
 
 if TYPE_CHECKING:
     from common.config import Settings
     from common.llm import LlmCallUsage
+    from search.models import RetrievalSpec
 
 log = structlog.get_logger(__name__)
 
@@ -130,6 +132,77 @@ class QueryPlanner(OpenAIChatMixin):
             },
         ]
 
+        return self._complete_and_parse(query, messages, usage_sink)
+
+    def replan(
+        self,
+        query: str,
+        *,
+        hint: str,
+        prior_specs: tuple[RetrievalSpec, ...],
+        prior_findings: tuple[str, ...],
+        asker: str | None = None,
+        usage_sink: list[LlmCallUsage] | None = None,
+    ) -> RetrievalPlan | ClarifyNeeded:
+        """Re-plan to target the synthesiser's gap hint (Phase 2 refinement).
+
+        Reuses the byte-stable :data:`PLANNER_SYSTEM_PROMPT` and the exact same
+        schema / parse path as :meth:`plan`, but builds a richer user turn via
+        :func:`~search.prompts.build_replan_user_message` that gives the model
+        the gap to close, the specs already tried, and the documents already
+        found, then asks for DIFFERENT specs that target the gap.
+
+        **Fail-open guarantee:** identical to :meth:`plan` — any parse failure,
+        empty / malformed response, or every model failing degrades to the safe
+        broad-semantic fallback plan.  Never raises.
+
+        Args:
+            query: The raw user search query.
+            hint: The synthesiser's adjustment hint — the gap to close.
+            prior_specs: The resolved specs already tried in the first pass,
+                rendered into the user turn so the model avoids repeating them.
+            prior_findings: Titles of the documents already found (may be
+                empty), rendered so the model knows what is already covered.
+            asker: The sanitised asker identity, or None for an anonymous query.
+            usage_sink: Optional list to receive the re-plan call's token usage.
+
+        Returns:
+            A frozen RetrievalPlan or ClarifyNeeded.  Never raises.
+        """
+        today = date.today().isoformat()
+        messages = [
+            {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": build_replan_user_message(
+                    query=query,
+                    today=today,
+                    hint=hint,
+                    prior_specs=prior_specs,
+                    prior_findings=prior_findings,
+                    asker=asker,
+                ),
+            },
+        ]
+        return self._complete_and_parse(query, messages, usage_sink)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _complete_and_parse(
+        self,
+        query: str,
+        messages: list[dict[str, str]],
+        usage_sink: list[LlmCallUsage] | None,
+    ) -> RetrievalPlan | ClarifyNeeded:
+        """Run the model-fallback completion and parse it, shared by plan/replan.
+
+        Both :meth:`plan` and :meth:`replan` differ only in the user message;
+        the model fallback chain, the response format, and the parse path are
+        identical, so they live here once (CODE_GUIDELINES §1.3).  Returns the
+        safe fallback plan when every model failed or returned empty content.
+        """
         raw_content = self._complete_with_model_fallback(
             primary_model=self.settings.SEARCH_PLANNER_MODEL,
             messages=messages,
@@ -143,12 +216,7 @@ class QueryPlanner(OpenAIChatMixin):
             return self._fallback_plan(
                 query, reason="all models failed or returned empty content"
             )
-
         return self._parse_response(query, raw_content)
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _parse_response(self, query: str, raw: str) -> RetrievalPlan | ClarifyNeeded:
         """Parse *raw* into a RetrievalPlan or ClarifyNeeded.
