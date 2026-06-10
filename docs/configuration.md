@@ -91,7 +91,10 @@ set will see no effect — the variable is silently ignored.
 | `LLM_PROVIDER` | AI provider for OCR and classification: `openai` or `ollama` | `openai` | No |
 | `OPENAI_API_KEY` | OpenAI API key. **Required regardless of `LLM_PROVIDER`** — the embedding step (used by the indexer) always uses OpenAI. | — | **Yes** |
 | `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`). Used only when `LLM_PROVIDER=ollama`. | `http://localhost:11434/v1/` | No |
-| `AI_MODELS` | Comma-separated model fallback chain for OCR and classification. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
+| `OCR_MODELS` | Comma-separated model fallback chain for OCR. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
+| `CLASSIFY_MODELS` | Comma-separated model fallback chain for classification. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
+
+> **Deprecated:** `AI_MODELS` is still honoured as an environment-variable fallback for both `OCR_MODELS` and `CLASSIFY_MODELS` when neither new key is set, but it is no longer the canonical key. Migrate to `OCR_MODELS` / `CLASSIFY_MODELS` — the `AI_MODELS` alias will be removed in a future release.
 
 ---
 
