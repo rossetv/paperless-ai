@@ -239,6 +239,17 @@ class Settings:
     """Reasoning effort for the judge (``minimal``/``low``/``medium``/``high``).
     Defaults to ``low`` — a coarse on-topic classification that does not need
     deep reasoning; raise it if the judge bails or filters too aggressively."""
+    SEARCH_JUDGE_KEEP_THRESHOLD: float
+    """Minimum judge score in [0, 1] a document must clear to be kept.
+
+    The judge returns a per-document ``score`` (how strongly the document helps
+    answer the question); the core keeps a document only when the verdict's
+    ``keep`` is true AND its ``score`` is ``>=`` this threshold. The default of
+    ``0.5`` keeps anything the judge rates at least middling while dropping
+    weak-but-not-rejected documents. Raise it to bite harder (precision-first);
+    lower it toward ``0.0`` to keep everything ``keep=true`` regardless of score
+    (recall-first). Clamped to ``[0.0, 1.0]``. A degraded (fail-open) verdict
+    bypasses this floor — a broken judge never drops documents on the score."""
 
     # Fail-fast gate knobs (search fail-fast spec §3)
     SEARCH_GATE_ADEQUACY: bool
@@ -616,6 +627,13 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
         SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
             source, "SEARCH_JUDGE_REASONING_EFFORT", default="low"
+        ),
+        # Clamped to [0.0, 1.0]: a score is a [0, 1] confidence, so a value
+        # outside that range can never be cleared (or is always cleared) — clamp
+        # to the nearest meaningful bound rather than reject and refuse the start.
+        SEARCH_JUDGE_KEEP_THRESHOLD=min(
+            1.0,
+            max(0.0, _get_float_env(source, "SEARCH_JUDGE_KEEP_THRESHOLD", 0.5)),
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),

@@ -361,25 +361,46 @@ def make_relevance_thresholds(
 
 
 def make_judge_candidate(
-    *, document_id: int = 1, snippet: str = "candidate snippet"
+    *,
+    document_id: int = 1,
+    snippet: str = "candidate snippet",
+    title: str | None = None,
+    created: str | None = None,
+    correspondent: str | None = None,
+    document_type: str | None = None,
 ) -> JudgeCandidate:
-    """Build a JudgeCandidate for judge/core tests."""
-    return JudgeCandidate(document_id=document_id, snippet=snippet)
+    """Build a JudgeCandidate for judge/core tests.
+
+    Metadata fields default to ``None`` (the snippet-only judge candidate); a
+    test exercising scope-aware judging passes the relevant metadata field.
+    """
+    return JudgeCandidate(
+        document_id=document_id,
+        snippet=snippet,
+        title=title,
+        created=created,
+        correspondent=correspondent,
+        document_type=document_type,
+    )
 
 
 def make_judge_verdict(
-    *, relevant_document_ids: set[int] | None = None, degraded: bool = False
+    *,
+    relevant_document_ids: set[int] | None = None,
+    degraded: bool = False,
+    score: float = 1.0,
 ) -> JudgeVerdict:
     """Build a JudgeVerdict from a set of kept ids; defaults to keeping document 1.
 
     Constructs one :class:`~search.models.DocVerdict` per kept id (keep=True,
-    empty reason). Tests that care about per-document verdict details should
-    build :class:`~search.models.JudgeVerdict` directly.
+    full-confidence *score*, empty reason). Tests that care about per-document
+    verdict details should build :class:`~search.models.JudgeVerdict` directly.
     """
     ids = frozenset(relevant_document_ids if relevant_document_ids is not None else {1})
     return JudgeVerdict(
         verdicts=tuple(
-            DocVerdict(document_id=i, keep=True, reason="") for i in sorted(ids)
+            DocVerdict(document_id=i, keep=True, reason="", score=score)
+            for i in sorted(ids)
         ),
         degraded=degraded,
     )
@@ -454,6 +475,10 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_GATE_JUDGE": False,
         "SEARCH_JUDGE_MODEL": "gpt-5.4-mini",
         "SEARCH_JUDGE_REASONING_EFFORT": "low",
+        # Scored-judge keep floor. A MagicMock auto-attribute would be a truthy
+        # mock, not a float, and break the score comparison in _judge_and_filter;
+        # pin to the production default (0.5) so judge tests get a real number.
+        "SEARCH_JUDGE_KEEP_THRESHOLD": 0.5,
         # Rationales ON mirrors the production default; tests that want lean
         # output (no reason strings) can override with SEARCH_JUDGE_RATIONALES=False.
         "SEARCH_JUDGE_RATIONALES": True,

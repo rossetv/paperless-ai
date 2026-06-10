@@ -153,26 +153,45 @@ def needs_more_response_json(adjustment: str) -> str:
 
 
 def judge_response_json(
-    relevant_document_ids: list[int],
+    relevant_document_ids: list[int] | None = None,
     dropped_document_ids: list[int] | None = None,
+    *,
+    verdicts: list[dict[str, object]] | None = None,
+    kept_score: float = 0.9,
+    dropped_score: float = 0.1,
 ) -> str:
     """Return a well-formed relevance-judge JSON response (per-document verdicts).
 
-    Each id in *relevant_document_ids* produces a ``keep: true`` verdict. Each
-    id in *dropped_document_ids* (optional) produces an explicit ``keep: false``
-    verdict. Callers that need explicit drop verdicts (so the new judge does not
-    default-keep omitted ids) should pass both lists.
+    Two shapes, kept backward-friendly:
+
+    * **Explicit verdicts.** Pass ``verdicts=[{"document_id": .., "keep": ..,
+      "reason": .., "score": ..}]`` for per-document control of every field.
+      Each dict is emitted verbatim, so a test can omit ``score`` to exercise
+      the judge's missing-score default.
+    * **Id lists (the default).** Each id in *relevant_document_ids* produces a
+      ``keep: true`` verdict scored *kept_score* (default ``0.9`` — above the
+      default keep threshold). Each id in *dropped_document_ids* produces an
+      explicit ``keep: false`` verdict scored *dropped_score* (default ``0.1``).
+      Callers needing explicit drops (so the judge does not default-keep omitted
+      ids) pass both lists.
     """
-    verdicts = [
-        {"document_id": doc_id, "keep": True, "reason": ""}
-        for doc_id in relevant_document_ids
+    if verdicts is not None:
+        return json.dumps({"verdicts": verdicts})
+    built = [
+        {"document_id": doc_id, "keep": True, "reason": "", "score": kept_score}
+        for doc_id in (relevant_document_ids or [])
     ]
     if dropped_document_ids:
-        verdicts += [
-            {"document_id": doc_id, "keep": False, "reason": "not relevant"}
+        built += [
+            {
+                "document_id": doc_id,
+                "keep": False,
+                "reason": "not relevant",
+                "score": dropped_score,
+            }
             for doc_id in dropped_document_ids
         ]
-    return json.dumps({"verdicts": verdicts})
+    return json.dumps({"verdicts": built})
 
 
 class ScriptedLLMClient:

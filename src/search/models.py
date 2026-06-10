@@ -330,24 +330,51 @@ PlanOutcome = RetrievalPlan | ClarifyNeeded
 
 @dataclass(frozen=True, slots=True)
 class JudgeCandidate:
-    """One document offered to the relevance judge: its id and a best-chunk snippet."""
+    """One document offered to the relevance judge: its metadata and a snippet.
+
+    The judge sees each document's metadata — title, created date, correspondent
+    name, and type — alongside the best-chunk snippet, so it can judge relevance
+    to the asked PERIOD/ENTITY rather than to the snippet text alone. Every
+    metadata field is optional: a document with no indexed title, date,
+    correspondent, or type carries ``None`` and is rendered without that line.
+
+    Attributes:
+        document_id: The Paperless document id.
+        snippet: A representative best-chunk text excerpt.
+        title: Indexed document title, or None.
+        created: Document creation date (UTC ISO-8601), or None.
+        correspondent: Resolved correspondent display name, or None.
+        document_type: Resolved document-type display name, or None.
+    """
 
     document_id: int
     snippet: str
+    title: str | None = None
+    created: str | None = None
+    correspondent: str | None = None
+    document_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class DocVerdict:
-    """The judge's per-document verdict: keep/drop + a one-line reason.
+    """The judge's per-document verdict: keep/drop, a reason, and a score.
 
     ``reason`` is empty when SEARCH_JUDGE_RATIONALES is off, or a short
     (length-capped) justification when on. It is model-generated text, rendered
     as escaped text on the client.
+
+    ``score`` is the judge's confidence in [0, 1] that the document helps answer
+    the question — higher is stronger. The core keeps a document only when
+    ``keep`` is true AND ``score`` clears ``SEARCH_JUDGE_KEEP_THRESHOLD``, so a
+    kept-but-weak verdict is still dropped. A fail-open (degraded) verdict
+    carries a full-confidence score so the document is never dropped on the
+    threshold by a broken judge.
     """
 
     document_id: int
     keep: bool
     reason: str
+    score: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

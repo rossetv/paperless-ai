@@ -49,7 +49,15 @@ def test_judge_verdict_defaults_not_degraded() -> None:
 def test_judge_system_prompt_is_recall_biased_and_routable() -> None:
     # Unique routing phrase for the scripted LLM client, plus the recall bias.
     assert "document-relevance judge" in JUDGE_SYSTEM_PROMPT
-    assert "When unsure" in JUDGE_SYSTEM_PROMPT
+    assert "Bias to keep when unsure" in JUDGE_SYSTEM_PROMPT
+
+
+def test_judge_system_prompt_is_scope_aware_and_scored() -> None:
+    # The judge judges whether a document INFORMS the asked period/entity, not
+    # whether its date falls inside a range, and returns a per-document score.
+    assert "INFORMS the question's period/entity" in JUDGE_SYSTEM_PROMPT
+    assert "metadata (title, date, correspondent, type)" in JUDGE_SYSTEM_PROMPT
+    assert "`score` in [0, 1]" in JUDGE_SYSTEM_PROMPT
 
 
 def test_judge_user_message_fences_untrusted_candidates() -> None:
@@ -240,6 +248,54 @@ def test_judge_omitted_candidate_defaults_to_keep(judge_with_response) -> None:
     v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
     assert 2 in v.relevant_document_ids
     assert v.degraded is False
+
+
+def test_judge_parses_per_document_score(judge_with_response) -> None:
+    judge = judge_with_response(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": true, "reason": "", "score": 0.8},'
+        '{"document_id": 2, "keep": false, "reason": "", "score": 0.1}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    scores = {dv.document_id: dv.score for dv in v.verdicts}
+    assert scores == {1: 0.8, 2: 0.1}
+
+
+def test_judge_missing_score_defaults_to_zero(judge_with_response) -> None:
+    # The model omits "score" → defaults to 0.0 (no positive confidence).
+    judge = judge_with_response(
+        '{"verdicts": [{"document_id": 1, "keep": true, "reason": ""}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a")])
+    assert v.verdicts[0].score == 0.0
+
+
+def test_judge_non_numeric_score_defaults_to_zero(judge_with_response) -> None:
+    judge = judge_with_response(
+        '{"verdicts": [{"document_id": 1, "keep": true, "reason": "", "score": "high"}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a")])
+    assert v.verdicts[0].score == 0.0
+
+
+def test_judge_out_of_range_score_is_clamped(judge_with_response) -> None:
+    judge = judge_with_response(
+        '{"verdicts": ['
+        '{"document_id": 1, "keep": true, "reason": "", "score": 1.7},'
+        '{"document_id": 2, "keep": true, "reason": "", "score": -0.5}]}'
+    )
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    scores = {dv.document_id: dv.score for dv in v.verdicts}
+    assert scores == {1: 1.0, 2: 0.0}
+
+
+def test_judge_fail_open_scores_full_confidence(judge_with_response) -> None:
+    # A degraded (unparseable) verdict keeps all at score 1.0 so the core's
+    # keep-threshold can never drop a document a broken judge could not score.
+    judge = judge_with_response("not json")
+    v = judge.judge("q", [JudgeCandidate(1, "a"), JudgeCandidate(2, "b")])
+    assert v.degraded is True
+    assert all(dv.score == 1.0 for dv in v.verdicts)
 
 
 def test_judge_usage_sink_receives_token_record(judge_with_response) -> None:
