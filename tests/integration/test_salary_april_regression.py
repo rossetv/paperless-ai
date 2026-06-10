@@ -50,9 +50,9 @@ from tests.integration.conftest import (
 _AXIS = _AXIS_SALARY
 
 # Document ids for the three seeded payslips.
-_DOC_APRIL = 750     # "eBay Payslip ... 04/2025", created 2025-04-25
-_DOC_FEB = 1482      # "Rosset Payslip 02/2025",   created 2025-02-05
-_DOC_JAN = 1483      # "Rosset Payslip 01/2025",   created 2025-01-05
+_DOC_APRIL = 750  # "eBay Payslip ... 04/2025", created 2025-04-25
+_DOC_FEB = 1482  # "Rosset Payslip 02/2025",   created 2025-02-05
+_DOC_JAN = 1483  # "Rosset Payslip 01/2025",   created 2025-01-05
 
 
 def _seed_payslip(
