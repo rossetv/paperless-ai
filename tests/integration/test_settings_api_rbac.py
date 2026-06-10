@@ -2,8 +2,9 @@
 
 Covers POST /api/settings/test-connection against a mocked Paperless
 count_documents call (success with a document count, bad token, unreachable
-host), and the RBAC gates on all three Settings endpoints — a member is 403,
-an unauthenticated caller is 401.
+host), the new per-service probes (openai, ollama), backward-compatibility of
+omitting ``service``, and the RBAC gates on all three Settings endpoints — a
+member is 403, an unauthenticated caller is 401.
 """
 
 from __future__ import annotations
@@ -100,6 +101,144 @@ def test_test_connection_reports_an_unreachable_host(tmp_path) -> None:
         body = response.json()
         assert body["ok"] is False
         assert "reach" in body["detail"].lower()
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_paperless_is_default_when_service_omitted(tmp_path) -> None:
+    """Omitting ``service`` still probes Paperless (back-compat)."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes.PaperlessClient.count_documents",
+            return_value=99,
+        ):
+            response = client.post(
+                "/api/settings/test-connection",
+                # No ``service`` key — must default to paperless.
+                json={"paperless_url": "http://x", "paperless_token": "tok"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["document_count"] == 99
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_openai_success(tmp_path) -> None:
+    """service=openai with a valid key returns ok=True, document_count=0."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_openai",
+            return_value=None,  # success — no exception
+        ):
+            response = client.post(
+                "/api/settings/test-connection",
+                json={
+                    "paperless_url": "",
+                    "paperless_token": "",
+                    "service": "openai",
+                    "openai_api_key": "sk-test",
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["document_count"] == 0
+        assert "connected" in body["detail"].lower()
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_openai_bad_key(tmp_path) -> None:
+    """service=openai with a bad key returns ok=False, never 500."""
+    import openai as openai_sdk
+
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_openai",
+            side_effect=openai_sdk.AuthenticationError(
+                "invalid api key",
+                response=httpx.Response(
+                    401, request=httpx.Request("GET", "https://api.openai.com")
+                ),
+                body={"error": {"message": "invalid api key", "type": "invalid_api_key"}},
+            ),
+        ):
+            response = client.post(
+                "/api/settings/test-connection",
+                json={
+                    "paperless_url": "",
+                    "paperless_token": "",
+                    "service": "openai",
+                    "openai_api_key": "bad-key",
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert body["document_count"] == 0
+        assert body["detail"]
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_ollama_success(tmp_path) -> None:
+    """service=ollama with a reachable base URL returns ok=True."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_ollama",
+            return_value=None,  # success — no exception
+        ):
+            response = client.post(
+                "/api/settings/test-connection",
+                json={
+                    "paperless_url": "",
+                    "paperless_token": "",
+                    "service": "ollama",
+                    "ollama_base_url": "http://localhost:11434",
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is True
+        assert body["document_count"] == 0
+        assert "connected" in body["detail"].lower()
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_ollama_unreachable(tmp_path) -> None:
+    """service=ollama with an unreachable host returns ok=False, never 500."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_ollama",
+            side_effect=httpx.ConnectError("connection refused"),
+        ):
+            response = client.post(
+                "/api/settings/test-connection",
+                json={
+                    "paperless_url": "",
+                    "paperless_token": "",
+                    "service": "ollama",
+                    "ollama_base_url": "http://localhost:11434",
+                },
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert body["document_count"] == 0
+        assert body["detail"]
     finally:
         store_reader.close()
         app_db.close()

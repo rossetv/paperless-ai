@@ -11,6 +11,8 @@ Forbidden: FastAPI, sqlite3, any I/O.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 # Bounds on the ``PUT /api/settings`` body. These are deliberately generous
@@ -113,9 +115,12 @@ class TestConnectionRequest(BaseModel):
     """Body of ``POST /api/settings/test-connection``.
 
     The Settings screen sends the *live form values* so an admin can verify a
-    Paperless connection before saving it.
+    connection before saving it.
 
     Attributes:
+        service: Which service to probe.  ``"paperless"`` is the default and
+            the only service that was supported before this field was added —
+            omitting it preserves existing behaviour.
         paperless_url: The Paperless base URL to probe. An empty string means
             "use the stored URL". Must be ``http://`` or ``https://`` when
             non-empty; user-info in the URL (``http://user:pw@host``) is
@@ -124,10 +129,17 @@ class TestConnectionRequest(BaseModel):
         paperless_token: The Paperless API token to probe with. An empty
             string means "use the stored token" — the Settings screen sends
             an empty token when the user has not replaced the masked one.
+        openai_api_key: The OpenAI API key to probe with when
+            ``service="openai"``. An empty string means "use the stored key".
+        ollama_base_url: The Ollama base URL to probe when
+            ``service="ollama"``. An empty string means "use the stored URL".
     """
 
-    paperless_url: str = Field(max_length=MAX_PAPERLESS_URL_LENGTH)
-    paperless_token: str = Field(max_length=MAX_SETTINGS_VALUE_LENGTH)
+    service: Literal["paperless", "openai", "ollama"] = "paperless"
+    paperless_url: str = Field(default="", max_length=MAX_PAPERLESS_URL_LENGTH)
+    paperless_token: str = Field(default="", max_length=MAX_SETTINGS_VALUE_LENGTH)
+    openai_api_key: str = Field(default="", max_length=MAX_SETTINGS_VALUE_LENGTH)
+    ollama_base_url: str = Field(default="", max_length=MAX_PAPERLESS_URL_LENGTH)
 
     @field_validator("paperless_url")
     @classmethod
@@ -158,17 +170,37 @@ class TestConnectionRequest(BaseModel):
             raise ValueError("paperless_url must include a host")
         return value
 
+    @field_validator("ollama_base_url")
+    @classmethod
+    def _check_ollama_base_url(cls, value: str) -> str:
+        """Require ``http(s)://`` and reject userinfo on a non-empty Ollama URL.
+
+        Mirrors the same checks applied to ``paperless_url``: an empty string
+        is the "use the stored value" sentinel and passes through untouched.
+        """
+        if not value:
+            return value
+        if not (value.startswith("http://") or value.startswith("https://")):
+            raise ValueError("ollama_base_url must start with http:// or https://")
+        from urllib.parse import urlparse  # noqa: PLC0415
+
+        parsed = urlparse(value)
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError("ollama_base_url must not contain credentials")
+        if not parsed.hostname:
+            raise ValueError("ollama_base_url must include a host")
+        return value
+
 
 class TestConnectionResponse(BaseModel):
     """Body of ``POST /api/settings/test-connection`` — the round-trip result.
 
     Attributes:
-        ok: Whether the Paperless API responded successfully to an
-            authenticated request.
-        document_count: The document count Paperless reported on success; 0
-            when the probe failed.
+        ok: Whether the probed service responded successfully.
+        document_count: The document count reported on a successful Paperless
+            probe; 0 for OpenAI/Ollama probes and on any failure.
         detail: A human-readable outcome — a success note or the failure
-            reason (an HTTP status, a connection error).
+            reason (an HTTP status, a connection error, an auth failure).
     """
 
     ok: bool

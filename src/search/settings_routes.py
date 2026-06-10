@@ -32,6 +32,7 @@ import os
 import sqlite3
 
 import httpx
+import openai
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -280,17 +281,58 @@ def _put_settings(
     return _read_settings(app_db, reveal=False, reindex_triggered=reindex_triggered)
 
 
+def _probe_openai(probe_settings: Settings) -> None:
+    """Verify that the OpenAI API key in *probe_settings* is accepted.
+
+    Builds a throwaway :class:`openai.OpenAI` client (mirroring the
+    construction in :mod:`common.library_setup`) and calls ``models.list()``
+    — the cheapest authenticated endpoint. Raises an :exc:`openai.APIError`
+    subclass on any authentication or connectivity failure.
+
+    Args:
+        probe_settings: A fully-built :class:`Settings` instance whose
+            ``OPENAI_API_KEY`` is the key under test.
+    """
+    client = openai.OpenAI(
+        api_key=probe_settings.OPENAI_API_KEY,
+        http_client=httpx.Client(trust_env=False),
+    )
+    try:
+        client.models.list()
+    finally:
+        client.close()
+
+
+def _probe_ollama(probe_settings: Settings) -> None:
+    """Verify that the Ollama daemon at *probe_settings.OLLAMA_BASE_URL* is reachable.
+
+    Issues a GET to the base URL; any 2xx response is "up". Raises
+    :exc:`httpx.HTTPError` or :exc:`OSError` on failure (matching the
+    transport-layer exceptions already handled for the Paperless probe).
+
+    Args:
+        probe_settings: A fully-built :class:`Settings` instance whose
+            ``OLLAMA_BASE_URL`` is the endpoint under test.
+    """
+    base_url = probe_settings.OLLAMA_BASE_URL or ""
+    with httpx.Client(trust_env=False) as client:
+        client.get(base_url, timeout=10).raise_for_status()
+
+
 def _test_connection(
     body: TestConnectionRequest, app_db: sqlite3.Connection
 ) -> TestConnectionResponse:
-    """Round-trip the Paperless API with the stored or supplied credentials.
+    """Probe one of three services with the stored or supplied credentials.
 
     Builds a throwaway :class:`Settings` from the current configuration with
-    the request's URL/token applied — an empty string for either falls back
-    to the stored value (the Settings screen sends an empty token when the
-    user has not replaced the masked one). A 200 is success and reports the
-    document count; any HTTP error or transport failure is a clean
-    ``ok=False`` outcome — this endpoint never 500s on a bad token.
+    any non-empty request overrides applied, then delegates to the appropriate
+    probe helper based on ``body.service``.  A 200 is always returned — any
+    failure is a clean ``ok=False`` outcome; this endpoint never 500s.
+
+    Service dispatch:
+    - ``"paperless"`` (default) — unchanged path, populates ``document_count``.
+    - ``"openai"`` — calls :func:`_probe_openai`; ``document_count`` is 0.
+    - ``"ollama"`` — calls :func:`_probe_ollama`; ``document_count`` is 0.
     """
     config_table = config_store.get_all(app_db)
     merged: dict[str, str] = dict(os.environ)
@@ -300,10 +342,13 @@ def _test_connection(
         merged["PAPERLESS_URL"] = body.paperless_url
     if body.paperless_token:
         merged["PAPERLESS_TOKEN"] = body.paperless_token
-    # build_settings requires every SECRET_KEY to be non-empty. For the
-    # test-connection probe we only care about the Paperless credentials; inject
-    # sentinels for any other required keys so build_settings can parse the
-    # mapping without failing on an unrelated missing key.
+    if body.openai_api_key:
+        merged["OPENAI_API_KEY"] = body.openai_api_key
+    if body.ollama_base_url:
+        merged["OLLAMA_BASE_URL"] = body.ollama_base_url
+    # build_settings requires every SECRET_KEY to be non-empty. Inject
+    # sentinels for any missing required keys so validation passes regardless
+    # of which service is being probed.
     _SENTINEL = "__test_connection_placeholder__"
     for req in SECRET_KEYS:
         merged.setdefault(req, _SENTINEL)
@@ -314,6 +359,29 @@ def _test_connection(
         # The override or stored config is itself invalid (e.g. no token).
         return TestConnectionResponse(ok=False, document_count=0, detail=str(exc))
 
+    if body.service == "openai":
+        try:
+            _probe_openai(probe_settings)
+        except Exception as exc:
+            return TestConnectionResponse(
+                ok=False, document_count=0, detail=str(exc)
+            )
+        return TestConnectionResponse(
+            ok=True, document_count=0, detail="Connected to OpenAI successfully."
+        )
+
+    if body.service == "ollama":
+        try:
+            _probe_ollama(probe_settings)
+        except Exception as exc:
+            return TestConnectionResponse(
+                ok=False, document_count=0, detail=str(exc)
+            )
+        return TestConnectionResponse(
+            ok=True, document_count=0, detail="Connected to Ollama successfully."
+        )
+
+    # Default: paperless
     client = PaperlessClient(probe_settings)
     try:
         count = client.count_documents()
