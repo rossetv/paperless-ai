@@ -302,11 +302,11 @@ describe('SettingsScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows a re-index note on a re-index key', async () => {
+  it('shows a reindex pill on a re-index key', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    const notes = await screen.findAllByText(/requires re-indexing all documents/i);
-    expect(notes.length).toBeGreaterThan(0);
+    const pills = await screen.findAllByText(/rebuilds the index on save/i);
+    expect(pills.length).toBeGreaterThan(0);
   });
 
   it('shows the coded default value in the control when source is default', async () => {

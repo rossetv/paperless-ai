@@ -68,6 +68,70 @@ const SECTION: SectionModel = {
   ],
 };
 
+// ── Section with advanced fields ─────────────────────────────────────────────
+
+const SECTION_WITH_ADVANCED: SectionModel = {
+  id: 'advanced-demo',
+  title: 'Advanced Demo',
+  subtitle: 'Tests advanced disclosure.',
+  groups: [
+    {
+      id: 'group-adv',
+      title: 'Group with Advanced',
+      fields: [
+        {
+          key: 'MAIN_FIELD',
+          label: 'Main field',
+          hint: 'A primary field',
+          control: { kind: 'text' },
+        },
+      ],
+      advanced: [
+        {
+          key: 'ADV_FIELD',
+          label: 'Advanced field',
+          hint: 'An advanced field',
+          control: { kind: 'text' },
+        },
+      ],
+    },
+  ],
+};
+
+// ── Section with model+reasoning composite ───────────────────────────────────
+
+const SECTION_WITH_REASONING: SectionModel = {
+  id: 'reasoning-demo',
+  title: 'Reasoning Demo',
+  subtitle: 'Tests composite model+reasoning.',
+  groups: [
+    {
+      id: 'group-model',
+      title: 'Model Group',
+      fields: [
+        {
+          key: 'MODEL_KEY',
+          label: 'Model',
+          hint: 'Which model to use',
+          control: {
+            kind: 'select',
+            options: [
+              { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
+              { value: 'gpt-5.4', label: 'gpt-5.4' },
+            ],
+            reasoningKey: 'MODEL_REASONING_KEY',
+            reasoningOptions: [
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+};
+
 const VALUES = {
   TEXT_KEY: 'hello',
   NUM_KEY: 30,
@@ -171,14 +235,14 @@ describe('SettingsSection', () => {
     expect(onChange).toHaveBeenCalledWith('SECRET_KEY', 'z');
   });
 
-  it('shows a re-index note for a key in reindexKeys', () => {
+  it('shows the reindex pill for a key in reindexKeys', () => {
     renderSection({ reindexKeys: new Set(['NUM_KEY']) });
-    expect(screen.getByText(/requires re-indexing all documents/i)).toBeInTheDocument();
+    expect(screen.getByText(/rebuilds the index on save/i)).toBeInTheDocument();
   });
 
-  it('shows no re-index note when no key needs one', () => {
+  it('shows no reindex pill when no key needs one', () => {
     renderSection();
-    expect(screen.queryByText(/requires re-indexing/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/rebuilds the index on save/i)).not.toBeInTheDocument();
   });
 
   it('renders groupActions in the matching card header', () => {
@@ -188,5 +252,84 @@ describe('SettingsSection', () => {
       },
     });
     expect(screen.getByRole('button', { name: 'Test connection' })).toBeInTheDocument();
+  });
+
+  // ── Advanced disclosure ───────────────────────────────────────────────────
+
+  describe('advanced disclosure', () => {
+    function renderAdvanced(overrides: Partial<Parameters<typeof SettingsSection>[0]> = {}) {
+      return render(
+        <SettingsSection
+          section={SECTION_WITH_ADVANCED}
+          values={{ MAIN_FIELD: 'main-value', ADV_FIELD: 'adv-value' }}
+          onChange={() => {}}
+          {...overrides}
+        />,
+      );
+    }
+
+    it('renders the primary field outside the disclosure', () => {
+      renderAdvanced();
+      expect(screen.getByDisplayValue('main-value')).toBeInTheDocument();
+    });
+
+    it('renders a <details> element for the advanced section', () => {
+      const { container } = renderAdvanced();
+      expect(container.querySelector('details')).not.toBeNull();
+    });
+
+    it('renders the Advanced disclosure summary with the field count', () => {
+      renderAdvanced();
+      // The disclosure summary text is "Advanced · 1".
+      expect(screen.getByText(/Advanced · \d/)).toBeInTheDocument();
+    });
+
+    it('starts collapsed (no open attribute on details)', () => {
+      const { container } = renderAdvanced();
+      const details = container.querySelector('details');
+      expect(details).not.toHaveAttribute('open');
+    });
+
+    it('passes requiresReindex to advanced field rows too', () => {
+      renderAdvanced({ reindexKeys: new Set(['ADV_FIELD']) });
+      expect(screen.getByText(/rebuilds the index on save/i)).toBeInTheDocument();
+    });
+  });
+
+  // ── Composite model+reasoning ─────────────────────────────────────────────
+
+  describe('model+reasoning composite', () => {
+    function renderReasoning(overrides: Partial<Parameters<typeof SettingsSection>[0]> = {}) {
+      return render(
+        <SettingsSection
+          section={SECTION_WITH_REASONING}
+          values={{ MODEL_KEY: 'gpt-5.4-nano', MODEL_REASONING_KEY: 'medium' }}
+          onChange={() => {}}
+          {...overrides}
+        />,
+      );
+    }
+
+    it('renders the model select combobox', () => {
+      renderReasoning();
+      expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
+    });
+
+    it('renders the Reasoning segmented beneath the model select', () => {
+      renderReasoning();
+      expect(screen.getByRole('radiogroup', { name: 'Reasoning' })).toBeInTheDocument();
+    });
+
+    it('reflects the reasoningValue in the segmented', () => {
+      renderReasoning();
+      expect(screen.getByRole('radio', { name: 'Medium' })).toHaveAttribute('aria-checked', 'true');
+    });
+
+    it('fires onChange with the reasoningKey when a reasoning option is chosen', async () => {
+      const onChange = vi.fn();
+      renderReasoning({ onChange });
+      await userEvent.click(screen.getByRole('radio', { name: 'High' }));
+      expect(onChange).toHaveBeenCalledWith('MODEL_REASONING_KEY', 'high');
+    });
   });
 });
