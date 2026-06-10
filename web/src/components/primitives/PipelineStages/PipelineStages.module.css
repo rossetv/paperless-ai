@@ -225,3 +225,9 @@
   background-color: var(--colour-accent-wash);
   color: var(--colour-link);
 }
+
+/* Preview control on a judged document — opens the in-app viewer for that id. */
+.verdict-action {
+  flex-shrink: 0;
+  align-self: flex-start;
+}

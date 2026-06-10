@@ -151,7 +151,11 @@ export function ResultsScreen({
         {/* Reasoning-trace transparency — the folded per-phase trace with
             per-step and total token/dollar cost. Supersedes the old query-plan
             summary: the plan's rewritten query is the trace's first phase. */}
-        <SearchTracePanel phases={trace.phases} cost={cost} />
+        <SearchTracePanel
+          phases={trace.phases}
+          cost={cost}
+          onPreview={onPreview}
+        />
       </Stack>
     </SearchScreenLayout>
   );

@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { PipelineStages } from './PipelineStages';
 import type { PipelineStage } from './PipelineStages';
 
@@ -164,5 +166,61 @@ describe('PipelineStages', () => {
     );
     expect(container.querySelector('[data-keep="true"]')).toBeInTheDocument();
     expect(container.querySelector('[data-keep="false"]')).toBeInTheDocument();
+  });
+
+  it('renders a Preview control per verdict and fires onPreviewDocument with the doc id', async () => {
+    const onPreviewDocument = vi.fn();
+    render(
+      <PipelineStages
+        onPreviewDocument={onPreviewDocument}
+        stages={[
+          {
+            label: 'Judging relevance',
+            detail: '',
+            state: 'done',
+            verdicts: [
+              {
+                docId: 9823,
+                title: 'Annual statement',
+                keep: true,
+                reason: 'matches',
+                score: 0.9,
+                paperlessUrl: 'http://paperless/documents/9823/',
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    const preview = screen.getByRole('button', { name: /preview/i });
+    await userEvent.click(preview);
+    expect(onPreviewDocument).toHaveBeenCalledWith(9823);
+  });
+
+  it('omits the Preview control when no onPreviewDocument handler is given', () => {
+    render(
+      <PipelineStages
+        stages={[
+          {
+            label: 'Judging relevance',
+            detail: '',
+            state: 'done',
+            verdicts: [
+              {
+                docId: 9823,
+                title: 'Annual statement',
+                keep: true,
+                reason: 'matches',
+                score: 0.9,
+                paperlessUrl: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', { name: /preview/i }),
+    ).not.toBeInTheDocument();
   });
 });
