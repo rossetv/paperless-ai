@@ -13,7 +13,7 @@ import {
 } from '../fieldModel';
 import { useUnsavedSettings } from '../useUnsavedSettings';
 import { SettingsSection } from '../SettingsSection/SettingsSection';
-import { TestConnectionAction } from '../TestConnectionAction/TestConnectionAction';
+import { ConnectionsPanel } from '../ConnectionsPanel/ConnectionsPanel';
 import { SaveBar } from '../SaveBar/SaveBar';
 import { Toast } from '../../../components/patterns/Toast/Toast';
 
@@ -100,39 +100,33 @@ function SettingsContent({
     );
   };
 
-  // The masked-token flag: the token is still the server mask while the draft
-  // value equals the baseline value.
-  const tokenIsMasked = draft['PAPERLESS_TOKEN'] === baseline['PAPERLESS_TOKEN'];
-
-  // The group-actions map wires the TestConnectionAction into the Paperless
-  // Endpoint card's headerActions slot.
-  const paperlessGroupActions: Record<string, React.ReactNode> = {
-    endpoint: (
-      <TestConnectionAction
-        url={typeof draft['PAPERLESS_URL'] === 'string' ? draft['PAPERLESS_URL'] : ''}
-        token={typeof draft['PAPERLESS_TOKEN'] === 'string' ? draft['PAPERLESS_TOKEN'] : ''}
-        tokenIsMasked={tokenIsMasked}
-      />
-    ),
-  };
-
   return (
     <>
       <SettingsLayout
         title="Settings"
         subtitle="Configure your Paperless AI deployment. Saved changes apply immediately — daemons hot-load them with no restart."
       >
-        {SETTINGS_SECTIONS.map((section) => (
-          <SettingsSection
-            key={section.id}
-            section={section}
-            values={draft}
-            reindexKeys={reindexKeys}
-            defaultKeys={defaultKeys}
-            onChange={handleChange}
-            {...(section.id === 'paperless' ? { groupActions: paperlessGroupActions } : {})}
-          />
-        ))}
+        {SETTINGS_SECTIONS.map((section) =>
+          section.id === 'connections' ? (
+            <ConnectionsPanel
+              key={section.id}
+              section={section}
+              values={draft}
+              onChange={handleChange}
+              reindexKeys={reindexKeys}
+              defaultKeys={defaultKeys}
+            />
+          ) : (
+            <SettingsSection
+              key={section.id}
+              section={section}
+              values={draft}
+              reindexKeys={reindexKeys}
+              defaultKeys={defaultKeys}
+              onChange={handleChange}
+            />
+          ),
+        )}
       </SettingsLayout>
       <SaveBar
         dirtyCount={changedKeys.length}

@@ -195,7 +195,7 @@ export function ConnectionsPanel({
       map[group.id] = group;
     }
     return map;
-  }, [section.groups]);
+  }, [section]);
 
   const providerGroup = groupById['provider'];
   const paperlessGroup = groupById['paperless'];

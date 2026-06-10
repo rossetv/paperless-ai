@@ -306,15 +306,15 @@ describe('SettingsScreen', () => {
     expect(screen.queryByText(/re-embedding your library/i)).toBeNull();
   });
 
-  it('the Paperless test-connection button is absent until wired to the connections section', async () => {
-    // The groupActions special-case still checks section.id === 'paperless', which
-    // no longer exists. The button is therefore not rendered until a later task
-    // re-wires it to section.id === 'connections'. For now just verify the screen
-    // loads without error.
+  it('renders the Connections section as accordion cards (Paperless-ngx, OpenAI)', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
-    expect(screen.queryByRole('button', { name: /^test$/i })).toBeNull();
+    // The ConnectionsPanel renders accordion cards — each has a Test button.
+    expect(screen.getByRole('button', { name: 'Test Paperless-ngx' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Test OpenAI' })).toBeInTheDocument();
+    // With LLM_PROVIDER=openai, Ollama card should not be present.
+    expect(screen.queryByRole('button', { name: 'Test Ollama' })).toBeNull();
   });
 
   it('shows a reindex pill on a re-index key', async () => {
