@@ -216,10 +216,12 @@ def test_migration_does_not_overwrite_existing_ocr_models(conn) -> None:
 
 
 def test_migration_is_a_noop_when_ai_models_absent(conn) -> None:
-    """When no AI_MODELS row exists the migration does nothing."""
+    """When no AI_MODELS row exists the migration does nothing — config_version
+    must also be unchanged."""
     from appdb.migrations import _migrate_v6
 
     config_store.set_value(conn, "CHUNK_SIZE", "2000")
+    version_before = config_store.get_config_version(conn)
 
     _migrate_v6(conn)
 
@@ -227,6 +229,8 @@ def test_migration_is_a_noop_when_ai_models_absent(conn) -> None:
     assert "OCR_MODELS" not in stored
     assert "CLASSIFY_MODELS" not in stored
     assert stored.get("CHUNK_SIZE") == "2000"
+    # No changes — the hot-load counter must not move.
+    assert config_store.get_config_version(conn) == version_before
 
 
 def test_migration_bumps_config_version(conn) -> None:
@@ -239,3 +243,54 @@ def test_migration_bumps_config_version(conn) -> None:
     _migrate_v6(conn)
 
     assert config_store.get_config_version(conn) > version_before
+
+
+def test_run_migrations_e2e_v5_to_v6_splits_ai_models(tmp_path) -> None:
+    """End-to-end: run_migrations on a v5 DB with AI_MODELS advances to v6,
+    creates OCR_MODELS and CLASSIFY_MODELS with the legacy value, and removes
+    AI_MODELS."""
+    from appdb.migrations import MIGRATIONS, run_migrations
+
+    # Build a DB at schema version 5 by running only the first five migrations.
+    conn = connect(str(tmp_path / "e2e.db"))
+    try:
+        v5_migrations = [(v, fn) for v, fn in MIGRATIONS if v <= 5]
+        for version, migration_fn in v5_migrations:
+            conn.execute("BEGIN")
+            migration_fn(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
+                (str(version),),
+            )
+            conn.commit()
+
+        # Seed an AI_MODELS row as a legacy deployment would have.
+        legacy_value = "gpt-5.4-mini,gpt-5.4"
+        conn.execute(
+            "INSERT INTO config (key, value, updated_at) VALUES (?, ?, '2026-01-01T00:00:00+00:00')",
+            ("AI_MODELS", legacy_value),
+        )
+        conn.commit()
+
+        # Confirm the DB is genuinely at v5 before the run.
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert int(row[0]) == 5
+
+        # Run all migrations — only v6 is pending.
+        run_migrations(conn)
+
+        # schema_version must now be 6.
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+        assert int(row[0]) == 6
+
+        # Both new keys must carry the legacy value; AI_MODELS must be gone.
+        stored = config_store.get_all(conn)
+        assert stored.get("OCR_MODELS") == legacy_value
+        assert stored.get("CLASSIFY_MODELS") == legacy_value
+        assert "AI_MODELS" not in stored
+    finally:
+        conn.close()
