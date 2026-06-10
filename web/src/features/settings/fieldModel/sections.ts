@@ -1,8 +1,13 @@
 /**
- * The nine settings sections, in display order.
+ * The seven settings sections, in pipeline display order.
  *
  * Each section contains one or more named sub-card groups, each group
  * containing an ordered list of field descriptors bound to one config key.
+ * Groups may also carry an `advanced` array rendered inside a collapsed
+ * "Advanced" disclosure beneath the primary fields.
+ *
+ * SelectControl fields may carry `reasoningKey`/`reasoningOptions` to render
+ * a companion reasoning-effort segmented line beneath the model select.
  *
  * Adding or retiring a config key is a change to this file alone — the
  * screen components are generic.
@@ -16,7 +21,7 @@ import type { SettingsSection } from './types';
 // Shared option lists
 // ---------------------------------------------------------------------------
 
-/** A small fixed model-identifier list, reused by the planner/answer selects. */
+/** A small fixed model-identifier list, reused by the planner/answer/judge selects. */
 const MODEL_OPTIONS = [
   { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
   { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
@@ -34,7 +39,7 @@ const EMBEDDING_MODEL_OPTIONS = [
  * OpenAI reasoning-effort tiers (the SDK's `ReasoningEffort` literal). Higher
  * tiers spend more reasoning tokens for better quality; OpenAI-only — the value
  * is ignored when the provider is Ollama. Reused by the OCR, classifier, and
- * search planner/answer reasoning selects.
+ * search planner/answer/judge reasoning selects.
  */
 const REASONING_EFFORT_OPTIONS = [
   { value: 'minimal', label: 'Minimal' },
@@ -48,21 +53,41 @@ const REASONING_EFFORT_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 /**
- * The nine settings sections, in display order.
+ * The seven settings sections, in pipeline display order.
  *
- * The order and section ids match the SettingsSideNav Configuration group.
- * Each section contains one or more named groups (sub-cards). Field order
- * within a group follows the approved mediaman mock.
+ * The order and section ids match the SettingsSideNav Pipeline / Operations
+ * groups. Each section contains one or more named groups (sub-cards). Field
+ * order within a group follows the approved settings-redesign mock.
  */
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  // ── 1. Connections ────────────────────────────────────────────────────────
   {
-    id: 'paperless',
-    title: 'Paperless Connection',
-    subtitle: 'The Paperless-ngx instance your daemons read from and write to.',
+    id: 'connections',
+    title: 'Connections',
+    subtitle: 'External services this app talks to.',
     groups: [
       {
-        id: 'endpoint',
-        title: 'Endpoint',
+        id: 'provider',
+        title: 'AI provider',
+        subtitle: 'OpenAI is hosted; Ollama runs locally. Embeddings always use OpenAI.',
+        fields: [
+          {
+            key: 'LLM_PROVIDER',
+            label: 'LLM provider',
+            hint: 'Switches which credentials matter below.',
+            control: {
+              kind: 'segmented',
+              options: [
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'ollama', label: 'Ollama' },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 'paperless',
+        title: 'Paperless-ngx',
         subtitle: 'Where the daemons reach Paperless, and where the browser opens documents.',
         fields: [
           {
@@ -86,36 +111,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           },
         ],
       },
-    ],
-  },
-  {
-    id: 'llm',
-    title: 'LLM Provider',
-    subtitle: 'The model used for OCR, classification, planning and synthesis.',
-    groups: [
       {
-        id: 'provider',
-        title: 'Provider',
-        subtitle: 'OpenAI is hosted; Ollama runs locally. Embeddings always use OpenAI.',
-        fields: [
-          {
-            key: 'LLM_PROVIDER',
-            label: 'LLM provider',
-            hint: 'Switches which credentials matter below.',
-            control: {
-              kind: 'segmented',
-              options: [
-                { value: 'openai', label: 'OpenAI' },
-                { value: 'ollama', label: 'Ollama' },
-              ],
-            },
-          },
-        ],
-      },
-      {
-        id: 'credentials',
-        title: 'Credentials',
-        subtitle: 'Only the credentials for the selected provider are used.',
+        id: 'openai',
+        title: 'OpenAI',
+        subtitle: 'Required for every process — embeddings always go through OpenAI.',
         fields: [
           {
             key: 'OPENAI_API_KEY',
@@ -124,6 +123,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             control: { kind: 'secret' },
             secret: true,
           },
+        ],
+      },
+      {
+        id: 'ollama',
+        title: 'Ollama',
+        subtitle: 'Ignored when the provider is OpenAI.',
+        fields: [
           {
             key: 'OLLAMA_BASE_URL',
             label: 'Ollama base URL',
@@ -132,266 +138,38 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           },
         ],
       },
-      {
-        id: 'models',
-        title: 'Models',
-        subtitle: 'Tried in order; first success wins.',
-        fields: [
-          {
-            key: 'AI_MODELS',
-            label: 'Model fallback chain',
-            hint: 'Comma-separated identifiers. Paperless tries each model in order until one accepts the request.',
-            control: { kind: 'list' },
-          },
-        ],
-      },
     ],
   },
-  {
-    id: 'search',
-    title: 'Search Server',
-    subtitle: 'Tune the agentic search pipeline — planning, retrieval, synthesis.',
-    groups: [
-      {
-        id: 'retrieval',
-        title: 'Retrieval',
-        subtitle: 'How many documents the synthesiser sees and how often it can refine.',
-        fields: [
-          {
-            key: 'SEARCH_TOP_K',
-            label: 'Top K',
-            hint: 'How many documents are fed to the synthesiser.',
-            control: { kind: 'number', min: 1 },
-          },
-          {
-            key: 'SEARCH_MAX_REFINEMENTS',
-            label: 'Max refinements',
-            hint: 'Agentic refinement passes. Each adds one LLM call per query, so cost and latency scale with it. No hard cap; default 1.',
-            control: { kind: 'number', min: 0 },
-          },
-        ],
-      },
-      {
-        id: 'relevance',
-        title: 'Relevance',
-        subtitle:
-          'The gate floor decides what is shown; the tier cut-points label how good each shown result is. All are absolute vector similarities in 0–1, hot-loaded on the next search.',
-        fields: [
-          {
-            key: 'SEARCH_RELEVANCE_MIN_SIMILARITY',
-            label: 'Gate floor',
-            hint: 'Results whose best similarity falls below this — and that have no keyword hit — are rejected as "no matches" before synthesis. 0 shows everything; default 0.60.',
-            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
-          },
-          {
-            key: 'SEARCH_RELEVANCE_TIER_STRONG',
-            label: 'Strong match ≥',
-            hint: 'A shown result at or above this similarity badges "Strong match". Default 0.70.',
-            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
-          },
-          {
-            key: 'SEARCH_RELEVANCE_TIER_GOOD',
-            label: 'Good match ≥',
-            hint: 'Badges "Good match" at or above this. Must sit between the Partial and Strong cut-points. Default 0.66.',
-            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
-          },
-          {
-            key: 'SEARCH_RELEVANCE_TIER_PARTIAL',
-            label: 'Partial match ≥',
-            hint: 'Badges "Partial match" at or above this; anything lower badges "Weak match". Default 0.60.',
-            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
-          },
-        ],
-      },
-      {
-        id: 'judge',
-        title: 'Relevance judge',
-        subtitle:
-          'A cheap model screens retrieved documents before the answer model runs — bailing to "no matches" when nothing fits and filtering to the relevant documents. Recall-biased and fail-open. Hot-loaded.',
-        fields: [
-          {
-            key: 'SEARCH_GATE_JUDGE',
-            label: 'Enable judge',
-            hint: 'Screen documents on the cheap judge model before the expensive answer model. Default on.',
-            control: { kind: 'toggle' },
-          },
-          {
-            key: 'SEARCH_JUDGE_RATIONALES',
-            label: 'Judge rationales',
-            hint: 'Have the relevance judge write a one-line reason per document. Costs a few extra tokens per query; turn off to save them.',
-            control: { kind: 'toggle' },
-          },
-          {
-            key: 'SEARCH_JUDGE_MODEL',
-            label: 'Judge model',
-            hint: 'The model that screens retrieved documents. Defaults to the planner model.',
-            control: { kind: 'select', options: MODEL_OPTIONS },
-          },
-          {
-            key: 'SEARCH_JUDGE_REASONING_EFFORT',
-            label: 'Judge reasoning effort',
-            hint: 'How hard the judge thinks: minimal / low / medium / high. OpenAI only. Default low.',
-            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
-          },
-        ],
-      },
-      {
-        id: 'identity',
-        title: 'Identity awareness',
-        subtitle:
-          'When on, the signed-in user\'s display name is threaded into the planner and answer model so first-person queries ("my passport", "our boiler") resolve to the right person. The name is also included in the result cache key so two users never share each other\'s answer.',
-        fields: [
-          {
-            key: 'SEARCH_IDENTITY_AWARE',
-            label: 'Identity-aware search',
-            hint: 'Resolve first-person references to the signed-in user\'s display name. Requires the account to have a display name set. Default on.',
-            control: { kind: 'toggle' },
-          },
-        ],
-      },
-      {
-        id: 'search-models',
-        title: 'Models',
-        subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',
-        fields: [
-          {
-            key: 'SEARCH_PLANNER_MODEL',
-            label: 'Planner model',
-            hint: 'Cheaper model for structured query extraction.',
-            control: { kind: 'select', options: MODEL_OPTIONS },
-          },
-          {
-            key: 'SEARCH_PLANNER_REASONING_EFFORT',
-            label: 'Planner reasoning effort',
-            hint: 'How hard the planner thinks: minimal / low / medium / high. OpenAI only.',
-            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
-          },
-          {
-            key: 'SEARCH_ANSWER_MODEL',
-            label: 'Answer model',
-            hint: 'Stronger model for user-facing synthesis.',
-            control: { kind: 'select', options: MODEL_OPTIONS },
-          },
-          {
-            key: 'SEARCH_ANSWER_REASONING_EFFORT',
-            label: 'Answer reasoning effort',
-            hint: 'How hard the answer model thinks: minimal / low / medium / high. OpenAI only.',
-            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
-          },
-        ],
-      },
-      {
-        id: 'server',
-        title: 'Server',
-        subtitle: 'Network binding and limits for /api/search.',
-        fields: [
-          {
-            key: 'SEARCH_SERVER_HOST',
-            label: 'Server host',
-            hint: '0.0.0.0 binds all interfaces.',
-            control: { kind: 'text', mono: true },
-          },
-          {
-            key: 'SEARCH_SERVER_PORT',
-            label: 'Server port',
-            hint: 'The TCP port the search server listens on.',
-            control: { kind: 'number', min: 1, max: 65535 },
-          },
-          {
-            key: 'SEARCH_MAX_CONCURRENT',
-            label: 'Max concurrent requests',
-            hint: 'Bounds in-flight /api/search work via a global semaphore. 0 is unbounded.',
-            control: { kind: 'number', min: 0 },
-          },
-          {
-            key: 'SEARCH_SESSION_TTL',
-            label: 'Session TTL',
-            hint: 'How long a signed session cookie stays valid after login.',
-            control: { kind: 'number', min: 1, suffix: 's' },
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'embed',
-    title: 'Embeddings & Index',
-    subtitle: 'How the indexer chunks, embeds and reconciles your library.',
-    groups: [
-      {
-        id: 'embeddings',
-        title: 'Embeddings',
-        subtitle: 'Changing the model or dimensions triggers a full rebuild.',
-        fields: [
-          {
-            key: 'EMBEDDING_MODEL',
-            label: 'Embedding model',
-            hint: 'Always OpenAI. Changing this triggers a full rebuild on the next reconcile.',
-            control: { kind: 'select', options: EMBEDDING_MODEL_OPTIONS },
-          },
-          {
-            key: 'EMBEDDING_DIMENSIONS',
-            label: 'Embedding dimensions',
-            hint: 'Must match the model. The schema is locked to this on the first reconcile.',
-            control: { kind: 'number', min: 1 },
-          },
-          {
-            key: 'EMBEDDING_MAX_CONCURRENT',
-            label: 'Embedding max concurrent',
-            hint: 'Global cap on concurrent embedding calls. 0 is unbounded.',
-            control: { kind: 'number', min: 0 },
-          },
-        ],
-      },
-      {
-        id: 'chunking',
-        title: 'Chunking',
-        subtitle: 'How long each text chunk is and how much they overlap.',
-        fields: [
-          {
-            key: 'CHUNK_SIZE',
-            label: 'Chunk size',
-            hint: 'Characters per text chunk fed to embedding.',
-            control: { kind: 'number', min: 1, suffix: 'chars' },
-          },
-          {
-            key: 'CHUNK_OVERLAP',
-            label: 'Chunk overlap',
-            hint: 'Adjacent-chunk overlap, so boundaries do not split context. Must be < chunk size.',
-            control: { kind: 'number', min: 0, suffix: 'chars' },
-          },
-        ],
-      },
-      {
-        id: 'reconcile',
-        title: 'Reconcile',
-        subtitle: 'How often the indexer scans for new and deleted documents.',
-        fields: [
-          {
-            key: 'RECONCILE_INTERVAL',
-            label: 'Reconcile interval',
-            hint: 'Seconds between incremental sync cycles.',
-            control: { kind: 'number', min: 1, suffix: 's' },
-          },
-          {
-            key: 'DELETION_SWEEP_INTERVAL',
-            label: 'Deletion sweep interval',
-            hint: 'Seconds between full deletion sweeps.',
-            control: { kind: 'number', min: 1, suffix: 's' },
-          },
-        ],
-      },
-    ],
-  },
+
+  // ── 2. OCR ────────────────────────────────────────────────────────────────
   {
     id: 'ocr',
     title: 'OCR',
     subtitle: 'Vision-model transcription of scanned pages.',
     groups: [
       {
+        id: 'model',
+        title: 'Model',
+        subtitle: 'Tried in order; first success wins. Higher reasoning tiers cost more tokens (OpenAI only).',
+        fields: [
+          {
+            key: 'OCR_MODELS',
+            label: 'Model fallback chain',
+            hint: 'Comma-separated identifiers tried in order until one accepts the request.',
+            control: { kind: 'list' },
+          },
+          {
+            key: 'OCR_REASONING_EFFORT',
+            label: 'Reasoning effort',
+            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
+          },
+        ],
+      },
+      {
         id: 'imaging',
-        title: 'Imaging',
-        subtitle: 'Resolution and size of the page images submitted to the vision model.',
+        title: 'Imaging & throughput',
+        subtitle: 'Resolution, image size, and page-level parallelism.',
         fields: [
           {
             key: 'OCR_DPI',
@@ -405,26 +183,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             hint: 'Pages are thumbnailed to fit this longest-edge size before submission.',
             control: { kind: 'number', min: 1, suffix: 'px' },
           },
-        ],
-      },
-      {
-        id: 'ocr-reasoning',
-        title: 'Reasoning',
-        subtitle: 'How hard the vision model thinks per page — higher tiers cost more reasoning tokens (OpenAI only).',
-        fields: [
           {
-            key: 'OCR_REASONING_EFFORT',
-            label: 'Reasoning effort',
-            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
-            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
+            key: 'PAGE_WORKERS',
+            label: 'Page workers',
+            hint: 'Pages OCR-d in parallel within a document. Drop to 1–2 on Ollama single-GPU.',
+            control: { kind: 'number', min: 1 },
           },
         ],
-      },
-      {
-        id: 'refusal',
-        title: 'Refusal handling',
-        subtitle: 'What to do when a model refuses to transcribe a page.',
-        fields: [
+        advanced: [
           {
             key: 'OCR_INCLUDE_PAGE_MODELS',
             label: 'Include model in page headers',
@@ -441,16 +207,51 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       },
     ],
   },
+
+  // ── 3. Classification ─────────────────────────────────────────────────────
   {
-    id: 'classify',
+    id: 'classification',
     title: 'Classification',
     subtitle: 'Metadata enrichment — title, correspondent, type, tags.',
     groups: [
       {
-        id: 'content-limits',
-        title: 'Content limits',
-        subtitle: 'How much of a document the classifier sees.',
+        id: 'model',
+        title: 'Model',
+        subtitle: 'Tried in order; first success wins. Higher reasoning tiers cost more tokens (OpenAI only).',
         fields: [
+          {
+            key: 'CLASSIFY_MODELS',
+            label: 'Model fallback chain',
+            hint: 'Comma-separated identifiers tried in order until one accepts the request.',
+            control: { kind: 'list' },
+          },
+          {
+            key: 'CLASSIFY_REASONING_EFFORT',
+            label: 'Reasoning effort',
+            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
+          },
+        ],
+      },
+      {
+        id: 'tagging',
+        title: 'Tagging',
+        subtitle: 'Limits and taxonomy context for classification output.',
+        fields: [
+          {
+            key: 'CLASSIFY_TAG_LIMIT',
+            label: 'Tag limit',
+            hint: 'Max optional tags to keep. Required tags (year, country) do not count.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
+            key: 'CLASSIFY_DEFAULT_COUNTRY_TAG',
+            label: 'Default country tag',
+            hint: 'A country name always added to every classified document. Empty to skip.',
+            control: { kind: 'text' },
+          },
+        ],
+        advanced: [
           {
             key: 'CLASSIFY_MAX_PAGES',
             label: 'Max pages sent to classifier',
@@ -481,30 +282,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             hint: 'Character budget when a document has no page headers.',
             control: { kind: 'number', min: 0, suffix: 'chars' },
           },
-        ],
-      },
-      {
-        id: 'tagging',
-        title: 'Tagging',
-        subtitle: 'Limits and taxonomy context for classification output.',
-        fields: [
-          {
-            key: 'CLASSIFY_TAG_LIMIT',
-            label: 'Tag limit',
-            hint: 'Max optional tags to keep. Required tags (year, country) do not count.',
-            control: { kind: 'number', min: 0 },
-          },
           {
             key: 'CLASSIFY_TAXONOMY_LIMIT',
             label: 'Taxonomy context limit',
             hint: 'Max correspondents / types / tags included in the LLM prompt as context.',
             control: { kind: 'number', min: 0 },
-          },
-          {
-            key: 'CLASSIFY_DEFAULT_COUNTRY_TAG',
-            label: 'Default country tag',
-            hint: 'A country name always added to every classified document. Empty to skip.',
-            control: { kind: 'text' },
           },
           {
             key: 'CLASSIFY_PERSON_FIELD_ID',
@@ -514,30 +296,230 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           },
         ],
       },
+    ],
+  },
+
+  // ── 4. Indexing ───────────────────────────────────────────────────────────
+  {
+    id: 'indexing',
+    title: 'Indexing',
+    subtitle: 'How the indexer chunks, embeds and reconciles your library.',
+    groups: [
       {
-        id: 'classify-reasoning',
-        title: 'Reasoning',
-        subtitle: 'How hard the classifier model thinks — higher tiers cost more reasoning tokens (OpenAI only).',
+        id: 'embeddings',
+        title: 'Embeddings',
+        subtitle: 'Changing the model or dimensions triggers a full rebuild.',
         fields: [
           {
-            key: 'CLASSIFY_REASONING_EFFORT',
-            label: 'Reasoning effort',
-            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
-            control: { kind: 'select', options: REASONING_EFFORT_OPTIONS },
+            key: 'EMBEDDING_MODEL',
+            label: 'Embedding model',
+            hint: 'Always OpenAI. Changing this triggers a full rebuild on the next reconcile.',
+            control: { kind: 'select', options: EMBEDDING_MODEL_OPTIONS },
+          },
+          {
+            key: 'EMBEDDING_DIMENSIONS',
+            label: 'Embedding dimensions',
+            hint: 'Must match the model. The schema is locked to this on the first reconcile.',
+            control: { kind: 'number', min: 1 },
+          },
+        ],
+      },
+      {
+        id: 'chunking',
+        title: 'Chunking & schedule',
+        subtitle: 'How long each text chunk is, how much overlap, and when the indexer runs.',
+        fields: [
+          {
+            key: 'CHUNK_SIZE',
+            label: 'Chunk size',
+            hint: 'Characters per text chunk fed to embedding.',
+            control: { kind: 'number', min: 1, suffix: 'chars' },
+          },
+          {
+            key: 'CHUNK_OVERLAP',
+            label: 'Chunk overlap',
+            hint: 'Adjacent-chunk overlap, so boundaries do not split context. Must be < chunk size.',
+            control: { kind: 'number', min: 0, suffix: 'chars' },
+          },
+          {
+            key: 'RECONCILE_INTERVAL',
+            label: 'Reconcile interval',
+            hint: 'Seconds between incremental sync cycles.',
+            control: { kind: 'number', min: 1, suffix: 's' },
+          },
+        ],
+        advanced: [
+          {
+            key: 'DELETION_SWEEP_INTERVAL',
+            label: 'Deletion sweep interval',
+            hint: 'Seconds between full deletion sweeps.',
+            control: { kind: 'number', min: 1, suffix: 's' },
+          },
+          {
+            key: 'EMBEDDING_MAX_CONCURRENT',
+            label: 'Embedding max concurrent',
+            hint: 'Global cap on concurrent embedding calls. 0 is unbounded.',
+            control: { kind: 'number', min: 0 },
           },
         ],
       },
     ],
   },
+
+  // ── 5. Search ─────────────────────────────────────────────────────────────
   {
-    id: 'tags',
-    title: 'Pipeline Tags',
-    subtitle: 'The numeric tag IDs that drive document state. Set 0 to disable a tag.',
+    id: 'search',
+    title: 'Search',
+    subtitle: 'Tune the agentic search pipeline — planning, retrieval, synthesis.',
     groups: [
       {
-        id: 'ocr-pipeline',
-        title: 'OCR pipeline',
-        subtitle: 'Tags that control the OCR daemon flow.',
+        id: 'models',
+        title: 'Models',
+        subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',
+        fields: [
+          {
+            key: 'SEARCH_PLANNER_MODEL',
+            label: 'Planner model',
+            hint: 'Cheaper model for structured query extraction.',
+            control: {
+              kind: 'select',
+              options: MODEL_OPTIONS,
+              reasoningKey: 'SEARCH_PLANNER_REASONING_EFFORT',
+              reasoningOptions: REASONING_EFFORT_OPTIONS,
+            },
+          },
+          {
+            key: 'SEARCH_ANSWER_MODEL',
+            label: 'Answer model',
+            hint: 'Stronger model for user-facing synthesis.',
+            control: {
+              kind: 'select',
+              options: MODEL_OPTIONS,
+              reasoningKey: 'SEARCH_ANSWER_REASONING_EFFORT',
+              reasoningOptions: REASONING_EFFORT_OPTIONS,
+            },
+          },
+          {
+            key: 'SEARCH_JUDGE_MODEL',
+            label: 'Judge model',
+            hint: 'The model that screens retrieved documents. Defaults to the planner model.',
+            control: {
+              kind: 'select',
+              options: MODEL_OPTIONS,
+              reasoningKey: 'SEARCH_JUDGE_REASONING_EFFORT',
+              reasoningOptions: REASONING_EFFORT_OPTIONS,
+            },
+          },
+        ],
+      },
+      {
+        id: 'retrieval',
+        title: 'Retrieval & relevance',
+        subtitle:
+          'How many documents the synthesiser sees and how results are gated and tiered.',
+        fields: [
+          {
+            key: 'SEARCH_TOP_K',
+            label: 'Top K',
+            hint: 'How many documents are fed to the synthesiser.',
+            control: { kind: 'number', min: 1 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_MIN_SIMILARITY',
+            label: 'Gate floor',
+            hint: 'Results whose best similarity falls below this — and that have no keyword hit — are rejected as "no matches" before synthesis. 0 shows everything; default 0.60.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_STRONG',
+            label: 'Strong match ≥',
+            hint: 'A shown result at or above this similarity badges "Strong match". Default 0.70.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+        ],
+      },
+      {
+        id: 'behaviour',
+        title: 'Behaviour',
+        subtitle: 'Judge gating and identity-aware resolution.',
+        fields: [
+          {
+            key: 'SEARCH_GATE_JUDGE',
+            label: 'Enable judge',
+            hint: 'Screen documents on the cheap judge model before the expensive answer model. Default on.',
+            control: { kind: 'toggle' },
+          },
+          {
+            key: 'SEARCH_IDENTITY_AWARE',
+            label: 'Identity-aware search',
+            hint: 'Resolve first-person references to the signed-in user\'s display name. Requires the account to have a display name set. Default on.',
+            control: { kind: 'toggle' },
+          },
+        ],
+        advanced: [
+          {
+            key: 'SEARCH_MAX_REFINEMENTS',
+            label: 'Max refinements',
+            hint: 'Agentic refinement passes. Each adds one LLM call per query, so cost and latency scale with it. No hard cap; default 1.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_GOOD',
+            label: 'Good match ≥',
+            hint: 'Badges "Good match" at or above this. Must sit between the Partial and Strong cut-points. Default 0.66.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_RELEVANCE_TIER_PARTIAL',
+            label: 'Partial match ≥',
+            hint: 'Badges "Partial match" at or above this; anything lower badges "Weak match". Default 0.60.',
+            control: { kind: 'number', min: 0, max: 1, step: 0.01 },
+          },
+          {
+            key: 'SEARCH_JUDGE_RATIONALES',
+            label: 'Judge rationales',
+            hint: 'Have the relevance judge write a one-line reason per document. Costs a few extra tokens per query; turn off to save them.',
+            control: { kind: 'toggle' },
+          },
+          {
+            key: 'SEARCH_SERVER_HOST',
+            label: 'Server host',
+            hint: '0.0.0.0 binds all interfaces.',
+            control: { kind: 'text', mono: true },
+          },
+          {
+            key: 'SEARCH_SERVER_PORT',
+            label: 'Server port',
+            hint: 'The TCP port the search server listens on.',
+            control: { kind: 'number', min: 1, max: 65535 },
+          },
+          {
+            key: 'SEARCH_MAX_CONCURRENT',
+            label: 'Max concurrent requests',
+            hint: 'Bounds in-flight /api/search work via a global semaphore. 0 is unbounded.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
+            key: 'SEARCH_SESSION_TTL',
+            label: 'Session TTL',
+            hint: 'How long a signed session cookie stays valid after login.',
+            control: { kind: 'number', min: 1, suffix: 's' },
+          },
+        ],
+      },
+    ],
+  },
+
+  // ── 6. Automation & Daemons ───────────────────────────────────────────────
+  {
+    id: 'automation',
+    title: 'Automation & Daemons',
+    subtitle: 'Pipeline tag IDs, worker concurrency, and polling behaviour.',
+    groups: [
+      {
+        id: 'tags',
+        title: 'Pipeline tags',
+        subtitle: 'The numeric tag IDs that drive document state. Set 0 to disable a tag.',
         fields: [
           {
             key: 'PRE_TAG_ID',
@@ -552,18 +534,38 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             control: { kind: 'number', min: 0 },
           },
           {
-            key: 'OCR_PROCESSING_TAG_ID',
-            label: 'OCR in-progress lock',
-            hint: 'Optional. Needed only for multi-instance deployments to claim a document.',
+            key: 'ERROR_TAG_ID',
+            label: 'Error tag',
+            hint: 'Applied when OCR or classification fails. Pipeline tags are removed.',
             control: { kind: 'number', min: 0 },
           },
         ],
       },
       {
-        id: 'classifier-pipeline',
-        title: 'Classifier pipeline',
-        subtitle: 'Tags that control the classifier daemon flow.',
+        id: 'workers',
+        title: 'Workers & polling',
+        subtitle: 'Parallelism within each daemon and how often they check for work.',
         fields: [
+          {
+            key: 'DOCUMENT_WORKERS',
+            label: 'Document workers',
+            hint: 'How many documents each daemon processes in parallel.',
+            control: { kind: 'number', min: 1 },
+          },
+          {
+            key: 'LLM_MAX_CONCURRENT',
+            label: 'LLM max concurrent',
+            hint: 'Global cap on LLM calls. 0 is unbounded.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
+            key: 'POLL_INTERVAL',
+            label: 'Poll interval',
+            hint: 'Seconds between polling Paperless for new work.',
+            control: { kind: 'number', min: 1, suffix: 's' },
+          },
+        ],
+        advanced: [
           {
             key: 'CLASSIFY_PRE_TAG_ID',
             label: 'Classifier queue',
@@ -577,68 +579,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             control: { kind: 'number', min: 0 },
           },
           {
+            key: 'OCR_PROCESSING_TAG_ID',
+            label: 'OCR in-progress lock',
+            hint: 'Optional. Needed only for multi-instance deployments to claim a document.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
             key: 'CLASSIFY_PROCESSING_TAG_ID',
             label: 'Classifier in-progress lock',
             hint: 'Optional. Multi-instance deployments use this to claim a document.',
             control: { kind: 'number', min: 0 },
-          },
-        ],
-      },
-      {
-        id: 'errors',
-        title: 'Errors',
-        subtitle: 'Tag applied when the pipeline fails.',
-        fields: [
-          {
-            key: 'ERROR_TAG_ID',
-            label: 'Error tag',
-            hint: 'Applied when OCR or classification fails. Pipeline tags are removed.',
-            control: { kind: 'number', min: 0 },
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'perf',
-    title: 'Performance',
-    subtitle: 'Throughput and concurrency knobs.',
-    groups: [
-      {
-        id: 'workers',
-        title: 'Workers',
-        subtitle: 'Parallelism within each daemon.',
-        fields: [
-          {
-            key: 'DOCUMENT_WORKERS',
-            label: 'Document workers',
-            hint: 'How many documents each daemon processes in parallel.',
-            control: { kind: 'number', min: 1 },
-          },
-          {
-            key: 'PAGE_WORKERS',
-            label: 'Page workers',
-            hint: 'Pages OCR-d in parallel within a document. Drop to 1–2 on Ollama single-GPU.',
-            control: { kind: 'number', min: 1 },
-          },
-          {
-            key: 'LLM_MAX_CONCURRENT',
-            label: 'LLM max concurrent',
-            hint: 'Global cap on LLM calls. 0 is unbounded.',
-            control: { kind: 'number', min: 0 },
-          },
-        ],
-      },
-      {
-        id: 'polling',
-        title: 'Polling & retries',
-        subtitle: 'How often the daemons check for work and how they handle failures.',
-        fields: [
-          {
-            key: 'POLL_INTERVAL',
-            label: 'Poll interval',
-            hint: 'Seconds between polling Paperless for new work.',
-            control: { kind: 'number', min: 1, suffix: 's' },
           },
           {
             key: 'REQUEST_TIMEOUT',
@@ -662,8 +612,10 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       },
     ],
   },
+
+  // ── 7. Logging ────────────────────────────────────────────────────────────
   {
-    id: 'logs',
+    id: 'logging',
     title: 'Logging',
     subtitle: 'What gets logged and how.',
     groups: [
