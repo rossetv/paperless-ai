@@ -74,7 +74,7 @@ export interface SelectControl {
 
 /**
  * A comma-separated list control — an editable text field whose value is a
- * `string[]`. Used for AI_MODELS and OCR_REFUSAL_MARKERS.
+ * `string[]`. Used for OCR_MODELS, CLASSIFY_MODELS and OCR_REFUSAL_MARKERS.
  */
 export interface ListControl {
   kind: 'list';
