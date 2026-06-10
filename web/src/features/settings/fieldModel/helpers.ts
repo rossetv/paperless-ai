@@ -8,19 +8,67 @@
 import type { ConfigValue, SettingsField } from './types';
 import { SETTINGS_SECTIONS } from './sections';
 
-/** Every config key the model defines, flattened in display order. */
+/**
+ * Every config key the model defines, flattened in display order.
+ *
+ * Includes keys from both `group.fields` and `group.advanced` (when present).
+ * For any `select` field that carries a `reasoningKey`, that sub-key is also
+ * included so `useUnsavedSettings` seeds and serialises it correctly.
+ */
 export function allFieldKeys(): string[] {
   return SETTINGS_SECTIONS.flatMap((section) =>
-    section.groups.flatMap((group) => group.fields.map((field) => field.key)),
+    section.groups.flatMap((group) => {
+      const allFields = [...group.fields, ...(group.advanced ?? [])];
+      return allFields.flatMap((field) => {
+        const keys: string[] = [field.key];
+        if (
+          field.control.kind === 'select' &&
+          field.control.reasoningKey !== undefined
+        ) {
+          keys.push(field.control.reasoningKey);
+        }
+        return keys;
+      });
+    }),
   );
 }
 
-/** Look up a field descriptor by config key, or undefined if unknown. */
+/**
+ * Look up a field descriptor by config key, or `undefined` if unknown.
+ *
+ * Searches `group.fields` and `group.advanced` across every section.
+ * If the key is not a direct field key but matches the `reasoningKey` of a
+ * `select` control, returns a synthetic `SettingsField` with a `segmented`
+ * control over `reasoningOptions` — so `parseValue` treats it as a string
+ * and `toDraft` seeds it from the draft.
+ */
 export function fieldByKey(key: string): SettingsField | undefined {
   for (const section of SETTINGS_SECTIONS) {
     for (const group of section.groups) {
-      const field = group.fields.find((f) => f.key === key);
-      if (field) return field;
+      const allFields = [...group.fields, ...(group.advanced ?? [])];
+
+      // Direct match first.
+      const direct = allFields.find((f) => f.key === key);
+      if (direct) return direct;
+
+      // Synthetic match: a select whose reasoningKey === key.
+      for (const field of allFields) {
+        if (
+          field.control.kind === 'select' &&
+          field.control.reasoningKey === key
+        ) {
+          const syntheticField: SettingsField = {
+            key,
+            label: 'Reasoning',
+            hint: '',
+            control: {
+              kind: 'segmented',
+              options: field.control.reasoningOptions ?? [],
+            },
+          };
+          return syntheticField;
+        }
+      }
     }
   }
   return undefined;

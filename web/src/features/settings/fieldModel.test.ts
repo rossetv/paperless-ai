@@ -131,4 +131,52 @@ describe('settings field model', () => {
     expect(fieldByKey('ERROR_TAG_ID')).toBeDefined();
     expect(fieldByKey('__unknown__')).toBeUndefined();
   });
+
+  // ---- New helper behaviour (no-op against current model) ------------------
+
+  it('allFieldKeys includes no duplicates even with advanced/reasoningKey logic applied', () => {
+    // The current model has no advanced fields or reasoningKey selects, so this
+    // verifies the new branches are genuinely no-ops against the real model.
+    const keys = allFieldKeys();
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('allFieldKeys still returns all group.fields keys', () => {
+    const expected = SETTINGS_SECTIONS.flatMap((s) =>
+      s.groups.flatMap((g) => g.fields.map((f) => f.key)),
+    );
+    // Every key from the base fields must appear in allFieldKeys().
+    const result = allFieldKeys();
+    for (const k of expected) {
+      expect(result).toContain(k);
+    }
+  });
+
+  it('fieldByKey returns undefined for an unknown key and does not throw', () => {
+    expect(fieldByKey('__nonexistent_key__')).toBeUndefined();
+  });
+
+  it('no group in the current model has an advanced array', () => {
+    // Asserts the new optional field is not yet present in the real model, so
+    // the advanced-field path is untouched until a later task adds it.
+    for (const section of SETTINGS_SECTIONS) {
+      for (const group of section.groups) {
+        expect(group.advanced).toBeUndefined();
+      }
+    }
+  });
+
+  it('no select control in the current model has a reasoningKey', () => {
+    // Same rationale — ensures the reasoningKey path is a no-op against the
+    // current model; the path will be exercised once sections.ts uses it.
+    for (const section of SETTINGS_SECTIONS) {
+      for (const group of section.groups) {
+        for (const field of group.fields) {
+          if (field.control.kind === 'select') {
+            expect(field.control.reasoningKey).toBeUndefined();
+          }
+        }
+      }
+    }
+  });
 });
