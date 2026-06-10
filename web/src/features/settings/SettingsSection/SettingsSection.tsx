@@ -35,8 +35,7 @@ export interface SettingsSectionProps {
   onChange: (key: string, value: ConfigValue | null) => void;
   /**
    * Map from group id to a React node to render in that group's card header
-   * actions slot. Used by the `paperless/endpoint` group for the
-   * `TestConnectionAction`.
+   * actions slot. Available for any group that needs injected header actions.
    */
   groupActions?: Record<string, React.ReactNode>;
 }
@@ -107,8 +106,7 @@ function FieldRow({
  * `advanced` array, those fields appear inside a collapsed `Disclosure` with
  * an "Advanced · {n}" summary, below the primary fields.
  *
- * The `groupActions` map lets callers inject actions into specific card headers
- * — used by the `paperless/endpoint` group for `TestConnectionAction`.
+ * The `groupActions` map lets callers inject actions into specific card headers.
  *
  * Tier: features/ — knows the field model, composes primitives + FieldControl.
  */
