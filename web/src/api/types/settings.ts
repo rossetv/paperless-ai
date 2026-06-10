@@ -74,6 +74,22 @@ export interface TestConnectionRequest {
    * user has not replaced the secret).
    */
   paperless_token: string;
+  /**
+   * The service to probe. When present, the backend routes the request to the
+   * appropriate connector. Omitting it defaults to the Paperless probe for
+   * backwards compatibility.
+   */
+  service?: 'paperless' | 'openai' | 'ollama';
+  /**
+   * The live OpenAI API key to probe with. Only sent when `service === 'openai'`
+   * and the key is not masked (user has replaced it in the draft).
+   */
+  openai_api_key?: string;
+  /**
+   * The live Ollama base URL to probe with. Only sent when `service === 'ollama'`
+   * and the URL is not masked.
+   */
+  ollama_base_url?: string;
 }
 
 /**
