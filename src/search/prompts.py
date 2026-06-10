@@ -37,6 +37,7 @@ from search.models import JudgeCandidate
 
 if TYPE_CHECKING:
     from common.config import Settings
+    from search.models import RetrievalSpec
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +331,99 @@ def build_planner_user_message(query: str, today: str, asker: str | None = None)
         else ""
     )
     return f"Today's date is {today}.\n{identity}\nUser query: {query}"
+
+
+def _render_prior_spec(index: int, spec: RetrievalSpec) -> str:
+    """Render one already-tried resolved spec into a compact human-readable line.
+
+    Shows the spec's mode, its semantic query (or joined keywords), and any
+    filter guesses that were resolved (correspondent / document-type ids, tags,
+    date bounds). The model only needs enough to recognise *what was already
+    tried* so it can produce something different — not the raw taxonomy ids in
+    full fidelity.
+
+    Args:
+        index: The 1-based position of this spec in the prior plan.
+        spec: A resolved :class:`~search.models.RetrievalSpec`.
+
+    Returns:
+        A single-line summary string.
+    """
+    query_text = spec.semantic if spec.mode == "semantic" else " ".join(spec.keywords)
+    filters = spec.filters
+    filter_parts: list[str] = []
+    if filters.correspondent_id is not None:
+        filter_parts.append(f"correspondent_id={filters.correspondent_id}")
+    if filters.document_type_id is not None:
+        filter_parts.append(f"document_type_id={filters.document_type_id}")
+    if filters.tag_ids:
+        filter_parts.append(f"tag_ids={list(filters.tag_ids)}")
+    if filters.date_from:
+        filter_parts.append(f"date_from={filters.date_from}")
+    if filters.date_to:
+        filter_parts.append(f"date_to={filters.date_to}")
+    filters_text = "; ".join(filter_parts) if filter_parts else "no filters"
+    return f"{index}. mode={spec.mode}, query={query_text!r}, filters: {filters_text}"
+
+
+def build_replan_user_message(
+    query: str,
+    today: str,
+    *,
+    hint: str,
+    prior_specs: tuple[RetrievalSpec, ...],
+    prior_findings: tuple[str, ...],
+    asker: str | None = None,
+) -> str:
+    """Assemble the re-plan user message: a richer turn that targets a gap.
+
+    Reuses the byte-stable :data:`PLANNER_SYSTEM_PROMPT`; this user turn carries
+    the extra context the re-plan needs: today's date, the optional asker
+    identity line (the same wording as :func:`build_planner_user_message`), the
+    original query, a compact rendering of the specs already tried, the titles
+    of the documents already found, the gap to close (the synthesiser's hint),
+    and an explicit instruction to produce *different* specs that target the gap.
+
+    Args:
+        query: The raw user search query.
+        today: Today's date in YYYY-MM-DD form.
+        hint: The synthesiser's adjustment hint — the gap to close.
+        prior_specs: The resolved specs already tried in the first pass.
+        prior_findings: Titles of the documents already found (may be empty).
+        asker: The sanitised asker identity, or None for anonymous queries.
+
+    Returns:
+        The formatted re-plan user message string.
+    """
+    identity = (
+        f"\nThe person asking is {asker}. Resolve first-person references "
+        "(my, mine, I, our) to this person where it sharpens the search — "
+        "rewrite a semantic query and/or set the correspondent filter candidate "
+        "to their name. Do not force the name where the documents would not "
+        "carry it.\n"
+        if asker
+        else ""
+    )
+    prior_specs_text = (
+        "\n".join(
+            _render_prior_spec(index, spec)
+            for index, spec in enumerate(prior_specs, start=1)
+        )
+        if prior_specs
+        else "none"
+    )
+    findings_text = ", ".join(prior_findings) if prior_findings else "none"
+    return (
+        f"Today's date is {today}.\n{identity}\n"
+        f"User query: {query}\n\n"
+        "This is a RE-PLAN. A first set of searches has already run and the "
+        "answering step could not answer from the results.\n\n"
+        f"Specs already tried:\n{prior_specs_text}\n\n"
+        f"Documents already found (titles): {findings_text}\n\n"
+        f"Gap to close: {hint}\n\n"
+        "Produce DIFFERENT specs that target the gap — do not repeat the specs "
+        "already tried."
+    )
 
 
 # ---------------------------------------------------------------------------
