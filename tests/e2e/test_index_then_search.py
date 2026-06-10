@@ -205,6 +205,12 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     # Identity-awareness (Task 10): pin a real bool so the asker path exercises
     # a deterministic gate rather than a truthy MagicMock attribute.
     settings.SEARCH_IDENTITY_AWARE = True
+    # Multi-spec retrieval knobs: pin real ints so the retriever's per-spec
+    # candidate cap and per-document cap, and the planner's spec cap, are
+    # comparisons against ints rather than auto-created MagicMock attributes.
+    settings.SEARCH_PER_SPEC_K = 10
+    settings.SEARCH_MAX_CHUNKS_PER_DOC = 3
+    settings.SEARCH_PLANNER_MAX_SPECS = 8
     return settings
 
 
