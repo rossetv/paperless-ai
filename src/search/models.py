@@ -15,6 +15,7 @@ from typing import Literal
 
 from common.llm import LlmCallUsage as LlmCallUsage  # re-exported for consumers
 from search.relevance import RelevanceTier
+from store.models import SearchFilters
 
 #: The synthesiser's two operating modes (spec §6.3).  ``"exploratory"`` lets
 #: the model return :class:`NeedsMore`; ``"final"`` coerces it to
@@ -75,6 +76,41 @@ class QueryPlan:
     keyword_terms: tuple[str, ...]
     filter_candidates: FilterCandidates
     sub_questions: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedSpec:
+    """One planned search as the planner emits it — free-text filter GUESSES, not ids.
+
+    mode selects the retrieval kind. ``semantic`` carries text to embed; ``keyword``
+    carries FTS terms. ``filter_guess`` holds unresolved name/date guesses that code
+    later resolves against the taxonomy and the deterministic date extractor.
+    """
+
+    mode: Literal["semantic", "keyword"]
+    semantic: str | None
+    keywords: tuple[str, ...]
+    filter_guess: FilterCandidates
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalSpec:
+    """A resolved search — real taxonomy ids + validated ISO dates — ready for the store."""
+
+    mode: Literal["semantic", "keyword"]
+    semantic: str | None
+    keywords: tuple[str, ...]
+    filters: SearchFilters
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalPlan:
+    """The planner's structured output: a list of scoped searches, or a clarify signal."""
+
+    specs: tuple[PlannedSpec, ...]
+    clarify: ClarifyNeeded | None = None
 
 
 @dataclass(frozen=True, slots=True)
