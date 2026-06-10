@@ -320,6 +320,29 @@ class Settings:
     the pre-identity behaviour. Inert until an account has a display name.
     """
 
+    # Multi-spec retrieval settings (multi-spec retrieval overhaul Phase 1)
+    SEARCH_PLANNER_MAX_SPECS: int
+    """Cap on the number of :class:`~search.models.PlannedSpec`\\s per plan.
+
+    The planner is instructed to emit at most this many specs. A value of 1
+    degrades to the legacy single-spec path. Clamped to >= 1.
+    Default ``8``.
+    """
+    SEARCH_PER_SPEC_K: int
+    """Candidate chunks pulled from the store per :class:`~search.models.RetrievalSpec`.
+
+    When unset, defaults to the resolved :attr:`SEARCH_TOP_K` value so the
+    total candidate budget per query is unchanged in the single-spec case.
+    Clamped to >= 1.
+    """
+    SEARCH_MAX_CHUNKS_PER_DOC: int
+    """Maximum chunks per document admitted to the synthesiser after the chunk-union step.
+
+    After merging chunks from all specs, each document is capped at this many
+    chunks before synthesis. Prevents a single large document from dominating
+    the context window. Clamped to >= 1. Default ``3``.
+    """
+
     @classmethod
     def from_environment(cls) -> Settings:
         """Build a :class:`Settings` from the process environment alone.
@@ -391,6 +414,10 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
     chunk_size = _require_at_least_one(
         "CHUNK_SIZE", _get_int_env(source, "CHUNK_SIZE", 2000)
+    )
+    # Resolved early so SEARCH_PER_SPEC_K can default to it when unset.
+    search_top_k = _require_at_least_one(
+        "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
     )
 
     provider_defaults = _resolve_provider_defaults(llm_provider, source)
@@ -551,9 +578,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         CHUNK_SIZE=chunk_size,
         CHUNK_OVERLAP=_resolve_chunk_overlap(source, chunk_size),
-        SEARCH_TOP_K=_require_at_least_one(
-            "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
-        ),
+        SEARCH_TOP_K=search_top_k,
         SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(source),
         SEARCH_PLANNER_MODEL=source.get("SEARCH_PLANNER_MODEL", default_planner_model),
         SEARCH_ANSWER_MODEL=source.get("SEARCH_ANSWER_MODEL", default_answer_model),
@@ -613,4 +638,16 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             0, _get_int_env(source, "SEARCH_MIN_QUERY_CHARS", 2)
         ),
         SEARCH_IDENTITY_AWARE=_get_bool_env(source, "SEARCH_IDENTITY_AWARE", True),
+        # Multi-spec retrieval settings — clamped >= 1 (Phase 1 overhaul).
+        SEARCH_PLANNER_MAX_SPECS=max(
+            1, _get_int_env(source, "SEARCH_PLANNER_MAX_SPECS", 8)
+        ),
+        # SEARCH_PER_SPEC_K defaults to the already-resolved SEARCH_TOP_K so the
+        # per-query candidate budget is unchanged in the single-spec case.
+        SEARCH_PER_SPEC_K=max(
+            1, _get_int_env(source, "SEARCH_PER_SPEC_K", search_top_k)
+        ),
+        SEARCH_MAX_CHUNKS_PER_DOC=max(
+            1, _get_int_env(source, "SEARCH_MAX_CHUNKS_PER_DOC", 3)
+        ),
     )
