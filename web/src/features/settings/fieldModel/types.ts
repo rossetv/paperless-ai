@@ -47,10 +47,29 @@ export interface SegmentedControl {
   options: { value: string; label: string }[];
 }
 
-/** A dropdown over a fixed option set. */
+/**
+ * A dropdown over a fixed option set.
+ *
+ * When `reasoningKey` is set, SettingsSection renders a second line beneath
+ * the select: a compact `Segmented` whose `value` comes from `reasoningKey`
+ * in the draft and whose options are `reasoningOptions`. This lets a model
+ * select and its reasoning-effort control share one visual unit without
+ * duplicating rows.
+ */
 export interface SelectControl {
   kind: 'select';
   options: { value: string; label: string }[];
+  /**
+   * The config key for the companion reasoning-effort segmented control.
+   * When present, a "Reasoning" segmented is rendered immediately beneath
+   * the select using `reasoningOptions`.
+   */
+  reasoningKey?: string;
+  /**
+   * The option list for the companion reasoning-effort segmented control.
+   * Required when `reasoningKey` is set; ignored otherwise.
+   */
+  reasoningOptions?: { value: string; label: string }[];
 }
 
 /**
@@ -109,6 +128,12 @@ export interface SettingsGroup {
   subtitle?: string;
   /** The fields in this group, top to bottom. */
   fields: SettingsField[];
+  /**
+   * Fields shown inside a collapsed "Advanced" `Disclosure` beneath the
+   * primary fields. Collapsed by default. Omit (or leave empty) when all
+   * fields belong in the primary list.
+   */
+  advanced?: SettingsField[];
 }
 
 /** One section of the Settings screen — a `SettingsBlock` with sub-cards. */
