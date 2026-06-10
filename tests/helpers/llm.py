@@ -188,10 +188,17 @@ class ScriptedLLMClient:
     calls of each kind were made.
 
     Args:
-        planner_response: Raw JSON string the planner call returns.
+        planner_response: Raw JSON string the *initial* planner call returns.
         synthesiser_responses: Ordered raw JSON strings; the *n*-th synthesiser
             call returns the *n*-th entry.  When exhausted the last entry is
             reused, so an over-eager loop stays observable rather than crashing.
+        judge_response: Raw JSON string the judge call returns (or None when no
+            judge call is scripted).
+        replan_response: Raw JSON string the planner's *re-plan* call returns.
+            A re-plan call shares the planner system prompt; it is distinguished
+            by the ``"This is a RE-PLAN."`` marker its user message carries.
+            When None (the default) a re-plan reuses *planner_response*, so the
+            re-plan resolves to the same specs as pass 1 — the no-op path.
     """
 
     def __init__(
@@ -199,18 +206,26 @@ class ScriptedLLMClient:
         planner_response: str,
         synthesiser_responses: list[str],
         judge_response: str | None = None,
+        replan_response: str | None = None,
     ) -> None:
         self._planner_response = planner_response
         self._synthesiser_responses = synthesiser_responses
         self._judge_response = judge_response
+        self._replan_response = replan_response
         self.planner_calls = 0
+        self.replan_calls = 0
         self.synthesiser_calls = 0
         self.judge_calls = 0
 
     @property
     def total_calls(self) -> int:
-        """Total LLM chat calls — planner plus judge plus synthesiser."""
-        return self.planner_calls + self.judge_calls + self.synthesiser_calls
+        """Total LLM chat calls — planner + re-plan + judge + synthesiser."""
+        return (
+            self.planner_calls
+            + self.replan_calls
+            + self.judge_calls
+            + self.synthesiser_calls
+        )
 
     def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
         """Stand-in for ``OpenAIChatMixin._create_completion``.
@@ -221,6 +236,14 @@ class ScriptedLLMClient:
         """
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "search-query planning engine" in system:
+            user = next((m["content"] for m in messages if m["role"] == "user"), "")
+            if "This is a RE-PLAN." in user:
+                self.replan_calls += 1
+                return make_chat_completion(
+                    self._replan_response
+                    if self._replan_response is not None
+                    else self._planner_response
+                )
             self.planner_calls += 1
             return make_chat_completion(self._planner_response)
 

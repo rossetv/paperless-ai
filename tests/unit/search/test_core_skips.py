@@ -95,9 +95,10 @@ class TestPlannerSkipWhenEnabled:
 
     def test_skip_path_skips_the_planner_call(self) -> None:
         reset_search_result_cache()
-        # Trivial query, planner skipped. With the default 1 refinement and a
-        # synth that always wants more, the calls are exploratory + 1 refine = 2
-        # synthesise calls and zero planner calls.
+        # Trivial query, the INITIAL planner call is skipped. The refinement
+        # re-plan is a separate LLM call and still fires (Phase 2): with one
+        # refinement and an always-NeedsMore synth the calls are exploratory
+        # synth + re-plan + final synth = 3, and zero *initial* planner calls.
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[needs_more_response_json("more")],
@@ -110,8 +111,9 @@ class TestPlannerSkipWhenEnabled:
         )
         result = core.answer("invoices")
         assert llm_client.planner_calls == 0
-        assert llm_client.total_calls <= 2
-        assert result.stats.llm_calls <= 2
+        # exploratory synth + re-plan (no-op) + final synth = 3.
+        assert llm_client.total_calls == 3
+        assert result.stats.llm_calls == 3
 
 
 # ---------------------------------------------------------------------------

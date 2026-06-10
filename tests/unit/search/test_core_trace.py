@@ -433,13 +433,17 @@ class TestSynthesiseAndRefineDetail:
         core.answer("a query", on_event=events.append)
         phases = _phases(events)
         # plan, resolve, retrieve, gate (default-on), synthesise (exploratory),
-        # refine (pass 1), synthesise (final).
+        # replan (Phase 2), refine (the marker), synthesise (final). With no
+        # scripted re-plan response the re-plan resolves to the same specs as
+        # pass 1 — the no-op path — so the refine marker reports noop and no
+        # second retrieve/judge phase is emitted.
         assert phases == [
             "plan",
             "resolve",
             "retrieve",
             "gate",
             "synthesise",
+            "replan",
             "refine",
             "synthesise",
         ]
@@ -448,9 +452,13 @@ class TestSynthesiseAndRefineDetail:
         assert synth_recs[0].detail["mode"] == "exploratory"
         assert synth_recs[1].detail["needs_more"] is False
         assert synth_recs[1].detail["mode"] == "final"
+        replan_rec = next(p for p in _records(events) if p.phase == "replan")
+        assert replan_rec.detail["hint"] == "Broaden the date range."
         refine_rec = next(p for p in _records(events) if p.phase == "refine")
-        assert refine_rec.detail["pass"] == 1
-        assert refine_rec.detail["adjustment"] == "Broaden the date range."
+        assert refine_rec.detail["gap"] == "Broaden the date range."
+        assert refine_rec.detail["noop"] is True
+        assert refine_rec.detail["new_specs"] == []
+        assert "no new searches" in refine_rec.detail["action"]
 
     def test_synthesise_detail_on_normal_query(self) -> None:
         reset_search_result_cache()
