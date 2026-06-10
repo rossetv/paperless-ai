@@ -82,6 +82,14 @@ describe('NumberStepper', () => {
     expect(screen.getByText('s')).toBeInTheDocument();
   });
 
+  it('renders the suffix inside the value cell', () => {
+    const { getByTestId } = render(
+      <NumberStepper value={2048} onChange={() => {}} label="Max" suffix="px" />,
+    );
+    const valueCell = getByTestId('numberstepper-value');
+    expect(valueCell).toHaveTextContent('px');
+  });
+
   it('does not call onChange when disabled and + is clicked', async () => {
     const onChange = vi.fn();
     render(<NumberStepper value={10} onChange={onChange} label="Top K" disabled />);

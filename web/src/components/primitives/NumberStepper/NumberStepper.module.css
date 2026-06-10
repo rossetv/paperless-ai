@@ -60,6 +60,15 @@
   background-color: var(--colour-button-light-bg);
 }
 
+/* ── Value cell — wraps the numeric input and the optional unit suffix.
+ *    Sits between the − and + buttons and carries the dividing borders. ── */
+.value-cell {
+  display: inline-flex;
+  align-items: stretch;
+  border-left: var(--spacing-1) solid var(--colour-border-button);
+  border-right: var(--spacing-1) solid var(--colour-border-button);
+}
+
 /* ── The value field — a flat number input. ── */
 .input {
   /* Hide the browser's native number spin-buttons — the − / + buttons replace them. */
@@ -67,8 +76,6 @@
   width: var(--width-stepper-input);
   padding: var(--spacing-6) var(--spacing-2);
   border: none;
-  border-left: var(--spacing-1) solid var(--colour-border-button);
-  border-right: var(--spacing-1) solid var(--colour-border-button);
   background-color: transparent;
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
@@ -95,7 +102,6 @@
   display: inline-flex;
   align-items: center;
   padding: 0 var(--spacing-7);
-  border-right: var(--spacing-1) solid var(--colour-border-button);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
