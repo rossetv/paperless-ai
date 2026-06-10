@@ -115,7 +115,7 @@ describe('every request sends credentials: include', () => {
     const body: SearchResponse = {
       answer: 'answer',
       sources: [],
-      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      plan: { specs: [] },
       stats: { llm_calls: 1, latency_ms: 100, refined: false },
       ...EMPTY_TELEMETRY,
       outcome_kind: 'answered',
@@ -259,9 +259,19 @@ describe('successful responses parse into typed shapes', () => {
         },
       ],
       plan: {
-        semantic_queries: ['boiler warranty expiry date'],
-        keyword_terms: ['boiler', 'warranty'],
-        sub_questions: [],
+        specs: [
+          {
+            mode: 'hybrid',
+            semantic: 'boiler warranty expiry date',
+            keywords: ['boiler', 'warranty'],
+            correspondent: null,
+            document_type: null,
+            tags: [],
+            date_from: null,
+            date_to: null,
+            rationale: 'find the warranty document',
+          },
+        ],
       },
       stats: { llm_calls: 2, latency_ms: 450, refined: false },
       ...EMPTY_TELEMETRY,
@@ -272,7 +282,7 @@ describe('successful responses parse into typed shapes', () => {
     expect(result.answer).toBe('The boiler warranty expires 2025.');
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0]?.document_id).toBe(42);
-    expect(result.plan.semantic_queries).toEqual(['boiler warranty expiry date']);
+    expect(result.plan.specs[0]?.semantic).toBe('boiler warranty expiry date');
     expect(result.stats.llm_calls).toBe(2);
   });
 
@@ -374,7 +384,7 @@ describe('correct HTTP methods and endpoint paths', () => {
     mockFetch(200, {
       answer: '',
       sources: [],
-      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      plan: { specs: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
       outcome_kind: 'answered',
     });

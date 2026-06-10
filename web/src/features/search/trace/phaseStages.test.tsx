@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { render } from '@testing-library/react';
 import {
   compactTokens,
   formatCostLabel,
   formatUsd,
+  phaseDetailNode,
   phaseToStages,
   verdictsOf,
 } from './phaseStages';
@@ -130,6 +132,204 @@ describe('verdictsOf', () => {
       ms: 1,
     };
     expect(verdictsOf(record)).toBeUndefined();
+  });
+});
+
+/** Render a phase's detail node and return its text content for assertions. */
+function detailText(record: PhaseRecord): string {
+  const { container } = render(<>{phaseDetailNode(record)}</>);
+  return container.textContent ?? '';
+}
+
+describe('phaseDetailNode — planner specs', () => {
+  it('renders one line per planned spec with query, mode, filters, rationale', () => {
+    const record: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: {
+        skipped_trivial: false,
+        specs: [
+          {
+            mode: 'hybrid',
+            query: 'npower energy 2024',
+            filters: {
+              correspondent: 'Npower',
+              document_type: 'Invoice',
+              tags: ['bills'],
+              date_from: '2024-01-01',
+              date_to: '2024-12-31',
+            },
+            rationale: 'find the annual spend',
+          },
+        ],
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('npower energy 2024');
+    expect(text).toContain('(hybrid)');
+    expect(text).toContain('from Npower');
+    expect(text).toContain('type Invoice');
+    expect(text).toContain('tags bills');
+    expect(text).toContain('2024-01-01→2024-12-31');
+    expect(text).toContain('find the annual spend');
+  });
+
+  it('falls back to the legacy rewritten_query when no specs are present', () => {
+    const record: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: { rewritten_query: 'old shape', skipped_trivial: false },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    expect(detailText(record)).toContain('old shape');
+  });
+
+  it('reports a skipped trivial plan', () => {
+    const record: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: { skipped_trivial: true, specs: [] },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    expect(detailText(record)).toContain('Trivial query');
+  });
+});
+
+describe('phaseDetailNode — resolve', () => {
+  it('renders resolved ids/dates and the dropped guesses', () => {
+    const record: PhaseRecord = {
+      phase: 'resolve',
+      label: 'Resolving filters',
+      detail: {
+        resolved: [
+          {
+            spec_index: 0,
+            correspondent_id: 7,
+            document_type_id: null,
+            tag_ids: [3, 9],
+            date_from: '2024-01-01',
+            date_to: null,
+          },
+        ],
+        dropped: [{ spec_index: 0, names: ['Acme Ltd', 'Receipt'] }],
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('correspondent #7');
+    expect(text).toContain('tags #3, #9');
+    expect(text).toContain('from 2024-01-01');
+    expect(text).toContain('Dropped (no match): Acme Ltd, Receipt');
+  });
+
+  it('renders "no filters" for a spec that resolved nothing', () => {
+    const record: PhaseRecord = {
+      phase: 'resolve',
+      label: 'Resolving filters',
+      detail: {
+        resolved: [
+          {
+            spec_index: 0,
+            correspondent_id: null,
+            document_type_id: null,
+            tag_ids: [],
+            date_from: null,
+            date_to: null,
+          },
+        ],
+        dropped: [],
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    expect(detailText(record)).toContain('no filters');
+  });
+});
+
+describe('phaseDetailNode — refine', () => {
+  it('renders the gap, action, new searches, and carried-over count', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'no figure for Q4',
+        action: 're-planned: 1 new searches',
+        new_specs: [{ mode: 'semantic', query: 'Q4 invoice total' }],
+        carried_over: 3,
+        noop: false,
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('Gap: no figure for Q4');
+    expect(text).toContain('Action: re-planned');
+    expect(text).toContain('New search 1: “Q4 invoice total”');
+    expect(text).toContain('Carried over 3 documents');
+  });
+
+  it('omits new searches on a no-op pass', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'nothing more to add',
+        action: 'no new searches → finalising on current evidence',
+        new_specs: [],
+        carried_over: 1,
+        noop: true,
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('finalising on current evidence');
+    expect(text).not.toContain('New search');
+    expect(text).toContain('Carried over 1 document');
+  });
+});
+
+describe('phaseDetailNode — replan', () => {
+  it('renders the hint and the re-planned searches', () => {
+    const record: PhaseRecord = {
+      phase: 'replan',
+      label: 'Re-planning',
+      detail: {
+        hint: 'need the 2023 figure too',
+        specs: [{ mode: 'hybrid', query: '2023 energy spend' }],
+        clarify: false,
+      },
+      tokens: { prompt: 50, completion: 5, reasoning: 0, total: 55 },
+      cost: { usd: 0.0005, local: false },
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('Hint: need the 2023 figure too');
+    expect(text).toContain('2023 energy spend');
+  });
+
+  it('notes when a re-plan asked to clarify', () => {
+    const record: PhaseRecord = {
+      phase: 'replan',
+      label: 'Re-planning',
+      detail: { clarify: true },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    expect(detailText(record)).toContain('asked to clarify');
   });
 });
 

@@ -33,12 +33,19 @@ const RESPONSE: SearchResponse = {
     },
   ],
   plan: {
-    semantic_queries: [
-      'Total annual energy payments to Npower in 2024',
-      'Direct debit schedule and upcoming collection date',
+    specs: [
+      {
+        mode: 'hybrid',
+        semantic: 'Total annual energy payments to Npower in 2024',
+        keywords: ['Npower', 'direct debit', '2024'],
+        correspondent: 'Npower',
+        document_type: null,
+        tags: [],
+        date_from: '2024-01-01',
+        date_to: '2024-12-31',
+        rationale: 'Find the annual energy spend',
+      },
     ],
-    keyword_terms: ['Npower', 'direct debit', '2024'],
-    sub_questions: [],
   },
   stats: { llm_calls: 3, latency_ms: 1842, refined: true },
   ...EMPTY_TELEMETRY,

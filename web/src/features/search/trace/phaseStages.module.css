@@ -1,0 +1,20 @@
+/*
+ * Search-trace detail-node CSS Module.
+ *
+ * The planner/resolve/refine/replan phases render a multi-line detail node
+ * (one short line per planned search, per resolved spec, etc.) inside the
+ * PipelineStages `.detail` caption slot. Each line is a block-level span so the
+ * lines stack vertically rather than running together.
+ *
+ * Tier: features (composition-only). Values come exclusively from design tokens.
+ */
+
+/* One stacked line in a multi-line trace detail node. */
+.line {
+  display: block;
+}
+
+/* Separate stacked lines slightly for legibility without changing the row gap. */
+.line + .line {
+  margin-top: var(--spacing-1);
+}

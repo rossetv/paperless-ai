@@ -99,11 +99,30 @@ export interface SourceDocument extends PreviewableDocument {
   tags: string[];
 }
 
-/** The query plan for UI transparency (spec §7.1). */
+/**
+ * One planned search in the multi-spec plan, for UI transparency (spec §7.1).
+ *
+ * Mirrors `SpecResponse` in `wire/search.py`: the planner's free-text filter
+ * *guesses* (correspondent / document_type / tags / date bounds), NOT the
+ * resolved taxonomy ids — resolution happens later in the pipeline (the
+ * `resolve` phase). `semantic` is null for a keyword-only spec; `keywords` is
+ * empty for a semantic-only spec.
+ */
+export interface Spec {
+  mode: string;
+  semantic: string | null;
+  keywords: string[];
+  correspondent: string | null;
+  document_type: string | null;
+  tags: string[];
+  date_from: string | null;
+  date_to: string | null;
+  rationale: string;
+}
+
+/** The multi-spec query plan for UI transparency (spec §7.1). */
 export interface QueryPlan {
-  semantic_queries: string[];
-  keyword_terms: string[];
-  sub_questions: string[];
+  specs: Spec[];
 }
 
 /** Execution statistics for UI transparency and debugging. */
@@ -149,10 +168,12 @@ export interface Cost {
  */
 export type SearchPhase =
   | 'plan'
+  | 'resolve'
   | 'retrieve'
   | 'gate'
   | 'judge'
   | 'synthesise'
+  | 'replan'
   | 'refine'
   | 'cache';
 

@@ -74,7 +74,7 @@ function mockFetch(status: number, body: unknown): void {
 const SEARCH_RESPONSE: SearchResponse = {
   answer: 'The boiler warranty expires next year.',
   sources: [],
-  plan: { semantic_queries: ['boiler'], keyword_terms: ['warranty'], sub_questions: [] },
+  plan: { specs: [] },
   stats: { llm_calls: 1, latency_ms: 200, refined: false },
   ...EMPTY_TELEMETRY,
   outcome_kind: 'answered',

@@ -140,7 +140,7 @@ const SUCCESS_DATA = {
       tags: ['Utilities'],
     },
   ],
-  plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+  plan: { specs: [] },
   stats: { llm_calls: 1, latency_ms: 100, refined: false },
   trace: { phases: [] },
   cost: {
