@@ -1,0 +1,12 @@
+/*
+ * ConnectionsPanel feature — CSS Module.
+ *
+ * Lays out the provider strip above the integration accordion cards.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Provider strip — sits above the accordion cards ── */
+.provider-strip {
+  padding: var(--spacing-13) 0 var(--spacing-13);
+}
