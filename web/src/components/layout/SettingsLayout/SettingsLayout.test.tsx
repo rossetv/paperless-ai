@@ -33,9 +33,9 @@ describe('SettingsLayout', () => {
     expect(screen.getByText('Body content')).toBeInTheDocument();
   });
 
-  it('renders the settings side-nav with the Access Control group', () => {
+  it('renders the settings side-nav with the Access control group', () => {
     renderLayout();
-    expect(screen.getByText('Access Control')).toBeInTheDocument();
+    expect(screen.getByText('Access control')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Users' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'API Keys' })).toBeInTheDocument();
   });
@@ -45,30 +45,49 @@ describe('SettingsLayout', () => {
     expect(container.firstElementChild?.className).toContain('extra');
   });
 
-  it('renders the Configuration nav group with all nine section links', () => {
+  it('renders the Pipeline nav group with the five pipeline section links', () => {
     renderLayout();
-    expect(screen.getByText('Configuration')).toBeInTheDocument();
-    const sections = [
-      'Paperless Connection',
-      'LLM Provider',
-      'Search Server',
-      'Embeddings & Index',
+    expect(screen.getByText('Pipeline')).toBeInTheDocument();
+    const pipelineItems = [
+      'Connections',
       'OCR',
       'Classification',
-      'Pipeline Tags',
-      'Performance',
-      'Logging',
+      'Indexing',
+      'Search',
     ];
-    for (const name of sections) {
+    for (const name of pipelineItems) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
   });
 
-  it('points the LLM Provider link at the settings route', () => {
+  it('renders the Operations nav group', () => {
     renderLayout();
-    expect(screen.getByRole('link', { name: 'LLM Provider' })).toHaveAttribute(
+    expect(screen.getByText('Operations')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Automation & Daemons' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Logging' })).toBeInTheDocument();
+  });
+
+  it('points the Connections link at the correct settings anchor', () => {
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'Connections' })).toHaveAttribute(
       'href',
-      '/settings#llm',
+      '/settings#connections',
+    );
+  });
+
+  it('points the Classification link at the correct settings anchor', () => {
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'Classification' })).toHaveAttribute(
+      'href',
+      '/settings#classification',
+    );
+  });
+
+  it('points the Indexing link at the correct settings anchor', () => {
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'Indexing' })).toHaveAttribute(
+      'href',
+      '/settings#indexing',
     );
   });
 });
