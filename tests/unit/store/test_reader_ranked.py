@@ -130,8 +130,8 @@ def test_vector_search_date_range_both_bounds(populated_db: str) -> None:
         unit_vec(4, 0),
         k=10,
         filters=make_search_filters(
-            date_from="2023-01-01T00:00:00+00:00",
-            date_to="2023-12-31T23:59:59+00:00",
+            date_from="2023-01-01",
+            date_to="2023-12-31",
         ),
     )
     reader.close()

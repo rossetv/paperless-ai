@@ -23,8 +23,13 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
 
     Filter semantics:
 
-    - ``date_from`` / ``date_to``: inclusive range on ``d.created`` using
-      lexicographic ISO-8601 string comparison (normalised dates sort correctly).
+    - ``date_from`` / ``date_to``: inclusive range on the **date portion** of
+      ``d.created`` via SQLite ``date(d.created)``.  Documents store a full
+      ISO-8601 timestamp (e.g. ``"2025-04-25T00:00:00+00:00"``); the bare
+      ``YYYY-MM-DD`` bounds supplied by the search pipeline would fail a naïve
+      lexicographic comparison because the ``T…`` suffix sorts after a bare date
+      string.  Wrapping with ``date()`` strips the time and timezone so a bound
+      of ``"2025-04-25"`` correctly includes any stored timestamp on that date.
     - ``correspondent_id``: equality on ``d.correspondent_id``.
     - ``document_type_id``: equality on ``d.document_type_id``.
     - ``tag_ids``: each id in the tuple must appear as a value in
@@ -38,11 +43,11 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
     params: list[str | int] = []
 
     if filters.date_from is not None:
-        clauses.append("d.created >= ?")
+        clauses.append("date(d.created) >= ?")
         params.append(filters.date_from)
 
     if filters.date_to is not None:
-        clauses.append("d.created <= ?")
+        clauses.append("date(d.created) <= ?")
         params.append(filters.date_to)
 
     if filters.correspondent_id is not None:
