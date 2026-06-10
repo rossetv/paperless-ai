@@ -1501,24 +1501,39 @@ def _specs_equal(
     left: tuple[RetrievalSpec, ...],
     right: tuple[RetrievalSpec, ...],
 ) -> bool:
-    """Return True when two resolved spec tuples are equivalent (no-op guard).
+    """Return True when two resolved spec tuples are search-equivalent (no-op guard).
 
-    Frozen-dataclass equality compares every field, but ``SearchFilters.tag_ids``
-    is an order-sensitive tuple — two re-plans that resolve the same tags in a
-    different order are the *same* search. Each spec's ``tag_ids`` is normalised
-    to a sorted tuple before comparison so a mere re-ordering reads as a no-op
-    (and the pass skips a redundant, billable retrieve + judge).
+    Compares only the SEARCH-DETERMINING fields — ``mode``, ``semantic``,
+    ``keywords`` (order-normalised), and ``filters`` (with ``tag_ids`` sorted) —
+    and explicitly EXCLUDES ``rationale``.  The re-plan regenerates rationale on
+    every call, so including it would prevent the guard from ever firing when the
+    actual search is identical but the explanatory text differs.
     """
     if len(left) != len(right):
         return False
-    return all(_normalise_spec(a) == _normalise_spec(b) for a, b in zip(left, right))
+    return all(_spec_search_key(a) == _spec_search_key(b) for a, b in zip(left, right))
 
 
-def _normalise_spec(spec: RetrievalSpec) -> RetrievalSpec:
-    """Return *spec* with its filters' ``tag_ids`` sorted, for stable comparison."""
-    return replace(
-        spec,
-        filters=replace(spec.filters, tag_ids=tuple(sorted(spec.filters.tag_ids))),
+def _spec_search_key(
+    spec: RetrievalSpec,
+) -> tuple[str, str | None, tuple[str, ...], object]:
+    """Return a comparable key for the search-determining fields of *spec*.
+
+    The key is ``(mode, semantic, sorted_keywords, normalised_filters)`` where
+    ``normalised_filters`` is the spec's :class:`~store.models.SearchFilters`
+    with ``tag_ids`` sorted — so two specs that differ only in tag order or in
+    their ``rationale`` compare as equal.  ``rationale`` is deliberately omitted:
+    it is explanatory text that changes every re-plan call and must not influence
+    the no-op decision.
+    """
+    normalised_filters = replace(
+        spec.filters, tag_ids=tuple(sorted(spec.filters.tag_ids))
+    )
+    return (
+        spec.mode,
+        spec.semantic,
+        tuple(sorted(spec.keywords)),
+        normalised_filters,
     )
 
 
