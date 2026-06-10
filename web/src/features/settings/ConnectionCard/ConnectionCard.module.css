@@ -1,0 +1,204 @@
+/*
+ * ConnectionCard feature — CSS Module.
+ *
+ * An accordion integration card: coloured glyph, title/subtitle, status pill,
+ * Test button, rotating chevron. Body hidden when collapsed.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+/* ── Card container ── */
+.card {
+  background-color: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border);
+  border-radius: var(--radius-large);
+  overflow: hidden;
+}
+
+/* ── Header row — the always-visible trigger ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  padding: var(--spacing-13) var(--spacing-14);
+  cursor: pointer;
+  user-select: none;
+}
+
+.header:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+}
+
+.header:hover .glyph {
+  opacity: var(--opacity-subdued);
+}
+
+/* ── Brand glyph — coloured rounded square ── */
+.glyph {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--spacing-16);
+  height: var(--spacing-16);
+  border-radius: var(--radius-standard);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+  color: var(--colour-text-on-dark);
+  transition: opacity var(--duration-fast) var(--easing-standard);
+}
+
+.glyph-blue {
+  background-color: var(--colour-accent);
+}
+
+.glyph-teal {
+  background-color: var(--colour-status-ok-fg);
+}
+
+.glyph-grey {
+  background-color: var(--colour-text-tertiary);
+}
+
+/* ── Title + subtitle ── */
+.header-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.title {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  line-height: var(--line-height-micro);
+  color: var(--colour-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Status pill — dot + label ── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+  flex-shrink: 0;
+}
+
+.pill-label {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill-dot {
+  flex-shrink: 0;
+  width: var(--size-conn-dot);
+  height: var(--size-conn-dot);
+  border-radius: var(--radius-circle);
+  background: var(--colour-text-tertiary);
+  transition: background var(--duration-fast) var(--easing-standard),
+              box-shadow var(--duration-fast) var(--easing-standard);
+}
+
+.pill-ok .pill-dot {
+  background: var(--colour-status-ok-fg);
+  box-shadow: var(--shadow-conn-ok);
+}
+
+.pill-err .pill-dot {
+  background: var(--colour-status-danger-fg);
+  box-shadow: var(--shadow-conn-err);
+}
+
+.pill-off .pill-dot {
+  background: var(--colour-text-tertiary);
+  opacity: var(--opacity-inactive);
+}
+
+.pill-untested .pill-dot {
+  background: var(--colour-text-tertiary);
+  opacity: var(--opacity-inactive);
+}
+
+/* ── Ghost Test button ── */
+.btn-test {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-4) var(--spacing-10);
+  border: var(--spacing-1) solid var(--colour-hairline-strong);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--colour-text-primary);
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-caption-bold);
+  letter-spacing: var(--letter-spacing-caption);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--duration-fast) var(--easing-standard),
+              border-color var(--duration-fast) var(--easing-standard);
+}
+
+.btn-test:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.btn-test:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+.btn-test:hover:not(:disabled) {
+  background: var(--colour-button-light-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+/* ── Chevron — rotates 180° when expanded ── */
+.chevron {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--colour-text-tertiary);
+  transition: transform var(--duration-slow) var(--easing-emphasis);
+}
+
+.chevron-open {
+  transform: rotate(180deg);
+}
+
+/* ── Body — hidden via HTML hidden attribute, padded when visible ── */
+.body {
+  padding: 0 var(--spacing-14);
+}
+
+.body[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
