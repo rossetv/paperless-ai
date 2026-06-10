@@ -1,7 +1,7 @@
 """LLM answer synthesiser — Stage 3 of the search pipeline.
 
 The synthesiser makes one LLM call using the configured SEARCH_ANSWER_MODEL
-(falling back through AI_MODELS on failure) and parses the JSON response into
+(falling back through CLASSIFY_MODELS on failure) and parses the JSON response into
 either an ``Answered`` or a ``NeedsMore`` dataclass.
 
 Design notes:
@@ -23,7 +23,7 @@ Design notes:
   (CODE_GUIDELINES.md §8.1): the synthesiser subclasses the mixin and inherits
   the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
   ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_ANSWER_MODEL
-  then AI_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
+  then CLASSIFY_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
 - A failing model — whether a retry-exhausted retryable error or a
   non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
   ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
@@ -85,7 +85,7 @@ class Synthesizer(OpenAIChatMixin):
 
     Args:
         settings: Application settings; supplies SEARCH_ANSWER_MODEL and
-            AI_MODELS for the fallback chain, plus MAX_RETRIES /
+            CLASSIFY_MODELS for the fallback chain, plus MAX_RETRIES /
             MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
     """
 
@@ -110,7 +110,7 @@ class Synthesizer(OpenAIChatMixin):
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
         Makes one LLM call using SEARCH_ANSWER_MODEL, falling back through
-        AI_MODELS on any API error.  On any parse failure or exhausted
+        CLASSIFY_MODELS on any API error.  On any parse failure or exhausted
         fallback, degrades gracefully based on *mode*.
 
         Args:
@@ -148,7 +148,7 @@ class Synthesizer(OpenAIChatMixin):
         raw_content = self._complete_with_model_fallback(
             primary_model=self.settings.SEARCH_ANSWER_MODEL,
             messages=messages,
-            fallback_models=self.settings.AI_MODELS,
+            fallback_models=self.settings.CLASSIFY_MODELS,
             log_event_prefix="synthesiser",
             reasoning_effort=self.settings.SEARCH_ANSWER_REASONING_EFFORT,
             response_format=_synthesiser_response_format(self.settings),

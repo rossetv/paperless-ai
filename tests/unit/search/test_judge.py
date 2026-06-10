@@ -183,6 +183,36 @@ def test_judge_fail_open_keeps_all_with_reason(judge_with_response) -> None:
     assert all(dv.keep for dv in v.verdicts)
 
 
+# ---------------------------------------------------------------------------
+# CLASSIFY_MODELS fallback tests
+# ---------------------------------------------------------------------------
+
+
+def test_judge_fallback_uses_classify_models() -> None:
+    """RelevanceJudge must fall back through CLASSIFY_MODELS, not AI_MODELS."""
+    from unittest.mock import MagicMock
+    from tests.helpers.llm import make_chat_completion, make_internal_server_error
+
+    good_verdict = '{"verdicts": [{"document_id": 1, "keep": true, "reason": ""}]}'
+    settings = make_search_settings(
+        SEARCH_JUDGE_MODEL="gpt-5.4-mini",
+        CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+    )
+
+    judge = RelevanceJudge(settings)
+    judge._create_completion = MagicMock(  # type: ignore[method-assign]
+        side_effect=[
+            make_internal_server_error(),
+            make_chat_completion(good_verdict),
+        ]
+    )
+
+    verdict = judge.judge("warranty?", [JudgeCandidate(1, "boiler warranty")])
+
+    assert judge._create_completion.call_count == 2  # type: ignore[attr-defined]
+    assert verdict.relevant_document_ids == frozenset({1})
+
+
 def test_judge_all_drop_is_an_explicit_bail(judge_with_response) -> None:
     judge = judge_with_response(
         '{"verdicts": ['

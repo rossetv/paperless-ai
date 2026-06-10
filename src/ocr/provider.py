@@ -32,7 +32,7 @@ def is_blank(image: Image.Image, threshold: int = 5) -> bool:
 class OcrProvider(OpenAIChatMixin):
     """OCR provider backed by the OpenAI (or Ollama-compatible) chat API.
 
-    Tries each model in ``settings.AI_MODELS`` in order, falling back to the
+    Tries each model in ``settings.OCR_MODELS`` in order, falling back to the
     next model when the current one refuses or errors.
     """
 
@@ -94,7 +94,7 @@ class OcrProvider(OpenAIChatMixin):
             },
         ]
 
-        models_to_try = unique_models(self.settings.AI_MODELS)
+        models_to_try = unique_models(self.settings.OCR_MODELS)
         primary_model = models_to_try[0]
 
         for model in models_to_try:

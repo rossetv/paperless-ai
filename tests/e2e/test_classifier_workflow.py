@@ -35,7 +35,7 @@ def _make_settings(**overrides):
         "CLASSIFY_MAX_TOKENS": 0,
         "LLM_PROVIDER": "openai",
         "REQUEST_TIMEOUT": 180,
-        "AI_MODELS": ["gpt-5.4-mini"],
+        "CLASSIFY_MODELS": ["gpt-5.4-mini"],
         "REFUSAL_MARK": "CHATGPT REFUSED TO TRANSCRIBE",
     }
     defaults.update(overrides)

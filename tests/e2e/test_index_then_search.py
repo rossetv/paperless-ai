@@ -161,7 +161,7 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_MAX_REFINEMENTS = 1
     settings.SEARCH_PLANNER_MODEL = "gpt-5.4-mini"
     settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
-    settings.AI_MODELS = ["gpt-5.4-mini", "gpt-5.4"]
+    settings.CLASSIFY_MODELS = ["gpt-5.4-mini", "gpt-5.4"]
     settings.PAPERLESS_URL = "http://paperless.example:8000"
     # Real ints so the @retry decorator on the planner / synthesiser is well-formed.
     settings.MAX_RETRIES = 3
