@@ -1,0 +1,16 @@
+/*
+ * FieldControl feature — CSS Module.
+ *
+ * The `composite` wrapper stacks a select and its companion Reasoning
+ * segmented vertically with a small gap, filling the available width.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.composite {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-6);
+  width: 100%;
+}

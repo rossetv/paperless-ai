@@ -2,20 +2,14 @@ import React from 'react';
 import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
 import { SettingsCard } from '../../../components/primitives/SettingsCard/SettingsCard';
 import { Row } from '../../../components/primitives/Row/Row';
-import { SettingsTextField } from '../../../components/primitives/SettingsTextField/SettingsTextField';
-import { SettingsListField } from '../../../components/primitives/SettingsListField/SettingsListField';
-import { SettingsSelectField } from '../../../components/primitives/SettingsSelectField/SettingsSelectField';
-import { NumberStepper } from '../../../components/primitives/NumberStepper/NumberStepper';
-import { Toggle } from '../../../components/primitives/Toggle/Toggle';
-import { Segmented } from '../../../components/primitives/Segmented/Segmented';
-import { SecretField } from '../SecretField/SecretField';
+import { Disclosure } from '../../../components/primitives/Disclosure/Disclosure';
+import { FieldControl } from '../FieldControl/FieldControl';
 import type {
   ConfigValue,
   SettingsDraft,
   SettingsSection as SectionModel,
   SettingsField,
 } from '../fieldModel';
-import styles from './SettingsSection.module.css';
 
 export interface SettingsSectionProps {
   /** The section descriptor from the field model. */
@@ -24,8 +18,8 @@ export interface SettingsSectionProps {
   values: SettingsDraft;
   /**
    * The config keys whose change requires a full document re-index — the
-   * server's `requires_reindex` set. A field in this set shows a re-index
-   * note under its hint.
+   * server's `requires_reindex` set. A field in this set shows an amber
+   * "Rebuilds the index on save" pill beside its label.
    */
   reindexKeys?: ReadonlySet<string>;
   /**
@@ -48,107 +42,75 @@ export interface SettingsSectionProps {
 }
 
 /**
- * Render the right-column control for one field, bound to its draft value.
+ * Render one field as a `Row` with the correct `FieldControl` inside.
  *
- * Each branch picks the primitive matching `field.control.kind`.
+ * Handles the `controlId` labellability rule (segmented and secret are not
+ * labellable), the `requiresReindex` pill, the `isDefault` badge, and the
+ * `reasoningValue` pass-through for composite select+reasoning controls.
  */
-function FieldControl({
+function FieldRow({
   field,
-  value,
+  values,
+  reindexKeys,
+  defaultKeys,
   onChange,
+  last,
 }: {
   field: SettingsField;
-  value: ConfigValue | undefined;
-  onChange: (value: ConfigValue | null) => void;
+  values: SettingsDraft;
+  reindexKeys?: ReadonlySet<string>;
+  defaultKeys?: ReadonlySet<string>;
+  onChange: (key: string, value: ConfigValue | null) => void;
+  last: boolean;
 }): React.ReactElement {
-  const control = field.control;
-  const id = `setting-${field.key}`;
+  // A single-element control can be focused from its label; a Segmented
+  // group or a SecretField (multiple elements) cannot.
+  const labellable =
+    field.control.kind !== 'segmented' && field.control.kind !== 'secret';
+  const controlId = labellable ? `setting-${field.key}` : undefined;
+  const requiresReindex = reindexKeys?.has(field.key) ?? false;
+  const isDefault = defaultKeys?.has(field.key) ?? false;
 
-  switch (control.kind) {
-    case 'number':
-      return (
-        <NumberStepper
-          label={field.label}
-          value={typeof value === 'number' ? value : 0}
-          min={control.min}
-          {...(control.max !== undefined ? { max: control.max } : {})}
-          {...(control.step !== undefined ? { step: control.step } : {})}
-          {...(control.suffix !== undefined ? { suffix: control.suffix } : {})}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'toggle':
-      return (
-        <Toggle
-          label={field.label}
-          checked={value === true}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'segmented':
-      return (
-        <Segmented
-          label={field.label}
-          options={control.options}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'select':
-      return (
-        <SettingsSelectField
-          id={id}
-          label={field.label}
-          options={control.options}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'secret':
-      return (
-        <SecretField
-          id={id}
-          label={field.label}
-          maskedValue={typeof value === 'string' ? value : ''}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'list':
-      return (
-        <SettingsListField
-          id={id}
-          label={field.label}
-          value={Array.isArray(value) ? value : []}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    case 'text':
-    default: {
-      const textMono = control.kind === 'text' ? (control.mono ?? false) : false;
-      const textPlaceholder = control.kind === 'text' ? control.placeholder : undefined;
-      return (
-        <SettingsTextField
-          id={id}
-          label={field.label}
-          {...(textMono ? { mono: true } : {})}
-          {...(textPlaceholder !== undefined ? { placeholder: textPlaceholder } : {})}
-          value={typeof value === 'string' ? value : ''}
-          onChange={(next) => onChange(next)}
-        />
-      );
-    }
-  }
+  // For select controls with a reasoningKey, pass the reasoning draft value
+  // through so FieldControl can bind the companion segmented.
+  const reasoningValue =
+    field.control.kind === 'select' && field.control.reasoningKey !== undefined
+      ? values[field.control.reasoningKey]
+      : undefined;
+
+  return (
+    <Row
+      label={field.label}
+      hint={field.hint}
+      env={field.key}
+      {...(controlId !== undefined ? { controlId } : {})}
+      last={last}
+      isDefault={isDefault}
+      requiresReindex={requiresReindex}
+    >
+      <FieldControl
+        field={field}
+        value={values[field.key]}
+        onChange={onChange}
+        {...(controlId !== undefined ? { controlId } : {})}
+        {...(reasoningValue !== undefined ? { reasoningValue } : {})}
+      />
+    </Row>
+  );
 }
 
 /**
  * One settings section — a `SettingsBlock` of model-driven `SettingsCard`s.
  *
  * Renders a `SettingsBlock` for the section, then a `SettingsCard` for each
- * group. Fields within each card are rendered as `Row`s. The `groupActions`
- * map lets callers inject actions into specific card headers — used by the
- * `paperless/endpoint` group for `TestConnectionAction`.
+ * group. Fields within each card are rendered as `Row`s. When a group has an
+ * `advanced` array, those fields appear inside a collapsed `Disclosure` with
+ * an "Advanced · {n}" summary, below the primary fields.
  *
- * Tier: features/ — knows the field model, composes primitives + SecretField.
+ * The `groupActions` map lets callers inject actions into specific card headers
+ * — used by the `paperless/endpoint` group for `TestConnectionAction`.
+ *
+ * Tier: features/ — knows the field model, composes primitives + FieldControl.
  */
 export function SettingsSection({
   section,
@@ -164,51 +126,50 @@ export function SettingsSection({
       title={section.title}
       subtitle={section.subtitle}
     >
-      {section.groups.map((group) => (
-        <SettingsCard
-          key={group.id}
-          title={group.title}
-          {...(group.subtitle !== undefined ? { subtitle: group.subtitle } : {})}
-          {...(groupActions?.[group.id] !== undefined ? { headerActions: groupActions[group.id] } : {})}
-        >
-          {group.fields.map((field, index) => {
-            // A single-element control can be focused from its label; a Segmented
-            // group or a SecretField (multiple elements) cannot.
-            const labellable =
-              field.control.kind !== 'segmented' && field.control.kind !== 'secret';
-            const needsReindex = reindexKeys?.has(field.key) ?? false;
-            const isDefault = defaultKeys?.has(field.key) ?? false;
-            const hint = needsReindex ? (
-              <>
-                {field.hint}
-                <span className={styles['reindex-note']}>
-                  Changing this requires re-indexing all documents.
-                </span>
-              </>
-            ) : (
-              field.hint
-            );
-            const controlId = labellable ? `setting-${field.key}` : undefined;
-            return (
-              <Row
+      {section.groups.map((group) => {
+        const advancedFields = group.advanced ?? [];
+        const hasAdvanced = advancedFields.length > 0;
+        // The "last" row logic must account for both primary and advanced fields.
+        // If there are advanced fields, the last primary row is never truly last
+        // in the visual card — the disclosure follows — so we keep the divider.
+        const primaryFields = group.fields;
+
+        return (
+          <SettingsCard
+            key={group.id}
+            title={group.title}
+            {...(group.subtitle !== undefined ? { subtitle: group.subtitle } : {})}
+            {...(groupActions?.[group.id] !== undefined ? { headerActions: groupActions[group.id] } : {})}
+          >
+            {primaryFields.map((field, index) => (
+              <FieldRow
                 key={field.key}
-                label={field.label}
-                hint={hint}
-                env={field.key}
-                {...(controlId !== undefined ? { controlId } : {})}
-                last={index === group.fields.length - 1}
-                isDefault={isDefault}
-              >
-                <FieldControl
-                  field={field}
-                  value={values[field.key]}
-                  onChange={(next) => onChange(field.key, next)}
-                />
-              </Row>
-            );
-          })}
-        </SettingsCard>
-      ))}
+                field={field}
+                values={values}
+                {...(reindexKeys !== undefined ? { reindexKeys } : {})}
+                {...(defaultKeys !== undefined ? { defaultKeys } : {})}
+                onChange={onChange}
+                last={index === primaryFields.length - 1 && !hasAdvanced}
+              />
+            ))}
+            {hasAdvanced && (
+              <Disclosure summary={`Advanced · ${advancedFields.length}`}>
+                {advancedFields.map((field, index) => (
+                  <FieldRow
+                    key={field.key}
+                    field={field}
+                    values={values}
+                    {...(reindexKeys !== undefined ? { reindexKeys } : {})}
+                    {...(defaultKeys !== undefined ? { defaultKeys } : {})}
+                    onChange={onChange}
+                    last={index === advancedFields.length - 1}
+                  />
+                ))}
+              </Disclosure>
+            )}
+          </SettingsCard>
+        );
+      })}
     </SettingsBlock>
   );
 }
