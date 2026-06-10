@@ -24,7 +24,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from search.models import SearchResult
+from search.core import _spec_search_key, _specs_equal
+from search.models import RetrievalSpec, SearchResult
+from store.models import SearchFilters
 from tests.helpers.factories import (
     make_chunk_hit,
     make_facet_set,
@@ -446,3 +448,120 @@ class TestEmptyRetrieval:
         assert llm_client.total_calls == 2
         assert result.answer == "Found after broadening [1]."
         assert len(result.sources) == 1
+
+
+# ---------------------------------------------------------------------------
+# H2: _specs_equal / _spec_search_key — rationale excluded from comparison
+# ---------------------------------------------------------------------------
+
+
+def _no_filter() -> SearchFilters:
+    """A SearchFilters with all fields set to 'no restriction'."""
+    return SearchFilters(
+        date_from=None,
+        date_to=None,
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+    )
+
+
+def _make_retrieval_spec(
+    *,
+    mode: str = "semantic",
+    semantic: str | None = "find payslip",
+    keywords: tuple[str, ...] = (),
+    filters: SearchFilters | None = None,
+    rationale: str = "default rationale",
+) -> RetrievalSpec:
+    return RetrievalSpec(
+        mode=mode,  # type: ignore[arg-type]
+        semantic=semantic,
+        keywords=keywords,
+        filters=filters if filters is not None else _no_filter(),
+        rationale=rationale,
+    )
+
+
+class TestSpecsEqual:
+    """_specs_equal compares only search-determining fields; rationale is excluded.
+
+    The no-op guard in SearchCore._refine must fire when the re-plan produces
+    specs whose mode/semantic/keywords/filters are identical but whose rationale
+    string has changed — the re-plan regenerates rationale each call, so
+    including it would prevent the guard from ever firing on equivalent re-plans.
+    """
+
+    def test_equal_specs_with_identical_rationale(self) -> None:
+        """Two identical specs compare as equal."""
+        spec = _make_retrieval_spec(rationale="because A")
+        assert _specs_equal((spec,), (spec,)) is True
+
+    def test_equal_specs_differing_only_in_rationale(self) -> None:
+        """Specs with the same search fields but different rationale are equal."""
+        spec_a = _make_retrieval_spec(rationale="first explanation")
+        spec_b = _make_retrieval_spec(rationale="completely different explanation")
+        assert _specs_equal((spec_a,), (spec_b,)) is True
+
+    def test_different_semantic_makes_specs_unequal(self) -> None:
+        """Different semantic text is a different search — specs must be unequal."""
+        spec_a = _make_retrieval_spec(semantic="find payslip")
+        spec_b = _make_retrieval_spec(semantic="find invoice")
+        assert _specs_equal((spec_a,), (spec_b,)) is False
+
+    def test_different_mode_makes_specs_unequal(self) -> None:
+        """Different mode (semantic vs keyword) is a different search."""
+        spec_a = _make_retrieval_spec(mode="semantic", semantic="payslip", keywords=())
+        spec_b = _make_retrieval_spec(mode="keyword", semantic=None, keywords=("payslip",))
+        assert _specs_equal((spec_a,), (spec_b,)) is False
+
+    def test_different_date_filter_makes_specs_unequal(self) -> None:
+        """Different date filter is a different search."""
+        filters_a = SearchFilters(
+            date_from="2025-04-01",
+            date_to="2025-04-30",
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(),
+        )
+        filters_b = SearchFilters(
+            date_from="2025-05-01",
+            date_to="2025-05-31",
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(),
+        )
+        spec_a = _make_retrieval_spec(filters=filters_a, rationale="april")
+        spec_b = _make_retrieval_spec(filters=filters_b, rationale="may — different text")
+        assert _specs_equal((spec_a,), (spec_b,)) is False
+
+    def test_tag_order_normalised(self) -> None:
+        """Tag order difference does not count as a different search."""
+        filters_a = SearchFilters(
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(7, 42),
+        )
+        filters_b = SearchFilters(
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(42, 7),
+        )
+        spec_a = _make_retrieval_spec(filters=filters_a, rationale="x")
+        spec_b = _make_retrieval_spec(filters=filters_b, rationale="y")
+        assert _specs_equal((spec_a,), (spec_b,)) is True
+
+    def test_different_length_tuples_are_unequal(self) -> None:
+        """A tuple of two specs is never equal to a tuple of one."""
+        spec = _make_retrieval_spec()
+        assert _specs_equal((spec,), (spec, spec)) is False
+
+    def test_spec_search_key_excludes_rationale(self) -> None:
+        """_spec_search_key returns the same key for two specs that differ only in rationale."""
+        spec_a = _make_retrieval_spec(rationale="rationale A")
+        spec_b = _make_retrieval_spec(rationale="rationale B")
+        assert _spec_search_key(spec_a) == _spec_search_key(spec_b)
