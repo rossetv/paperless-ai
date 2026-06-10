@@ -29,13 +29,25 @@ class ModelPrice:
     output_per_mtok: float
 
 
-# Current OpenAI list prices (USD / 1M tokens). THE single edit point — update
-# when rates change. Ollama/local models are intentionally absent (priced as
-# free via the provider check, not this table).
+# OpenAI list prices, USD per 1M tokens — Standard tier, short context
+# (https://openai.com/api/pricing). THE single edit point when rates change.
+# Confirmed against the operator's account on 2026-06-10; covers every model in
+# the prod search chain (planner/judge gpt-5.4-nano, answer gpt-5.4-mini, and the
+# gpt-5.4-mini/gpt-5.4/gpt-5.5/o4-mini fallback). Ollama/local models are
+# intentionally absent (priced as free via the provider check, not this table).
+#
+# Cached-input discounts are NOT modelled: every prompt token is priced at the
+# full (uncached) input rate. OpenAI bills cache-hit prompt tokens at a lower
+# rate, so this is a small, deliberately conservative OVER-estimate, never an
+# under-count. The cache-optimised system prompts make some hits likely, but the
+# synthesiser's input is dominated by the (uncacheable) retrieved chunks, so the
+# overshoot is minor.
 MODEL_PRICES: dict[str, ModelPrice] = {
-    "gpt-5.5": ModelPrice(input_per_mtok=1.25, output_per_mtok=10.0),
-    "gpt-5.4": ModelPrice(input_per_mtok=1.0, output_per_mtok=8.0),
-    "gpt-5.4-mini": ModelPrice(input_per_mtok=0.25, output_per_mtok=2.0),
+    "gpt-5.5": ModelPrice(input_per_mtok=5.0, output_per_mtok=30.0),
+    "gpt-5.4": ModelPrice(input_per_mtok=2.5, output_per_mtok=15.0),
+    "gpt-5.4-mini": ModelPrice(input_per_mtok=0.75, output_per_mtok=4.5),
+    "gpt-5.4-nano": ModelPrice(input_per_mtok=0.2, output_per_mtok=1.25),
+    "o4-mini": ModelPrice(input_per_mtok=1.1, output_per_mtok=4.4),
 }
 
 

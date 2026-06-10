@@ -32,7 +32,7 @@ def test_done_summarises_sink_prices_and_emits():
     assert rec.tokens == TokenUsage(
         prompt=1_000_000, completion=0, reasoning=0, total=1_000_000
     )
-    assert rec.cost.usd == 0.25 and rec.ms == 50  # gpt-5.4-mini input 0.25 $/Mtok
+    assert rec.cost.usd == 0.75 and rec.ms == 50  # gpt-5.4-mini input 0.75 $/Mtok
 
 
 def test_cost_summary_totals_and_marks_unpriced():
