@@ -13,7 +13,7 @@ Also covers:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import httpx
 
@@ -262,12 +262,10 @@ def test_probe_ollama_uses_models_endpoint(tmp_path) -> None:
     """
     import httpx
 
-    from common.config import Settings
     from search.settings_routes import _probe_ollama
 
     # Build minimal Settings with OLLAMA_BASE_URL ending in /v1/
     base_url = "http://ollama-host:11434/v1/"
-    models_url = "http://ollama-host:11434/v1/models"
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.rstrip("/") == "/v1/models":
