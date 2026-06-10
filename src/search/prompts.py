@@ -46,49 +46,67 @@ if TYPE_CHECKING:
 # ``required`` at every object level.
 # ---------------------------------------------------------------------------
 
-#: Strict schema for the planner's plan-OR-clarify union.
+#: Strict schema for the planner's retrieval-plan-OR-clarify output.
 #:
-#: Uses the same required-superset strategy as the synthesiser schema: every
-#: property is listed in ``required`` (OpenAI strict mode enforces this), but the
-#: shape discriminates at parse time.
+#: The planner emits a JSON object with two keys:
+#: - ``specs``: an array of PlannedSpec objects (one per planned search).  On a
+#:   clarify response this array is empty; the clarify path is signalled only via
+#:   the ``clarify`` field.
+#: - ``clarify``: null on a normal plan; ``{"reason": "..."}`` when the model
+#:   judges the query obviously inadequate.
 #:
-#: - **Plan response:** ``clarify`` is ``null``; the four plan fields are
-#:   populated normally.
-#: - **Clarify response:** ``clarify`` is ``{"reason": "..."}``; the four plan
-#:   fields carry empty arrays / a null-filled ``filter_candidates`` and are
-#:   ignored by the parser.
-#:
-#: ``clarify`` is typed ``object | null`` so the model can set it to ``null``
-#: on the plan path without violating strict mode.  The nested ``reason`` field
-#: inside the clarify object is typed ``string`` and is required within that
-#: sub-object when the object is present.
+#: Each spec in ``specs`` has:
+#: - ``mode``: ``"semantic"`` or ``"keyword"``.
+#: - ``semantic``: text to embed for a semantic spec; null for a keyword spec.
+#: - ``keywords``: verbatim FTS terms for a keyword spec; empty for semantic.
+#: - ``filter_guess``: free-text filter guesses (correspondent, document_type,
+#:   tags, date_from, date_to) — code resolves them, never the LLM.
+#: - ``rationale``: one-line explanation for why this spec exists.
 PLANNER_JSON_SCHEMA: dict[str, object] = {
     "name": "search_query_plan",
+    "strict": True,
     "schema": {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "semantic_queries": {"type": "array", "items": {"type": "string"}},
-            "keyword_terms": {"type": "array", "items": {"type": "string"}},
-            "filter_candidates": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "correspondent": {"type": ["string", "null"]},
-                    "document_type": {"type": ["string", "null"]},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                    "date_from": {"type": ["string", "null"]},
-                    "date_to": {"type": ["string", "null"]},
+            "specs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "mode": {"type": "string", "enum": ["semantic", "keyword"]},
+                        "semantic": {"type": ["string", "null"]},
+                        "keywords": {"type": "array", "items": {"type": "string"}},
+                        "filter_guess": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "correspondent": {"type": ["string", "null"]},
+                                "document_type": {"type": ["string", "null"]},
+                                "tags": {"type": "array", "items": {"type": "string"}},
+                                "date_from": {"type": ["string", "null"]},
+                                "date_to": {"type": ["string", "null"]},
+                            },
+                            "required": [
+                                "correspondent",
+                                "document_type",
+                                "tags",
+                                "date_from",
+                                "date_to",
+                            ],
+                        },
+                        "rationale": {"type": "string"},
+                    },
+                    "required": [
+                        "mode",
+                        "semantic",
+                        "keywords",
+                        "filter_guess",
+                        "rationale",
+                    ],
                 },
-                "required": [
-                    "correspondent",
-                    "document_type",
-                    "tags",
-                    "date_from",
-                    "date_to",
-                ],
             },
-            "sub_questions": {"type": "array", "items": {"type": "string"}},
             # Adequacy gate (Layer 1): null on a normal plan; an object with a
             # ``reason`` string when the model judges the query inadequate.
             "clarify": {
@@ -103,15 +121,8 @@ PLANNER_JSON_SCHEMA: dict[str, object] = {
                 ]
             },
         },
-        "required": [
-            "semantic_queries",
-            "keyword_terms",
-            "filter_candidates",
-            "sub_questions",
-            "clarify",
-        ],
+        "required": ["specs", "clarify"],
     },
-    "strict": True,
 }
 
 #: Strict schema for the synthesiser's discriminated Answered | NeedsMore union.
@@ -200,29 +211,36 @@ def _judge_response_format(settings: Settings) -> dict[str, object] | None:
 #: Today's date lives in the user turn (:func:`build_planner_user_message`).
 PLANNER_SYSTEM_PROMPT: str = """
 You are a search-query planning engine.  Your sole job is to analyse the user's
-search query and produce a structured JSON object that will drive a hybrid
-retrieval pipeline over a personal document archive (Paperless-ngx).
+search query and produce a structured JSON object that drives a hybrid retrieval
+pipeline over a personal document archive (Paperless-ngx).
 
 The user message states today's date.  Use it to resolve relative date
 expressions such as "last year", "since March", or "the past six months" into
-concrete ISO-8601 dates.
+concrete ISO-8601 dates (YYYY-MM-DD).
 
 # Output format
 
 Reply with a single valid JSON object.  No markdown fences, no explanations,
-no text outside the JSON object.  The object must have exactly these keys:
+no text outside the JSON object.  The object must have exactly these top-level
+keys:
 
 {
-  "semantic_queries": [string, ...],
-  "keyword_terms": [string, ...],
-  "filter_candidates": {
-    "correspondent": string | null,
-    "document_type": string | null,
-    "tags": [string, ...],
-    "date_from": string | null,
-    "date_to": string | null
-  },
-  "sub_questions": [string, ...],
+  "specs": [
+    {
+      "mode": "semantic" | "keyword",
+      "semantic": string | null,
+      "keywords": [string, ...],
+      "filter_guess": {
+        "correspondent": string | null,
+        "document_type": string | null,
+        "tags": [string, ...],
+        "date_from": string | null,
+        "date_to": string | null
+      },
+      "rationale": string
+    },
+    ...
+  ],
   "clarify": {"reason": string} | null
 }
 
@@ -236,48 +254,53 @@ a personal document library and returning a plan would be pointless:
 - A bare entity name with no question (e.g. ``HMRC``, ``BT``) — in these cases
   suggest the user filter by correspondent or document type instead.
 
-**Be conservative.** If there is any real search intent — a question, a date, a
+**Be conservative.**  If there is any real search intent — a question, a date, a
 document type, an action — return a normal plan, not a clarify.  Anything
 ambiguous gets a plan.  The clarify path is for obvious dead ends only.
 
-When you return a clarify response, set the plan fields (``semantic_queries``,
-``keyword_terms``, ``filter_candidates``, ``sub_questions``) to empty/null
-values — they will be ignored.
+When you return a clarify response, set ``specs`` to an empty array.
 
-# Field guidance
+# Strategy — emit a DIVERSE set of searches
 
-**semantic_queries** (1–3 items)
-Rephrase the user's query in 1–3 different ways suitable for dense vector
-search.  Include synonyms, domain paraphrases, and the most natural prose
-form of the question.
+The downstream pipeline runs every spec through a relevance judge and a
+synthesiser that reads full chunks and cites sources.  Your job is to make the
+right documents RETRIEVABLE — not to answer the question.  Favour RECALL.
 
-**keyword_terms** (0–5 items)
-Exact terms, proper nouns, reference numbers, or identifiers that should be
-matched verbatim — e.g. company names, invoice numbers, account references.
-Omit common words.
+Produce a diverse spread across the precision ↔ recall axis, for example:
 
-**filter_candidates**
-Free-text guesses for metadata filters.  These are *candidates* that the
-retrieval code resolves against the real taxonomy — never fabricate ids.
+1. A **tight keyword + filter** spec: exact names/numbers, a strong filter
+   (correspondent or document_type), a narrow date range.
+2. A **medium semantic + date** spec: a rephrased question, some date scoping,
+   light or no other filters.
+3. A **broad semantic** spec with few or no filters — the recall floor.
 
-- correspondent: the likely sender / organisation name, or null.
-- document_type: the likely document category (e.g. "invoice", "contract",
-  "warranty"), or null.
-- tags: zero or more tag label guesses.
-- date_from / date_to: ISO-8601 date strings (YYYY-MM-DD) derived from any
-  temporal language in the query, or null when no date constraint is implied.
-
-**sub_questions** (0–3 items)
-If the query is multi-part or requires several lookups, decompose it into
-discrete sub-questions.  Leave the list empty for a straightforward query.
+Rules:
+- **Filters are optional precision boosters** on SOME specs.  Never put the same
+  filter on every spec.  Always include at least one broadly filtered or
+  unfiltered semantic spec.
+- **Date scoping**: the date range may scope most specs, but keep at least one
+  spec that is NOT date-bound — the answer may live in a document that reports
+  the period without being dated within it (e.g. a year-end summary).
+- **document_type / correspondent as filter, not keyword**: prefer a
+  ``filter_guess.document_type`` of ``"Payslip"`` over adding "Payslip" as a
+  keyword — the word may be absent from the OCR body.
+- **Both modes**: emit at least one ``keyword`` spec (verbatim terms, proper
+  nouns, reference numbers) AND at least one ``semantic`` spec.
+- **Each spec**: set ``mode``, then either ``semantic`` (a rephrasing to embed,
+  ``keywords`` empty) OR ``keywords`` (verbatim FTS terms, ``semantic`` null).
+  ``filter_guess`` holds unresolved name/date guesses (code resolves against the
+  real taxonomy — never fabricate ids).  ``rationale`` is one line on why this
+  spec exists.
 
 # Important rules
 
 - Emit only the JSON object; nothing else.
 - Use British English throughout.
 - Do not invent ids, codes, or field names not mentioned in the query.
+- Resolve relative dates using today's date (given in the user message) into
+  ISO ``YYYY-MM-DD``.
 - When the query contains no correspondent, type, tag, or date hint, set the
-  relevant filter_candidates fields to null or an empty list.
+  relevant ``filter_guess`` fields to null or an empty array.
 """.strip()
 
 

@@ -19,10 +19,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from search.models import EMPTY_FILTER_CANDIDATES, QueryPlan
+from search.models import EMPTY_FILTER_CANDIDATES, RetrievalPlan
 from search.planner import QueryPlanner
 from tests.helpers.factories import make_search_settings
 from tests.helpers.llm import (
+    _make_spec,
     make_authentication_error,
     make_api_error,
     make_chat_completion,
@@ -32,12 +33,15 @@ from tests.helpers.llm import (
 from tests.unit.search.conftest import build_planner
 
 
-def _assert_is_fallback_plan(plan: QueryPlan, raw_query: str) -> None:
+def _assert_is_fallback_plan(plan: RetrievalPlan, raw_query: str) -> None:
     """Assert *plan* is the minimal safe fallback for *raw_query*."""
-    assert plan.semantic_queries == (raw_query,)
-    assert plan.keyword_terms == ()
-    assert plan.sub_questions == ()
-    assert plan.filter_candidates == EMPTY_FILTER_CANDIDATES
+    assert isinstance(plan, RetrievalPlan)
+    assert len(plan.specs) == 1
+    spec = plan.specs[0]
+    assert spec.mode == "semantic"
+    assert spec.semantic == raw_query
+    assert spec.keywords == ()
+    assert spec.filter_guess == EMPTY_FILTER_CANDIDATES
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +95,7 @@ class TestModelFallback:
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
             CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
-        payload = planner_response_json(semantic_queries=["fallback worked"])
+        payload = planner_response_json(specs=[_make_spec(semantic="fallback worked")])
 
         planner = QueryPlanner(settings)
         # First model raises a retryable error; second model succeeds.
@@ -105,7 +109,8 @@ class TestModelFallback:
         plan = planner.plan("test fallback")
 
         assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
-        assert "fallback worked" in plan.semantic_queries
+        assert isinstance(plan, RetrievalPlan)
+        assert any(s.semantic == "fallback worked" for s in plan.specs)
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +165,9 @@ class TestApiErrorNeverEscapes:
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
             CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
-        payload = planner_response_json(semantic_queries=["second model answered"])
+        payload = planner_response_json(
+            specs=[_make_spec(semantic="second model answered")]
+        )
         planner = QueryPlanner(settings)
         planner._create_completion = MagicMock(  # type: ignore[method-assign]
             side_effect=[
@@ -171,7 +178,8 @@ class TestApiErrorNeverEscapes:
 
         plan = planner.plan("a query")
 
-        assert "second model answered" in plan.semantic_queries
+        assert isinstance(plan, RetrievalPlan)
+        assert any(s.semantic == "second model answered" for s in plan.specs)
         assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
 
 
@@ -244,7 +252,9 @@ class TestPlannerReadsClassifyModels:
 
     def test_fallback_chain_uses_classify_models(self) -> None:
         """When the primary model fails, the planner falls back through CLASSIFY_MODELS."""
-        payload = planner_response_json(semantic_queries=["classify-fallback worked"])
+        payload = planner_response_json(
+            specs=[_make_spec(semantic="classify-fallback worked")]
+        )
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
             CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
@@ -261,4 +271,5 @@ class TestPlannerReadsClassifyModels:
         plan = planner.plan("test fallback via classify")
 
         assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
-        assert "classify-fallback worked" in plan.semantic_queries
+        assert isinstance(plan, RetrievalPlan)
+        assert any(s.semantic == "classify-fallback worked" for s in plan.specs)

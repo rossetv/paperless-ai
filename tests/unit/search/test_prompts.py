@@ -41,24 +41,33 @@ class TestPlannerSchema:
         required = set(PLANNER_JSON_SCHEMA["schema"]["required"])
         assert props == required
 
-    def test_schema_models_the_query_plan_keys(self) -> None:
+    def test_schema_models_the_retrieval_plan_keys(self) -> None:
+        """The new schema has 'specs' (array of PlannedSpec) and 'clarify'."""
         props = PLANNER_JSON_SCHEMA["schema"]["properties"]
-        assert {
-            "semantic_queries",
-            "keyword_terms",
-            "filter_candidates",
-            "sub_questions",
-        } <= set(props)
+        assert {"specs", "clarify"} <= set(props)
 
     def test_schema_includes_clarify_field(self) -> None:
         """The schema must include a 'clarify' field for the adequacy gate."""
         props = PLANNER_JSON_SCHEMA["schema"]["properties"]
         assert "clarify" in props
 
-    def test_nested_filter_candidates_is_also_strict(self) -> None:
-        fc = PLANNER_JSON_SCHEMA["schema"]["properties"]["filter_candidates"]
-        assert fc["additionalProperties"] is False
-        assert set(fc["properties"]) == set(fc["required"])
+    def test_specs_items_carry_the_planned_spec_keys(self) -> None:
+        """Each item in specs must carry mode, semantic, keywords, filter_guess, rationale."""
+        spec_schema = PLANNER_JSON_SCHEMA["schema"]["properties"]["specs"]["items"]
+        assert {
+            "mode",
+            "semantic",
+            "keywords",
+            "filter_guess",
+            "rationale",
+        } <= set(spec_schema["properties"])
+
+    def test_nested_filter_guess_is_also_strict(self) -> None:
+        """filter_guess inside each spec must be strict and list all required fields."""
+        spec_schema = PLANNER_JSON_SCHEMA["schema"]["properties"]["specs"]["items"]
+        fg = spec_schema["properties"]["filter_guess"]
+        assert fg["additionalProperties"] is False
+        assert set(fg["properties"]) == set(fg["required"])
 
 
 class TestSynthesiserSchema:

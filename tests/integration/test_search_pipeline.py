@@ -28,6 +28,7 @@ from store.reader import StoreReader
 from store.writer import StoreWriter
 from tests.helpers.llm import (
     ScriptedLLMClient,
+    _make_spec,
     answered_response_json,
     planner_response_json,
 )
@@ -82,7 +83,7 @@ class TestFullPipelineAnswer:
         try:
             llm_client = ScriptedLLMClient(
                 planner_response=planner_response_json(
-                    semantic_queries=["boiler warranty expiry"]
+                    specs=[_make_spec(semantic="boiler warranty expiry")]
                 ),
                 synthesiser_responses=[
                     answered_response_json(
@@ -135,7 +136,7 @@ class TestFullPipelineAnswer:
         try:
             llm_client = ScriptedLLMClient(
                 planner_response=planner_response_json(
-                    semantic_queries=["electricity bill total"]
+                    specs=[_make_spec(semantic="electricity bill total")]
                 ),
                 synthesiser_responses=[
                     answered_response_json("The total is £142.50 [1].", citations=[1])
@@ -174,7 +175,9 @@ class TestFullPipelineAnswer:
         store_reader = StoreReader(settings)
         try:
             llm_client = ScriptedLLMClient(
-                planner_response=planner_response_json(semantic_queries=["a topic"]),
+                planner_response=planner_response_json(
+                    specs=[_make_spec(semantic="a topic")]
+                ),
                 synthesiser_responses=[
                     answered_response_json("Here is the answer [77].", citations=[77])
                 ],
@@ -212,7 +215,9 @@ class TestEmptyRetrievalEndToEnd:
         store_reader = StoreReader(settings)
         try:
             llm_client = ScriptedLLMClient(
-                planner_response=planner_response_json(semantic_queries=["anything"]),
+                planner_response=planner_response_json(
+                    specs=[_make_spec(semantic="anything")]
+                ),
                 synthesiser_responses=[
                     answered_response_json("must not be reached", citations=[])
                 ],
@@ -260,7 +265,7 @@ class TestRetrieveOnlyEndToEnd:
         try:
             llm_client = ScriptedLLMClient(
                 planner_response=planner_response_json(
-                    semantic_queries=["indexed content"]
+                    specs=[_make_spec(semantic="indexed content")]
                 ),
                 synthesiser_responses=[
                     answered_response_json("must not be reached", citations=[])

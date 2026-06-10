@@ -443,6 +443,11 @@ def make_search_settings(**overrides: Any) -> Any:
         # so make_search_settings always returns a real bool, not a truthy mock,
         # and tests that need it off can override with SEARCH_IDENTITY_AWARE=False.
         "SEARCH_IDENTITY_AWARE": True,
+        # Cap on the number of planner specs (SEARCH_PLANNER_MAX_SPECS). A
+        # MagicMock auto-attribute used as a slice index silently returns only
+        # the first element; pin to 8 (the production default) so multi-spec
+        # tests get the full list without needing to override.
+        "SEARCH_PLANNER_MAX_SPECS": 8,
     }
     defaults.update(overrides)
     settings = MagicMock()
