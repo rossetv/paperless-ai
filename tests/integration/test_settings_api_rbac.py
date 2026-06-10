@@ -5,11 +5,15 @@ count_documents call (success with a document count, bad token, unreachable
 host), the new per-service probes (openai, ollama), backward-compatibility of
 omitting ``service``, and the RBAC gates on all three Settings endpoints — a
 member is 403, an unauthenticated caller is 401.
+
+Also covers:
+- Fix 1: _probe_ollama hits the /models endpoint, not the bare base URL
+- Fix 2: missing credential short-circuits before the probe is called
 """
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 
@@ -239,6 +243,156 @@ def test_test_connection_ollama_unreachable(tmp_path) -> None:
         assert body["ok"] is False
         assert body["document_count"] == 0
         assert body["detail"]
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: _probe_ollama must use the /models endpoint, not the bare base URL
+# ---------------------------------------------------------------------------
+
+
+def test_probe_ollama_uses_models_endpoint(tmp_path) -> None:
+    """_probe_ollama hits {base_url}/models, not the bare base URL.
+
+    A real Ollama server returns 404 for GET /v1/ (the bare base).  A mock
+    transport that 404s on the base URL and 200s on /models proves the probe
+    is correct — the function must succeed (not raise) when /models is up.
+    """
+    import httpx
+
+    from common.config import Settings
+    from search.settings_routes import _probe_ollama
+
+    # Build minimal Settings with OLLAMA_BASE_URL ending in /v1/
+    base_url = "http://ollama-host:11434/v1/"
+    models_url = "http://ollama-host:11434/v1/models"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.rstrip("/") == "/v1/models":
+            return httpx.Response(200, json={"object": "list", "data": []})
+        # Bare /v1/ (or anything else) → 404, as a real Ollama server does.
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+
+    # Patch httpx.Client to use our mock transport
+    real_client_init = httpx.Client.__init__
+
+    def patched_init(self, *args, **kwargs):
+        kwargs["transport"] = transport
+        real_client_init(self, *args, **kwargs)
+
+    with patch.object(httpx.Client, "__init__", patched_init):
+        # Build a throwaway Settings; only OLLAMA_BASE_URL matters here.
+        from unittest.mock import patch as _patch
+        import os
+
+        with _patch.dict(
+            os.environ,
+            {
+                "OLLAMA_BASE_URL": base_url,
+                "PAPERLESS_TOKEN": "x",
+                "OPENAI_API_KEY": "x",
+                "LLM_PROVIDER": "ollama",
+            },
+            clear=True,
+        ):
+            from common.config import build_settings
+
+            probe_settings = build_settings(
+                {
+                    "OLLAMA_BASE_URL": base_url,
+                    "PAPERLESS_TOKEN": "tok",
+                    "OPENAI_API_KEY": "key",
+                    "LLM_PROVIDER": "ollama",
+                }
+            )
+        # Must NOT raise — the /models path returns 200.
+        _probe_ollama(probe_settings)
+
+
+def test_probe_ollama_raises_on_404_at_models_endpoint(tmp_path) -> None:
+    """_probe_ollama raises when the /models endpoint returns 4xx."""
+    import httpx
+
+    from search.settings_routes import _probe_ollama
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    real_client_init = httpx.Client.__init__
+
+    def patched_init(self, *args, **kwargs):
+        kwargs["transport"] = transport
+        real_client_init(self, *args, **kwargs)
+
+    with patch.object(httpx.Client, "__init__", patched_init):
+        from common.config import build_settings
+
+        probe_settings = build_settings(
+            {
+                "OLLAMA_BASE_URL": "http://ollama-host:11434/v1/",
+                "PAPERLESS_TOKEN": "tok",
+                "OPENAI_API_KEY": "key",
+                "LLM_PROVIDER": "ollama",
+            }
+        )
+        import pytest
+
+        with pytest.raises(Exception):
+            _probe_ollama(probe_settings)
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: missing / sentinel credential short-circuits before the probe
+# ---------------------------------------------------------------------------
+
+
+def test_test_connection_openai_no_key_skips_probe(tmp_path) -> None:
+    """service=openai with no stored/supplied key returns ok=False,
+    detail='Not configured', and the probe is never called."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_openai",
+        ) as mock_probe:
+            response = client.post(
+                "/api/settings/test-connection",
+                # No openai_api_key in the request; nothing stored in app_db.
+                json={"service": "openai"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert body["document_count"] == 0
+        assert "not configured" in body["detail"].lower()
+        mock_probe.assert_not_called()
+    finally:
+        store_reader.close()
+        app_db.close()
+
+
+def test_test_connection_ollama_no_url_skips_probe(tmp_path) -> None:
+    """service=ollama with no stored/supplied URL returns ok=False,
+    detail='Not configured', and the probe is never called."""
+    client, app_db, store_reader = _admin_client(tmp_path)
+    try:
+        with patch(
+            "search.settings_routes._probe_ollama",
+        ) as mock_probe:
+            response = client.post(
+                "/api/settings/test-connection",
+                json={"service": "ollama"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert body["document_count"] == 0
+        assert "not configured" in body["detail"].lower()
+        mock_probe.assert_not_called()
     finally:
         store_reader.close()
         app_db.close()

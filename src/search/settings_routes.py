@@ -306,17 +306,21 @@ def _probe_openai(probe_settings: Settings) -> None:
 def _probe_ollama(probe_settings: Settings) -> None:
     """Verify that the Ollama daemon at *probe_settings.OLLAMA_BASE_URL* is reachable.
 
-    Issues a GET to the base URL; any 2xx response is "up". Raises
-    :exc:`httpx.HTTPError` or :exc:`OSError` on failure (matching the
-    transport-layer exceptions already handled for the Paperless probe).
+    Issues a GET to the OpenAI-compatible ``/models`` endpoint
+    (``{base_url.rstrip('/')}/models``).  A real Ollama server returns 404 for
+    the bare ``/v1/`` base URL, so probing that directly would always fail; the
+    ``/models`` list endpoint is the right liveness check.  Any 2xx response is
+    "up".  Raises :exc:`httpx.HTTPError` or :exc:`OSError` on failure (matching
+    the transport-layer exceptions already handled for the Paperless probe).
 
     Args:
         probe_settings: A fully-built :class:`Settings` instance whose
             ``OLLAMA_BASE_URL`` is the endpoint under test.
     """
-    base_url = probe_settings.OLLAMA_BASE_URL or ""
+    base_url = (probe_settings.OLLAMA_BASE_URL or "").rstrip("/")
+    models_url = f"{base_url}/models"
     with httpx.Client(trust_env=False) as client:
-        client.get(base_url, timeout=10).raise_for_status()
+        client.get(models_url, timeout=10).raise_for_status()
 
 
 def _test_connection(
@@ -352,6 +356,26 @@ def _test_connection(
     _SENTINEL = "__test_connection_placeholder__"
     for req in SECRET_KEYS:
         merged.setdefault(req, _SENTINEL)
+
+    # Short-circuit BEFORE building Settings: if the credential we would actually
+    # use is absent or only a sentinel, there is no point attempting the probe.
+    # We check the merged dict here (not the built Settings) because build_settings
+    # may normalise or discard values based on LLM_PROVIDER — e.g. OLLAMA_BASE_URL
+    # is set to None by Settings when LLM_PROVIDER=openai regardless of the
+    # value in merged.
+    if body.service == "openai":
+        effective_key = merged.get("OPENAI_API_KEY", "")
+        if not effective_key or effective_key == _SENTINEL:
+            return TestConnectionResponse(
+                ok=False, document_count=0, detail="Not configured"
+            )
+
+    if body.service == "ollama":
+        effective_url = merged.get("OLLAMA_BASE_URL", "")
+        if not effective_url or effective_url == _SENTINEL:
+            return TestConnectionResponse(
+                ok=False, document_count=0, detail="Not configured"
+            )
 
     try:
         probe_settings = build_settings(merged)
