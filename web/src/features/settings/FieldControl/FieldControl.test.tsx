@@ -142,12 +142,12 @@ describe('FieldControl', () => {
     render(
       <FieldControl
         field={secretField}
-        value="••••"
+        value="********"
         onChange={noop}
         controlId="setting-MY_SECRET"
       />,
     );
-    expect(screen.getByLabelText('Secret field')).toHaveValue('••••');
+    expect(screen.getByLabelText('Secret field')).toHaveValue('********');
   });
 
   it('renders a list field for kind=list', () => {

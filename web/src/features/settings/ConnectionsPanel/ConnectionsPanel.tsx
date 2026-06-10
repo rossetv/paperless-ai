@@ -13,10 +13,11 @@
  * show "Not configured" without probing. Each card's "Test" button re-runs
  * the probe for that one service.
  *
- * Masked-secret detection: a value containing '•' is still the server mask —
- * the user has not replaced the secret. These count as "configured" (the server
- * will use its stored value), but the probe is sent with an empty/absent field
- * for that secret so the backend falls back to the stored one.
+ * Masked-secret detection: a value equal to SECRET_MASK ('********') is still
+ * the server mask — the user has not replaced the secret. These count as
+ * "configured" (the server will use its stored value), but the probe is sent
+ * with an empty/absent field for that secret so the backend falls back to the
+ * stored one.
  *
  * Tier: features/ — composes ConnectionCard, FieldControl, fieldModel types.
  * Does NOT import sections.ts — the section is passed in as a prop.
@@ -30,6 +31,7 @@ import { FieldControl } from '../FieldControl/FieldControl';
 import { Row } from '../../../components/primitives/Row/Row';
 import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
 import { useTestConnection } from '../../../api/hooks/settings';
+import { SECRET_MASK } from '../../../api/types/settings';
 import styles from './ConnectionsPanel.module.css';
 
 export interface ConnectionsPanelProps {
@@ -52,9 +54,9 @@ interface ServiceStatus {
   label: string;
 }
 
-/** True when a string value is still the server-side mask (contains bullet char). */
+/** True when a string value is still the server-side mask (exact match). */
 function isMasked(v: string): boolean {
-  return v.includes('•');
+  return v === SECRET_MASK;
 }
 
 /** True when a service has its required credential configured (non-empty). */
@@ -187,6 +189,20 @@ export function ConnectionsPanel({
   // Only run on mount — deps intentionally empty.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When Ollama becomes visible (LLM_PROVIDER switches to 'ollama') and its
+  // base URL is configured, auto-probe it. Does not re-probe on every keystroke.
+  const prevShowOllamaRef = React.useRef(showOllama);
+  React.useEffect(() => {
+    const wasHidden = !prevShowOllamaRef.current;
+    prevShowOllamaRef.current = showOllama;
+
+    if (showOllama && wasHidden && isConfigured('ollama', values)) {
+      void probeService('ollama');
+    }
+  // showOllama drives the hidden→visible transition; probeService is stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showOllama]);
 
   // Find field model groups from the section — looked up by group id.
   const groupById = React.useMemo(() => {

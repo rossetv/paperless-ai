@@ -137,7 +137,7 @@ const VALUES = {
   NUM_KEY: 30,
   BOOL_KEY: false,
   SEG_KEY: 'a',
-  SECRET_KEY: '••••mask',
+  SECRET_KEY: '********',
   LIST_KEY: ['x', 'y'],
 };
 
@@ -189,7 +189,7 @@ describe('SettingsSection', () => {
 
   it('renders a secret field showing the masked value', () => {
     renderSection();
-    expect(screen.getByLabelText('Secret field')).toHaveValue('••••mask');
+    expect(screen.getByLabelText('Secret field')).toHaveValue('********');
   });
 
   it('renders a list control showing each item as a pill', () => {
