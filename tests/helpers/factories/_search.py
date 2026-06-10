@@ -2,7 +2,8 @@
 
 The ``tests.helpers.factories`` package re-exports every factory from its
 ``__init__``; this submodule holds the builders for the search-pipeline shapes
-— :class:`~search.models.FilterCandidates`, :class:`~search.models.QueryPlan`,
+— :class:`~search.models.FilterCandidates`, :class:`~search.models.PlannedSpec`,
+:class:`~search.models.RetrievalPlan`,
 :class:`~search.models.RetrievedChunk`, :class:`~search.models.SourceDocument`,
 :class:`~search.models.SearchStats`, :class:`~search.models.SearchResult`,
 :class:`~search.models.Answered`, :class:`~search.models.NeedsMore` — and the
@@ -31,7 +32,8 @@ from search.models import (
     JudgeCandidate,
     JudgeVerdict,
     NeedsMore,
-    QueryPlan,
+    PlannedSpec,
+    RetrievalPlan,
     RetrievedChunk,
     SearchResult,
     SearchStats,
@@ -74,28 +76,44 @@ def make_filter_candidates(
     )
 
 
-def make_query_plan(
+def make_planned_spec(
     *,
-    semantic_queries: tuple[str, ...] = ("test query",),
-    keyword_terms: tuple[str, ...] = (),
-    filter_candidates: FilterCandidates | None = None,
-    sub_questions: tuple[str, ...] = (),
-) -> QueryPlan:
-    """Create a QueryPlan with a single semantic query and no filters.
+    mode: str = "semantic",
+    semantic: str | None = "test query",
+    keywords: tuple[str, ...] = (),
+    filter_guess: FilterCandidates | None = None,
+    rationale: str = "test spec",
+) -> PlannedSpec:
+    """Create a PlannedSpec with a single semantic query and no filter guesses.
 
-    *filter_candidates* defaults to an all-``None`` :class:`FilterCandidates`
-    (via :func:`make_filter_candidates`) so a planner test that does not care
-    about filters need not spell one out.
+    *filter_guess* defaults to an all-``None`` :class:`FilterCandidates`
+    (via :func:`make_filter_candidates`) so a test that does not care about
+    filters need not spell one out.
     """
-    return QueryPlan(
-        semantic_queries=semantic_queries,
-        keyword_terms=keyword_terms,
-        filter_candidates=(
-            filter_candidates
-            if filter_candidates is not None
-            else make_filter_candidates()
+    return PlannedSpec(
+        mode=mode,  # type: ignore[arg-type]
+        semantic=semantic,
+        keywords=keywords,
+        filter_guess=(
+            filter_guess if filter_guess is not None else make_filter_candidates()
         ),
-        sub_questions=sub_questions,
+        rationale=rationale,
+    )
+
+
+def make_retrieval_plan(
+    *,
+    specs: tuple[PlannedSpec, ...] | None = None,
+    clarify: object | None = None,
+) -> RetrievalPlan:
+    """Create a RetrievalPlan with one broad semantic spec and no clarify.
+
+    *specs* defaults to a single :func:`make_planned_spec` so a test that does
+    not care about the plan shape need not spell one out.
+    """
+    return RetrievalPlan(
+        specs=specs if specs is not None else (make_planned_spec(),),
+        clarify=clarify,  # type: ignore[arg-type]
     )
 
 
@@ -193,7 +211,7 @@ def make_search_result(
     *,
     answer: str = "The synthesised answer.",
     sources: tuple[SourceDocument, ...] | None = None,
-    plan: QueryPlan | None = None,
+    plan: RetrievalPlan | None = None,
     stats: SearchStats | None = None,
 ) -> SearchResult:
     """Create a SearchResult with one source, a default plan, and default stats.
@@ -204,7 +222,7 @@ def make_search_result(
     return SearchResult(
         answer=answer,
         sources=(sources if sources is not None else (make_source_document(),)),
-        plan=plan if plan is not None else make_query_plan(),
+        plan=plan if plan is not None else make_retrieval_plan(),
         stats=stats if stats is not None else make_search_stats(),
     )
 

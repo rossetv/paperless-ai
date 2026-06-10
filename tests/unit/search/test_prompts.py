@@ -24,7 +24,7 @@ class TestPlannerSchema:
 
     The schema uses a required-superset strategy (matching the synthesiser): all
     fields required, ``clarify`` is ``object | null`` and is null for a normal
-    plan; ``semantic_queries`` etc. are present for a plan and empty for a
+    plan; ``specs`` carries the planned searches for a plan and is empty for a
     clarify response.  This preserves OpenAI strict mode (required == properties)
     while letting the parser discriminate at runtime.
     """

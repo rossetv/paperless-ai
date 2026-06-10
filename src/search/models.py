@@ -62,23 +62,6 @@ EMPTY_FILTER_CANDIDATES = FilterCandidates(
 
 
 @dataclass(frozen=True, slots=True)
-class QueryPlan:
-    """Structured output of the planner stage (spec §6.1).
-
-    Attributes:
-        semantic_queries: 1–3 rephrasings of the user query for vector search.
-        keyword_terms: Exact terms or identifiers for FTS5 keyword search.
-        filter_candidates: Free-text filter guesses to be resolved in code.
-        sub_questions: Decomposed sub-questions for multi-hop retrieval.
-    """
-
-    semantic_queries: tuple[str, ...]
-    keyword_terms: tuple[str, ...]
-    filter_candidates: FilterCandidates
-    sub_questions: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class PlannedSpec:
     """One planned search as the planner emits it — free-text filter GUESSES, not ids.
 
@@ -260,7 +243,8 @@ class SearchResult:
     Attributes:
         answer: Synthesised prose answer to the user's query.
         sources: Ranked source documents cited in the answer.
-        plan: The query plan produced by the planner, for UI transparency.
+        plan: The multi-spec retrieval plan produced by the planner, for UI
+            transparency.
         stats: Execution statistics, for UI transparency and debugging.
         outcome_kind: Discriminator for the result type — ``"answered"`` (the
             synthesiser produced an answer), ``"clarify"`` (the planner judged
@@ -272,7 +256,7 @@ class SearchResult:
 
     answer: str
     sources: tuple[SourceDocument, ...]
-    plan: QueryPlan
+    plan: RetrievalPlan
     stats: SearchStats
     outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
 
@@ -323,7 +307,7 @@ AnswerOutcome = Answered | NeedsMore
 class ClarifyNeeded:
     """The planner judged the query too vague/insufficient to search (Layer 1).
 
-    Returned by the planner *instead of* a :class:`QueryPlan`; the core
+    Returned by the planner *instead of* a :class:`RetrievalPlan`; the core
     surfaces it as a 'be more specific' result without retrieving or
     synthesising.
 
@@ -335,8 +319,8 @@ class ClarifyNeeded:
 
 
 #: Discriminated union returned by the planner stage.
-#: Use isinstance(outcome, QueryPlan) / isinstance(outcome, ClarifyNeeded) to narrow.
-PlanOutcome = QueryPlan | ClarifyNeeded
+#: Use isinstance(outcome, RetrievalPlan) / isinstance(outcome, ClarifyNeeded) to narrow.
+PlanOutcome = RetrievalPlan | ClarifyNeeded
 
 
 # ---------------------------------------------------------------------------

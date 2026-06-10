@@ -628,11 +628,19 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_two_entries() -> None:
-    """CONFIG_KEYS is the 72-key universe (AI_MODELS split into OCR_MODELS + CLASSIFY_MODELS)."""
+def test_config_keys_has_seventy_five_entries() -> None:
+    """CONFIG_KEYS is the 75-key universe.
+
+    72 base keys plus the three multi-spec retrieval knobs added by the
+    multi-spec overhaul (SEARCH_PER_SPEC_K, SEARCH_MAX_CHUNKS_PER_DOC,
+    SEARCH_PLANNER_MAX_SPECS).
+    """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 72
+    assert len(CONFIG_KEYS) == 75
+    assert "SEARCH_PER_SPEC_K" in CONFIG_KEYS
+    assert "SEARCH_MAX_CHUNKS_PER_DOC" in CONFIG_KEYS
+    assert "SEARCH_PLANNER_MAX_SPECS" in CONFIG_KEYS
     assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "AI_MODELS" not in CONFIG_KEYS

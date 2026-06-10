@@ -1,7 +1,7 @@
 """Shared test object factories.
 
 Every test that needs a domain object — a ``Settings``, a Paperless document,
-a ``QueryPlan``, a ``SearchResult`` — builds it through a factory here, so the
+a ``RetrievalPlan``, a ``SearchResult`` — builds it through a factory here, so the
 one field a test actually cares about is the only one it has to spell out
 (CODE_GUIDELINES §11.5).  Irrelevant fields carry deterministic defaults.
 Hand-rolled per-file builders are a smell: they drift, and the same literal
@@ -12,7 +12,7 @@ The package is split by concept:
 - :mod:`tests.helpers.factories._core` — ``Settings``, Paperless documents,
   ``ClassificationResult``, and the store-boundary write shapes.
 - :mod:`tests.helpers.factories._search` — the search-pipeline shapes
-  (``QueryPlan``, ``RetrievedChunk``, ``SearchResult``, …) and the store
+  (``RetrievalPlan``, ``RetrievedChunk``, ``SearchResult``, …) and the store
   read-shapes the search tests consume.
 
 Both submodules' factories are re-exported here, so a test imports everything
@@ -46,8 +46,9 @@ from tests.helpers.factories._search import (
     make_judge_candidate,
     make_judge_verdict,
     make_needs_more,
-    make_query_plan,
+    make_planned_spec,
     make_relevance_thresholds,
+    make_retrieval_plan,
     make_retrieved_chunk,
     make_search_result,
     make_search_settings,
@@ -74,9 +75,10 @@ __all__ = [
     "make_judge_verdict",
     "make_needs_more",
     "make_paperless_document",
+    "make_planned_spec",
     "make_png_bytes",
-    "make_query_plan",
     "make_relevance_thresholds",
+    "make_retrieval_plan",
     "make_retrieved_chunk",
     "make_search_filters",
     "make_search_result",

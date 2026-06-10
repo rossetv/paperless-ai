@@ -106,6 +106,36 @@ def test_unresolvable_correspondent_drops_to_none() -> None:
     assert resolved[0].filters.correspondent_id is None
 
 
+def test_resolves_correspondent_after_case_normalisation() -> None:
+    """A case-mismatched guess ("ebay") resolves via the normalised pass."""
+    spec = _semantic_spec(correspondent="ebay")
+    plan = RetrievalPlan(specs=(spec,))
+
+    resolved = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY)
+
+    assert resolved[0].filters.correspondent_id == 132
+
+
+def test_resolves_document_type_after_punctuation_and_case_normalisation() -> None:
+    """A guess differing only by punctuation/case ("pay-slip") still resolves."""
+    spec = _semantic_spec(document_type="pay-slip")
+    plan = RetrievalPlan(specs=(spec,))
+
+    resolved = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY)
+
+    assert resolved[0].filters.document_type_id == 155
+
+
+def test_unresolvable_tag_is_dropped_resolvable_tags_kept() -> None:
+    """An unresolvable tag is dropped; a resolvable one in the same guess is kept."""
+    spec = _semantic_spec(tags=("payroll", "ghost-tag"))
+    plan = RetrievalPlan(specs=(spec,))
+
+    resolved = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY)
+
+    assert resolved[0].filters.tag_ids == (7,)
+
+
 # ---------------------------------------------------------------------------
 # Dates: ISO pass-through, deterministic extraction, malformed dropping
 # ---------------------------------------------------------------------------

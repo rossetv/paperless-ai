@@ -13,7 +13,7 @@ HTTP boundary correctly so the SPA can branch on it.
 from __future__ import annotations
 
 from tests.helpers.factories import (
-    make_query_plan,
+    make_retrieval_plan,
     make_search_result,
     make_search_stats,
 )
@@ -48,7 +48,7 @@ def test_to_search_response_maps_clarify_outcome_kind() -> None:
     """outcome_kind='clarify' travels through to_search_response unchanged."""
     from search.models import SearchResult
 
-    plan = make_query_plan()
+    plan = make_retrieval_plan()
     stats = make_search_stats()
     result = SearchResult(
         answer="Could you be more specific? Try including a document type or date range.",
@@ -69,7 +69,7 @@ def test_to_search_response_maps_no_match_outcome_kind() -> None:
     """outcome_kind='no_match' travels through to_search_response unchanged."""
     from search.models import SearchResult
 
-    plan = make_query_plan()
+    plan = make_retrieval_plan()
     stats = make_search_stats()
     result = SearchResult(
         answer="No relevant documents were found. Try rephrasing your question.",
