@@ -270,7 +270,9 @@ class TestSynthesizerReadsClassifyModels:
         """When the primary model fails, the synthesizer falls back through CLASSIFY_MODELS."""
         from tests.helpers.factories import make_retrieved_chunk
 
-        payload = answered_response_json("answer via classify-fallback [1].", citations=[1])
+        payload = answered_response_json(
+            "answer via classify-fallback [1].", citations=[1]
+        )
         settings = make_search_settings(
             SEARCH_ANSWER_MODEL="gpt-5.4",
             CLASSIFY_MODELS=["gpt-5.4", "gpt-5.4-mini"],
