@@ -27,11 +27,22 @@ from typing import TYPE_CHECKING
 import structlog
 
 from common.embeddings import EMBEDDING_FAILURE_EXCEPTIONS
-from search.models import FilterCandidates, QueryPlan, RetrievedChunk, RetrievalSignal
+from search.dates import extract_date_range, normalise_iso_date
+from search.models import (
+    FilterCandidates,
+    PlannedSpec,
+    QueryPlan,
+    RetrievalPlan,
+    RetrievalSignal,
+    RetrievalSpec,
+    RetrievedChunk,
+)
 from store.models import ChunkHit, FacetSet, TaxonomyEntry
 from store.reader import SearchFilters, StoreReader
 
 if TYPE_CHECKING:
+    from datetime import date
+
     from common.config import Settings
     from common.embeddings import EmbeddingClient
 
@@ -164,6 +175,212 @@ def resolve_filters(
         correspondent_id=correspondent_id,
         document_type_id=document_type_id,
         tag_ids=tuple(resolved_tag_ids),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-spec filter resolution (multi-spec retrieval)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_dates(
+    filter_guess: FilterCandidates,
+    today: date,
+) -> tuple[str | None, str | None]:
+    """Resolve a spec's date guesses into a validated ``(date_from, date_to)`` pair.
+
+    Two date sources can appear in a planner guess, and the deterministic one
+    is authoritative:
+
+    1. **ISO bounds.**  When the planner supplies ``date_from`` / ``date_to`` as
+       ISO strings, each is validated with :func:`normalise_iso_date`.  A valid
+       bound is kept; a *malformed* one is dropped to ``None`` — a hallucinated
+       date never narrows the search.  If at least one ISO bound validates, that
+       pair is returned and no further parsing happens.
+    2. **A non-ISO temporal expression.**  When neither field is an ISO date but
+       one carries a free-text expression ("April 2025", "last month"), the
+       *first non-empty* raw guess is run through the deterministic
+       :func:`extract_date_range`, whose ``(from, to)`` is returned.
+
+    When neither path yields anything, ``(None, None)`` means "no date filter",
+    which is the correct, widest result.
+    """
+    iso_from = (
+        normalise_iso_date(filter_guess.date_from) if filter_guess.date_from else None
+    )
+    iso_to = normalise_iso_date(filter_guess.date_to) if filter_guess.date_to else None
+
+    # The planner gave ISO bounds; the malformed ones have already dropped to
+    # None above.  These are authoritative — do not re-parse.
+    if iso_from or iso_to:
+        return iso_from, iso_to
+
+    # No ISO bound validated.  If either raw guess carries a non-ISO temporal
+    # expression, the deterministic extractor turns it into a range.
+    raw_guess = filter_guess.date_from or filter_guess.date_to
+    if raw_guess:
+        return extract_date_range(raw_guess, today)
+
+    return None, None
+
+
+def _intersect(
+    spec_filters: SearchFilters,
+    ui_filters: SearchFilters | None,
+) -> SearchFilters:
+    """Intersect a spec's resolved filters with the user's global UI filters.
+
+    The UI filters are a constraint the user explicitly set, so they may only
+    *narrow* the search — never widen it.  The intersection rules:
+
+    - **Dates.** ``date_from`` becomes the *later* (lexical max) of the two ISO
+      strings, ``date_to`` the *earlier* (lexical min); a ``None`` bound is
+      unbounded, so the other side wins.  Both moves shrink the window.
+    - **Correspondent / document type.** A UI value AND-narrows and therefore
+      overrides the spec's; absent, the spec's resolved value is kept.
+    - **Tags.** The order-stable, de-duplicated union of both — a spec tag and a
+      UI tag are both required, so both ids are carried.
+
+    When ``ui_filters`` is ``None`` the spec's filters pass through unchanged.
+    """
+    if ui_filters is None:
+        return spec_filters
+
+    date_from = _later_iso(spec_filters.date_from, ui_filters.date_from)
+    date_to = _earlier_iso(spec_filters.date_to, ui_filters.date_to)
+
+    # A set UI value wins; otherwise keep the spec's resolved value.
+    correspondent_id = (
+        ui_filters.correspondent_id
+        if ui_filters.correspondent_id is not None
+        else spec_filters.correspondent_id
+    )
+    document_type_id = (
+        ui_filters.document_type_id
+        if ui_filters.document_type_id is not None
+        else spec_filters.document_type_id
+    )
+
+    return SearchFilters(
+        date_from=date_from,
+        date_to=date_to,
+        correspondent_id=correspondent_id,
+        document_type_id=document_type_id,
+        tag_ids=_union_ids(spec_filters.tag_ids, ui_filters.tag_ids),
+    )
+
+
+def _later_iso(left: str | None, right: str | None) -> str | None:
+    """Return the later of two ISO date bounds; ``None`` means unbounded."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _earlier_iso(left: str | None, right: str | None) -> str | None:
+    """Return the earlier of two ISO date bounds; ``None`` means unbounded."""
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _union_ids(left: tuple[int, ...], right: tuple[int, ...]) -> tuple[int, ...]:
+    """Return the order-stable, de-duplicated union of two id tuples."""
+    seen: set[int] = set()
+    union: list[int] = []
+    for tag_id in (*left, *right):
+        if tag_id not in seen:
+            seen.add(tag_id)
+            union.append(tag_id)
+    return tuple(union)
+
+
+def resolve_specs(
+    plan: RetrievalPlan,
+    facets: FacetSet,
+    *,
+    ui_filters: SearchFilters | None,
+    today: date,
+) -> tuple[RetrievalSpec, ...]:
+    """Resolve every planned spec's free-text guesses into ready-for-store specs.
+
+    For each :class:`~search.models.PlannedSpec` the mode, semantic text,
+    keywords, and rationale are carried through verbatim; only the filter guess
+    is resolved into a real :class:`~store.models.SearchFilters`:
+
+    - Correspondent, document type, and tag *names* are matched against the live
+      taxonomy via :func:`_match_name` (exact, then case/punctuation-normalised);
+      a name with no match is dropped, never guessed at an id.
+    - Dates are resolved by :func:`_resolve_dates`: validated ISO bounds are
+      authoritative, a non-ISO expression is run through the deterministic
+      extractor, and a malformed planner date is dropped.
+    - The result is then intersected with ``ui_filters`` via :func:`_intersect`:
+      the UI is a global constraint the user set, so it narrows the spec and
+      never widens it.
+
+    A spec whose guesses resolve to nothing simply yields a ``SearchFilters``
+    with those fields ``None`` — that is the correct "no filter" outcome.
+
+    Args:
+        plan: The planner's structured multi-spec output.
+        facets: The live taxonomy from ``StoreReader.list_facets()``.
+        ui_filters: The user's explicit global filters, or ``None``.
+        today: Reference date for relative temporal expressions (injected for
+            deterministic tests).
+
+    Returns:
+        One :class:`~search.models.RetrievalSpec` per planned spec, in order.
+    """
+    resolved: list[RetrievalSpec] = []
+    for spec in plan.specs:
+        resolved.append(_resolve_one_spec(spec, facets, ui_filters, today))
+    return tuple(resolved)
+
+
+def _resolve_one_spec(
+    spec: PlannedSpec,
+    facets: FacetSet,
+    ui_filters: SearchFilters | None,
+    today: date,
+) -> RetrievalSpec:
+    """Resolve one planned spec into a ready-for-store RetrievalSpec."""
+    guess = spec.filter_guess
+
+    correspondent_id = (
+        _match_name(guess.correspondent, facets.correspondents)
+        if guess.correspondent is not None
+        else None
+    )
+    document_type_id = (
+        _match_name(guess.document_type, facets.document_types)
+        if guess.document_type is not None
+        else None
+    )
+    tag_ids = tuple(
+        tag_id
+        for tag_candidate in guess.tags
+        if (tag_id := _match_name(tag_candidate, facets.tags)) is not None
+    )
+    date_from, date_to = _resolve_dates(guess, today)
+
+    spec_filters = SearchFilters(
+        date_from=date_from,
+        date_to=date_to,
+        correspondent_id=correspondent_id,
+        document_type_id=document_type_id,
+        tag_ids=tag_ids,
+    )
+
+    return RetrievalSpec(
+        mode=spec.mode,
+        semantic=spec.semantic,
+        keywords=spec.keywords,
+        filters=_intersect(spec_filters, ui_filters),
+        rationale=spec.rationale,
     )
 
 
