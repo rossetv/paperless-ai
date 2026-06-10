@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Settings — redesign mock</title>
+<!-- Font Awesome 7 Free — the exact package the app ships (@fortawesome/fontawesome-free@7), via jsDelivr for the mock. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/css/fontawesome.min.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/css/solid.min.css" />
+<style>
+/* ───────────────────────────────────────────────────────────
+ * Tokens lifted verbatim from web/src/styles/tokens.css + the
+ * dark overrides in themes.css. This mock is a faithful preview,
+ * not production code — every value here mirrors a real token.
+ * ─────────────────────────────────────────────────────────── */
+:root {
+  --colour-bg: #000;
+  --colour-surface: #272729;
+  --colour-surface-dark: #1c1c1e;
+  --colour-text-primary: #fff;
+  --colour-text-secondary: rgb(255 255 255 / 80%);
+  --colour-text-tertiary: rgb(255 255 255 / 48%);
+  --colour-accent: #0071e3;
+  --colour-link: #2997ff;
+  --colour-border: rgb(255 255 255 / 8%);
+  --colour-border-button: rgb(255 255 255 / 12%);
+  --colour-hairline-strong: rgb(255 255 255 / 12%);
+  --colour-button-light-bg: #272729;
+  --colour-savebar-bg: rgb(20 20 22 / 92%);
+  --colour-toggle-on: #34c759;
+  --colour-toggle-off: rgb(255 255 255 / 16%);
+  --colour-segmented-track: rgb(255 255 255 / 7%);
+  --colour-status-ok-bg: rgb(52 199 89 / 12%);
+  --colour-status-ok-fg: #5fd884;
+  --colour-status-warn-bg: rgb(255 193 0 / 15%);
+  --colour-status-warn-fg: #e3b24a;
+  --colour-status-info-bg: rgb(0 113 227 / 10%);
+  --colour-status-info-fg: #2997ff;
+  --colour-status-neutral-bg: rgb(255 255 255 / 8%);
+  --colour-status-neutral-fg: rgb(255 255 255 / 72%);
+  --colour-accent-wash: rgb(0 113 227 / 10%);
+
+  --font-display: "SF Pro Display", -apple-system, "Helvetica Neue", helvetica, arial, sans-serif;
+  --font-text: "SF Pro Text", -apple-system, "Helvetica Neue", helvetica, arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", menlo, monospace;
+
+  --shadow-card: rgb(255 255 255 / 6%) 0 1px 0 inset, 0 4px 24px rgb(0 0 0 / 60%);
+
+  --radius-micro: 5px;
+  --radius-standard: 8px;
+  --radius-comfortable: 11px;
+  --radius-large: 12px;
+
+  --width-settings-nav: 236px;
+  --width-settings-content-max: 1180px;
+  --width-row-label: 300px;
+  --width-app-content: 1320px;
+  --height-nav: 48px;
+  --gap-settings-layout: 56px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--colour-bg);
+  color: var(--colour-text-primary);
+  font-family: var(--font-text);
+  font-size: 1.0625rem;
+  line-height: 1.47;
+  letter-spacing: -0.374px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Glass nav bar ─────────────────────────────────────────── */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  height: var(--height-nav);
+  display: flex; align-items: center;
+  padding: 0 24px;
+  background: rgb(0 0 0 / 80%);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--colour-border);
+}
+.nav-brand { font-weight: 600; font-size: 0.95rem; margin-right: 28px; }
+.nav-brand b { font-weight: 700; }
+.nav-links { display: flex; gap: 22px; font-size: 0.75rem; }
+.nav-links a { color: var(--colour-text-secondary); text-decoration: none; }
+.nav-links a.active { color: var(--colour-text-primary); }
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 0.75rem; color: var(--colour-text-tertiary); }
+.nav-pill { display: inline-flex; align-items: center; gap: 7px; }
+.nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--colour-toggle-on); box-shadow: 0 0 0 3px rgb(52 199 89 / 18%); }
+.nav-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg,#3a6df0,#5856d6); display: grid; place-items: center; font-size: 0.7rem; font-weight: 600; color: #fff; }
+
+/* ── Settings layout: rail + content ───────────────────────── */
+.shell {
+  max-width: var(--width-app-content);
+  margin: 0 auto;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: var(--width-settings-nav) 1fr;
+  gap: var(--gap-settings-layout);
+}
+
+/* ── Left rail ─────────────────────────────────────────────── */
+.rail { position: sticky; top: calc(var(--height-nav) + 32px); align-self: start; padding-top: 32px; }
+.rail-eyebrow { display: block; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.12em; color: var(--colour-text-tertiary); text-transform: uppercase; margin-bottom: 16px; }
+.rail-group { padding-bottom: 18px; margin-bottom: 18px; }
+.rail-group + .rail-group { border-top: 1px solid var(--colour-border); padding-top: 18px; }
+.rail-group-title { display: block; font-size: 0.625rem; font-weight: 600; letter-spacing: 0.12em; color: var(--colour-text-tertiary); text-transform: uppercase; margin-bottom: 10px; padding-left: 12px; }
+.rail-link {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 12px; border-radius: var(--radius-standard);
+  color: var(--colour-text-secondary); text-decoration: none;
+  font-size: 0.9375rem; font-weight: 400; letter-spacing: -0.3px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.rail-link:hover { color: var(--colour-text-primary); background: rgb(255 255 255 / 4%); }
+.rail-link.active { background: rgb(255 255 255 / 7%); color: var(--colour-text-primary); }
+.rail-link .ic { font-size: 15px; width: 18px; text-align: center; opacity: 0.7; flex: none; }
+.rail-link.active .ic { opacity: 1; color: var(--colour-accent); }
+.rail-num { margin-left: auto; font-size: 0.625rem; font-weight: 600; color: var(--colour-text-tertiary); background: rgb(255 255 255 / 6%); border-radius: 980px; padding: 1px 7px; }
+
+/* ── Content column ────────────────────────────────────────── */
+.content { max-width: var(--width-settings-content-max); padding-bottom: 160px; min-width: 0; }
+.page-head { padding: 32px 0 8px; }
+.page-title { font-family: var(--font-display); font-size: 2.5rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.5px; }
+.page-sub { color: var(--colour-text-secondary); font-size: 1.0625rem; margin-top: 10px; max-width: 640px; }
+
+/* ── Section block ─────────────────────────────────────────── */
+.block { padding-top: 56px; scroll-margin-top: 80px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+.block-titlewrap { display: flex; align-items: center; gap: 13px; }
+.block-step { width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--colour-accent-wash); color: var(--colour-accent); display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; font-family: var(--font-text); }
+.block-step i { font-size: 12px; }
+.block-title { font-family: var(--font-display); font-size: 1.625rem; font-weight: 600; letter-spacing: -0.02em; }
+.block-sub { color: var(--colour-text-tertiary); font-size: 0.875rem; text-align: right; max-width: 360px; }
+
+/* ── Sub-card ──────────────────────────────────────────────── */
+.card { background: var(--colour-surface); border-radius: var(--radius-large); box-shadow: var(--shadow-card); margin-bottom: 16px; overflow: hidden; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 16px; }
+.card-title { font-family: var(--font-display); font-size: 1.3125rem; font-weight: 700; letter-spacing: 0.231px; }
+.card-sub { color: var(--colour-text-tertiary); font-size: 0.875rem; margin-top: 4px; max-width: 540px; }
+.card-body { padding: 0 24px 8px; }
+
+/* ── Row: label column + control column ────────────────────── */
+.row { display: grid; grid-template-columns: var(--width-row-label) 1fr; gap: 24px; align-items: center; padding: 16px 0; border-top: 1px solid var(--colour-border); }
+.row:first-child { border-top: none; }
+.row-label { font-size: 1.0625rem; font-weight: 600; line-height: 1.24; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* a title carrying a rebuild pill stays on one line; the pill extends into the
+   gutter beside the title rather than wrapping under it. */
+.row-label:has(.warnchip) { flex-wrap: nowrap; white-space: nowrap; }
+.row-hint { color: var(--colour-text-tertiary); font-size: 0.875rem; line-height: 1.3; margin-top: 4px; }
+.row-key { display: inline-block; margin-top: 8px; font-family: var(--font-mono); font-size: 0.6875rem; color: rgb(255 255 255 / 36%); letter-spacing: 0; }
+.row-control { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+.row-control-col { flex-direction: column; align-items: flex-end; gap: 6px; }
+.row-default { font-size: 0.75rem; color: var(--colour-text-tertiary); font-style: italic; }
+
+/* ── Controls ──────────────────────────────────────────────── */
+.inp {
+  width: 100%; max-width: 320px;
+  background: #000; color: var(--colour-text-primary);
+  border: 1px solid var(--colour-border-button); border-radius: var(--radius-standard);
+  padding: 9px 13px; font-family: var(--font-mono); font-size: 0.875rem;
+}
+.inp:focus { outline: 2px solid var(--colour-accent); outline-offset: 0; }
+.inp.text { font-family: var(--font-text); }
+.secret { display: flex; align-items: center; gap: 10px; }
+.secret .inp { letter-spacing: 2px; max-width: none; width: 340px; }
+
+.btn { border: 1px solid var(--colour-border-button); background: transparent; color: var(--colour-text-primary); border-radius: var(--radius-standard); padding: 7px 15px; font-size: 0.9375rem; cursor: pointer; font-family: var(--font-text); }
+.btn:hover { background: rgb(255 255 255 / 6%); }
+.btn-primary { background: var(--colour-accent); border-color: transparent; }
+.btn-primary:hover { background: #1a82ea; }
+
+/* Test status pill */
+.statuspill { display: inline-flex; align-items: center; gap: 7px; font-size: 0.8125rem; padding: 4px 11px; border-radius: 980px; }
+.statuspill .d { width: 7px; height: 7px; border-radius: 50%; }
+.statuspill.untested { background: var(--colour-status-neutral-bg); color: var(--colour-status-neutral-fg); }
+.statuspill.untested .d { background: var(--colour-text-tertiary); }
+.statuspill.ok { background: var(--colour-status-ok-bg); color: var(--colour-status-ok-fg); }
+.statuspill.ok .d { background: var(--colour-toggle-on); }
+
+/* ── Integration accordion card (mediaman pattern) ─────────────── */
+.provider-strip { display: flex; align-items: center; gap: 16px; padding: 4px 4px 22px; }
+.provider-strip .lbl { font-size: 0.9375rem; font-weight: 600; }
+.provider-strip .sub { font-size: 0.8125rem; color: var(--colour-text-tertiary); margin-top: 3px; max-width: 520px; }
+.intg { background: var(--colour-surface); border: 1px solid var(--colour-border); border-radius: var(--radius-large); overflow: hidden; box-shadow: var(--shadow-card); }
+.intg + .intg { margin-top: 14px; }
+.intg-hd { display: flex; align-items: center; gap: 14px; padding: 17px 22px; cursor: pointer; border-bottom: 1px solid var(--colour-border); }
+.intg.collapsed .intg-hd { border-bottom: 0; }
+.intg-hd:focus-visible { outline: 2px solid var(--colour-accent); outline-offset: -2px; }
+.intg-glyph { width: 36px; height: 36px; border-radius: var(--radius-standard); display: grid; place-items: center; font-weight: 700; font-size: 14px; letter-spacing: -0.02em; font-family: var(--font-display); flex: none; }
+.gy-blue { background: rgb(0 113 227 / 14%); color: #2997ff; }
+.gy-teal { background: rgb(48 209 130 / 14%); color: #30d182; }
+.gy-grey { background: rgb(255 255 255 / 8%); color: var(--colour-text-secondary); }
+.intg-info { flex: 1; min-width: 0; }
+.intg-info h3 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.intg-info .sub { font-size: 12px; color: var(--colour-text-tertiary); margin-top: 3px; }
+.intg-acts { display: flex; align-items: center; gap: 12px; flex: none; }
+.conn { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--colour-text-secondary); }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--colour-text-tertiary); flex: none; }
+.conn.ok .conn-dot { background: #30d182; box-shadow: 0 0 8px rgb(48 209 130 / 60%); }
+.conn.err .conn-dot { background: #ff453a; box-shadow: 0 0 8px rgb(255 69 58 / 60%); }
+.conn.off .conn-dot { background: var(--colour-text-tertiary); opacity: 0.5; box-shadow: none; }
+.conn.untested .conn-dot { background: var(--colour-text-tertiary); opacity: 0.6; }
+.btn-test { border: 1px solid var(--colour-border-button); background: transparent; color: var(--colour-text-primary); border-radius: var(--radius-standard); padding: 6px 15px; font-size: 0.8125rem; cursor: pointer; font-family: var(--font-text); }
+.btn-test:hover { background: rgb(255 255 255 / 6%); }
+.btn-test:disabled { opacity: 0.6; cursor: default; }
+.intg-chev { color: var(--colour-text-tertiary); transition: transform 0.18s ease; flex: none; font-size: 15px; line-height: 1; }
+.intg.collapsed .intg-chev { transform: rotate(-90deg); }
+.intg-bd { padding: 4px 22px 12px; }
+.intg.collapsed .intg-bd { display: none; }
+
+/* Segmented */
+.seg { display: inline-flex; background: var(--colour-segmented-track); border-radius: var(--radius-standard); padding: 3px; gap: 2px; }
+.seg button { border: none; background: transparent; color: var(--colour-text-secondary); padding: 6px 16px; border-radius: 6px; font-size: 0.875rem; cursor: pointer; font-family: var(--font-text); }
+.seg button.on { background: #3a3a3c; color: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 40%); }
+
+/* Toggle */
+.tog { width: 42px; height: 26px; border-radius: 980px; background: var(--colour-toggle-off); position: relative; cursor: pointer; border: none; flex: none; transition: background 0.15s ease; }
+.tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; }
+.tog.on { background: var(--colour-toggle-on); }
+.tog.on::after { transform: translateX(16px); }
+
+/* Number stepper */
+.step { display: inline-flex; align-items: center; border: 1px solid var(--colour-border-button); border-radius: var(--radius-standard); overflow: hidden; }
+.step button { border: none; background: transparent; color: var(--colour-text-primary); width: 34px; height: 38px; font-size: 1.1rem; cursor: pointer; }
+.step button:hover { background: rgb(255 255 255 / 6%); }
+.step input { width: 56px; text-align: center; border: none; background: #000; color: #fff; height: 38px; font-family: var(--font-mono); font-size: 0.875rem; border-left: 1px solid var(--colour-border-button); border-right: 1px solid var(--colour-border-button); }
+/* unit label lives INSIDE the value well, after the number */
+.step-val { display: inline-flex; align-items: baseline; gap: 5px; height: 38px; padding: 0 11px; background: #000; border-left: 1px solid var(--colour-border-button); border-right: 1px solid var(--colour-border-button); }
+.step-val input { width: 56px; text-align: right; border: none; background: transparent; color: #fff; font-family: var(--font-mono); font-size: 0.875rem; padding: 0; }
+.step-val input:focus { outline: none; }
+.step-val .su { color: var(--colour-text-tertiary); font-size: 0.8125rem; }
+
+/* reasoning effort on its own labelled second line under a model select */
+.reasoning-line { display: flex; align-items: center; gap: 10px; }
+.reasoning-lbl { font-size: 0.75rem; color: var(--colour-text-tertiary); letter-spacing: 0; }
+
+/* Select */
+.sel { position: relative; }
+.sel select { appearance: none; background: #000; color: #fff; border: 1px solid var(--colour-border-button); border-radius: var(--radius-standard); padding: 9px 38px 9px 13px; font-family: var(--font-mono); font-size: 0.875rem; cursor: pointer; min-width: 180px; }
+.sel .caret { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: var(--colour-text-tertiary); pointer-events: none; font-size: 11px; }
+
+/* List editor */
+.list { width: 100%; max-width: 360px; }
+.list-row { display: flex; align-items: center; gap: 8px; background: #000; border: 1px solid var(--colour-border-button); border-radius: var(--radius-standard); padding: 7px 10px; margin-bottom: 7px; }
+.list-row .n { color: var(--colour-text-tertiary); font-size: 0.75rem; width: 14px; }
+.list-row .v { flex: 1; font-family: var(--font-mono); font-size: 0.8125rem; }
+.list-row .acts { display: flex; gap: 4px; color: var(--colour-text-tertiary); }
+.list-row .acts button { border: none; background: transparent; color: inherit; cursor: pointer; padding: 2px 5px; border-radius: 4px; font-size: 0.85rem; }
+.list-row .acts button:hover { background: rgb(255 255 255 / 8%); color: #fff; }
+.list-add { display: flex; gap: 8px; margin-top: 4px; }
+.list-add input { flex: 1; background: #000; border: 1px solid var(--colour-border-button); border-radius: var(--radius-standard); color: #fff; padding: 8px 11px; font-family: var(--font-mono); font-size: 0.8125rem; }
+
+/* Rebuild warning chip on a row */
+.warnchip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.01em; color: var(--colour-status-warn-fg); background: var(--colour-status-warn-bg); border: 1px solid rgb(255 193 0 / 22%); border-radius: 980px; padding: 3px 10px 3px 8px; white-space: nowrap; flex: none; }
+.warnchip i { font-size: 10px; flex: none; }
+
+/* ── Advanced disclosure ───────────────────────────────────── */
+.adv { border-top: 1px solid var(--colour-border); }
+.adv-summary { display: flex; align-items: center; gap: 10px; padding: 15px 0; cursor: pointer; color: var(--colour-text-secondary); font-size: 0.9375rem; font-weight: 600; user-select: none; list-style: none; }
+.adv-summary::-webkit-details-marker { display: none; }
+.adv-chev { transition: transform 0.2s ease; color: var(--colour-text-tertiary); }
+details[open] .adv-chev { transform: rotate(90deg); }
+.adv-count { font-size: 0.6875rem; font-weight: 600; color: var(--colour-text-tertiary); background: rgb(255 255 255 / 6%); border-radius: 980px; padding: 1px 8px; }
+.adv-hint { margin-left: auto; font-size: 0.8125rem; font-weight: 400; color: var(--colour-text-tertiary); }
+
+/* New-surface flag badge (mock annotation) */
+.flag { display: inline-flex; align-items: center; gap: 5px; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; color: var(--colour-status-info-fg); background: var(--colour-status-info-bg); border-radius: 980px; padding: 2px 9px; vertical-align: middle; margin-left: 9px; }
+
+/* ── Sticky savebar ────────────────────────────────────────── */
+.savebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; background: var(--colour-savebar-bg); backdrop-filter: saturate(180%) blur(20px); border-top: 1px solid var(--colour-hairline-strong); }
+.savebar-inner { max-width: var(--width-app-content); margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+.savebar-status { display: flex; align-items: center; gap: 9px; font-size: 0.9375rem; color: var(--colour-text-secondary); }
+.savebar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--colour-status-warn-fg); box-shadow: 0 0 10px var(--colour-status-warn-bg); }
+.savebar-note { font-size: 0.8125rem; color: var(--colour-text-tertiary); }
+.savebar-actions { margin-left: auto; display: flex; gap: 10px; }
+
+/* mock-only banner */
+.mockbanner { background: var(--colour-accent-wash); border-bottom: 1px solid var(--colour-border); color: var(--colour-link); font-size: 0.8125rem; text-align: center; padding: 7px 16px; }
+</style>
+</head>
+<body>
+
+<div class="mockbanner">Static mock · pipeline-ordered categories · models in each stage · advanced folded away — annotations in blue are notes for you, not final UI</div>
+
+<nav class="nav">
+  <span class="nav-brand">Paperless<b>AI</b></span>
+  <span class="nav-links">
+    <a href="#">Search</a><a href="#">Library</a><a href="#">Index</a><a href="#" class="active">Settings</a>
+  </span>
+  <span class="nav-right">
+    <span class="nav-pill"><span class="nav-dot"></span> index ready · 754 docs</span>
+    <span class="nav-avatar">VR</span>
+  </span>
+</nav>
+
+<div class="shell">
+
+  <!-- ── LEFT RAIL ─────────────────────────────────────────── -->
+  <aside class="rail">
+    <span class="rail-eyebrow">Settings</span>
+    <div class="rail-group">
+      <span class="rail-group-title">Pipeline</span>
+      <a class="rail-link active" href="#connections"><i class="fa-solid fa-link ic"></i>Connections</a>
+      <a class="rail-link" href="#ocr"><i class="fa-solid fa-eye ic"></i>OCR</a>
+      <a class="rail-link" href="#classification"><i class="fa-solid fa-tags ic"></i>Classification</a>
+      <a class="rail-link" href="#indexing"><i class="fa-solid fa-database ic"></i>Indexing</a>
+      <a class="rail-link" href="#search"><i class="fa-solid fa-magnifying-glass ic"></i>Search</a>
+    </div>
+    <div class="rail-group">
+      <span class="rail-group-title">Operations</span>
+      <a class="rail-link" href="#automation"><i class="fa-solid fa-gears ic"></i>Automation &amp; Daemons</a>
+      <a class="rail-link" href="#logging"><i class="fa-solid fa-file-lines ic"></i>Logging</a>
+    </div>
+    <div class="rail-group">
+      <span class="rail-group-title">Access control</span>
+      <a class="rail-link" href="#"><i class="fa-solid fa-users ic"></i>Users</a>
+      <a class="rail-link" href="#"><i class="fa-solid fa-key ic"></i>API Keys</a>
+    </div>
+  </aside>
+
+  <!-- ── CONTENT ───────────────────────────────────────────── -->
+  <main class="content">
+    <div class="page-head">
+      <h1 class="page-title">Settings</h1>
+      <p class="page-sub">Configured in the order a document travels: connect, read it, understand it, find it. Saved changes hot-load — daemons pick them up with no restart.</p>
+    </div>
+
+    <!-- ════ CONNECTIONS ════════════════════════════════════ -->
+    <section class="block" id="connections">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step" style="background:var(--colour-status-neutral-bg);color:var(--colour-text-secondary)"><i class="fa-solid fa-link"></i></span><h2 class="block-title">Connections</h2></div>
+        <p class="block-sub">External services this app talks to. Each is tested automatically on load — expand a card to edit its credentials.</p>
+      </div>
+
+      <div class="provider-strip">
+        <div><div class="lbl">AI provider</div><div class="sub">Which provider runs OCR, classification and search. Embeddings always use OpenAI regardless.</div></div>
+        <div class="seg" style="margin-left:auto"><button class="on" onclick="setProvider('openai')">OpenAI</button><button onclick="setProvider('ollama')">Ollama</button></div>
+      </div>
+
+      <!-- Paperless-ngx -->
+      <div class="intg collapsed" id="intg-paperless">
+        <div class="intg-hd" role="button" tabindex="0" onclick="toggleIntg('paperless')">
+          <div class="intg-glyph gy-blue">P</div>
+          <div class="intg-info"><h3>Paperless-ngx</h3><div class="sub">Reads documents and writes metadata back.</div></div>
+          <div class="intg-acts">
+            <span class="conn untested" data-conn="paperless"><span class="conn-dot"></span><span data-conn-label>Untested</span></span>
+            <button class="btn-test" onclick="event.stopPropagation();testIntg('paperless',this)">Test</button>
+            <span class="intg-chev"><i class="fa-solid fa-chevron-down"></i></span>
+          </div>
+        </div>
+        <div class="intg-bd">
+          <div class="row"><div><div class="row-label">Server URL</div><div class="row-hint">API base URL, reachable from this container.</div><span class="row-key">PAPERLESS_URL</span></div><div class="row-control"><input class="inp" value="http://paperless:8000" /></div></div>
+          <div class="row"><div><div class="row-label">Public URL</div><div class="row-hint">Browser-facing base for document deep-links. Falls back to the server URL.</div><span class="row-key">PAPERLESS_PUBLIC_URL</span></div><div class="row-control"><input class="inp" value="https://docs.rosset.ie" /></div></div>
+          <div class="row"><div><div class="row-label">API token</div><div class="row-hint">Paperless → Settings → Users &amp; Groups → API Token.</div><span class="row-key">PAPERLESS_TOKEN</span></div><div class="row-control"><div class="secret"><input class="inp" value="••••••••" disabled /><button class="btn">Replace</button></div></div></div>
+        </div>
+      </div>
+
+      <!-- OpenAI -->
+      <div class="intg collapsed" id="intg-openai">
+        <div class="intg-hd" role="button" tabindex="0" onclick="toggleIntg('openai')">
+          <div class="intg-glyph gy-teal">AI</div>
+          <div class="intg-info"><h3>OpenAI</h3><div class="sub">Powers embeddings always, and OCR / classification / search when selected.</div></div>
+          <div class="intg-acts">
+            <span class="conn untested" data-conn="openai"><span class="conn-dot"></span><span data-conn-label>Untested</span></span>
+            <button class="btn-test" onclick="event.stopPropagation();testIntg('openai',this)">Test</button>
+            <span class="intg-chev"><i class="fa-solid fa-chevron-down"></i></span>
+          </div>
+        </div>
+        <div class="intg-bd">
+          <div class="row"><div><div class="row-label">API key</div><div class="row-hint">Required even on Ollama — embeddings always go through OpenAI.</div><span class="row-key">OPENAI_API_KEY</span></div><div class="row-control"><div class="secret"><input class="inp" value="••••••••" disabled /><button class="btn">Replace</button></div></div></div>
+        </div>
+      </div>
+
+      <!-- Ollama — shown only when the provider is Ollama -->
+      <div class="intg collapsed" id="intg-ollama" style="display:none">
+        <div class="intg-hd" role="button" tabindex="0" onclick="toggleIntg('ollama')">
+          <div class="intg-glyph gy-grey">Ll</div>
+          <div class="intg-info"><h3>Ollama</h3><div class="sub">Local model server. Used only when the provider above is Ollama.</div></div>
+          <div class="intg-acts">
+            <span class="conn off" data-conn="ollama"><span class="conn-dot"></span><span data-conn-label>Not configured</span></span>
+            <button class="btn-test" onclick="event.stopPropagation();testIntg('ollama',this)">Test</button>
+            <span class="intg-chev"><i class="fa-solid fa-chevron-down"></i></span>
+          </div>
+        </div>
+        <div class="intg-bd">
+          <div class="row"><div><div class="row-label">Base URL</div><div class="row-hint">Must end with /v1/. Ignored when the provider is OpenAI.</div><span class="row-key">OLLAMA_BASE_URL</span></div><div class="row-control row-control-col"><input class="inp" placeholder="http://ollama.lan:11434/v1/" /><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ OCR ════════════════════════════════════════════ -->
+    <section class="block" id="ocr">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step"><i class="fa-solid fa-eye"></i></span><h2 class="block-title">OCR</h2></div>
+        <p class="block-sub">Step one: a vision model transcribes scanned pages into text.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Model</div><div class="card-sub">The vision-capable models tried for transcription, first success wins. <span class="flag">⚠ needs backend split</span></div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">OCR model chain</div><div class="row-hint">Comma-separated identifiers, tried in order. Today this is the shared <code>AI_MODELS</code> — splitting it gives OCR its own vision-model list.</div><span class="row-key">OCR_MODELS</span></div>
+            <div class="row-control"><div class="list">
+              <div class="list-row"><span class="n">1</span><span class="v">gpt-5.4-mini</span><span class="acts"><button aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button><button aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div>
+              <div class="list-row"><span class="n">2</span><span class="v">gpt-5.4</span><span class="acts"><button aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button><button aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div>
+              <div class="list-add"><input placeholder="Add a model…" /><button class="btn">Add</button></div>
+            </div></div>
+          </div>
+          <div class="row"><div><div class="row-label">Reasoning effort</div><div class="row-hint">How hard the vision model thinks per page. OpenAI only.</div><span class="row-key">OCR_REASONING_EFFORT</span></div><div class="row-control"><div class="seg"><button>Min</button><button class="on">Low</button><button>Med</button><button>High</button></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Imaging &amp; throughput</div><div class="card-sub">Resolution of the page images, and how many pages are transcribed at once.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">OCR DPI</div><div class="row-hint">Higher DPI = better accuracy, larger images. 300 is a good default.</div><span class="row-key">OCR_DPI</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="300" /><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">Max image side</div><div class="row-hint">Pages are thumbnailed to fit this longest edge before submission.</div><span class="row-key">OCR_MAX_SIDE</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><span class="step-val"><input value="2048" /><span class="su">px</span></span><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">Page workers</div><div class="row-hint">Pages OCR-d in parallel within one document. Drop to 1–2 on a single-GPU Ollama. <span class="flag">moved from Performance</span></div><span class="row-key">PAGE_WORKERS</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="4" /><button>+</button></div><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <details class="adv">
+            <summary class="adv-summary"><span class="adv-chev">›</span>Advanced<span class="adv-count">2</span><span class="adv-hint">refusal handling</span></summary>
+            <div class="row"><div><div class="row-label">Include model in page headers</div><div class="row-hint">Tag each OCR-d page with the model that transcribed it.</div><span class="row-key">OCR_INCLUDE_PAGE_MODELS</span></div><div class="row-control"><button class="tog on"></button></div></div>
+            <div class="row"><div><div class="row-label">Refusal markers</div><div class="row-hint">Phrases that, if detected, make the next model retry the page.</div><span class="row-key">OCR_REFUSAL_MARKERS</span></div><div class="row-control"><div class="list"><div class="list-row"><span class="n">1</span><span class="v">i can't assist</span><span class="acts"><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div><div class="list-row"><span class="n">2</span><span class="v">i'm sorry</span><span class="acts"><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div><div class="list-add"><input placeholder="Add a phrase…" /><button class="btn">Add</button></div></div></div></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ CLASSIFICATION ═════════════════════════════════ -->
+    <section class="block" id="classification">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step"><i class="fa-solid fa-tags"></i></span><h2 class="block-title">Classification</h2></div>
+        <p class="block-sub">Step two: a text model enriches each document — title, correspondent, type, tags.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Model</div><div class="card-sub">The text models tried for metadata extraction. <span class="flag">⚠ needs backend split</span></div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Classifier model chain</div><div class="row-hint">Comma-separated identifiers, tried in order until one accepts.</div><span class="row-key">CLASSIFY_MODELS</span></div>
+            <div class="row-control"><div class="list">
+              <div class="list-row"><span class="n">1</span><span class="v">gpt-5.4</span><span class="acts"><button aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button><button aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div>
+              <div class="list-row"><span class="n">2</span><span class="v">gpt-5.5</span><span class="acts"><button aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button><button aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button><button aria-label="Remove"><i class="fa-solid fa-xmark"></i></button></span></div>
+              <div class="list-add"><input placeholder="Add a model…" /><button class="btn">Add</button></div>
+            </div></div>
+          </div>
+          <div class="row"><div><div class="row-label">Reasoning effort</div><div class="row-hint">How hard the classifier thinks. OpenAI only.</div><span class="row-key">CLASSIFY_REASONING_EFFORT</span></div><div class="row-control"><div class="seg"><button>Min</button><button>Low</button><button class="on">Med</button><button>High</button></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Tagging</div><div class="card-sub">Limits and taxonomy context for the metadata it produces.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Tag limit</div><div class="row-hint">Max optional tags to keep. Required tags (year, country) don't count.</div><span class="row-key">CLASSIFY_TAG_LIMIT</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="8" /><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">Default country tag</div><div class="row-hint">A country always added to every classified document. Empty to skip.</div><span class="row-key">CLASSIFY_DEFAULT_COUNTRY_TAG</span></div><div class="row-control row-control-col"><input class="inp text" value="Ireland" /><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <details class="adv">
+            <summary class="adv-summary"><span class="adv-chev">›</span>Advanced<span class="adv-count">5</span><span class="adv-hint">content limits, taxonomy &amp; person field</span></summary>
+            <div class="row"><div><div class="row-label">Max pages sent to classifier</div><div class="row-hint">Keeps the first N pages of OCR text. 0 = no limit.</div><span class="row-key">CLASSIFY_MAX_PAGES</span></div><div class="row-control"><div class="step"><button>−</button><input value="6" /><button>+</button></div></div></div>
+            <div class="row"><div><div class="row-label">Tail pages</div><div class="row-hint">Extra pages from the end, included when truncating.</div><span class="row-key">CLASSIFY_TAIL_PAGES</span></div><div class="row-control"><div class="step"><button>−</button><input value="2" /><button>+</button></div></div></div>
+            <div class="row"><div><div class="row-label">Max characters</div><div class="row-hint">Hard character cap on the prompt. 0 = no cap.</div><span class="row-key">CLASSIFY_MAX_CHARS</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="0" /><span class="su">chars</span></span><button>+</button></div></div></div>
+            <div class="row"><div><div class="row-label">Taxonomy context limit</div><div class="row-hint">Max correspondents / types / tags fed to the model as context.</div><span class="row-key">CLASSIFY_TAXONOMY_LIMIT</span></div><div class="row-control"><div class="step"><button>−</button><input value="200" /><button>+</button></div></div></div>
+            <div class="row"><div><div class="row-label">Person custom-field ID</div><div class="row-hint">A text custom field where the inferred person name is stored.</div><span class="row-key">CLASSIFY_PERSON_FIELD_ID</span></div><div class="row-control"><div class="step"><button>−</button><input value="0" /><button>+</button></div></div></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ INDEXING ═══════════════════════════════════════ -->
+    <section class="block" id="indexing">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step"><i class="fa-solid fa-database"></i></span><h2 class="block-title">Indexing</h2></div>
+        <p class="block-sub">Step three: documents are chunked, embedded and reconciled into the vector index that search reads.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Embeddings</div><div class="card-sub">The model and vector size. Always OpenAI. Changing either triggers a full rebuild.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Embedding model<div class="warnchip"><i class="fa-solid fa-arrows-rotate"></i>Rebuilds the index on save</div></div><div class="row-hint">Changing this re-indexes every document on the next reconcile.</div><span class="row-key">EMBEDDING_MODEL</span></div><div class="row-control"><div class="sel"><select><option>text-embedding-3-small</option><option>text-embedding-3-large</option></select><i class="fa-solid fa-chevron-down caret"></i></div></div></div>
+          <div class="row"><div><div class="row-label">Embedding dimensions</div><div class="row-hint">Must match the model. Locked to this on first reconcile.</div><span class="row-key">EMBEDDING_DIMENSIONS</span></div><div class="row-control"><div class="step"><button>−</button><input value="1536" /><button>+</button></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Chunking &amp; schedule</div><div class="card-sub">How text is split, and how often the indexer scans for changes.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Chunk size<div class="warnchip"><i class="fa-solid fa-arrows-rotate"></i>Rebuilds the index on save</div></div><div class="row-hint">Characters per text chunk fed to embedding.</div><span class="row-key">CHUNK_SIZE</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="1200" /><span class="su">chars</span></span><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Chunk overlap<div class="warnchip"><i class="fa-solid fa-arrows-rotate"></i>Rebuilds the index on save</div></div><div class="row-hint">Overlap between adjacent chunks. Must be &lt; chunk size.</div><span class="row-key">CHUNK_OVERLAP</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="200" /><span class="su">chars</span></span><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Reconcile interval</div><div class="row-hint">Seconds between incremental sync cycles.</div><span class="row-key">RECONCILE_INTERVAL</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><span class="step-val"><input value="300" /><span class="su">s</span></span><button>+</button></div><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-body">
+        <details class="adv"><summary class="adv-summary"><span class="adv-chev">›</span>Advanced<span class="adv-count">2</span><span class="adv-hint">deletion sweep, embedding concurrency</span></summary>
+          <div class="row"><div><div class="row-label">Deletion sweep interval</div><div class="row-hint">Seconds between full deletion sweeps.</div><span class="row-key">DELETION_SWEEP_INTERVAL</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="3600" /><span class="su">s</span></span><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Embedding max concurrent</div><div class="row-hint">Global cap on concurrent embedding calls. 0 = unbounded.</div><span class="row-key">EMBEDDING_MAX_CONCURRENT</span></div><div class="row-control"><div class="step"><button>−</button><input value="8" /><button>+</button></div></div></div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ════ SEARCH ═════════════════════════════════════════ -->
+    <section class="block" id="search">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step"><i class="fa-solid fa-magnifying-glass"></i></span><h2 class="block-title">Search</h2></div>
+        <p class="block-sub">Step four: the agentic query pipeline — plan, retrieve, judge, synthesise an answer.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Models</div><div class="card-sub">Three roles in the search loop. The planner extracts a structured query; the answer model writes prose; the judge screens documents cheaply first.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Planner model</div><div class="row-hint">Cheaper model for structured query extraction.</div><span class="row-key">SEARCH_PLANNER_MODEL</span></div><div class="row-control row-control-col"><div class="sel"><select><option>gpt-5.4-nano</option><option>gpt-5.4-mini</option></select><i class="fa-solid fa-chevron-down caret"></i></div><div class="reasoning-line"><span class="reasoning-lbl">Reasoning</span><div class="seg"><button>Min</button><button class="on">Low</button><button>Med</button><button>High</button></div></div></div></div>
+          <div class="row"><div><div class="row-label">Answer model</div><div class="row-hint">Stronger model for user-facing synthesis.</div><span class="row-key">SEARCH_ANSWER_MODEL</span></div><div class="row-control row-control-col"><div class="sel"><select><option>gpt-5.4</option><option>gpt-5.5</option></select><i class="fa-solid fa-chevron-down caret"></i></div><div class="reasoning-line"><span class="reasoning-lbl">Reasoning</span><div class="seg"><button>Min</button><button>Low</button><button class="on">Med</button><button>High</button></div></div></div></div>
+          <div class="row"><div><div class="row-label">Judge model</div><div class="row-hint">Screens retrieved documents before the answer model runs.</div><span class="row-key">SEARCH_JUDGE_MODEL</span></div><div class="row-control row-control-col"><div class="sel"><select><option>gpt-5.4-nano</option><option>gpt-5.4-mini</option></select><i class="fa-solid fa-chevron-down caret"></i></div><div class="reasoning-line"><span class="reasoning-lbl">Reasoning</span><div class="seg"><button class="on">Min</button><button>Low</button><button>Med</button><button>High</button></div></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Retrieval &amp; relevance</div><div class="card-sub">How many documents the synthesiser sees, and the similarity thresholds that gate and badge them.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Top K</div><div class="row-hint">How many documents are fed to the synthesiser.</div><span class="row-key">SEARCH_TOP_K</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="8" /><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">Gate floor</div><div class="row-hint">Below this similarity with no keyword hit → rejected as "no matches". 0 shows everything.</div><span class="row-key">SEARCH_RELEVANCE_MIN_SIMILARITY</span></div><div class="row-control"><div class="step"><button>−</button><input value="0.60" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Strong match ≥</div><div class="row-hint">A shown result at or above this badges "Strong match".</div><span class="row-key">SEARCH_RELEVANCE_TIER_STRONG</span></div><div class="row-control"><div class="step"><button>−</button><input value="0.70" /><button>+</button></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Behaviour</div><div class="card-sub">The relevance judge and identity awareness.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Enable relevance judge</div><div class="row-hint">Screen documents on a cheap model before the expensive answer model.</div><span class="row-key">SEARCH_GATE_JUDGE</span></div><div class="row-control"><button class="tog on"></button></div></div>
+          <div class="row"><div><div class="row-label">Identity-aware search</div><div class="row-hint">Resolve "my passport" / "our boiler" to the signed-in user's name.</div><span class="row-key">SEARCH_IDENTITY_AWARE</span></div><div class="row-control"><button class="tog on"></button></div></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-body">
+        <details class="adv"><summary class="adv-summary"><span class="adv-chev">›</span>Advanced<span class="adv-count">7</span><span class="adv-hint">refinements, tier cut-points, judge rationales, server binding</span></summary>
+          <div class="row"><div><div class="row-label">Max refinements</div><div class="row-hint">Agentic refinement passes. Each adds an LLM call per query.</div><span class="row-key">SEARCH_MAX_REFINEMENTS</span></div><div class="row-control"><div class="step"><button>−</button><input value="1" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Good match ≥</div><div class="row-hint">Between Partial and Strong. Badges "Good match".</div><span class="row-key">SEARCH_RELEVANCE_TIER_GOOD</span></div><div class="row-control"><div class="step"><button>−</button><input value="0.66" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Partial match ≥</div><div class="row-hint">Below this badges "Weak match".</div><span class="row-key">SEARCH_RELEVANCE_TIER_PARTIAL</span></div><div class="row-control"><div class="step"><button>−</button><input value="0.60" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Judge rationales</div><div class="row-hint">One-line reason per document. Costs a few extra tokens.</div><span class="row-key">SEARCH_JUDGE_RATIONALES</span></div><div class="row-control"><button class="tog on"></button></div></div>
+          <div class="row"><div><div class="row-label">Server host</div><div class="row-hint">0.0.0.0 binds all interfaces.</div><span class="row-key">SEARCH_SERVER_HOST</span></div><div class="row-control"><input class="inp" value="0.0.0.0" /></div></div>
+          <div class="row"><div><div class="row-label">Server port</div><div class="row-hint">TCP port the search server listens on.</div><span class="row-key">SEARCH_SERVER_PORT</span></div><div class="row-control"><div class="step"><button>−</button><input value="8200" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Session TTL</div><div class="row-hint">How long a signed session cookie stays valid.</div><span class="row-key">SEARCH_SESSION_TTL</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="604800" /><span class="su">s</span></span><button>+</button></div></div></div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ════ AUTOMATION ═════════════════════════════════════ -->
+    <section class="block" id="automation">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step" style="background:var(--colour-status-neutral-bg);color:var(--colour-text-secondary)"><i class="fa-solid fa-gears"></i></span><h2 class="block-title">Automation &amp; Daemons</h2></div>
+        <p class="block-sub">The tag IDs that hand documents between the OCR and classifier daemons, and how hard those daemons run.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Pipeline tags</div><div class="card-sub">Numeric Paperless tag IDs that drive document state. The OCR daemon picks up the queue tag; the classifier picks up what OCR finished. Set 0 to disable.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">OCR queue</div><div class="row-hint">Documents with this tag get picked up by the OCR daemon.</div><span class="row-key">PRE_TAG_ID</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="12" /><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">OCR complete → classifier queue</div><div class="row-hint">Applied after OCR; the classifier waits on this tag.</div><span class="row-key">POST_TAG_ID</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="13" /><button>+</button></div><span class="row-default">default</span></div></div>
+          <div class="row"><div><div class="row-label">Error tag</div><div class="row-hint">Applied when OCR or classification fails. Pipeline tags are removed.</div><span class="row-key">ERROR_TAG_ID</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><input value="14" /><button>+</button></div><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><div class="card-title">Workers &amp; polling</div><div class="card-sub">Parallelism and cadence shared across both daemons.</div></div></div>
+        <div class="card-body">
+          <div class="row"><div><div class="row-label">Document workers</div><div class="row-hint">How many documents each daemon processes in parallel.</div><span class="row-key">DOCUMENT_WORKERS</span></div><div class="row-control"><div class="step"><button>−</button><input value="3" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">LLM max concurrent</div><div class="row-hint">Global cap on LLM calls. 0 = unbounded.</div><span class="row-key">LLM_MAX_CONCURRENT</span></div><div class="row-control"><div class="step"><button>−</button><input value="6" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Poll interval</div><div class="row-hint">Seconds between polling Paperless for new work.</div><span class="row-key">POLL_INTERVAL</span></div><div class="row-control row-control-col"><div class="step"><button>−</button><span class="step-val"><input value="30" /><span class="su">s</span></span><button>+</button></div><span class="row-default">default</span></div></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-body">
+        <details class="adv"><summary class="adv-summary"><span class="adv-chev">›</span>Advanced<span class="adv-count">5</span><span class="adv-hint">multi-instance locks, timeouts &amp; retries</span></summary>
+          <div class="row"><div><div class="row-label">Classification complete</div><div class="row-hint">Optional tag applied after success. If unset, pipeline tags are just removed.</div><span class="row-key">CLASSIFY_POST_TAG_ID</span></div><div class="row-control"><div class="step"><button>−</button><input value="0" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">OCR in-progress lock</div><div class="row-hint">Only for multi-instance deployments, to claim a document.</div><span class="row-key">OCR_PROCESSING_TAG_ID</span></div><div class="row-control"><div class="step"><button>−</button><input value="0" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Request timeout</div><div class="row-hint">HTTP timeout for model API calls.</div><span class="row-key">REQUEST_TIMEOUT</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="120" /><span class="su">s</span></span><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Max retries</div><div class="row-hint">Retries before a failing operation gives up.</div><span class="row-key">MAX_RETRIES</span></div><div class="row-control"><div class="step"><button>−</button><input value="3" /><button>+</button></div></div></div>
+          <div class="row"><div><div class="row-label">Max retry backoff</div><div class="row-hint">Upper bound on the exponential-backoff delay.</div><span class="row-key">MAX_RETRY_BACKOFF_SECONDS</span></div><div class="row-control"><div class="step"><button>−</button><span class="step-val"><input value="60" /><span class="su">s</span></span><button>+</button></div></div></div>
+        </details>
+      </div></div>
+    </section>
+
+    <!-- ════ LOGGING ════════════════════════════════════════ -->
+    <section class="block" id="logging">
+      <div class="block-head">
+        <div class="block-titlewrap"><span class="block-step" style="background:var(--colour-status-neutral-bg);color:var(--colour-text-secondary)"><i class="fa-solid fa-file-lines"></i></span><h2 class="block-title">Logging</h2></div>
+        <p class="block-sub">What gets logged and in what format.</p>
+      </div>
+      <div class="card"><div class="card-body">
+        <div class="row"><div><div class="row-label">Log level</div><div class="row-hint">Minimum severity to emit.</div><span class="row-key">LOG_LEVEL</span></div><div class="row-control"><div class="seg"><button>Debug</button><button class="on">Info</button><button>Warning</button><button>Error</button></div></div></div>
+        <div class="row"><div><div class="row-label">Log format</div><div class="row-hint">JSON for aggregators; console for local debugging.</div><span class="row-key">LOG_FORMAT</span></div><div class="row-control"><div class="seg"><button class="on">Console</button><button>JSON</button></div></div></div>
+      </div></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── SAVEBAR ──────────────────────────────────────────────── -->
+<div class="savebar"><div class="savebar-inner">
+  <div class="savebar-status"><span class="savebar-dot"></span>0 unsaved changes</div>
+  <div class="savebar-actions"><button class="btn">Discard</button><button class="btn btn-primary">Save changes</button></div>
+</div></div>
+
+<script>
+// ── Integration accordion + auto-tester (mirrors mediaman) ──────
+function toggleIntg(id){ document.getElementById('intg-'+id).classList.toggle('collapsed'); }
+function setConn(service, tone, label){
+  document.querySelectorAll('[data-conn="'+service+'"]').forEach(el => {
+    el.classList.remove('ok','err','off','untested');
+    el.classList.add(tone);
+    const l = el.querySelector('[data-conn-label]'); if (l) l.textContent = label;
+  });
+}
+function testIntg(service, btn){
+  setConn(service,'untested','Testing…');
+  if (btn){ btn.disabled = true; btn.textContent = 'Testing…'; }
+  // mock: Ollama fails (not running), everything else connects
+  setTimeout(() => {
+    const ok = service !== 'ollama';
+    setConn(service, ok ? 'ok' : 'err', ok ? 'Connected' : 'Connection failed');
+    if (btn){ btn.textContent = ok ? 'OK ✓' : 'Failed'; setTimeout(() => { btn.textContent='Test'; btn.disabled=false; }, 1600); }
+  }, 700);
+}
+function setProvider(p){
+  document.querySelectorAll('.provider-strip .seg button').forEach((b,i) => b.classList.toggle('on', (i===0)===(p==='openai')));
+  // Ollama card only exists when the provider is Ollama
+  document.getElementById('intg-ollama').style.display = (p === 'ollama') ? '' : 'none';
+}
+// auto-test configured services on load (Ollama unconfigured → stays "Not configured")
+window.addEventListener('load', () => {
+  setConn('paperless','untested','Testing…');
+  setConn('openai','untested','Testing…');
+  setTimeout(() => setConn('paperless','ok','Connected'), 600);
+  setTimeout(() => setConn('openai','ok','Connected'), 800);
+});
+
+// active rail item follows scroll
+const ids = ['connections','ocr','classification','indexing','search','automation','logging'];
+const links = document.querySelectorAll('.rail-link[href^="#"]');
+window.addEventListener('scroll', () => {
+  const pos = window.scrollY + 160;
+  let cur = ids[0];
+  for (const id of ids){ const el = document.getElementById(id); if (el && el.offsetTop <= pos) cur = id; }
+  links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#'+cur));
+}, {passive:true});
+</script>
+</body>
+</html>
