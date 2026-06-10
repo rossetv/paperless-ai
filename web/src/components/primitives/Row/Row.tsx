@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../../../lib/cn';
+import { Icon } from '../Icon/Icon';
 import styles from './Row.module.css';
 
 export interface RowProps {
@@ -23,6 +24,11 @@ export interface RowProps {
    * signal that this key is on its coded default, not an explicit override.
    */
   isDefault?: boolean;
+  /**
+   * When true, renders an amber "Rebuilds the index on save" pill beside the
+   * label title to warn the user that saving will trigger a full index rebuild.
+   */
+  requiresReindex?: boolean;
   /** The control element(s) for the right column. */
   children: React.ReactNode;
   /** Additional class names to merge onto the row. */
@@ -47,19 +53,28 @@ export function Row({
   controlId,
   last = false,
   isDefault = false,
+  requiresReindex = false,
   children,
   className,
 }: RowProps): React.ReactElement {
   return (
     <div className={cn(styles['row'], last && styles['row-last'], className)}>
       <div>
-        {controlId !== undefined ? (
-          <label htmlFor={controlId} className={styles['label']}>
-            {label}
-          </label>
-        ) : (
-          <span className={styles['label']}>{label}</span>
-        )}
+        <div className={styles['label-row']}>
+          {controlId !== undefined ? (
+            <label htmlFor={controlId} className={styles['label']}>
+              {label}
+            </label>
+          ) : (
+            <span className={styles['label']}>{label}</span>
+          )}
+          {requiresReindex && (
+            <span className={styles['reindex-pill']}>
+              <Icon name="arrows-rotate" size="small" />
+              Rebuilds the index on save
+            </span>
+          )}
+        </div>
         {hint !== undefined && <p className={styles['hint']}>{hint}</p>}
         {env !== undefined && <span className={styles['env']}>{env}</span>}
       </div>

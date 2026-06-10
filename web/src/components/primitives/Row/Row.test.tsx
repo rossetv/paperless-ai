@@ -62,4 +62,18 @@ describe('Row', () => {
     );
     expect(container.firstElementChild?.className).toContain('extra');
   });
+
+  it('shows the reindex pill when requiresReindex is true', () => {
+    render(<Row label="Max Tokens" requiresReindex><input /></Row>);
+    expect(
+      screen.getByText(/rebuilds the index on save/i),
+    ).toBeInTheDocument();
+  });
+
+  it('does not show the reindex pill when requiresReindex is false', () => {
+    render(<Row label="Max Tokens"><input /></Row>);
+    expect(
+      screen.queryByText(/rebuilds the index on save/i),
+    ).not.toBeInTheDocument();
+  });
 });
