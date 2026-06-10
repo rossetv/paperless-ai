@@ -200,3 +200,34 @@ def test_legacy_ai_models_populates_both_lists_when_new_keys_absent() -> None:
 
     assert s.OCR_MODELS == ["legacy-a", "legacy-b"]
     assert s.CLASSIFY_MODELS == ["legacy-a", "legacy-b"]
+
+
+def test_explicit_ocr_models_wins_over_ai_models_legacy_fallback() -> None:
+    """When OCR_MODELS is set explicitly it wins; AI_MODELS fills CLASSIFY_MODELS.
+
+    Precedence: explicit new key > AI_MODELS legacy > provider default.
+    """
+    from common.config import Settings
+
+    env = {**_MINIMAL_ENV, "AI_MODELS": "x", "OCR_MODELS": "y"}
+    with patch.dict(os.environ, env, clear=True):
+        s = Settings.from_environment()
+
+    # Explicit OCR_MODELS wins for OCR.
+    assert s.OCR_MODELS == ["y"]
+    # CLASSIFY_MODELS falls back to AI_MODELS because CLASSIFY_MODELS is absent.
+    assert s.CLASSIFY_MODELS == ["x"]
+
+
+def test_empty_ai_models_falls_to_provider_default() -> None:
+    """An empty AI_MODELS env var is treated as unset — provider default applies."""
+    from common.config import Settings
+
+    env = {**_MINIMAL_ENV, "AI_MODELS": ""}
+    with patch.dict(os.environ, env, clear=True):
+        s = Settings.from_environment()
+
+    # Empty AI_MODELS is falsy — both lists fall to the OpenAI provider defaults.
+    openai_defaults = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+    assert s.OCR_MODELS == openai_defaults
+    assert s.CLASSIFY_MODELS == openai_defaults
