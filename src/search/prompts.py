@@ -490,6 +490,21 @@ If the retrieved context is too thin or irrelevant to answer reliably
 - Do not fabricate information not present in the provided chunks.
 - If the chunks contain the answer, use "answered" — even if incomplete.
 
+# Evidence-gating
+
+Assert ONLY what the provided chunks state.  If the question asks about a
+period, entity, or item that is NOT present in the chunks, say so plainly (e.g.
+"I don't have a payslip for April 2025") — do NOT substitute the nearest
+available period or a similar document as if it answered the question.  A
+document about a different month, person, or item does not answer a question
+about the one asked.
+
+# Reconciliation
+
+When several documents are relevant, compare and attribute them with their
+citations rather than averaging or blending — name what each one says [n], so
+the reader can see which document each figure or claim comes from.
+
 # Final-mode rule
 
 When the question contains the instruction "FINAL_MODE_TRIGGER", always
@@ -510,12 +525,30 @@ Use British English throughout.  Be concise; avoid padding.
 _DATA_FENCE_LABEL: str = "DATA"
 
 
+def _chunk_header(document_id: int, title: str | None, created: str | None) -> str:
+    """Render a chunk's labelled header — ``[id] <title> (<date>)`` when known.
+
+    The title and date come from our own index (never the chunk body), so the
+    header stays control text even though it sits inside the data region. A
+    document with no title falls back to the bare ``[id]`` label (the
+    pre-metadata behaviour); a known title without a date drops the trailing
+    ``(<date>)`` segment. The date is trimmed to its ``YYYY-MM-DD`` prefix — the
+    time-of-day in an ISO timestamp adds noise the model does not need.
+    """
+    if not title:
+        return f"[{document_id}]"
+    if created:
+        return f"[{document_id}] {title} ({created[:10]})"
+    return f"[{document_id}] {title}"
+
+
 def build_synthesiser_user_message(
     query: str,
     labelled_chunks: list[tuple[int, str]],
     *,
     final: bool = False,
     asker: str | None = None,
+    documents_by_id: dict[int, tuple[str | None, str | None]] | None = None,
 ) -> str:
     """Assemble the user-role message for the synthesiser LLM call.
 
@@ -528,13 +561,19 @@ def build_synthesiser_user_message(
        an instruction telling the model that everything between the two fence
        markers is untrusted data.
     2. **Data plane** — the retrieved chunk texts, each labelled
-       ``[document_id]``, wrapped between an opening ``<<<DATA {nonce}>>>`` and a
-       closing ``<<<END DATA {nonce}>>>`` fence.  The *nonce* is a fresh random
-       token per message, so a chunk cannot reproduce the closing fence to end
-       the data region early, and a chunk that embeds boundary-shaped text (a
-       bare ``---``, a forged ``Question:``) reads as data — the model is told
-       the data region ends only at the matching nonce fence, which the chunk
-       cannot see.
+       ``[document_id] <title> (<date>)`` when the document's metadata is known
+       (so the model can attribute and reconcile across documents — Phase 3B),
+       falling back to a bare ``[document_id]`` label otherwise.  The labelled
+       header is *our* control text (it comes from our store via
+       *documents_by_id*, never from the chunk body), so it adds no injection
+       surface even though it sits inside the data region.  The texts are
+       wrapped between an opening ``<<<DATA {nonce}>>>`` and a closing
+       ``<<<END DATA {nonce}>>>`` fence.  The *nonce* is a fresh random token
+       per message, so a chunk cannot reproduce the closing fence to end the
+       data region early, and a chunk that embeds boundary-shaped text (a bare
+       ``---``, a forged ``Question:``) reads as data — the model is told the
+       data region ends only at the matching nonce fence, which the chunk cannot
+       see.
 
     Args:
         query: The user's original search query.
@@ -549,6 +588,12 @@ def build_synthesiser_user_message(
             resolve first-person references and address the asker as "you".
             When None the message is byte-identical to the pre-identity
             behaviour.
+        documents_by_id: Optional ``{document_id: (title, created)}`` look-up
+            (sourced from our index, not the chunk text) used to enrich each
+            chunk's labelled header with the document's title and date.  A
+            document absent from the map, or carrying a ``None`` title, falls
+            back to the bare ``[document_id]`` label — preserving the
+            pre-metadata behaviour.
 
     Returns:
         The formatted user message string.
@@ -577,9 +622,12 @@ def build_synthesiser_user_message(
         else ""
     )
 
+    metadata = documents_by_id or {}
     chunks_section_parts = []
     for document_id, chunk_text in labelled_chunks:
-        chunks_section_parts.append(f"[{document_id}]\n{chunk_text}")
+        title, created = metadata.get(document_id, (None, None))
+        header = _chunk_header(document_id, title, created)
+        chunks_section_parts.append(f"{header}\n{chunk_text}")
     chunks_section = "\n\n".join(chunks_section_parts)
 
     # A fresh nonce per message: a document chunk cannot see or reproduce it, so

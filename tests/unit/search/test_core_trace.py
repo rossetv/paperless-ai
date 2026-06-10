@@ -384,6 +384,11 @@ class TestJudgeDetail:
         # Each verdict carries the judge's per-document score (kept 0.9 / dropped 0.1).
         assert verdicts[1]["score"] == 0.9
         assert verdicts[2]["score"] == 0.1
+        # Each verdict carries a Paperless deep-link (Phase 3B) so the SPA can
+        # render a Preview link per judged document. Built from the same base
+        # URL + /documents/{id}/ route the SourceDocument link uses.
+        assert verdicts[1]["paperless_url"].endswith("/documents/1/")
+        assert verdicts[2]["paperless_url"].endswith("/documents/2/")
         # The judge made one LLM call → its phase carries tokens.
         assert rec.tokens is not None
 

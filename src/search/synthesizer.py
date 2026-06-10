@@ -106,6 +106,7 @@ class Synthesizer(OpenAIChatMixin):
         mode: SearchMode,
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
+        documents_by_id: dict[int, tuple[str | None, str | None]] | None = None,
     ) -> AnswerOutcome:
         """Synthesise an answer for *query* using the retrieved *chunks*.
 
@@ -126,6 +127,12 @@ class Synthesizer(OpenAIChatMixin):
                 :class:`~common.llm.LlmCallUsage` record capturing the token
                 usage for this synthesise call (the search telemetry). ``None``
                 (the default) skips capture and keeps behaviour unchanged.
+            documents_by_id: Optional ``{document_id: (title, created)}`` look-up
+                (sourced from our index, not chunk text) used to enrich each
+                labelled chunk header with the document's title and date, so the
+                model can attribute and reconcile across documents (Phase 3B). A
+                document absent from the map falls back to the bare ``[id]``
+                label.
 
         Returns:
             An ``Answered`` or ``NeedsMore`` dataclass.  Never raises.
@@ -139,6 +146,7 @@ class Synthesizer(OpenAIChatMixin):
             labelled_chunks=labelled_chunks,
             final=is_final,
             asker=asker,
+            documents_by_id=documents_by_id,
         )
         messages = [
             {"role": "system", "content": system_prompt},

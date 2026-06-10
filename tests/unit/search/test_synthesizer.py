@@ -340,6 +340,33 @@ class TestPromptInjectionSafety:
         # The document id must appear as a label in the chunk section.
         assert "[99]" in user_content or "99" in user_content
 
+    def test_metadata_header_flows_into_the_user_message(self) -> None:
+        """A supplied documents_by_id enriches the chunk header in the LLM call."""
+        chunks = [_chunk(750, "Reg Salary 1923.08")]
+        synthesiser = build_synthesizer(
+            make_search_settings(),
+            answered_response_json("answer [750].", citations=[750]),
+        )
+        synthesiser.synthesise(
+            "salary in April 2025?",
+            chunks,
+            mode="exploratory",
+            documents_by_id={750: ("April Payslip", "2025-04-25T00:00:00+00:00")},
+        )
+        user_content = self._user_message(synthesiser)
+        assert "[750] April Payslip (2025-04-25)" in user_content
+
+    def test_bare_label_when_no_metadata_supplied(self) -> None:
+        """Without documents_by_id the header is the bare [id] (unchanged)."""
+        chunks = [_chunk(750, "Reg Salary 1923.08")]
+        synthesiser = build_synthesizer(
+            make_search_settings(),
+            answered_response_json("answer [750].", citations=[750]),
+        )
+        synthesiser.synthesise("salary?", chunks, mode="exploratory")
+        user_content = self._user_message(synthesiser)
+        assert "[750]\nReg Salary 1923.08" in user_content
+
     def test_asker_appears_in_control_plane_of_user_message(self) -> None:
         """When asker is set, the name appears before the data fence."""
         chunks = [_chunk(1, "passport doc")]
