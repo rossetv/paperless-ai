@@ -183,6 +183,55 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
     _apply_schema_string(conn, SCHEMA_V5)
 
 
+def _migrate_v6(conn: sqlite3.Connection) -> None:
+    """Migrate AI_MODELS to OCR_MODELS and CLASSIFY_MODELS (config split).
+
+    If an ``AI_MODELS`` row exists in the ``config`` table, its value is
+    copied to ``OCR_MODELS`` (only if absent) and ``CLASSIFY_MODELS`` (only
+    if absent), then the ``AI_MODELS`` row is deleted. The ``config_version``
+    counter is bumped once so every running process detects the change on its
+    next hot-load check.
+
+    Idempotent: running it a second time finds no ``AI_MODELS`` row and makes
+    no further changes. This migration is called by :func:`run_migrations`
+    inside an explicit ``BEGIN…COMMIT`` transaction, so partial failures roll
+    back atomically.
+    """
+    row = conn.execute("SELECT value FROM config WHERE key = 'AI_MODELS'").fetchone()
+    if row is None:
+        return  # Nothing to migrate.
+
+    legacy_value: str = row["value"]
+    now = conn.execute(
+        "SELECT STRFTIME('%Y-%m-%dT%H:%M:%S+00:00', 'now')"
+    ).fetchone()[0]
+
+    # Insert OCR_MODELS and CLASSIFY_MODELS only when they are absent so we
+    # do not overwrite an operator who has already set one of them explicitly.
+    for key in ("OCR_MODELS", "CLASSIFY_MODELS"):
+        existing = conn.execute(
+            "SELECT 1 FROM config WHERE key = ?", (key,)
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, legacy_value, now),
+            )
+
+    # Remove the old key regardless.
+    conn.execute("DELETE FROM config WHERE key = 'AI_MODELS'")
+
+    # Bump config_version so hot-loading processes rebuild their Settings.
+    # Inlined rather than imported from appdb.config to stay consistent with
+    # the rest of this module (all deps are sqlite3 + structlog only).
+    conn.execute(
+        "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
+        "WHERE key = 'config_version'"
+    )
+
+    log.info("appdb.migration_v6_ai_models_split")
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
@@ -192,6 +241,7 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (3, _migrate_v3),
     (4, _migrate_v4),
     (5, _migrate_v5),
+    (6, _migrate_v6),
 ]
 
 

@@ -178,3 +178,64 @@ def test_seed_from_env_returns_zero_for_an_empty_environment(conn) -> None:
     )
     assert seeded == 0
     assert config_store.get_all(conn) == {}
+
+
+# ---------------------------------------------------------------------------
+# AI_MODELS → OCR_MODELS / CLASSIFY_MODELS migration tests
+# ---------------------------------------------------------------------------
+
+
+def test_migration_copies_ai_models_to_both_new_keys(conn) -> None:
+    """When AI_MODELS exists in the config table the migration creates
+    OCR_MODELS and CLASSIFY_MODELS with the same value and deletes AI_MODELS."""
+    from appdb.migrations import _migrate_v6
+
+    config_store.set_value(conn, "AI_MODELS", "gpt-5.4-mini,gpt-5.4")
+
+    _migrate_v6(conn)
+
+    stored = config_store.get_all(conn)
+    assert stored.get("OCR_MODELS") == "gpt-5.4-mini,gpt-5.4"
+    assert stored.get("CLASSIFY_MODELS") == "gpt-5.4-mini,gpt-5.4"
+    assert "AI_MODELS" not in stored
+
+
+def test_migration_does_not_overwrite_existing_ocr_models(conn) -> None:
+    """When OCR_MODELS already exists the migration leaves it untouched."""
+    from appdb.migrations import _migrate_v6
+
+    config_store.set_value(conn, "AI_MODELS", "old-model")
+    config_store.set_value(conn, "OCR_MODELS", "vision-model")
+
+    _migrate_v6(conn)
+
+    stored = config_store.get_all(conn)
+    assert stored.get("OCR_MODELS") == "vision-model"
+    assert stored.get("CLASSIFY_MODELS") == "old-model"
+    assert "AI_MODELS" not in stored
+
+
+def test_migration_is_a_noop_when_ai_models_absent(conn) -> None:
+    """When no AI_MODELS row exists the migration does nothing."""
+    from appdb.migrations import _migrate_v6
+
+    config_store.set_value(conn, "CHUNK_SIZE", "2000")
+
+    _migrate_v6(conn)
+
+    stored = config_store.get_all(conn)
+    assert "OCR_MODELS" not in stored
+    assert "CLASSIFY_MODELS" not in stored
+    assert stored.get("CHUNK_SIZE") == "2000"
+
+
+def test_migration_bumps_config_version(conn) -> None:
+    """The migration bumps config_version when it makes changes."""
+    from appdb.migrations import _migrate_v6
+
+    version_before = config_store.get_config_version(conn)
+    config_store.set_value(conn, "AI_MODELS", "gpt-5.4-mini")
+
+    _migrate_v6(conn)
+
+    assert config_store.get_config_version(conn) > version_before
