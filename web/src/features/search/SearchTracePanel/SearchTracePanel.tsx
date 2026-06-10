@@ -19,6 +19,14 @@ export interface SearchTracePanelProps {
    * row. Omitted on the error path (no honest total was produced).
    */
   cost?: CostSummary;
+  /**
+   * Called with a document id when a judged document's "Preview" control is
+   * activated. Threaded straight to `PipelineStages`; when omitted, the judge
+   * verdict rows render without a Preview control. The page supplies the same
+   * `onPreview` handler the source cards use, so preview opens the in-app
+   * document viewer.
+   */
+  onPreview?: (documentId: number) => void;
 }
 
 /**
@@ -41,6 +49,7 @@ export interface SearchTracePanelProps {
 export function SearchTracePanel({
   phases,
   cost,
+  onPreview,
 }: SearchTracePanelProps): React.ReactElement | null {
   if (phases.length === 0) {
     return null;
@@ -67,7 +76,10 @@ export function SearchTracePanel({
         <Text as="span" variant="micro" tone="tertiary">
           Each step of the agentic pipeline, with its token and dollar cost.
         </Text>
-        <PipelineStages stages={stages} />
+        <PipelineStages
+          stages={stages}
+          {...(onPreview !== undefined ? { onPreviewDocument: onPreview } : {})}
+        />
       </Stack>
     </Disclosure>
   );

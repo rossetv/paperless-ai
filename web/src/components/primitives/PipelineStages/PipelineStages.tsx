@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '../../../lib/cn';
 import { Icon } from '../Icon/Icon';
+import { Button } from '../Button/Button';
 import styles from './PipelineStages.module.css';
 
 /** Lifecycle state of one pipeline stage. */
@@ -66,6 +67,13 @@ export interface PipelineStagesProps {
   stages: PipelineStage[];
   /** Additional class names to merge. */
   className?: string;
+  /**
+   * Called with a document id when a judged document's "Preview" control is
+   * activated. When supplied, each verdict row renders a Preview button that
+   * opens the in-app document viewer for that id; when omitted (e.g. a context
+   * with no document-open handler) the rows render without the control.
+   */
+  onPreviewDocument?: (documentId: number) => void;
 }
 
 /**
@@ -74,18 +82,22 @@ export interface PipelineStagesProps {
  * An ordered list of pipeline stages: each row shows a status dot (a tick
  * when done, a pulsing core when active, a muted disc when pending), the
  * stage label and detail, an optional "tokens · cost" chip, an "in progress"
- * pill on the active stage, and — for the judge stage — a kept/dropped
- * per-document verdict sublist. The pulse respects `prefers-reduced-motion`.
+ * pill on the active stage, and — for the judge stage — a keep/drop
+ * per-document verdict sublist (score · title · reason, with an optional
+ * Preview control when `onPreviewDocument` is supplied). The pulse respects
+ * `prefers-reduced-motion`.
  *
  * App-agnostic — it renders whatever stages it is given. `LoadingScreen` maps
  * the live streamed phases onto it; `SearchTracePanel` renders the final trace.
+ * Both thread the page's document-open handler in as `onPreviewDocument`.
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
- * primitives (Icon), lib/.
+ * primitives (Icon, Button), lib/.
  */
 export function PipelineStages({
   stages,
   className,
+  onPreviewDocument,
 }: PipelineStagesProps): React.ReactElement {
   return (
     <ol className={cn(styles['stages'], className)}>
@@ -145,6 +157,17 @@ export function PipelineStages({
                   <span className={styles['verdict-tag']}>
                     {verdict.keep ? 'keep' : 'drop'}
                   </span>
+                  {onPreviewDocument !== undefined && (
+                    <span className={styles['verdict-action']}>
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        onClick={() => onPreviewDocument(verdict.docId)}
+                      >
+                        Preview
+                      </Button>
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

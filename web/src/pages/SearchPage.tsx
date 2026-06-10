@@ -197,6 +197,7 @@ export function SearchPage(): React.ReactElement {
         onFiltersChange={setFilters}
         phaseRecords={state.phaseRecords}
         activePhase={state.activePhase}
+        onPreview={openPreview}
       />
     );
   }

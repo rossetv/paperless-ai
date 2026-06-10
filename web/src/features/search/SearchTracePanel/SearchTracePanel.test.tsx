@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { SearchTracePanel } from './SearchTracePanel';
 import type { CostSummary, PhaseRecord } from '../../../api/types';
 
@@ -167,5 +168,21 @@ describe('SearchTracePanel', () => {
     expect(screen.getByText(/Dropped \(no match\): Mystery Co/)).toBeInTheDocument();
     expect(screen.getByText(/Gap: no Q4 figure/)).toBeInTheDocument();
     expect(screen.getByText(/New search 1: “Q4 invoice total”/)).toBeInTheDocument();
+  });
+
+  it('opens a judged document preview via the threaded onPreview handler', async () => {
+    const onPreview = vi.fn();
+    render(<SearchTracePanel phases={PHASES} cost={COST} onPreview={onPreview} />);
+    const previews = screen.getAllByRole('button', { name: /preview/i });
+    expect(previews).toHaveLength(2);
+    await userEvent.click(previews[0] as HTMLElement);
+    expect(onPreview).toHaveBeenCalledWith(9823);
+  });
+
+  it('renders no Preview control when no onPreview handler is given', () => {
+    render(<SearchTracePanel phases={PHASES} cost={COST} />);
+    expect(
+      screen.queryByRole('button', { name: /preview/i }),
+    ).not.toBeInTheDocument();
   });
 });

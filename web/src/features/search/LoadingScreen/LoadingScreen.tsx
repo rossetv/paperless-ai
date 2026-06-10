@@ -27,6 +27,13 @@ export interface LoadingScreenProps {
   phaseRecords: PhaseRecord[];
   /** The phase currently running — shown as the "in progress" rail row. */
   activePhase: SearchPhase | null;
+  /**
+   * Called with a document id when a judged document's "Preview" control is
+   * activated in the live rail. The page supplies the same `onPreview` handler
+   * the source cards use, so preview opens the in-app document viewer. When
+   * omitted, the judge verdict rows render without a Preview control.
+   */
+  onPreview?: (documentId: number) => void;
 }
 
 /**
@@ -51,6 +58,7 @@ export function LoadingScreen({
   onFiltersChange,
   phaseRecords,
   activePhase,
+  onPreview,
 }: LoadingScreenProps): React.ReactElement {
   // Real elapsed seconds since this screen mounted — drives the visible
   // counter. The interval is cleared on unmount, which happens as soon as the
@@ -96,7 +104,14 @@ export function LoadingScreen({
                 {elapsedSeconds}s
               </Text>
             </Stack>
-            {stages.length > 0 && <PipelineStages stages={stages} />}
+            {stages.length > 0 && (
+              <PipelineStages
+                stages={stages}
+                {...(onPreview !== undefined
+                  ? { onPreviewDocument: onPreview }
+                  : {})}
+              />
+            )}
           </Stack>
         </Card>
 
