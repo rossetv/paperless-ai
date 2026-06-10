@@ -118,7 +118,7 @@ The system prompt (`src/ocr/prompts.py`) tells the model to:
 
 ## Model Fallback Chain
 
-`AI_MODELS` is an ordered list of models. The first model is the **primary**; the rest are fallbacks (the list is deduplicated, preserving order). For each page:
+`OCR_MODELS` is an ordered list of models. The first model is the **primary**; the rest are fallbacks (the list is deduplicated, preserving order). For each page:
 
 1. Send the page to the current model.
 2. If the model **refuses** or **redacts** (output matches any `OCR_REFUSAL_MARKERS` phrase, or contains a `[REDACTED…]` marker) or throws an **API error**, advance to the next model.

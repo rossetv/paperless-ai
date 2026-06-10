@@ -57,8 +57,8 @@ re-raised, so the failure is never swallowed.
 
 ## Model fallback chains
 
-The OCR and classifier providers try the models in `AI_MODELS` **in order**, and
-fall to the next when the current model:
+OCR uses the `OCR_MODELS` chain; classification uses the `CLASSIFY_MODELS` chain.
+Each is tried **in order**, falling to the next when the current model:
 
 - **refuses** (OCR only — the response matches an `OCR_REFUSAL_MARKERS` phrase), or
 - **returns unusable output** (classification only — unparseable JSON), or
@@ -68,7 +68,7 @@ The first model to produce a usable result wins. If every model fails, OCR write
 the fixed refusal marker into the document content and the classifier returns no
 result — in both cases the document is quarantined (see below).
 
-Default chains:
+Default chains (provider-dependent, same for both stages unless overridden):
 
 - **OpenAI:** `gpt-5.4-mini` → `gpt-5.4` → `gpt-5.5`
 - **Ollama:** `gemma3:27b` → `gemma3:12b`

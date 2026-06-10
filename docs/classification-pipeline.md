@@ -168,7 +168,7 @@ Different models accept different request parameters — Ollama models reject Op
 
 The strippable parameters (and the order their error matchers are tried) live in a fixed registry: `temperature`, `response_format` / `json_schema`, `max_completion_tokens`, `max_tokens`, `reasoning_effort`, `verbosity`. The registry's fixed length bounds the strip loop, so a misfiring matcher can never loop forever.
 
-This is what lets you mix OpenAI and Ollama models in one `AI_MODELS` chain without per-model configuration. Per-document counters record how often each parameter was stripped (`temperature_retries`, `response_format_retries`, `max_tokens_retries`).
+This is what lets you mix OpenAI and Ollama models in one `CLASSIFY_MODELS` chain without per-model configuration. Per-document counters record how often each parameter was stripped (`temperature_retries`, `response_format_retries`, `max_tokens_retries`).
 
 **Source:** `src/classifier/provider.py`, `src/common/llm.py`, `src/common/model_compat.py`
 
