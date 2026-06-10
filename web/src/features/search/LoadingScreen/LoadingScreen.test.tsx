@@ -34,8 +34,22 @@ const JUDGE_RECORD: PhaseRecord = {
     degraded: false,
     bailed: false,
     verdicts: [
-      { doc_id: 9823, title: 'Annual statement', keep: true, reason: 'on point' },
-      { doc_id: 4410, title: 'Old letter', keep: false, reason: 'wrong year' },
+      {
+        doc_id: 9823,
+        title: 'Annual statement',
+        keep: true,
+        reason: 'on point',
+        score: 0.95,
+        paperless_url: 'http://paperless/documents/9823/',
+      },
+      {
+        doc_id: 4410,
+        title: 'Old letter',
+        keep: false,
+        reason: 'wrong year',
+        score: 0.12,
+        paperless_url: 'http://paperless/documents/4410/',
+      },
     ],
   },
   tokens: { prompt: 800, completion: 60, reasoning: 0, total: 860 },
@@ -109,8 +123,8 @@ describe('LoadingScreen', () => {
     expect(screen.getByText('Annual statement')).toBeInTheDocument();
     expect(screen.getByText('Old letter')).toBeInTheDocument();
     expect(screen.getByText('wrong year')).toBeInTheDocument();
-    expect(screen.getByText('kept')).toBeInTheDocument();
-    expect(screen.getByText('dropped')).toBeInTheDocument();
+    expect(screen.getByText('keep')).toBeInTheDocument();
+    expect(screen.getByText('drop')).toBeInTheDocument();
     // The synthesise phase is the active row.
     expect(screen.getByText(/synthesising the answer/i)).toBeInTheDocument();
   });

@@ -187,6 +187,15 @@
   color: var(--colour-text-secondary);
 }
 
+/* The judge's relevance score, shown as a compact monospace prefix on the
+   verdict title (e.g. "0.87"). */
+.verdict-score {
+  margin-right: var(--spacing-4);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  color: var(--colour-text-tertiary);
+}
+
 .verdict[data-keep="false"] .verdict-title {
   color: var(--colour-text-tertiary);
 }

@@ -121,6 +121,9 @@ export function verdictsOf(record: PhaseRecord): StageVerdict[] | undefined {
       title: typeof item['title'] === 'string' ? item['title'] : null,
       keep: item['keep'] === true,
       reason: typeof item['reason'] === 'string' ? item['reason'] : '',
+      score: typeof item['score'] === 'number' ? item['score'] : null,
+      paperlessUrl:
+        typeof item['paperless_url'] === 'string' ? item['paperless_url'] : null,
     };
   });
 }

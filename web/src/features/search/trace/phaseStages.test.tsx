@@ -108,7 +108,14 @@ describe('verdictsOf', () => {
       label: 'Judging',
       detail: {
         verdicts: [
-          { doc_id: 9823, title: 'A', keep: true, reason: 'yes' },
+          {
+            doc_id: 9823,
+            title: 'A',
+            keep: true,
+            reason: 'yes',
+            score: 0.8,
+            paperless_url: 'http://paperless/documents/9823/',
+          },
           { doc_id: 4410, title: null, keep: false, reason: 'no' },
         ],
       },
@@ -117,8 +124,23 @@ describe('verdictsOf', () => {
       ms: 1,
     };
     expect(verdictsOf(record)).toEqual([
-      { docId: 9823, title: 'A', keep: true, reason: 'yes' },
-      { docId: 4410, title: null, keep: false, reason: 'no' },
+      {
+        docId: 9823,
+        title: 'A',
+        keep: true,
+        reason: 'yes',
+        score: 0.8,
+        paperlessUrl: 'http://paperless/documents/9823/',
+      },
+      // Missing score / paperless_url map to null.
+      {
+        docId: 4410,
+        title: null,
+        keep: false,
+        reason: 'no',
+        score: null,
+        paperlessUrl: null,
+      },
     ]);
   });
 

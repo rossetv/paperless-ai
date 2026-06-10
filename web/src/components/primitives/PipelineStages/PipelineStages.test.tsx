@@ -118,12 +118,16 @@ describe('PipelineStages', () => {
                 title: 'Annual statement',
                 keep: true,
                 reason: 'matches the tax year',
+                score: 0.92,
+                paperlessUrl: null,
               },
               {
                 docId: 4410,
                 title: null,
                 keep: false,
                 reason: 'different correspondent',
+                score: 0.1,
+                paperlessUrl: null,
               },
             ],
           },
@@ -135,8 +139,11 @@ describe('PipelineStages', () => {
     // A null title falls back to the document id.
     expect(screen.getByText('Document 4410')).toBeInTheDocument();
     expect(screen.getByText('different correspondent')).toBeInTheDocument();
-    expect(screen.getByText('kept')).toBeInTheDocument();
-    expect(screen.getByText('dropped')).toBeInTheDocument();
+    expect(screen.getByText('keep')).toBeInTheDocument();
+    expect(screen.getByText('drop')).toBeInTheDocument();
+    // The judge's relevance score prefixes each verdict.
+    expect(screen.getByText('0.92')).toBeInTheDocument();
+    expect(screen.getByText('0.10')).toBeInTheDocument();
   });
 
   it('marks a kept verdict and a dropped verdict distinctly', () => {
@@ -148,8 +155,8 @@ describe('PipelineStages', () => {
             detail: '',
             state: 'done',
             verdicts: [
-              { docId: 1, title: 'A', keep: true, reason: '' },
-              { docId: 2, title: 'B', keep: false, reason: '' },
+              { docId: 1, title: 'A', keep: true, reason: '', score: 0.9, paperlessUrl: null },
+              { docId: 2, title: 'B', keep: false, reason: '', score: 0.2, paperlessUrl: null },
             ],
           },
         ]}
