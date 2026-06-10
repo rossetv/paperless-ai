@@ -39,6 +39,20 @@ log = structlog.get_logger(__name__)
 _MAX_REASON_CHARS = 200
 
 
+def _parse_score(raw: object) -> float:
+    """Coerce a raw model ``score`` into a clamped ``[0.0, 1.0]`` float.
+
+    A missing, non-numeric, or boolean value defaults to ``0.0`` — the judge
+    expressing no positive confidence — never trusting raw model output
+    unchecked (CODE_GUIDELINES §10.4). A genuine number outside the unit range
+    is clamped to the nearest bound. ``bool`` is rejected explicitly: it is an
+    ``int`` subclass, so ``True`` would otherwise read as the score ``1.0``.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return 0.0
+    return min(1.0, max(0.0, float(raw)))
+
+
 class RelevanceJudge(OpenAIChatMixin):
     """Decide which retrieved documents could plausibly answer the query.
 
@@ -140,7 +154,7 @@ class RelevanceJudge(OpenAIChatMixin):
             return self._fail_open(all_ids, reason="missing or non-list verdicts field")
 
         # Build a lookup from the model's verdicts, validating each entry.
-        model_verdicts: dict[int, tuple[bool, str]] = {}
+        model_verdicts: dict[int, tuple[bool, str, float]] = {}
         for item in raw_verdicts:
             if not isinstance(item, dict):
                 continue
@@ -155,30 +169,41 @@ class RelevanceJudge(OpenAIChatMixin):
                 reason = ""
             # Cap reason length; never trust raw model text unchecked.
             reason = reason[:_MAX_REASON_CHARS]
+            score = _parse_score(item.get("score"))
             if doc_id in all_ids:
-                model_verdicts[doc_id] = (bool(keep), reason)
+                model_verdicts[doc_id] = (bool(keep), reason, score)
 
         # Build a DocVerdict for EVERY candidate. An omitted id defaults to
-        # keep=True, "" reason — recall-biased: the judge not mentioning a doc
-        # is not an explicit drop.
+        # keep=True, "" reason, score 0.0 — recall-biased: the judge not
+        # mentioning a doc is not an explicit drop, but it carries no positive
+        # score, so the core's keep-threshold (which a fail-open never trips)
+        # still governs whether it survives.
         doc_verdicts: list[DocVerdict] = []
         for candidate in candidates:
             if candidate.document_id in model_verdicts:
-                keep_flag, reason_str = model_verdicts[candidate.document_id]
+                keep_flag, reason_str, score_value = model_verdicts[
+                    candidate.document_id
+                ]
             else:
-                keep_flag, reason_str = True, ""
+                keep_flag, reason_str, score_value = True, "", 0.0
             doc_verdicts.append(
                 DocVerdict(
                     document_id=candidate.document_id,
                     keep=keep_flag,
                     reason=reason_str,
+                    score=score_value,
                 )
             )
 
         return JudgeVerdict(verdicts=tuple(doc_verdicts), degraded=False)
 
     def _fail_open(self, all_ids: frozenset[int], reason: str) -> JudgeVerdict:
-        """Return a keep-everything verdict and log a warning."""
+        """Return a keep-everything verdict and log a warning.
+
+        Every fail-open verdict carries ``score=1.0`` so the core's
+        keep-threshold can never drop a document a broken judge could not score —
+        a degraded judge only ever loses precision, never an answer.
+        """
         log.warning("judge.degraded_to_fail_open", reason=reason)
         return JudgeVerdict(
             verdicts=tuple(
@@ -186,6 +211,7 @@ class RelevanceJudge(OpenAIChatMixin):
                     document_id=i,
                     keep=True,
                     reason="(judge unavailable — kept by fail-open)",
+                    score=1.0,
                 )
                 for i in sorted(all_ids)
             ),
