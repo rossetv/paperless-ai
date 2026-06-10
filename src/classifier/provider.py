@@ -59,7 +59,7 @@ class ClassificationProvider(OpenAIChatMixin):
         """
         Classify OCR text with taxonomy context, returning ``(result, model_used)``.
 
-        Tries each model in ``settings.AI_MODELS`` in order.  Returns
+        Tries each model in ``settings.CLASSIFY_MODELS`` in order.  Returns
         ``(None, "")`` when all models fail.
         """
         if not text.strip():
@@ -72,7 +72,7 @@ class ClassificationProvider(OpenAIChatMixin):
             {"role": "user", "content": user_content},
         ]
 
-        models_to_try = unique_models(self.settings.AI_MODELS)
+        models_to_try = unique_models(self.settings.CLASSIFY_MODELS)
         primary_model = models_to_try[0] if models_to_try else ""
 
         for model in models_to_try:

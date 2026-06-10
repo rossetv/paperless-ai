@@ -51,7 +51,7 @@ class TestModelSelection:
     def test_configured_model_is_requested(self) -> None:
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
         planner = build_planner(settings, planner_response_json())
         planner.plan("test query")
@@ -62,7 +62,7 @@ class TestModelSelection:
 
     def test_different_configured_model_is_requested(self) -> None:
         settings = make_search_settings(
-            SEARCH_PLANNER_MODEL="gemma3:12b", AI_MODELS=["gemma3:12b"]
+            SEARCH_PLANNER_MODEL="gemma3:12b", CLASSIFY_MODELS=["gemma3:12b"]
         )
         planner = build_planner(settings, planner_response_json())
         planner.plan("test query")
@@ -89,7 +89,7 @@ class TestModelFallback:
     def test_fallback_to_second_model_on_api_error(self) -> None:
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
         payload = planner_response_json(semantic_queries=["fallback worked"])
 
@@ -127,7 +127,7 @@ class TestApiErrorNeverEscapes:
         """A wrong/expired OPENAI_API_KEY must not raise out of plan()."""
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
         planner = QueryPlanner(settings)
         # Every model attempt raises AuthenticationError — non-retryable.
@@ -144,7 +144,7 @@ class TestApiErrorNeverEscapes:
 
     def test_generic_api_error_degrades_to_fallback(self) -> None:
         """A bare openai.APIError (no subclass) also degrades, never escapes."""
-        settings = make_search_settings(SEARCH_PLANNER_MODEL="m", AI_MODELS=["m"])
+        settings = make_search_settings(SEARCH_PLANNER_MODEL="m", CLASSIFY_MODELS=["m"])
         planner = QueryPlanner(settings)
         planner._create_completion = MagicMock(  # type: ignore[method-assign]
             side_effect=make_api_error()
@@ -158,7 +158,7 @@ class TestApiErrorNeverEscapes:
         """A non-retryable error on model 1 still lets model 2 answer."""
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
         )
         payload = planner_response_json(semantic_queries=["second model answered"])
         planner = QueryPlanner(settings)
@@ -182,7 +182,7 @@ class TestReasoningEffortForwarded:
         # "medium" is the shipped default — proves the wiring forwards it verbatim.
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini"],
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
             SEARCH_PLANNER_REASONING_EFFORT="medium",
         )
         planner = build_planner(settings, planner_response_json())
@@ -196,7 +196,7 @@ class TestReasoningEffortForwarded:
         # to capture the saving. Proves a non-default value forwards too.
         settings = make_search_settings(
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini"],
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
             SEARCH_PLANNER_REASONING_EFFORT="minimal",
         )
         planner = build_planner(settings, planner_response_json())
@@ -215,7 +215,7 @@ class TestResponseFormatForwarded:
         settings = make_search_settings(
             LLM_PROVIDER="openai",
             SEARCH_PLANNER_MODEL="gpt-5.4-mini",
-            AI_MODELS=["gpt-5.4-mini"],
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
         )
         planner = build_planner(settings, planner_response_json())
         planner.plan("any query")
@@ -230,10 +230,35 @@ class TestResponseFormatForwarded:
         settings = make_search_settings(
             LLM_PROVIDER="ollama",
             SEARCH_PLANNER_MODEL="gemma3:12b",
-            AI_MODELS=["gemma3:12b"],
+            CLASSIFY_MODELS=["gemma3:12b"],
         )
         planner = build_planner(settings, planner_response_json())
         planner.plan("any query")
 
         call = planner._create_completion.call_args  # type: ignore[attr-defined]
         assert "response_format" not in call.kwargs
+
+
+class TestPlannerReadsClassifyModels:
+    """Search planner fallback chain must use CLASSIFY_MODELS, not AI_MODELS."""
+
+    def test_fallback_chain_uses_classify_models(self) -> None:
+        """When the primary model fails, the planner falls back through CLASSIFY_MODELS."""
+        payload = planner_response_json(semantic_queries=["classify-fallback worked"])
+        settings = make_search_settings(
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+
+        planner = QueryPlanner(settings)
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                make_internal_server_error(),
+                make_chat_completion(payload),
+            ]
+        )
+
+        plan = planner.plan("test fallback via classify")
+
+        assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
+        assert "classify-fallback worked" in plan.semantic_queries

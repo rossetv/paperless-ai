@@ -105,7 +105,7 @@ class TestIsRefusal:
 
 class TestOcrProviderSuccess:
     def test_first_model_success(self):
-        settings = _make_settings(AI_MODELS=["gpt-5.4-mini"])
+        settings = _make_settings(OCR_MODELS=["gpt-5.4-mini"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             return_value=_make_response("Transcribed text")
@@ -118,7 +118,7 @@ class TestOcrProviderSuccess:
         assert page.model == "gpt-5.4-mini"
 
     def test_returns_stripped_text(self):
-        settings = _make_settings(AI_MODELS=["model-a"])
+        settings = _make_settings(OCR_MODELS=["model-a"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             return_value=_make_response("  text with whitespace  \n")
@@ -133,7 +133,7 @@ class TestOcrProviderSuccess:
 class TestOcrProviderRefusalFallback:
     def test_fallback_on_refusal(self):
         settings = _make_settings(
-            AI_MODELS=["model-a", "model-b"],
+            OCR_MODELS=["model-a", "model-b"],
             OCR_REFUSAL_MARKERS=["i cannot"],
         )
         provider = OcrProvider(settings)
@@ -152,7 +152,7 @@ class TestOcrProviderRefusalFallback:
 
     def test_refusal_increments_stats(self):
         settings = _make_settings(
-            AI_MODELS=["model-a", "model-b"],
+            OCR_MODELS=["model-a", "model-b"],
             OCR_REFUSAL_MARKERS=["i cannot"],
         )
         provider = OcrProvider(settings)
@@ -174,7 +174,7 @@ class TestOcrProviderRefusalFallback:
 
 class TestOcrProviderApiErrorFallback:
     def test_fallback_on_api_error(self):
-        settings = _make_settings(AI_MODELS=["model-a", "model-b"])
+        settings = _make_settings(OCR_MODELS=["model-a", "model-b"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             side_effect=[
@@ -194,7 +194,7 @@ class TestOcrProviderApiErrorFallback:
         assert page.model == "model-b"
 
     def test_api_error_increments_stats(self):
-        settings = _make_settings(AI_MODELS=["model-a", "model-b"])
+        settings = _make_settings(OCR_MODELS=["model-a", "model-b"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             side_effect=[
@@ -218,7 +218,7 @@ class TestOcrProviderApiErrorFallback:
 class TestOcrProviderAllFail:
     def test_all_models_refuse_returns_refusal_mark(self):
         settings = _make_settings(
-            AI_MODELS=["model-a", "model-b"],
+            OCR_MODELS=["model-a", "model-b"],
             OCR_REFUSAL_MARKERS=["i cannot"],
             REFUSAL_MARK="CHATGPT REFUSED TO TRANSCRIBE",
         )
@@ -238,7 +238,7 @@ class TestOcrProviderAllFail:
 
     def test_all_models_api_error_returns_refusal_mark(self):
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             REFUSAL_MARK="REFUSED",
         )
         provider = OcrProvider(settings)
@@ -260,7 +260,7 @@ class TestOcrProviderAllFail:
 class TestOcrProviderBlankImage:
     @patch("ocr.provider.is_blank", return_value=True)
     def test_blank_image_returns_empty_without_api_call(self, mock_is_blank):
-        settings = _make_settings(AI_MODELS=["model-a"])
+        settings = _make_settings(OCR_MODELS=["model-a"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock()
         image = _make_blank_image()
@@ -273,7 +273,7 @@ class TestOcrProviderBlankImage:
 
     @patch("ocr.provider.is_blank", return_value=True)
     def test_blank_image_no_stats_increment(self, mock_is_blank):
-        settings = _make_settings(AI_MODELS=["model-a"])
+        settings = _make_settings(OCR_MODELS=["model-a"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock()
         image = _make_blank_image()
@@ -288,7 +288,7 @@ class TestOcrProviderImageResize:
     @patch("ocr.provider.is_blank", return_value=False)
     def test_large_image_resized(self, mock_is_blank):
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             OCR_MAX_SIDE=500,
         )
         provider = OcrProvider(settings)
@@ -304,7 +304,7 @@ class TestOcrProviderImageResize:
     @patch("ocr.provider.is_blank", return_value=False)
     def test_small_image_not_resized(self, mock_is_blank):
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             OCR_MAX_SIDE=2000,
         )
         provider = OcrProvider(settings)
@@ -340,7 +340,7 @@ class TestOcrProviderStats:
 
     def test_fallback_success_tracked(self):
         settings = _make_settings(
-            AI_MODELS=["primary", "fallback"],
+            OCR_MODELS=["primary", "fallback"],
             OCR_REFUSAL_MARKERS=["refused"],
         )
         provider = OcrProvider(settings)
@@ -360,7 +360,7 @@ class TestOcrProviderStats:
         assert stats["refusals"] == 1
 
     def test_primary_model_success_no_fallback_stat(self):
-        settings = _make_settings(AI_MODELS=["primary", "fallback"])
+        settings = _make_settings(OCR_MODELS=["primary", "fallback"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             return_value=_make_response("good text")
@@ -396,7 +396,7 @@ class TestOcrProviderThreadSafety:
 
 class TestOcrProviderDuplicateModels:
     def test_duplicate_models_tried_once(self):
-        settings = _make_settings(AI_MODELS=["model-a", "model-a", "model-b"])
+        settings = _make_settings(OCR_MODELS=["model-a", "model-a", "model-b"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
             side_effect=[
@@ -416,7 +416,7 @@ class TestOcrProviderDuplicateModels:
 
 class TestOcrProviderNoneContent:
     def test_none_response_content_treated_as_empty(self):
-        settings = _make_settings(AI_MODELS=["model-a"])
+        settings = _make_settings(OCR_MODELS=["model-a"])
         provider = OcrProvider(settings)
         response = MagicMock()
         response.choices = [MagicMock()]
@@ -441,19 +441,19 @@ class TestOcrProviderImageDetail:
         return image_part["image_url"]["detail"]
 
     def test_defaults_to_high(self):
-        settings = _make_settings(AI_MODELS=["model-a"], OCR_IMAGE_DETAIL="high")
+        settings = _make_settings(OCR_MODELS=["model-a"], OCR_IMAGE_DETAIL="high")
         provider = OcrProvider(settings)
 
         assert self._capture_detail(provider) == "high"
 
     def test_honours_auto(self):
-        settings = _make_settings(AI_MODELS=["model-a"], OCR_IMAGE_DETAIL="auto")
+        settings = _make_settings(OCR_MODELS=["model-a"], OCR_IMAGE_DETAIL="auto")
         provider = OcrProvider(settings)
 
         assert self._capture_detail(provider) == "auto"
 
     def test_honours_low(self):
-        settings = _make_settings(AI_MODELS=["model-a"], OCR_IMAGE_DETAIL="low")
+        settings = _make_settings(OCR_MODELS=["model-a"], OCR_IMAGE_DETAIL="low")
         provider = OcrProvider(settings)
 
         assert self._capture_detail(provider) == "low"
@@ -468,7 +468,7 @@ class TestOcrProviderReasoningEffort:
 
     def test_defaults_to_medium_for_openai(self):
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             LLM_PROVIDER="openai",
             OCR_REASONING_EFFORT="medium",
         )
@@ -478,7 +478,7 @@ class TestOcrProviderReasoningEffort:
 
     def test_honours_minimal_for_openai(self):
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             LLM_PROVIDER="openai",
             OCR_REASONING_EFFORT="minimal",
         )
@@ -489,10 +489,27 @@ class TestOcrProviderReasoningEffort:
     def test_omitted_for_non_openai(self):
         # The OpenAI-only param must never reach an Ollama-compatible endpoint.
         settings = _make_settings(
-            AI_MODELS=["model-a"],
+            OCR_MODELS=["model-a"],
             LLM_PROVIDER="ollama",
             OCR_REASONING_EFFORT="minimal",
         )
         provider = OcrProvider(settings)
 
         assert "reasoning_effort" not in self._capture_kwargs(provider)
+
+
+class TestOcrProviderReadsOcrModels:
+    """OCR provider must read OCR_MODELS, not AI_MODELS."""
+
+    def test_uses_ocr_models_field(self):
+        """OcrProvider iterates settings.OCR_MODELS, not settings.AI_MODELS."""
+        settings = _make_settings(OCR_MODELS=["ocr-only-model"])
+        provider = OcrProvider(settings)
+        provider._create_completion = MagicMock(
+            return_value=_make_response("transcribed")
+        )
+        image = _make_test_image()
+
+        page = provider.transcribe_image(image)
+
+        assert page.model == "ocr-only-model"

@@ -38,7 +38,7 @@ class TestTemperatureNowAlwaysSentThenAdapted:
     and a 400 strips-and-caches it (spec §4.3 accepted behaviour change)."""
 
     def test_temperature_is_sent_on_the_first_call_for_gpt5(self):
-        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        provider = make_provider(CLASSIFY_MODELS=["gpt-5.4-mini"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -55,7 +55,7 @@ class TestTemperatureNowAlwaysSentThenAdapted:
         assert captured_kwargs["temperature"] == 0.2
 
     def test_temperature_is_included_for_non_gpt5_model(self):
-        provider = make_provider(AI_MODELS=["claude-3"])
+        provider = make_provider(CLASSIFY_MODELS=["claude-3"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -70,7 +70,7 @@ class TestTemperatureNowAlwaysSentThenAdapted:
         assert captured_kwargs["temperature"] == 0.2
 
     def test_gpt5_strips_temperature_after_one_400_then_caches_it(self):
-        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        provider = make_provider(CLASSIFY_MODELS=["gpt-5.4-mini"])
         good = make_completion_response(valid_classification_json())
         calls: list[dict] = []
 
@@ -94,7 +94,7 @@ class TestMaxTokensHandling:
     """CLASSIFY_MAX_TOKENS > 0 adds max_tokens param."""
 
     def test_max_tokens_added_when_positive(self):
-        provider = make_provider(AI_MODELS=["claude-3"], CLASSIFY_MAX_TOKENS=500)
+        provider = make_provider(CLASSIFY_MODELS=["claude-3"], CLASSIFY_MAX_TOKENS=500)
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -109,7 +109,7 @@ class TestMaxTokensHandling:
         assert captured_kwargs["max_tokens"] == 500
 
     def test_max_tokens_not_added_when_zero(self):
-        provider = make_provider(AI_MODELS=["claude-3"], CLASSIFY_MAX_TOKENS=0)
+        provider = make_provider(CLASSIFY_MODELS=["claude-3"], CLASSIFY_MAX_TOKENS=0)
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -332,7 +332,7 @@ class TestResponseFormat:
     """response_format is only included for openai provider."""
 
     def test_response_format_included_for_openai(self):
-        provider = make_provider(LLM_PROVIDER="openai", AI_MODELS=["claude-3"])
+        provider = make_provider(LLM_PROVIDER="openai", CLASSIFY_MODELS=["claude-3"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -347,7 +347,7 @@ class TestResponseFormat:
         assert "response_format" in captured_kwargs
 
     def test_response_format_excluded_for_ollama(self):
-        provider = make_provider(LLM_PROVIDER="ollama", AI_MODELS=["llama3"])
+        provider = make_provider(LLM_PROVIDER="ollama", CLASSIFY_MODELS=["llama3"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -369,7 +369,7 @@ class TestReasoningEffort:
         # Default effort is "medium" (the models' own default); prove it flows
         # through to the outgoing params unchanged.
         provider = make_provider(
-            AI_MODELS=["gpt-5.4-mini"], CLASSIFY_REASONING_EFFORT="medium"
+            CLASSIFY_MODELS=["gpt-5.4-mini"], CLASSIFY_REASONING_EFFORT="medium"
         )
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
@@ -386,7 +386,7 @@ class TestReasoningEffort:
 
     def test_reasoning_effort_uses_configured_value(self):
         provider = make_provider(
-            AI_MODELS=["gpt-5.4"], CLASSIFY_REASONING_EFFORT="high"
+            CLASSIFY_MODELS=["gpt-5.4"], CLASSIFY_REASONING_EFFORT="high"
         )
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
@@ -402,7 +402,7 @@ class TestReasoningEffort:
         assert captured_kwargs["reasoning_effort"] == "high"
 
     def test_reasoning_effort_stripped_on_400_then_retried(self):
-        provider = make_provider(AI_MODELS=["gpt-5.4-mini"])
+        provider = make_provider(CLASSIFY_MODELS=["gpt-5.4-mini"])
         response = make_completion_response(valid_classification_json())
         error = make_bad_request_error("Unsupported parameter: 'reasoning_effort'")
         calls: list[dict] = []

@@ -1,7 +1,7 @@
 """LLM document-relevance judge — the Layer-3 pre-synthesis screen.
 
 The judge makes one LLM call on the cheap SEARCH_JUDGE_MODEL (falling back
-through AI_MODELS) and returns one :class:`~search.models.DocVerdict` per
+through CLASSIFY_MODELS) and returns one :class:`~search.models.DocVerdict` per
 candidate. It is recall-biased and fail-open: any failure — malformed, empty,
 unparseable, all-models-failed — returns a verdict that keeps EVERY candidate
 document (degraded=True), so a broken judge can only ever reduce the answer
@@ -46,7 +46,7 @@ class RelevanceJudge(OpenAIChatMixin):
     the injected ``settings``, so instances are safe to share across threads.
 
     Args:
-        settings: Supplies SEARCH_JUDGE_MODEL and AI_MODELS for the fallback
+        settings: Supplies SEARCH_JUDGE_MODEL and CLASSIFY_MODELS for the fallback
             chain, SEARCH_JUDGE_REASONING_EFFORT, SEARCH_JUDGE_RATIONALES, and
             MAX_RETRIES / MAX_RETRY_BACKOFF_SECONDS for the inherited retry
             decorator.
@@ -98,7 +98,7 @@ class RelevanceJudge(OpenAIChatMixin):
         raw_content = self._complete_with_model_fallback(
             primary_model=self.settings.SEARCH_JUDGE_MODEL,
             messages=messages,
-            fallback_models=self.settings.AI_MODELS,
+            fallback_models=self.settings.CLASSIFY_MODELS,
             log_event_prefix="judge",
             reasoning_effort=self.settings.SEARCH_JUDGE_REASONING_EFFORT,
             response_format=_judge_response_format(self.settings),

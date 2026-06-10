@@ -1,7 +1,7 @@
 """LLM query planner — Stage 1 of the search pipeline.
 
 The planner makes one LLM call using the configured SEARCH_PLANNER_MODEL
-(falling back through AI_MODELS on failure) and parses the JSON response
+(falling back through CLASSIFY_MODELS on failure) and parses the JSON response
 into a frozen QueryPlan dataclass.
 
 Design notes:
@@ -16,7 +16,7 @@ Design notes:
   (CODE_GUIDELINES.md §8.1): the planner subclasses the mixin and inherits
   the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
   ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_PLANNER_MODEL
-  then AI_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
+  then CLASSIFY_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
 - A failing model — whether a retry-exhausted retryable error or a
   non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
   ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
@@ -75,7 +75,7 @@ class QueryPlanner(OpenAIChatMixin):
 
     Args:
         settings: Application settings; supplies SEARCH_PLANNER_MODEL and
-            AI_MODELS for the fallback chain, plus MAX_RETRIES /
+            CLASSIFY_MODELS for the fallback chain, plus MAX_RETRIES /
             MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
     """
 
@@ -97,7 +97,7 @@ class QueryPlanner(OpenAIChatMixin):
         """Analyse *query* and return a QueryPlan or ClarifyNeeded.
 
         Makes one LLM call using SEARCH_PLANNER_MODEL, falling back through
-        AI_MODELS on any API error.  The response is **either** a normal plan
+        CLASSIFY_MODELS on any API error.  The response is **either** a normal plan
         **or** a clarify signal (when ``SEARCH_GATE_ADEQUACY`` is True and the
         model judges the query obviously inadequate).
 
@@ -133,7 +133,7 @@ class QueryPlanner(OpenAIChatMixin):
         raw_content = self._complete_with_model_fallback(
             primary_model=self.settings.SEARCH_PLANNER_MODEL,
             messages=messages,
-            fallback_models=self.settings.AI_MODELS,
+            fallback_models=self.settings.CLASSIFY_MODELS,
             log_event_prefix="planner",
             reasoning_effort=self.settings.SEARCH_PLANNER_REASONING_EFFORT,
             response_format=_planner_response_format(self.settings),

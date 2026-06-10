@@ -49,7 +49,7 @@ class TestModelSelection:
     def test_configured_answer_model_is_requested(self) -> None:
         chunks = [_chunk(1, "Some text.")]
         settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="gpt-5.4", AI_MODELS=["gpt-5.4-mini", "gpt-5.4"]
+            SEARCH_ANSWER_MODEL="gpt-5.4", CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"]
         )
         synthesiser = build_synthesizer(
             settings, answered_response_json("answer", citations=[1])
@@ -63,7 +63,7 @@ class TestModelSelection:
     def test_different_configured_model_is_requested(self) -> None:
         chunks = [_chunk(1, "Some text.")]
         settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="gemma3:27b", AI_MODELS=["gemma3:27b"]
+            SEARCH_ANSWER_MODEL="gemma3:27b", CLASSIFY_MODELS=["gemma3:27b"]
         )
         synthesiser = build_synthesizer(
             settings, answered_response_json("answer", citations=[1])
@@ -94,7 +94,7 @@ class TestModelFallback:
     def test_fallback_to_second_model_on_api_error(self) -> None:
         chunks = [_chunk(1, "Boiler warranty text.")]
         settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="gpt-5.4", AI_MODELS=["gpt-5.4", "gpt-5.4-mini"]
+            SEARCH_ANSWER_MODEL="gpt-5.4", CLASSIFY_MODELS=["gpt-5.4", "gpt-5.4-mini"]
         )
         synthesiser = Synthesizer(settings)
         # First model raises a retryable error; second model succeeds.
@@ -133,7 +133,7 @@ class TestApiErrorNeverEscapes:
         """A wrong/expired key in final mode degrades to Answered, never raises."""
         chunks = [_chunk(1, "Some text.")]
         settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="gpt-5.4", AI_MODELS=["gpt-5.4", "gpt-5.4-mini"]
+            SEARCH_ANSWER_MODEL="gpt-5.4", CLASSIFY_MODELS=["gpt-5.4", "gpt-5.4-mini"]
         )
         synthesiser = Synthesizer(settings)
         synthesiser._create_completion = MagicMock(  # type: ignore[method-assign]
@@ -151,7 +151,7 @@ class TestApiErrorNeverEscapes:
     def test_authentication_error_in_exploratory_mode_returns_needs_more(self) -> None:
         """A wrong/expired key in exploratory mode degrades to NeedsMore, never raises."""
         chunks = [_chunk(1, "Some text.")]
-        settings = make_search_settings(SEARCH_ANSWER_MODEL="m", AI_MODELS=["m"])
+        settings = make_search_settings(SEARCH_ANSWER_MODEL="m", CLASSIFY_MODELS=["m"])
         synthesiser = Synthesizer(settings)
         synthesiser._create_completion = MagicMock(  # type: ignore[method-assign]
             side_effect=make_authentication_error()
@@ -165,7 +165,7 @@ class TestApiErrorNeverEscapes:
         """A non-retryable error on model 1 still lets model 2 answer."""
         chunks = [_chunk(1, "Boiler warranty text.")]
         settings = make_search_settings(
-            SEARCH_ANSWER_MODEL="gpt-5.4", AI_MODELS=["gpt-5.4", "gpt-5.4-mini"]
+            SEARCH_ANSWER_MODEL="gpt-5.4", CLASSIFY_MODELS=["gpt-5.4", "gpt-5.4-mini"]
         )
         synthesiser = Synthesizer(settings)
         synthesiser._create_completion = MagicMock(  # type: ignore[method-assign]
@@ -191,7 +191,7 @@ class TestSynthReasoningEffortForwarded:
         # "medium" is the shipped default — proves the wiring forwards it verbatim.
         settings = make_search_settings(
             SEARCH_ANSWER_MODEL="gpt-5.4",
-            AI_MODELS=["gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4"],
             SEARCH_ANSWER_REASONING_EFFORT="medium",
         )
         synthesiser = build_synthesizer(
@@ -208,7 +208,7 @@ class TestSynthReasoningEffortForwarded:
         # The realistic per-env tuning: an operator lowers the synth to "low".
         settings = make_search_settings(
             SEARCH_ANSWER_MODEL="gpt-5.4",
-            AI_MODELS=["gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4"],
             SEARCH_ANSWER_REASONING_EFFORT="low",
         )
         synthesiser = build_synthesizer(
@@ -231,7 +231,7 @@ class TestSynthResponseFormatForwarded:
         settings = make_search_settings(
             LLM_PROVIDER="openai",
             SEARCH_ANSWER_MODEL="gpt-5.4",
-            AI_MODELS=["gpt-5.4"],
+            CLASSIFY_MODELS=["gpt-5.4"],
         )
         synthesiser = build_synthesizer(
             settings, answered_response_json("ok [1].", citations=[1])
@@ -250,7 +250,7 @@ class TestSynthResponseFormatForwarded:
         settings = make_search_settings(
             LLM_PROVIDER="ollama",
             SEARCH_ANSWER_MODEL="gemma3:27b",
-            AI_MODELS=["gemma3:27b"],
+            CLASSIFY_MODELS=["gemma3:27b"],
         )
         synthesiser = build_synthesizer(
             settings, answered_response_json("ok [1].", citations=[1])
@@ -261,3 +261,34 @@ class TestSynthResponseFormatForwarded:
 
         call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
         assert "response_format" not in call.kwargs
+
+
+class TestSynthesizerReadsClassifyModels:
+    """Search synthesizer fallback chain must use CLASSIFY_MODELS, not AI_MODELS."""
+
+    def test_fallback_chain_uses_classify_models(self) -> None:
+        """When the primary model fails, the synthesizer falls back through CLASSIFY_MODELS."""
+        from tests.helpers.factories import make_retrieved_chunk
+
+        payload = answered_response_json("answer via classify-fallback [1].", citations=[1])
+        settings = make_search_settings(
+            SEARCH_ANSWER_MODEL="gpt-5.4",
+            CLASSIFY_MODELS=["gpt-5.4", "gpt-5.4-mini"],
+        )
+
+        synthesiser = Synthesizer(settings)
+        synthesiser._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                make_internal_server_error(),
+                make_chat_completion(payload),
+            ]
+        )
+
+        result = synthesiser.synthesise(
+            "q",
+            [make_retrieved_chunk(chunk_id=1, document_id=1)],
+            mode="exploratory",
+        )
+
+        assert synthesiser._create_completion.call_count == 2  # type: ignore[attr-defined]
+        assert isinstance(result, Answered)
