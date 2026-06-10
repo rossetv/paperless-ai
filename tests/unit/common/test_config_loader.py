@@ -155,3 +155,48 @@ def test_current_settings_is_cached_across_calls(app_db_path) -> None:
         a = current_settings(app_db_path)
         b = current_settings(app_db_path)
     assert a is b
+
+
+# ---------------------------------------------------------------------------
+# OCR_MODELS / CLASSIFY_MODELS split tests (AI_MODELS back-compat)
+# ---------------------------------------------------------------------------
+
+
+def test_openai_defaults_produce_ocr_and_classify_model_lists() -> None:
+    """OpenAI provider defaults set both OCR_MODELS and CLASSIFY_MODELS."""
+    from common.config import Settings
+
+    with patch.dict(os.environ, _MINIMAL_ENV, clear=True):
+        s = Settings.from_environment()
+
+    assert s.OCR_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+    assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+    assert not hasattr(s, "AI_MODELS")
+
+
+def test_explicit_ocr_and_classify_models_override_defaults() -> None:
+    """Explicit OCR_MODELS and CLASSIFY_MODELS env vars are parsed independently."""
+    from common.config import Settings
+
+    env = {
+        **_MINIMAL_ENV,
+        "OCR_MODELS": "gpt-5.4-mini,gpt-5.4",
+        "CLASSIFY_MODELS": "gpt-5.5",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        s = Settings.from_environment()
+
+    assert s.OCR_MODELS == ["gpt-5.4-mini", "gpt-5.4"]
+    assert s.CLASSIFY_MODELS == ["gpt-5.5"]
+
+
+def test_legacy_ai_models_populates_both_lists_when_new_keys_absent() -> None:
+    """Legacy AI_MODELS env var is copied to both OCR_MODELS and CLASSIFY_MODELS."""
+    from common.config import Settings
+
+    env = {**_MINIMAL_ENV, "AI_MODELS": "legacy-a,legacy-b"}
+    with patch.dict(os.environ, env, clear=True):
+        s = Settings.from_environment()
+
+    assert s.OCR_MODELS == ["legacy-a", "legacy-b"]
+    assert s.CLASSIFY_MODELS == ["legacy-a", "legacy-b"]
