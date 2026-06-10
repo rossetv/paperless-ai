@@ -76,9 +76,10 @@ class TestDefaults:
         s = _build(mocker, _MINIMAL_ENV)
         assert getattr(s, attr) == expected
 
-    def test_ai_models_default_openai(self, mocker):
+    def test_ocr_and_classify_models_default_openai(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
-        assert s.AI_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        assert s.OCR_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
 
     def test_ocr_refusal_markers_default(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -137,9 +138,13 @@ class TestCustomEnvVars:
         s = _build(mocker, {**_MINIMAL_ENV, env_key: env_val})
         assert getattr(s, attr) == expected
 
-    def test_ai_models_custom(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": "model-a, model-b"})
-        assert s.AI_MODELS == ["model-a", "model-b"]
+    def test_ocr_models_custom(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": "model-a, model-b"})
+        assert s.OCR_MODELS == ["model-a", "model-b"]
+
+    def test_classify_models_custom(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": "model-c"})
+        assert s.CLASSIFY_MODELS == ["model-c"]
 
 
 class TestMissingRequired:
@@ -203,7 +208,8 @@ class TestSettingsRepr:
 class TestOllamaConfig:
     def test_ollama_default_models(self, mocker):
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
-        assert s.AI_MODELS == ["gemma3:27b", "gemma3:12b"]
+        assert s.OCR_MODELS == ["gemma3:27b", "gemma3:12b"]
+        assert s.CLASSIFY_MODELS == ["gemma3:27b", "gemma3:12b"]
 
     def test_ollama_default_base_url(self, mocker):
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
@@ -403,26 +409,38 @@ class TestClassifyClamping:
         assert getattr(s, env_key) == 0
 
 
-class TestAiModelsValidation:
-    def test_all_commas_raises(self, mocker):
+class TestModelListsValidation:
+    def test_ocr_models_all_commas_raises(self, mocker):
         with pytest.raises(
-            ValueError, match="AI_MODELS must contain at least one model"
+            ValueError, match="OCR_MODELS must contain at least one model"
         ):
-            _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": ",,, ,"})
+            _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ",,, ,"})
 
-    def test_empty_string_raises(self, mocker):
+    def test_ocr_models_empty_string_raises(self, mocker):
         with pytest.raises(
-            ValueError, match="AI_MODELS must contain at least one model"
+            ValueError, match="OCR_MODELS must contain at least one model"
         ):
-            _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": ""})
+            _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": ""})
 
-    def test_single_model(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": "model-a"})
-        assert s.AI_MODELS == ["model-a"]
+    def test_classify_models_all_commas_raises(self, mocker):
+        with pytest.raises(
+            ValueError, match="CLASSIFY_MODELS must contain at least one model"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ",,, ,"})
 
-    def test_whitespace_stripped(self, mocker):
-        s = _build(mocker, {**_MINIMAL_ENV, "AI_MODELS": " model-a , model-b "})
-        assert s.AI_MODELS == ["model-a", "model-b"]
+    def test_classify_models_empty_string_raises(self, mocker):
+        with pytest.raises(
+            ValueError, match="CLASSIFY_MODELS must contain at least one model"
+        ):
+            _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_MODELS": ""})
+
+    def test_ocr_models_single_model(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": "model-a"})
+        assert s.OCR_MODELS == ["model-a"]
+
+    def test_ocr_models_whitespace_stripped(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "OCR_MODELS": " model-a , model-b "})
+        assert s.OCR_MODELS == ["model-a", "model-b"]
 
 
 class TestOcrRefusalMarkers:
@@ -610,13 +628,16 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_one_entries() -> None:
-    """CONFIG_KEYS is the 71-key universe (judge rationales toggle added one)."""
+def test_config_keys_has_seventy_two_entries() -> None:
+    """CONFIG_KEYS is the 72-key universe (AI_MODELS split into OCR_MODELS + CLASSIFY_MODELS)."""
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 71
+    assert len(CONFIG_KEYS) == 72
     assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
+    assert "AI_MODELS" not in CONFIG_KEYS
+    assert "OCR_MODELS" in CONFIG_KEYS
+    assert "CLASSIFY_MODELS" in CONFIG_KEYS
     assert "SEARCH_FORWARDED_ALLOW_IPS" in CONFIG_KEYS
     assert "SEARCH_GATE_ADEQUACY" in CONFIG_KEYS
     assert "SEARCH_GATE_RELEVANCE" in CONFIG_KEYS

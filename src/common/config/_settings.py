@@ -68,7 +68,8 @@ class _ProviderDefaults:
     """
 
     ollama_base_url: str | None
-    ai_models: list[str]
+    ocr_models: list[str]
+    classify_models: list[str]
     planner_model: str
     answer_model: str
     judge_model: str
@@ -82,20 +83,22 @@ def _resolve_provider_defaults(
     Under ``ollama`` the Ollama base URL is read (defaulting to the local
     daemon) and the model defaults are the local Gemma set; under ``openai`` the
     base URL is ``None`` and the defaults are the GPT set. These are only
-    *defaults* — an explicit ``AI_MODELS`` / ``SEARCH_*_MODEL`` value in *source*
-    still wins in :func:`_build_settings`.
+    *defaults* — explicit ``OCR_MODELS`` / ``CLASSIFY_MODELS`` / ``SEARCH_*_MODEL``
+    values in *source* still win in :func:`_build_settings`.
     """
     if llm_provider == "ollama":
         return _ProviderDefaults(
             ollama_base_url=source.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL),
-            ai_models=["gemma3:27b", "gemma3:12b"],
+            ocr_models=["gemma3:27b", "gemma3:12b"],
+            classify_models=["gemma3:27b", "gemma3:12b"],
             planner_model="gemma3:12b",
             answer_model="gemma3:27b",
             judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
         ollama_base_url=None,
-        ai_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
+        ocr_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
+        classify_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
         planner_model="gpt-5.4-mini",
         answer_model="gpt-5.5",
         judge_model="gpt-5.4-mini",
@@ -125,7 +128,8 @@ class Settings:
     # client always uses OpenAI (CODE_GUIDELINES §10.8, §15.4).
     OPENAI_API_KEY: str
 
-    AI_MODELS: list[str]
+    OCR_MODELS: list[str]
+    CLASSIFY_MODELS: list[str]
     OCR_REFUSAL_MARKERS: list[str]
     OCR_INCLUDE_PAGE_MODELS: bool
 
@@ -379,10 +383,16 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
 
     provider_defaults = _resolve_provider_defaults(llm_provider, source)
     ollama_base_url = provider_defaults.ollama_base_url
-    default_ai_models = provider_defaults.ai_models
+    default_ocr_models = provider_defaults.ocr_models
+    default_classify_models = provider_defaults.classify_models
     default_planner_model = provider_defaults.planner_model
     default_answer_model = provider_defaults.answer_model
     default_judge_model = provider_defaults.judge_model
+
+    # Back-compat shim: AI_MODELS is the legacy key. If neither OCR_MODELS nor
+    # CLASSIFY_MODELS is set but AI_MODELS is, use its value as the default for
+    # both. Precedence: explicit new key > AI_MODELS legacy > provider default.
+    legacy_models = _get_csv_env(source, "AI_MODELS", [], require_non_empty=False)
 
     # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
     # int default and treats blank as unset, so it returns a plain int — no
@@ -409,8 +419,17 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         OLLAMA_BASE_URL=ollama_base_url,
         # Required unconditionally — embeddings always use OpenAI.
         OPENAI_API_KEY=_get_required_env(source, "OPENAI_API_KEY"),
-        AI_MODELS=_get_csv_env(
-            source, "AI_MODELS", default_ai_models, require_non_empty=True
+        OCR_MODELS=_get_csv_env(
+            source,
+            "OCR_MODELS",
+            legacy_models or default_ocr_models,
+            require_non_empty=True,
+        ),
+        CLASSIFY_MODELS=_get_csv_env(
+            source,
+            "CLASSIFY_MODELS",
+            legacy_models or default_classify_models,
+            require_non_empty=True,
         ),
         OCR_REFUSAL_MARKERS=[
             marker.lower()
