@@ -8,30 +8,28 @@ import {
 } from './fieldModel';
 
 describe('settings field model', () => {
-  it('defines exactly nine sections', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(9);
+  it('defines exactly seven sections', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(7);
+  });
+
+  it('uses the seven expected section anchor ids in pipeline order', () => {
+    expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
+      'connections',
+      'ocr',
+      'classification',
+      'indexing',
+      'search',
+      'automation',
+      'logging',
+    ]);
   });
 
   it('gives every section a stable anchor id and a title', () => {
     for (const section of SETTINGS_SECTIONS) {
-      expect(section.id).toMatch(/^[a-z]+$/);
+      expect(section.id).toMatch(/^[a-z]+(-[a-z]+)*$/);
       expect(section.title.length).toBeGreaterThan(0);
       expect(section.groups.length).toBeGreaterThan(0);
     }
-  });
-
-  it('uses the nine expected section anchor ids', () => {
-    expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
-      'paperless',
-      'llm',
-      'search',
-      'embed',
-      'ocr',
-      'classify',
-      'tags',
-      'perf',
-      'logs',
-    ]);
   });
 
   it('every group has a non-empty id, title, and at least one field', () => {
@@ -52,7 +50,8 @@ describe('settings field model', () => {
   it('gives every field a non-empty label and a control kind', () => {
     for (const section of SETTINGS_SECTIONS) {
       for (const group of section.groups) {
-        for (const field of group.fields) {
+        const allFields = [...group.fields, ...(group.advanced ?? [])];
+        for (const field of allFields) {
           expect(field.label.length).toBeGreaterThan(0);
           expect(field.control.kind).toBeTruthy();
         }
@@ -63,7 +62,8 @@ describe('settings field model', () => {
   it('gives every number field a finite minimum', () => {
     for (const section of SETTINGS_SECTIONS) {
       for (const group of section.groups) {
-        for (const field of group.fields) {
+        const allFields = [...group.fields, ...(group.advanced ?? [])];
+        for (const field of allFields) {
           if (field.control.kind === 'number') {
             expect(Number.isFinite(field.control.min)).toBe(true);
           }
@@ -76,7 +76,8 @@ describe('settings field model', () => {
     const secret = allFieldKeys().filter((k) => {
       for (const section of SETTINGS_SECTIONS) {
         for (const group of section.groups) {
-          const f = group.fields.find((field) => field.key === k);
+          const allFields = [...group.fields, ...(group.advanced ?? [])];
+          const f = allFields.find((field) => field.key === k);
           if (f) return f.secret === true;
         }
       }
@@ -93,7 +94,7 @@ describe('settings field model', () => {
     const toggleField = fieldByKey('OCR_INCLUDE_PAGE_MODELS')!;
     expect(parseValue(toggleField, 'true')).toBe(true);
     expect(parseValue(toggleField, 'false')).toBe(false);
-    const listField = fieldByKey('AI_MODELS')!;
+    const listField = fieldByKey('OCR_MODELS')!;
     expect(parseValue(listField, 'a, b ,c')).toEqual(['a', 'b', 'c']);
     const textField = fieldByKey('PAPERLESS_URL')!;
     expect(parseValue(textField, 'http://x')).toBe('http://x');
@@ -101,7 +102,7 @@ describe('settings field model', () => {
 
   it('parses a null wire value to the control empty value', () => {
     expect(parseValue(fieldByKey('SEARCH_TOP_K')!, null)).toBe(0);
-    expect(parseValue(fieldByKey('AI_MODELS')!, null)).toEqual([]);
+    expect(parseValue(fieldByKey('OCR_MODELS')!, null)).toEqual([]);
     expect(parseValue(fieldByKey('PAPERLESS_URL')!, null)).toBe('');
   });
 
@@ -113,16 +114,16 @@ describe('settings field model', () => {
     expect(serialiseValue('http://x')).toBe('http://x');
   });
 
-  it('places PAPERLESS_URL in the paperless/endpoint group', () => {
-    const paperless = SETTINGS_SECTIONS.find((s) => s.id === 'paperless')!;
-    const endpoint = paperless.groups.find((g) => g.id === 'endpoint')!;
-    expect(endpoint.fields.map((f) => f.key)).toContain('PAPERLESS_URL');
+  it('places PAPERLESS_URL in the connections/paperless group', () => {
+    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
+    const paperless = connections.groups.find((g) => g.id === 'paperless')!;
+    expect(paperless.fields.map((f) => f.key)).toContain('PAPERLESS_URL');
   });
 
-  it('splits llm into provider, credentials, and models groups', () => {
-    const llm = SETTINGS_SECTIONS.find((s) => s.id === 'llm')!;
-    const groupIds = llm.groups.map((g) => g.id);
-    expect(groupIds).toEqual(['provider', 'credentials', 'models']);
+  it('structures connections into provider/paperless/openai/ollama groups', () => {
+    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
+    const groupIds = connections.groups.map((g) => g.id);
+    expect(groupIds).toEqual(['provider', 'paperless', 'openai', 'ollama']);
   });
 
   it('fieldByKey resolves a key nested inside any group', () => {
@@ -132,11 +133,40 @@ describe('settings field model', () => {
     expect(fieldByKey('__unknown__')).toBeUndefined();
   });
 
-  // ---- New helper behaviour (no-op against current model) ------------------
+  // ── New-model specific assertions ─────────────────────────────────────────
+
+  it('allFieldKeys contains OCR_MODELS and CLASSIFY_MODELS', () => {
+    const keys = allFieldKeys();
+    expect(keys).toContain('OCR_MODELS');
+    expect(keys).toContain('CLASSIFY_MODELS');
+  });
+
+  it('allFieldKeys contains SEARCH_PLANNER_REASONING_EFFORT as a reasoning sub-key', () => {
+    expect(allFieldKeys()).toContain('SEARCH_PLANNER_REASONING_EFFORT');
+  });
+
+  it('allFieldKeys contains an advanced key (OCR_REFUSAL_MARKERS)', () => {
+    expect(allFieldKeys()).toContain('OCR_REFUSAL_MARKERS');
+  });
+
+  it('allFieldKeys does NOT contain AI_MODELS (replaced by OCR_MODELS/CLASSIFY_MODELS)', () => {
+    expect(allFieldKeys()).not.toContain('AI_MODELS');
+  });
+
+  it('allFieldKeys does NOT contain a never-surfaced key', () => {
+    expect(allFieldKeys()).not.toContain('SEARCH_CACHE_TTL_SECONDS');
+  });
+
+  it('fieldByKey resolves SEARCH_PLANNER_REASONING_EFFORT (reasoning sub-key) as defined', () => {
+    expect(fieldByKey('SEARCH_PLANNER_REASONING_EFFORT')).toBeDefined();
+  });
+
+  it('fieldByKey also resolves SEARCH_ANSWER_REASONING_EFFORT and SEARCH_JUDGE_REASONING_EFFORT', () => {
+    expect(fieldByKey('SEARCH_ANSWER_REASONING_EFFORT')).toBeDefined();
+    expect(fieldByKey('SEARCH_JUDGE_REASONING_EFFORT')).toBeDefined();
+  });
 
   it('allFieldKeys includes no duplicates even with advanced/reasoningKey logic applied', () => {
-    // The current model has no advanced fields or reasoningKey selects, so this
-    // verifies the new branches are genuinely no-ops against the real model.
     const keys = allFieldKeys();
     expect(new Set(keys).size).toBe(keys.length);
   });
@@ -145,7 +175,6 @@ describe('settings field model', () => {
     const expected = SETTINGS_SECTIONS.flatMap((s) =>
       s.groups.flatMap((g) => g.fields.map((f) => f.key)),
     );
-    // Every key from the base fields must appear in allFieldKeys().
     const result = allFieldKeys();
     for (const k of expected) {
       expect(result).toContain(k);
@@ -156,27 +185,31 @@ describe('settings field model', () => {
     expect(fieldByKey('__nonexistent_key__')).toBeUndefined();
   });
 
-  it('no group in the current model has an advanced array', () => {
-    // Asserts the new optional field is not yet present in the real model, so
-    // the advanced-field path is untouched until a later task adds it.
-    for (const section of SETTINGS_SECTIONS) {
-      for (const group of section.groups) {
-        expect(group.advanced).toBeUndefined();
+  it('advanced groups are present in the new model', () => {
+    // At least one group must have an advanced array.
+    const hasAdvanced = SETTINGS_SECTIONS.some((s) =>
+      s.groups.some((g) => g.advanced !== undefined && g.advanced.length > 0),
+    );
+    expect(hasAdvanced).toBe(true);
+  });
+
+  it('select controls on search model fields carry reasoningKey', () => {
+    const search = SETTINGS_SECTIONS.find((s) => s.id === 'search')!;
+    const models = search.groups.find((g) => g.id === 'models')!;
+    for (const field of models.fields) {
+      if (field.control.kind === 'select') {
+        expect(field.control.reasoningKey).toBeDefined();
+        expect(field.control.reasoningOptions).toBeDefined();
       }
     }
   });
 
-  it('no select control in the current model has a reasoningKey', () => {
-    // Same rationale — ensures the reasoningKey path is a no-op against the
-    // current model; the path will be exercised once sections.ts uses it.
-    for (const section of SETTINGS_SECTIONS) {
-      for (const group of section.groups) {
-        for (const field of group.fields) {
-          if (field.control.kind === 'select') {
-            expect(field.control.reasoningKey).toBeUndefined();
-          }
-        }
-      }
-    }
+  it('OCR imaging group carries advanced fields with OCR_INCLUDE_PAGE_MODELS and OCR_REFUSAL_MARKERS', () => {
+    const ocr = SETTINGS_SECTIONS.find((s) => s.id === 'ocr')!;
+    const imaging = ocr.groups.find((g) => g.id === 'imaging')!;
+    expect(imaging.advanced).toBeDefined();
+    const advancedKeys = imaging.advanced!.map((f) => f.key);
+    expect(advancedKeys).toContain('OCR_INCLUDE_PAGE_MODELS');
+    expect(advancedKeys).toContain('OCR_REFUSAL_MARKERS');
   });
 });
