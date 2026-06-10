@@ -351,7 +351,7 @@
   /* Settings sidenav eyebrow — uppercase label above the nav groups. */
   --letter-spacing-eyebrow:        0.12em;
 
-  /* Connection status dot — the 8 px indicator in TestConnectionAction. */
+  /* Connection status dot — the 8 px indicator in the ConnectionCard status pill. */
   --size-conn-dot:            8px;
   --shadow-conn-ok:           0 0 var(--spacing-8) var(--colour-status-ok-bg);
   --shadow-conn-err:          0 0 var(--spacing-6) var(--colour-status-danger-bg);
