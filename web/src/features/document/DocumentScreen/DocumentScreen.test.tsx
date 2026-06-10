@@ -434,7 +434,7 @@ describe('DocumentScreen', () => {
           tags: [],
         },
       ],
-      plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+      plan: { specs: [] },
       stats: { llm_calls: 0, latency_ms: 0, refined: false },
     }));
     render(

@@ -39,11 +39,7 @@ const RESPONSE: SearchResponse = {
       tags: [],
     },
   ],
-  plan: {
-    semantic_queries: ['Annual energy payments to Npower in 2024'],
-    keyword_terms: ['Npower', '2024'],
-    sub_questions: [],
-  },
+  plan: { specs: [] },
   stats: { llm_calls: 3, latency_ms: 1842, refined: true },
   trace: {
     phases: [

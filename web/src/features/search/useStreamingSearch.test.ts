@@ -49,7 +49,7 @@ function makeResponse(answer: string): SearchResponse {
   return {
     answer,
     sources: [],
-    plan: { semantic_queries: [], keyword_terms: [], sub_questions: [] },
+    plan: { specs: [] },
     stats: { llm_calls: 1, latency_ms: 10, refined: false },
     trace: { phases: [] },
     cost: {

@@ -85,4 +85,68 @@ describe('SearchTracePanel', () => {
     const { container } = render(<SearchTracePanel phases={[]} cost={COST} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('shows the planner per-spec searches, resolve, and refine details', () => {
+    const phases: PhaseRecord[] = [
+      {
+        phase: 'plan',
+        label: 'Planning the query',
+        detail: {
+          skipped_trivial: false,
+          specs: [
+            {
+              mode: 'hybrid',
+              query: 'npower energy 2024',
+              filters: { correspondent: 'Npower', tags: [], date_from: null, date_to: null },
+              rationale: 'find the annual spend',
+            },
+          ],
+        },
+        tokens: { prompt: 100, completion: 10, reasoning: 0, total: 110 },
+        cost: { usd: 0.001, local: false },
+        ms: 12,
+      },
+      {
+        phase: 'resolve',
+        label: 'Resolving filters',
+        detail: {
+          resolved: [
+            {
+              spec_index: 0,
+              correspondent_id: 7,
+              document_type_id: null,
+              tag_ids: [],
+              date_from: null,
+              date_to: null,
+            },
+          ],
+          dropped: [{ spec_index: 0, names: ['Mystery Co'] }],
+        },
+        tokens: null,
+        cost: null,
+        ms: 2,
+      },
+      {
+        phase: 'refine',
+        label: 'Refining',
+        detail: {
+          gap: 'no Q4 figure',
+          action: 're-planned: 1 new searches',
+          new_specs: [{ mode: 'semantic', query: 'Q4 invoice total' }],
+          carried_over: 3,
+          noop: false,
+        },
+        tokens: null,
+        cost: null,
+        ms: 3,
+      },
+    ];
+    render(<SearchTracePanel phases={phases} cost={COST} />);
+    expect(screen.getByText(/npower energy 2024/)).toBeInTheDocument();
+    expect(screen.getByText(/from Npower/)).toBeInTheDocument();
+    expect(screen.getByText(/correspondent #7/)).toBeInTheDocument();
+    expect(screen.getByText(/Dropped \(no match\): Mystery Co/)).toBeInTheDocument();
+    expect(screen.getByText(/Gap: no Q4 figure/)).toBeInTheDocument();
+    expect(screen.getByText(/New search 1: “Q4 invoice total”/)).toBeInTheDocument();
+  });
 });

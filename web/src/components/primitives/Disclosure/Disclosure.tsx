@@ -21,7 +21,7 @@ export interface DisclosureProps {
  * (respecting `prefers-reduced-motion`). Using the native element means
  * keyboard operation and the open/closed state come for free.
  *
- * App-agnostic — knows nothing about query plans. `QueryPlanSummary`
+ * App-agnostic — knows nothing about the search trace. `SearchTracePanel`
  * composes it.
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
