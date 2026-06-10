@@ -231,3 +231,53 @@ def test_empty_ai_models_falls_to_provider_default() -> None:
     openai_defaults = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
     assert s.OCR_MODELS == openai_defaults
     assert s.CLASSIFY_MODELS == openai_defaults
+
+
+# ---------------------------------------------------------------------------
+# Deprecation warning tests (fix 6)
+# ---------------------------------------------------------------------------
+
+
+def test_ai_models_deprecation_warning_fires_once() -> None:
+    """The one-shot deprecation flag is set on the first build where AI_MODELS
+    is used as a fallback, and stays set on subsequent builds — ensuring the
+    hot-load loop does not spam the log."""
+    import common.config._settings as _settings_mod
+    from common.config import Settings
+
+    # Reset the one-shot flag so this test is independent of import order.
+    _settings_mod._ai_models_deprecation_warned = False
+    try:
+        env = {**_MINIMAL_ENV, "AI_MODELS": "some-model"}
+        with patch.dict(os.environ, env, clear=True):
+            Settings.from_environment()
+            # Flag must be set after the first call that uses the legacy key.
+            assert _settings_mod._ai_models_deprecation_warned is True
+            # Second call — flag stays set (no double-warn), no exception.
+            Settings.from_environment()
+            assert _settings_mod._ai_models_deprecation_warned is True
+    finally:
+        _settings_mod._ai_models_deprecation_warned = False
+
+
+def test_ai_models_deprecation_warning_silent_when_new_keys_set() -> None:
+    """No warning when AI_MODELS is set but both OCR_MODELS and CLASSIFY_MODELS
+    are also explicitly provided — the fallback is never used."""
+    import common.config._settings as _settings_mod
+    from common.config import Settings
+
+    _settings_mod._ai_models_deprecation_warned = False
+    try:
+        env = {
+            **_MINIMAL_ENV,
+            "AI_MODELS": "legacy-model",
+            "OCR_MODELS": "explicit-ocr",
+            "CLASSIFY_MODELS": "explicit-classify",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            Settings.from_environment()
+
+        # Flag must remain False — no warning was warranted.
+        assert _settings_mod._ai_models_deprecation_warned is False
+    finally:
+        _settings_mod._ai_models_deprecation_warned = False

@@ -20,6 +20,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+import structlog
+
 from ..constants import REFUSAL_PHRASES
 from ._catalogue import SECRET_KEYS
 from ._parsers import (
@@ -43,6 +45,16 @@ from ._parsers import (
     _resolve_search_reasoning_effort,
     _resolve_server_port,
 )
+
+log = structlog.get_logger(__name__)
+
+# One-shot deprecation guard: emit the AI_MODELS warning at most once per
+# process lifetime so the hot-load loop (which rebuilds Settings on every
+# config_version bump) does not spam the log. Module-level state is reset
+# between test runs because each test session re-imports the module, but that
+# is the intended behaviour — the flag prevents spam within a single run, not
+# across test isolation boundaries.
+_ai_models_deprecation_warned: bool = False
 
 # Default store path used by the indexer and search server.
 _DEFAULT_INDEX_DB_PATH = "/data/index.db"
@@ -393,6 +405,29 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     # CLASSIFY_MODELS is set but AI_MODELS is, use its value as the default for
     # both. Precedence: explicit new key > AI_MODELS legacy > provider default.
     legacy_models = _get_csv_env(source, "AI_MODELS", [], require_non_empty=False)
+
+    # One-shot deprecation warning: fire at most once per process lifetime when
+    # AI_MODELS is actually being used as a fallback for at least one of the new
+    # keys.  The flag prevents the hot-load loop from spamming the log on every
+    # config_version bump.
+    global _ai_models_deprecation_warned
+    if legacy_models and not _ai_models_deprecation_warned:
+        _missing_new_keys = [
+            k
+            for k in ("OCR_MODELS", "CLASSIFY_MODELS")
+            if not source.get(k, "").strip()
+        ]
+        if _missing_new_keys:
+            _ai_models_deprecation_warned = True
+            log.warning(
+                "common.config.ai_models_deprecated",
+                message=(
+                    "AI_MODELS is deprecated; migrate to OCR_MODELS / CLASSIFY_MODELS. "
+                    "AI_MODELS is still honoured as a fallback but will be removed in a "
+                    "future release."
+                ),
+                missing_keys=_missing_new_keys,
+            )
 
     # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
     # int default and treats blank as unset, so it returns a plain int — no
