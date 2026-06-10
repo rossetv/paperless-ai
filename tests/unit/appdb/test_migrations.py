@@ -260,10 +260,10 @@ def test_migration_v4_seeds_config_version_zero(tmp_path) -> None:
         conn.close()
 
 
-def test_migration_v5_brings_schema_version_to_5(tmp_path) -> None:
-    """A fresh database migrates all the way to v5."""
+def test_migration_brings_schema_version_to_current(tmp_path) -> None:
+    """A fresh database migrates all the way to the current SCHEMA_VERSION."""
     from appdb.connection import connect
-    from appdb.schema import ensure_schema
+    from appdb.schema import SCHEMA_VERSION, ensure_schema
 
     conn = connect(str(tmp_path / "app.db"))
     try:
@@ -271,7 +271,7 @@ def test_migration_v5_brings_schema_version_to_5(tmp_path) -> None:
         version = conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()[0]
-        assert int(version) == 5
+        assert int(version) == SCHEMA_VERSION
     finally:
         conn.close()
 

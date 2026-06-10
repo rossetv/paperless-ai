@@ -26,7 +26,7 @@ from appdb.migrations import run_migrations
 # store._migrate_v1). A ``;`` inside a comment would split into a fragment that
 # starts with plain text rather than a SQL keyword and break the migration. Keep
 # comments inside these strings semicolon-free, or strip comments before split.
-SCHEMA_VERSION: int = 5
+SCHEMA_VERSION: int = 6
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
