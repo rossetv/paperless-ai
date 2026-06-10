@@ -69,6 +69,11 @@ describe('ConnectionCard', () => {
     expect(screen.getByText('Connected')).toBeInTheDocument();
   });
 
+  it('status pill has role="status" for assistive tech announcements', () => {
+    render(makeCard({ status: { tone: 'ok', label: 'Connected' } }));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
   it('renders the glyph text', () => {
     render(makeCard({ glyph: 'AI', glyphTone: 'teal' }));
     expect(screen.getByText('AI')).toBeInTheDocument();

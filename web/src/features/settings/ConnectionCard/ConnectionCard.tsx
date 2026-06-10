@@ -96,8 +96,11 @@ export function ConnectionCard({
           )}
         </div>
 
-        {/* Status pill */}
-        <span className={cn(styles['pill'], styles[`pill-${status.tone}`])}>
+        {/* Status pill — role="status" announces changes to assistive tech. */}
+        <span
+          role="status"
+          className={cn(styles['pill'], styles[`pill-${status.tone}`])}
+        >
           <span className={styles['pill-dot']} />
           <span className={styles['pill-label']}>{status.label}</span>
         </span>
