@@ -105,6 +105,9 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_JUDGE_REASONING_EFFORT",
         "SEARCH_JUDGE_RATIONALES",
         "SEARCH_IDENTITY_AWARE",
+        "SEARCH_PLANNER_MAX_SPECS",
+        "SEARCH_PER_SPEC_K",
+        "SEARCH_MAX_CHUNKS_PER_DOC",
     }
 )
 
