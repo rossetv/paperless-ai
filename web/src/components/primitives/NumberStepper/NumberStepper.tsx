@@ -92,27 +92,27 @@ export function NumberStepper({
       >
         −
       </button>
-      <input
-        type="number"
-        aria-label={label}
-        value={draft}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        onChange={handleChange}
-        className={styles['input']}
-      />
       {/*
-       * Unit suffix sits INSIDE the bordered control, between the value and
-       * the + button. Keeping it inside the border means the stepper's right
-       * edge (the + button) is always at column-right regardless of whether
-       * the row carries a unit — so steppers visually right-align with text
-       * inputs and selects in the same Settings card.
+       * Value cell: wraps the numeric input and the optional unit suffix
+       * together so they share the same bordered region between the − and +
+       * buttons. The data-testid allows targeted assertions in tests.
        */}
-      {suffix !== undefined && (
-        <span className={styles['suffix']}>{suffix}</span>
-      )}
+      <div data-testid="numberstepper-value" className={styles['value-cell']}>
+        <input
+          type="number"
+          aria-label={label}
+          value={draft}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          onChange={handleChange}
+          className={styles['input']}
+        />
+        {suffix !== undefined && (
+          <span className={styles['suffix']}>{suffix}</span>
+        )}
+      </div>
       <button
         type="button"
         aria-label={`Increase ${label}`}
