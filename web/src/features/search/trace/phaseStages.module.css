@@ -26,10 +26,12 @@
   color: var(--colour-text-secondary);
 }
 
-/* A "loosened from …" annotation on a resolved taxonomy match — a muted sage
-   green aside noting the planner's guess was widened to land a real id. */
+/* A "loosened from …" annotation on a resolved taxonomy match — a quiet aside
+   noting the planner's guess was widened to land a real id. Rendered in the
+   ordinary tertiary body colour (the wording alone carries the meaning; no
+   colour highlight). */
 .loosened {
-  color: var(--colour-loosened);
+  color: var(--colour-text-tertiary);
 }
 
 /* A vertical stack of body subrows (retrieved chunks / gated documents). */
