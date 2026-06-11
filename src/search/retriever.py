@@ -388,10 +388,11 @@ def resolve_specs(
             which deliberately drops all date filters — can omit it.
         max_specs: When set, enables the unfiltered recall-twin pass after the
             safety net: every resolved spec that carries a filter gains a
-            filter-stripped twin (deduped on retrieval identity, total capped at
-            ``max_specs`` — only twins are dropped at the cap, never originals).
-            ``None`` (the default) disables twinning, so the broadened pass —
-            which already drops all filters — is unaffected.
+            filter-stripped twin (deduped on retrieval identity). Only twins are
+            bounded by ``max_specs`` — originals (including a safety-net spec)
+            always survive, so the total can be ``max_specs + 1`` when the
+            safety net also fired. ``None`` (the default) disables twinning, so
+            the broadened pass — which already drops all filters — is unaffected.
 
     Returns:
         One :class:`~search.models.RetrievalSpec` per planned spec, in order,
