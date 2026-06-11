@@ -315,6 +315,7 @@ Start with the README you're reading; reach for these when you want the detail b
 | [Indexer](docs/indexer.md) | Reconciliation daemon: incremental sync, deletion sweep, failed-document retry, flock single-writer guard |
 | [Search](docs/search.md) | Search server: agentic pipeline, RRF fusion, HTTP API, Web UI, MCP endpoint, authentication |
 | [Search Pipeline (deep dive)](docs/search-pipeline.md) | The agentic pipeline stage-by-stage: planner, retrieve, judge, synthesise, refinement, worked example |
+| [Result Cache](docs/cache.md) | What search caches, the cache key, lifetimes, what isn't cached and why, invalidation |
 | [Configuration Reference](docs/configuration.md) | All environment variables, pipeline tags, performance tuning |
 | [Deployment](docs/deployment.md) | Docker examples, tag setup, multi-instance, privacy |
 | [Development](docs/development.md) | Local setup, tests, CI/CD |

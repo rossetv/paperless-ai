@@ -213,17 +213,20 @@ def make_search_result(
     sources: tuple[SourceDocument, ...] | None = None,
     plan: RetrievalPlan | None = None,
     stats: SearchStats | None = None,
+    outcome_kind: str = "answered",
 ) -> SearchResult:
     """Create a SearchResult with one source, a default plan, and default stats.
 
     Each absent argument is filled from the matching factory, so a test asserts
-    on only the field it cares about.
+    on only the field it cares about. Pass ``outcome_kind="no_match"`` or
+    ``"clarify"`` (with ``sources=()``) to build the short-circuit shapes.
     """
     return SearchResult(
         answer=answer,
         sources=(sources if sources is not None else (make_source_document(),)),
         plan=plan if plan is not None else make_retrieval_plan(),
         stats=stats if stats is not None else make_search_stats(),
+        outcome_kind=outcome_kind,
     )
 
 
