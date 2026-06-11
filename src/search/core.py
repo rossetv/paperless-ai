@@ -274,12 +274,15 @@ class SearchCore:
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
-        A successful answer is served from / written to the process result
-        cache (RAG-05) keyed on the normalised query, the UI filters, a cheap
-        index-version signal, and the asker identity. A cache hit makes zero
-        LLM calls. The cache is bypassed (fail-open) when the index version
-        cannot be read, and a no-match or degraded result is never cached.
-        ``SEARCH_CACHE_TTL_SECONDS`` of 0 disables the cache entirely.
+        Results are served from / written to the process result cache (RAG-05)
+        keyed on the normalised query, the UI filters, a cheap index-version
+        signal, and the asker identity. A cache hit makes zero LLM calls.
+        Answered, clarify, and no-match results are all cached so an identical
+        repeat is not re-run; a no-match is invalidated by the index-version key
+        when a reconciliation indexes a document, not by a timer. The degraded
+        synthesiser fallback is never cached. The cache is bypassed (fail-open)
+        when the index version cannot be read. ``SEARCH_CACHE_TTL_SECONDS`` of 0
+        disables it entirely.
 
         Args:
             query: The raw user search query.

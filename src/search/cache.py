@@ -1,4 +1,12 @@
-"""Process-singleton TTL cache of successful search answers (RAG-05).
+"""Process-singleton TTL cache of search results (RAG-05).
+
+Answered, clarify, and no-match results are all cached, so an identical repeat
+(a back-navigation, a re-ask) is served without re-running the pipeline; the
+synthesiser final-mode fallback is a degrade sentinel and is never cached. A
+no-match is invalidated not by a separate timer but by the index-version
+component of the cache key — a reconciliation that indexes or prunes a document
+moves ``document_count:chunk_count`` and drops every prior no-match, so a
+newly-indexed document is searchable on the next query (see :func:`is_cacheable`).
 
 Why a process-global singleton
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -106,26 +114,37 @@ def build_cache_key(
 
 
 def is_cacheable(result: SearchResult) -> bool:
-    """Return whether *result* is a successful answer worth caching (RAG-05).
+    """Return whether *result* should be written to the cache (RAG-05).
 
-    Cache successful answers only: a non-empty answer with at least one source,
-    excluding the two degrade sentinels (the no-match answer and the synthesiser
-    final-mode fallback). A no-match result is cheap to recompute (no synth
-    call), and excluding failures means a fix — a re-index, a model recovery —
-    is visible on the very next query (spec §4.5).
+    Answered, clarify, and no-match results are all cached so an identical repeat
+    (a back-navigation, a re-ask) is served without re-running the pipeline:
 
-    The two sentinels are imported lazily to avoid a circular import: ``core``
-    and ``synthesizer`` both import this module, so importing them at module
-    scope would cycle.
+    * **answered** — cached only when it carries a real answer and at least one
+      source. The synthesiser final-mode fallback rides on an ``answered``
+      outcome but is a degrade sentinel — never cached, so a model recovery is
+      visible on the very next query.
+    * **clarify** — cached. Re-asking the identical vague query cannot become
+      answerable; a user who reworks the wording keys to a different entry
+      anyway, so caching is safe and saves the planner call on an exact repeat.
+    * **no_match** — cached, and invalidated by the cache key's index version
+      rather than a timer: a reconciliation that indexes a document moves
+      ``document_count:chunk_count`` and drops every prior no-match, so a
+      newly-indexed document is searchable on the next query. A no-match over an
+      unchanged corpus stays a no-match, so serving it from cache is correct.
+
+    The sentinel is imported lazily to avoid a circular import: ``synthesizer``
+    imports this module, so importing it at module scope would cycle.
     """
-    if not result.answer or not result.sources:
-        return False
-    # rationale: function-local import breaks the cache <-> core/synthesizer
-    # import cycle; these constants are read only on this rare write path.
-    from search.core import _NO_MATCHES_ANSWER
+    # rationale: function-local import breaks the cache <-> synthesizer import
+    # cycle; the constant is read only on this rare write path.
     from search.synthesizer import _FALLBACK_FINAL_ANSWER
 
-    return result.answer not in (_NO_MATCHES_ANSWER, _FALLBACK_FINAL_ANSWER)
+    if result.answer == _FALLBACK_FINAL_ANSWER:
+        return False
+    if result.outcome_kind in ("no_match", "clarify"):
+        return True
+    # answered: only a real, sourced answer is worth a cache entry.
+    return bool(result.answer) and bool(result.sources)
 
 
 class SearchResultCache:

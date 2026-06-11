@@ -105,7 +105,7 @@ There is also a fourth screen, the **relevance judge** (Layer 3, `SEARCH_GATE_JU
 
 ### The result cache
 
-A successful answer is written to a process-local cache keyed on the normalised query, the UI filters, a cheap index-version signal (`document_count:chunk_count`), and the asker's identity. A cache hit makes zero LLM calls and returns the prior result directly. The cache is bypassed (fail-open) when the index version cannot be read, and a no-match or degraded result is never cached. A change to the corpus moves the index-version key and invalidates prior entries; a configuration change drops the cache outright so the next query recomputes. `SEARCH_CACHE_TTL_SECONDS` of 0 disables it (default 14400 = 4 h).
+Answered, clarify, and no-match results are written to a process-local cache keyed on the normalised query, the UI filters, a cheap index-version signal (`document_count:chunk_count`), and the asker's identity. A cache hit makes zero LLM calls and returns the prior result directly, so an identical repeat — a back-navigation or a re-ask — is not re-run. The cache is bypassed (fail-open) when the index version cannot be read, and the degraded synthesiser fallback is never cached (so a model recovery shows on the next query). A change to the corpus moves the index-version key and invalidates prior entries — this is what evicts a stale no-match once a document is indexed, so a reconcile that indexes nothing correctly leaves it in place; a configuration change drops the cache outright so the next query recomputes. `SEARCH_CACHE_TTL_SECONDS` of 0 disables it (default 14400 = 4 h).
 
 ### The two entry points
 

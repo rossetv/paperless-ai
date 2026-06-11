@@ -124,9 +124,8 @@ class TestIndexChangeBustsCache:
         assert llm_client.total_calls == 4
 
 
-class TestNoMatchNotCached:
-    def test_no_match_result_is_not_cached(self) -> None:
-        reset_search_result_cache()
+class TestNoMatchCached:
+    def _no_match_core(self):
         store_reader = MagicMock()
         store_reader.list_facets.return_value = make_facet_set()
         store_reader.vector_search.return_value = []
@@ -138,14 +137,33 @@ class TestNoMatchNotCached:
             planner_response=planner_response_json(),
             synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         )
-        core = _core(store_reader, llm_client)
+        return store_reader, llm_client, _core(store_reader, llm_client)
+
+    def test_identical_no_match_repeat_is_served_from_cache(self) -> None:
+        reset_search_result_cache()
+        _store_reader_, llm_client, core = self._no_match_core()
         first = core.answer("matches nothing")
         # The no-match path makes only the planner call (1).
         assert llm_client.total_calls == 1
-        # A repeat is NOT served from cache — planner runs again.
+        # A repeat over an unchanged index is now served from the (short-TTL)
+        # cache — the planner does not run again.
         second = core.answer("matches nothing")
-        assert llm_client.total_calls == 2
+        assert llm_client.total_calls == 1
         assert first.answer == second.answer
+        assert second.outcome_kind == "no_match"
+
+    def test_index_change_busts_a_cached_no_match(self) -> None:
+        reset_search_result_cache()
+        store_reader, llm_client, core = self._no_match_core()
+        core.answer("matches nothing")
+        assert llm_client.total_calls == 1
+        # A document is indexed → counts change → the cached no-match no longer
+        # keys, so the next identical query recomputes (planner runs again).
+        store_reader.get_stats.return_value = make_index_stats(
+            document_count=4, chunk_count=13
+        )
+        core.answer("matches nothing")
+        assert llm_client.total_calls == 2
 
 
 class TestVersionUnreadableFailsOpen:

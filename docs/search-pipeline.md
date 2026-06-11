@@ -749,9 +749,12 @@ streaming).  Non-LLM phases carry `tokens=None, cost=None`.
 The accumulated trace (`SearchStats.trace`) is included in the `SearchResult`
 and is rendered live in the SPA's "How this answer was found" accordion.
 
-> A successful answer is also cached (keyed on the normalised query, the UI
-> filters, a cheap index-version signal, and the asker). A cache hit makes zero
-> LLM calls and emits a single `cache` phase. A no-match or degraded result is
+> Answered, clarify, and no-match results are all cached (keyed on the
+> normalised query, the UI filters, a cheap index-version signal, and the
+> asker), so an identical repeat is not re-run. A cache hit makes zero LLM calls
+> and emits a single `cache` phase. A no-match is evicted by the index-version
+> key when a reconciliation indexes a document — not by a timer — so a reconcile
+> that indexes nothing leaves it in place. The degraded synthesiser fallback is
 > never cached; `SEARCH_CACHE_TTL_SECONDS` of 0 disables the cache entirely.
 
 ---

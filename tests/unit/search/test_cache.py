@@ -166,7 +166,9 @@ class TestBound:
 
 
 class TestIsCacheable:
-    """Only a successful answer (non-empty, sourced, not a degrade sentinel) caches."""
+    """Answered (sourced), clarify, and no-match all cache; the synth final-mode
+    fallback never does. A no-match relies on the index-version key for
+    invalidation, not a timer."""
 
     def test_answer_with_sources_is_cacheable(self) -> None:
         result = make_search_result(
@@ -178,19 +180,32 @@ class TestIsCacheable:
         result = make_search_result(answer="", sources=(make_source_document(),))
         assert is_cacheable(result) is False
 
-    def test_no_sources_is_not_cacheable(self) -> None:
+    def test_answered_without_sources_is_not_cacheable(self) -> None:
         result = make_search_result(answer="text", sources=())
         assert is_cacheable(result) is False
 
-    def test_no_match_sentinel_is_not_cacheable(self) -> None:
+    def test_no_match_is_cacheable(self) -> None:
+        # A no-match carries the no-match answer and no sources, but is now cached
+        # so an identical repeat is not re-run; the index version evicts it when
+        # the corpus changes.
         from search.core import _NO_MATCHES_ANSWER
 
         result = make_search_result(
-            answer=_NO_MATCHES_ANSWER, sources=(make_source_document(),)
+            answer=_NO_MATCHES_ANSWER, sources=(), outcome_kind="no_match"
         )
-        assert is_cacheable(result) is False
+        assert is_cacheable(result) is True
+
+    def test_clarify_is_cacheable(self) -> None:
+        from search.core import _CLARIFY_ANSWER
+
+        result = make_search_result(
+            answer=_CLARIFY_ANSWER, sources=(), outcome_kind="clarify"
+        )
+        assert is_cacheable(result) is True
 
     def test_synth_final_fallback_sentinel_is_not_cacheable(self) -> None:
+        # An "answered" outcome carrying the degrade sentinel must never cache, so
+        # a model recovery is visible on the very next query.
         from search.synthesizer import _FALLBACK_FINAL_ANSWER
 
         result = make_search_result(
