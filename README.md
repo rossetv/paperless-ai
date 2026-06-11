@@ -1,6 +1,8 @@
 # Paperless-ngx AI — OCR, Classification & Semantic Search
 
-AI-powered document transcription, classification, and semantic search for [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx), using OpenAI or Ollama vision/language models.
+[Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) is a great place to store your scanned documents — but it can only file what it can read, and it can only find what you remember to tag. This project fixes both. It reads the text off your scans with a vision AI, fills in the title, sender, type, and tags for you, and lets you search the whole archive by *meaning* — ask "when does my passport expire?" and get the answer, not a list of filenames.
+
+It runs entirely as containers next to your existing Paperless-ngx, works with either OpenAI or a local Ollama, and stores nothing you can't throw away and rebuild.
 
 [![Docker Hub](https://img.shields.io/docker/pulls/rossetv/paperless-ai?label=Docker%20Hub)](https://hub.docker.com/r/rossetv/paperless-ai)
 [![CI](https://img.shields.io/github/actions/workflow/status/rossetv/paperless-ai/ci.yml?branch=main&label=CI)](https://github.com/rossetv/paperless-ai/actions)
@@ -8,25 +10,18 @@ AI-powered document transcription, classification, and semantic search for [Pape
 
 ---
 
-## What This Project Does
+## The gist
 
-This project adds **AI-powered OCR, document classification, and semantic search** to your Paperless-ngx instance. It ships as **one Docker image** that runs as any of four daemons — pick the command, run as many as you need:
+The project ships as **one Docker image**. That image can run as any of four small programs ("daemons"), and you pick which one by passing a command. Run as many as you need:
 
-**OCR Daemon** — Polls Paperless for documents tagged for OCR, converts pages to images, transcribes them using a vision AI model, and uploads the text back into Paperless.
+- **OCR daemon** — watches Paperless for documents you've tagged for OCR, turns each page into an image, transcribes it with a vision AI model, and writes the text back.
+- **Classification daemon** — picks up freshly-OCR'd documents, reads the text, and fills in the metadata: title, correspondent, document type, tags, date, language, and person name.
+- **Indexer daemon** — keeps a local search index in step with Paperless. It chops each document's text into chunks, turns those chunks into embeddings (vectors that capture meaning), and tracks new, changed, and deleted documents.
+- **Search server** — serves a JSON API, a React web UI, and an [MCP](https://modelcontextprotocol.io) endpoint (`search_documents`, `ask_documents`). Behind them sits an *agentic* search pipeline: it plans the query, retrieves candidates, and synthesises an answer.
 
-**Classification Daemon** — Polls Paperless for OCR'd documents, sends the text to an LLM, and enriches the document's metadata: title, correspondent, document type, tags, date, language, and person name.
+The two enrichment daemons (OCR and classification) coordinate purely through **Paperless tags** — there's no database or queue between them. A document's tags *are* its state: which stage it's in, whether it's done, whether it failed. That design has three happy consequences: you can run several copies of a daemon at once without them treading on each other, a settings change takes effect on the next poll with no restart, and there's nothing to migrate or back up on that side.
 
-**Indexer Daemon** — Reconciles Paperless-ngx into a local SQLite search index: chunks and embeds document text, keeps the index in sync with new, changed, and deleted documents.
-
-**Search Server** — Serves a JSON API, a React Web UI, and an MCP endpoint (`search_documents`, `ask_documents`) backed by an agentic search pipeline (plan → hybrid retrieve → synthesise); refinement depth is operator-configurable (`SEARCH_MAX_REFINEMENTS`).
-
-The OCR and classification daemons use a **tag-driven pipeline** (no external database), support **model fallback chains**, and work with both **OpenAI** and **Ollama**. The search subsystem keeps two SQLite databases on the shared volume: the **search index** (`index.db`, a derived artefact, rebuildable from Paperless) and the **application database** (`app.db`, holding accounts, sessions, API keys, and hot-loaded config) — kept separate so rebuilding the index never touches your accounts.
-
----
-
-## How It Works
-
-The OCR and classification daemons run a **tag-driven state machine** — a document's tags are the only state, so there is no database or queue between them. Once a document is classified, the indexer picks it up and the search server makes it searchable.
+Here is the journey a document takes from ingestion to searchable:
 
 ```mermaid
 flowchart LR
@@ -48,7 +43,7 @@ flowchart LR
     style K fill:#cfe2ff,stroke:#0071e3
 ```
 
-You can run any subset of the four daemons. OCR + classification alone enriches documents in Paperless; add the indexer and search server to get semantic search and the web UI. All four share one `/data` volume.
+You don't have to run all four. OCR plus classification alone enriches documents inside Paperless; add the indexer and search server when you also want semantic search and the web UI. All four share one `/data` volume.
 
 ---
 
@@ -61,11 +56,13 @@ You can run any subset of the four daemons. OCR + classification alone enriches 
 3. An **OpenAI API key** or a running **Ollama instance**
 4. At least **two tags** created in Paperless (e.g. "OCR Queue" and "OCR Complete") — note their numeric IDs
 
+The fastest useful setup is the OCR daemon on its own: tag a document, watch the text appear. Add the others once that works.
+
 ### OCR Daemon
 
 ```bash
 docker run -d --name paperless-ocr \
-  -v paperless-index:/data \
+  -v paperless-ai-data:/data \
   -e PAPERLESS_URL="http://your-paperless:8000" \
   -e PAPERLESS_TOKEN="your_paperless_api_token" \
   -e OPENAI_API_KEY="sk-your-openai-key" \
@@ -74,19 +71,17 @@ docker run -d --name paperless-ocr \
   rossetv/paperless-ai:latest
 ```
 
-For Ollama, add these alongside the OpenAI key:
+To use Ollama instead of OpenAI for the vision and chat calls, add these alongside the OpenAI key:
 ```bash
   -e LLM_PROVIDER="ollama" \
   -e OLLAMA_BASE_URL="http://your-ollama:11434/v1/" \
 ```
 
-`OPENAI_API_KEY` is still required even with `LLM_PROVIDER=ollama` — it is
-loaded by every process so the embedding client can use OpenAI (see the note
-under [Semantic Search](#semantic-search--additional-services) below).
+`OPENAI_API_KEY` is still required even with `LLM_PROVIDER=ollama` — every process loads it so the embedding client can reach OpenAI (see the note under [Semantic Search](#semantic-search--additional-services) below).
 
 ### Classification Daemon
 
-Same image, different command:
+Same image, different command — the trailing `paperless-classifier-daemon` is what selects it:
 
 ```bash
 docker run -d --name paperless-classifier \
@@ -99,16 +94,11 @@ docker run -d --name paperless-classifier \
   paperless-classifier-daemon
 ```
 
-#### Classification Environment Variables
-
-In addition to the shared variables (`PAPERLESS_URL`, `PAPERLESS_TOKEN`, `OPENAI_API_KEY`, `LLM_PROVIDER`, `OLLAMA_BASE_URL`):
-
-| Variable | Type | Default | Purpose |
-|:---|:---|:---|:---|
-| `CLASSIFY_REASONING_EFFORT` | string | `medium` | Reasoning effort for reasoning-capable models on the classify call. One of `minimal`, `low`, `medium`, `high`. The default `medium` matches the models' own default effort (a zero-cost no-op); lower it to `low` or `minimal` to spend fewer (invisible) reasoning tokens — classification is structured extraction and rarely needs more than `low`. Models that do not accept the parameter have it stripped automatically. |
-| `CLASSIFY_TAXONOMY_LIMIT` | int | `40` | Maximum existing names per kind (correspondents, document types, tags) injected into the classify prompt as reuse hints. Names are usage-ranked; a lower limit shrinks every classify prompt. `0` means unlimited. |
+`CLASSIFY_PRE_TAG_ID` is the tag the classifier waits for; pointing it at the OCR daemon's `POST_TAG_ID` (here, `444`) chains the two stages so a document flows from OCR straight into classification.
 
 ### Docker Compose
+
+For anything beyond a quick test, Compose is easier. This stack runs the two enrichment daemons:
 
 ```yaml
 services:
@@ -116,7 +106,7 @@ services:
     image: rossetv/paperless-ai:latest
     restart: unless-stopped
     volumes:
-      - paperless-index:/data            # required: holds app.db (accounts, sessions, config)
+      - paperless-ai-data:/data            # required: holds app.db (accounts, sessions, config)
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -130,7 +120,7 @@ services:
     restart: unless-stopped
     command: ["paperless-classifier-daemon"]
     volumes:
-      - paperless-index:/data            # required: shared with OCR/indexer/search
+      - paperless-ai-data:/data            # required: shared with OCR/indexer/search
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -148,7 +138,9 @@ services:
 
 ## Semantic Search — Additional Services
 
-The indexer and search server require a shared volume for the SQLite index file. Add the following services to your Docker Compose stack:
+The two daemons above are enough to enrich documents inside Paperless. To add semantic search — the web UI, the API, and the "ask a question, get an answer" experience — run two more services: the **indexer**, which keeps the local search index current, and the **search server**, which answers queries against it. Both need the shared volume so they can read and write the index file.
+
+Add these to the same Compose stack:
 
 ```yaml
 services:
@@ -157,7 +149,7 @@ services:
     restart: unless-stopped
     command: ["paperless-indexer-daemon"]
     volumes:
-      - paperless-index:/data
+      - paperless-ai-data:/data
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
@@ -171,7 +163,7 @@ services:
     restart: unless-stopped
     command: ["paperless-search-server"]
     volumes:
-      - paperless-index:/data
+      - paperless-ai-data:/data
     ports:
       - "8080:8080"
     environment:
@@ -189,8 +181,15 @@ services:
       retries: 3
 
 volumes:
-  paperless-index:
+  paperless-ai-data:
 ```
+
+The search subsystem keeps **two** SQLite databases on that shared volume, and the split matters:
+
+- The **search index** (`index.db`) is a derived artefact — it holds chunks and embeddings, and every byte of it can be rebuilt from Paperless.
+- The **application database** (`app.db`) holds the things you can't rebuild: user accounts, sessions, API keys, and the hot-loaded configuration.
+
+They're kept apart so that wiping and rebuilding the index never touches your accounts.
 
 > **Note on `OPENAI_API_KEY` with Ollama:** even when `LLM_PROVIDER=ollama`, the embedding client always uses OpenAI (`text-embedding-3-small`) — local Ollama embeddings are not supported. `OPENAI_API_KEY` is therefore **required by every process** (OCR, classifier, indexer, and search server) regardless of the LLM provider setting: configuration loading fails closed at startup if it is missing. With `LLM_PROVIDER=ollama`, the LLM (vision and chat) calls go to Ollama while embeddings go to OpenAI.
 
@@ -198,16 +197,16 @@ volumes:
 
 ## Accessing the Web UI
 
-There is no shared-secret env var — the search server has **no `SEARCH_API_KEY`**. Access is created on first run:
+There's no shared password to set — the search server has **no `SEARCH_API_KEY`**. Instead, the first account is created on first run via a one-off token:
 
 1. Start the search server. With no accounts yet, it enters **setup mode** and prints a one-off **setup token** to the container logs:
    ```bash
    docker logs paperless-search 2>&1 | grep "SETUP TOKEN"
    ```
 2. Open `http://your-host:8080/setup` and complete the first-run setup form, pasting that token to create the first **admin** account. The token is invalidated the moment setup completes.
-3. From then on, sign in with username and password. A successful login sets a signed, `HttpOnly` session cookie (lifetime `SEARCH_SESSION_TTL`, default 7 days).
+3. From then on, sign in with username and password. A successful login sets a signed, `HttpOnly` session cookie that lasts eight hours — or as long as `SEARCH_SESSION_TTL` (default seven days) if you tick "keep me signed in".
 
-**Two credential types:**
+There are **two kinds of credential**, one for humans and one for machines:
 
 | Surface | Credential |
 |:---|:---|
@@ -218,11 +217,22 @@ Admins manage further accounts and API keys from the web UI. Configuration chang
 
 ---
 
-## Semantic Search — Environment Variables
+## Configuration
 
-These variables are read by the indexer daemon and the search server, in addition to the shared variables (`PAPERLESS_URL`, `PAPERLESS_TOKEN`, `OPENAI_API_KEY`, `LLM_PROVIDER`, `OLLAMA_BASE_URL`, `DOCUMENT_WORKERS`, `LOG_LEVEL`, `LOG_FORMAT`).
+Most setups run on the defaults. The tables below are the dials you can turn when you need to — each daemon reads them on top of the shared variables (`PAPERLESS_URL`, `PAPERLESS_TOKEN`, `OPENAI_API_KEY`, `LLM_PROVIDER`, `OLLAMA_BASE_URL`, plus the logging and worker settings). The full reference, including every shared variable and pipeline tag, is in [docs/configuration.md](docs/configuration.md).
+
+### Classification
+
+Two extra knobs control how the classifier spends tokens and how much taxonomy it sees:
+
+| Variable | Type | Default | Purpose |
+|:---|:---|:---|:---|
+| `CLASSIFY_REASONING_EFFORT` | string | `medium` | Reasoning effort for reasoning-capable models on the classify call. One of `minimal`, `low`, `medium`, `high`. The default `medium` matches the models' own default effort (a zero-cost no-op); lower it to `low` or `minimal` to spend fewer (invisible) reasoning tokens — classification is structured extraction and rarely needs more than `low`. Models that do not accept the parameter have it stripped automatically. |
+| `CLASSIFY_TAXONOMY_LIMIT` | int | `40` | Maximum existing names per kind (correspondents, document types, tags) injected into the classify prompt as reuse hints. Names are usage-ranked; a lower limit shrinks every classify prompt. `0` means unlimited. |
 
 ### Indexer and Store
+
+These govern where the index lives, how text is chunked, and how embeddings are produced. They're read by the indexer daemon and the search server:
 
 | Variable | Type | Default | Purpose |
 |:---|:---|:---|:---|
@@ -238,16 +248,18 @@ These variables are read by the indexer daemon and the search server, in additio
 
 ### Search Server
 
+The search server has the most dials because the search pipeline has the most stages. You can leave nearly all of them alone; the ones worth knowing are `SEARCH_MAX_REFINEMENTS` (how hard the pipeline retries before answering) and `SEARCH_FORWARDED_ALLOW_IPS` (a security setting if your server's port is reachable without a reverse proxy in front). For the pipeline these dials tune, stage by stage, see [docs/search-pipeline.md](docs/search-pipeline.md).
+
 | Variable | Type | Default | Purpose |
 |:---|:---|:---|:---|
 | `SEARCH_TOP_K` | int | `10` | Documents fed to the synthesiser |
-| `SEARCH_MAX_REFINEMENTS` | int | `1` | Agentic refinement passes; no hard cap. Each adds one LLM call (per-query budget = 2 + this) |
+| `SEARCH_MAX_REFINEMENTS` | int | `1` | Agentic refinement passes before the pipeline answers. Each pass re-plans, retrieves and re-synthesises, so it adds several LLM calls per pass (not one) — see the per-query budget breakdown in [docs/search-pipeline.md](docs/search-pipeline.md) |
 | `SEARCH_PLANNER_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Query-planning + adequacy-judging model (cheap, structured extraction) |
 | `SEARCH_ANSWER_MODEL` | string | `gpt-5.5` / `gemma3:27b` | Answer-synthesis model (stronger, user-facing prose) |
 | `SEARCH_SERVER_HOST` | string | `0.0.0.0` | Bind address for the search server |
 | `SEARCH_SERVER_PORT` | int | `8080` | Port for the search server |
 | `SEARCH_FORWARDED_ALLOW_IPS` | string | `*` | Peers uvicorn trusts the `X-Forwarded-For` / `X-Forwarded-Proto` headers from. `*` trusts every peer — correct when the search server's port is reachable **only** through your reverse proxy. If that port can be reached directly, pin this to the proxy's IP or CIDR (e.g. `10.0.0.0/8`, or a single `172.18.0.2`): otherwise an attacker reaching the port directly can spoof those headers to forge the client IP recorded in audit logs / sessions and to flip the session-cookie `Secure` flag. Comma-separated for multiple values |
-| `SEARCH_SESSION_TTL` | int | `604800` | Web UI session-cookie lifetime in seconds (default: 7 days) |
+| `SEARCH_SESSION_TTL` | int | `604800` | Lifetime of the "keep me signed in" session cookie, in seconds. An un-ticked login gets a fixed 8-hour session |
 | `SEARCH_MAX_CONCURRENT` | int | `4` | Maximum concurrent `/api/search` requests |
 | `SEARCH_PLANNER_REASONING_EFFORT` | string | `medium` | Planner `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on the planner. Invalid values are rejected at startup; stripped automatically for models that don't support it |
 | `SEARCH_ANSWER_REASONING_EFFORT` | string | `medium` | Synthesiser `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`). `medium` is the models' default, so it does **not** lower spend on its own — set `low` or `minimal` to save tokens on synthesis. Invalid values are rejected at startup; stripped automatically for unsupporting models |
@@ -260,12 +272,15 @@ These variables are read by the indexer daemon and the search server, in additio
 | `SEARCH_RELEVANCE_TIER_STRONG` | float | `0.70` | Badge cut-point: a shown result at or above this similarity is labelled "Strong match". Independent of the gate floor above |
 | `SEARCH_RELEVANCE_TIER_GOOD` | float | `0.66` | Badge cut-point for "Good match". Validated `partial ≤ good ≤ strong` |
 | `SEARCH_RELEVANCE_TIER_PARTIAL` | float | `0.60` | Badge cut-point for "Partial match"; below this a shown result is labelled "Weak match" |
+| `SEARCH_GATE_JUDGE` | bool | `true` | **Layer 3** — an LLM relevance judge screens the retrieved documents and drops the irrelevant ones before the answer is written. On by default; each judging pass costs one extra (cheap) LLM call |
+| `SEARCH_JUDGE_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Model for the Layer 3 relevance judge (defaults to the planner model) |
+| `SEARCH_JUDGE_REASONING_EFFORT` | string | `low` | Judge `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`) |
 
 ---
 
 ## Corruption Recovery Runbook
 
-If `GET /api/healthz` returns `{"status": "index-corrupt"}`:
+The search index is the one piece you might ever have to repair, and because it's a derived artefact, repairing it is simply rebuilding it. If `GET /api/healthz` returns `{"status": "index-corrupt"}`:
 
 1. Stop the indexer daemon container.
 2. Delete the index file and its companion lock file:
@@ -277,7 +292,7 @@ If `GET /api/healthz` returns `{"status": "index-corrupt"}`:
 
 The index is a derived artefact — every byte is reconstructable from Paperless-ngx. There is no backup requirement.
 
-The three health states:
+`GET /api/healthz` reports one of three states:
 
 | `status` | Meaning |
 |:---|:---|
@@ -289,6 +304,8 @@ The three health states:
 
 ## Documentation
 
+Start with the README you're reading; reach for these when you want the detail behind a particular subsystem:
+
 | Guide | What it covers |
 |:---|:---|
 | [Architecture](docs/architecture.md) | Package structure, daemon lifecycle, concurrency model, state management |
@@ -297,6 +314,7 @@ The three health states:
 | [Store](docs/store.md) | SQLite search index: schema, writer/reader split, migrations, embedding-model rebuild, corruption recovery |
 | [Indexer](docs/indexer.md) | Reconciliation daemon: incremental sync, deletion sweep, failed-document retry, flock single-writer guard |
 | [Search](docs/search.md) | Search server: agentic pipeline, RRF fusion, HTTP API, Web UI, MCP endpoint, authentication |
+| [Search Pipeline (deep dive)](docs/search-pipeline.md) | The agentic pipeline stage-by-stage: planner, retrieve, judge, synthesise, refinement, worked example |
 | [Configuration Reference](docs/configuration.md) | All environment variables, pipeline tags, performance tuning |
 | [Deployment](docs/deployment.md) | Docker examples, tag setup, multi-instance, privacy |
 | [Development](docs/development.md) | Local setup, tests, CI/CD |

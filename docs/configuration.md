@@ -1,14 +1,27 @@
 # Configuration Reference
 
-Configuration lives in the **application database** (`app.db`), in a `config`
-table, and is edited from the **Settings** screen in the web UI — no `.env`
-file and no restart is needed to change a value. All four daemons (OCR,
-classifier, indexer, search) read this table and hot-load any change.
+paperless-ai has a lot of knobs, but you only need a handful to get going. This page is the full reference — every setting, what it does, and its default. Read the next two sections first; they tell you how configuration works and the short list you actually have to set. Everything after that is optional tuning you can ignore until you need it.
 
-Two settings are the exception: `APP_DB_PATH` and `INDEX_DB_PATH` are
-*bootstrap* variables. They tell each process where its databases live, so
-they cannot themselves be stored in a database — they remain environment
-variables. See "Application & Index Databases" below.
+## In a nutshell
+
+Configuration lives in a database, not a file. The values sit in the **application database** (`app.db`), in a `config` table, and you edit them from the **Settings** screen in the web UI. There is no `.env` file to manage and **no restart** when you change something — saving a value takes effect within seconds. All four daemons (OCR, classifier, indexer, search) read this table and hot-load any change.
+
+You can still set values as **environment variables** — they seed the database on first run and act as a fallback — but the database always wins once a value is set there.
+
+Two settings are the exception. `APP_DB_PATH` and `INDEX_DB_PATH` are *bootstrap* variables: they tell each process where its databases live, so they cannot themselves live in a database. They stay environment variables. See [Application & Index Databases](#application--index-databases).
+
+## What you actually need to set
+
+To get a working install, you need just a few values. Everything else has a sensible default.
+
+| Setting | Why you need it |
+|:---|:---|
+| `PAPERLESS_URL` | Where your Paperless-ngx instance lives (defaults to `http://paperless:8000`, which is correct for the standard Docker setup). |
+| `PAPERLESS_TOKEN` | The API token paperless-ai uses to talk to Paperless. **Required.** |
+| `OPENAI_API_KEY` | The OpenAI key. **Required even if you run Ollama** — the search indexer always embeds with OpenAI. |
+| `PRE_TAG_ID`, `POST_TAG_ID`, `ERROR_TAG_ID` | The Paperless tag IDs that drive the pipeline: which documents need OCR, which are done, which failed. They have defaults (`443` / `444` / `552`), but those are example IDs — set them to match the tags in *your* Paperless. |
+
+Set those, save, and the pipeline runs. Everything below is for tuning: model choice, concurrency, classification behaviour, the search server, cost controls, logging. Skip it until you have a reason to change it.
 
 ---
 
@@ -53,6 +66,8 @@ the reference for every setting.
 
 ## Paperless-ngx Connection
 
+How paperless-ai reaches your Paperless instance, and how it authenticates.
+
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
 | `PAPERLESS_URL` | URL of your Paperless-ngx instance, as the daemons reach the API (often an internal address). Stored stripped of any trailing slash. | `http://paperless:8000` | No |
@@ -63,8 +78,8 @@ the reference for every setting.
 
 ## Application & Index Databases
 
-The search subsystem uses two separate SQLite databases on the `/data` volume.
-They are kept apart so that rebuilding the search index never destroys user
+paperless-ai keeps two separate SQLite databases on the `/data` volume. They
+are kept apart so that rebuilding the search index never destroys user
 accounts or configuration.
 
 | Variable | Description | Default | Required |
@@ -86,6 +101,10 @@ set will see no effect — the variable is silently ignored.
 
 ## LLM Provider
 
+Which AI provider runs OCR and classification, and the model fallback chains.
+`openai` is the default; `ollama` runs everything locally — except embeddings,
+which always use OpenAI.
+
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
 | `LLM_PROVIDER` | AI provider for OCR and classification: `openai` or `ollama` | `openai` | No |
@@ -100,6 +119,10 @@ set will see no effect — the variable is silently ignored.
 
 ## OCR Settings
 
+How scanned pages are rasterised and sent to the vision model. The defaults
+match the request shape paperless-ai used before these knobs existed; the
+cheaper options trade a little accuracy for lower cost.
+
 | Variable | Description | Default |
 |:---|:---|:---|
 | `OCR_DPI` | DPI for rasterising PDF pages to images. Higher = better accuracy, larger images. | `300` |
@@ -112,6 +135,9 @@ set will see no effect — the variable is silently ignored.
 ---
 
 ## Classification Settings
+
+How much of each document's text the classifier sees, and how it enriches the
+metadata it writes back (tags, correspondents, document types, a person field).
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -130,7 +156,11 @@ set will see no effect — the variable is silently ignored.
 
 ## Pipeline Tags
 
-These integer tag IDs control how documents flow through the processing pipeline.
+These integer tag IDs are how paperless-ai tracks each document's stage. They
+hold no state of their own — a document's tags *are* its state. The OCR daemon
+picks up anything tagged `PRE_TAG_ID`, swaps it for `POST_TAG_ID` when done;
+the classifier then picks up `CLASSIFY_PRE_TAG_ID` (which defaults to
+`POST_TAG_ID`), and a failure anywhere lands the document on `ERROR_TAG_ID`.
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -168,6 +198,10 @@ flowchart TD
 ---
 
 ## Performance Tuning
+
+How wide the daemons run and how they handle slow or flaky API calls. The
+defaults are conservative and safe; raise the concurrency knobs only when you
+know your provider can take it.
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -212,23 +246,43 @@ step always uses OpenAI**, so `OPENAI_API_KEY` is required even when
 
 ## Search Server
 
-These drive the search server (HTTP API, web UI, MCP endpoint).
+These drive the search server (HTTP API, web UI, MCP endpoint): where it
+binds, how long sessions last, the models it uses, and how hard it reasons.
 
 | Variable | Description | Default |
 |:---|:---|:---|
 | `SEARCH_SERVER_HOST` | Interface to bind. `0.0.0.0` is deliberate — the server is auth-gated; restrict exposure at the reverse proxy. | `0.0.0.0` |
 | `SEARCH_SERVER_PORT` | TCP port to listen on (1–65535). | `8080` |
 | `SEARCH_FORWARDED_ALLOW_IPS` | Which peers uvicorn trusts `X-Forwarded-For/-Proto` from. Pin to the proxy CIDR if the uvicorn port is directly reachable. | `*` |
-| `SEARCH_SESSION_TTL` | Session lifetime in seconds (the "keep me signed in" cookie). Default is 7 days. | `604800` |
+| `SEARCH_SESSION_TTL` | Lifetime of the "keep me signed in" Web-UI session cookie, in seconds. An un-ticked login gets a fixed 8-hour session. | `604800` |
 | `SEARCH_MAX_CONCURRENT` | Max in-flight `/api/search` requests (abuse/cost guard). `0` = unlimited. | `4` |
 | `SEARCH_TOP_K` | Number of documents returned from retrieval to synthesis. | `10` |
-| `SEARCH_MAX_REFINEMENTS` | Agentic refinement passes (≥ 0, no hard cap). Each adds one LLM call; the per-query budget is 2 + this. Cost and latency scale with it. | `1` |
+| `SEARCH_MAX_REFINEMENTS` | Agentic refinement passes (≥ 0) before the pipeline answers. Each pass re-plans, retrieves and re-synthesises, so it adds several LLM calls per pass — the per-query budget is `2 + j + R×(2 + j)` (R = this value, j = 1 when the relevance judge is on), i.e. 6 with the defaults. See [search-pipeline.md](search-pipeline.md). Cost and latency scale with it. | `1` |
 | `SEARCH_PLANNER_MODEL` | LLM model for the query planner (also judges query adequacy for Layer 1). | OpenAI: `gpt-5.4-mini`; Ollama: `gemma3:12b` |
 | `SEARCH_ANSWER_MODEL` | LLM model for the synthesiser. | OpenAI: `gpt-5.5`; Ollama: `gemma3:27b` |
 | `SEARCH_PLANNER_REASONING_EFFORT` | Reasoning effort for the planner call: `minimal`/`low`/`medium`/`high`. | `medium` |
 | `SEARCH_ANSWER_REASONING_EFFORT` | Reasoning effort for the synthesiser call. | `medium` |
+| `SEARCH_IDENTITY_AWARE` | If `true`, the logged-in user's display name is sanitised and passed to the planner and answer model, so first-person queries ("my passport") resolve to that person and answers address them as "you". The cache key includes the asker, so personalised answers never leak across users. Inert until an account has a display name. | `true` |
+
+### Multi-spec retrieval
+
+The planner can split one question into several retrieval specs and search them
+in parallel, then merge the results. These cap that fan-out so a single query
+or a single large document cannot dominate.
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `SEARCH_PLANNER_MAX_SPECS` | Maximum retrieval specs the planner may emit per query. `1` degrades to the legacy single-spec path. Clamped to `≥ 1`. | `8` |
+| `SEARCH_PER_SPEC_K` | Candidate chunks pulled from the store per retrieval spec. Defaults to the resolved `SEARCH_TOP_K`, so the total candidate budget is unchanged in the single-spec case. Clamped to `≥ 1`. | Value of `SEARCH_TOP_K` |
+| `SEARCH_MAX_CHUNKS_PER_DOC` | Maximum chunks per document admitted to the synthesiser after the chunk-union step. Stops one large document from filling the context window. Clamped to `≥ 1`. | `3` |
 
 ### Search cost controls
+
+A search answer can run several LLM calls, so each one costs money. These knobs
+short-circuit the cheap-to-decide cases before the expensive synthesis call —
+the four "layers" that reject a degenerate, vague, or off-topic query early —
+and cap the result cache. For how the layers fit together, see
+[The Search Server](search.md).
 
 | Variable | Description | Default |
 |:---|:---|:---|
@@ -238,6 +292,10 @@ These drive the search server (HTTP API, web UI, MCP endpoint).
 | `SEARCH_GATE_ADEQUACY` | Layer 1: let the planner return a "too vague, please clarify" outcome instead of a plan (no extra LLM call). | `true` |
 | `SEARCH_GATE_RELEVANCE` | Layer 2: skip synthesis and return "no matches" when retrieval is clearly irrelevant. | `true` |
 | `SEARCH_RELEVANCE_MIN_SIMILARITY` | Layer 2 floor: reject only when the best vector similarity is below this **and** there is no keyword hit. Calibrated (good ≥ 0.666, off-topic ≈ 0.567). | `0.60` |
+| `SEARCH_GATE_JUDGE` | Layer 3: run a cheap relevance judge over the retrieved documents before synthesis. It bails to "no matches" when nothing is relevant, otherwise filters the chunk set to the relevant documents. Recall-biased and fail-open — any judge failure proceeds to synthesis over all chunks. | `true` |
+| `SEARCH_JUDGE_MODEL` | LLM model for the Layer 3 relevance judge. Defaults to the planner model for the provider; set it independently to run the judge on a cheaper or sharper model than the planner. | OpenAI: `gpt-5.4-mini`; Ollama: `gemma3:12b` |
+| `SEARCH_JUDGE_REASONING_EFFORT` | Reasoning effort for the judge call: `minimal`/`low`/`medium`/`high`. Default `low` — a coarse on-topic classification that needs no deep reasoning; raise it if the judge bails or filters too aggressively. | `low` |
+| `SEARCH_JUDGE_RATIONALES` | If `true`, the judge writes a one-line reason (`≤ 200` chars) per document, shown in the live trace UI. Costs a few extra tokens per query; set `false` to suppress the rationale and save them. | `true` |
 | `SEARCH_RELEVANCE_TIER_STRONG` | Relevance-badge cut-point: a shown result with similarity at or above this is labelled "Strong match". Independent of the gate floor; validated `partial ≤ good ≤ strong`. | `0.70` |
 | `SEARCH_RELEVANCE_TIER_GOOD` | Relevance-badge cut-point for "Good match". | `0.66` |
 | `SEARCH_RELEVANCE_TIER_PARTIAL` | Relevance-badge cut-point for "Partial match"; below it a shown result is labelled "Weak match". | `0.60` |
@@ -248,6 +306,9 @@ filter resolution — see [The Search Server](search.md).
 ---
 
 ## Logging
+
+Verbosity and output format. Use `console` while watching logs by eye, `json`
+when shipping them to an aggregator.
 
 | Variable | Description | Default |
 |:---|:---|:---|

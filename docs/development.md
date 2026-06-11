@@ -1,16 +1,10 @@
 # Development
 
-This is the guide to building, testing, and shipping `paperless-ai` locally and
-in CI. The standards every change is held to live in
-[`CODE_GUIDELINES.md`](../CODE_GUIDELINES.md).
+This guide gets you from a fresh clone to a green test run, then explains how the project is built, tested, and shipped. The standards every change is held to live in [`CODE_GUIDELINES.md`](../CODE_GUIDELINES.md).
 
-The repository is two halves: the Python backend (`src/`) and the React frontend
-(`web/`). They are tested, linted, and type-checked separately and built together
-into one Docker image.
+## The fastest path
 
----
-
-## Local setup — backend
+Four commands take you from nothing to a passing test suite:
 
 ```bash
 git clone https://github.com/rossetv/paperless-ai.git
@@ -27,12 +21,41 @@ pip install -e . -r requirements-dev.txt
 pytest -n auto
 ```
 
+If that ends green, your environment is good and you can start changing code. The tests never touch a live Paperless, OpenAI, or Ollama — every external boundary is mocked — so a green run needs no API keys and no network.
+
+One caveat: if you intend to run the OCR daemon (not just the tests), you also need **Poppler** installed on the host. The rest of this page fills in the detail — the runtime dependencies, the frontend, the test tiers, the quality gates you should run before pushing, and what CI does.
+
+> The repository is two halves: the Python backend (`src/`) and the React frontend (`web/`). They are tested, linted, and type-checked separately, then built together into one Docker image.
+
+---
+
+## Local setup — backend
+
+The fastest path above is the whole backend setup. For reference:
+
+```bash
+git clone https://github.com/rossetv/paperless-ai.git
+cd paperless-ai
+
+# Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install the project and the dev toolchain
+pip install -e . -r requirements-dev.txt
+
+# Run the test suite (parallel across cores)
+pytest -n auto
+```
+
+Once the virtual environment is active, the toolchain lives in `venv/bin/` (e.g. `venv/bin/pytest`, `venv/bin/ruff`) — call those directly if you'd rather not rely on your shell's `PATH`.
+
 ### Runtime dependencies
 
-Outside Docker you need:
+The tests run with no extra system software. To actually *run* a process outside Docker you need:
 
 - **Python 3.11+**
-- **Poppler** (`poppler-utils`) — for PDF-to-image conversion (the OCR daemon)
+- **Poppler** (`poppler-utils`) — converts PDFs to images for the OCR daemon
 
 ```bash
 # macOS
@@ -43,7 +66,7 @@ apt-get install poppler-utils
 
 ### Python runtime dependencies
 
-From `pyproject.toml`:
+These are pulled in automatically by `pip install -e .`. The table is here so you know what each one is for, not as something to install by hand. From `pyproject.toml`:
 
 | Package | Constraint | Purpose |
 |:---|:---|:---|
@@ -62,9 +85,7 @@ From `pyproject.toml`:
 
 ## Running a process locally
 
-Configuration is read from `app.db`'s config table layered over the environment,
-so for a bare local run the environment alone is enough. The four entry points
-(from `pyproject.toml` `[project.scripts]`):
+Configuration is read from `app.db`'s config table layered over the environment, so for a bare local run the environment alone is enough. There are four entry points (from `pyproject.toml` `[project.scripts]`):
 
 ```bash
 export PAPERLESS_URL="http://localhost:8000"
@@ -80,12 +101,13 @@ python3 -m indexer.daemon        # or: paperless-indexer-daemon
 python3 -m search.api            # or: paperless-search-server
 ```
 
-The daemons run against a live Paperless and a live model provider; for tests
-those boundaries are always mocked (see below).
+These run against a *live* Paperless and a *live* model provider. That is the one place real services come into play — the tests, by contrast, always mock those boundaries (see below).
 
 ---
 
 ## Local setup — frontend
+
+You only need this if you're working on the search UI; the backend tests don't require it.
 
 ```bash
 cd web
@@ -93,9 +115,7 @@ npm ci
 npm run dev        # Vite dev server with hot reload
 ```
 
-The frontend talks to the search API; point it at a running
-`paperless-search-server` (or its mock handlers in tests). The package scripts
-(`web/package.json`):
+The frontend talks to the search API, so point it at a running `paperless-search-server` (or rely on its mock handlers in tests). The package scripts (`web/package.json`):
 
 | Script | Command | Purpose |
 |:---|:---|:---|
@@ -110,9 +130,9 @@ The frontend talks to the search API; point it at a running
 
 ## Running the tests
 
-The backend suite is split into unit, integration, and end-to-end tiers (the
-pyramid — `CODE_GUIDELINES.md` §11). No test touches a live Paperless, OpenAI,
-or Ollama; the LLM, the embeddings, and Paperless are always mocked.
+The single most important thing to know: **no test touches a live Paperless, OpenAI, or Ollama.** The LLM, the embeddings, and Paperless are always mocked. That is why the suite runs offline, needs no secrets, and is safe to run on every save.
+
+The backend suite is split into three tiers — the test pyramid (`CODE_GUIDELINES.md` §11):
 
 ```bash
 # Everything, parallel across cores (pytest-xdist)
@@ -138,7 +158,7 @@ pytest -n auto --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer
 
 ### Test markers
 
-Markers are declared in `pyproject.toml` and applied by directory:
+The three tiers each have a marker, declared in `pyproject.toml` and applied by directory:
 
 - `unit` — fast, no I/O, one cohesive unit
 - `integration` — module boundaries, real temporary store
@@ -147,27 +167,17 @@ Markers are declared in `pyproject.toml` and applied by directory:
 
 ### Test layout
 
-Tests mirror the source tree one-to-one (`src/indexer/chunker.py` ↔
-`tests/unit/indexer/test_chunker.py`); a moved function moves its test in the
-same change. Use the shared builders in `tests/helpers/` (`make_document`,
-`make_settings_obj`, `make_classification_result`, the mock-Paperless builders)
-rather than hand-building objects.
+Tests mirror the source tree one-to-one (`src/indexer/chunker.py` ↔ `tests/unit/indexer/test_chunker.py`), so a moved function moves its test in the same change. Rather than hand-building objects, use the shared builders in `tests/helpers/` (`make_document`, `make_settings_obj`, `make_classification_result`, the mock-Paperless builders).
 
 ### Known gap — no real-frontend → real-backend e2e test
 
-There is no test that wires a real React build against a real running FastAPI
-server. Each side is tested independently — the backend via FastAPI's
-`TestClient`, the frontend against MSW mock handlers under Vitest — and the wire
-contract between them is held by keeping the TypeScript types in
-`web/src/api/types/` in deliberate correspondence with the Pydantic models in
-`src/search/wire/`, policed by per-wave review. A Playwright login → search →
-preview scenario is tracked as a follow-up but is not required for release.
+There is no test that wires a real React build against a real running FastAPI server. Each side is tested independently — the backend via FastAPI's `TestClient`, the frontend against MSW mock handlers under Vitest — and the wire contract between them is held by keeping the TypeScript types in `web/src/api/types/` in deliberate correspondence with the Pydantic models in `src/search/wire/`, policed by per-wave review. A Playwright login → search → preview scenario is tracked as a follow-up but is not required for release.
 
 ---
 
 ## Quality gates (run them before pushing)
 
-CI runs these, so run them locally first:
+CI runs all of these, so running them locally first saves a round-trip. With the virtual environment active, each tool is on your `PATH` (or call it as `venv/bin/<tool>`):
 
 ```bash
 # Backend
@@ -185,16 +195,19 @@ npm run test
 npm run build
 ```
 
-`mypy` is enforced on `store`, `indexer`, and `search` (the subsystems held to
-full typing from their first commit). `bandit -ll` reports MEDIUM severity and
-above; `pip-audit` scans the installed environment (there is no lockfile).
+A few notes on the backend gates:
+
+- `mypy` is enforced only on `store`, `indexer`, and `search` — the subsystems held to full typing from their first commit.
+- `bandit -ll` reports MEDIUM severity and above.
+- `pip-audit` scans the installed environment (there is no lockfile), so install it on demand — it is not part of `requirements-dev.txt`.
 
 ---
 
 ## CI/CD pipeline
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request
-to `main`. An in-flight run for the same ref is cancelled when a new one starts.
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request to `main`. An in-flight run for the same ref is cancelled when a new one starts, so only the latest commit's checks matter.
+
+The pipeline is a set of independent check jobs, and an image build that depends on all of them passing:
 
 | Job | What it does |
 |:---|:---|
@@ -208,16 +221,8 @@ to `main`. An in-flight run for the same ref is cancelled when a new one starts.
 
 ### The image build
 
-The `Docker` job builds **each architecture on its native runner** — `amd64` on
-`ubuntu-latest`, `arm64` on `ubuntu-24.04-arm` — no QEMU emulation. On a pull
-request each arch is built to validate the Dockerfile and nothing is pushed; on a
-push each arch is built and pushed *by digest*, and `Docker manifest` then
-assembles the tagged multi-arch manifest (`:latest`, `:sha-<sha>`) on Docker Hub.
+The `Docker` job builds **each architecture on its native runner** — `amd64` on `ubuntu-latest`, `arm64` on `ubuntu-24.04-arm` — with no QEMU emulation. On a pull request each arch is built only to validate the Dockerfile, and nothing is pushed. On a push to `main` each arch is built and pushed *by digest*, and `Docker manifest` then assembles the tagged multi-arch manifest (`:latest`, `:sha-<sha>`) on Docker Hub.
 
-CI passes `RUN_TESTS=0` to the image build because the dedicated `Tests` job
-already ran `pytest` once, natively — re-running it inside the emulated build per
-architecture would be slow and redundant. A plain local `docker build` defaults
-to `RUN_TESTS=1` and keeps the in-image test gate.
+CI passes `RUN_TESTS=0` to the image build because the dedicated `Tests` job already ran `pytest` once, natively — re-running it inside the emulated build per architecture would be slow and redundant. A plain local `docker build` defaults to `RUN_TESTS=1` and keeps the in-image test gate.
 
-See [Deployment](deployment.md) for the Dockerfile's stages and how to run the
-image.
+See [Deployment](deployment.md) for the Dockerfile's stages and how to run the image.

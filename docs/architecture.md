@@ -1,20 +1,17 @@
 # Architecture
 
-`paperless-ai` adds AI to a Paperless-ngx archive in four stages — OCR, then
-classification, then indexing, then semantic search — and a React web
-application to query the result. This document is the map: the packages, the
-four daemons and their lifecycle, the concurrency model, and the two databases.
+`paperless-ai` bolts AI onto a [Paperless-ngx](https://docs.paperless-ngx.com/) document archive: it reads the text off your scans, files them automatically, and lets you ask questions of the whole collection in plain language. This document is the map — read it first, then follow the links into each subsystem.
 
-For the rules every change is held to, see [`CODE_GUIDELINES.md`](../CODE_GUIDELINES.md).
-For a subsystem in depth, follow the links: [search](search.md), [store](store.md),
-[indexer](indexer.md), [OCR](ocr-pipeline.md), [classification](classification-pipeline.md).
+## In a nutshell
 
----
+A document flows through four stages, each run by its own long-lived background process (a **daemon**):
 
-## The shape of the system
+1. **OCR** — reads the text off a scanned page using a vision model, so the rest of the system works with words instead of pixels.
+2. **Classify** — asks an LLM for a title, correspondent, document type, date and tags, and writes that metadata back to Paperless.
+3. **Index** — chunks each document, turns the chunks into vectors, and stores them so they can be searched by meaning.
+4. **Search** — a web app and API that answers natural-language questions by retrieving the right chunks and asking an LLM to synthesise an answer.
 
-Four long-lived processes share one Paperless-ngx instance and two SQLite
-databases on the `/data` volume:
+The single most important idea: **the first two stages keep no state of their own.** A document's position in the pipeline is recorded entirely as Paperless **tags** — a "needs OCR" tag, a "done" tag, an "error" tag. The daemons just watch for tags and act. That makes them safe to restart, safe to run several copies of, and means a configuration change takes effect on the next poll with no restart. We call this **tag-driven**.
 
 ```mermaid
 flowchart LR
@@ -43,31 +40,31 @@ flowchart LR
     SEARCH -->|"accounts · config · keys"| APP
 ```
 
-- The **OCR daemon** finds documents tagged for OCR, sends each page to a vision
-  model, and writes the transcription back to Paperless.
-- The **classifier daemon** picks up OCR'd documents, asks an LLM for a title,
-  correspondent, type, date and tags, and writes that metadata back.
-- The **indexer daemon** continuously reconciles Paperless against the search
-  index: it chunks new and changed documents, embeds the chunks, and upserts
-  them into `index.db`. It is the **only** process that writes the index.
-- The **search server** is one process that hosts the HTTP API, the React web
-  UI, and the MCP endpoint. It reads the index through a read-only API and never
-  writes it.
+Four processes share one Paperless-ngx instance and two SQLite databases on the `/data` volume:
 
-The OCR and classifier daemons are **tag-driven and stateless** — all their
-pipeline state is Paperless tags, so they are safe to run as several instances.
-The indexer and the search server are **single-instance**: the indexer because
-exactly one writer may hold the index, the search server because it is the one
-network-facing process.
+- The **OCR daemon** finds documents tagged for OCR, sends each page to a vision model, and writes the transcription back to Paperless.
+- The **classifier daemon** picks up OCR'd documents, asks an LLM for a title, correspondent, type, date and tags, and writes that metadata back.
+- The **indexer daemon** continuously **reconciles** Paperless against the search index: it chunks new and changed documents, embeds the chunks, and upserts them into `index.db`. It is the **only** process that writes the index.
+- The **search server** is one process hosting the HTTP API, the React web UI, and the [MCP](https://modelcontextprotocol.io/) endpoint. It reads the index through a read-only API and never writes it.
+
+The two databases are split for a reason: `app.db` holds the things you cannot afford to lose (accounts, API keys, configuration), while `index.db` is *derived* — the indexer can rebuild it from Paperless at any time. Wiping and rebuilding the search index never touches your accounts or settings.
+
+For each subsystem in depth, follow the links: [OCR](ocr-pipeline.md), [classification](classification-pipeline.md), [indexer](indexer.md), [store](store.md), and [search](search.md) (with its stage-by-stage companion, [the search pipeline deep-dive](search-pipeline.md)). For the failure-handling model shared across all of them, see [Resilience](resilience.md); for every configuration value, see [Configuration](configuration.md). For the rules every change is held to, see [`CODE_GUIDELINES.md`](../CODE_GUIDELINES.md).
+
+---
+
+## Which processes can run as many copies, and which cannot
+
+This is the rule that shapes everything below, so it is worth stating plainly:
+
+- The **OCR and classifier daemons** are tag-driven and stateless, so they are safe to run as **several instances** at once. Two copies will not trip over each other because the work queue is just Paperless tags.
+- The **indexer** and the **search server** are **single-instance**. The indexer because exactly one writer may hold the index (it takes an exclusive lock on startup; a second copy refuses to run rather than corrupt the data). The search server because it is the one network-facing process.
 
 ---
 
 ## Packages
 
-The backend is seven Python packages under `src/`. Imports flow **downward
-only**; an upward or sideways cross-package import is a review blocker
-(`CODE_GUIDELINES.md` §2). The two leaves at the bottom — `common/` and
-`appdb/` — may be imported by anything above them.
+The backend is seven Python packages under `src/`. The one rule that keeps them untangled: **imports flow downward only**. A package may import the ones below it, never one above or beside it — an upward or sideways cross-package import is a review blocker (`CODE_GUIDELINES.md` §2). The two leaves at the bottom — `common/` and `appdb/` — may be imported by anything above them.
 
 ```mermaid
 graph TD
@@ -108,14 +105,11 @@ graph TD
 | `indexer/` | The reconcile daemon — chunking, embedding, upsert, pruning, the writer flock | `store/`, `common/`, `appdb/` |
 | `search/` | The agentic pipeline (plan → retrieve → refine → synthesise) and the two interface processes | `store/`, `appdb/`, `common/` |
 
-The two databases are **separate on purpose**: rebuilding the search index must
-never destroy accounts, API keys, or configuration. `store/` and `appdb/` never
-import each other; their migration runners are deliberately duplicated, not
-shared, so the two databases version independently (`CODE_GUIDELINES.md`
-§2.2.1). The OCR and classifier daemons are barred from `store/` entirely — they
-hold no index state — but read `app.db` config through `appdb/`.
+Two design choices fall out of the import rule. First, the two databases are **separate on purpose**: rebuilding the search index must never destroy accounts, API keys, or configuration. `store/` and `appdb/` never import each other; their migration runners are deliberately duplicated, not shared, so the two databases version independently (`CODE_GUIDELINES.md` §2.2.1). Second, the OCR and classifier daemons are barred from `store/` entirely — they hold no index state — but read `app.db` config through `appdb/`.
 
-Entry points (`pyproject.toml` → `[project.scripts]`):
+### Entry points
+
+Four scripts, declared in `pyproject.toml` under `[project.scripts]`, are the four processes:
 
 | Command | Module | Process |
 |:---|:---|:---|
@@ -128,9 +122,11 @@ Entry points (`pyproject.toml` → `[project.scripts]`):
 
 ## Daemon lifecycle
 
-All three tag/index daemons and the search server share the same five-step
-process startup, defined once in `src/common/bootstrap.py` as
-`bootstrap_process()`:
+Every process starts the same way, then the daemons add a few steps before settling into their loop. This section walks that startup, then the polling loop the two tag daemons run.
+
+### Shared startup
+
+All four processes share the same five-step startup, defined once in `src/common/bootstrap.py` as `bootstrap_process()`:
 
 ```mermaid
 flowchart TD
@@ -141,13 +137,9 @@ flowchart TD
     E["5. Concurrency — llm_limiter.init(LLM_MAX_CONCURRENT)"]
 ```
 
-Steps 3 and 5 initialise module-global singletons that raise `RuntimeError` if
-used before init, so a dropped step fails loudly rather than silently degrading.
-The fixed order is the single source of truth — an entry point that
-re-implemented it inline would drift.
+Steps 3 and 5 set up module-global singletons that raise `RuntimeError` if used before init, so a dropped step fails loudly rather than silently degrading. Defining the order in exactly one place is what stops an entry point from quietly omitting a step.
 
-The **OCR and classifier daemons** then run `bootstrap_daemon()`, which adds
-three more steps before the polling loop:
+The **OCR and classifier daemons** then run `bootstrap_daemon()`, which adds three more steps before the polling loop:
 
 ```mermaid
 flowchart TD
@@ -158,13 +150,11 @@ flowchart TD
     LOOP["Polling loop"]
 ```
 
-If preflight fails the daemon logs the error and exits without entering the
-loop (fail closed). Stale-lock recovery (`src/common/stale_lock.py`) sweeps any
-documents left carrying a processing-lock tag from a prior crash and puts the
-queue tag back so they are retried.
+If preflight fails, the daemon logs the error and exits without entering the loop — it **fails closed** rather than running half-configured. Stale-lock recovery (`src/common/stale_lock.py`) sweeps any documents left carrying a processing-lock tag from a prior crash and puts the queue tag back so they are retried.
 
-The **polling loop** (`run_polling_threadpool` in `src/common/daemon_loop.py`)
-repeats until a shutdown signal arrives:
+### The polling loop
+
+The polling loop (`run_polling_threadpool` in `src/common/daemon_loop.py`) repeats until a shutdown signal arrives:
 
 ```mermaid
 flowchart TD
@@ -179,41 +169,25 @@ flowchart TD
     SLEEP["sleep POLL_INTERVAL\n(checks shutdown flag)"] --> START
 ```
 
-Three behaviours worth naming:
+Three behaviours are worth naming:
 
-- **Config hot-load.** `before_each_poll` calls `current_settings()`, which
-  returns the *same* cached `Settings` object until the `config` table changes;
-  the cheap `is` check is the steady-state cost. On a change the daemon closes
-  its Paperless client, rebuilds logging / the OpenAI client / the LLM limiter
-  and the client from the new config, and resets the circuit breaker. A saved
-  setting takes effect on the next cycle with no restart — except
-  `POLL_INTERVAL` and `DOCUMENT_WORKERS`, which are fixed for the loop's life
-  (the loop's cadence and pool size are structural).
-- **Per-document fault isolation.** Each document is processed in its own thread
-  with its own Paperless client; one document's failure is logged with its
-  traceback and isolated so the rest of the batch completes
-  (`CODE_GUIDELINES.md` §6.4, site 2). A single bad document never crashes the
-  daemon.
-- **The write-back circuit breaker.** See [Resilience](resilience.md) — after a
-  run of *consecutive* failed write-backs the daemon halts and stops pulling
-  work, so a systemic fault (a deleted tag, a misconfigured field) cannot burn
-  one LLM call per queued document.
+- **Config hot-load.** At the top of every poll, `before_each_poll` calls `current_settings()`, which returns the *same* cached `Settings` object until the `config` table changes; the cheap `is` check is the steady-state cost. On a change the daemon closes its Paperless client, rebuilds logging, the OpenAI client, the LLM limiter and the client from the new config, and resets the circuit breaker. A saved setting takes effect on the next cycle with **no restart** — except `POLL_INTERVAL` and `DOCUMENT_WORKERS`, which set the loop's cadence and pool size and so are fixed for the loop's life.
+- **Per-document fault isolation.** Each document is processed in its own thread with its own Paperless client; one document's failure is logged with its traceback and isolated so the rest of the batch completes (`CODE_GUIDELINES.md` §6.4, site 2). A single bad document never crashes the daemon.
+- **The write-back circuit breaker.** After a run of *consecutive* failed write-backs the daemon **halts** and stops pulling work, so a systemic fault (a deleted tag, a misconfigured field) cannot burn one LLM call per queued document. See [Resilience](resilience.md).
 
-The **indexer daemon** does not use the polling-threadpool loop — it runs a
-sequential reconcile loop (`src/indexer/daemon/`). Its lifecycle is: acquire the
-exclusive writer `flock`, run preflight (Paperless reachable, store writable,
-embedding model responds, embedding-model compatibility check), then loop:
-re-check config, run an incremental sync, run a deletion sweep when due,
-checkpoint the WAL, and wait `RECONCILE_INTERVAL` (waking early on shutdown or a
-manual trigger). See [the indexer doc](indexer.md) for the full cycle.
+### The indexer is different
 
-Every daemon honours **SIGTERM and SIGINT** via a thread-safe flag
-(`src/common/shutdown.py`): the loop checks it before each sleep, lets in-flight
-work finish, closes HTTP sessions and database handles, and exits 0.
+The **indexer daemon** does not use the polling-threadpool loop — it runs a sequential reconcile loop (`src/indexer/daemon/`). Its lifecycle: acquire the exclusive writer `flock`, run preflight (Paperless reachable, store writable, embedding model responds, embedding-model compatibility check), then loop — re-check config, run an incremental sync, run a deletion sweep when due, checkpoint the WAL, and wait `RECONCILE_INTERVAL` (waking early on shutdown or a manual trigger). See [the indexer doc](indexer.md) for the full cycle.
+
+### Graceful shutdown
+
+Every daemon honours **SIGTERM and SIGINT** via a thread-safe flag (`src/common/shutdown.py`): the loop checks it before each sleep, lets in-flight work finish, closes HTTP sessions and database handles, and exits 0.
 
 ---
 
 ## Concurrency model
+
+The daemons fan work out across threads but keep the total number of outbound API calls under tight, configurable caps. This is the shape:
 
 ```
 Tag daemon (OCR / classifier)
@@ -226,21 +200,11 @@ Tag daemon (OCR / classifier)
 └── llm_limiter — BoundedSemaphore across all threads (LLM_MAX_CONCURRENT)
 ```
 
-- **OCR has two levels of parallelism.** Up to `DOCUMENT_WORKERS` documents at
-  once, and within each document up to `PAGE_WORKERS` pages at once. The
-  theoretical ceiling on concurrent vision calls is `DOCUMENT_WORKERS ×
-  PAGE_WORKERS` (default 4 × 8 = 32), but see the next point.
-- **Classification has one level.** Up to `DOCUMENT_WORKERS` documents at once;
-  one LLM call per document.
-- **The LLM limiter is the real cap.** `LLM_MAX_CONCURRENT` (default **4**)
-  bounds total concurrent LLM calls across every thread via a bounded semaphore
-  (`src/common/concurrency.py`). `0` means unbounded. It is initialised at
-  bootstrap and re-sized on a config change.
-- **Embeddings have their own cap.** The indexer's `EmbeddingClient` uses a
-  separate `ConcurrencyGuard` from `EMBEDDING_MAX_CONCURRENT` (default 4).
-- **The search server** bounds in-flight `/api/search` work with an asyncio
-  semaphore (`SEARCH_MAX_CONCURRENT`, default 4), so an exposed endpoint cannot
-  be turned into a billing-denial attack.
+- **OCR has two levels of parallelism.** Up to `DOCUMENT_WORKERS` documents at once, and within each document up to `PAGE_WORKERS` pages at once. The theoretical ceiling on concurrent vision calls is `DOCUMENT_WORKERS × PAGE_WORKERS` (default 4 × 8 = 32) — but see the next point.
+- **Classification has one level.** Up to `DOCUMENT_WORKERS` documents at once; one LLM call per document.
+- **The LLM limiter is the real cap.** `LLM_MAX_CONCURRENT` (default **4**) bounds total concurrent LLM calls across every thread via a bounded semaphore (`src/common/concurrency.py`). `0` means unbounded. It is initialised at bootstrap and re-sized on a config change.
+- **Embeddings have their own cap.** The indexer's `EmbeddingClient` uses a separate `ConcurrencyGuard` from `EMBEDDING_MAX_CONCURRENT` (default 4).
+- **The search server** bounds in-flight `/api/search` work with an asyncio semaphore (`SEARCH_MAX_CONCURRENT`, default 4), so an exposed endpoint cannot be turned into a billing-denial attack.
 
 ### Thread safety
 
@@ -255,19 +219,13 @@ Tag daemon (OCR / classifier)
 | Write-back circuit breaker | One per daemon, every state change under a `threading.Lock`. |
 | Shutdown flag | `threading.Event`. |
 
-Both databases run in **WAL mode** with `synchronous=NORMAL`, `foreign_keys=ON`,
-and a bounded `busy_timeout` — one writer plus concurrent readers across
-processes. The pragmas are set centrally when a connection opens
-(`src/store/schema.py`, `src/appdb/connection.py`), never per call.
+Both databases run in **WAL mode** with `synchronous=NORMAL`, `foreign_keys=ON`, and a bounded `busy_timeout` — one writer plus concurrent readers across processes. The pragmas are set centrally when a connection opens (`src/store/schema.py`, `src/appdb/connection.py`), never per call.
 
 ---
 
 ## The tag-driven state machine
 
-The OCR and classifier daemons keep **no state of their own**: a document's
-position in the pipeline is entirely a function of which Paperless tags it
-carries. This is why those daemons can restart at any time and run as multiple
-instances.
+This is the mechanism behind the "no state of their own" claim from the top. The OCR and classifier daemons track a document's position in the pipeline *entirely* by which Paperless tags it carries — which is exactly why they can restart at any time and run as multiple instances.
 
 ```mermaid
 flowchart TD
@@ -286,38 +244,29 @@ flowchart TD
     style ERROR fill:#f8d7da,stroke:#dc3545
 ```
 
-- By default `CLASSIFY_PRE_TAG_ID` equals `POST_TAG_ID`, so a document that
-  finishes OCR is automatically picked up by the classifier — no extra wiring.
-- The **processing-lock** tags are optional and only needed when running several
-  instances of the same daemon. The claim is a best-effort optimistic lock
-  (refresh → check → patch → verify); see [Resilience](resilience.md).
-- A document is **quarantined** to `ERROR_TAG_ID` only on a *permanent* failure
-  (a Paperless 4xx on write-back). Transient failures are retried with backoff
-  and never error-tag the document. Tag IDs set to `0` or negative are treated as
-  unset.
+Reading the diagram:
 
-The **search index** is the other piece of state, but it is derived: the indexer
-rebuilds it from Paperless, and it can be wiped and rebuilt at any time without
-data loss. Accounts, sessions, API keys and configuration live in `app.db` and
-survive an index rebuild.
+- By default `CLASSIFY_PRE_TAG_ID` equals `POST_TAG_ID`, so a document that finishes OCR is **automatically** picked up by the classifier — no extra wiring.
+- The **processing-lock** tags are optional and only needed when running several instances of the same daemon. The claim is a best-effort optimistic lock (refresh → check → patch → verify); see [Resilience](resilience.md).
+- A document is **quarantined** to `ERROR_TAG_ID` only on a *permanent* failure (a Paperless 4xx on write-back). Transient failures are retried with backoff and never error-tag the document. Tag IDs set to `0` or negative are treated as unset.
+
+The **search index** is the system's other piece of state, but it is *derived*: the indexer rebuilds it from Paperless, and it can be wiped and rebuilt at any time without data loss. Accounts, sessions, API keys and configuration live in `app.db` and survive an index rebuild.
 
 ---
 
 ## Key data shapes
 
-Structured data crossing a function boundary is a frozen dataclass
-(`CODE_GUIDELINES.md` §5.2).
+Anything structured that crosses a function boundary travels as a frozen dataclass, never a raw dict or `sqlite3.Row` (`CODE_GUIDELINES.md` §5.2). The ones worth knowing:
 
 | Shape | Defined in | Carries |
 |:---|:---|:---|
 | `Settings` | `src/common/config/_settings.py` | Every config value for one process; built once, immutable, secrets masked in its repr |
 | `ClassificationResult` | `src/classifier/result.py` | The parsed LLM classification — title, correspondent, tags, date, type, language, person |
 | `TaxonomyContext` | `src/classifier/taxonomy.py` | The correspondent / type / tag name lists fed to the classifier prompt |
-| `QueryPlan`, `SearchResult`, `SourceDocument` | `src/search/models.py` | The agentic pipeline's plan, result, and per-document hit |
+| `RetrievalPlan`, `SearchResult`, `SourceDocument` | `src/search/models.py` | The search pipeline's plan, result, and per-document hit |
 | `Chunk`, document/index rows | `src/store/models.py` | The store's typed read/write shapes (never raw `sqlite3.Row`) |
 
-`Settings` is the single configuration object; see the
-[Configuration Reference](configuration.md) for every field.
+`Settings` is the single configuration object; see the [Configuration Reference](configuration.md) for every field.
 
 ---
 

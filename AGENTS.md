@@ -271,10 +271,10 @@ React 19 + TypeScript SPA, built with Vite. Layered: `pages/` → `features/` �
 ## Common Agent Tasks
 
 ### "Where is X configured?"
-Every environment variable is catalogued in `src/common/config/_catalogue.py`, defined on the `Settings` dataclass in `src/common/config/_settings.py`, and validated in `src/common/config/_parsers.py`. Runtime config also layers `app.db`'s `config` table over the environment via `current_settings()`, so a change saved in the web UI hot-loads with no restart. Full reference → [docs/configuration.md](docs/configuration.md). Semantic-search variables → [README.md — Semantic Search Environment Variables](README.md#semantic-search--environment-variables).
+Every environment variable is catalogued in `src/common/config/_catalogue.py`, defined on the `Settings` dataclass in `src/common/config/_settings.py`, and validated in `src/common/config/_parsers.py`. Runtime config also layers `app.db`'s `config` table over the environment via `current_settings()`, so a change saved in the web UI hot-loads with no restart. Full reference → [docs/configuration.md](docs/configuration.md). Semantic-search variables → [README.md — Semantic Search Environment Variables](README.md#configuration).
 
 ### "How does the processing pipeline work?"
-A tag-driven state machine — no database, no queue. Overview → [Architecture](docs/architecture.md#state-management). OCR details → [docs/ocr-pipeline.md](docs/ocr-pipeline.md). Classification details → [docs/classification-pipeline.md](docs/classification-pipeline.md).
+A tag-driven state machine — no database, no queue. Overview → [Architecture](docs/architecture.md#the-tag-driven-state-machine). OCR details → [docs/ocr-pipeline.md](docs/ocr-pipeline.md). Classification details → [docs/classification-pipeline.md](docs/classification-pipeline.md).
 
 ### "How does the LLM integration work?"
 OpenAI SDK wrapper in `src/common/llm.py`. OCR uses vision models via `src/ocr/provider.py`; classification uses chat models via `src/classifier/provider.py`; both support model fallback chains. Parameters a model rejects are cached and stripped on retry by `src/common/model_compat.py`.
@@ -289,16 +289,16 @@ Two-level `ThreadPoolExecutor`: `DOCUMENT_WORKERS` threads at the daemon level, 
 Retry with exponential backoff → `src/common/retry.py`. Model fallback → `src/ocr/provider.py`, `src/classifier/provider.py`. Per-document isolation → `src/common/daemon_loop.py`. Repeated write-back failure trips a circuit breaker → `src/common/circuit_breaker.py`. Full details → [docs/resilience.md](docs/resilience.md).
 
 ### "How do I add a new test?"
-Mirror the source layout under `tests/`. Use factories from `tests/helpers/factories.py`. Web tests are co-located beside the source as `*.test.tsx`. Details → [docs/development.md](docs/development.md#adding-new-tests).
+Mirror the source layout under `tests/`. Use factories from `tests/helpers/factories.py`. Web tests are co-located beside the source as `*.test.tsx`. Details → [docs/development.md](docs/development.md#running-the-tests).
 
 ### "How does the Docker image work?"
-Multi-stage build. Tests run in the builder stage. The production stage is minimal with a non-root user. Details → [docs/development.md](docs/development.md#docker-image).
+Multi-stage build. Tests run in the builder stage. The production stage is minimal with a non-root user. Details → [docs/development.md](docs/development.md#the-image-build).
 
 ### "How do tags flow through the pipeline?"
-State diagram → [docs/configuration.md](docs/configuration.md#tag-state-flow). Tag setup → [docs/deployment.md](docs/deployment.md#tag-setup-guide).
+State diagram → [docs/configuration.md](docs/configuration.md#tag-state-flow). Tag setup → [docs/deployment.md](docs/deployment.md#tag-setup).
 
 ### "How does the search index stay in sync with Paperless?"
-Incremental sync via a `modified__gt` watermark plus a periodic deletion sweep. Details → [docs/indexer.md](docs/indexer.md#incremental-sync). The indexer is the sole writer, enforced by `flock` — see [docs/indexer.md](docs/indexer.md#single-writer-guard).
+Incremental sync via a `modified__gt` watermark plus a periodic deletion sweep. Details → [docs/indexer.md](docs/indexer.md#incremental-sync-indexing-only-what-changed). The indexer is the sole writer, enforced by `flock` — see [docs/indexer.md](docs/indexer.md#the-single-writer-lock).
 
 ### "How does the search pipeline work?"
 Bounded agentic loop: plan (1 LLM call) → hybrid retrieve (vector + FTS5, fused with RRF) → synthesise (1–2 LLM calls). Hard ceiling: **three LLM chat calls per query**, enforced both structurally and by a defensive counter. Details → [docs/search.md](docs/search.md).

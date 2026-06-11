@@ -357,8 +357,9 @@ class SearchCore:
         resolve filters, retrieve, broaden-and-retry once if retrieval is empty,
         synthesise once, and — while the synthesiser asks for more and the
         refinement budget allows — adjust, retrieve again, merge, and
-        re-synthesise. At most ``2 + SEARCH_MAX_REFINEMENTS`` LLM calls are made
-        (see the module docstring).
+        re-synthesise. At most ``2 + j + R*(2 + j)`` LLM calls are made
+        (``R`` = SEARCH_MAX_REFINEMENTS, ``j`` = 1 when the judge gate is on;
+        see :func:`_max_llm_calls` and the module docstring).
 
         Three fail-fast gates sit at the front of the pipeline (spec §7):
 
