@@ -71,17 +71,19 @@ export function SearchTracePanel({
   );
 
   return (
-    <Disclosure summary={summary}>
-      <Stack direction="vertical" gap={3}>
-        <Text as="span" variant="micro" tone="tertiary">
-          Each step of the agentic pipeline, with its token and dollar cost.
-        </Text>
-        <PipelineStages
-          collapsible
-          stages={stages}
-          {...(onPreview !== undefined ? { onPreviewDocument: onPreview } : {})}
-        />
-      </Stack>
-    </Disclosure>
+    <div className={styles['panel']}>
+      <Disclosure summary={summary}>
+        <Stack direction="vertical" gap={3}>
+          <Text as="span" variant="micro" tone="tertiary">
+            Each step of the agentic pipeline, with its token and dollar cost.
+          </Text>
+          <PipelineStages
+            collapsible
+            stages={stages}
+            {...(onPreview !== undefined ? { onPreviewDocument: onPreview } : {})}
+          />
+        </Stack>
+      </Disclosure>
+    </div>
   );
 }

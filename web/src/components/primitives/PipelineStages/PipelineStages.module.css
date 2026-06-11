@@ -55,6 +55,12 @@
   color: var(--colour-text-on-dark);
 }
 
+/* Shrink the check icon so it sits inset from the circle edge (11 px in 18 px).
+   calc(--spacing-7 + --spacing-1) = 9 + 2 = 11 px. */
+.dot > * {
+  font-size: calc(var(--spacing-7) + var(--spacing-1));
+}
+
 .stage[data-state="active"] .dot {
   border: var(--spacing-1) solid var(--colour-accent);
 }
@@ -143,13 +149,12 @@
   white-space: nowrap;
 }
 
-/* Judge per-document verdict sublist — indented under the stage row. */
+/* Judge per-document verdict sublist — rendered inside .stage-body which already
+   provides the consistent left indent. No extra padding needed here. */
 .verdicts {
   list-style: none;
   margin: var(--spacing-6) 0 0;
-
-  /* Indent to align under the stage text column (dot width + the row gap). */
-  padding: 0 0 0 calc(var(--size-stage-dot) + var(--spacing-10));
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-4);
@@ -162,16 +167,9 @@
 }
 
 .verdict-dot {
-  flex-shrink: 0;
-  width: var(--spacing-4);
-  height: var(--spacing-4);
-  margin-top: var(--spacing-3);
-  border-radius: var(--radius-circle);
-  background-color: var(--colour-status-ready);
-}
-
-.verdict[data-keep="false"] .verdict-dot {
-  background-color: var(--colour-text-tertiary);
+  /* Hidden so judge verdict text aligns flush at the .stage-body left edge,
+     consistent with retrieve/gate subrows whose .sdot is also hidden. */
+  display: none;
 }
 
 .verdict-text {
@@ -253,9 +251,10 @@
 /* Expand the detail area after the summary row. Carry the caption font-size and
    tertiary colour the old `.detail` slot supplied, so body text (planner specs,
    resolved-filter lines, chunk titles) renders at one consistent caption size —
-   NOT the inherited 17px body default — matching the summary line above it. */
+   NOT the inherited 17px body default — matching the summary line above it.
+   Right padding prevents content from hugging the card edge. */
 .stage-body {
-  padding: var(--spacing-2) 0 var(--spacing-7)
+  padding: var(--spacing-2) var(--spacing-9) var(--spacing-7)
     calc(var(--size-stage-dot) + var(--spacing-10));
   font-size: var(--font-size-caption);
   line-height: var(--line-height-body);
@@ -264,9 +263,9 @@
 
 .chevron {
   flex-shrink: 0;
+  align-self: center;
   width: var(--spacing-7);
   height: var(--spacing-7);
-  margin-top: var(--spacing-1);
   color: var(--colour-text-tertiary);
   transition: transform var(--duration-fast) ease;
 }
