@@ -269,61 +269,75 @@ function formatDateRange(from: string | null, to: string | null): string | null 
  * Falls back to the legacy `rewritten_query` rendering when no specs are
  * present (an older backend or a clarify outcome).
  */
-function planNode(d: Record<string, unknown>): React.ReactNode {
-  if (bool(d, 'skipped_trivial')) {
-    return 'Trivial query — planning skipped';
-  }
-  const specs = objList(d, 'specs');
-  if (specs.length === 0) {
-    const rewritten = str(d, 'rewritten_query');
-    return rewritten ? `Rewritten: "${rewritten}"` : null;
-  }
+/** One filter chip — a dim key label ("from"/"type"/"tags") and its value. */
+function filterChip(key: string, label: string, value: string): React.ReactNode {
+  return (
+    <span key={key} className={styles['qfilter']}>
+      <span className={styles['qfilter-key']}>{label} </span>
+      {value}
+    </span>
+  );
+}
 
+/**
+ * Build the filter chips for one query block. Reads either the planner's
+ * free-text guesses (`correspondent`/`document_type`/`tags` strings — plan and
+ * replan) or resolved taxonomy ids (`correspondent_id`/… — refine); the two
+ * shapes are disjoint, so the same renderer serves all three phases.
+ */
+function filterChips(filters: Record<string, unknown>): React.ReactNode[] {
+  const chips: React.ReactNode[] = [];
+  const correspondent = fieldStr(filters, 'correspondent');
+  if (correspondent !== null) {
+    chips.push(filterChip('correspondent', 'from', correspondent));
+  }
+  const documentType = fieldStr(filters, 'document_type');
+  if (documentType !== null) {
+    chips.push(filterChip('document_type', 'type', documentType));
+  }
+  const tags = fieldStrList(filters, 'tags');
+  if (tags.length > 0) {
+    chips.push(filterChip('tags', 'tags', tags.join(', ')));
+  }
+  const correspondentId = fieldNum(filters, 'correspondent_id');
+  if (correspondentId !== null) {
+    chips.push(filterChip('correspondent_id', 'from', `#${correspondentId}`));
+  }
+  const documentTypeId = fieldNum(filters, 'document_type_id');
+  if (documentTypeId !== null) {
+    chips.push(filterChip('document_type_id', 'type', `#${documentTypeId}`));
+  }
+  const tagIds = fieldNumList(filters, 'tag_ids');
+  if (tagIds.length > 0) {
+    chips.push(
+      filterChip('tag_ids', 'tags', tagIds.map((id) => `#${id}`).join(', ')),
+    );
+  }
+  const dateRange = formatDateRange(
+    fieldStr(filters, 'date_from'),
+    fieldStr(filters, 'date_to'),
+  );
+  if (dateRange !== null) {
+    chips.push(
+      <span key="date" className={styles['qfilter']}>
+        {dateRange}
+      </span>,
+    );
+  }
+  return chips;
+}
+
+/**
+ * Render a list of search specs as styled query blocks — ordinal label, mode
+ * badge, filter chips, the query in curly quotes, and the rationale beneath.
+ * Shared by the plan, replan and refine phases so all three look identical.
+ */
+function queryBlocksNode(specs: Record<string, unknown>[]): React.ReactNode {
   const blocks = specs.map((spec, i): React.ReactNode => {
     const query = fieldStr(spec, 'query') ?? '';
     const mode = fieldStr(spec, 'mode');
     const rationale = fieldStr(spec, 'rationale');
     const filters = (spec['filters'] ?? {}) as Record<string, unknown>;
-
-    // Build filter chips from the planner's free-text guesses.
-    const chips: React.ReactNode[] = [];
-    const correspondent = fieldStr(filters, 'correspondent');
-    if (correspondent !== null) {
-      chips.push(
-        <span key="correspondent" className={styles['qfilter']}>
-          <span className={styles['qfilter-key']}>from </span>
-          {correspondent}
-        </span>,
-      );
-    }
-    const documentType = fieldStr(filters, 'document_type');
-    if (documentType !== null) {
-      chips.push(
-        <span key="document_type" className={styles['qfilter']}>
-          <span className={styles['qfilter-key']}>type </span>
-          {documentType}
-        </span>,
-      );
-    }
-    const tags = fieldStrList(filters, 'tags');
-    if (tags.length > 0) {
-      chips.push(
-        <span key="tags" className={styles['qfilter']}>
-          <span className={styles['qfilter-key']}>tags </span>
-          {tags.join(', ')}
-        </span>,
-      );
-    }
-    const dateFrom = fieldStr(filters, 'date_from');
-    const dateTo = fieldStr(filters, 'date_to');
-    const dateRange = formatDateRange(dateFrom, dateTo);
-    if (dateRange !== null) {
-      chips.push(
-        <span key="date" className={styles['qfilter']}>
-          {dateRange}
-        </span>,
-      );
-    }
 
     const isKeyword = mode === 'keyword';
     const modeClass = isKeyword ? styles['qmode-keyword'] : styles['qmode-semantic'];
@@ -336,7 +350,7 @@ function planNode(d: Record<string, unknown>): React.ReactNode {
           {mode !== null && (
             <span className={`${styles['qmode']} ${modeClass}`}>{modeLabel}</span>
           )}
-          {chips}
+          {filterChips(filters)}
         </div>
         <div className={styles['qtext']}>{'“'}{query}{'”'}</div>
         {rationale !== null && rationale !== '' && (
@@ -347,6 +361,29 @@ function planNode(d: Record<string, unknown>): React.ReactNode {
   });
 
   return <>{blocks}</>;
+}
+
+/** A context line above a re-plan / refine query list — an optional dim key
+ *  ("Gap", "Action") followed by the value, styled to match the trace body. */
+function hintLine(key: string | null, value: string): React.ReactNode {
+  return (
+    <div className={styles['qhint']}>
+      {key !== null && <span className={styles['qhint-key']}>{key} </span>}
+      {value}
+    </div>
+  );
+}
+
+function planNode(d: Record<string, unknown>): React.ReactNode {
+  if (bool(d, 'skipped_trivial')) {
+    return 'Trivial query — planning skipped';
+  }
+  const specs = objList(d, 'specs');
+  if (specs.length === 0) {
+    const rewritten = str(d, 'rewritten_query');
+    return rewritten ? `Rewritten: "${rewritten}"` : null;
+  }
+  return queryBlocksNode(specs);
 }
 
 /**
@@ -394,60 +431,46 @@ function resolveNode(d: Record<string, unknown>): React.ReactNode {
 }
 
 /**
- * Render the refine phase: the synthesiser's gap hint, the action taken, the
- * new searches the re-plan added (or none on a no-op), and how many documents
- * carried over from the previous round.
+ * Render the refine phase body: the synthesiser's gap, the action taken, the
+ * new searches the re-plan added (as styled query blocks), and how many
+ * documents carried over — matching the planning phase's styling.
  */
-function refineNode(d: Record<string, unknown>): React.ReactNode {
+function refineBodyNode(d: Record<string, unknown>): React.ReactNode {
   const gap = str(d, 'gap');
   const action = str(d, 'action');
   const carriedOver = num(d, 'carried_over');
   const newSpecs = objList(d, 'new_specs');
-  const noop = bool(d, 'noop');
-
-  const rows: React.ReactNode[] = [];
-  if (gap !== null) {
-    rows.push(`Gap: ${gap}`);
-  }
-  if (action !== null) {
-    rows.push(`Action: ${action}`);
-  }
-  if (!noop) {
-    newSpecs.forEach((spec, i) => {
-      const query = fieldStr(spec, 'query') ?? '';
-      const mode = fieldStr(spec, 'mode');
-      rows.push(
-        `New search ${i + 1}: "${query}"${mode !== null ? ` (${mode})` : ''}`,
-      );
-    });
-  }
-  if (carriedOver !== null) {
-    rows.push(`Carried over ${carriedOver} document${carriedOver === 1 ? '' : 's'}`);
-  }
-  return lines(rows);
+  return (
+    <>
+      {gap !== null && hintLine('Gap', gap)}
+      {action !== null && hintLine('Action', action)}
+      {newSpecs.length > 0 && queryBlocksNode(newSpecs)}
+      {carriedOver !== null &&
+        hintLine('Carried over', plural(carriedOver, 'document'))}
+    </>
+  );
 }
 
 /**
- * Render the replan phase: the gap hint that drove the re-plan and the new
- * searches it produced (or a note that it asked to clarify, which refinement
- * ignores).
+ * Render the replan phase body: the gap hint that drove the re-plan and the new
+ * searches it produced as styled query blocks (matching the planning phase), or
+ * a note that it asked to clarify (which refinement ignores).
  */
-function replanNode(d: Record<string, unknown>): React.ReactNode {
+function replanBodyNode(d: Record<string, unknown>): React.ReactNode {
   if (bool(d, 'clarify')) {
-    return 'Re-plan asked to clarify — ignored, finalising on current evidence';
+    return hintLine(
+      null,
+      'Re-plan asked to clarify — finalising on current evidence',
+    );
   }
   const hint = str(d, 'hint');
   const specs = objList(d, 'specs');
-  const rows: React.ReactNode[] = [];
-  if (hint !== null) {
-    rows.push(`Hint: ${hint}`);
-  }
-  specs.forEach((spec, i) => {
-    const query = fieldStr(spec, 'query') ?? '';
-    const mode = fieldStr(spec, 'mode');
-    rows.push(`${i + 1}. "${query}"${mode !== null ? ` (${mode})` : ''}`);
-  });
-  return lines(rows);
+  return (
+    <>
+      {hint !== null && hintLine('Gap', hint)}
+      {specs.length > 0 && queryBlocksNode(specs)}
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +507,39 @@ function specHasResolvedFilter(spec: Record<string, unknown>): boolean {
 }
 
 /**
+ * "<head> · K keyword, S semantic" — the count summary shared by the plan and
+ * replan phases. `head` carries the accent-styled lead ("3 searches planned",
+ * "2 searches re-planned"); the keyword/semantic tail is appended plainly.
+ */
+function searchModeSummary(
+  specs: Record<string, unknown>[],
+  head: string,
+): React.ReactNode {
+  let keyword = 0;
+  let semantic = 0;
+  specs.forEach((spec) => {
+    if (fieldStr(spec, 'mode') === 'keyword') {
+      keyword += 1;
+    } else {
+      semantic += 1;
+    }
+  });
+  const modeBits: string[] = [];
+  if (keyword > 0) {
+    modeBits.push(`${keyword} keyword`);
+  }
+  if (semantic > 0) {
+    modeBits.push(`${semantic} semantic`);
+  }
+  return (
+    <>
+      <span className={styles['accent']}>{head}</span>
+      {modeBits.length > 0 ? ` · ${modeBits.join(', ')}` : ''}
+    </>
+  );
+}
+
+/**
  * The one-line summary for a phase — the always-visible row text in the
  * collapsible trace and the only text shown in the lean live rail. Each phase
  * compresses its outcome to a single readable line; phases without a bespoke
@@ -501,28 +557,35 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
         // Older shape / clarify: fall back to the legacy rewritten-query line.
         return phaseDetailNode(record);
       }
-      let keyword = 0;
-      let semantic = 0;
-      specs.forEach((spec) => {
-        const mode = fieldStr(spec, 'mode');
-        if (mode === 'keyword') {
-          keyword += 1;
-        } else {
-          semantic += 1;
-        }
-      });
-      const modeBits: string[] = [];
-      if (keyword > 0) {
-        modeBits.push(`${keyword} keyword`);
+      return searchModeSummary(specs, plural(specs.length, 'search') + ' planned');
+    }
+    case 'replan': {
+      if (bool(d, 'clarify')) {
+        return 'Asked to clarify — finalising on current evidence';
       }
-      if (semantic > 0) {
-        modeBits.push(`${semantic} semantic`);
+      const specs = objList(d, 'specs');
+      if (specs.length === 0) {
+        return 'Re-planned';
       }
-      const head = plural(specs.length, 'search') + ' planned';
+      return searchModeSummary(
+        specs,
+        plural(specs.length, 'search') + ' re-planned',
+      );
+    }
+    case 'refine': {
+      if (bool(d, 'noop')) {
+        return 'No new searches — finalising on current evidence';
+      }
+      const newSpecs = objList(d, 'new_specs');
+      const carried = num(d, 'carried_over');
+      const carriedText =
+        carried !== null ? ` · ${plural(carried, 'document')} carried over` : '';
       return (
         <>
-          <span className={styles['accent']}>{head}</span>
-          {modeBits.length > 0 ? ` · ${modeBits.join(', ')}` : ''}
+          <span className={styles['accent']}>
+            {plural(newSpecs.length, 'search') + ' added'}
+          </span>
+          {carriedText}
         </>
       );
     }
@@ -979,10 +1042,14 @@ export function phaseBodyNode(
       // The judge's verdict list (with the View control) is rendered by
       // PipelineStages from the `verdicts` field, so there is no separate body.
       return null;
+    case 'replan':
+      return replanBodyNode(d);
+    case 'refine':
+      return refineBodyNode(d);
     default:
-      // refine / replan / synthesise / cache carry their whole detail in the
-      // summary line (via phaseDetailNode), so they have no separate body — a
-      // duplicate body would render the same lines twice.
+      // synthesise / cache carry their whole detail in the summary line (via
+      // phaseDetailNode), so they have no separate body — a duplicate body would
+      // render the same lines twice.
       return null;
   }
 }
@@ -1044,9 +1111,9 @@ export function phaseDetailNode(record: PhaseRecord): React.ReactNode {
       return mode ? `Mode: ${mode}${needsMore}` : null;
     }
     case 'replan':
-      return replanNode(d);
+      return replanBodyNode(d);
     case 'refine':
-      return refineNode(d);
+      return refineBodyNode(d);
     case 'cache':
       return 'Answer served from the cache';
     default:
