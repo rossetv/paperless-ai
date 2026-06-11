@@ -4,6 +4,7 @@ import {
   compactTokens,
   formatCostLabel,
   formatUsd,
+  ordinal,
   phaseDetailNode,
   phaseSummary,
   phaseToStages,
@@ -90,6 +91,30 @@ describe('formatCostLabel', () => {
   });
 });
 
+describe('ordinal', () => {
+  it('produces st/nd/rd/th for the first four', () => {
+    expect(ordinal(1)).toBe('1st');
+    expect(ordinal(2)).toBe('2nd');
+    expect(ordinal(3)).toBe('3rd');
+    expect(ordinal(4)).toBe('4th');
+  });
+
+  it('uses "th" for the teens (11, 12, 13)', () => {
+    expect(ordinal(11)).toBe('11th');
+    expect(ordinal(12)).toBe('12th');
+    expect(ordinal(13)).toBe('13th');
+  });
+
+  it('resumes st/nd/rd pattern after the teens', () => {
+    expect(ordinal(21)).toBe('21st');
+    expect(ordinal(22)).toBe('22nd');
+    expect(ordinal(23)).toBe('23rd');
+    expect(ordinal(101)).toBe('101st');
+    expect(ordinal(111)).toBe('111th');
+    expect(ordinal(112)).toBe('112th');
+  });
+});
+
 describe('verdictsOf', () => {
   it('returns undefined for a non-judge phase', () => {
     const record: PhaseRecord = {
@@ -165,7 +190,7 @@ function detailText(record: PhaseRecord): string {
 }
 
 describe('phaseDetailNode — planner specs', () => {
-  it('renders one line per planned spec with query, mode, filters, rationale', () => {
+  it('renders per-query blocks with ordinal labels, mode, filter chips, query, rationale', () => {
     const record: PhaseRecord = {
       phase: 'plan',
       label: 'Planning the query',
@@ -173,7 +198,7 @@ describe('phaseDetailNode — planner specs', () => {
         skipped_trivial: false,
         specs: [
           {
-            mode: 'hybrid',
+            mode: 'keyword',
             query: 'npower energy 2024',
             filters: {
               correspondent: 'Npower',
@@ -184,6 +209,12 @@ describe('phaseDetailNode — planner specs', () => {
             },
             rationale: 'find the annual spend',
           },
+          {
+            mode: 'semantic',
+            query: 'energy bills overview',
+            filters: {},
+            rationale: null,
+          },
         ],
       },
       tokens: null,
@@ -191,12 +222,21 @@ describe('phaseDetailNode — planner specs', () => {
       ms: 1,
     };
     const text = detailText(record);
-    expect(text).toContain('npower energy 2024');
-    expect(text).toContain('(hybrid)');
+    // Ordinal labels
+    expect(text).toContain('1st query');
+    expect(text).toContain('2nd query');
+    // Mode labels
+    expect(text).toContain('Keyword');
+    expect(text).toContain('Semantic');
+    // Filter chips
     expect(text).toContain('from Npower');
     expect(text).toContain('type Invoice');
     expect(text).toContain('tags bills');
     expect(text).toContain('2024-01-01→2024-12-31');
+    // Query texts
+    expect(text).toContain('npower energy 2024');
+    expect(text).toContain('energy bills overview');
+    // Rationale
     expect(text).toContain('find the annual spend');
   });
 
@@ -298,7 +338,7 @@ describe('phaseDetailNode — refine', () => {
     const text = detailText(record);
     expect(text).toContain('Gap: no figure for Q4');
     expect(text).toContain('Action: re-planned');
-    expect(text).toContain('New search 1: “Q4 invoice total”');
+    expect(text).toContain('New search 1: "Q4 invoice total"');
     expect(text).toContain('Carried over 3 documents');
   });
 
@@ -546,7 +586,45 @@ describe('phaseToStages summary/body split', () => {
     expect(stage.body).toBeTruthy();
   });
 
-  it('resolve: body shows "no filters proposed" for specs with no filters', () => {
+  it('plan: body contains ordinal labels, mode badges, query text, and rationale', () => {
+    const record: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: {
+        specs: [
+          {
+            mode: 'keyword',
+            query: 'deed Spain',
+            filters: { document_type: 'Deed' },
+            rationale: 'exact terms for deed papers',
+          },
+          {
+            mode: 'semantic',
+            query: 'house ownership document',
+            filters: {},
+            rationale: null,
+          },
+        ],
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    const text = container.textContent ?? '';
+    expect(text).toContain('1st query');
+    expect(text).toContain('2nd query');
+    expect(text).toContain('Keyword');
+    expect(text).toContain('Semantic');
+    expect(text).toContain('type');
+    expect(text).toContain('Deed');
+    expect(text).toContain('deed Spain');
+    expect(text).toContain('house ownership document');
+    expect(text).toContain('exact terms for deed papers');
+  });
+
+  it('resolve: body shows ordinal label and "Planner proposed no filters" for specs with no filters', () => {
     const record = makeResolveRecord({
       resolved: [
         { spec_index: 0, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
@@ -555,11 +633,24 @@ describe('phaseToStages summary/body split', () => {
     });
     const stage = phaseToStages([record], null)[0]!;
     const { container } = render(<>{stage.body}</>);
-    expect(container.textContent).toContain('no filters proposed');
+    expect(container.textContent).toContain('1st query');
+    expect(container.textContent).toContain('Planner proposed no filters');
   });
 
-  it('resolve: body shows resolved name and loosened tag when method=loose', () => {
-    const record = makeResolveRecord({
+  it('resolve: body shows ordinal label, resolved name, and loosened annotation when method=loose', () => {
+    const planRecord: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: {
+        specs: [
+          { mode: 'keyword', query: 'deed', filters: { document_type: 'Deed' }, rationale: null },
+        ],
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const resolveRecord = makeResolveRecord({
       resolved: [
         {
           spec_index: 0,
@@ -572,10 +663,13 @@ describe('phaseToStages summary/body split', () => {
       ],
       dropped: [],
     });
-    const stage = phaseToStages([record], null)[0]!;
-    const { container } = render(<>{stage.body}</>);
+    const stages = phaseToStages([planRecord, resolveRecord], null);
+    const resolveStage = stages[1]!;
+    const { container } = render(<>{resolveStage.body}</>);
+    expect(container.textContent).toContain('1st query');
     expect(container.textContent).toContain('Property Deed');
     expect(container.textContent).toContain('loosened');
+    expect(container.textContent).toContain('Deed');
   });
 
   it('resolve: body shows reason-aware dropped lines', () => {

@@ -161,15 +161,20 @@ describe('SearchTracePanel', () => {
         ms: 3,
       },
     ];
-    render(<SearchTracePanel phases={phases} cost={COST} />);
-    expect(screen.getByText(/npower energy 2024/)).toBeInTheDocument();
-    expect(screen.getByText(/from Npower/)).toBeInTheDocument();
+    const { container } = render(<SearchTracePanel phases={phases} cost={COST} />);
+    const text = container.textContent ?? '';
+    // Plan body: query text and filter chips ("from " key + "Npower" value are
+    // in separate spans, so we assert on container.textContent rather than
+    // getByText, which requires a single matching element).
+    expect(text).toContain('npower energy 2024');
+    expect(text).toContain('from');
+    expect(text).toContain('Npower');
     // The resolve body renders the legacy id wire as "from #7" (no name on the
     // legacy shape); the new object wire would show the resolved name instead.
-    expect(screen.getByText(/from #7/)).toBeInTheDocument();
-    expect(screen.getByText(/Dropped \(no match\): Mystery Co/)).toBeInTheDocument();
-    expect(screen.getByText(/Gap: no Q4 figure/)).toBeInTheDocument();
-    expect(screen.getByText(/New search 1: “Q4 invoice total”/)).toBeInTheDocument();
+    expect(text).toContain('from #7');
+    expect(text).toContain('Dropped (no match): Mystery Co');
+    expect(text).toContain('Gap: no Q4 figure');
+    expect(text).toContain('New search 1: "Q4 invoice total"');
   });
 
   it('opens a judged document preview via the threaded onPreview handler', async () => {
