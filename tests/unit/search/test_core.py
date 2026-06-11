@@ -512,7 +512,9 @@ class TestSpecsEqual:
     def test_different_mode_makes_specs_unequal(self) -> None:
         """Different mode (semantic vs keyword) is a different search."""
         spec_a = _make_retrieval_spec(mode="semantic", semantic="payslip", keywords=())
-        spec_b = _make_retrieval_spec(mode="keyword", semantic=None, keywords=("payslip",))
+        spec_b = _make_retrieval_spec(
+            mode="keyword", semantic=None, keywords=("payslip",)
+        )
         assert _specs_equal((spec_a,), (spec_b,)) is False
 
     def test_different_date_filter_makes_specs_unequal(self) -> None:
@@ -532,7 +534,9 @@ class TestSpecsEqual:
             tag_ids=(),
         )
         spec_a = _make_retrieval_spec(filters=filters_a, rationale="april")
-        spec_b = _make_retrieval_spec(filters=filters_b, rationale="may — different text")
+        spec_b = _make_retrieval_spec(
+            filters=filters_b, rationale="may — different text"
+        )
         assert _specs_equal((spec_a,), (spec_b,)) is False
 
     def test_tag_order_normalised(self) -> None:
