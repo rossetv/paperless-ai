@@ -16,6 +16,7 @@ bridge depends on ``loop.call_soon_threadsafe`` from the worker thread).
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -90,6 +91,41 @@ async def test_stream_yields_phase_then_result() -> None:
     assert isinstance(body, dict)
     assert body["answer"] == "streamed answer"
     assert "trace" in body and "cost" in body
+
+
+@pytest.mark.anyio
+async def test_stream_emits_keepalive_during_a_silent_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A silent gap (e.g. a long synthesiser call) flushes blank keepalive lines.
+
+    Without traffic an idle proxy/tunnel closes the connection mid-stream and the
+    SPA reports a bare "network error". The blank line keeps the socket warm; the
+    client skips blank lines, so no frame is fabricated.
+    """
+    monkeypatch.setattr("search.routes._STREAM_KEEPALIVE_SECONDS", 0.05)
+
+    core = MagicMock()
+
+    def _slow_answer(*, query: str, ui_filters: Any, asker: Any, on_event: Any) -> Any:
+        # Hold the worker silent past the keepalive interval — no event and no
+        # result enqueued yet — mimicking a long LLM call.
+        time.sleep(0.25)
+        return make_search_result(answer="late answer")
+
+    core.answer.side_effect = _slow_answer
+
+    resp = await _search_stream(_request(), core, _noop_semaphore(), asker=None)
+    chunks = [
+        chunk.decode() if isinstance(chunk, bytes) else chunk
+        async for chunk in resp.body_iterator
+    ]
+
+    # At least one blank keepalive line flushed during the silent gap …
+    assert any(chunk == "\n" for chunk in chunks), chunks
+    # … and the real result frame still arrived afterwards.
+    parsed = [json.loads(c) for c in chunks if c.strip()]
+    assert any(obj.get("type") == "result" for obj in parsed)
 
 
 @pytest.mark.anyio
