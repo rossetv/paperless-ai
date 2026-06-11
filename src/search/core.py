@@ -418,7 +418,16 @@ class SearchCore:
         # The judge's per-document scores are accumulated here (and updated by
         # any re-judge in refinement) so the final sources rank by relevance.
         judge_scores: dict[int, float] = {}
-        filtered = self._judge_and_filter(query, chunks, budget, tele, judge_scores)
+        today_iso = date.today().isoformat()
+        filtered = self._judge_and_filter(
+            query,
+            chunks,
+            budget,
+            tele,
+            judge_scores,
+            asker=asker,
+            today=today_iso,
+        )
         if filtered is None:
             log.info("search.judge_bailed", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
             return self._no_match_result(plan, budget, started, tele)
@@ -847,6 +856,9 @@ class SearchCore:
         budget: _LlmBudget,
         tele: _Telemetry,
         judge_scores: dict[int, float] | None = None,
+        *,
+        asker: str | None = None,
+        today: str | None = None,
     ) -> list[RetrievedChunk] | None:
         """Judge the retrieved documents; return filtered chunks, or None to bail.
 
@@ -854,8 +866,13 @@ class SearchCore:
         is emitted then). Otherwise records one budget call, asks the judge
         which documents are relevant, emits the ``judge`` phase carrying the
         per-document verdicts (capturing the call's token usage), and: bails
-        (None) only on an explicit empty verdict; filters to surviving documents
-        otherwise; fails open (all chunks) if filtering keeps nothing.
+        (None) only when the judge explicitly drops every document; filters to
+        surviving documents otherwise; fails open (all chunks) if filtering
+        keeps nothing.
+
+        The *asker* and *today* are threaded to the judge so it can resolve
+        ownership and temporal references — a document belonging to the asker
+        is relevant to "my …" queries even when the title does not name them.
 
         When *judge_scores* is supplied it is populated with each verdict's
         per-document score (the later, re-judge pass overwrites the earlier one),
@@ -874,13 +891,13 @@ class SearchCore:
         started = time.monotonic()
         sink: list[LlmCallUsage] = []
         budget.record()
-        verdict = self._judge.judge(query, candidates, usage_sink=sink)
-        # A document survives only when the judge keeps it AND its score clears
-        # the configured floor; a degraded (fail-open) verdict keeps everything
-        # (its scores are 1.0, so the floor never bites). An explicit non-degraded
-        # verdict that survives nothing is a bail (no_match, no synthesis).
-        threshold = self._settings.SEARCH_JUDGE_KEEP_THRESHOLD
-        kept_ids = _surviving_ids(verdict, threshold)
+        verdict = self._judge.judge(
+            query, candidates, asker=asker, today=today, usage_sink=sink
+        )
+        # A document survives when its verdict is ``keep=True``; a degraded
+        # (fail-open) verdict keeps everything. An explicit non-degraded verdict
+        # that keeps nothing is a bail (no_match, no synthesis).
+        kept_ids = _surviving_ids(verdict)
         bailed = not kept_ids and not verdict.degraded
         if judge_scores is not None:
             for dv in verdict.verdicts:
@@ -892,7 +909,6 @@ class SearchCore:
             {
                 "degraded": verdict.degraded,
                 "bailed": bailed,
-                "threshold": threshold,
                 "verdicts": [
                     {
                         "doc_id": dv.document_id,
@@ -1112,7 +1128,15 @@ class SearchCore:
         # no_match, we just answer from what we have. The re-judge's scores
         # overwrite the pass-1 scores so the final ranking reflects the latest
         # verdict on the merged set.
-        judged = self._judge_and_filter(query, merged, budget, tele, judge_scores)
+        judged = self._judge_and_filter(
+            query,
+            merged,
+            budget,
+            tele,
+            judge_scores,
+            asker=asker,
+            today=date.today().isoformat(),
+        )
         kept = judged if judged is not None else merged
         outcome = self._synthesise(
             query, kept, mode=mode, budget=budget, asker=asker, tele=tele
@@ -1345,19 +1369,19 @@ def _elapsed_ms(started: float) -> int:
     return int((time.monotonic() - started) * 1000)
 
 
-def _surviving_ids(verdict: JudgeVerdict, threshold: float) -> frozenset[int]:
-    """Return the document ids that survive the judge keep + score gate.
+def _surviving_ids(verdict: JudgeVerdict) -> frozenset[int]:
+    """Return the document ids that survive the judge's ``keep`` gate.
 
-    A document survives when its verdict is ``keep`` AND its ``score`` is at or
-    above *threshold*. A degraded (fail-open) verdict carries ``score=1.0`` on
-    every kept document, so the floor never bites — a broken judge keeps
-    everything regardless of the threshold (CODE_GUIDELINES §1.11). This is the
-    scored replacement for ``JudgeVerdict.relevant_document_ids`` (keep-only),
-    used by the core to filter chunks and decide the bail.
+    A document survives when its verdict is ``keep=True``. The judge's boolean
+    ``keep`` decision is the sole gate — no secondary score threshold is applied.
+    The ``score`` field is still populated and used for source RANKING (Phase
+    3B), but it no longer influences whether a document reaches synthesis.
+
+    A degraded (fail-open) verdict carries ``keep=True`` on every document, so
+    a broken judge keeps everything — it can only ever lose precision, never
+    block an answer (CODE_GUIDELINES §1.11).
     """
-    return frozenset(
-        v.document_id for v in verdict.verdicts if v.keep and v.score >= threshold
-    )
+    return frozenset(v.document_id for v in verdict.verdicts if v.keep)
 
 
 def _title_for(

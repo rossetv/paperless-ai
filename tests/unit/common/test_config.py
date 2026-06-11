@@ -628,16 +628,16 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_six_entries() -> None:
-    """CONFIG_KEYS is the 76-key universe.
+def test_config_keys_has_seventy_five_entries() -> None:
+    """CONFIG_KEYS is the 75-key universe.
 
-    75 prior keys plus SEARCH_JUDGE_KEEP_THRESHOLD, the scored-judge keep floor
-    added by the Phase 3A scored relevance judge.
+    SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
+    the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 76
-    assert "SEARCH_JUDGE_KEEP_THRESHOLD" in CONFIG_KEYS
+    assert len(CONFIG_KEYS) == 75
+    assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
     assert "SEARCH_PER_SPEC_K" in CONFIG_KEYS
     assert "SEARCH_MAX_CHUNKS_PER_DOC" in CONFIG_KEYS
     assert "SEARCH_PLANNER_MAX_SPECS" in CONFIG_KEYS
@@ -669,7 +669,6 @@ def test_judge_keys_are_config_only() -> None:
         "SEARCH_GATE_JUDGE",
         "SEARCH_JUDGE_MODEL",
         "SEARCH_JUDGE_REASONING_EFFORT",
-        "SEARCH_JUDGE_KEEP_THRESHOLD",
         "SEARCH_JUDGE_RATIONALES",
     ):
         assert key in CONFIG_KEYS
@@ -684,26 +683,6 @@ def test_search_judge_rationales_defaults_true_and_parses_false(mocker) -> None:
 
     settings_off = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_RATIONALES": "false"})
     assert settings_off.SEARCH_JUDGE_RATIONALES is False
-
-
-def test_search_judge_keep_threshold_defaults_and_parses(mocker) -> None:
-    """SEARCH_JUDGE_KEEP_THRESHOLD defaults to 0.5 and parses a float."""
-    settings_default = _build(mocker, _MINIMAL_ENV)
-    assert settings_default.SEARCH_JUDGE_KEEP_THRESHOLD == 0.5
-
-    settings_set = _build(
-        mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_KEEP_THRESHOLD": "0.7"}
-    )
-    assert settings_set.SEARCH_JUDGE_KEEP_THRESHOLD == 0.7
-
-
-def test_search_judge_keep_threshold_is_clamped_to_unit_range(mocker) -> None:
-    """A value outside [0, 1] is clamped to the nearest bound, not rejected."""
-    high = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_KEEP_THRESHOLD": "1.5"})
-    assert high.SEARCH_JUDGE_KEEP_THRESHOLD == 1.0
-
-    low = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_KEEP_THRESHOLD": "-0.3"})
-    assert low.SEARCH_JUDGE_KEEP_THRESHOLD == 0.0
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:

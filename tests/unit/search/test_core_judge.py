@@ -137,94 +137,88 @@ def test_judge_call_counts_against_the_budget() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3A — scored keep-threshold tests
+# Phase 3A/identity — keep-gate tests (score is for ranking only)
 # ---------------------------------------------------------------------------
 
 
-def test_judge_drops_a_kept_but_below_threshold_document() -> None:
-    """keep=true but score below the floor → the document is dropped."""
+def test_judge_keep_true_with_low_score_is_retained() -> None:
+    """keep=true with a LOW score is retained — the score no longer gates inclusion.
+
+    The real-world bug this fixes: a DoiT payslip scored 0.31 ("ownership is
+    unclear") and was dropped, even though it genuinely belonged to the asker.
+    The judge's boolean ``keep`` is now the sole gate; ``score`` is used only
+    for source ranking.
+    """
     reset_search_result_cache()
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        # Both kept, but doc 2's score (0.3) is below the 0.5 floor → dropped.
+        # Both kept; doc 2 has a very low score (0.31) — previously dropped by
+        # the 0.5 threshold, now retained because keep=true is the sole gate.
         judge_response=judge_response_json(
             verdicts=[
                 {"document_id": 1, "keep": True, "reason": "", "score": 0.9},
-                {"document_id": 2, "keep": True, "reason": "", "score": 0.3},
+                {"document_id": 2, "keep": True, "reason": "", "score": 0.31},
             ]
         ),
     )
-    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    result = _core(llm_client).answer("warranty?")
+    assert result.outcome_kind == "answered"
+    assert {s.document_id for s in result.sources} == {1, 2}
+
+
+def test_judge_keep_false_doc_is_excluded() -> None:
+    """keep=false explicitly excludes a document regardless of its score."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
+        judge_response=judge_response_json(
+            verdicts=[
+                {"document_id": 1, "keep": True, "reason": "", "score": 0.9},
+                {
+                    "document_id": 2,
+                    "keep": False,
+                    "reason": "not relevant",
+                    "score": 0.8,
+                },
+            ]
+        ),
+    )
+    result = _core(llm_client).answer("warranty?")
     assert result.outcome_kind == "answered"
     assert {s.document_id for s in result.sources} == {1}
 
 
-def test_judge_keeps_a_document_exactly_on_the_threshold() -> None:
-    """score == threshold survives (the floor is inclusive)."""
+def test_degraded_judge_keeps_all_documents() -> None:
+    """A fail-open verdict keeps every document — degraded judge never blocks."""
     reset_search_result_cache()
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        judge_response=judge_response_json(
-            verdicts=[
-                {"document_id": 1, "keep": True, "reason": "", "score": 0.5},
-                {"document_id": 2, "keep": True, "reason": "", "score": 0.5},
-            ]
-        ),
+        judge_response="not valid json",  # → degraded fail-open
     )
-    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    result = _core(llm_client).answer("warranty?")
+    assert result.outcome_kind == "answered"
     assert {s.document_id for s in result.sources} == {1, 2}
 
 
-def test_judge_all_below_threshold_bails_to_no_match() -> None:
-    """Every kept document scoring below the floor → no_match, no synthesis."""
+def test_all_keep_false_bails_to_no_match() -> None:
+    """Every candidate explicitly keep=false → no_match, no synthesis."""
     reset_search_result_cache()
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("unreachable", citations=[])],
         judge_response=judge_response_json(
             verdicts=[
-                {"document_id": 1, "keep": True, "reason": "", "score": 0.2},
-                {"document_id": 2, "keep": True, "reason": "", "score": 0.1},
+                {"document_id": 1, "keep": False, "reason": "no", "score": 0.9},
+                {"document_id": 2, "keep": False, "reason": "no", "score": 0.8},
             ]
         ),
     )
-    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.5).answer("warranty?")
+    result = _core(llm_client).answer("warranty?")
     assert result.outcome_kind == "no_match"
     assert llm_client.synthesiser_calls == 0
-
-
-def test_degraded_judge_ignores_the_threshold_and_keeps_all() -> None:
-    """A fail-open verdict keeps every document regardless of the keep floor."""
-    reset_search_result_cache()
-    llm_client = ScriptedLLMClient(
-        planner_response=planner_response_json(),
-        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        judge_response="not valid json",  # → degraded fail-open (score 1.0)
-    )
-    # A punishingly high floor would drop everything if it applied to a degraded
-    # verdict; it must not — degraded keeps all.
-    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.99).answer("warranty?")
-    assert result.outcome_kind == "answered"
-    assert {s.document_id for s in result.sources} == {1, 2}
-
-
-def test_zero_threshold_keeps_everything_kept_regardless_of_score() -> None:
-    """A 0.0 floor degrades to keep-only — any keep=true survives."""
-    reset_search_result_cache()
-    llm_client = ScriptedLLMClient(
-        planner_response=planner_response_json(),
-        synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        judge_response=judge_response_json(
-            verdicts=[
-                {"document_id": 1, "keep": True, "reason": "", "score": 0.0},
-                {"document_id": 2, "keep": True, "reason": "", "score": 0.01},
-            ]
-        ),
-    )
-    result = _core(llm_client, SEARCH_JUDGE_KEEP_THRESHOLD=0.0).answer("warranty?")
-    assert {s.document_id for s in result.sources} == {1, 2}
 
 
 def test_sources_are_ranked_by_judge_score_over_rrf() -> None:
