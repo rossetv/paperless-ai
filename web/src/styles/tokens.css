@@ -491,6 +491,11 @@
   /* Success green — the "index ready" status dot */
   --colour-status-ready:        #34c759;
 
+  /* Muted "loosened" green — a desaturated sage green for the resolve-phase
+     "loosened from …" annotation. Recognisably green but quiet enough to read
+     as an aside rather than a highlight. */
+  --colour-loosened:            #4d8f5e;
+
   /* Soft glow halo around the "index ready" status dot in the nav pill */
   --shadow-status-ready-ring:   0 0 0 3px rgb(52 199 89 / 18%);
 

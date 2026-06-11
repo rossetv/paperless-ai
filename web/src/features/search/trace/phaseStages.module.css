@@ -26,10 +26,10 @@
   color: var(--colour-text-secondary);
 }
 
-/* A "loosened from …" annotation on a resolved taxonomy match — a quiet green
-   aside noting the planner's guess was widened to land a real id. */
+/* A "loosened from …" annotation on a resolved taxonomy match — a muted sage
+   green aside noting the planner's guess was widened to land a real id. */
 .loosened {
-  color: var(--colour-status-ready);
+  color: var(--colour-loosened);
 }
 
 /* A vertical stack of body subrows (retrieved chunks / gated documents). */
@@ -46,14 +46,10 @@
   gap: var(--spacing-6);
 }
 
-/* The leading dot on a body subrow. */
+/* The leading dot on a body subrow — hidden to align all body text at the
+   same left edge (PipelineStages .stage-body provides the indent). */
 .sdot {
-  flex-shrink: 0;
-  width: var(--spacing-4);
-  height: var(--spacing-4);
-  margin-top: var(--spacing-3);
-  border-radius: var(--radius-circle);
-  background-color: var(--colour-border-strong);
+  display: none;
 }
 
 /* The text column of a body subrow — title above snippet / bar. */
@@ -116,4 +112,95 @@
   height: 100%;
   border-radius: var(--radius-pill);
   background-color: var(--colour-accent);
+}
+
+/* ── Planning redesign — per-query blocks ── */
+
+/* One query block inside the planning body. */
+.qblock {
+  padding: var(--spacing-7) 0;
+}
+
+/* Thin top border between consecutive query blocks. */
+.qblock + .qblock {
+  border-top: var(--spacing-1) solid var(--colour-border);
+}
+
+/* Meta row: ordinal label, mode badge, filter chips — all on one line. */
+.qmeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-6);
+  margin-bottom: var(--spacing-3);
+}
+
+/* Ordinal label — "1st query", "2nd query", etc. */
+.qord {
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-micro-bold);
+  letter-spacing: var(--letter-spacing-label);
+  color: var(--colour-text-tertiary);
+  text-transform: uppercase;
+}
+
+/* Mode badge base — a small pill. */
+.qmode {
+  font-size: var(--font-size-nano);
+  font-weight: var(--font-weight-micro-bold);
+  letter-spacing: var(--letter-spacing-label);
+  text-transform: uppercase;
+  padding: var(--spacing-1) var(--spacing-7);
+  border-radius: var(--radius-pill);
+}
+
+/* Keyword mode — accent blue wash. */
+.qmode-keyword {
+  background-color: var(--colour-accent-wash);
+  color: var(--colour-link);
+}
+
+/* Semantic mode — neutral grey. */
+.qmode-semantic {
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-text-secondary);
+}
+
+/* Filter chip — a small rounded pill showing one planner filter guess. */
+.qfilter {
+  font-size: var(--font-size-nano);
+  padding: var(--spacing-1) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-text-secondary);
+}
+
+/* The filter chip's keyword label (e.g. "type") — dimmer than the value. */
+.qfilter-key {
+  color: var(--colour-text-tertiary);
+}
+
+/* Query text — in curly quotes, secondary colour. */
+.qtext {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* Rationale line — smaller, tertiary, on its own line below the query. */
+.qwhy {
+  margin-top: var(--spacing-1);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* ── Resolving redesign — ordinal lines ── */
+
+/* One resolve line: ordinal label + resolved/dropped text. */
+.rline {
+  padding: var(--spacing-2) 0;
+}
+
+/* Resolved taxonomy name — secondary colour. */
+.rname {
+  color: var(--colour-text-secondary);
 }
