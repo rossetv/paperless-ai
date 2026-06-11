@@ -14,10 +14,13 @@ from search.prompts import (
     SYNTHESISER_SYSTEM_PROMPT,
     _planner_response_format,
     _synthesiser_response_format,
+    build_planner_taxonomy_block,
     build_planner_user_message,
+    build_replan_user_message,
     build_synthesiser_user_message,
 )
-from tests.helpers.factories import make_search_settings
+from tests.helpers.factories import make_facet_set, make_search_settings
+from tests.helpers.factories import make_taxonomy_entry as _entry
 
 
 class TestPlannerSchema:
@@ -155,6 +158,101 @@ class TestPlannerUserMessageCarriesDate:
     def test_user_message_contains_the_query(self) -> None:
         msg = build_planner_user_message(query="find my invoice", today="2026-06-05")
         assert "find my invoice" in msg
+
+
+class TestPlannerTaxonomyBlock:
+    """The planner taxonomy block: names-only JSON arrays, alphabetical, capped."""
+
+    def _facets(self) -> object:
+        return make_facet_set(
+            correspondents=(
+                _entry(kind="correspondent", entry_id=2, name="npower"),
+                _entry(kind="correspondent", entry_id=1, name="HMRC"),
+            ),
+            document_types=(
+                _entry(kind="document_type", entry_id=5, name="Tax Return"),
+            ),
+            tags=(_entry(kind="tag", entry_id=7, name="tax"),),
+        )
+
+    def test_lists_names_only_alphabetically(self) -> None:
+        block = build_planner_taxonomy_block(self._facets(), limit=100)
+        assert '["HMRC", "npower"]' in block  # case-insensitive alpha order
+        assert '["Tax Return"]' in block
+        assert '["tax"]' in block
+        assert "correspondents" in block and "document types" in block
+
+    def test_respects_limit(self) -> None:
+        block = build_planner_taxonomy_block(self._facets(), limit=1)
+        assert '["HMRC"]' in block  # only the first alphabetically
+        assert "npower" not in block
+
+    def test_empty_facets_yield_empty_arrays(self) -> None:
+        empty = make_facet_set(correspondents=(), document_types=(), tags=())
+        block = build_planner_taxonomy_block(empty, limit=100)
+        assert "[]" in block
+
+    def test_states_cap_when_limited(self) -> None:
+        block = build_planner_taxonomy_block(self._facets(), limit=1)
+        assert "capped" in block.lower()
+        assert "may contain more" in block.lower()
+
+    def test_no_cap_note_when_uncapped(self) -> None:
+        block = build_planner_taxonomy_block(self._facets(), limit=0)
+        assert "capped" not in block.lower()
+
+
+class TestPlannerIdentityAndTaxonomy:
+    """Identity resolves the owner in semantic text only; taxonomy precedes date."""
+
+    def test_identity_no_longer_sets_correspondent_to_asker(self) -> None:
+        msg = build_planner_user_message(
+            query="how much tax did I pay", today="2026-06-11", asker="Vilmar Rosset"
+        )
+        assert "correspondent filter candidate to their name" not in msg
+        assert "Vilmar Rosset" in msg  # still named for semantic rewriting
+        assert "never set the correspondent" in msg.lower()
+
+    def test_taxonomy_block_precedes_the_date(self) -> None:
+        msg = build_planner_user_message(
+            query="q",
+            today="2026-06-11",
+            asker=None,
+            taxonomy_block="TAXBLOCK-MARKER",
+        )
+        assert msg.index("TAXBLOCK-MARKER") < msg.index("Today's date is")
+
+    def test_empty_taxonomy_block_is_backward_compatible(self) -> None:
+        msg = build_planner_user_message(query="q", today="2026-06-11")
+        assert msg == "Today's date is 2026-06-11.\n\nUser query: q"
+
+    def test_replan_identity_and_taxonomy(self) -> None:
+        msg = build_replan_user_message(
+            query="q",
+            today="2026-06-11",
+            hint="need the amount",
+            prior_specs=(),
+            prior_findings=(),
+            asker="Vilmar Rosset",
+            taxonomy_block="TAXBLOCK-MARKER",
+        )
+        assert "never set the correspondent" in msg.lower()
+        assert msg.index("TAXBLOCK-MARKER") < msg.index("Today's date is")
+
+
+class TestPlannerSystemPromptGuidance:
+    """The system prompt defines correspondent and warns dates are issue dates."""
+
+    def test_defines_correspondent_as_external_party(self) -> None:
+        p = PLANNER_SYSTEM_PROMPT.lower()
+        assert "correspondent" in p
+        assert "recipient" in p and "never" in p
+
+    def test_warns_document_date_lags_the_period(self) -> None:
+        p = PLANNER_SYSTEM_PROMPT.lower()
+        assert "issued" in p or "filed" in p
+        assert "tax return" in p
+        assert "keyword" in p
 
 
 class TestSynthesiserUserMessageInjectionSafety:

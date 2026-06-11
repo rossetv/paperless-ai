@@ -30,6 +30,7 @@ nonce-delimited data block the chunk cannot forge (CODE_GUIDELINES.md §10.2).
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from common.prompt_fences import build_data_fence
@@ -38,6 +39,7 @@ from search.models import JudgeCandidate
 if TYPE_CHECKING:
     from common.config import Settings
     from search.models import RetrievalSpec
+    from store.models import FacetSet, TaxonomyEntry
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +296,29 @@ Rules:
   real taxonomy — never fabricate ids).  ``rationale`` is one line on why this
   spec exists.
 
+# Correspondent — the EXTERNAL party
+
+A correspondent is the external party that issued, sent, or is the counterparty
+of a document (e.g. HMRC, a bank, an employer, a utility).  The person who owns
+this archive is the RECIPIENT and is **never** the correspondent.  If the
+issuing party is unclear, leave ``correspondent`` null — a wrong correspondent
+filter excludes the right document.  The user turn lists the existing
+correspondents, document types, and tags; prefer matching those names when a
+filter helps, but the list may be capped — you may still name one that is not
+shown.
+
+# Dates — issue date, not subject period
+
+A document's date is when it was ISSUED or FILED, which often differs from the
+period it concerns.  For document types created AFTER the period they describe —
+tax returns, annual statements, year-end summaries, P60s, annual tax
+certificates — do NOT hard-bound the date filter to that period.  Put the
+year/period as a KEYWORD instead, and either leave the date filter open or widen
+it (the period start through a year or two after its end).  Amendments and
+reissues can post years later.  When the query names a calendar year, prefer
+keyword + open date over a literal Jan–Dec bound — you do not know the archive's
+jurisdiction or tax-year boundaries.
+
 # Important rules
 
 - Emit only the JSON object; nothing else.
@@ -306,32 +331,93 @@ Rules:
 """.strip()
 
 
-def build_planner_user_message(query: str, today: str, asker: str | None = None) -> str:
-    """Assemble the planner user-role message: date, optional asker, then query.
+def _sorted_capped_names(entries: tuple[TaxonomyEntry, ...], limit: int) -> list[str]:
+    """Alphabetical (case-insensitive), de-duplicated names, capped at *limit*.
 
-    When *asker* is set, an identity line tells the planner who is asking so it
-    can resolve first-person references; it sits in the user turn (the system
-    prompt stays byte-stable/cacheable). When *asker* is None the message is
-    byte-identical to the pre-identity behaviour.
+    The search :class:`~store.models.FacetSet` carries no usage counts, so
+    ordering is alphabetical — deterministic and byte-stable so the rendered
+    block stays cacheable across calls. ``limit <= 0`` means no cap.
+    """
+    seen: set[str] = set()
+    names: list[str] = []
+    for entry in entries:
+        name = entry.name.strip()
+        key = name.lower()
+        if name and key not in seen:
+            seen.add(key)
+            names.append(name)
+    names.sort(key=str.lower)
+    return names if limit <= 0 else names[:limit]
+
+
+def build_planner_taxonomy_block(facets: FacetSet, limit: int) -> str:
+    """Render the live taxonomy as names-only JSON arrays for the planner.
+
+    Mirrors :meth:`classifier.provider.ClassifierProvider._taxonomy_block`: names
+    only (the planner resolves names -> ids downstream), three sections. Lives in
+    the cacheable prefix of the planner user turn, ahead of the volatile date, so
+    it is cached while the taxonomy is unchanged.
+
+    When ``limit`` is a positive cap, a trailing note tells the model the lists
+    are truncated and it may use a correct name even if it is not shown — the
+    resolver still matches such a name against the *full* taxonomy.
+    """
+    corr = _sorted_capped_names(facets.correspondents, limit)
+    types = _sorted_capped_names(facets.document_types, limit)
+    tags = _sorted_capped_names(facets.tags, limit)
+    cap_note = (
+        f"\n\nNote: each list above is capped at the first {limit} names "
+        "(alphabetical) — the archive may contain more. Prefer a listed name, "
+        "but if the right one is not shown, use the correct name anyway."
+        if limit > 0
+        else ""
+    )
+    return (
+        "Existing correspondents — the external party that issued or sent a "
+        "document (never the archive owner); prefer these when a filter helps:\n"
+        f"{json.dumps(corr, ensure_ascii=True)}\n\n"
+        "Existing document types (prefer these when possible):\n"
+        f"{json.dumps(types, ensure_ascii=True)}\n\n"
+        "Existing tags (prefer these when possible):\n"
+        f"{json.dumps(tags, ensure_ascii=True)}"
+        f"{cap_note}"
+    )
+
+
+def build_planner_user_message(
+    query: str, today: str, asker: str | None = None, taxonomy_block: str = ""
+) -> str:
+    """Assemble the planner user-role message: taxonomy, date, optional asker, query.
+
+    The optional *taxonomy_block* (the live correspondent/type/tag lists) is
+    prepended *ahead of* the volatile date so the cacheable prefix covers the
+    system prompt plus the taxonomy; the date then breaks the cache exactly as
+    before. When *asker* is set, an identity line tells the planner who is asking
+    so it can resolve first-person references **in the semantic query text only**
+    — never as the correspondent filter (the archive owner is the recipient of
+    their documents, never the correspondent). With no *taxonomy_block* and no
+    *asker* the message is byte-identical to the pre-identity behaviour.
 
     Args:
         query: The raw user search query.
         today: Today's date in YYYY-MM-DD form.
         asker: The sanitised asker identity, or None for anonymous queries.
+        taxonomy_block: The rendered taxonomy lists, or "" to omit them.
 
     Returns:
         The formatted user message string.
     """
     identity = (
         f"\nThe person asking is {asker}. Resolve first-person references "
-        "(my, mine, I, our) to this person where it sharpens the search — "
-        "rewrite a semantic query and/or set the correspondent filter candidate "
-        "to their name. Do not force the name where the documents would not "
-        "carry it.\n"
+        "(my, mine, I, our) to this person ONLY when rewriting the semantic "
+        "query text. NEVER set the correspondent filter to this person — the "
+        "archive owner is the recipient of their documents, never the "
+        "correspondent.\n"
         if asker
         else ""
     )
-    return f"Today's date is {today}.\n{identity}\nUser query: {query}"
+    prefix = f"{taxonomy_block}\n\n" if taxonomy_block else ""
+    return f"{prefix}Today's date is {today}.\n{identity}\nUser query: {query}"
 
 
 def _render_prior_spec(index: int, spec: RetrievalSpec) -> str:
@@ -375,15 +461,18 @@ def build_replan_user_message(
     prior_specs: tuple[RetrievalSpec, ...],
     prior_findings: tuple[str, ...],
     asker: str | None = None,
+    taxonomy_block: str = "",
 ) -> str:
     """Assemble the re-plan user message: a richer turn that targets a gap.
 
     Reuses the byte-stable :data:`PLANNER_SYSTEM_PROMPT`; this user turn carries
-    the extra context the re-plan needs: today's date, the optional asker
-    identity line (the same wording as :func:`build_planner_user_message`), the
-    original query, a compact rendering of the specs already tried, the titles
-    of the documents already found, the gap to close (the synthesiser's hint),
-    and an explicit instruction to produce *different* specs that target the gap.
+    the extra context the re-plan needs: the optional taxonomy block (prepended
+    ahead of the volatile date, as in :func:`build_planner_user_message`),
+    today's date, the optional asker identity line (same semantic-only wording —
+    never set the correspondent to the asker), the original query, a compact
+    rendering of the specs already tried, the titles of the documents already
+    found, the gap to close (the synthesiser's hint), and an explicit
+    instruction to produce *different* specs that target the gap.
 
     Args:
         query: The raw user search query.
@@ -392,16 +481,17 @@ def build_replan_user_message(
         prior_specs: The resolved specs already tried in the first pass.
         prior_findings: Titles of the documents already found (may be empty).
         asker: The sanitised asker identity, or None for anonymous queries.
+        taxonomy_block: The rendered taxonomy lists, or "" to omit them.
 
     Returns:
         The formatted re-plan user message string.
     """
     identity = (
         f"\nThe person asking is {asker}. Resolve first-person references "
-        "(my, mine, I, our) to this person where it sharpens the search — "
-        "rewrite a semantic query and/or set the correspondent filter candidate "
-        "to their name. Do not force the name where the documents would not "
-        "carry it.\n"
+        "(my, mine, I, our) to this person ONLY when rewriting the semantic "
+        "query text. NEVER set the correspondent filter to this person — the "
+        "archive owner is the recipient of their documents, never the "
+        "correspondent.\n"
         if asker
         else ""
     )
@@ -414,8 +504,9 @@ def build_replan_user_message(
         else "none"
     )
     findings_text = ", ".join(prior_findings) if prior_findings else "none"
+    prefix = f"{taxonomy_block}\n\n" if taxonomy_block else ""
     return (
-        f"Today's date is {today}.\n{identity}\n"
+        f"{prefix}Today's date is {today}.\n{identity}\n"
         f"User query: {query}\n\n"
         "This is a RE-PLAN. A first set of searches has already run and the "
         "answering step could not answer from the results.\n\n"
