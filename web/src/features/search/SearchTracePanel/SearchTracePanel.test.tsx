@@ -178,8 +178,12 @@ describe('SearchTracePanel', () => {
     // as a struck chip with a "no match" reason, not a flat trailing line.
     expect(text).toContain('Mystery Co');
     expect(text).toContain('no match');
-    expect(text).toContain('Gap: no Q4 figure');
-    expect(text).toContain('New search 1: "Q4 invoice total"');
+    // Refine body: short summary line + styled context lines + a styled query
+    // block (matching the planning phase), not the old flat "New search 1:" dump.
+    expect(text).toContain('1 search added');
+    expect(text).toContain('no Q4 figure');
+    expect(text).toContain('Q4 invoice total');
+    expect(text).not.toContain('New search 1');
   });
 
   it('opens a judged document preview via the threaded onPreview handler', async () => {

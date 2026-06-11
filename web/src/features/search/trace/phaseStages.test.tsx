@@ -320,14 +320,16 @@ describe('phaseDetailNode — resolve', () => {
 });
 
 describe('phaseDetailNode — refine', () => {
-  it('renders the gap, action, new searches, and carried-over count', () => {
+  it('renders the gap, action, new searches as styled blocks, and carried-over', () => {
     const record: PhaseRecord = {
       phase: 'refine',
       label: 'Refining',
       detail: {
         gap: 'no figure for Q4',
         action: 're-planned: 1 new searches',
-        new_specs: [{ mode: 'semantic', query: 'Q4 invoice total' }],
+        new_specs: [
+          { mode: 'semantic', query: 'Q4 invoice total', rationale: 'find the total' },
+        ],
         carried_over: 3,
         noop: false,
       },
@@ -336,10 +338,51 @@ describe('phaseDetailNode — refine', () => {
       ms: 1,
     };
     const text = detailText(record);
-    expect(text).toContain('Gap: no figure for Q4');
-    expect(text).toContain('Action: re-planned');
-    expect(text).toContain('New search 1: "Q4 invoice total"');
+    expect(text).toContain('Gap');
+    expect(text).toContain('no figure for Q4');
+    expect(text).toContain('Action');
+    expect(text).toContain('re-planned: 1 new searches');
+    // Styled query block, not the old "New search 1:" line.
+    expect(text).toContain('1st query');
+    expect(text).toContain('Semantic');
+    expect(text).toContain('Q4 invoice total');
+    expect(text).toContain('find the total');
+    expect(text).not.toContain('New search 1');
     expect(text).toContain('Carried over 3 documents');
+  });
+
+  it('renders resolved filter ids as chips on a new search', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'g',
+        action: 'a',
+        new_specs: [
+          {
+            mode: 'keyword',
+            query: 'payslip',
+            filters: {
+              correspondent_id: 7,
+              document_type_id: null,
+              tag_ids: [3],
+              date_from: null,
+              date_to: null,
+            },
+          },
+        ],
+        carried_over: 0,
+        noop: false,
+      },
+      tokens: null,
+      cost: null,
+      ms: 1,
+    };
+    const text = detailText(record);
+    expect(text).toContain('from');
+    expect(text).toContain('#7');
+    expect(text).toContain('tags');
+    expect(text).toContain('#3');
   });
 
   it('omits new searches on a no-op pass', () => {
@@ -359,19 +402,21 @@ describe('phaseDetailNode — refine', () => {
     };
     const text = detailText(record);
     expect(text).toContain('finalising on current evidence');
-    expect(text).not.toContain('New search');
+    expect(text).not.toContain('1st query');
     expect(text).toContain('Carried over 1 document');
   });
 });
 
 describe('phaseDetailNode — replan', () => {
-  it('renders the hint and the re-planned searches', () => {
+  it('renders the gap hint and the re-planned searches as styled blocks', () => {
     const record: PhaseRecord = {
       phase: 'replan',
       label: 'Re-planning',
       detail: {
         hint: 'need the 2023 figure too',
-        specs: [{ mode: 'hybrid', query: '2023 energy spend' }],
+        specs: [
+          { mode: 'keyword', query: '2023 energy spend', rationale: 'narrow to 2023' },
+        ],
         clarify: false,
       },
       tokens: { prompt: 50, completion: 5, reasoning: 0, total: 55 },
@@ -379,8 +424,12 @@ describe('phaseDetailNode — replan', () => {
       ms: 1,
     };
     const text = detailText(record);
-    expect(text).toContain('Hint: need the 2023 figure too');
+    expect(text).toContain('Gap');
+    expect(text).toContain('need the 2023 figure too');
+    expect(text).toContain('1st query');
+    expect(text).toContain('Keyword');
     expect(text).toContain('2023 energy spend');
+    expect(text).toContain('narrow to 2023');
   });
 
   it('notes when a re-plan asked to clarify', () => {
@@ -576,6 +625,71 @@ describe('phaseSummary', () => {
     expect(container.textContent).toContain('Kept 1');
     expect(container.textContent).toContain('dropped 1');
   });
+
+  it('replan: shows a short count summary, not the full hint dump', () => {
+    const record: PhaseRecord = {
+      phase: 'replan',
+      label: 'Re-planning',
+      detail: {
+        hint: 'a long winded hint about what is missing from the evidence base',
+        specs: [
+          { mode: 'keyword', query: 'a' },
+          { mode: 'semantic', query: 'b' },
+        ],
+        clarify: false,
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('2 searches re-planned');
+    expect(container.textContent).toContain('1 keyword');
+    expect(container.textContent).toContain('1 semantic');
+    // The hint and per-query lines must NOT appear in the streaming summary.
+    expect(container.textContent).not.toContain('long winded hint');
+  });
+
+  it('replan: clarify outcome shows a short note', () => {
+    const record: PhaseRecord = {
+      phase: 'replan',
+      label: 'Re-planning',
+      detail: { clarify: true },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toMatch(/clarify/i);
+  });
+
+  it('refine: shows new-search count and carried-over, not the full dump', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'a detailed gap description that should stay out of the summary',
+        action: 're-planned: 1 new searches',
+        new_specs: [{ mode: 'semantic', query: 'x' }],
+        carried_over: 3,
+        noop: false,
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('1 search added');
+    expect(container.textContent).toContain('3 documents carried over');
+    expect(container.textContent).not.toContain('detailed gap description');
+  });
+
+  it('refine: no-op pass shows a short finalising note', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'g', action: 'a', new_specs: [], carried_over: 1, noop: true,
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('No new searches');
+  });
 });
 
 describe('phaseToStages summary/body split', () => {
@@ -622,6 +736,46 @@ describe('phaseToStages summary/body split', () => {
     expect(text).toContain('deed Spain');
     expect(text).toContain('house ownership document');
     expect(text).toContain('exact terms for deed papers');
+  });
+
+  it('replan: stage has a short summary and a separate styled body', () => {
+    const record: PhaseRecord = {
+      phase: 'replan',
+      label: 'Re-planning',
+      detail: {
+        hint: 'missing the 2024 total',
+        specs: [{ mode: 'keyword', query: '2024 total', rationale: 'why' }],
+        clarify: false,
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const stage = phaseToStages([record], null)[0]!;
+    const { container: sc } = render(<>{stage.summary}</>);
+    expect(sc.textContent).toContain('1 search re-planned');
+    expect(stage.body).toBeTruthy();
+    const { container: bc } = render(<>{stage.body}</>);
+    expect(bc.textContent).toContain('1st query');
+    expect(bc.textContent).toContain('2024 total');
+  });
+
+  it('refine: stage has a short summary and a separate styled body', () => {
+    const record: PhaseRecord = {
+      phase: 'refine',
+      label: 'Refining',
+      detail: {
+        gap: 'g', action: 're-planned: 1 new searches',
+        new_specs: [{ mode: 'semantic', query: 'follow up', rationale: 'why' }],
+        carried_over: 2, noop: false,
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const stage = phaseToStages([record], null)[0]!;
+    const { container: sc } = render(<>{stage.summary}</>);
+    expect(sc.textContent).toContain('1 search added');
+    expect(stage.body).toBeTruthy();
+    const { container: bc } = render(<>{stage.body}</>);
+    expect(bc.textContent).toContain('1st query');
+    expect(bc.textContent).toContain('follow up');
   });
 
   it('resolve: body shows ordinal label and "No filters proposed" for specs with no filters', () => {

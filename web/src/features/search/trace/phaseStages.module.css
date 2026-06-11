@@ -187,6 +187,22 @@
   color: var(--colour-text-tertiary);
 }
 
+/* Context line above a re-plan / refine query list — the gap hint, the action
+ * taken, or the carried-over count. Matches the query-text scale; an optional
+ * leading key ("Gap", "Action") is dimmed like a filter-chip label. */
+.qhint {
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+}
+
+.qhint + .qhint {
+  margin-top: var(--spacing-3);
+}
+
+.qhint-key {
+  color: var(--colour-text-tertiary);
+}
+
 /* ── Resolving redesign — per-query status chips ──
  * Mirrors the planning step: one block per query, each filter shown as a chip
  * annotated with its fate (kept / loosened / dropped + why). */
