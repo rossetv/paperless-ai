@@ -89,31 +89,83 @@ def _normalise(text: str) -> str:
     return text
 
 
+@dataclass(frozen=True, slots=True)
+class NameMatch:
+    """Outcome of resolving one planner name guess against a taxonomy.
+
+    ``id`` is the resolved taxonomy id, or None when nothing was applied.
+    ``method`` records HOW it resolved so the trace can explain it: ``"exact"``,
+    ``"normalised"``, ``"loose"`` (whole-word containment), ``"none"`` (no match),
+    or ``"ambiguous"`` (more than one loose candidate — dropped, never guessed).
+    ``candidates`` carries the competing names only when ``method == "ambiguous"``.
+    """
+
+    id: int | None
+    method: str
+    candidates: tuple[str, ...] = ()
+
+
+def _tokenise(text: str) -> frozenset[str]:
+    """Split *text* into a set of normalised whole-word tokens.
+
+    NFKC + lower-case, then split on any run of non-alphanumerics; empty tokens
+    are dropped. ``"Property Deed"`` -> ``{"property", "deed"}``. Used by the
+    loose-matching pass so "Deed" matches "Property Deed" but "ID" does not match
+    "Video" (no whole token "id").
+    """
+    folded = unicodedata.normalize("NFKC", text).lower()
+    return frozenset(tok for tok in re.split(r"[^a-z0-9]+", folded) if tok)
+
+
 def _match_name(
     candidate: str,
     entries: Sequence[TaxonomyEntry],
-) -> int | None:
-    """Resolve *candidate* against *entries*, returning the matched id or None.
+) -> NameMatch:
+    """Resolve *candidate* against *entries* (spec §B1).
 
     Resolution order:
     1. Exact string match on ``entry.name``.
-    2. Normalised match via ``_normalise`` applied to both sides.
+    2. Case- and punctuation-normalised match via ``_normalise``.
+    3. Whole-word containment: one token set a (non-empty) subset of the other,
+       in either direction. A unique loose hit resolves; multiple loose hits are
+       ambiguous and dropped (the candidates are reported); none is a plain
+       no-match.
 
-    If neither pass matches, returns ``None`` — the candidate is dropped, never
-    guessed at a wrong id (spec §6.1).
+    The resolved id is never a guess — an ambiguous or unmatched candidate yields
+    ``id=None`` (spec §6.1).
     """
     # Pass 1: exact match.
     for entry in entries:
         if entry.name == candidate:
-            return entry.id
+            return NameMatch(id=entry.id, method="exact")
 
     # Pass 2: case- and punctuation-normalised match.
     normalised_candidate = _normalise(candidate)
     for entry in entries:
         if _normalise(entry.name) == normalised_candidate:
-            return entry.id
+            return NameMatch(id=entry.id, method="normalised")
 
-    return None
+    # Pass 3: whole-word containment (bidirectional token subset).
+    candidate_tokens = _tokenise(candidate)
+    if candidate_tokens:
+        loose = [
+            entry
+            for entry in entries
+            if (entry_tokens := _tokenise(entry.name))
+            and (
+                candidate_tokens <= entry_tokens or entry_tokens <= candidate_tokens
+            )
+        ]
+        if len(loose) == 1:
+            return NameMatch(id=loose[0].id, method="loose")
+        if len(loose) > 1:
+            return NameMatch(
+                id=None,
+                method="ambiguous",
+                candidates=tuple(entry.name for entry in loose),
+            )
+
+    return NameMatch(id=None, method="none")
 
 
 # ---------------------------------------------------------------------------
@@ -370,19 +422,19 @@ def _resolve_one_spec(
     guess = spec.filter_guess
 
     correspondent_id = (
-        _match_name(guess.correspondent, facets.correspondents)
+        _match_name(guess.correspondent, facets.correspondents).id
         if guess.correspondent is not None
         else None
     )
     document_type_id = (
-        _match_name(guess.document_type, facets.document_types)
+        _match_name(guess.document_type, facets.document_types).id
         if guess.document_type is not None
         else None
     )
     tag_ids = tuple(
-        tag_id
+        match.id
         for tag_candidate in guess.tags
-        if (tag_id := _match_name(tag_candidate, facets.tags)) is not None
+        if (match := _match_name(tag_candidate, facets.tags)).id is not None
     )
     date_from, date_to = _resolve_dates(guess, today)
 
