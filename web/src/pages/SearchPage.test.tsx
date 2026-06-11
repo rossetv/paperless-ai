@@ -57,11 +57,19 @@ vi.mock('../features/search/ResultsScreen/ResultsScreen', () => ({
     ),
 }));
 vi.mock('../features/search/NoResultsScreen/NoResultsScreen', () => ({
-  NoResultsScreen: ({ onSearch }: { onSearch: (q: string) => void }) =>
+  NoResultsScreen: ({
+    onSearch,
+    result,
+  }: {
+    onSearch: (q: string) => void;
+    result: { outcome_kind: string; answer: string };
+  }) =>
     React.createElement(
       'button',
       {
         'data-testid': 'no-results',
+        'data-outcome-kind': result.outcome_kind,
+        'data-answer': result.answer,
         onClick: () => onSearch('octopus tariff'),
       },
       'no-results',
@@ -247,16 +255,59 @@ describe('SearchPage', () => {
     expect(screen.queryByTestId('results')).not.toBeInTheDocument();
   });
 
-  it('renders the NoResultsScreen when a done search has zero sources', async () => {
+  it('renders the ResultsScreen (not NoResultsScreen) for an answered result with sources', async () => {
+    // outcome_kind 'answered' → ResultsScreen regardless of sources count.
     mockUseStreamingSearch.mockReturnValue(
-      streamState({
-        status: 'done',
-        result: { ...SUCCESS_DATA, sources: [] },
-      }),
+      streamState({ status: 'done', result: SUCCESS_DATA }),
     );
     renderPage();
     await userEvent.click(screen.getByTestId('idle'));
-    expect(screen.getByTestId('no-results')).toBeInTheDocument();
+    expect(screen.getByTestId('results')).toBeInTheDocument();
+    expect(screen.queryByTestId('no-results')).not.toBeInTheDocument();
+  });
+
+  it('renders the NoResultsScreen on a no_match result', async () => {
+    const NO_MATCH_DATA = {
+      ...SUCCESS_DATA,
+      sources: [],
+      outcome_kind: 'no_match',
+      answer: "Nothing matched your query.",
+      no_match_reason: 'empty_retrieval',
+      candidate_count: null,
+    };
+    mockUseStreamingSearch.mockReturnValue(
+      streamState({ status: 'done', result: NO_MATCH_DATA }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    const noResults = screen.getByTestId('no-results');
+    expect(noResults).toBeInTheDocument();
+    expect(noResults).toHaveAttribute('data-outcome-kind', 'no_match');
+  });
+
+  it('renders the NoResultsScreen on a clarify result showing the clarify text', async () => {
+    const CLARIFY_DATA = {
+      ...SUCCESS_DATA,
+      sources: [],
+      outcome_kind: 'clarify',
+      answer: 'Could you be more specific about the date range?',
+      no_match_reason: null,
+      candidate_count: null,
+    };
+    mockUseStreamingSearch.mockReturnValue(
+      streamState({ status: 'done', result: CLARIFY_DATA }),
+    );
+    renderPage();
+    await userEvent.click(screen.getByTestId('idle'));
+    const noResults = screen.getByTestId('no-results');
+    expect(noResults).toBeInTheDocument();
+    expect(noResults).toHaveAttribute('data-outcome-kind', 'clarify');
+    expect(noResults).toHaveAttribute(
+      'data-answer',
+      'Could you be more specific about the date range?',
+    );
+    // Must not accidentally show ResultsScreen.
+    expect(screen.queryByTestId('results')).not.toBeInTheDocument();
   });
 
   it('renders the IndexNotReadyScreen on a 503 stream error', async () => {

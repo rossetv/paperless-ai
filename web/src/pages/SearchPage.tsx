@@ -11,8 +11,8 @@
  *   - search error, 503              → IndexNotReadyScreen
  *   - search error, 401              → invalidate `me`; ProtectedRoute → login
  *   - search error, other            → SearchErrorScreen (+ partial trace)
- *   - done, zero sources             → NoResultsScreen
- *   - done, sources                  → ResultsScreen (+ SearchTracePanel)
+ *   - done, outcome `clarify`/`no_match` → NoResultsScreen (reason-aware + trace)
+ *   - done, outcome `answered`          → ResultsScreen (+ SearchTracePanel)
  *
  * The search runs over `POST /api/search/stream` (NDJSON): the planner rewrite,
  * vector-gate drops, per-document judge verdicts, synthesis and refinement are
@@ -157,18 +157,21 @@ export function SearchPage(): React.ReactElement {
       );
     }
 
-    // Done — render results (or a no-results nudge), plus the trace panel.
+    // Done — route on outcome_kind: answered → ResultsScreen; everything else
+    // (clarify | no_match) → NoResultsScreen (reason-aware + trace).
     if (stateIsCurrent && state.status === 'done' && state.result !== null) {
       const result = state.result;
-      if (result.sources.length === 0) {
+      if (result.outcome_kind !== 'answered') {
         return (
           <NoResultsScreen
+            result={result}
             query={query}
             filters={filters}
             onFiltersChange={setFilters}
             onSearch={runSearch}
             onClearFilters={clearFilters}
             onSearchWithoutFilters={clearFilters}
+            onPreview={openPreview}
           />
         );
       }
