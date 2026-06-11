@@ -603,6 +603,38 @@ describe('phaseToStages summary/body split', () => {
     expect(container.textContent).toContain('0.74');
   });
 
+  it('retrieve: the chunk popover carries the full text, not the truncated snippet', () => {
+    const record = makeRetrieveRecord([
+      {
+        chunk_id: 1,
+        document_id: 1,
+        title: 'Deed',
+        snippet: 'truncated preview…',
+        text: 'the full untruncated chunk passage that the popover must reveal',
+        vector_similarity: 0.7,
+      },
+    ]);
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    const snip = container.querySelector('[data-full]');
+    expect(snip?.getAttribute('data-full')).toBe(
+      'the full untruncated chunk passage that the popover must reveal',
+    );
+    // Inline row still shows the short snippet.
+    expect(snip?.textContent).toBe('truncated preview…');
+  });
+
+  it('retrieve: popover falls back to the snippet when an old payload omits text', () => {
+    const record = makeRetrieveRecord([
+      { chunk_id: 1, document_id: 1, title: 'Deed', snippet: 'only a snippet', vector_similarity: 0.7 },
+    ]);
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.querySelector('[data-full]')?.getAttribute('data-full')).toBe(
+      'only a snippet',
+    );
+  });
+
   it('gate: body lists documents with title and similarity bar', () => {
     const record = makeGateRecord([
       { document_id: 1, title: 'Property Deed Folio', best_similarity: 0.64 },

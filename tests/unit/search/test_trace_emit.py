@@ -352,10 +352,25 @@ class TestTraceChunks:
             "document_id",
             "title",
             "snippet",
+            "text",
             "vector_similarity",
         }
         assert result[0]["chunk_id"] == 7
         assert result[0]["document_id"] == 3
+
+    def test_text_is_full_untruncated_chunk(self) -> None:
+        # The popover shows the whole chunk, so `text` is the full (whitespace-
+        # collapsed) passage — NOT capped at 160 chars like `snippet`.
+        long_text = "word " * 60  # 300 chars, well over the snippet cap
+        chunks = [
+            make_retrieved_chunk(
+                chunk_id=1, document_id=1, text=long_text, vector_similarity=0.5
+            )
+        ]
+        result = _trace_chunks(chunks, {})
+        assert result[0]["text"] == ("word " * 59) + "word"  # collapsed, untruncated
+        assert len(str(result[0]["text"])) > 160
+        assert str(result[0]["snippet"]).endswith("…")  # snippet still truncates
 
     def test_all_chunks_emitted(self) -> None:
         chunks = [
