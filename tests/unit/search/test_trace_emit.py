@@ -88,7 +88,7 @@ def _spec(
 
 class TestResolvePhaseEmitResolved:
     def test_resolved_emits_id_name_method_for_loose_match(self) -> None:
-        """A "Deed" guess that loosely matches "Property Deed" → method "loose"."""
+        """A reordered guess with the same word set as "Property Deed" → "loose"."""
         facets = make_facet_set(
             document_types=(
                 make_taxonomy_entry(
@@ -96,7 +96,7 @@ class TestResolvePhaseEmitResolved:
                 ),
             )
         )
-        plan = RetrievalPlan(specs=(_planned_spec(document_type="Deed"),))
+        plan = RetrievalPlan(specs=(_planned_spec(document_type="Deed Property"),))
         specs = (_spec(document_type_id=42),)
 
         tele, records = _tele()
@@ -211,8 +211,8 @@ class TestResolvePhaseEmitDropped:
             "candidates": [],
         }
 
-    def test_dropped_ambiguous(self) -> None:
-        """A guess that loosely matches multiple entries → dropped with reason "ambiguous"."""
+    def test_dropped_near_miss(self) -> None:
+        """A guess sharing words with entries but equal to none → "near_miss"."""
         facets = make_facet_set(
             document_types=(
                 make_taxonomy_entry(
@@ -224,7 +224,7 @@ class TestResolvePhaseEmitDropped:
             )
         )
         plan = RetrievalPlan(specs=(_planned_spec(document_type="Deed"),))
-        specs = (_spec(),)  # ambiguous → no id applied
+        specs = (_spec(),)  # near_miss → no id applied
 
         tele, records = _tele()
         SearchCore._emit_resolve_phase(plan, specs, facets, tele)
@@ -233,8 +233,38 @@ class TestResolvePhaseEmitDropped:
         assert len(dropped) == 1
         entry = dropped[0]
         assert entry["name"] == "Deed"
-        assert entry["reason"] == "ambiguous"
+        assert entry["reason"] == "near_miss"
         assert set(entry["candidates"]) == {"Property Deed", "Trust Deed"}
+
+    def test_dropped_ambiguous(self) -> None:
+        """A guess equal to two word-identical entries → dropped as "ambiguous"."""
+        facets = make_facet_set(
+            document_types=(
+                make_taxonomy_entry(
+                    kind="document_type", entry_id=1, name="Employment Contract"
+                ),
+                make_taxonomy_entry(
+                    kind="document_type", entry_id=2, name="Contract of Employment"
+                ),
+            )
+        )
+        plan = RetrievalPlan(
+            specs=(_planned_spec(document_type="Contract Employment"),)
+        )
+        specs = (_spec(),)  # ambiguous → no id applied
+
+        tele, records = _tele()
+        SearchCore._emit_resolve_phase(plan, specs, facets, tele)
+
+        dropped = _record(records, "resolve").detail["dropped"]
+        assert len(dropped) == 1
+        entry = dropped[0]
+        assert entry["name"] == "Contract Employment"
+        assert entry["reason"] == "ambiguous"
+        assert set(entry["candidates"]) == {
+            "Employment Contract",
+            "Contract of Employment",
+        }
 
     def test_dropped_tag_no_match(self) -> None:
         """A tag guess that matches nothing → one dropped entry per unmatched tag."""

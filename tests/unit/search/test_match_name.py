@@ -1,9 +1,11 @@
 """Tests for search.retriever._match_name — taxonomy name resolution (spec §B1).
 
-Verifies the three-pass resolution: exact, punctuation/case-normalised, then
-whole-word containment, plus the ambiguous-drop and no-match outcomes. Whole-word
-matching is what lets "Deed" resolve to "Property Deed" while refusing to match
-"ID" to "Video" (no whole token "id").
+Verifies the resolution passes: exact, punctuation/case-normalised, then
+content-word-set equality (order- and connective-independent). A loose match
+resolves only when an entry has EXACTLY the candidate's meaningful words — never
+broader, never more specific. Guesses that overlap real names but are not equal
+are reported as near-misses (diagnostic only, never applied); genuinely
+word-identical duplicate types are ambiguous.
 """
 
 from __future__ import annotations
@@ -30,29 +32,86 @@ def test_normalised_match_on_punctuation_and_case() -> None:
     assert match.method == "normalised"
 
 
-def test_loose_match_whole_word_subset() -> None:
-    match = _match_name("Deed", _entries("Property Deed"))
+def test_word_set_equality_resolves_ignoring_order_and_stopwords() -> None:
+    # The reported bug: "Employment Contract" must resolve to "Contract of
+    # Employment" (same words, reordered, connective "of" ignored) and NOT to
+    # the broader "Contract".
+    match = _match_name(
+        "Employment Contract", _entries("Contract", "Contract of Employment")
+    )
+    assert match == NameMatch(id=2, method="loose")
+
+
+def test_word_set_equality_is_symmetric_across_stopwords() -> None:
+    # The reverse phrasing resolves too — here the candidate carries the
+    # connective and the taxonomy name omits it.
+    match = _match_name("Contract of Employment", _entries("Employment Contract"))
     assert match.id == 1
     assert match.method == "loose"
 
 
-def test_loose_match_is_bidirectional() -> None:
-    # A verbose planner guess still matches the shorter taxonomy name.
-    match = _match_name("Spanish Property Deed", _entries("Property Deed"))
-    assert match.id == 1
-    assert match.method == "loose"
+def test_broader_index_type_does_not_resolve() -> None:
+    # "Contract" drops "employment": a filter broader than asked is refused and
+    # surfaced as a near-miss, never applied.
+    match = _match_name("Employment Contract", _entries("Contract"))
+    assert match.id is None
+    assert match.method == "near_miss"
+    assert match.candidates == ("Contract",)
 
 
-def test_loose_match_rejects_partial_token() -> None:
-    # "id" is not a whole token in "Video"; raw substring would wrongly match.
-    assert _match_name("ID", _entries("Video")) == NameMatch(id=None, method="none")
+def test_more_specific_index_type_does_not_resolve() -> None:
+    # An addendum is a different document — a more specific type is refused.
+    match = _match_name("Employment Contract", _entries("Employment Contract Addendum"))
+    assert match.id is None
+    assert match.method == "near_miss"
+    assert match.candidates == ("Employment Contract Addendum",)
 
 
-def test_ambiguous_loose_match_drops_with_candidates() -> None:
-    match = _match_name("Deed", _entries("Property Deed", "Trust Deed"))
+def test_near_miss_candidates_rank_by_shared_word_count() -> None:
+    match = _match_name(
+        "Annual Tax Return",
+        _entries("Tax Return Schedule", "Tax Notice", "Council Letter"),
+    )
+    assert match.method == "near_miss"
+    # "Tax Return Schedule" shares 2 words, "Tax Notice" shares 1, "Council
+    # Letter" shares none — ranked by overlap, the zero-overlap entry excluded.
+    assert match.candidates == ("Tax Return Schedule", "Tax Notice")
+
+
+def test_near_miss_caps_candidates_at_five() -> None:
+    entries = _entries("Tax A", "Tax B", "Tax C", "Tax D", "Tax E", "Tax F", "Tax G")
+    match = _match_name("Tax Return", entries)
+    assert match.method == "near_miss"
+    assert len(match.candidates) == 5
+
+
+def test_word_identical_types_are_ambiguous() -> None:
+    # Two taxonomy names with the same word set and neither an exact/normalised
+    # string match of the guess — genuinely ambiguous, dropped with candidates.
+    match = _match_name(
+        "Contract Employment",
+        _entries("Employment Contract", "Contract of Employment"),
+    )
     assert match.id is None
     assert match.method == "ambiguous"
-    assert set(match.candidates) == {"Property Deed", "Trust Deed"}
+    assert set(match.candidates) == {"Employment Contract", "Contract of Employment"}
+
+
+def test_stopword_only_candidate_matches_nothing() -> None:
+    # A guess that is only connectives has no content tokens and must not match
+    # every entry by virtue of an empty set.
+    match = _match_name("the", _entries("The Deed", "The Contract"))
+    assert match == NameMatch(id=None, method="none")
+
+
+def test_zero_word_overlap_is_plain_no_match() -> None:
+    match = _match_name("Invoice", _entries("Receipt", "Statement"))
+    assert match == NameMatch(id=None, method="none")
+
+
+def test_rejects_partial_token() -> None:
+    # "id" is not a whole token in "Video"; raw substring would wrongly match.
+    assert _match_name("ID", _entries("Video")) == NameMatch(id=None, method="none")
 
 
 def test_no_match_on_empty_taxonomy() -> None:
