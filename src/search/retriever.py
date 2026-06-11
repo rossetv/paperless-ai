@@ -35,7 +35,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import structlog
@@ -338,6 +338,7 @@ def resolve_specs(
     ui_filters: SearchFilters | None,
     today: date,
     query: str = "",
+    max_specs: int | None = None,
 ) -> tuple[RetrievalSpec, ...]:
     """Resolve every planned spec's free-text guesses into ready-for-store specs.
 
@@ -385,10 +386,17 @@ def resolve_specs(
             net.  Defaults to ``""`` (safety net disabled) so callers that do
             not need the safety net — such as the broadened retrieval pass,
             which deliberately drops all date filters — can omit it.
+        max_specs: When set, enables the unfiltered recall-twin pass after the
+            safety net: every resolved spec that carries a filter gains a
+            filter-stripped twin (deduped on retrieval identity, total capped at
+            ``max_specs`` — only twins are dropped at the cap, never originals).
+            ``None`` (the default) disables twinning, so the broadened pass —
+            which already drops all filters — is unaffected.
 
     Returns:
         One :class:`~search.models.RetrievalSpec` per planned spec, in order,
-        plus an optional extra safety-net spec when the conditions above hold.
+        plus an optional safety-net spec and, when ``max_specs`` is set, the
+        deduped unfiltered twins.
     """
     resolved: list[RetrievalSpec] = []
     for spec in plan.specs:
@@ -403,6 +411,9 @@ def resolve_specs(
                 _make_safety_net_spec(resolved, date_from, date_to, ui_filters)
             )
 
+    if max_specs is not None:
+        resolved = _append_unfiltered_twins(resolved, max_specs)
+
     return tuple(resolved)
 
 
@@ -412,6 +423,64 @@ def _any_has_date(specs: list[RetrievalSpec]) -> bool:
         spec.filters.date_from is not None or spec.filters.date_to is not None
         for spec in specs
     )
+
+
+_EMPTY_FILTERS = SearchFilters(
+    date_from=None,
+    date_to=None,
+    correspondent_id=None,
+    document_type_id=None,
+    tag_ids=(),
+)
+
+
+def _has_filter(f: SearchFilters) -> bool:
+    """True when the spec carries any resolved filter (so a twin would differ)."""
+    return (
+        f.correspondent_id is not None
+        or f.document_type_id is not None
+        or bool(f.tag_ids)
+        or f.date_from is not None
+        or f.date_to is not None
+    )
+
+
+def _retrieval_key(spec: RetrievalSpec) -> tuple[object, ...]:
+    """Identity that affects retrieval — excludes rationale so twins dedup on it."""
+    return (spec.mode, spec.semantic, spec.keywords, spec.filters)
+
+
+def _append_unfiltered_twins(
+    resolved: list[RetrievalSpec], max_specs: int
+) -> list[RetrievalSpec]:
+    """Append a filter-stripped twin of each filtered spec (deduped, capped).
+
+    Recall insurance: a wrong filter silently *excludes* the answer, and the
+    tightest spec is the most filtered.  Each filtered spec gains a twin with the
+    same query but no filters, so whatever a filter excluded is still retrieved;
+    if the filter was right, RRF fusion rewards the document found by both the
+    filtered spec and its twin.  The twin is the *same query* with filters off,
+    so it cannot drift off-topic — it only re-admits what a filter removed.
+
+    Dedup is on retrieval identity (mode, query, keywords, filters), so a twin
+    identical to an existing unfiltered spec is dropped, and rationale text never
+    blocks a dedup.  Originals always survive the cap; only twins are dropped
+    when ``max_specs`` is reached.
+    """
+    out = list(resolved)
+    seen = {_retrieval_key(spec) for spec in resolved}
+    for spec in resolved:
+        if len(out) >= max_specs:
+            break
+        if not _has_filter(spec.filters):
+            continue
+        twin = replace(spec, filters=_EMPTY_FILTERS)
+        key = _retrieval_key(twin)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(twin)
+    return out
 
 
 def _make_safety_net_spec(

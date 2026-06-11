@@ -44,6 +44,17 @@ def _clarify_json(reason: str = "Query is too vague.") -> str:
     return _json.dumps({"specs": [], "clarify": {"reason": reason}})
 
 
+def test_plan_forwards_taxonomy_block_into_the_user_message() -> None:
+    """The taxonomy block reaches the planner LLM call's user message."""
+    planner = build_planner(make_search_settings(), planner_response_json())
+
+    planner.plan("how much tax did I pay", taxonomy_block="TAXBLOCK-MARKER")
+
+    messages = planner._create_completion.call_args.kwargs["messages"]
+    user = next(m["content"] for m in messages if m["role"] == "user")
+    assert "TAXBLOCK-MARKER" in user
+
+
 def _assert_is_fallback_plan(plan: RetrievalPlan, raw_query: str) -> None:
     """Assert *plan* is the minimal safe fallback for *raw_query*."""
     assert isinstance(plan, RetrievalPlan)

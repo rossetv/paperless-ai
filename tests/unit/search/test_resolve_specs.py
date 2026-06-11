@@ -445,3 +445,85 @@ class TestDateSafetyNet:
         # Safety net is the last one.
         assert resolved[2].filters.date_from == "2025-04-01"
         assert resolved[2].filters.date_to == "2025-04-30"
+
+
+# ---------------------------------------------------------------------------
+# Unfiltered recall twins (max_specs)
+# ---------------------------------------------------------------------------
+
+
+def _empty_filters(filters: object) -> bool:
+    return (
+        filters.correspondent_id is None
+        and filters.document_type_id is None
+        and not filters.tag_ids
+        and filters.date_from is None
+        and filters.date_to is None
+    )
+
+
+def test_filtered_spec_gets_unfiltered_twin() -> None:
+    """A spec with a resolved filter gains a filter-stripped twin (same query)."""
+    plan = RetrievalPlan(specs=(_semantic_spec(correspondent="eBay"),))
+
+    specs = resolve_specs(
+        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
+    )
+
+    assert len(specs) == 2
+    assert specs[0].filters.correspondent_id == 132  # original keeps its filter
+    assert _empty_filters(specs[1].filters)  # twin has none
+    assert specs[1].semantic == specs[0].semantic  # same query
+    assert specs[1].mode == specs[0].mode
+
+
+def test_unfiltered_spec_gets_no_twin() -> None:
+    """A spec that resolved to no filters needs no twin."""
+    plan = RetrievalPlan(specs=(_semantic_spec(),))
+
+    specs = resolve_specs(
+        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
+    )
+
+    assert len(specs) == 1
+
+
+def test_twin_deduped_against_existing_unfiltered_spec() -> None:
+    """A twin identical to an already-present unfiltered spec is dropped."""
+    filtered = _semantic_spec(correspondent="eBay", semantic="same")
+    plain = _semantic_spec(semantic="same")
+    plan = RetrievalPlan(specs=(filtered, plain))
+
+    specs = resolve_specs(
+        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
+    )
+
+    # filtered + plain only; the twin equals `plain` and is deduped away.
+    assert len(specs) == 2
+
+
+def test_twins_respect_max_specs_dropping_twins_not_originals() -> None:
+    """At the cap, twins are dropped from the tail; originals always survive."""
+    plan = RetrievalPlan(
+        specs=(
+            _semantic_spec(correspondent="eBay", semantic="a"),
+            _semantic_spec(document_type="Payslip", semantic="b"),
+        )
+    )
+
+    specs = resolve_specs(
+        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=3
+    )
+
+    assert len(specs) == 3  # 2 originals + 1 twin (capped)
+    assert specs[0].filters.correspondent_id == 132
+    assert specs[1].filters.document_type_id == 155
+
+
+def test_max_specs_none_means_no_twins() -> None:
+    """The default (max_specs=None) disables twinning — the broadened pass case."""
+    plan = RetrievalPlan(specs=(_semantic_spec(correspondent="eBay"),))
+
+    specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY)
+
+    assert len(specs) == 1
