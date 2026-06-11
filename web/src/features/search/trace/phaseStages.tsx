@@ -717,6 +717,9 @@ function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
       {chunks.map((chunk, i) => {
         const title = fieldStr(chunk, 'title') ?? `Document ${fieldNum(chunk, 'document_id') ?? '?'}`;
         const snippet = fieldStr(chunk, 'snippet') ?? '';
+        // The popover reveals the full chunk text; fall back to the snippet for
+        // an older payload that did not carry the untruncated `text`.
+        const fullText = fieldStr(chunk, 'text') ?? snippet;
         const sim = fieldNum(chunk, 'vector_similarity');
         const scoreText = sim !== null ? sim.toFixed(2) : '';
         return (
@@ -735,7 +738,7 @@ function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
                   tabIndex={0}
                   data-title={title}
                   data-score={scoreText}
-                  data-full={snippet}
+                  data-full={fullText}
                 >
                   {snippet}
                 </span>

@@ -1758,10 +1758,12 @@ def _trace_chunks(
 ) -> list[dict[str, object]]:
     """Serialise *chunks* for the retrieve-phase trace detail.
 
-    Every chunk is emitted as ``{chunk_id, document_id, title, snippet,
+    Every chunk is emitted as ``{chunk_id, document_id, title, snippet, text,
     vector_similarity}``, sorted by ``vector_similarity`` descending (``None``
-    last).  Title falls back to ``"Document <id>"`` when the document is not in
-    the look-up (deleted between retrieval and emit).
+    last).  ``snippet`` is the 160-char inline preview; ``text`` is the full
+    untruncated chunk for the SPA's hover/focus popover.  Title falls back to
+    ``"Document <id>"`` when the document is not in the look-up (deleted between
+    retrieval and emit).
     """
 
     def _sort_key(c: RetrievedChunk) -> tuple[int, float]:
@@ -1779,6 +1781,10 @@ def _trace_chunks(
             "title": _title_for(documents_by_id, c.document_id)
             or f"Document {c.document_id}",
             "snippet": _trace_snippet(c.text),
+            # The full (whitespace-collapsed) chunk text, untruncated — the SPA
+            # clamps the inline row to one line but reveals THIS in the hover/focus
+            # popover, so the user reads the whole retrieved passage.
+            "text": " ".join(c.text.split()),
             "vector_similarity": c.vector_similarity,
         }
         for c in sorted_chunks
