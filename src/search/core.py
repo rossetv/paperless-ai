@@ -89,7 +89,7 @@ from search.refinement import (
     merge_chunks,
     trivial_plan,
 )
-from search.retriever import resolve_specs
+from search.retriever import _match_name, resolve_specs
 from search.relevance import RelevanceThresholds
 from search.sources import _paperless_url, _snippet, assemble_sources
 from search.text import (
@@ -188,15 +188,17 @@ class _RetrievalPhaseResult:
     Carries the retrieved chunks and signal alongside the resolved pass-1 specs
     and the facets used to resolve them, so the refinement pass can re-plan
     against the same taxonomy and run its no-op guard (does the re-plan resolve
-    to the same specs?) without a second ``list_facets`` round-trip. A small
-    frozen carrier beats a 4-tuple the caller would have to unpack positionally
-    (CODE_GUIDELINES §5.8).
+    to the same specs?) without a second ``list_facets`` round-trip.  The
+    ``documents_by_id`` map is built once here and shared with the gate phase
+    so the title look-up is never duplicated.  A small frozen carrier beats a
+    5-tuple the caller would have to unpack positionally (CODE_GUIDELINES §5.8).
     """
 
     chunks: list[RetrievedChunk]
     signal: RetrievalSignal
     specs: tuple[RetrievalSpec, ...]
     facets: FacetSet
+    documents_by_id: dict[int, IndexedDocument]
 
 
 class SearchCore:
@@ -416,7 +418,7 @@ class SearchCore:
 
         # --- Layer 2: relevance gate (spec §7.2) ---
         if self._settings.SEARCH_GATE_RELEVANCE and self._gate_rejects(
-            signal, chunks, tele
+            signal, chunks, tele, retrieved.documents_by_id
         ):
             log.info(
                 "search.synth_skipped_no_relevance",
@@ -699,41 +701,57 @@ class SearchCore:
         specs = resolve_specs(
             plan, facets, ui_filters=ui_filters, today=today, query=query
         )
-        self._emit_resolve_phase(plan, specs, tele)
+        self._emit_resolve_phase(plan, specs, facets, tele)
 
         tele.start("retrieve", "Retrieving documents")
         started = time.monotonic()
         chunks, signal, broadened = self._retrieve_with_broaden(
             plan, specs, ui_filters, facets, today
         )
+        doc_ids = {c.document_id for c in chunks}
+        documents_by_id = {
+            doc.id: doc
+            for doc in self._store_reader.get_documents(doc_ids)
+        }
         tele.done(
             "retrieve",
             "Retrieving documents",
             {
                 "chunk_count": len(chunks),
-                "doc_count": len({c.document_id for c in chunks}),
+                "doc_count": len(doc_ids),
                 "broadened": broadened,
+                "chunks": _trace_chunks(chunks, documents_by_id),
             },
             usage_sink=[],
             started=started,
         )
         return _RetrievalPhaseResult(
-            chunks=chunks, signal=signal, specs=specs, facets=facets
+            chunks=chunks,
+            signal=signal,
+            specs=specs,
+            facets=facets,
+            documents_by_id=documents_by_id,
         )
 
     @staticmethod
     def _emit_resolve_phase(
         plan: RetrievalPlan,
         specs: tuple[RetrievalSpec, ...],
+        facets: FacetSet,
         tele: _Telemetry,
     ) -> None:
-        """Emit the non-LLM ``resolve`` phase: resolved ids/dates + dropped guesses.
+        """Emit the non-LLM ``resolve`` phase: resolved filter names/methods + drop reasons.
 
-        ``resolved`` lists each spec's taxonomy ids and ISO date bounds after
-        resolution; ``dropped`` lists the name guesses that were present in the
-        plan but did not resolve to a real id (correspondent / document type /
-        each tag).  Both are JSON-serialisable primitives the SPA renders as the
-        "Resolving filters" step.
+        ``resolved`` lists each spec's per-field ``{id, name, method}`` objects
+        and ISO date bounds after resolution.  ``dropped`` lists each name guess
+        that did not resolve (``method`` is ``"none"`` or ``"ambiguous"``), with
+        the drop reason and, for the ambiguous case, the competing candidate names.
+        Both are JSON-serialisable primitives the SPA renders as the "Resolving
+        filters" step.
+
+        The ``method`` values are recomputed here via :func:`~search.retriever._match_name`
+        against the live *facets* so the emit does not depend on
+        ``resolve_specs`` threading its intermediate results back out.
         """
         tele.start("resolve", "Resolving filters")
         started = time.monotonic()
@@ -742,17 +760,11 @@ class SearchCore:
             "Resolving filters",
             {
                 "resolved": [
-                    {
-                        "spec_index": index,
-                        "correspondent_id": spec.filters.correspondent_id,
-                        "document_type_id": spec.filters.document_type_id,
-                        "tag_ids": list(spec.filters.tag_ids),
-                        "date_from": spec.filters.date_from,
-                        "date_to": spec.filters.date_to,
-                    }
+                    _resolved_spec_detail(index, spec, plan.specs[index].filter_guess, facets)
                     for index, spec in enumerate(specs)
+                    if index < len(plan.specs)
                 ],
-                "dropped": _dropped_guesses(plan, specs),
+                "dropped": _dropped_guesses(plan, specs, facets),
             },
             usage_sink=[],
             started=started,
@@ -763,14 +775,20 @@ class SearchCore:
         signal: RetrievalSignal,
         chunks: list[RetrievedChunk],
         tele: _Telemetry,
+        documents_by_id: dict[int, IndexedDocument] | None = None,
     ) -> bool:
         """Run the Layer-2 relevance gate, emitting the ``gate`` phase.
 
         The gate is a BINARY aggregate decision over the retrieval signal — it
         does not drop individual documents — so the detail reports the signal
         and a single ``rejected`` boolean, never a per-document drop list (those
-        happen at the judge). Returns True when the signal is too weak to
-        synthesise from.
+        happen at the judge).  The ``documents`` list in the detail gives
+        one row per evaluated document with its best vector similarity and title,
+        sorted descending, for the trace UI.  Returns True when the signal is
+        too weak to synthesise from.
+
+        *documents_by_id* is the same map built in ``_retrieve_phase`` so the
+        title look-up is shared and never duplicated.
         """
         tele.start("gate", "Relevance gate")
         started = time.monotonic()
@@ -785,6 +803,7 @@ class SearchCore:
                 "best_similarity": signal.best_vector_similarity,
                 "has_keyword_hit": signal.has_keyword_hit,
                 "rejected": rejected,
+                "documents": _gate_documents(chunks, documents_by_id or {}),
             },
             usage_sink=[],
             started=started,
@@ -1615,38 +1634,177 @@ def _guess_dict(fg: FilterCandidates) -> dict[str, object]:
     }
 
 
+def _resolved_spec_detail(
+    spec_index: int,
+    spec: RetrievalSpec,
+    guess: FilterCandidates,
+    facets: FacetSet,
+) -> dict[str, object]:
+    """Build the ``resolved[i]`` trace entry for one spec.
+
+    Recomputes :func:`~search.retriever._match_name` for each field so the emit
+    function does not depend on ``resolve_specs`` returning its intermediate
+    match results (spec §B3).  The APPLIED id comes from the spec's
+    post-intersect filters, not the raw match — the UI filter can override the
+    planner guess.
+    """
+    corr_detail: dict[str, object] | None = None
+    if guess.correspondent is not None:
+        m = _match_name(guess.correspondent, facets.correspondents)
+        # Use the spec's applied id (may differ if ui_filters overrode it).
+        applied_id = spec.filters.correspondent_id
+        if applied_id is not None:
+            name = next((e.name for e in facets.correspondents if e.id == applied_id), None)
+            corr_detail = {"id": applied_id, "name": name, "method": m.method}
+
+    dtype_detail: dict[str, object] | None = None
+    if guess.document_type is not None:
+        m = _match_name(guess.document_type, facets.document_types)
+        applied_id = spec.filters.document_type_id
+        if applied_id is not None:
+            name = next((e.name for e in facets.document_types if e.id == applied_id), None)
+            dtype_detail = {"id": applied_id, "name": name, "method": m.method}
+
+    tag_details: list[dict[str, object]] = []
+    applied_tag_ids = set(spec.filters.tag_ids)
+    for tag_guess in guess.tags:
+        m = _match_name(tag_guess, facets.tags)
+        if m.id is not None and m.id in applied_tag_ids:
+            name = next((e.name for e in facets.tags if e.id == m.id), None)
+            tag_details.append({"id": m.id, "name": name, "method": m.method})
+
+    return {
+        "spec_index": spec_index,
+        "correspondent": corr_detail,
+        "document_type": dtype_detail,
+        "tags": tag_details,
+        "date_from": spec.filters.date_from,
+        "date_to": spec.filters.date_to,
+    }
+
+
 def _dropped_guesses(
     plan: RetrievalPlan,
     specs: tuple[RetrievalSpec, ...],
+    facets: FacetSet,
 ) -> list[dict[str, object]]:
-    """List the name guesses that did not resolve to a taxonomy id, per spec.
+    """List the name guesses that did not resolve, with reason and candidates.
 
-    A guess is "dropped" when the plan carried a name (correspondent / document
-    type / a tag) but the matching resolved id is ``None`` (or, for tags, the
-    resolved id set is smaller than the guess set). Dates are deterministic and
-    never reported here. The result is JSON-serialisable primitives.
+    A guess is "dropped" when :func:`~search.retriever._match_name` returns
+    ``method="none"`` or ``method="ambiguous"``.  Each dropped entry is
+    ``{"name": <guess str>, "reason": <"none"|"ambiguous">, "candidates": [...]}``.
+    For tags, one entry is emitted per dropped tag.  Dates are deterministic and
+    never reported here.  The result is JSON-serialisable primitives.
     """
     dropped: list[dict[str, object]] = []
-    for index, (planned, resolved) in enumerate(zip(plan.specs, specs)):
+    for planned, resolved in zip(plan.specs, specs):
         guess = planned.filter_guess
-        names: list[str] = []
-        if (
-            guess.correspondent is not None
-            and resolved.filters.correspondent_id is None
-        ):
-            names.append(guess.correspondent)
-        if (
-            guess.document_type is not None
-            and resolved.filters.document_type_id is None
-        ):
-            names.append(guess.document_type)
-        # A tag guess is dropped when fewer ids resolved than tags were guessed;
-        # the ids are anonymous, so report the count rather than guess which.
-        if len(guess.tags) > len(resolved.filters.tag_ids):
-            names.extend(guess.tags[len(resolved.filters.tag_ids) :])
-        if names:
-            dropped.append({"spec_index": index, "names": names})
+        if guess.correspondent is not None:
+            m = _match_name(guess.correspondent, facets.correspondents)
+            if m.method in {"none", "ambiguous"}:
+                dropped.append({
+                    "name": guess.correspondent,
+                    "reason": m.method,
+                    "candidates": list(m.candidates),
+                })
+        if guess.document_type is not None:
+            m = _match_name(guess.document_type, facets.document_types)
+            if m.method in {"none", "ambiguous"}:
+                dropped.append({
+                    "name": guess.document_type,
+                    "reason": m.method,
+                    "candidates": list(m.candidates),
+                })
+        for tag_guess in guess.tags:
+            m = _match_name(tag_guess, facets.tags)
+            if m.method in {"none", "ambiguous"}:
+                dropped.append({
+                    "name": tag_guess,
+                    "reason": m.method,
+                    "candidates": list(m.candidates),
+                })
     return dropped
+
+
+_TRACE_SNIPPET_CHARS = 160
+
+
+def _trace_snippet(text: str) -> str:
+    """Return a short trace snippet — whitespace-collapsed and capped at 160 chars.
+
+    Uses a tighter limit than the source-card snippet (280 chars) because the
+    trace lists every retrieved chunk and space is at a premium.
+    """
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= _TRACE_SNIPPET_CHARS:
+        return collapsed
+    return collapsed[:_TRACE_SNIPPET_CHARS].rstrip() + "…"
+
+
+def _trace_chunks(
+    chunks: list[RetrievedChunk],
+    documents_by_id: dict[int, IndexedDocument],
+) -> list[dict[str, object]]:
+    """Serialise *chunks* for the retrieve-phase trace detail.
+
+    Every chunk is emitted as ``{chunk_id, document_id, title, snippet,
+    vector_similarity}``, sorted by ``vector_similarity`` descending (``None``
+    last).  Title falls back to ``"Document <id>"`` when the document is not in
+    the look-up (deleted between retrieval and emit).
+    """
+
+    def _sort_key(c: RetrievedChunk) -> tuple[int, float]:
+        # Primary: has a similarity score (0 = yes, 1 = no) for None-last sort.
+        # Secondary: similarity descending (negate for min-sort).
+        if c.vector_similarity is None:
+            return (1, 0.0)
+        return (0, -c.vector_similarity)
+
+    sorted_chunks = sorted(chunks, key=_sort_key)
+    return [
+        {
+            "chunk_id": c.chunk_id,
+            "document_id": c.document_id,
+            "title": _title_for(documents_by_id, c.document_id)
+            or f"Document {c.document_id}",
+            "snippet": _trace_snippet(c.text),
+            "vector_similarity": c.vector_similarity,
+        }
+        for c in sorted_chunks
+    ]
+
+
+def _gate_documents(
+    chunks: list[RetrievedChunk],
+    documents_by_id: dict[int, IndexedDocument],
+) -> list[dict[str, object]]:
+    """Serialise per-document best similarity for the gate-phase trace detail.
+
+    One row per distinct document: ``{document_id, title, best_similarity}``.
+    ``best_similarity`` is the maximum ``vector_similarity`` over all of that
+    document's chunks; documents whose every chunk has ``None`` similarity are
+    excluded (no signal to display).  Rows are sorted by ``best_similarity``
+    descending.  Title falls back to ``"Document <id>"`` for a deleted doc.
+    """
+    best: dict[int, float] = {}
+    for c in chunks:
+        if c.vector_similarity is not None:
+            current = best.get(c.document_id)
+            if current is None or c.vector_similarity > current:
+                best[c.document_id] = c.vector_similarity
+
+    return sorted(
+        [
+            {
+                "document_id": doc_id,
+                "title": _title_for(documents_by_id, doc_id) or f"Document {doc_id}",
+                "best_similarity": sim,
+            }
+            for doc_id, sim in best.items()
+        ],
+        key=lambda row: row["best_similarity"],  # type: ignore[arg-type]
+        reverse=True,
+    )
 
 
 def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:
