@@ -273,6 +273,7 @@ or a single large document cannot dominate.
 | Variable | Description | Default |
 |:---|:---|:---|
 | `SEARCH_PLANNER_MAX_SPECS` | Maximum retrieval specs the planner may emit per query. `1` degrades to the legacy single-spec path. Clamped to `≥ 1`. | `8` |
+| `SEARCH_PLANNER_TAXONOMY_LIMIT` | Maximum names per taxonomy list (correspondents, document types, tags) shown to the planner so it picks real names instead of guessing. The lists sit in the cacheable prompt prefix; `0` means no cap. | `100` |
 | `SEARCH_PER_SPEC_K` | Candidate chunks pulled from the store per retrieval spec. Defaults to the resolved `SEARCH_TOP_K`, so the total candidate budget is unchanged in the single-spec case. Clamped to `≥ 1`. | Value of `SEARCH_TOP_K` |
 | `SEARCH_MAX_CHUNKS_PER_DOC` | Maximum chunks per document admitted to the synthesiser after the chunk-union step. Stops one large document from filling the context window. Clamped to `≥ 1`. | `3` |
 
