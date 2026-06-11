@@ -301,7 +301,7 @@ State diagram → [docs/configuration.md](docs/configuration.md#tag-state-flow).
 Incremental sync via a `modified__gt` watermark plus a periodic deletion sweep. Details → [docs/indexer.md](docs/indexer.md#incremental-sync-indexing-only-what-changed). The indexer is the sole writer, enforced by `flock` — see [docs/indexer.md](docs/indexer.md#the-single-writer-lock).
 
 ### "How does the search pipeline work?"
-Bounded agentic loop: plan (1 LLM call) → hybrid retrieve (vector + FTS5, fused with RRF) → synthesise (1–2 LLM calls). Hard ceiling: **three LLM chat calls per query**, enforced both structurally and by a defensive counter. Details → [docs/search.md](docs/search.md).
+Bounded agentic loop: plan (1 LLM call) → hybrid retrieve (vector + FTS5, fused with RRF) → synthesise (1–2 LLM calls). Details → [docs/search.md](docs/search.md).
 
 ### "How is the search server authenticated?"
 There is **no shared-secret env var** — the legacy `SEARCH_API_KEY` was retired. Two credential types:
