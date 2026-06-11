@@ -20,6 +20,7 @@ def _make_settings(
     s.LLM_PROVIDER = provider
     s.OPENAI_API_KEY = api_key
     s.OLLAMA_BASE_URL = base_url
+    s.REQUEST_TIMEOUT = 180
     return s
 
 
@@ -73,6 +74,9 @@ class TestOpenAIProvider:
         call_kwargs = mock_openai_cls.call_args.kwargs
         assert call_kwargs["api_key"] == "sk-my-key"
         assert call_kwargs["base_url"] is None
+        # Every chat call is bounded by REQUEST_TIMEOUT so a stalled provider
+        # cannot hang a search for the SDK's ~600s default × retries.
+        assert call_kwargs["timeout"] == 180
         assert llm_mod._openai_holder._client is mock_openai_cls.return_value
 
 

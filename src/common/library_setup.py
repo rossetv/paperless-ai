@@ -112,9 +112,19 @@ def setup_libraries(settings: Settings) -> None:
             api_key = settings.OPENAI_API_KEY
             base_url = None
 
+        # Cap every chat call at REQUEST_TIMEOUT. Without this the SDK applies its
+        # ~600s default per request, so a single stalled call (a hung provider or
+        # a streaming response that stops mid-flight) blocks for ten minutes and
+        # then, being a retryable APITimeoutError, is retried MAX_RETRIES times —
+        # up to ~30 minutes of a search "Synthesising the answer" that never
+        # finishes. REQUEST_TIMEOUT bounds each attempt so a hang fails fast and
+        # falls through to the model fallback / degrade path. (OCR and the
+        # classifier already set this on their own clients; the search chat client
+        # was the gap.)
         client = openai.OpenAI(
             api_key=api_key,
             base_url=base_url,
             http_client=http_client,
+            timeout=settings.REQUEST_TIMEOUT,
         )
         init_openai_client(client)
