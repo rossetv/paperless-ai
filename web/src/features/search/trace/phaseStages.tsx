@@ -782,11 +782,10 @@ export function phaseBodyNode(
       // The judge's verdict list (with the View control) is rendered by
       // PipelineStages from the `verdicts` field, so there is no separate body.
       return null;
-    case 'refine':
-      return refineNode(d);
-    case 'replan':
-      return replanNode(d);
     default:
+      // refine / replan / synthesise / cache carry their whole detail in the
+      // summary line (via phaseDetailNode), so they have no separate body — a
+      // duplicate body would render the same lines twice.
       return null;
   }
 }
