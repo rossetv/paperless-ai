@@ -34,7 +34,7 @@ const ACTIVITY_ROW_LIMIT = 5;
  * activity / failed-document / stats queries (the first two poll) and the
  * reconcile mutation.
  *
- * Holds `previewDocumentId` state: when a failed-document's "Preview" button
+ * Holds `previewDocumentId` state: when a failed-document's "View" button
  * is clicked, `FailedDocumentsPanel` calls `onOpen(id)`, which sets this
  * state and renders the in-app `DocumentPreviewScreen` overlay.
  *

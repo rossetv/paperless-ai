@@ -7,7 +7,7 @@ import styles from './FailedDocumentsPanel.module.css';
 export interface FailedDocumentsPanelProps {
   /** The failed documents, from GET /api/index/failed. */
   documents: FailedDocument[];
-  /** Called with a document id when its "Preview" button is pressed; opens the in-app DocumentPreviewScreen overlay. */
+  /** Called with a document id when its "View" button is pressed; opens the in-app DocumentPreviewScreen overlay. */
   onOpen: (documentId: number) => void;
   /** Additional class names to merge onto the root. */
   className?: string;
@@ -17,7 +17,7 @@ export interface FailedDocumentsPanelProps {
  * The Index dashboard failed-documents panel.
  *
  * Header with a count badge, a card per failed document (id chip, title,
- * failure count, "Preview" action). An empty list shows an all-clear line.
+ * failure count, "View" action). An empty list shows an all-clear line.
  *
  * The component is a pure render: `previewDocumentId` state lives in
  * `IndexScreen`, which passes `onOpen`. Retry is intentionally absent —
@@ -66,10 +66,10 @@ export function FailedDocumentsPanel({
                 <button
                   type="button"
                   className={styles['action']}
-                  aria-label={`Preview document ${doc.document_id}: ${doc.title ?? '(no title)'}`}
+                  aria-label={`View document ${doc.document_id}: ${doc.title ?? '(no title)'}`}
                   onClick={() => onOpen(doc.document_id)}
                 >
-                  Preview
+                  View
                 </button>
               </div>
             </article>

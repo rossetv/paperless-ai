@@ -169,11 +169,11 @@ describe('ResultsScreen', () => {
     expect(onPreview).toHaveBeenCalledWith(9823);
   });
 
-  it('fires onPreview when a source preview is clicked', async () => {
+  it('fires onPreview when a source view is clicked', async () => {
     const onPreview = vi.fn();
     renderResults({ onPreview });
     await userEvent.click(
-      screen.getByRole('button', { name: /^preview$/i }),
+      screen.getByRole('button', { name: /^view$/i }),
     );
     expect(onPreview).toHaveBeenCalledWith(9823);
   });

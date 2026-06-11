@@ -24,7 +24,7 @@ export interface SourceCardProps {
    */
   highlighted?: boolean;
   /**
-   * Called with the document id when "Preview" is activated. The page opens
+   * Called with the document id when "View" is activated. The page opens
    * the in-app document-preview viewer for that id.
    */
   onPreview: (documentId: number) => void;
@@ -35,7 +35,7 @@ export interface SourceCardProps {
  *
  * Composes the `SourceCardSurface` shell (the two-column grid with the
  * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
- * display-font title, the highlighted matched-content snippet, a "Preview"
+ * display-font title, the highlighted matched-content snippet, a "View"
  * button that opens the in-app viewer, and the relevance score.
  *
  * Note: `source.paperless_url` is present on the wire type but intentionally
@@ -85,7 +85,7 @@ function SourceCardInner({
             size="small"
             onClick={() => onPreview(source.document_id)}
           >
-            Preview
+            View
           </Button>
           <RelevanceMeter tier={source.relevance_tier} />
         </Stack>

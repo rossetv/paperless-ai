@@ -78,7 +78,7 @@ describe('SourceList', () => {
     ];
     render(<SourceList sources={sources} onPreview={onPreview} />);
     await userEvent.click(
-      screen.getByRole('button', { name: /^preview$/i }),
+      screen.getByRole('button', { name: /^view$/i }),
     );
     expect(onPreview).toHaveBeenCalledWith(11);
   });
