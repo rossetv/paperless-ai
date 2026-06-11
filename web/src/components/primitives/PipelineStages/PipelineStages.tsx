@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { cn } from '../../../lib/cn';
 import { Icon } from '../Icon/Icon';
 import { Button } from '../Button/Button';
+import { ChunkPopover } from './ChunkPopover';
 import styles from './PipelineStages.module.css';
 
 /** Lifecycle state of one pipeline stage. */
@@ -80,12 +81,84 @@ export interface PipelineStagesProps {
   /** Additional class names to merge. */
   className?: string;
   /**
-   * Called with a document id when a judged document's "Preview" control is
-   * activated. When supplied, each verdict row renders a Preview button that
+   * Whether the rail is the folded final trace (true) or the lean live rail
+   * (false / omitted). When collapsible, a stage that has a `body` or verdicts
+   * renders as a `<details>` disclosure whose summary line is always shown and
+   * whose rich body expands on click. When NOT collapsible, every stage renders
+   * a single plain row showing only its summary — no body, no verdicts — so the
+   * live rail stays lean while a search is running.
+   */
+  collapsible?: boolean;
+  /**
+   * Called with a document id when a judged document's "View" control is
+   * activated. When supplied, each verdict row renders a View button that
    * opens the in-app document viewer for that id; when omitted (e.g. a context
    * with no document-open handler) the rows render without the control.
    */
   onPreviewDocument?: (documentId: number) => void;
+}
+
+/** The judge's per-document verdict list, shown inside a collapsible stage's
+ *  expanded body. Each row carries the score, title, reason, keep/drop tag and
+ *  an optional "View" control that opens the in-app document viewer. */
+function VerdictList({
+  verdicts,
+  onPreviewDocument,
+}: {
+  verdicts: StageVerdict[];
+  onPreviewDocument?: (documentId: number) => void;
+}): React.ReactElement {
+  return (
+    <ul className={styles['verdicts']}>
+      {verdicts.map((verdict) => (
+        <li
+          key={verdict.docId}
+          className={styles['verdict']}
+          data-keep={verdict.keep}
+        >
+          <span className={styles['verdict-dot']} aria-hidden="true" />
+          <span className={styles['verdict-text']}>
+            <span className={styles['verdict-title']}>
+              {verdict.score !== null && (
+                <span className={styles['verdict-score']}>
+                  {formatScore(verdict.score)}
+                </span>
+              )}
+              {verdict.title ?? `Document ${verdict.docId}`}
+            </span>
+            {verdict.reason !== '' && (
+              <span className={styles['verdict-reason']}>{verdict.reason}</span>
+            )}
+          </span>
+          <span className={styles['verdict-tag']}>
+            {verdict.keep ? 'keep' : 'drop'}
+          </span>
+          {onPreviewDocument !== undefined && (
+            <span className={styles['verdict-action']}>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => onPreviewDocument(verdict.docId)}
+              >
+                View
+              </Button>
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The status dot for a stage row — a tick when done, a pulsing core when
+ *  active, an empty disc otherwise. */
+function StageDot({ state }: { state: PipelineStageState }): React.ReactElement {
+  return (
+    <span className={styles['dot']} aria-hidden="true">
+      {state === 'done' && <Icon name="check" size="small" />}
+      {state === 'active' && <span className={styles['pulse']} />}
+    </span>
+  );
 }
 
 /**
@@ -96,8 +169,14 @@ export interface PipelineStagesProps {
  * stage label and detail, an optional "tokens · cost" chip, an "in progress"
  * pill on the active stage, and — for the judge stage — a keep/drop
  * per-document verdict sublist (score · title · reason, with an optional
- * Preview control when `onPreviewDocument` is supplied). The pulse respects
+ * View control when `onPreviewDocument` is supplied). The pulse respects
  * `prefers-reduced-motion`.
+ *
+ * In `collapsible` mode each stage with a rich `body` (or verdicts) becomes a
+ * native `<details>` disclosure: the summary line is always visible and the
+ * body expands on click. Without `collapsible` (the live rail) only the
+ * summary line is shown — no body, no verdicts — keeping the in-flight rail
+ * lean.
  *
  * App-agnostic — it renders whatever stages it is given. `LoadingScreen` maps
  * the live streamed phases onto it; `SearchTracePanel` renders the final trace.
@@ -109,83 +188,87 @@ export interface PipelineStagesProps {
 export function PipelineStages({
   stages,
   className,
+  collapsible = false,
   onPreviewDocument,
 }: PipelineStagesProps): React.ReactElement {
+  // The <ol> hosts the shared ChunkPopover: it listens for hover/focus on the
+  // retrieve-body `.chunk-snip` elements rendered inside the disclosure bodies.
+  const olRef = useRef<HTMLOListElement | null>(null);
+
   return (
-    <ol className={cn(styles['stages'], className)}>
-      {stages.map((stage, i) => (
-        <li key={i} className={styles['stage']} data-state={stage.state}>
-          <div className={styles['row']}>
-            <span className={styles['dot']} aria-hidden="true">
-              {stage.state === 'done' && <Icon name="check" size="small" />}
-              {stage.state === 'active' && (
-                <span className={styles['pulse']} />
-              )}
-            </span>
+    <>
+      <ol ref={olRef} className={cn(styles['stages'], className)}>
+        {stages.map((stage, i) => {
+          const summaryContent = stage.summary ?? stage.detailNode ?? stage.detail;
+          const hasVerdicts =
+            stage.verdicts !== undefined && stage.verdicts.length > 0;
+          const expandable =
+            collapsible && (stage.body != null || hasVerdicts);
 
-            <span className={styles['text']}>
-              <span className={styles['label']}>{stage.label}</span>
-              <span className={styles['detail']}>
-                {stage.detailNode ?? stage.detail}
-              </span>
-            </span>
-
-            {stage.costLabel !== undefined && (
-              <span className={styles['cost-chip']}>{stage.costLabel}</span>
-            )}
-
-            {stage.state === 'active' && (
-              <span className={styles['progress-pill']}>in progress</span>
-            )}
-          </div>
-
-          {stage.verdicts !== undefined && stage.verdicts.length > 0 && (
-            <ul className={styles['verdicts']}>
-              {stage.verdicts.map((verdict) => (
-                <li
-                  key={verdict.docId}
-                  className={styles['verdict']}
-                  data-keep={verdict.keep}
-                >
-                  <span
-                    className={styles['verdict-dot']}
-                    aria-hidden="true"
-                  />
-                  <span className={styles['verdict-text']}>
-                    <span className={styles['verdict-title']}>
-                      {verdict.score !== null && (
-                        <span className={styles['verdict-score']}>
-                          {formatScore(verdict.score)}
+          return (
+            <li key={i} className={styles['stage']} data-state={stage.state}>
+              {expandable ? (
+                <details className={styles['stage-disclosure']}>
+                  <summary className={styles['stage-summary-row']}>
+                    <div className={styles['row']}>
+                      <StageDot state={stage.state} />
+                      <span className={styles['text']}>
+                        <span className={styles['label']}>{stage.label}</span>
+                        <span className={styles['detail']}>{summaryContent}</span>
+                      </span>
+                      {stage.costLabel !== undefined && (
+                        <span className={styles['cost-chip']}>
+                          {stage.costLabel}
                         </span>
                       )}
-                      {verdict.title ?? `Document ${verdict.docId}`}
-                    </span>
-                    {verdict.reason !== '' && (
-                      <span className={styles['verdict-reason']}>
-                        {verdict.reason}
-                      </span>
-                    )}
-                  </span>
-                  <span className={styles['verdict-tag']}>
-                    {verdict.keep ? 'keep' : 'drop'}
-                  </span>
-                  {onPreviewDocument !== undefined && (
-                    <span className={styles['verdict-action']}>
-                      <Button
-                        variant="ghost"
-                        size="small"
-                        onClick={() => onPreviewDocument(verdict.docId)}
+                      <svg
+                        className={styles['chevron']}
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
                       >
-                        Preview
-                      </Button>
-                    </span>
+                        <path
+                          d="M6 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                  </summary>
+                  <div className={styles['stage-body']}>
+                    {stage.body}
+                    {hasVerdicts && (
+                      <VerdictList
+                        verdicts={stage.verdicts as StageVerdict[]}
+                        {...(onPreviewDocument !== undefined
+                          ? { onPreviewDocument }
+                          : {})}
+                      />
+                    )}
+                  </div>
+                </details>
+              ) : (
+                <div className={styles['row']}>
+                  <StageDot state={stage.state} />
+                  <span className={styles['text']}>
+                    <span className={styles['label']}>{stage.label}</span>
+                    <span className={styles['detail']}>{summaryContent}</span>
+                  </span>
+                  {stage.costLabel !== undefined && (
+                    <span className={styles['cost-chip']}>{stage.costLabel}</span>
                   )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </li>
-      ))}
-    </ol>
+                  {stage.state === 'active' && (
+                    <span className={styles['progress-pill']}>in progress</span>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <ChunkPopover containerRef={olRef as React.RefObject<HTMLElement | null>} />
+    </>
   );
 }

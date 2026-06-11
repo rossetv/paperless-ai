@@ -202,6 +202,7 @@
 
 .verdict-reason {
   margin-top: var(--spacing-1);
+  padding-left: var(--spacing-7);
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
@@ -226,8 +227,51 @@
   color: var(--colour-link);
 }
 
-/* Preview control on a judged document — opens the in-app viewer for that id. */
+/* View control on a judged document — opens the in-app viewer for that id. */
 .verdict-action {
   flex-shrink: 0;
   align-self: flex-start;
+}
+
+/* Collapsible stage — the native <details> disclosure. */
+.stage-disclosure {
+  /* Reset browser default details margin. */
+  margin: 0;
+}
+
+/* Remove the default triangle marker on the <summary> element. */
+.stage-summary-row {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.stage-summary-row::-webkit-details-marker {
+  display: none;
+}
+
+/* Expand the detail area after the summary row. */
+.stage-body {
+  padding: var(--spacing-2) 0 var(--spacing-7)
+    calc(var(--size-stage-dot) + var(--spacing-10));
+}
+
+.chevron {
+  flex-shrink: 0;
+  width: var(--spacing-7);
+  height: var(--spacing-7);
+  margin-top: var(--spacing-1);
+  color: var(--colour-text-tertiary);
+  transition: transform var(--duration-fast) ease;
+}
+
+/* Rotate chevron to indicate open state. */
+.stage-disclosure[open] .chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
 }

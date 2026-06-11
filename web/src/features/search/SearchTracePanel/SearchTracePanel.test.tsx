@@ -164,7 +164,9 @@ describe('SearchTracePanel', () => {
     render(<SearchTracePanel phases={phases} cost={COST} />);
     expect(screen.getByText(/npower energy 2024/)).toBeInTheDocument();
     expect(screen.getByText(/from Npower/)).toBeInTheDocument();
-    expect(screen.getByText(/correspondent #7/)).toBeInTheDocument();
+    // The resolve body renders the legacy id wire as "from #7" (no name on the
+    // legacy shape); the new object wire would show the resolved name instead.
+    expect(screen.getByText(/from #7/)).toBeInTheDocument();
     expect(screen.getByText(/Dropped \(no match\): Mystery Co/)).toBeInTheDocument();
     expect(screen.getByText(/Gap: no Q4 figure/)).toBeInTheDocument();
     expect(screen.getByText(/New search 1: “Q4 invoice total”/)).toBeInTheDocument();
@@ -173,16 +175,16 @@ describe('SearchTracePanel', () => {
   it('opens a judged document preview via the threaded onPreview handler', async () => {
     const onPreview = vi.fn();
     render(<SearchTracePanel phases={PHASES} cost={COST} onPreview={onPreview} />);
-    const previews = screen.getAllByRole('button', { name: /preview/i });
+    const previews = screen.getAllByRole('button', { name: /view/i });
     expect(previews).toHaveLength(2);
     await userEvent.click(previews[0] as HTMLElement);
     expect(onPreview).toHaveBeenCalledWith(9823);
   });
 
-  it('renders no Preview control when no onPreview handler is given', () => {
+  it('renders no View control when no onPreview handler is given', () => {
     render(<SearchTracePanel phases={PHASES} cost={COST} />);
     expect(
-      screen.queryByRole('button', { name: /preview/i }),
+      screen.queryByRole('button', { name: /view/i }),
     ).not.toBeInTheDocument();
   });
 });

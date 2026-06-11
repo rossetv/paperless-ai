@@ -77,6 +77,7 @@ export function SearchTracePanel({
           Each step of the agentic pipeline, with its token and dollar cost.
         </Text>
         <PipelineStages
+          collapsible
           stages={stages}
           {...(onPreview !== undefined ? { onPreviewDocument: onPreview } : {})}
         />

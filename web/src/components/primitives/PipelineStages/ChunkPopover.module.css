@@ -1,0 +1,71 @@
+/*
+ * ChunkPopover — the fixed-position full-chunk-text popover.
+ *
+ * Appears near the cursor (hover) or anchored below the snippet (focus).
+ * Clamped to the viewport; max-height with internal scroll.
+ * Transitions respect prefers-reduced-motion.
+ *
+ * All values come exclusively from design tokens (var(--…)).
+ */
+
+.popover {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  max-width: var(--width-toast-max);
+  max-height: var(--height-listbox);
+  overflow: auto;
+  padding: var(--spacing-7) var(--spacing-8);
+  border-radius: var(--radius-large);
+  background: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  line-height: 1.55;
+  color: var(--colour-text-secondary);
+
+  /* Start invisible and slightly shifted down. */
+  opacity: 0;
+  transform: translateY(var(--spacing-2));
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+}
+
+.popover[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popover {
+    transition: none;
+  }
+}
+
+.pophead {
+  display: flex;
+  gap: var(--spacing-4);
+  align-items: baseline;
+  margin-bottom: var(--spacing-4);
+}
+
+.pop-title {
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-body-emphasis);
+  color: var(--colour-text-primary);
+}
+
+.pop-score {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  color: var(--colour-text-tertiary);
+}
+
+.pop-body {
+  margin: 0;
+  font-size: var(--font-size-nano);
+  color: var(--colour-text-secondary);
+  line-height: 1.55;
+}
