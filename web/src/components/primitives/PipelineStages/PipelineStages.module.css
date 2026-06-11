@@ -250,10 +250,16 @@
   display: none;
 }
 
-/* Expand the detail area after the summary row. */
+/* Expand the detail area after the summary row. Carry the caption font-size and
+   tertiary colour the old `.detail` slot supplied, so body text (planner specs,
+   resolved-filter lines, chunk titles) renders at one consistent caption size —
+   NOT the inherited 17px body default — matching the summary line above it. */
 .stage-body {
   padding: var(--spacing-2) 0 var(--spacing-7)
     calc(var(--size-stage-dot) + var(--spacing-10));
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-body);
+  color: var(--colour-text-tertiary);
 }
 
 .chevron {
