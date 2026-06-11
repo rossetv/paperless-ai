@@ -309,9 +309,9 @@ def test_a_success_resets_the_failure_counter(tmp_path: Path) -> None:
         app_db.close()
 
 
-def test_remember_login_sets_a_seven_day_cookie(tmp_path: Path) -> None:
-    """remember=True -> Max-Age 604800 (7 days)."""
-    settings = make_settings(tmp_path)
+def test_remember_login_honours_configured_session_ttl(tmp_path: Path) -> None:
+    """remember=True -> Max-Age is the configured SEARCH_SESSION_TTL."""
+    settings = make_settings(tmp_path, SEARCH_SESSION_TTL=4242)
     seed_store(settings)
     app_db = open_app_db(tmp_path)
     store_reader = StoreReader(settings)
@@ -325,7 +325,7 @@ def test_remember_login_sets_a_seven_day_cookie(tmp_path: Path) -> None:
             remember=True,
         )
         assert response.status_code == 200, response.text
-        assert "Max-Age=604800" in _set_cookie_header(response)
+        assert "Max-Age=4242" in _set_cookie_header(response)
     finally:
         store_reader.close()
         app_db.close()

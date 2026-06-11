@@ -24,8 +24,9 @@ SQLite and blocking argon2id password hashing, so FastAPI runs them in the
 threadpool — keeping that work off the event loop. Each takes its ``app.db``
 connection from the per-request :func:`~search.deps.get_app_db` dependency.
 
-Allowed deps: fastapi, structlog, appdb, search (sessions, setup, accounts,
-deps, appstate, cookies, login_throttle, wire), store (reader).
+Allowed deps: fastapi, structlog, appdb, common.config (Settings), search
+(sessions, setup, accounts, deps, appstate, cookies, login_throttle, wire),
+store (reader).
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ from search.wire import (
 from store import StoreError
 
 if TYPE_CHECKING:
+    from common.config import Settings
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
@@ -74,12 +76,13 @@ log = structlog.get_logger(__name__)
 # here. The session-cookie security flags are owned there too.
 
 
-def build_account_router(store_reader: StoreReader) -> APIRouter:
+def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
     """Build the account ``/api`` router (web-redesign §4.6).
 
-    The handlers close over *store_reader* (for the public stats endpoint)
-    and reach everything else — the per-request ``app.db`` connection, the
-    setup state, the legacy key — through FastAPI dependencies.
+    The handlers close over *settings* (for the session-cookie TTL) and
+    *store_reader* (for the public stats endpoint), and reach everything else —
+    the per-request ``app.db`` connection, the setup state, the legacy key —
+    through FastAPI dependencies.
 
     # rationale: 60+ executable lines — the body is ten route declarations,
     # one per account endpoint, each an irreducible decorator + signature +
@@ -87,6 +90,8 @@ def build_account_router(store_reader: StoreReader) -> APIRouter:
     # flat table of routes without making any of it clearer.
 
     Args:
+        settings: Application settings; the login handler reads
+            ``SEARCH_SESSION_TTL`` for the "keep me signed in" cookie lifetime.
         store_reader: The read-side store, backing ``GET /api/stats/public``.
 
     Returns:
@@ -127,7 +132,13 @@ def build_account_router(store_reader: StoreReader) -> APIRouter:
         recent failures (HTTP-01; the per-username counter survives
         X-Forwarded-For rotation, §10.6).
         """
-        return _login(body, request, response, app_db)
+        return _login(
+            body,
+            request,
+            response,
+            app_db,
+            remember_ttl_seconds=settings.SEARCH_SESSION_TTL,
+        )
 
     @router.post("/api/auth/logout", status_code=204)
     def logout(
@@ -246,6 +257,8 @@ def _login(
     request: Request,
     response: Response,
     app_db: sqlite3.Connection,
+    *,
+    remember_ttl_seconds: int,
 ) -> UserEnvelope:
     """Login-handler body: throttle, authenticate, open a session, set the cookie.
 
@@ -288,7 +301,9 @@ def _login(
         log.warning("search.login_suspended", username=body.username)
         raise HTTPException(status_code=403, detail="This account is suspended.")
 
-    ttl = cookie_ttl_seconds(remember=body.remember)
+    ttl = cookie_ttl_seconds(
+        remember=body.remember, remember_ttl_seconds=remember_ttl_seconds
+    )
     issued = begin_session(
         app_db,
         user_id=user.id,

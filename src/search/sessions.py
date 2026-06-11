@@ -36,10 +36,10 @@ from appdb import users as user_store
 # Token entropy in bytes. 32 bytes (256 bits) is well beyond brute-force.
 _TOKEN_BYTES = 32
 
-# Session lifetimes in seconds (spec §4.4). The "keep me signed in" tick
-# selects REMEMBER_TTL_SECONDS; an un-ticked login gets the shorter one.
+# Short-session lifetime in seconds (spec §4.4): the lifetime an un-ticked
+# login gets. The "keep me signed in" tick instead uses the operator-configured
+# SEARCH_SESSION_TTL (default 7 days), passed in to cookie_ttl_seconds.
 SESSION_TTL_SECONDS = 28800  # 8 hours
-REMEMBER_TTL_SECONDS = 604800  # 7 days
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,17 +94,19 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def cookie_ttl_seconds(*, remember: bool) -> int:
+def cookie_ttl_seconds(*, remember: bool, remember_ttl_seconds: int) -> int:
     """Return the cookie/session lifetime in seconds for a login.
 
     Args:
         remember: ``True`` when the user ticked "keep me signed in".
+        remember_ttl_seconds: The operator-configured ``SEARCH_SESSION_TTL`` —
+            the lifetime to use when *remember* is set.
 
     Returns:
-        :data:`REMEMBER_TTL_SECONDS` when *remember* is set, otherwise
-        :data:`SESSION_TTL_SECONDS`.
+        *remember_ttl_seconds* when *remember* is set, otherwise the fixed
+        :data:`SESSION_TTL_SECONDS` short-session lifetime.
     """
-    return REMEMBER_TTL_SECONDS if remember else SESSION_TTL_SECONDS
+    return remember_ttl_seconds if remember else SESSION_TTL_SECONDS
 
 
 # How stale last_seen_at may get before a request triggers a refresh write.
