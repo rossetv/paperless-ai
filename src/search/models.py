@@ -364,11 +364,10 @@ class DocVerdict:
     as escaped text on the client.
 
     ``score`` is the judge's confidence in [0, 1] that the document helps answer
-    the question — higher is stronger. The core keeps a document only when
-    ``keep`` is true AND ``score`` clears ``SEARCH_JUDGE_KEEP_THRESHOLD``, so a
-    kept-but-weak verdict is still dropped. A fail-open (degraded) verdict
-    carries a full-confidence score so the document is never dropped on the
-    threshold by a broken judge.
+    the question — higher is stronger. The boolean ``keep`` is the sole gate:
+    ``score`` is used only for source RANKING (Phase 3B), not to filter documents.
+    A fail-open (degraded) verdict carries ``keep=True`` on every document so a
+    broken judge can never block an answer.
     """
 
     document_id: int

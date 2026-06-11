@@ -475,10 +475,6 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_GATE_JUDGE": False,
         "SEARCH_JUDGE_MODEL": "gpt-5.4-mini",
         "SEARCH_JUDGE_REASONING_EFFORT": "low",
-        # Scored-judge keep floor. A MagicMock auto-attribute would be a truthy
-        # mock, not a float, and break the score comparison in _judge_and_filter;
-        # pin to the production default (0.5) so judge tests get a real number.
-        "SEARCH_JUDGE_KEEP_THRESHOLD": 0.5,
         # Rationales ON mirrors the production default; tests that want lean
         # output (no reason strings) can override with SEARCH_JUDGE_RATIONALES=False.
         "SEARCH_JUDGE_RATIONALES": True,

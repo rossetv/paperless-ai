@@ -310,3 +310,90 @@ def test_judge_usage_sink_receives_token_record(judge_with_response) -> None:
     # The mock completion has no real usage, so zeros are recorded.
     assert len(sink) == 1
     assert isinstance(sink[0], LlmCallUsage)
+
+
+# ---------------------------------------------------------------------------
+# Identity and date forwarding tests
+# ---------------------------------------------------------------------------
+
+
+def test_judge_forwards_asker_into_user_message() -> None:
+    """judge() threads asker into the user message so the judge is identity-aware."""
+    captured: dict[str, str] = {}
+
+    def _capturing_create_completion(*, messages, **_kw):
+        from tests.helpers.llm import make_chat_completion
+
+        user = next((m["content"] for m in messages if m["role"] == "user"), "")
+        captured["user"] = user
+        return make_chat_completion(
+            '{"verdicts": [{"document_id": 1, "keep": true, "reason": "", "score": 0.8}]}'
+        )
+
+    judge = RelevanceJudge(make_search_settings())
+    judge._create_completion = _capturing_create_completion  # type: ignore[method-assign]
+    judge.judge(
+        "my payslip?", [JudgeCandidate(1, "payslip text")], asker="Vilmar Rosset"
+    )
+    assert "Vilmar Rosset" in captured["user"]
+
+
+def test_judge_forwards_today_into_user_message() -> None:
+    """judge() threads today into the user message for temporal context."""
+    captured: dict[str, str] = {}
+
+    def _capturing_create_completion(*, messages, **_kw):
+        from tests.helpers.llm import make_chat_completion
+
+        user = next((m["content"] for m in messages if m["role"] == "user"), "")
+        captured["user"] = user
+        return make_chat_completion(
+            '{"verdicts": [{"document_id": 1, "keep": true, "reason": "", "score": 0.8}]}'
+        )
+
+    judge = RelevanceJudge(make_search_settings())
+    judge._create_completion = _capturing_create_completion  # type: ignore[method-assign]
+    judge.judge(
+        "recent payslip?",
+        [JudgeCandidate(1, "payslip text")],
+        today="2026-06-11",
+    )
+    assert "2026-06-11" in captured["user"]
+
+
+def test_judge_message_unchanged_when_no_asker_or_today() -> None:
+    """judge() without asker/today produces a message unchanged from pre-identity."""
+    messages_with_none: list[list[dict]] = []
+    messages_without: list[list[dict]] = []
+
+    def _capture_with(*, messages, **_kw):
+        from tests.helpers.llm import make_chat_completion
+
+        messages_with_none.append(messages)
+        return make_chat_completion(
+            '{"verdicts": [{"document_id": 1, "keep": true, "reason": "", "score": 0.8}]}'
+        )
+
+    def _capture_without(*, messages, **_kw):
+        from tests.helpers.llm import make_chat_completion
+
+        messages_without.append(messages)
+        return make_chat_completion(
+            '{"verdicts": [{"document_id": 1, "keep": true, "reason": "", "score": 0.8}]}'
+        )
+
+    j1 = RelevanceJudge(make_search_settings())
+    j1._create_completion = _capture_with  # type: ignore[method-assign]
+    j1.judge("q", [JudgeCandidate(1, "s")], asker=None, today=None)
+
+    j2 = RelevanceJudge(make_search_settings())
+    j2._create_completion = _capture_without  # type: ignore[method-assign]
+    j2.judge("q", [JudgeCandidate(1, "s")])
+
+    user_with = next(m["content"] for m in messages_with_none[0] if m["role"] == "user")
+    user_without = next(
+        m["content"] for m in messages_without[0] if m["role"] == "user"
+    )
+    # The nonce makes the full messages differ, but everything before the fence
+    # must be the same (control plane is identical).
+    assert user_with.split("<<<DATA")[0] == user_without.split("<<<DATA")[0]

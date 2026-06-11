@@ -79,6 +79,8 @@ class RelevanceJudge(OpenAIChatMixin):
         query: str,
         candidates: Sequence[JudgeCandidate],
         *,
+        asker: str | None = None,
+        today: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
     ) -> JudgeVerdict:
         """Return the relevant-document verdict for *query* over *candidates*.
@@ -90,6 +92,14 @@ class RelevanceJudge(OpenAIChatMixin):
         Args:
             query: The user's original search query.
             candidates: The document-level candidates (id + best-chunk snippet).
+            asker: Optional sanitised display name of the requesting user.
+                When set, an identity line is added to the user message so the
+                judge can resolve ownership — a document whose content belongs
+                to the asker is treated as relevant to "my …" queries even when
+                the title does not repeat their name.
+            today: Today's date in YYYY-MM-DD form, or ``None``. When set, a
+                date line is added to the user message so the judge can resolve
+                relative temporal language.
             usage_sink: Optional list to receive one
                 :class:`~common.llm.LlmCallUsage` record capturing the token
                 usage for this call. Pass ``None`` to skip capture.
@@ -105,7 +115,11 @@ class RelevanceJudge(OpenAIChatMixin):
             {
                 "role": "user",
                 "content": build_judge_user_message(
-                    query, list(candidates), include_reasons=include_reasons
+                    query,
+                    list(candidates),
+                    include_reasons=include_reasons,
+                    asker=asker,
+                    today=today,
                 ),
             },
         ]
@@ -175,9 +189,8 @@ class RelevanceJudge(OpenAIChatMixin):
 
         # Build a DocVerdict for EVERY candidate. An omitted id defaults to
         # keep=True, "" reason, score 0.0 — recall-biased: the judge not
-        # mentioning a doc is not an explicit drop, but it carries no positive
-        # score, so the core's keep-threshold (which a fail-open never trips)
-        # still governs whether it survives.
+        # mentioning a doc is not an explicit drop. The score carries no gate
+        # weight; it is used only for source ranking (Phase 3B).
         doc_verdicts: list[DocVerdict] = []
         for candidate in candidates:
             if candidate.document_id in model_verdicts:
@@ -200,9 +213,10 @@ class RelevanceJudge(OpenAIChatMixin):
     def _fail_open(self, all_ids: frozenset[int], reason: str) -> JudgeVerdict:
         """Return a keep-everything verdict and log a warning.
 
-        Every fail-open verdict carries ``score=1.0`` so the core's
-        keep-threshold can never drop a document a broken judge could not score —
-        a degraded judge only ever loses precision, never an answer.
+        Every fail-open verdict carries ``keep=True`` and ``score=1.0``. The
+        score is set to full confidence so source ranking (Phase 3B) does not
+        demote documents the judge could not evaluate — a degraded judge only
+        ever loses precision, never blocks an answer.
         """
         log.warning("judge.degraded_to_fail_open", reason=reason)
         return JudgeVerdict(
