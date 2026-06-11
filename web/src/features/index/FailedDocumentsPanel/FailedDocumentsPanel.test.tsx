@@ -57,7 +57,7 @@ describe('FailedDocumentsPanel', () => {
     render(<FailedDocumentsPanel documents={DOCS} onOpen={onOpen} />);
     // Each button now carries a unique aria-label — match on the first document's id.
     const previewButton = screen.getByRole('button', {
-      name: /preview document 8421/i,
+      name: /view document 8421/i,
     });
     await userEvent.click(previewButton);
     expect(onOpen).toHaveBeenCalledWith(8421);

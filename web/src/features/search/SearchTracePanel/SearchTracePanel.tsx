@@ -20,10 +20,10 @@ export interface SearchTracePanelProps {
    */
   cost?: CostSummary;
   /**
-   * Called with a document id when a judged document's "Preview" control is
+   * Called with a document id when a judged document's "View" control is
    * activated. Threaded straight to `PipelineStages`; when omitted, the judge
-   * verdict rows render without a Preview control. The page supplies the same
-   * `onPreview` handler the source cards use, so preview opens the in-app
+   * verdict rows render without a View control. The page supplies the same
+   * `onPreview` handler the source cards use, so it opens the in-app
    * document viewer.
    */
   onPreview?: (documentId: number) => void;

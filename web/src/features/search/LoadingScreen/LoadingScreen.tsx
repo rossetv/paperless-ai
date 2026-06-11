@@ -28,10 +28,11 @@ export interface LoadingScreenProps {
   /** The phase currently running — shown as the "in progress" rail row. */
   activePhase: SearchPhase | null;
   /**
-   * Called with a document id when a judged document's "Preview" control is
-   * activated in the live rail. The page supplies the same `onPreview` handler
-   * the source cards use, so preview opens the in-app document viewer. When
-   * omitted, the judge verdict rows render without a Preview control.
+   * Called with a document id when a judged document's "View" control is
+   * activated. The page supplies the same `onPreview` handler the source cards
+   * use, so it opens the in-app document viewer. The lean live rail no longer
+   * shows verdict rows, so this is currently unused there, but is threaded for
+   * parity with the folded trace.
    */
   onPreview?: (documentId: number) => void;
 }

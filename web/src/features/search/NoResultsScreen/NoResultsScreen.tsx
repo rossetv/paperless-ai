@@ -38,7 +38,7 @@ export interface NoResultsScreenProps {
   /** Called when the user asks to re-run the search with no filters. */
   onSearchWithoutFilters: () => void;
   /**
-   * Called with a document id when the trace panel's judge-verdict "Preview"
+   * Called with a document id when the trace panel's judge-verdict "View"
    * control is activated. Threaded straight through to `SearchTracePanel`.
    */
   onPreview: (documentId: number) => void;

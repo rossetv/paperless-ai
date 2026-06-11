@@ -91,7 +91,7 @@ function LibraryCardInner({
         </div>
         <span className={styles['open-affordance']} aria-hidden="true">
           <Icon name="eye" size="small" />
-          Preview
+          View
         </span>
       </div>
 
