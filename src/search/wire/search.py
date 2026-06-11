@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from search.models import NoMatchReason
 from store import SearchFilters
 
 if TYPE_CHECKING:
@@ -257,6 +258,21 @@ class SearchResponse(BaseModel):
                      carries a nudge message and sources is empty (Layer 2
                      fail-fast).
     """
+    no_match_reason: NoMatchReason | None = None
+    """Why the result is a no-match — ``None`` for ``"answered"`` and ``"clarify"`` results.
+
+    ``"empty_retrieval"`` — the retriever found no chunks at all.
+    ``"weak_relevance"`` — the Layer-2 gate rejected the retrieved chunks.
+    ``"judge_rejected"`` — the Layer-3 judge dropped every candidate.
+    """
+    candidate_count: int | None = None
+    """Number of distinct candidate documents considered before the no-match bail.
+
+    ``None`` for ``"answered"`` and ``"clarify"`` results. Matches the
+    "Retrieving N documents" count in the retrieve trace phase: ``0`` for
+    ``"empty_retrieval"``, otherwise the distinct-document count over the
+    retrieved chunks.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -399,4 +415,6 @@ def to_search_response(result: SearchResult) -> SearchResponse:
         trace=trace,
         cost=cost,
         outcome_kind=result.outcome_kind,
+        no_match_reason=result.no_match_reason,
+        candidate_count=result.candidate_count,
     )
