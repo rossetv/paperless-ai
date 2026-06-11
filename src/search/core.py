@@ -710,8 +710,7 @@ class SearchCore:
         )
         doc_ids = {c.document_id for c in chunks}
         documents_by_id = {
-            doc.id: doc
-            for doc in self._store_reader.get_documents(doc_ids)
+            doc.id: doc for doc in self._store_reader.get_documents(doc_ids)
         }
         tele.done(
             "retrieve",
@@ -760,7 +759,9 @@ class SearchCore:
             "Resolving filters",
             {
                 "resolved": [
-                    _resolved_spec_detail(index, spec, plan.specs[index].filter_guess, facets)
+                    _resolved_spec_detail(
+                        index, spec, plan.specs[index].filter_guess, facets
+                    )
                     for index, spec in enumerate(specs)
                     if index < len(plan.specs)
                 ],
@@ -1654,7 +1655,9 @@ def _resolved_spec_detail(
         # Use the spec's applied id (may differ if ui_filters overrode it).
         applied_id = spec.filters.correspondent_id
         if applied_id is not None:
-            name = next((e.name for e in facets.correspondents if e.id == applied_id), None)
+            name = next(
+                (e.name for e in facets.correspondents if e.id == applied_id), None
+            )
             corr_detail = {"id": applied_id, "name": name, "method": m.method}
 
     dtype_detail: dict[str, object] | None = None
@@ -1662,7 +1665,9 @@ def _resolved_spec_detail(
         m = _match_name(guess.document_type, facets.document_types)
         applied_id = spec.filters.document_type_id
         if applied_id is not None:
-            name = next((e.name for e in facets.document_types if e.id == applied_id), None)
+            name = next(
+                (e.name for e in facets.document_types if e.id == applied_id), None
+            )
             dtype_detail = {"id": applied_id, "name": name, "method": m.method}
 
     tag_details: list[dict[str, object]] = []
@@ -1702,27 +1707,33 @@ def _dropped_guesses(
         if guess.correspondent is not None:
             m = _match_name(guess.correspondent, facets.correspondents)
             if m.method in {"none", "ambiguous"}:
-                dropped.append({
-                    "name": guess.correspondent,
-                    "reason": m.method,
-                    "candidates": list(m.candidates),
-                })
+                dropped.append(
+                    {
+                        "name": guess.correspondent,
+                        "reason": m.method,
+                        "candidates": list(m.candidates),
+                    }
+                )
         if guess.document_type is not None:
             m = _match_name(guess.document_type, facets.document_types)
             if m.method in {"none", "ambiguous"}:
-                dropped.append({
-                    "name": guess.document_type,
-                    "reason": m.method,
-                    "candidates": list(m.candidates),
-                })
+                dropped.append(
+                    {
+                        "name": guess.document_type,
+                        "reason": m.method,
+                        "candidates": list(m.candidates),
+                    }
+                )
         for tag_guess in guess.tags:
             m = _match_name(tag_guess, facets.tags)
             if m.method in {"none", "ambiguous"}:
-                dropped.append({
-                    "name": tag_guess,
-                    "reason": m.method,
-                    "candidates": list(m.candidates),
-                })
+                dropped.append(
+                    {
+                        "name": tag_guess,
+                        "reason": m.method,
+                        "candidates": list(m.candidates),
+                    }
+                )
     return dropped
 
 
@@ -1793,18 +1804,18 @@ def _gate_documents(
             if current is None or c.vector_similarity > current:
                 best[c.document_id] = c.vector_similarity
 
-    return sorted(
-        [
-            {
-                "document_id": doc_id,
-                "title": _title_for(documents_by_id, doc_id) or f"Document {doc_id}",
-                "best_similarity": sim,
-            }
-            for doc_id, sim in best.items()
-        ],
-        key=lambda row: row["best_similarity"],  # type: ignore[arg-type]
-        reverse=True,
-    )
+    # Sort by the float similarity BEFORE building the dicts, so the sort key is
+    # a float (not the dict's ``object``-typed value) — keeps mypy happy without
+    # a cast.
+    ordered = sorted(best.items(), key=lambda item: item[1], reverse=True)
+    return [
+        {
+            "document_id": doc_id,
+            "title": _title_for(documents_by_id, doc_id) or f"Document {doc_id}",
+            "best_similarity": sim,
+        }
+        for doc_id, sim in ordered
+    ]
 
 
 def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:

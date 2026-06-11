@@ -91,7 +91,9 @@ class TestResolvePhaseEmitResolved:
         """A "Deed" guess that loosely matches "Property Deed" → method "loose"."""
         facets = make_facet_set(
             document_types=(
-                make_taxonomy_entry(kind="document_type", entry_id=42, name="Property Deed"),
+                make_taxonomy_entry(
+                    kind="document_type", entry_id=42, name="Property Deed"
+                ),
             )
         )
         plan = RetrievalPlan(specs=(_planned_spec(document_type="Deed"),))
@@ -141,7 +143,9 @@ class TestResolvePhaseEmitResolved:
         tele, records = _tele()
         SearchCore._emit_resolve_phase(plan, specs, facets, tele)
 
-        assert _record(records, "resolve").detail["resolved"][0]["correspondent"] is None
+        assert (
+            _record(records, "resolve").detail["resolved"][0]["correspondent"] is None
+        )
 
     def test_resolved_includes_date_bounds(self) -> None:
         facets = make_facet_set()
@@ -209,8 +213,12 @@ class TestResolvePhaseEmitDropped:
         """A guess that loosely matches multiple entries → dropped with reason "ambiguous"."""
         facets = make_facet_set(
             document_types=(
-                make_taxonomy_entry(kind="document_type", entry_id=1, name="Property Deed"),
-                make_taxonomy_entry(kind="document_type", entry_id=2, name="Trust Deed"),
+                make_taxonomy_entry(
+                    kind="document_type", entry_id=1, name="Property Deed"
+                ),
+                make_taxonomy_entry(
+                    kind="document_type", entry_id=2, name="Trust Deed"
+                ),
             )
         )
         plan = RetrievalPlan(specs=(_planned_spec(document_type="Deed"),))
@@ -296,13 +304,17 @@ class TestTraceChunks:
         assert result[1]["vector_similarity"] is None
 
     def test_title_from_lookup(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=10, vector_similarity=0.8)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, document_id=10, vector_similarity=0.8)
+        ]
         docs = {10: make_indexed_document(document_id=10, title="Land Registry Deed")}
         result = _trace_chunks(chunks, docs)
         assert result[0]["title"] == "Land Registry Deed"
 
     def test_title_fallback_when_doc_missing(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=99, vector_similarity=0.5)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, document_id=99, vector_similarity=0.5)
+        ]
         result = _trace_chunks(chunks, {})  # empty lookup
         assert result[0]["title"] == "Document 99"
 
@@ -320,14 +332,20 @@ class TestTraceChunks:
 
     def test_snippet_truncated_at_160_chars(self) -> None:
         long_text = "word " * 50  # well over 160 chars
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=1, text=long_text, vector_similarity=0.5)]
+        chunks = [
+            make_retrieved_chunk(
+                chunk_id=1, document_id=1, text=long_text, vector_similarity=0.5
+            )
+        ]
         result = _trace_chunks(chunks, {})
         snippet = result[0]["snippet"]
         assert len(snippet) <= 162  # 160 chars + possible ellipsis (1 char)
         assert snippet.endswith("…")
 
     def test_all_fields_present(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=7, document_id=3, vector_similarity=0.4)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=7, document_id=3, vector_similarity=0.4)
+        ]
         result = _trace_chunks(chunks, {})
         assert set(result[0].keys()) == {
             "chunk_id",
@@ -341,7 +359,9 @@ class TestTraceChunks:
 
     def test_all_chunks_emitted(self) -> None:
         chunks = [
-            make_retrieved_chunk(chunk_id=i, document_id=i, vector_similarity=float(i) / 10)
+            make_retrieved_chunk(
+                chunk_id=i, document_id=i, vector_similarity=float(i) / 10
+            )
             for i in range(1, 8)
         ]
         result = _trace_chunks(chunks, {})
@@ -377,13 +397,17 @@ class TestGateDocuments:
         assert sims == sorted(sims, reverse=True)
 
     def test_title_from_lookup(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=5, vector_similarity=0.7)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, document_id=5, vector_similarity=0.7)
+        ]
         docs = {5: make_indexed_document(document_id=5, title="Tax Return 2024")}
         result = _gate_documents(chunks, docs)
         assert result[0]["title"] == "Tax Return 2024"
 
     def test_title_fallback_when_doc_absent(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=77, vector_similarity=0.5)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, document_id=77, vector_similarity=0.5)
+        ]
         result = _gate_documents(chunks, {})
         assert result[0]["title"] == "Document 77"
 
@@ -399,7 +423,9 @@ class TestGateDocuments:
         assert 2 in doc_ids
 
     def test_all_fields_present(self) -> None:
-        chunks = [make_retrieved_chunk(chunk_id=1, document_id=4, vector_similarity=0.6)]
+        chunks = [
+            make_retrieved_chunk(chunk_id=1, document_id=4, vector_similarity=0.6)
+        ]
         result = _gate_documents(chunks, {})
         assert set(result[0].keys()) == {"document_id", "title", "best_similarity"}
 
