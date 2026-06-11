@@ -105,13 +105,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
-WORKDIR /app
-
-# Create a clean virtual environment for the production image
+# Working directory and venv path. Pre-create BOTH directories owned by appuser
+# (two empty dirs — an O(1) chown, not a recursive pass) and drop to the non-root
+# user BEFORE creating the venv and installing, so every file the install writes
+# is owned by appuser from the start. This replaces a final `chown -R` over the
+# whole venv + app — a metadata-bound pass over thousands of tiny package files
+# that cost ~40s on the native arm64 CI runner — with zero extra work, for the
+# same end-state ownership.
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN mkdir -p /app "$VIRTUAL_ENV" \
+    && chown appuser:appgroup /app "$VIRTUAL_ENV"
+WORKDIR /app
+USER appuser
+
+# Create a clean virtual environment for the production image (as appuser).
+RUN python3 -m venv "$VIRTUAL_ENV"
 
 # Upgrade pip to the latest version
 RUN pip install --no-cache-dir --upgrade pip
@@ -119,11 +128,11 @@ RUN pip install --no-cache-dir --upgrade pip
 # Install the application and its production dependencies from the wheelhouse
 # built in the previous stage. --no-index guarantees nothing is pulled from PyPI
 # and no source build can be triggered: every requirement must already exist as
-# a wheel under /wheels. The wheelhouse is removed afterwards to keep the layer
-# lean.
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir --no-index --find-links=/wheels paperless-ai \
-    && rm -rf /wheels
+# a wheel in the wheelhouse. It is copied under the appuser-owned /app (so it can
+# be removed without root) and deleted afterwards to keep the layer lean.
+COPY --from=builder --chown=appuser:appgroup /wheels /app/wheels
+RUN pip install --no-cache-dir --no-index --find-links=/app/wheels paperless-ai \
+    && rm -rf /app/wheels
 
 # Tell api.py where to find the built frontend.  When installed as a Python
 # package, Path(__file__).parent.parent.parent resolves to the venv site-packages
@@ -140,13 +149,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV MALLOC_ARENA_MAX=2
 
 # Copy the built frontend from the Node stage so the StaticFiles mount is live.
-COPY --from=frontend-builder /web/dist ./web/dist
-
-# Transfer ownership of the application files and venv to the non-root user
-RUN chown -R appuser:appgroup /app /opt/venv
-
-# Switch to the non-root user
-USER appuser
+# --chown keeps it appuser-owned in the same pass — no follow-up chown needed.
+COPY --from=frontend-builder --chown=appuser:appgroup /web/dist ./web/dist
 
 # Set the default command to run the OCR daemon.
 # (The same image can run the classifier via: `paperless-classifier-daemon`
