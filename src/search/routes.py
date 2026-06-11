@@ -73,6 +73,13 @@ _RECONCILE_SENTINEL_NAME = "reconcile.request"
 # HTTP status the healthz endpoint returns when the index is not yet usable.
 _HEALTHZ_UNAVAILABLE_STATUS = 503
 
+# Heartbeat cadence for the search stream. A phase such as synthesis can hold the
+# worker on a single LLM call for 40s+ with nothing to enqueue; without traffic an
+# idle proxy or tunnel (e.g. Cloudflare) closes the connection and the SPA reports
+# a bare "network error". Emitting a blank NDJSON line on this interval keeps the
+# socket warm — the client skips blank lines, so no frame is fabricated.
+_STREAM_KEEPALIVE_SECONDS = 15.0
+
 #: The three index-health states healthz can report (spec §4.7).
 IndexHealthState = Literal["ok", "index-not-ready", "index-corrupt"]
 
@@ -529,7 +536,16 @@ async def _search_stream(
             seq = 0
             try:
                 while True:
-                    kind, payload = await queue.get()
+                    try:
+                        kind, payload = await asyncio.wait_for(
+                            queue.get(), timeout=_STREAM_KEEPALIVE_SECONDS
+                        )
+                    except asyncio.TimeoutError:
+                        # No frame for a while (e.g. a long synthesiser call).
+                        # Flush a blank line so idle proxies keep the connection
+                        # open; the client skips blank lines.
+                        yield "\n"
+                        continue
                     if kind == "sentinel":
                         break
                     seq += 1
