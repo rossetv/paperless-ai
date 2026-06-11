@@ -221,6 +221,58 @@ def test_all_keep_false_bails_to_no_match() -> None:
     assert llm_client.synthesiser_calls == 0
 
 
+def test_judge_bail_no_match_reason_is_judge_rejected() -> None:
+    """Judge bailing (all docs dropped) sets no_match_reason='judge_rejected'."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        judge_response=judge_response_json([], dropped_document_ids=[1, 2]),
+    )
+    result = _core(llm_client).answer("anything")
+    assert result.no_match_reason == "judge_rejected"
+
+
+def test_judge_bail_candidate_count_is_distinct_document_count() -> None:
+    """Judge bail sets candidate_count to the number of distinct judged documents.
+
+    The default _store_reader returns chunks for doc 1 and doc 2, so the
+    candidate count should be 2.
+    """
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        judge_response=judge_response_json([], dropped_document_ids=[1, 2]),
+    )
+    result = _core(llm_client).answer("anything")
+    assert result.candidate_count == 2
+
+
+def test_judge_answered_result_leaves_no_match_reason_none() -> None:
+    """A successful judge pass (docs kept) leaves no_match_reason as None."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("Found it [1].", citations=[1])],
+        judge_response=judge_response_json([1], dropped_document_ids=[2]),
+    )
+    result = _core(llm_client).answer("warranty?")
+    assert result.no_match_reason is None
+
+
+def test_judge_answered_result_leaves_candidate_count_none() -> None:
+    """A successful judge pass leaves candidate_count as None."""
+    reset_search_result_cache()
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(),
+        synthesiser_responses=[answered_response_json("Found it [1].", citations=[1])],
+        judge_response=judge_response_json([1], dropped_document_ids=[2]),
+    )
+    result = _core(llm_client).answer("warranty?")
+    assert result.candidate_count is None
+
+
 def test_sources_are_ranked_by_judge_score_over_rrf() -> None:
     """A higher judge score outranks a higher RRF score in the source order.
 

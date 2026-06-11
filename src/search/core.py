@@ -74,6 +74,7 @@ from search.models import (
     JudgeCandidate,
     JudgeVerdict,
     NeedsMore,
+    NoMatchReason,
     RetrievalPlan,
     RetrievalSpec,
     RetrievedChunk,
@@ -400,7 +401,14 @@ class SearchCore:
                 "search.no_matches",
                 query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
             )
-            return self._no_match_result(plan, budget, started, tele)
+            return self._no_match_result(
+                plan,
+                budget,
+                started,
+                tele,
+                reason="empty_retrieval",
+                candidate_count=0,
+            )
 
         # --- Layer 2: relevance gate (spec §7.2) ---
         if self._settings.SEARCH_GATE_RELEVANCE and self._gate_rejects(
@@ -412,7 +420,14 @@ class SearchCore:
                 best_vector_similarity=signal.best_vector_similarity,
                 has_keyword_hit=signal.has_keyword_hit,
             )
-            return self._no_match_result(plan, budget, started, tele)
+            return self._no_match_result(
+                plan,
+                budget,
+                started,
+                tele,
+                reason="weak_relevance",
+                candidate_count=len({c.document_id for c in chunks}),
+            )
 
         # --- Layer 3: document-relevance judge (cheap pre-synthesis screen) ---
         # The judge's per-document scores are accumulated here (and updated by
@@ -430,7 +445,14 @@ class SearchCore:
         )
         if filtered is None:
             log.info("search.judge_bailed", query_prefix=query[:QUERY_LOG_PREFIX_CHARS])
-            return self._no_match_result(plan, budget, started, tele)
+            return self._no_match_result(
+                plan,
+                budget,
+                started,
+                tele,
+                reason="judge_rejected",
+                candidate_count=len({c.document_id for c in chunks}),
+            )
         chunks = filtered
 
         outcome = self._synthesise(
@@ -1283,14 +1305,20 @@ class SearchCore:
         budget: _LlmBudget,
         started: float,
         tele: _Telemetry,
+        *,
+        reason: NoMatchReason,
+        candidate_count: int,
     ) -> SearchResult:
         """Build the no-hits SearchResult — no sources, no synthesis call.
 
-        Used for both the empty-retrieval case (no chunks found at all) and the
-        Layer-2 relevance-gate rejection (chunks found but signal too weak).
-        The ``outcome_kind`` is ``"no_match"`` in both cases so callers and the
-        SPA can render a consistent "try rephrasing" state. The trace/cost
-        accumulated up to the short-circuit ride on the stats.
+        Used for all three no-match triggers: empty retrieval, the Layer-2
+        relevance-gate rejection, and the Layer-3 judge bailing on every
+        candidate.  The ``outcome_kind`` is ``"no_match"`` in all cases so
+        callers and the SPA can render a consistent "try rephrasing" state.
+        ``reason`` tells the UI *why* so it can show a tailored message;
+        ``candidate_count`` matches the "Retrieving N documents" count in the
+        retrieve trace phase.  The trace/cost accumulated up to the
+        short-circuit ride on the stats.
         """
         stats = SearchStats(
             llm_calls=budget.count,
@@ -1305,6 +1333,8 @@ class SearchCore:
             plan=plan,
             stats=stats,
             outcome_kind="no_match",
+            no_match_reason=reason,
+            candidate_count=candidate_count,
         )
 
     def _clarify_result(

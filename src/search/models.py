@@ -23,6 +23,15 @@ from store.models import SearchFilters
 #: four call layers a type error rather than a silent runtime fallthrough.
 SearchMode = Literal["exploratory", "final"]
 
+#: The reason a no-match result was produced — surfaced alongside ``outcome_kind``
+#: so the UI can show a tailored message rather than a generic "try rephrasing".
+#:
+#: ``"empty_retrieval"`` — the retriever returned no chunks at all.
+#: ``"weak_relevance"`` — the Layer-2 gate rejected the retrieved chunks because
+#:     the best vector similarity was below the configured threshold.
+#: ``"judge_rejected"`` — the Layer-3 relevance judge dropped every candidate.
+NoMatchReason = Literal["empty_retrieval", "weak_relevance", "judge_rejected"]
+
 
 @dataclass(frozen=True, slots=True)
 class FilterCandidates:
@@ -259,6 +268,24 @@ class SearchResult:
     plan: RetrievalPlan
     stats: SearchStats
     outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
+    no_match_reason: NoMatchReason | None = None
+    """Why the result is a no-match — ``None`` for ``"answered"`` and ``"clarify"`` results.
+
+    Set on every ``"no_match"`` result to let the UI render a tailored message:
+    ``"empty_retrieval"`` when the retriever found no chunks at all,
+    ``"weak_relevance"`` when the Layer-2 gate rejected weak chunks, and
+    ``"judge_rejected"`` when the Layer-3 judge dropped every candidate.
+    """
+    candidate_count: int | None = None
+    """Number of distinct candidate documents considered before the no-match bail.
+
+    ``None`` for ``"answered"`` and ``"clarify"`` results.  Matches the
+    "Retrieving N documents" count in the retrieve trace phase so the UI message
+    agrees with what the trace shows:
+    - ``0`` for ``"empty_retrieval"`` (no documents were retrieved);
+    - the distinct-document count over the retrieved chunks for
+      ``"weak_relevance"`` and ``"judge_rejected"``.
+    """
 
 
 # ---------------------------------------------------------------------------

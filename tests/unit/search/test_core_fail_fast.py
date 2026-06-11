@@ -463,6 +463,80 @@ class TestLayer2RelevanceGate:
         assert result.stats.llm_calls <= 3
         assert result.stats.llm_calls == 2
 
+    # --- no_match_reason and candidate_count ---
+
+    def test_layer2_no_match_reason_is_weak_relevance(self) -> None:
+        """Layer 2 rejection sets no_match_reason='weak_relevance'."""
+        weak_hits = [make_chunk_hit(chunk_id=1, document_id=1, score=5.0)]
+        llm_client = _answered_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(vector_hits=weak_hits, keyword_hits=[]),
+            SEARCH_GATE_RELEVANCE=True,
+            SEARCH_RELEVANCE_MIN_SIMILARITY=self._MIN_SIM,
+        )
+        result = core.answer("house deeds in Spain")
+        assert result.no_match_reason == "weak_relevance"
+
+    def test_layer2_candidate_count_is_distinct_document_count(self) -> None:
+        """Layer 2 rejection sets candidate_count to the number of distinct retrieved documents."""
+        # Two chunks from two different documents.
+        weak_hits = [
+            make_chunk_hit(chunk_id=1, document_id=1, score=5.0),
+            make_chunk_hit(chunk_id=2, document_id=2, score=5.0),
+        ]
+        llm_client = _answered_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(vector_hits=weak_hits, keyword_hits=[]),
+            SEARCH_GATE_RELEVANCE=True,
+            SEARCH_RELEVANCE_MIN_SIMILARITY=self._MIN_SIM,
+        )
+        result = core.answer("house deeds in Spain")
+        assert result.candidate_count == 2
+
+    def test_layer2_candidate_count_deduplicates_same_document(self) -> None:
+        """Two chunks from the same document count as one candidate."""
+        weak_hits = [
+            make_chunk_hit(chunk_id=1, document_id=1, score=5.0),
+            make_chunk_hit(chunk_id=2, document_id=1, score=5.0),
+        ]
+        llm_client = _answered_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(vector_hits=weak_hits, keyword_hits=[]),
+            SEARCH_GATE_RELEVANCE=True,
+            SEARCH_RELEVANCE_MIN_SIMILARITY=self._MIN_SIM,
+        )
+        result = core.answer("house deeds in Spain")
+        assert result.candidate_count == 1
+
+    def test_answered_result_leaves_no_match_reason_none(self) -> None:
+        """An answered result must leave no_match_reason as None."""
+        strong_hits = [make_chunk_hit(chunk_id=1, document_id=1, score=0.1)]
+        llm_client = _answered_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(vector_hits=strong_hits, keyword_hits=[]),
+            SEARCH_GATE_RELEVANCE=True,
+            SEARCH_RELEVANCE_MIN_SIMILARITY=self._MIN_SIM,
+        )
+        result = core.answer("when does my boiler warranty expire?")
+        assert result.no_match_reason is None
+
+    def test_answered_result_leaves_candidate_count_none(self) -> None:
+        """An answered result must leave candidate_count as None."""
+        strong_hits = [make_chunk_hit(chunk_id=1, document_id=1, score=0.1)]
+        llm_client = _answered_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(vector_hits=strong_hits, keyword_hits=[]),
+            SEARCH_GATE_RELEVANCE=True,
+            SEARCH_RELEVANCE_MIN_SIMILARITY=self._MIN_SIM,
+        )
+        result = core.answer("when does my boiler warranty expire?")
+        assert result.candidate_count is None
+
     # --- retrieve() does NOT apply Layer 2 ---
 
     def test_retrieve_does_not_apply_layer2(self) -> None:
