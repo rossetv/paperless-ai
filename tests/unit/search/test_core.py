@@ -416,6 +416,36 @@ class TestEmptyRetrieval:
 
         assert result.answer != ""
 
+    def test_empty_retrieval_no_match_reason_is_empty_retrieval(self) -> None:
+        """Empty retrieval sets no_match_reason='empty_retrieval'."""
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=llm_client,
+            store_reader=self._empty_store_reader(),
+            embedding_client=_embedding_client(),
+        )
+        result = core.answer("nothing matches")
+        assert result.no_match_reason == "empty_retrieval"
+
+    def test_empty_retrieval_candidate_count_is_zero(self) -> None:
+        """Empty retrieval sets candidate_count=0 (no documents retrieved)."""
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[answered_response_json("unreachable", citations=[])],
+        )
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=llm_client,
+            store_reader=self._empty_store_reader(),
+            embedding_client=_embedding_client(),
+        )
+        result = core.answer("nothing matches")
+        assert result.candidate_count == 0
+
     def test_broaden_retry_runs_before_giving_up(self) -> None:
         """A filtered retrieval that finds nothing is retried broadened; if
         the broadened retrieval finds chunks, synthesis proceeds normally."""
