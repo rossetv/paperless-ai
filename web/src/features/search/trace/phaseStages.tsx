@@ -533,9 +533,7 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
       const droppedCount = dropped.length;
       return (
         <>
-          <span className={styles['accent']}>
-            {plural(resolvedCount, 'filter')} resolved
-          </span>
+          <span className={styles['accent']}>{resolvedCount} kept</span>
           {` · ${droppedCount} dropped`}
         </>
       );
@@ -597,13 +595,87 @@ function fieldObj(
   return value as Record<string, unknown>;
 }
 
+// Short chip label per resolved/dropped filter dimension — matches the verbs
+// used by the planning step's chips ("from"/"type"/"tags").
+const RESOLVE_DIM_LABEL: Record<string, string> = {
+  correspondent: 'from',
+  document_type: 'type',
+  tags: 'tags',
+};
+
+// Human noun per dimension, for the "no matching …" drop reason.
+const RESOLVE_DIM_NOUN: Record<string, string> = {
+  correspondent: 'correspondent',
+  document_type: 'document type',
+  tags: 'tag',
+};
+
 /**
- * Render the resolve phase body with ordinal labels matching the planning body.
+ * One "kept" filter row: a ✓ mark, a neutral chip (dimension + value), and an
+ * optional muted annotation (e.g. `loosened from "Deed"`). The mark is
+ * decorative — the outcome is also carried by the chip styling and annotation.
+ */
+function keptFilterRow(
+  key: string,
+  dim: string | null,
+  value: React.ReactNode,
+  annot?: React.ReactNode,
+): React.ReactNode {
+  return (
+    <div key={key} className={styles['frow']}>
+      <span
+        className={`${styles['mark']} ${styles['mark-kept']}`}
+        aria-hidden="true"
+      >
+        ✓
+      </span>
+      <span className={styles['fchip']}>
+        {dim !== null && <span className={styles['dim']}>{dim}</span>}
+        <span className={styles['val']}>{value}</span>
+      </span>
+      {annot !== undefined && <span className={styles['annot']}>{annot}</span>}
+    </div>
+  );
+}
+
+/**
+ * One "dropped" filter row: a ✕ mark, a dashed chip with the struck-through
+ * value, and the drop reason. Keeps the filter visible under its query rather
+ * than hiding it in a query-less list.
+ */
+function droppedFilterRow(
+  key: string,
+  dim: string | null,
+  value: React.ReactNode,
+  annot: React.ReactNode,
+): React.ReactNode {
+  return (
+    <div key={key} className={styles['frow']}>
+      <span
+        className={`${styles['mark']} ${styles['mark-drop']}`}
+        aria-hidden="true"
+      >
+        ✕
+      </span>
+      <span className={`${styles['fchip']} ${styles['fchip-dropped']}`}>
+        {dim !== null && <span className={styles['dim']}>{dim}</span>}
+        <span className={styles['val']}>{value}</span>
+      </span>
+      <span className={`${styles['annot']} ${styles['annot-drop']}`}>{annot}</span>
+    </div>
+  );
+}
+
+/**
+ * Render the resolve phase body as one block per planned query, mirroring the
+ * planning step. Each block lists *all* of that query's filters as status chips:
+ * kept (✓), loosened (✓ + `loosened from "…"`), or dropped (✕, struck chip +
+ * the reason it could not be matched). A query that proposed nothing shows
+ * "No filters proposed".
  *
- * Each resolved spec becomes one `.rline`: its ordinal label followed by the
- * resolved taxonomy names (with `· loosened from "…"` in muted green when the
- * resolver widened the planner's guess), or "Planner proposed no filters" when
- * the spec carried nothing to resolve. Dropped entries follow below.
+ * Dropped guesses are grouped under the query that proposed them via their
+ * `spec_index`; an older trace whose drops lack a `spec_index` falls back to a
+ * trailing "Dropped" block so a drop is never silently hidden.
  *
  * Supports both the new object wire (`{correspondent, document_type, tags}`
  * with `{id, name, method}`) and the legacy id wire (falls back to `#id`).
@@ -628,78 +700,79 @@ function resolveBodyNode(
     return fieldStr(filters, key);
   }
 
-  const rows: React.ReactNode[] = resolved.map((spec, i): React.ReactNode => {
-    const index = fieldNum(spec, 'spec_index') ?? i;
-    const bits: React.ReactNode[] = [];
+  // Index resolved specs by their query position (fallback to array order).
+  const resolvedByIndex = new Map<number, Record<string, unknown>>();
+  resolved.forEach((spec, i) => {
+    resolvedByIndex.set(fieldNum(spec, 'spec_index') ?? i, spec);
+  });
 
-    /** Render one resolved taxonomy field (correspondent / document_type). */
-    function renderField(key: string, verb: string, guessKey: string): void {
+  // Group dropped guesses by the query that proposed them; drops without a
+  // spec_index (older traces) collect into a trailing block.
+  const droppedByIndex = new Map<number, Record<string, unknown>[]>();
+  const orphanDrops: Record<string, unknown>[] = [];
+  dropped.forEach((entry) => {
+    const idx = fieldNum(entry, 'spec_index');
+    if (idx === null) {
+      orphanDrops.push(entry);
+      return;
+    }
+    const bucket = droppedByIndex.get(idx) ?? [];
+    bucket.push(entry);
+    droppedByIndex.set(idx, bucket);
+  });
+
+  /** Kept rows for one resolved spec, across every filter dimension. */
+  function keptRowsFor(
+    spec: Record<string, unknown>,
+    index: number,
+  ): React.ReactNode[] {
+    const rows: React.ReactNode[] = [];
+
+    function renderField(key: string, dim: string, guessKey: string): void {
       const obj = fieldObj(spec, key);
       if (obj !== null) {
         const name = fieldStr(obj, 'name');
-        const method = fieldStr(obj, 'method');
         if (name !== null) {
-          const loose = method === 'loose';
+          const loose = fieldStr(obj, 'method') === 'loose';
           const guess = loose ? guessFor(index, guessKey) : null;
-          bits.push(
-            <React.Fragment key={`${key}-${bits.length}`}>
-              <span className={styles['rname']}>{`${verb} ${name}`}</span>
-              {loose && (
-                <span className={styles['loosened']}>
-                  {guess !== null
-                    ? ` · loosened from "${guess}"`
-                    : ' · loosened'}
-                </span>
-              )}
-            </React.Fragment>,
-          );
+          const annot = loose
+            ? guess !== null
+              ? `loosened from "${guess}"`
+              : 'loosened'
+            : undefined;
+          rows.push(keptFilterRow(`${key}-${index}`, dim, name, annot));
           return;
         }
       }
       // Legacy id wire fallback.
       const legacyId = fieldNum(spec, `${key}_id`);
       if (legacyId !== null) {
-        bits.push(
-          <span key={`${key}-legacy`} className={styles['rname']}>
-            {`${verb} #${legacyId}`}
-          </span>,
-        );
+        rows.push(keptFilterRow(`${key}-${index}`, dim, `#${legacyId}`));
       }
     }
 
     renderField('correspondent', 'from', 'correspondent');
     renderField('document_type', 'type', 'document_type');
 
-    // Tags — new object wire, with a legacy id-list fallback.
+    // Tags — new object wire (one row per tag), with a legacy id-list fallback.
     const tagObjs = objList(spec, 'tags');
     if (tagObjs.length > 0) {
-      const tagBits: React.ReactNode[] = tagObjs.map((tag, ti) => {
-        const name = fieldStr(tag, 'name');
-        const method = fieldStr(tag, 'method');
-        const loose = method === 'loose';
-        return (
-          <React.Fragment key={ti}>
-            {ti > 0 ? ', ' : ''}
-            <span className={styles['rname']}>{name ?? '?'}</span>
-            {loose && <span className={styles['loosened']}> · loosened</span>}
-          </React.Fragment>
+      tagObjs.forEach((tag, ti) => {
+        const name = fieldStr(tag, 'name') ?? '?';
+        const loose = fieldStr(tag, 'method') === 'loose';
+        rows.push(
+          keptFilterRow(
+            `tag-${index}-${ti}`,
+            'tags',
+            name,
+            loose ? 'loosened' : undefined,
+          ),
         );
       });
-      bits.push(
-        <React.Fragment key={`tags-${bits.length}`}>
-          {'tags '}
-          {tagBits}
-        </React.Fragment>,
-      );
     } else {
-      const tagIds = fieldNumList(spec, 'tag_ids');
-      if (tagIds.length > 0) {
-        bits.push(
-          <span key="tag-ids" className={styles['rname']}>
-            {`tags ${tagIds.map((id) => `#${id}`).join(', ')}`}
-          </span>,
-        );
-      }
+      fieldNumList(spec, 'tag_ids').forEach((id, ti) => {
+        rows.push(keptFilterRow(`tagid-${index}-${ti}`, 'tags', `#${id}`));
+      });
     }
 
     const dateRange = formatDateRange(
@@ -707,60 +780,88 @@ function resolveBodyNode(
       fieldStr(spec, 'date_to'),
     );
     if (dateRange !== null) {
-      bits.push(
-        <span key="date" className={styles['rname']}>
-          {`date ${dateRange}`}
-        </span>,
-      );
+      rows.push(keptFilterRow(`date-${index}`, 'date', dateRange));
     }
+    return rows;
+  }
 
+  /** Dropped rows for one query's dropped guesses. */
+  function droppedRowsFor(
+    entries: Record<string, unknown>[],
+    index: number,
+  ): React.ReactNode[] {
+    const rows: React.ReactNode[] = [];
+    entries.forEach((entry, di) => {
+      const name = fieldStr(entry, 'name');
+      if (name !== null) {
+        const fieldKind = fieldStr(entry, 'field');
+        const dim = fieldKind !== null ? RESOLVE_DIM_LABEL[fieldKind] ?? null : null;
+        const noun =
+          fieldKind !== null ? RESOLVE_DIM_NOUN[fieldKind] ?? 'filter' : 'filter';
+        const candidates = fieldStrList(entry, 'candidates');
+        const annot =
+          fieldStr(entry, 'reason') === 'ambiguous' && candidates.length > 0
+            ? `ambiguous — matched ${candidates.join(', ')}`
+            : `no matching ${noun}`;
+        rows.push(droppedFilterRow(`drop-${index}-${di}`, dim, name, annot));
+        return;
+      }
+      // Legacy dropped wire: {spec_index, names: [...]} — no field or reason.
+      fieldStrList(entry, 'names').forEach((nm, ni) => {
+        rows.push(
+          droppedFilterRow(`dropn-${index}-${di}-${ni}`, null, nm, 'no match'),
+        );
+      });
+    });
+    return rows;
+  }
+
+  // Total query count: trust the planner's spec list; fall back to the highest
+  // index seen in the data when plan specs were not threaded in.
+  const dataMax = Math.max(
+    -1,
+    ...resolvedByIndex.keys(),
+    ...droppedByIndex.keys(),
+  );
+  const total = Math.max(planSpecs.length, dataMax + 1);
+
+  const blocks: React.ReactNode[] = Array.from({ length: total }, (_, q) => {
+    const spec = resolvedByIndex.get(q);
+    const rows: React.ReactNode[] = [];
+    if (spec !== undefined) {
+      rows.push(...keptRowsFor(spec, q));
+    }
+    const drops = droppedByIndex.get(q);
+    if (drops !== undefined) {
+      rows.push(...droppedRowsFor(drops, q));
+    }
     return (
-      <div key={`r-${index}`} className={styles['rline']}>
-        <span className={styles['qord']}>{ordinal(index + 1)} query{'  '}</span>
-        {bits.length > 0
-          ? bits.map((bit, bi) => (
-              <React.Fragment key={bi}>
-                {bi > 0 ? ' · ' : ''}
-                {bit}
-              </React.Fragment>
-            ))
-          : 'Planner proposed no filters'}
+      <div key={`q-${q}`} className={styles['fblock']}>
+        <div className={styles['fhead']}>
+          <span className={styles['qord']}>{ordinal(q + 1)} query</span>
+        </div>
+        {rows.length > 0 ? (
+          rows
+        ) : (
+          <div className={styles['nofilters']}>No filters proposed</div>
+        )}
       </div>
     );
   });
 
-  dropped.forEach((entry, i) => {
-    const name = fieldStr(entry, 'name');
-    if (name !== null) {
-      const reason = fieldStr(entry, 'reason');
-      const candidates = fieldStrList(entry, 'candidates');
-      if (reason === 'ambiguous' && candidates.length > 0) {
-        rows.push(
-          <div key={`drop-${i}`} className={styles['rline']}>
-            {`Dropped (ambiguous): ${name} → ${candidates.join(', ')}`}
-          </div>,
-        );
-      } else {
-        rows.push(
-          <div key={`drop-${i}`} className={styles['rline']}>
-            {`Dropped (no match): ${name}`}
-          </div>,
-        );
-      }
-    } else {
-      // Legacy dropped wire: {spec_index, names: [...]}.
-      const names = fieldStrList(entry, 'names');
-      if (names.length > 0) {
-        rows.push(
-          <div key={`drop-${i}`} className={styles['rline']}>
-            {`Dropped (no match): ${names.join(', ')}`}
-          </div>,
-        );
-      }
-    }
-  });
+  // Orphan drops (no spec_index) — never hide them; show in a trailing block.
+  if (orphanDrops.length > 0) {
+    blocks.push(
+      <div key="q-orphan" className={styles['fblock']}>
+        <div className={styles['fhead']}>
+          <span className={styles['qord']}>Dropped</span>
+        </div>
+        {droppedRowsFor(orphanDrops, -1)}
+      </div>,
+    );
+  }
 
-  return <>{rows}</>;
+  return <>{blocks}</>;
 }
 
 /**

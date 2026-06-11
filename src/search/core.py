@@ -89,7 +89,7 @@ from search.refinement import (
     merge_chunks,
     trivial_plan,
 )
-from search.retriever import _match_name, resolve_specs
+from search.retriever import NameMatch, _match_name, resolve_specs
 from search.relevance import RelevanceThresholds
 from search.sources import _paperless_url, _snippet, assemble_sources
 from search.text import (
@@ -1688,6 +1688,25 @@ def _resolved_spec_detail(
     }
 
 
+def _drop_entry(
+    spec_index: int, field: str, name: str, match: NameMatch
+) -> dict[str, object]:
+    """Build one ``dropped[i]`` trace entry for a guess that did not resolve.
+
+    Carries ``spec_index`` (which planned query the guess came from) and
+    ``field`` (``"correspondent"`` | ``"document_type"`` | ``"tags"``) so the
+    trace UI can show the drop under its query, labelled with its dimension,
+    instead of as a query-less flat line.
+    """
+    return {
+        "spec_index": spec_index,
+        "field": field,
+        "name": name,
+        "reason": match.method,
+        "candidates": list(match.candidates),
+    }
+
+
 def _dropped_guesses(
     plan: RetrievalPlan,
     specs: tuple[RetrievalSpec, ...],
@@ -1697,43 +1716,32 @@ def _dropped_guesses(
 
     A guess is "dropped" when :func:`~search.retriever._match_name` returns
     ``method="none"`` or ``method="ambiguous"``.  Each dropped entry is
-    ``{"name": <guess str>, "reason": <"none"|"ambiguous">, "candidates": [...]}``.
-    For tags, one entry is emitted per dropped tag.  Dates are deterministic and
-    never reported here.  The result is JSON-serialisable primitives.
+    ``{"spec_index": <int>, "field": <"correspondent"|"document_type"|"tags">,
+    "name": <guess str>, "reason": <"none"|"ambiguous">, "candidates": [...]}``.
+    ``spec_index`` and ``field`` let the UI group the drop under its query and
+    name its dimension.  For tags, one entry is emitted per dropped tag.  Dates
+    are deterministic and never reported here.  The result is JSON-serialisable
+    primitives.
     """
     dropped: list[dict[str, object]] = []
-    for planned, resolved in zip(plan.specs, specs):
+    for spec_index, (planned, _resolved) in enumerate(zip(plan.specs, specs)):
         guess = planned.filter_guess
         if guess.correspondent is not None:
             m = _match_name(guess.correspondent, facets.correspondents)
             if m.method in {"none", "ambiguous"}:
                 dropped.append(
-                    {
-                        "name": guess.correspondent,
-                        "reason": m.method,
-                        "candidates": list(m.candidates),
-                    }
+                    _drop_entry(spec_index, "correspondent", guess.correspondent, m)
                 )
         if guess.document_type is not None:
             m = _match_name(guess.document_type, facets.document_types)
             if m.method in {"none", "ambiguous"}:
                 dropped.append(
-                    {
-                        "name": guess.document_type,
-                        "reason": m.method,
-                        "candidates": list(m.candidates),
-                    }
+                    _drop_entry(spec_index, "document_type", guess.document_type, m)
                 )
         for tag_guess in guess.tags:
             m = _match_name(tag_guess, facets.tags)
             if m.method in {"none", "ambiguous"}:
-                dropped.append(
-                    {
-                        "name": tag_guess,
-                        "reason": m.method,
-                        "candidates": list(m.candidates),
-                    }
-                )
+                dropped.append(_drop_entry(spec_index, "tags", tag_guess, m))
     return dropped
 
 

@@ -169,10 +169,15 @@ describe('SearchTracePanel', () => {
     expect(text).toContain('npower energy 2024');
     expect(text).toContain('from');
     expect(text).toContain('Npower');
-    // The resolve body renders the legacy id wire as "from #7" (no name on the
-    // legacy shape); the new object wire would show the resolved name instead.
-    expect(text).toContain('from #7');
-    expect(text).toContain('Dropped (no match): Mystery Co');
+    // The resolve body renders the legacy id wire as a "from" chip with the id
+    // "#7" (no name on the legacy shape); the new object wire would show the
+    // resolved name instead. The chip's label and value are separate spans, so
+    // assert on each rather than the concatenation.
+    expect(text).toContain('#7');
+    // The legacy {spec_index, names} drop is grouped under its query and shown
+    // as a struck chip with a "no match" reason, not a flat trailing line.
+    expect(text).toContain('Mystery Co');
+    expect(text).toContain('no match');
     expect(text).toContain('Gap: no Q4 figure');
     expect(text).toContain('New search 1: "Q4 invoice total"');
   });

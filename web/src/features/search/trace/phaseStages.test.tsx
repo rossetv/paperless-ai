@@ -514,18 +514,18 @@ describe('phaseSummary', () => {
     expect(container.textContent).toMatch(/trivial/i);
   });
 
-  it('resolve: shows N filters resolved and M dropped', () => {
+  it('resolve: shows N kept and M dropped', () => {
     const record = makeResolveRecord({
       resolved: [
         { spec_index: 0, correspondent: { id: 7, name: 'Npower', method: 'exact' }, document_type: null, tags: [], date_from: null, date_to: null },
         { spec_index: 1, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
       ],
       dropped: [
-        { name: 'Acme', reason: 'none', candidates: [] },
+        { spec_index: 0, field: 'correspondent', name: 'Acme', reason: 'none', candidates: [] },
       ],
     });
     const { container } = render(<>{phaseSummary(record)}</>);
-    expect(container.textContent).toContain('1 filter resolved');
+    expect(container.textContent).toContain('1 kept');
     expect(container.textContent).toContain('1 dropped');
   });
 
@@ -624,7 +624,7 @@ describe('phaseToStages summary/body split', () => {
     expect(text).toContain('exact terms for deed papers');
   });
 
-  it('resolve: body shows ordinal label and "Planner proposed no filters" for specs with no filters', () => {
+  it('resolve: body shows ordinal label and "No filters proposed" for specs with no filters', () => {
     const record = makeResolveRecord({
       resolved: [
         { spec_index: 0, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
@@ -634,7 +634,7 @@ describe('phaseToStages summary/body split', () => {
     const stage = phaseToStages([record], null)[0]!;
     const { container } = render(<>{stage.body}</>);
     expect(container.textContent).toContain('1st query');
-    expect(container.textContent).toContain('Planner proposed no filters');
+    expect(container.textContent).toContain('No filters proposed');
   });
 
   it('resolve: body shows ordinal label, resolved name, and loosened annotation when method=loose', () => {
@@ -672,18 +672,68 @@ describe('phaseToStages summary/body split', () => {
     expect(container.textContent).toContain('Deed');
   });
 
-  it('resolve: body shows reason-aware dropped lines', () => {
+  it('resolve: body shows reason-aware drop annotations under their query', () => {
     const record = makeResolveRecord({
-      resolved: [],
+      resolved: [
+        { spec_index: 0, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
+      ],
       dropped: [
-        { name: 'Acme', reason: 'none', candidates: [] },
-        { name: 'Deed', reason: 'ambiguous', candidates: ['Property Deed', 'Trust Deed'] },
+        { spec_index: 0, field: 'correspondent', name: 'Acme', reason: 'none', candidates: [] },
+        { spec_index: 0, field: 'document_type', name: 'Deed', reason: 'ambiguous', candidates: ['Property Deed', 'Trust Deed'] },
       ],
     });
     const stage = phaseToStages([record], null)[0]!;
     const { container } = render(<>{stage.body}</>);
-    expect(container.textContent).toContain('Dropped (no match): Acme');
-    expect(container.textContent).toContain('Dropped (ambiguous): Deed → Property Deed, Trust Deed');
+    const text = container.textContent ?? '';
+    expect(text).toContain('Acme');
+    expect(text).toContain('no matching correspondent');
+    expect(text).toContain('Deed');
+    expect(text).toContain('ambiguous — matched Property Deed, Trust Deed');
+    // No query-less flat "Dropped (no match): …" line any more.
+    expect(text).not.toContain('Dropped (no match)');
+  });
+
+  it('resolve: a dropped guess renders under the query that proposed it, not a flat trailing line', () => {
+    // The bug fix: the planner asked for a Spain tag on the 1st query; it does
+    // not resolve, so it must appear under "1st query" — alongside the kept
+    // (loosened) type filter — not as a query-less "Dropped: Spain" line.
+    const planRecord: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: {
+        specs: [
+          { mode: 'keyword', query: 'deed Spain', filters: { document_type: 'Deed', tags: ['Spain'] }, rationale: null },
+          { mode: 'semantic', query: 'house papers', filters: {}, rationale: null },
+        ],
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const resolveRecord = makeResolveRecord({
+      resolved: [
+        { spec_index: 0, correspondent: null, document_type: { id: 12, name: 'Property Deed', method: 'loose' }, tags: [], date_from: null, date_to: null },
+        { spec_index: 1, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
+      ],
+      dropped: [
+        { spec_index: 0, field: 'tags', name: 'Spain', reason: 'none', candidates: [] },
+      ],
+    });
+    const stage = phaseToStages([planRecord, resolveRecord], null)[1]!;
+    const { container } = render(<>{stage.body}</>);
+    const text = container.textContent ?? '';
+
+    // The 1st-query block carries BOTH its kept type and its dropped tag.
+    expect(text).toContain('1st query');
+    expect(text).toContain('Property Deed');
+    expect(text).toContain('loosened from "Deed"');
+    expect(text).toContain('Spain');
+    expect(text).toContain('no matching tag');
+    // The 2nd query, which proposed nothing, is still shown.
+    expect(text).toContain('2nd query');
+    expect(text).toContain('No filters proposed');
+
+    // The drop sits before the 2nd-query block — i.e. grouped under query 1,
+    // not appended as a trailing flat line.
+    expect(text.indexOf('Spain')).toBeLessThan(text.indexOf('2nd query'));
   });
 
   it('retrieve: body lists chunks with title and snippet', () => {
