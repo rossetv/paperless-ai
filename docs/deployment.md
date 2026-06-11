@@ -1,16 +1,41 @@
 # Deployment
 
-`paperless-ai` ships as **one Docker image** that runs any of its four processes
-— the OCR daemon, the classifier daemon, the indexer daemon, and the search
-server — chosen by the command you give it. A full deployment runs all four
-against one Paperless-ngx instance and one shared `/data` volume.
+`paperless-ai` is **one Docker image** that can run as up to four small background processes. Each process does one job, and you pick which one by the command you pass the image. A full deployment runs all four side by side, pointed at one Paperless-ngx instance and sharing one `/data` folder.
 
-You do not need all four. The OCR and classifier daemons are useful on their own;
-the indexer and search server add semantic search on top.
+## In a nutshell
+
+There is a single image — `rossetv/paperless-ai:latest` — and four things it can be:
+
+- **OCR daemon** — reads text off scanned documents (the default command).
+- **Classifier daemon** — tags and files those documents once OCR is done.
+- **Indexer daemon** — builds a search index from your documents.
+- **Search server** — serves the web UI, an HTTP API, and an MCP endpoint on port 8080.
+
+You run as many of these as you want, each as its own container, all sharing the same `/data` volume. **You do not need all four.** OCR and the classifier are useful on their own; the indexer and search server add semantic search on top. The two databases that hold everything live on that shared volume, so the only hard rule is: every container points at the same `/data`.
+
+## The fastest path
+
+The quickest way to a working setup is a single OCR daemon. You need three things from your existing setup — a Paperless URL, a Paperless API token, and an OpenAI key — plus two tag IDs you create in Paperless (one for "needs OCR", one for "done"). Then:
+
+```bash
+docker run -d --name paperless-ocr \
+  -v paperless-ai-data:/data \
+  -e PAPERLESS_URL="http://your-paperless:8000" \
+  -e PAPERLESS_TOKEN="your_paperless_api_token" \
+  -e OPENAI_API_KEY="sk-your-openai-key" \
+  -e PRE_TAG_ID="443" \
+  -e POST_TAG_ID="444" \
+  -e ERROR_TAG_ID="552" \
+  rossetv/paperless-ai:latest
+```
+
+Tag a document "needs OCR" in Paperless, and within a few seconds the daemon picks it up. That is the whole loop. Everything below adds the other three processes, the full Compose stack, and the tuning you reach for later.
 
 ---
 
 ## Prerequisites
+
+Before any of the commands below will work you need:
 
 1. **A running Paperless-ngx instance** with API access enabled.
 2. **A Paperless API token** — *Settings → Users & Groups → [your user] → API
@@ -43,6 +68,9 @@ natural way to seed a first install.
 ---
 
 ## Docker run — the tag daemons
+
+Run the OCR and classifier daemons one container at a time with `docker run`. The
+OCR daemon comes in two flavours depending on your AI provider.
 
 ### OCR daemon (OpenAI)
 
@@ -103,9 +131,10 @@ explicitly to use a different trigger tag.
 
 ## Docker Compose — the full stack
 
-This runs all four processes. OCR feeds classification through the shared tag
-`444`; the indexer reconciles Paperless into the search index; the search server
-exposes the web UI, HTTP API, and MCP endpoint on port 8080.
+Once you want more than one process, Compose is the easier way to manage them.
+This stack runs all four. OCR feeds classification through the shared tag `444`;
+the indexer reconciles Paperless into the search index; the search server exposes
+the web UI, HTTP API, and MCP endpoint on port 8080.
 
 ```yaml
 services:
@@ -219,6 +248,11 @@ handle startup ordering.
 
 ## Tag setup
 
+The daemons take all their direction from Paperless tags: a document tagged
+"needs OCR" is work to do, and the daemons swap tags as it moves through the
+pipeline. So before anything runs you create those tags in Paperless and tell the
+daemons their numeric IDs.
+
 ### Required tags
 
 Create these in Paperless (*Admin → Tags*) and note their numeric IDs:
@@ -232,6 +266,9 @@ The numeric ID is in the tag's admin URL — e.g. `/admin/documents/tag/443/chan
 → `443`.
 
 ### Optional tags
+
+These are not required to get going, but each earns its place in a real
+deployment:
 
 | Purpose | Variable | When |
 |:---|:---|:---|
@@ -256,10 +293,11 @@ Just run both daemons with the same `POST_TAG_ID`.
 
 ## Multi-instance deployments
 
-To scale throughput you can run several OCR or classifier instances. To stop two
-instances processing the same document, set a **processing-lock tag**
-(`OCR_PROCESSING_TAG_ID` and/or `CLASSIFY_PROCESSING_TAG_ID`) to a dedicated tag
-ID. Each instance refreshes the document, checks the lock, patches it on, and
+If one OCR or classifier daemon cannot keep up, run several. They all watch the
+same Paperless, so the only thing to sort out is stopping two of them grabbing the
+same document at once. You do that with a **processing-lock tag**: set
+`OCR_PROCESSING_TAG_ID` and/or `CLASSIFY_PROCESSING_TAG_ID` to a dedicated tag ID.
+Each instance refreshes the document, checks the lock, patches it on, and
 re-verifies before processing; the lock is released in a `finally` block.
 
 This is a best-effort optimistic lock, not a strict distributed one — in a rare
@@ -275,7 +313,11 @@ the index's sole writer.
 
 ## The Docker image
 
-The image is a three-stage build (`Dockerfile`):
+You never build the image yourself for normal use — you pull
+`rossetv/paperless-ai:latest`. This section is for the curious and for anyone
+building it locally.
+
+It is a three-stage build (`Dockerfile`):
 
 1. **Frontend builder** (`node:22-slim`, on the build host's native arch) — runs
    `npm ci` and `vite build` to produce `web/dist`. The output is
@@ -297,7 +339,8 @@ publishes a multi-arch manifest to Docker Hub as `rossetv/paperless-ai:latest`
 
 ## Privacy & data handling
 
-Each subsystem sends content to external services for processing:
+To do its job, each process sends some document content to an external service.
+Know what goes where before you deploy:
 
 | Subsystem | What is sent | Where |
 |:---|:---|:---|

@@ -1504,7 +1504,7 @@ useful. Run it against every PR before approving.
 
 - [ ] No hardcoded colour, size, radius, or shadow outside `web/src/styles/tokens.css`
       ([§12.4](#124-design-tokens-are-the-only-source-of-design-values)).
-- [ ] No `.module.css` outside `components/` (and the §12.5 `features/` exception for screen-level layout tokens — see [§12.5](#125-css-modules-and-the-forbidden-zone)).
+- [ ] No `.module.css` outside `components/` (and the §12.5 `features/` exception for screen-level layout tokens — see [§12.5](#125-css-module-ownership)).
 - [ ] No layer-boundary violation — a `pages/` import of a primitive, a `fetch`
       call outside `api/` ([§12.3](#123-the-layer-stack-and-its-one-rule),
       [§12.6](#126-the-typed-api-layer)).

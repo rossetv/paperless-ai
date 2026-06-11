@@ -1,47 +1,79 @@
 # Search Pipeline Architecture
 
-> **Accuracy notice.** This document was generated from a direct reading of the
-> current source on `main` (`src/search/core.py`, `planner.py`, `prompts.py`,
-> `retriever.py`, `dates.py`, `judge.py`, `synthesizer.py`, `refinement.py`,
-> `models.py`, and `store/reader/_filters.py`).  Every claim maps to the actual
-> code; nothing is inferred.
+> This is the deep dive into the search pipeline's internals. For the server,
+> API, authentication, and UI view of search, see [search.md](search.md).
+
+The search pipeline turns a plain-language question — *"What was my salary in
+April 2025?"* — into a written answer backed by your own documents. It plans the
+search, pulls the relevant documents, checks they actually fit the question,
+writes the answer, and cites its sources.
+
+## In a nutshell
+
+You ask a question. The pipeline answers it from the documents in your index, in
+six steps:
+
+1. **Plan** — one LLM call turns your question into a handful of concrete
+   searches (some narrow, some broad).
+2. **Resolve** — plain code turns the planner's text guesses ("npower", "April
+   2025") into real taxonomy ids and validated dates.
+3. **Retrieve** — plain code runs each search against the store and fuses the
+   results into one ranked list of document chunks.
+4. **Judge** — one cheap LLM call reads the candidates and decides which
+   documents genuinely fit the question.
+5. **Synthesise** — one LLM call writes the answer from the surviving chunks,
+   citing each document it draws on.
+6. **Refine** *(optional)* — if the answer needs more evidence, the pipeline
+   re-plans and tries once more, then stops.
+
+The single most important thing to understand: **the pipeline is bounded and
+non-agentic.** It makes a fixed, predictable number of LLM calls per query — no
+open-ended "search again and again" loop. That keeps cost and latency
+controllable on a billable, network-facing endpoint. `SearchCore.answer()` is
+the one entry point; a raw query goes in and a fully assembled `SearchResult`
+comes out — prose answer, ranked sources, the plan, and a per-phase telemetry
+trace.
+
+```mermaid
+flowchart LR
+    Q([Question]) --> P[Plan]
+    P --> RS[Resolve]
+    RS --> RT[Retrieve]
+    RT --> J[Judge]
+    J --> SY[Synthesise]
+    SY --> A([Answer + sources])
+    SY -. needs more .-> P
+
+    style A fill:#d4edda,stroke:#28a745
+```
+
+**Entry point:** `src/search/core.py` — `SearchCore.answer()`
+
+> **Accuracy notice.** This document was written from a direct reading of the
+> source on `main`: `src/search/core.py`, `planner.py`, `prompts.py`,
+> `retriever.py`, `dates.py`, `judge.py`, `synthesizer.py`, `sources.py`,
+> `relevance.py`, `refinement.py`, `models.py`, and `store/reader/_filters.py`.
+> Every claim maps to the actual code; nothing is inferred.
 
 ---
 
-## 1. Overview
+## How it works
 
-`SearchCore.answer()` is the single entry point for the read-side search
-pipeline.  A raw user query enters and a fully synthesised `SearchResult`
-emerges — with a prose answer, ranked source documents, the execution plan, and
-a per-phase telemetry trace.
+The six stages run in order. Three of them are LLM calls (plan, judge,
+synthesise); the rest is plain, deterministic code. Two fail-fast **gates** sit
+in front so a useless query never reaches a paid model:
 
-The pipeline is **bounded and non-agentic**: it makes a fixed, predictable
-number of LLM calls per query.  There is no open-ended agent loop.  The stages
-are:
+- **Layer 0** — a query shorter than `SEARCH_MIN_QUERY_CHARS` (after trimming) is
+  rejected immediately with a clarify message and **zero** LLM calls.
+- **Layer 1** — the planner may decide a query is too vague to search and ask for
+  clarification. The core short-circuits before retrieval or synthesis.
+- **Layer 2** — after retrieval, if the best match is weak *and* there was no
+  keyword hit, the pipeline returns "no match" rather than synthesising from
+  noise.
 
-1. **Planner** — one LLM call that turns a free-text query into a
-   multi-`PlannedSpec` `RetrievalPlan`, with deliberate precision/recall spread.
-   Identity- and date-aware.  May return `ClarifyNeeded` (Layer 1 adequacy
-   gate).
-2. **Resolve** — pure code.  Turns free-text filter guesses into real taxonomy
-   ids and validated ISO dates.  A deterministic date safety net appends a
-   date-scoped spec when the query names a period but no spec carries a date
-   filter.
-3. **Retrieve** — pure code.  Each spec runs independently against the store
-   (vector search for semantic specs, FTS5 for keyword specs).  All ranked lists
-   are fused with Reciprocal Rank Fusion (RRF).  Broaden-and-retry fires once on
-   an empty result.
-4. **Judge** — one LLM call (cheap model).  Identity- and date-aware.  Scores
-   each document 0–1 and issues a boolean `keep` per document.  The `keep`
-   boolean is the **sole gate** — no score threshold applies.  Fail-open on any
-   failure.
-5. **Synthesise** — one LLM call.  Evidence-gated (never fabricates a missing
-   period).  Reconciles multiple documents with attribution.  Returns `Answered`
-   (done) or `NeedsMore{hint}` (optional refinement pass).
-6. **Refine** (optional, bounded by `SEARCH_MAX_REFINEMENTS`) — re-plan from
-   the synth's gap hint → resolve → retrieve → merge → re-judge → final synth.
-   A no-op guard prevents paying for a redundant retrieve when the re-plan
-   resolves identically to what was already tried.
+What follows walks the happy path stage by stage. The deeper material —
+refinement, the exact LLM-call budget, the streaming trace, a full worked
+example, and the design decisions behind it all — comes after.
 
 ```mermaid
 flowchart TD
@@ -127,9 +159,16 @@ flowchart TD
 
 ---
 
-## 2. Stage-by-stage breakdown
+## Stage-by-stage breakdown
 
-### 2.1 Planner
+This is the same six-stage journey at full detail. Each stage names its source
+file, says whether it makes an LLM call, and describes its inputs, outputs, and
+the rules it applies.
+
+### Planner
+
+The planner reads your question and writes the search strategy: a small set of
+concrete searches to run, deliberately spread from narrow to broad.
 
 **File:** `src/search/planner.py` — `QueryPlanner.plan()` / `QueryPlanner.replan()`
 
@@ -175,18 +214,28 @@ The plan is capped at `SEARCH_PLANNER_MAX_SPECS`.  Any parse failure degrades
 gracefully to a single broad semantic spec on the raw query — `plan()` never
 raises.
 
+> **Trivial-query shortcut (RAG-08).** When `SEARCH_SKIP_PLANNER_FOR_TRIVIAL` is
+> set and the query is a short, signal-free keyword lookup, the planner LLM call
+> is skipped entirely and a fallback-shaped plan runs vector + FTS on the raw
+> query — nothing is lost. The flag defaults off, preserving always-plan
+> behaviour.
+
 #### Layer 1 adequacy gate
 
 When `SEARCH_GATE_ADEQUACY` is on and the planner returns `{"clarify":
-{"reason": "..."}, "specs": []}`, the core short-circuits with a fixed
-user-facing message (`_CLARIFY_ANSWER`) and makes zero further LLM calls.  The
-model's reason is logged for operator triage and never shown to users.  The gate
-is fail-open: a malformed or empty `clarify` field falls through to a normal
-plan.
+{"reason": "..."}}`, the core short-circuits with a fixed user-facing message
+(`_CLARIFY_ANSWER`) and makes zero further LLM calls.  The model's reason is
+logged for operator triage and never shown to users.  The gate is fail-open: a
+malformed or empty `clarify` field falls through to a normal plan.
 
 ---
 
-### 2.2 Resolve
+### Resolve
+
+The planner only ever emits *names* ("Payslip", "DoiT") and *date phrases*
+("April 2025"). Resolve is the pure-code stage that turns those into the real
+taxonomy ids and ISO dates the store can actually filter on — and quietly drops
+anything that doesn't match a real entity.
 
 **File:** `src/search/retriever.py` — `resolve_specs()`, `_resolve_one_spec()`,
 `_resolve_dates()`, `_match_name()`, `_intersect()`; `src/search/dates.py` —
@@ -269,7 +318,11 @@ stored timestamp because the `T…` suffix sorts after a bare date string.
 
 ---
 
-### 2.3 Retrieve
+### Retrieve
+
+Retrieve runs every search the resolver produced, then fuses all the results
+into one ranked list of document chunks. It makes no chat call — only a single
+embedding batch (which is not counted in the LLM budget).
 
 **File:** `src/search/retriever.py` — `Retriever.retrieve()`, `_run_passes()`,
 `_fuse_with_rrf()`, `_top_document_ids()`, `_build_capped_chunks()`
@@ -323,10 +376,10 @@ or `None` when the chunk was found by keyword search alone.
 
 #### Broaden-and-retry
 
-When the first retrieval pass returns an empty list, `_retrieve_with_broaden()`
-retries once with all filter guesses dropped (`broaden_plan()` clears every
-spec's `filter_guess`).  UI filters are also dropped on the broadened pass —
-a user-set filter is not the cause of a mis-resolved planner filter.  This retry
+When the first retrieval pass returns an empty list, the core retries once with
+all filter guesses dropped (`broaden_plan()` clears every spec's `filter_guess`,
+and the broadened pass is resolved with `ui_filters=None`).  A user-set filter is
+not the cause of a mis-resolved planner filter, so it is dropped too.  This retry
 fires once per query, never recursively.
 
 #### RetrievalSignal
@@ -342,9 +395,23 @@ RetrievalSignal(
 
 This feeds the Layer 2 relevance gate.
 
+#### Layer 2 relevance gate
+
+When `SEARCH_GATE_RELEVANCE` is on, `_is_irrelevant()` (in `core.py`) inspects
+the signal and rejects the query — returning `no_match` with no synthesis — only
+when **both** signals are poor: `best_vector_similarity` is below
+`SEARCH_RELEVANCE_MIN_SIMILARITY` **and** there was no keyword hit.  An exact-term
+keyword match or a strong semantic match always passes.  The gate is fail-open:
+a `None` similarity (no vector pass ran) always proceeds to the judge.
+
 ---
 
-### 2.4 Judge
+### Judge
+
+Retrieval is good at finding *similar* documents, but "similar" is not the same
+as "answers the question". The judge is a cheap LLM call that reads each
+candidate and decides which documents genuinely fit — the right period, the
+right entity.
 
 **File:** `src/search/judge.py` — `RelevanceJudge.judge()`
 
@@ -407,7 +474,11 @@ already found chunks.
 
 ---
 
-### 2.5 Synthesise
+### Synthesise
+
+Synthesise is where the answer actually gets written. It reads the surviving
+chunks and produces prose with inline citations — or, in exploratory mode, says
+the evidence is too thin and asks for another pass.
 
 **File:** `src/search/synthesizer.py` — `Synthesizer.synthesise()`
 
@@ -481,21 +552,33 @@ mode degrades to a `NeedsMore` with a generic broadening hint.
 
 ---
 
-### 2.6 Result assembly
+### Result assembly
 
-After synthesis, `assemble_sources()` constructs `SourceDocument` instances from
-the final chunk list, ranking by RRF score and labelling each with a
-`relevance_tier` (strong / good / partial / weak) derived from the document's
-absolute `vector_similarity`.  The `judge_scores` dict (accumulated across both
-passes) is used to break ties and further order sources by relevance.
+The final step turns the surviving chunks into the ranked `SourceDocument` list
+the UI shows, and narrows them to just the documents the answer cited.
 
-`_cited_sources()` narrows the assembled sources to only those cited in the
-answer's `citations` list.  If the synthesiser cited nothing or its citations
-match no retrieved source, all sources are returned as a fallback.
+After synthesis, `assemble_sources()` groups the final chunks by document
+(keeping each document's best fused score, a snippet from its best chunk, and its
+best absolute vector similarity), resolves correspondent and document-type names
+in one `get_documents` look-up, and labels each document with a `relevance_tier`
+(strong / good / partial / weak) derived from its absolute `vector_similarity`. A
+keyword-only document (no vector similarity) is labelled "good" — an exact-term
+match is a deliberate, solid signal.
+
+Sources are ranked **by the judge's relevance score first** (the judge has read
+each document's metadata and snippet, a far stronger signal than a rank-based RRF
+number), falling back to the RRF/fused `score` for any document the judge did not
+score, with the RRF score also breaking ties. So a degraded query — where no
+judge score exists — keeps its descending-RRF order.
+
+`_cited_sources()` then narrows the assembled sources to only those cited in the
+answer's `citations` list.  If the synthesiser cited nothing, returned a
+`NeedsMore`, or its citations match no retrieved source, all sources are returned
+as a fallback rather than an empty list.
 
 ---
 
-## 3. Refinement loop
+## Refinement loop
 
 When the exploratory synthesiser returns `NeedsMore`, the core may trigger one
 or more refinement passes (bounded by `SEARCH_MAX_REFINEMENTS`).  Each pass
@@ -550,7 +633,11 @@ relevant evidence; a mid-refinement judge bail must not downgrade to no-match.
 
 ---
 
-## 4. LLM-call accounting
+## LLM-call accounting
+
+The pipeline's whole reason for being bounded is that every LLM call costs money
+and latency on a network-facing endpoint. Here is exactly how many calls each
+path makes, and the backstop that guarantees it never exceeds that.
 
 ### Common path (no refinement)
 
@@ -585,10 +672,15 @@ max_calls = 2 + j + R × (2 + j)
 
 where `j = 1` if `SEARCH_GATE_JUDGE` is on (else 0) and `R =
 SEARCH_MAX_REFINEMENTS`.  A no-op-guard pass skips re-retrieve and re-judge, so
-the actual count is at or below this ceiling.  A logic regression that tried an
-extra call raises `LlmBudgetExceededError` rather than silently overspending.
+the actual count is at or below this ceiling.  Every LLM call is recorded
+*before* it is made, so a logic regression that tried an extra call raises
+`LlmBudgetExceededError` rather than silently overspending.
 
 The query embedding is **not** a chat call and is not counted.
+
+> The operator sets `SEARCH_MAX_REFINEMENTS` from the UI with no hard cap, so
+> cost and latency scale with it — the budget ceiling is whatever the formula
+> above evaluates to for the chosen value.
 
 ### Sequence diagram
 
@@ -632,7 +724,11 @@ sequenceDiagram
 
 ---
 
-## 5. The streaming trace
+## The streaming trace
+
+So a user can watch the pipeline work — and an operator can debug it — every
+phase emits a live event. The SPA renders these as the "How this answer was
+found" accordion.
 
 Every pipeline phase emits a `PhaseStart` event then a `PhaseRecord` event
 through the `on_event` callback (wired to the HTTP SSE route for live
@@ -653,9 +749,16 @@ streaming).  Non-LLM phases carry `tokens=None, cost=None`.
 The accumulated trace (`SearchStats.trace`) is included in the `SearchResult`
 and is rendered live in the SPA's "How this answer was found" accordion.
 
+> A successful answer is also cached (keyed on the normalised query, the UI
+> filters, a cheap index-version signal, and the asker). A cache hit makes zero
+> LLM calls and emits a single `cache` phase. A no-match or degraded result is
+> never cached; `SEARCH_CACHE_TTL_SECONDS` of 0 disables the cache entirely.
+
 ---
 
-## 6. Worked example: "What was my salary in April 2025?"
+## Worked example: "What was my salary in April 2025?"
+
+To make all six stages concrete, here is one query traced end to end.
 
 **Setup:** asker is `"Alice"`, today is `2026-06-11`.
 
@@ -752,7 +855,10 @@ sources to docs 55 and 61 only.
 
 ---
 
-## 7. Key design decisions
+## Key design decisions
+
+Every stage above made a deliberate choice that an earlier or naïver design got
+wrong. These are the four that matter most.
 
 ### Multi-spec + per-spec filters
 
@@ -801,3 +907,22 @@ it can honestly answer the question.  A similarity-score trigger would fire for
 low-scored chunks that are nonetheless sufficient to answer, and would miss cases
 where chunks are plentiful but off-topic.  Delegating the "enough context?"
 decision to the stage that reads the evidence is more reliable.
+
+---
+
+## File Index
+
+| File | Purpose |
+|:---|:---|
+| `core.py` | `SearchCore` — the bounded orchestrator: gates, the six-stage pipeline, the refinement loop, the LLM-call budget, and result assembly wiring |
+| `planner.py` | `QueryPlanner` — turns a query into a `RetrievalPlan`; the Layer 1 adequacy gate; the re-planner |
+| `retriever.py` | `resolve_specs` + `Retriever` — name/date resolution, the date safety net, per-spec fan-out, RRF fusion, broaden-and-retry |
+| `dates.py` | `extract_date_range` / `normalise_iso_date` — the deterministic date parser |
+| `judge.py` | `RelevanceJudge` — the cheap per-document relevance screen, fail-open |
+| `synthesizer.py` | `Synthesizer` — writes the answer from chunks; evidence-gating; the nonce-fenced data region |
+| `sources.py` | `assemble_sources` — groups chunks into ranked `SourceDocument`s, judge-score-first |
+| `relevance.py` | `relevance_tier` — buckets a vector similarity into a strong/good/partial/weak badge |
+| `refinement.py` | `broaden_plan` / `merge_chunks` / `trivial_plan` — the pure helpers behind broaden, refine, and the trivial-query skip |
+| `prompts.py` | The planner, judge, and synthesiser system prompts and user-message builders |
+| `models.py` | The pipeline's data types — `RetrievalPlan`, `RetrievalSpec`, `RetrievedChunk`, `JudgeVerdict`, `SearchResult`, … |
+| `store/reader/_filters.py` | `build_filters` — translates resolved filters (including the `date()`-wrapped date bounds) into SQL |
