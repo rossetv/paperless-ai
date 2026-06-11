@@ -679,7 +679,8 @@ describe('phaseToStages summary/body split', () => {
       ],
       dropped: [
         { spec_index: 0, field: 'correspondent', name: 'Acme', reason: 'none', candidates: [] },
-        { spec_index: 0, field: 'document_type', name: 'Deed', reason: 'ambiguous', candidates: ['Property Deed', 'Trust Deed'] },
+        { spec_index: 0, field: 'document_type', name: 'Deed', reason: 'near_miss', candidates: ['Property Deed', 'Trust Deed'] },
+        { spec_index: 0, field: 'tags', name: 'Contract Employment', reason: 'ambiguous', candidates: ['Employment Contract', 'Contract of Employment'] },
       ],
     });
     const stage = phaseToStages([record], null)[0]!;
@@ -688,7 +689,8 @@ describe('phaseToStages summary/body split', () => {
     expect(text).toContain('Acme');
     expect(text).toContain('no matching correspondent');
     expect(text).toContain('Deed');
-    expect(text).toContain('ambiguous — matched Property Deed, Trust Deed');
+    expect(text).toContain('no match — nearest Property Deed, Trust Deed');
+    expect(text).toContain('ambiguous — matched Employment Contract, Contract of Employment');
     // No query-less flat "Dropped (no match): …" line any more.
     expect(text).not.toContain('Dropped (no match)');
   });

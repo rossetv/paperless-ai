@@ -743,8 +743,9 @@ class SearchCore:
 
         ``resolved`` lists each spec's per-field ``{id, name, method}`` objects
         and ISO date bounds after resolution.  ``dropped`` lists each name guess
-        that did not resolve (``method`` is ``"none"`` or ``"ambiguous"``), with
-        the drop reason and, for the ambiguous case, the competing candidate names.
+        that did not resolve (``method`` in :data:`_DROPPED_METHODS` — ``"none"``,
+        ``"ambiguous"`` or ``"near_miss"``), with the drop reason and, for the
+        ambiguous/near-miss cases, the competing or overlapping candidate names.
         Both are JSON-serialisable primitives the SPA renders as the "Resolving
         filters" step.
 
@@ -1707,6 +1708,12 @@ def _drop_entry(
     }
 
 
+# ``_match_name`` methods that mean a guess did NOT resolve to a filter and so
+# is reported in the trace's ``dropped`` list (``"loose"``/``"exact"``/
+# ``"normalised"`` resolved and are not dropped).
+_DROPPED_METHODS = frozenset({"none", "ambiguous", "near_miss"})
+
+
 def _dropped_guesses(
     plan: RetrievalPlan,
     specs: tuple[RetrievalSpec, ...],
@@ -1714,33 +1721,33 @@ def _dropped_guesses(
 ) -> list[dict[str, object]]:
     """List the name guesses that did not resolve, with reason and candidates.
 
-    A guess is "dropped" when :func:`~search.retriever._match_name` returns
-    ``method="none"`` or ``method="ambiguous"``.  Each dropped entry is
-    ``{"spec_index": <int>, "field": <"correspondent"|"document_type"|"tags">,
-    "name": <guess str>, "reason": <"none"|"ambiguous">, "candidates": [...]}``.
-    ``spec_index`` and ``field`` let the UI group the drop under its query and
-    name its dimension.  For tags, one entry is emitted per dropped tag.  Dates
-    are deterministic and never reported here.  The result is JSON-serialisable
-    primitives.
+    A guess is "dropped" when :func:`~search.retriever._match_name` returns a
+    method in :data:`_DROPPED_METHODS` (``"none"``, ``"ambiguous"`` or
+    ``"near_miss"``).  Each dropped entry is ``{"spec_index": <int>, "field":
+    <"correspondent"|"document_type"|"tags">, "name": <guess str>, "reason":
+    <method>, "candidates": [...]}``.  ``spec_index`` and ``field`` let the UI
+    group the drop under its query and name its dimension.  For tags, one entry
+    is emitted per dropped tag.  Dates are deterministic and never reported here.
+    The result is JSON-serialisable primitives.
     """
     dropped: list[dict[str, object]] = []
     for spec_index, (planned, _resolved) in enumerate(zip(plan.specs, specs)):
         guess = planned.filter_guess
         if guess.correspondent is not None:
             m = _match_name(guess.correspondent, facets.correspondents)
-            if m.method in {"none", "ambiguous"}:
+            if m.method in _DROPPED_METHODS:
                 dropped.append(
                     _drop_entry(spec_index, "correspondent", guess.correspondent, m)
                 )
         if guess.document_type is not None:
             m = _match_name(guess.document_type, facets.document_types)
-            if m.method in {"none", "ambiguous"}:
+            if m.method in _DROPPED_METHODS:
                 dropped.append(
                     _drop_entry(spec_index, "document_type", guess.document_type, m)
                 )
         for tag_guess in guess.tags:
             m = _match_name(tag_guess, facets.tags)
-            if m.method in {"none", "ambiguous"}:
+            if m.method in _DROPPED_METHODS:
                 dropped.append(_drop_entry(spec_index, "tags", tag_guess, m))
     return dropped
 

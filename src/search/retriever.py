@@ -89,15 +89,33 @@ def _normalise(text: str) -> str:
     return text
 
 
+# Connective stopwords stripped before content-word comparison. Deliberately
+# tiny — the common joiners in real taxonomy names ("Contract OF Employment",
+# "Terms AND Conditions", "Application FOR X"). "a"/"an" are excluded on purpose:
+# they would collapse short labels ("Form A" -> "Form", "Schedule A" == "Schedule
+# B"), which terse tags genuinely use.
+_STOPWORDS = frozenset({"of", "the", "and", "for", "to"})
+
+
 @dataclass(frozen=True, slots=True)
 class NameMatch:
     """Outcome of resolving one planner name guess against a taxonomy.
 
     ``id`` is the resolved taxonomy id, or None when nothing was applied.
-    ``method`` records HOW it resolved so the trace can explain it: ``"exact"``,
-    ``"normalised"``, ``"loose"`` (whole-word containment), ``"none"`` (no match),
-    or ``"ambiguous"`` (more than one loose candidate — dropped, never guessed).
-    ``candidates`` carries the competing names only when ``method == "ambiguous"``.
+    ``method`` records HOW it resolved so the trace can explain it:
+
+    - ``"exact"`` — exact string match on ``entry.name``.
+    - ``"normalised"`` — case/punctuation-normalised string match.
+    - ``"loose"`` — unique content-word-set equality (see ``_match_name``).
+    - ``"ambiguous"`` — two or more taxonomy names share the candidate's exact
+      word set; dropped, never guessed.
+    - ``"near_miss"`` — no name has the candidate's exact word set, but some
+      share at least one word; dropped. Diagnostic only — the overlapping names
+      are reported so the trace can show what the guess nearly matched.
+    - ``"none"`` — no word overlap at all (or the guess was only stopwords).
+
+    ``candidates`` carries the competing names for ``"ambiguous"`` and the
+    overlapping names (ranked by shared-word count, capped) for ``"near_miss"``.
     """
 
     id: int | None
@@ -109,12 +127,22 @@ def _tokenise(text: str) -> frozenset[str]:
     """Split *text* into a set of normalised whole-word tokens.
 
     NFKC + lower-case, then split on any run of non-alphanumerics; empty tokens
-    are dropped. ``"Property Deed"`` -> ``{"property", "deed"}``. Used by the
-    loose-matching pass so "Deed" matches "Property Deed" but "ID" does not match
-    "Video" (no whole token "id").
+    are dropped. ``"Property Deed"`` -> ``{"property", "deed"}``. Underlies the
+    loose pass's whole-word comparison, so "ID" does not match "Video" (no whole
+    token "id").
     """
     folded = unicodedata.normalize("NFKC", text).lower()
     return frozenset(tok for tok in re.split(r"[^a-z0-9]+", folded) if tok)
+
+
+def _content_tokens(text: str) -> frozenset[str]:
+    """Whole-word tokens of *text* with connective stopwords removed.
+
+    ``"Contract of Employment"`` -> ``{"contract", "employment"}``. Lets word-set
+    equality ignore both word order and connective fillers, so "Employment
+    Contract" resolves to "Contract of Employment" but not to "Contract".
+    """
+    return _tokenise(text) - _STOPWORDS
 
 
 def _match_name(
@@ -126,13 +154,17 @@ def _match_name(
     Resolution order:
     1. Exact string match on ``entry.name``.
     2. Case- and punctuation-normalised match via ``_normalise``.
-    3. Whole-word containment: one token set a (non-empty) subset of the other,
-       in either direction. A unique loose hit resolves; multiple loose hits are
-       ambiguous and dropped (the candidates are reported); none is a plain
-       no-match.
+    3. Content-word-set equality: the entry must have EXACTLY the candidate's
+       meaningful words — same set, order- and connective-independent, no more
+       and no fewer. A unique equal name resolves; two or more equal names are
+       ``"ambiguous"``; otherwise any names sharing a word are reported as a
+       ``"near_miss"`` (diagnostic, never applied). A broader name (drops a word)
+       and a more specific name (adds a word) both fail to resolve — applying a
+       filter that is not what was asked is worse than none, since text retrieval
+       still runs.
 
-    The resolved id is never a guess — an ambiguous or unmatched candidate yields
-    ``id=None`` (spec §6.1).
+    The resolved id is never a guess — an ambiguous, near-miss or unmatched
+    candidate yields ``id=None`` (spec §6.1).
     """
     # Pass 1: exact match.
     for entry in entries:
@@ -145,22 +177,34 @@ def _match_name(
         if _normalise(entry.name) == normalised_candidate:
             return NameMatch(id=entry.id, method="normalised")
 
-    # Pass 3: whole-word containment (bidirectional token subset).
-    candidate_tokens = _tokenise(candidate)
+    # Pass 3: content-word-set equality (order- and connective-independent).
+    candidate_tokens = _content_tokens(candidate)
     if candidate_tokens:
-        loose = [
+        equal = [
             entry
             for entry in entries
-            if (entry_tokens := _tokenise(entry.name))
-            and (candidate_tokens <= entry_tokens or entry_tokens <= candidate_tokens)
+            if _content_tokens(entry.name) == candidate_tokens
         ]
-        if len(loose) == 1:
-            return NameMatch(id=loose[0].id, method="loose")
-        if len(loose) > 1:
+        if len(equal) == 1:
+            return NameMatch(id=equal[0].id, method="loose")
+        if len(equal) > 1:
             return NameMatch(
                 id=None,
                 method="ambiguous",
-                candidates=tuple(entry.name for entry in loose),
+                candidates=tuple(entry.name for entry in equal),
+            )
+        # No exact word set — surface near-misses (entries sharing a word),
+        # ranked by overlap and capped, as a diagnostic. Never resolved.
+        near = sorted(
+            (e for e in entries if _content_tokens(e.name) & candidate_tokens),
+            key=lambda e: len(_content_tokens(e.name) & candidate_tokens),
+            reverse=True,
+        )
+        if near:
+            return NameMatch(
+                id=None,
+                method="near_miss",
+                candidates=tuple(entry.name for entry in near[:5]),
             )
 
     return NameMatch(id=None, method="none")

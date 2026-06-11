@@ -799,10 +799,13 @@ function resolveBodyNode(
         const noun =
           fieldKind !== null ? RESOLVE_DIM_NOUN[fieldKind] ?? 'filter' : 'filter';
         const candidates = fieldStrList(entry, 'candidates');
+        const reason = fieldStr(entry, 'reason');
         const annot =
-          fieldStr(entry, 'reason') === 'ambiguous' && candidates.length > 0
+          reason === 'ambiguous' && candidates.length > 0
             ? `ambiguous — matched ${candidates.join(', ')}`
-            : `no matching ${noun}`;
+            : reason === 'near_miss' && candidates.length > 0
+              ? `no match — nearest ${candidates.join(', ')}`
+              : `no matching ${noun}`;
         rows.push(droppedFilterRow(`drop-${index}-${di}`, dim, name, annot));
         return;
       }
