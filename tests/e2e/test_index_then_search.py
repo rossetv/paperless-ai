@@ -211,6 +211,9 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_PER_SPEC_K = 10
     settings.SEARCH_MAX_CHUNKS_PER_DOC = 3
     settings.SEARCH_PLANNER_MAX_SPECS = 8
+    # Names per taxonomy list fed to the planner — a real int so the alphabetical
+    # cap comparison isn't an auto-created MagicMock attribute.
+    settings.SEARCH_PLANNER_TAXONOMY_LIMIT = 100
     return settings
 
 

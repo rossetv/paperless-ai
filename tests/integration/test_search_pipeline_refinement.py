@@ -291,11 +291,17 @@ class TestRefineByReplan:
             assert result.stats.refined is True
 
             # Pass 1 was 2024-scoped; the refined pass was April-2025-scoped — a
-            # genuinely different, date-scoped filter, not a blind broaden.
-            assert len(spy.vector_filters) == 2
-            assert spy.vector_filters[0].date_from == "2024-01-01"
-            assert spy.vector_filters[1].date_from == "2025-04-01"
-            assert spy.vector_filters[1].date_to == "2025-04-30"
+            # genuinely different, date-scoped filter, not a blind broaden. Each
+            # date-filtered spec is now paired with an unfiltered recall twin
+            # (same query, filters stripped) so a wrong filter can't silently
+            # exclude the answer — hence four vector searches: pass-1 filtered +
+            # twin, then refined filtered + twin.
+            assert len(spy.vector_filters) == 4
+            assert spy.vector_filters[0].date_from == "2024-01-01"  # pass 1 filtered
+            assert spy.vector_filters[1].date_from is None  # pass 1 twin
+            assert spy.vector_filters[2].date_from == "2025-04-01"  # refined filtered
+            assert spy.vector_filters[2].date_to == "2025-04-30"
+            assert spy.vector_filters[3].date_from is None  # refined twin
 
             # The April doc appears only after refinement: it is the cited source.
             source_ids = {source.document_id for source in result.sources}
