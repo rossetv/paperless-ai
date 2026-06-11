@@ -227,33 +227,21 @@ function lines(items: React.ReactNode[]): React.ReactNode {
 }
 
 /**
- * Summarise one planned spec's free-text filter guesses as a compact, readable
- * suffix (e.g. "from Npower · type Invoice · tags A, B · 2024-01-01→2024-12-31").
- * Returns the empty string when the spec carried no filter guesses.
+ * Return the ordinal suffix for a 1-based index: 1→"1st", 2→"2nd", 3→"3rd",
+ * 4→"4th", …, 11→"11th", 12→"12th", 13→"13th", 21→"21st", etc.
  */
-function planSpecFilters(spec: Record<string, unknown>): string {
-  const filters = (spec['filters'] ?? {}) as Record<string, unknown>;
-  const parts: string[] = [];
-  const correspondent = fieldStr(filters, 'correspondent');
-  if (correspondent !== null) {
-    parts.push(`from ${correspondent}`);
+export function ordinal(n: number): string {
+  const abs = Math.abs(n);
+  const mod100 = abs % 100;
+  // Special-case the teens (11–13) which break the normal suffix pattern.
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${n}th`;
   }
-  const documentType = fieldStr(filters, 'document_type');
-  if (documentType !== null) {
-    parts.push(`type ${documentType}`);
-  }
-  const tags = fieldStrList(filters, 'tags');
-  if (tags.length > 0) {
-    parts.push(`tags ${tags.join(', ')}`);
-  }
-  const dateRange = formatDateRange(
-    fieldStr(filters, 'date_from'),
-    fieldStr(filters, 'date_to'),
-  );
-  if (dateRange !== null) {
-    parts.push(dateRange);
-  }
-  return parts.join(' · ');
+  const mod10 = abs % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
 }
 
 /** Format an inclusive ISO date range, or a single bound, or null when absent. */
@@ -271,10 +259,15 @@ function formatDateRange(from: string | null, to: string | null): string | null 
 }
 
 /**
- * Render the planner's per-spec search list (the `specs` detail key). One line
- * per planned search: its query text, its mode, the filter guesses, and the
- * planner's rationale. Falls back to the legacy `rewritten_query` rendering
- * when no specs are present (an older backend or a clarify outcome).
+ * Render the planner's per-spec search list (the `specs` detail key).
+ *
+ * Each spec becomes a structured block containing:
+ *   - a meta row: ordinal label, mode badge (Keyword/Semantic), filter chips
+ *   - the query text in curly quotes on its own line
+ *   - the rationale on its own line below (smaller, tertiary)
+ *
+ * Falls back to the legacy `rewritten_query` rendering when no specs are
+ * present (an older backend or a clarify outcome).
  */
 function planNode(d: Record<string, unknown>): React.ReactNode {
   if (bool(d, 'skipped_trivial')) {
@@ -283,20 +276,77 @@ function planNode(d: Record<string, unknown>): React.ReactNode {
   const specs = objList(d, 'specs');
   if (specs.length === 0) {
     const rewritten = str(d, 'rewritten_query');
-    return rewritten ? `Rewritten: “${rewritten}”` : null;
+    return rewritten ? `Rewritten: "${rewritten}"` : null;
   }
-  const rows = specs.map((spec, i): React.ReactNode => {
+
+  const blocks = specs.map((spec, i): React.ReactNode => {
     const query = fieldStr(spec, 'query') ?? '';
     const mode = fieldStr(spec, 'mode');
-    const filters = planSpecFilters(spec);
     const rationale = fieldStr(spec, 'rationale');
-    const head = `${i + 1}. “${query}”${mode !== null ? ` (${mode})` : ''}`;
-    const tail = [filters, rationale ? `— ${rationale}` : '']
-      .filter((part) => part !== '')
-      .join(' · ');
-    return tail !== '' ? `${head} · ${tail}` : head;
+    const filters = (spec['filters'] ?? {}) as Record<string, unknown>;
+
+    // Build filter chips from the planner's free-text guesses.
+    const chips: React.ReactNode[] = [];
+    const correspondent = fieldStr(filters, 'correspondent');
+    if (correspondent !== null) {
+      chips.push(
+        <span key="correspondent" className={styles['qfilter']}>
+          <span className={styles['qfilter-key']}>from </span>
+          {correspondent}
+        </span>,
+      );
+    }
+    const documentType = fieldStr(filters, 'document_type');
+    if (documentType !== null) {
+      chips.push(
+        <span key="document_type" className={styles['qfilter']}>
+          <span className={styles['qfilter-key']}>type </span>
+          {documentType}
+        </span>,
+      );
+    }
+    const tags = fieldStrList(filters, 'tags');
+    if (tags.length > 0) {
+      chips.push(
+        <span key="tags" className={styles['qfilter']}>
+          <span className={styles['qfilter-key']}>tags </span>
+          {tags.join(', ')}
+        </span>,
+      );
+    }
+    const dateFrom = fieldStr(filters, 'date_from');
+    const dateTo = fieldStr(filters, 'date_to');
+    const dateRange = formatDateRange(dateFrom, dateTo);
+    if (dateRange !== null) {
+      chips.push(
+        <span key="date" className={styles['qfilter']}>
+          {dateRange}
+        </span>,
+      );
+    }
+
+    const isKeyword = mode === 'keyword';
+    const modeClass = isKeyword ? styles['qmode-keyword'] : styles['qmode-semantic'];
+    const modeLabel = isKeyword ? 'Keyword' : 'Semantic';
+
+    return (
+      <div key={i} className={styles['qblock']}>
+        <div className={styles['qmeta']}>
+          <span className={styles['qord']}>{ordinal(i + 1)} query</span>
+          {mode !== null && (
+            <span className={`${styles['qmode']} ${modeClass}`}>{modeLabel}</span>
+          )}
+          {chips}
+        </div>
+        <div className={styles['qtext']}>{'“'}{query}{'”'}</div>
+        {rationale !== null && rationale !== '' && (
+          <div className={styles['qwhy']}>{rationale}</div>
+        )}
+      </div>
+    );
   });
-  return lines(rows);
+
+  return <>{blocks}</>;
 }
 
 /**
@@ -367,7 +417,7 @@ function refineNode(d: Record<string, unknown>): React.ReactNode {
       const query = fieldStr(spec, 'query') ?? '';
       const mode = fieldStr(spec, 'mode');
       rows.push(
-        `New search ${i + 1}: “${query}”${mode !== null ? ` (${mode})` : ''}`,
+        `New search ${i + 1}: "${query}"${mode !== null ? ` (${mode})` : ''}`,
       );
     });
   }
@@ -395,7 +445,7 @@ function replanNode(d: Record<string, unknown>): React.ReactNode {
   specs.forEach((spec, i) => {
     const query = fieldStr(spec, 'query') ?? '';
     const mode = fieldStr(spec, 'mode');
-    rows.push(`${i + 1}. “${query}”${mode !== null ? ` (${mode})` : ''}`);
+    rows.push(`${i + 1}. "${query}"${mode !== null ? ` (${mode})` : ''}`);
   });
   return lines(rows);
 }
@@ -548,11 +598,15 @@ function fieldObj(
 }
 
 /**
- * Render the resolve phase body with the new object wire shape — each resolved
- * spec carries `{correspondent, document_type, tags}` objects with `{id, name,
- * method}` (or null). A `method === 'loose'` field is annotated as loosened
- * from the planner's original guess (read from the threaded plan specs).
- * Tolerates the legacy id wire shape (falls back to `#id`).
+ * Render the resolve phase body with ordinal labels matching the planning body.
+ *
+ * Each resolved spec becomes one `.rline`: its ordinal label followed by the
+ * resolved taxonomy names (with `· loosened from "…"` in muted green when the
+ * resolver widened the planner's guess), or "Planner proposed no filters" when
+ * the spec carried nothing to resolve. Dropped entries follow below.
+ *
+ * Supports both the new object wire (`{correspondent, document_type, tags}`
+ * with `{id, name, method}`) and the legacy id wire (falls back to `#id`).
  */
 function resolveBodyNode(
   d: Record<string, unknown>,
@@ -564,7 +618,7 @@ function resolveBodyNode(
     return null;
   }
 
-  /** The planner's free-text guess for a field on the spec at `index`. */
+  /** The planner's free-text guess for a filter key on the spec at `index`. */
   function guessFor(index: number, key: string): string | null {
     const planSpec = planSpecs[index];
     if (planSpec === undefined) {
@@ -579,11 +633,7 @@ function resolveBodyNode(
     const bits: React.ReactNode[] = [];
 
     /** Render one resolved taxonomy field (correspondent / document_type). */
-    function renderField(
-      key: string,
-      verb: string,
-      guessKey: string,
-    ): void {
+    function renderField(key: string, verb: string, guessKey: string): void {
       const obj = fieldObj(spec, key);
       if (obj !== null) {
         const name = fieldStr(obj, 'name');
@@ -593,11 +643,11 @@ function resolveBodyNode(
           const guess = loose ? guessFor(index, guessKey) : null;
           bits.push(
             <React.Fragment key={`${key}-${bits.length}`}>
-              {`${verb} ${name}`}
+              <span className={styles['rname']}>{`${verb} ${name}`}</span>
               {loose && (
                 <span className={styles['loosened']}>
                   {guess !== null
-                    ? ` · loosened from “${guess}”`
+                    ? ` · loosened from "${guess}"`
                     : ' · loosened'}
                 </span>
               )}
@@ -609,7 +659,11 @@ function resolveBodyNode(
       // Legacy id wire fallback.
       const legacyId = fieldNum(spec, `${key}_id`);
       if (legacyId !== null) {
-        bits.push(`${verb} #${legacyId}`);
+        bits.push(
+          <span key={`${key}-legacy`} className={styles['rname']}>
+            {`${verb} #${legacyId}`}
+          </span>,
+        );
       }
     }
 
@@ -626,7 +680,7 @@ function resolveBodyNode(
         return (
           <React.Fragment key={ti}>
             {ti > 0 ? ', ' : ''}
-            {name ?? '?'}
+            <span className={styles['rname']}>{name ?? '?'}</span>
             {loose && <span className={styles['loosened']}> · loosened</span>}
           </React.Fragment>
         );
@@ -640,7 +694,11 @@ function resolveBodyNode(
     } else {
       const tagIds = fieldNumList(spec, 'tag_ids');
       if (tagIds.length > 0) {
-        bits.push(`tags ${tagIds.map((id) => `#${id}`).join(', ')}`);
+        bits.push(
+          <span key="tag-ids" className={styles['rname']}>
+            {`tags ${tagIds.map((id) => `#${id}`).join(', ')}`}
+          </span>,
+        );
       }
     }
 
@@ -649,12 +707,16 @@ function resolveBodyNode(
       fieldStr(spec, 'date_to'),
     );
     if (dateRange !== null) {
-      bits.push(`date ${dateRange}`);
+      bits.push(
+        <span key="date" className={styles['rname']}>
+          {`date ${dateRange}`}
+        </span>,
+      );
     }
 
     return (
-      <>
-        {`${index + 1}. `}
+      <div key={`r-${index}`} className={styles['rline']}>
+        <span className={styles['qord']}>{ordinal(index + 1)} query{'  '}</span>
         {bits.length > 0
           ? bits.map((bit, bi) => (
               <React.Fragment key={bi}>
@@ -662,8 +724,8 @@ function resolveBodyNode(
                 {bit}
               </React.Fragment>
             ))
-          : 'no filters proposed'}
-      </>
+          : 'Planner proposed no filters'}
+      </div>
     );
   });
 
@@ -674,15 +736,15 @@ function resolveBodyNode(
       const candidates = fieldStrList(entry, 'candidates');
       if (reason === 'ambiguous' && candidates.length > 0) {
         rows.push(
-          <React.Fragment key={`drop-${i}`}>
+          <div key={`drop-${i}`} className={styles['rline']}>
             {`Dropped (ambiguous): ${name} → ${candidates.join(', ')}`}
-          </React.Fragment>,
+          </div>,
         );
       } else {
         rows.push(
-          <React.Fragment key={`drop-${i}`}>
+          <div key={`drop-${i}`} className={styles['rline']}>
             {`Dropped (no match): ${name}`}
-          </React.Fragment>,
+          </div>,
         );
       }
     } else {
@@ -690,15 +752,15 @@ function resolveBodyNode(
       const names = fieldStrList(entry, 'names');
       if (names.length > 0) {
         rows.push(
-          <React.Fragment key={`drop-${i}`}>
+          <div key={`drop-${i}`} className={styles['rline']}>
             {`Dropped (no match): ${names.join(', ')}`}
-          </React.Fragment>,
+          </div>,
         );
       }
     }
   });
 
-  return lines(rows);
+  return <>{rows}</>;
 }
 
 /**
