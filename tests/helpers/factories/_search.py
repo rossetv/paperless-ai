@@ -490,6 +490,10 @@ def make_search_settings(**overrides: Any) -> Any:
         # the first element; pin to 8 (the production default) so multi-spec
         # tests get the full list without needing to override.
         "SEARCH_PLANNER_MAX_SPECS": 8,
+        # Names per taxonomy list fed to the planner prompt
+        # (SEARCH_PLANNER_TAXONOMY_LIMIT). Pinned to the production default so
+        # tests exercising the taxonomy block get a real int, not a MagicMock.
+        "SEARCH_PLANNER_TAXONOMY_LIMIT": 100,
         # Multi-spec retriever knobs. A MagicMock auto-attribute used as an
         # int comparison or slice index misbehaves, so pin both to their
         # production defaults (SEARCH_PER_SPEC_K defaults to SEARCH_TOP_K=10).

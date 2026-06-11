@@ -628,19 +628,21 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_five_entries() -> None:
-    """CONFIG_KEYS is the 75-key universe.
+def test_config_keys_has_seventy_six_entries() -> None:
+    """CONFIG_KEYS is the 76-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
+    SEARCH_PLANNER_TAXONOMY_LIMIT was added to feed the planner the live taxonomy.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 75
+    assert len(CONFIG_KEYS) == 76
     assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
     assert "SEARCH_PER_SPEC_K" in CONFIG_KEYS
     assert "SEARCH_MAX_CHUNKS_PER_DOC" in CONFIG_KEYS
     assert "SEARCH_PLANNER_MAX_SPECS" in CONFIG_KEYS
+    assert "SEARCH_PLANNER_TAXONOMY_LIMIT" in CONFIG_KEYS
     assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
     assert "SEARCH_API_KEY" not in CONFIG_KEYS
     assert "AI_MODELS" not in CONFIG_KEYS
