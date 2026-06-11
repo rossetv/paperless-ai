@@ -327,6 +327,13 @@ class Settings:
     degrades to the legacy single-spec path. Clamped to >= 1.
     Default ``8``.
     """
+    SEARCH_PLANNER_TAXONOMY_LIMIT: int
+    """Max names per taxonomy list fed to the planner prompt.
+
+    Correspondents, document types, and tags are listed (alphabetically) in the
+    planner's cacheable prefix so it picks real names instead of guessing. A
+    value of ``<= 0`` means no cap. Default ``100``.
+    """
     SEARCH_PER_SPEC_K: int
     """Candidate chunks pulled from the store per :class:`~search.models.RetrievalSpec`.
 
@@ -640,6 +647,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         # Multi-spec retrieval settings — clamped >= 1 (Phase 1 overhaul).
         SEARCH_PLANNER_MAX_SPECS=max(
             1, _get_int_env(source, "SEARCH_PLANNER_MAX_SPECS", 8)
+        ),
+        SEARCH_PLANNER_TAXONOMY_LIMIT=max(
+            0, _get_int_env(source, "SEARCH_PLANNER_TAXONOMY_LIMIT", 100)
         ),
         # SEARCH_PER_SPEC_K defaults to the already-resolved SEARCH_TOP_K so the
         # per-query candidate budget is unchanged in the single-spec case.

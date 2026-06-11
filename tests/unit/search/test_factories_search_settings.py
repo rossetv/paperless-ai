@@ -31,6 +31,11 @@ def test_llm_provider_is_openai_so_response_format_is_built() -> None:
     assert settings.LLM_PROVIDER == "openai"
 
 
+def test_planner_taxonomy_limit_defaults_to_100() -> None:
+    settings = make_search_settings()
+    assert settings.SEARCH_PLANNER_TAXONOMY_LIMIT == 100
+
+
 def test_overrides_still_win() -> None:
     settings = make_search_settings(SEARCH_CACHE_TTL_SECONDS=14400)
     assert settings.SEARCH_CACHE_TTL_SECONDS == 14400
