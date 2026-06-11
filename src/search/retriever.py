@@ -152,9 +152,7 @@ def _match_name(
             entry
             for entry in entries
             if (entry_tokens := _tokenise(entry.name))
-            and (
-                candidate_tokens <= entry_tokens or entry_tokens <= candidate_tokens
-            )
+            and (candidate_tokens <= entry_tokens or entry_tokens <= candidate_tokens)
         ]
         if len(loose) == 1:
             return NameMatch(id=loose[0].id, method="loose")
