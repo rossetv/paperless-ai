@@ -9,7 +9,6 @@ the CurrentUser dataclass shape.
 from __future__ import annotations
 
 from search.sessions import (
-    REMEMBER_TTL_SECONDS,
     SESSION_TTL_SECONDS,
     CurrentUser,
     cookie_ttl_seconds,
@@ -63,16 +62,17 @@ def test_hash_token_matches_known_sha256() -> None:
     assert hash_token("hello") == hashlib.sha256(b"hello").hexdigest()
 
 
-def test_cookie_ttl_uses_remember_ttl_when_remember_is_true() -> None:
-    assert cookie_ttl_seconds(remember=True) == REMEMBER_TTL_SECONDS
+def test_cookie_ttl_uses_configured_remember_ttl() -> None:
+    """remember=True returns the caller's configured SEARCH_SESSION_TTL."""
+    assert cookie_ttl_seconds(remember=True, remember_ttl_seconds=4242) == 4242
 
 
-def test_cookie_ttl_uses_session_ttl_when_remember_is_false() -> None:
-    assert cookie_ttl_seconds(remember=False) == SESSION_TTL_SECONDS
-
-
-def test_remember_ttl_is_seven_days() -> None:
-    assert REMEMBER_TTL_SECONDS == 604800
+def test_cookie_ttl_uses_session_ttl_when_not_remember() -> None:
+    """remember=False uses the fixed short session, ignoring the remember TTL."""
+    assert (
+        cookie_ttl_seconds(remember=False, remember_ttl_seconds=4242)
+        == SESSION_TTL_SECONDS
+    )
 
 
 def test_session_ttl_is_eight_hours() -> None:
