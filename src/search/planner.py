@@ -93,6 +93,8 @@ class QueryPlanner(OpenAIChatMixin):
         query: str,
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
+        *,
+        taxonomy_block: str = "",
     ) -> RetrievalPlan | ClarifyNeeded:
         """Analyse *query* and return a RetrievalPlan or ClarifyNeeded.
 
@@ -127,7 +129,7 @@ class QueryPlanner(OpenAIChatMixin):
             {
                 "role": "user",
                 "content": build_planner_user_message(
-                    query=query, today=today, asker=asker
+                    query=query, today=today, asker=asker, taxonomy_block=taxonomy_block
                 ),
             },
         ]
@@ -143,6 +145,7 @@ class QueryPlanner(OpenAIChatMixin):
         prior_findings: tuple[str, ...],
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
+        taxonomy_block: str = "",
     ) -> RetrievalPlan | ClarifyNeeded:
         """Re-plan to target the synthesiser's gap hint (Phase 2 refinement).
 
@@ -181,6 +184,7 @@ class QueryPlanner(OpenAIChatMixin):
                     prior_specs=prior_specs,
                     prior_findings=prior_findings,
                     asker=asker,
+                    taxonomy_block=taxonomy_block,
                 ),
             },
         ]

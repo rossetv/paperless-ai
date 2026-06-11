@@ -89,6 +89,7 @@ from search.refinement import (
     merge_chunks,
     trivial_plan,
 )
+from search.prompts import build_planner_taxonomy_block
 from search.retriever import NameMatch, _match_name, resolve_specs
 from search.relevance import RelevanceThresholds
 from search.sources import _paperless_url, _snippet, assemble_sources
@@ -393,13 +394,19 @@ class SearchCore:
             )
 
         # --- Plan (Layer 1 lives inside the planner) ---
-        plan_outcome = self._plan_phase(query, budget, asker, tele)
+        # Fetch the live taxonomy once, before planning, so the planner can see
+        # the real correspondent/type/tag names; the same facets are reused for
+        # filter resolution in the retrieve phase (no second list_facets).
+        facets = self._store_reader.list_facets()
+        plan_outcome = self._plan_phase(query, budget, asker, tele, facets)
         if isinstance(plan_outcome, ClarifyNeeded):
             return self._clarify_result(plan_outcome.reason, budget, started, tele)
         plan = plan_outcome
 
         # --- Retrieve (broaden-and-retry once) ---
-        retrieved = self._retrieve_phase(plan, ui_filters, tele, query=query)
+        retrieved = self._retrieve_phase(
+            plan, ui_filters, tele, query=query, facets=facets
+        )
         chunks, signal = retrieved.chunks, retrieved.signal
         current_specs = retrieved.specs
         if not chunks:
@@ -580,13 +587,18 @@ class SearchCore:
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        plan_outcome = self._plan_phase(query, budget, asker, tele)
+        # Fetch the live taxonomy once, before planning, and reuse it for filter
+        # resolution in the retrieve phase (no second list_facets round-trip).
+        facets = self._store_reader.list_facets()
+        plan_outcome = self._plan_phase(query, budget, asker, tele, facets)
         if isinstance(plan_outcome, ClarifyNeeded):
             return self._clarify_result(plan_outcome.reason, budget, started, tele)
         plan = plan_outcome
 
         # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
-        retrieved = self._retrieve_phase(plan, ui_filters, tele, query=query)
+        retrieved = self._retrieve_phase(
+            plan, ui_filters, tele, query=query, facets=facets
+        )
         sources = assemble_sources(
             retrieved.chunks,
             self._store_reader,
@@ -607,6 +619,7 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None,
         tele: _Telemetry,
+        facets: FacetSet,
     ) -> RetrievalPlan | ClarifyNeeded:
         """Run the plan stage, emitting the ``plan`` phase with its detail.
 
@@ -623,7 +636,7 @@ class SearchCore:
         skipped_trivial = (
             self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query)
         )
-        outcome = self._plan(query, budget, asker, usage_sink=sink)
+        outcome = self._plan(query, budget, asker, usage_sink=sink, facets=facets)
         plan = outcome if isinstance(outcome, RetrievalPlan) else None
         tele.done(
             "plan",
@@ -645,6 +658,8 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
+        *,
+        facets: FacetSet,
     ) -> RetrievalPlan | ClarifyNeeded:
         """Run the planner stage, or skip it for a trivial query (RAG-08).
 
@@ -667,7 +682,12 @@ class SearchCore:
             )
             return trivial_plan(query)
         budget.record()
-        return self._planner.plan(query, asker=asker, usage_sink=usage_sink)
+        taxonomy_block = build_planner_taxonomy_block(
+            facets, self._settings.SEARCH_PLANNER_TAXONOMY_LIMIT
+        )
+        return self._planner.plan(
+            query, asker=asker, usage_sink=usage_sink, taxonomy_block=taxonomy_block
+        )
 
     def _retrieve_phase(
         self,
@@ -676,17 +696,19 @@ class SearchCore:
         tele: _Telemetry,
         *,
         query: str,
+        facets: FacetSet,
     ) -> _RetrievalPhaseResult:
         """Resolve the plan's specs then retrieve, emitting both phases.
 
-        Fetches the live taxonomy once, emits the non-LLM ``resolve`` phase (the
-        per-spec resolved ids/dates and the guesses that did not resolve), then
-        the ``retrieve`` phase with the chunk/document counts and whether the
+        Takes the live taxonomy *facets* (fetched once by the caller, before the
+        planner saw them), emits the non-LLM ``resolve`` phase (the per-spec
+        resolved ids/dates and the guesses that did not resolve), then the
+        ``retrieve`` phase with the chunk/document counts and whether the
         broadened (filter-dropped) second pass ran.  Neither phase is an LLM
-        call, so neither carries tokens.  The facets are fetched here and reused
-        across both the first and the broadened retrieval pass.
+        call, so neither carries tokens.  The same *facets* are reused across
+        both the first and the broadened retrieval pass.
 
-        The resolved pass-1 specs and the fetched facets ride on the returned
+        The resolved pass-1 specs and the *facets* ride on the returned
         :class:`_RetrievalPhaseResult` so the refinement pass can re-plan against
         the same taxonomy and run the no-op guard without a second
         ``list_facets`` round-trip.
@@ -694,12 +716,18 @@ class SearchCore:
         The raw *query* is threaded through to :func:`~search.retriever.resolve_specs`
         to power the deterministic date safety net (design §5.2): if no resolved
         spec carries a date filter but the query names an explicit period, a
-        date-scoped spec is appended automatically.
+        date-scoped spec is appended automatically.  ``max_specs`` enables the
+        unfiltered recall-twin pass — a bad filter can never silently exclude the
+        answer because its filter-stripped twin still retrieves it.
         """
-        facets = self._store_reader.list_facets()
         today = date.today()
         specs = resolve_specs(
-            plan, facets, ui_filters=ui_filters, today=today, query=query
+            plan,
+            facets,
+            ui_filters=ui_filters,
+            today=today,
+            query=query,
+            max_specs=self._settings.SEARCH_PLANNER_MAX_SPECS,
         )
         self._emit_resolve_phase(plan, specs, facets, tele)
 
@@ -1134,6 +1162,7 @@ class SearchCore:
             budget,
             asker,
             tele,
+            facets,
         )
 
         # A clarify on a re-plan is ignored: finalise on the existing evidence.
@@ -1147,7 +1176,11 @@ class SearchCore:
             return outcome, previous_chunks, prior_specs
 
         new_specs = resolve_specs(
-            replan_outcome, facets, ui_filters=ui_filters, today=date.today()
+            replan_outcome,
+            facets,
+            ui_filters=ui_filters,
+            today=date.today(),
+            max_specs=self._settings.SEARCH_PLANNER_MAX_SPECS,
         )
 
         # No-op guard: a re-plan that resolves to the same specs already tried
@@ -1222,6 +1255,7 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None,
         tele: _Telemetry,
+        facets: FacetSet,
     ) -> RetrievalPlan | ClarifyNeeded:
         """Run the re-plan stage, emitting the ``replan`` phase with its usage.
 
@@ -1235,6 +1269,9 @@ class SearchCore:
         started = time.monotonic()
         sink: list[LlmCallUsage] = []
         budget.record()
+        taxonomy_block = build_planner_taxonomy_block(
+            facets, self._settings.SEARCH_PLANNER_TAXONOMY_LIMIT
+        )
         outcome = self._planner.replan(
             query,
             hint=hint,
@@ -1242,6 +1279,7 @@ class SearchCore:
             prior_findings=prior_findings,
             asker=asker,
             usage_sink=sink,
+            taxonomy_block=taxonomy_block,
         )
         plan = outcome if isinstance(outcome, RetrievalPlan) else None
         tele.done(
