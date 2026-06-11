@@ -469,7 +469,12 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
         modeBits.push(`${semantic} semantic`);
       }
       const head = plural(specs.length, 'search') + ' planned';
-      return modeBits.length > 0 ? `${head} · ${modeBits.join(', ')}` : head;
+      return (
+        <>
+          <span className={styles['accent']}>{head}</span>
+          {modeBits.length > 0 ? ` · ${modeBits.join(', ')}` : ''}
+        </>
+      );
     }
     case 'resolve': {
       const resolved = objList(d, 'resolved');
@@ -477,15 +482,23 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
       const resolvedCount = resolved.filter(specHasResolvedFilter).length;
       const droppedCount = dropped.length;
       return (
-        <span className={styles['accent']}>
-          {plural(resolvedCount, 'filter')} resolved · {droppedCount} dropped
-        </span>
+        <>
+          <span className={styles['accent']}>
+            {plural(resolvedCount, 'filter')} resolved
+          </span>
+          {` · ${droppedCount} dropped`}
+        </>
       );
     }
     case 'retrieve': {
       const chunks = num(d, 'chunk_count') ?? 0;
       const docs = num(d, 'doc_count') ?? 0;
-      return `${plural(chunks, 'chunk')} · ${plural(docs, 'document')}`;
+      return (
+        <>
+          <span className={styles['accent']}>{plural(chunks, 'chunk')}</span>
+          {` · ${plural(docs, 'document')}`}
+        </>
+      );
     }
     case 'gate': {
       if (bool(d, 'rejected')) {
@@ -494,10 +507,25 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
       const evaluated = num(d, 'evaluated') ?? 0;
       const best = num(d, 'best_similarity');
       const bestText = best !== null ? ` · best ${best.toFixed(2)}` : '';
-      return `Passed ${plural(evaluated, 'document')}${bestText}`;
+      return (
+        <>
+          <span className={styles['accent']}>
+            Passed {plural(evaluated, 'document')}
+          </span>
+          {bestText}
+        </>
+      );
     }
-    case 'judge':
-      return phaseDetailNode(record);
+    case 'judge': {
+      // Wrap the judge's headline ("No document judged relevant" / "Kept K,
+      // dropped D") in the same quiet emphasis as the other phase summaries.
+      const node = phaseDetailNode(record);
+      return typeof node === 'string' ? (
+        <span className={styles['accent']}>{node}</span>
+      ) : (
+        node
+      );
+    }
     default:
       return phaseDetailNode(record);
   }

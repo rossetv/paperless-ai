@@ -19,10 +19,11 @@
   margin-top: var(--spacing-1);
 }
 
-/* The resolved-filter count in a summary line — drawn in the accent colour so
-   "N filters resolved" reads as the phase's positive outcome. */
+/* The leading metric in a phase summary line ("3 searches planned", "16 chunks",
+   "N filters resolved") — lifted to the secondary text colour so it reads a step
+   brighter than the tertiary remainder, a quiet emphasis (NOT a link colour). */
 .accent {
-  color: var(--colour-link);
+  color: var(--colour-text-secondary);
 }
 
 /* A "loosened from …" annotation on a resolved taxonomy match — a quiet green
