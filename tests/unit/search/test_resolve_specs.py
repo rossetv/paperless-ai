@@ -277,3 +277,171 @@ def test_order_and_metadata_preserved_across_specs() -> None:
     assert resolved[1].keywords == ("invoice", "2025")
     assert resolved[1].rationale == "second rationale"
     assert resolved[1].filters.document_type_id == 155
+
+
+# ---------------------------------------------------------------------------
+# H1: deterministic date safety net on the raw query
+# ---------------------------------------------------------------------------
+
+
+def _broad_spec(semantic: str = "find something") -> PlannedSpec:
+    """A broad PlannedSpec with no date hints — mimics the degraded/fallback plan."""
+    from search.models import EMPTY_FILTER_CANDIDATES
+
+    return PlannedSpec(
+        mode="semantic",
+        semantic=semantic,
+        keywords=(),
+        filter_guess=EMPTY_FILTER_CANDIDATES,
+        rationale="broad fallback",
+    )
+
+
+class TestDateSafetyNet:
+    """resolve_specs appends a date-scoped spec when the query names a period but
+    no resolved spec has a date filter (the degraded/fallback planner path)."""
+
+    def test_safety_net_appended_for_dated_query_on_broad_plan(self) -> None:
+        """A date-less broad spec + temporal query → safety-net spec appended.
+
+        The recall-floor spec (the original broad, date-unbound spec) is
+        preserved as the first spec.  The safety-net spec is second with the
+        correct date range.
+        """
+        plan = RetrievalPlan(specs=(_broad_spec(),))
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="what was my salary in April 2025",
+        )
+
+        # Recall floor preserved — the original spec is still there.
+        assert len(resolved) == 2
+        broad = resolved[0]
+        assert broad.filters.date_from is None
+        assert broad.filters.date_to is None
+
+        # Safety-net spec carries the April 2025 date range.
+        safety = resolved[1]
+        assert safety.filters.date_from == "2025-04-01"
+        assert safety.filters.date_to == "2025-04-30"
+        assert "safety net" in safety.rationale
+
+    def test_safety_net_not_appended_when_spec_already_has_date(self) -> None:
+        """When at least one spec already has a date filter, the safety net does not fire.
+
+        The intentionally-unbound recall spec (if any) must stay unbound.
+        """
+        dated_spec = _semantic_spec(date_from="2025-04-01", date_to="2025-04-30")
+        plan = RetrievalPlan(specs=(dated_spec,))
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="salary in April 2025",
+        )
+
+        # No safety-net spec added — one in, one out.
+        assert len(resolved) == 1
+        assert resolved[0].filters.date_from == "2025-04-01"
+        assert resolved[0].filters.date_to == "2025-04-30"
+
+    def test_safety_net_not_appended_for_non_temporal_query(self) -> None:
+        """A query with no recognisable date adds no safety-net spec."""
+        plan = RetrievalPlan(specs=(_broad_spec(),))
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="my salary",
+        )
+
+        assert len(resolved) == 1
+        assert resolved[0].filters.date_from is None
+
+    def test_safety_net_absent_when_no_query_supplied(self) -> None:
+        """When query is omitted (defaults to ''), the safety net never fires."""
+        plan = RetrievalPlan(specs=(_broad_spec(),))
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            # query not supplied — broadened retrieval pass, safety net off.
+        )
+
+        assert len(resolved) == 1
+
+    def test_safety_net_intersects_ui_filters(self) -> None:
+        """The safety-net spec's date is intersected with ui_filters (non-date UI constraints).
+
+        A UI filter with a correspondent_id (but no date) does not supply a date
+        itself, so the safety net still fires, and the UI correspondent is
+        carried into the safety-net spec's filters.
+        """
+        from store.reader import SearchFilters
+
+        plan = RetrievalPlan(specs=(_broad_spec(),))
+        # UI sets a correspondent but no date — the broad spec still has no date
+        # after intersection, so the safety net must fire.
+        ui = SearchFilters(
+            date_from=None,
+            date_to=None,
+            correspondent_id=999,
+            document_type_id=None,
+            tag_ids=(),
+        )
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=ui,
+            today=_TODAY,
+            query="what was my salary in April 2025",
+        )
+
+        assert len(resolved) == 2
+        safety = resolved[1]
+        # Safety-net spec carries the April 2025 date range.
+        assert safety.filters.date_from == "2025-04-01"
+        assert safety.filters.date_to == "2025-04-30"
+        # UI correspondent is preserved in the safety-net spec.
+        assert safety.filters.correspondent_id == 999
+
+    def test_recall_floor_preserved_alongside_safety_net(self) -> None:
+        """The broad, date-unbound recall spec survives when safety net fires.
+
+        Two specs in the plan; neither has a date; the query has a date.
+        Both originals survive; one safety-net spec is appended.
+        """
+        plan = RetrievalPlan(
+            specs=(
+                _broad_spec("broad semantic query A"),
+                _broad_spec("broad semantic query B"),
+            )
+        )
+
+        resolved = resolve_specs(
+            plan,
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="salary in April 2025",
+        )
+
+        # Two originals + one safety-net spec.
+        assert len(resolved) == 3
+        # Both originals are date-unbound.
+        assert resolved[0].filters.date_from is None
+        assert resolved[1].filters.date_from is None
+        # Safety net is the last one.
+        assert resolved[2].filters.date_from == "2025-04-01"
+        assert resolved[2].filters.date_to == "2025-04-30"

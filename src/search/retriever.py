@@ -243,6 +243,7 @@ def resolve_specs(
     *,
     ui_filters: SearchFilters | None,
     today: date,
+    query: str = "",
 ) -> tuple[RetrievalSpec, ...]:
     """Resolve every planned spec's free-text guesses into ready-for-store specs.
 
@@ -263,20 +264,100 @@ def resolve_specs(
     A spec whose guesses resolve to nothing simply yields a ``SearchFilters``
     with those fields ``None`` — that is the correct "no filter" outcome.
 
+    **Deterministic date safety net** (design §5.2): after all specs are
+    resolved, if *none* of them carries a date filter AND *query* names an
+    explicit time period (as detected by :func:`~search.dates.extract_date_range`),
+    one extra ``RetrievalSpec`` is appended.  The extra spec is a copy of the
+    first semantic spec (or the first spec when there is no semantic one) with its
+    filters augmented by the extracted date range and intersected with
+    *ui_filters*.  This preserves the recall floor — the original, date-unbound
+    spec remains in the tuple — while guaranteeing that a dated query reaches
+    at least one date-scoped search even when the planner is degraded or produced
+    a broad fallback plan with no date hints.
+
+    The safety net fires only on the degraded / fallback path; in the normal case
+    the planner or the deterministic filter resolution already binds at least one
+    spec to a date, so the guard does not trigger and the intentionally-unbound
+    recall spec is left untouched.
+
     Args:
         plan: The planner's structured multi-spec output.
         facets: The live taxonomy from ``StoreReader.list_facets()``.
         ui_filters: The user's explicit global filters, or ``None``.
         today: Reference date for relative temporal expressions (injected for
             deterministic tests).
+        query: The raw user query string.  When non-empty it is run through the
+            deterministic date extractor after resolution to power the safety
+            net.  Defaults to ``""`` (safety net disabled) so callers that do
+            not need the safety net — such as the broadened retrieval pass,
+            which deliberately drops all date filters — can omit it.
 
     Returns:
-        One :class:`~search.models.RetrievalSpec` per planned spec, in order.
+        One :class:`~search.models.RetrievalSpec` per planned spec, in order,
+        plus an optional extra safety-net spec when the conditions above hold.
     """
     resolved: list[RetrievalSpec] = []
     for spec in plan.specs:
         resolved.append(_resolve_one_spec(spec, facets, ui_filters, today))
+
+    # Deterministic date safety net: only fires when the query names a period
+    # but no resolved spec has a date filter.
+    if query and not _any_has_date(resolved):
+        date_from, date_to = extract_date_range(query, today)
+        if date_from is not None or date_to is not None:
+            resolved.append(
+                _make_safety_net_spec(resolved, date_from, date_to, ui_filters)
+            )
+
     return tuple(resolved)
+
+
+def _any_has_date(specs: list[RetrievalSpec]) -> bool:
+    """Return True when at least one spec already carries a date filter."""
+    return any(
+        spec.filters.date_from is not None or spec.filters.date_to is not None
+        for spec in specs
+    )
+
+
+def _make_safety_net_spec(
+    resolved: list[RetrievalSpec],
+    date_from: str | None,
+    date_to: str | None,
+    ui_filters: SearchFilters | None,
+) -> RetrievalSpec:
+    """Build the safety-net spec: a date-scoped copy of the most relevant spec.
+
+    Prefers the first ``mode=="semantic"`` spec; falls back to the very first
+    spec.  The date range is grafted onto the base spec's already-intersected
+    filters (so correspondent/type/tag constraints from the planner are kept),
+    then the combined filters are intersected with *ui_filters* once more so the
+    UI constraint still wins.
+
+    The ``rationale`` describes the safety net so the trace is honest about why
+    the extra spec exists.
+    """
+    # Prefer the first semantic spec; fall back to the first spec.
+    base = next((s for s in resolved if s.mode == "semantic"), resolved[0])
+
+    # Graft the query date range onto the base spec's filters.
+    date_scoped_filters = SearchFilters(
+        date_from=_later_iso(base.filters.date_from, date_from),
+        date_to=_earlier_iso(base.filters.date_to, date_to),
+        correspondent_id=base.filters.correspondent_id,
+        document_type_id=base.filters.document_type_id,
+        tag_ids=base.filters.tag_ids,
+    )
+    # Apply the UI constraint on top (the UI is authoritative).
+    final_filters = _intersect(date_scoped_filters, ui_filters)
+
+    return RetrievalSpec(
+        mode=base.mode,
+        semantic=base.semantic,
+        keywords=base.keywords,
+        filters=final_filters,
+        rationale="deterministic date safety net: query names an explicit period",
+    )
 
 
 def _resolve_one_spec(
