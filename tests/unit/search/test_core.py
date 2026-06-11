@@ -103,6 +103,29 @@ class TestNormalQuery:
         assert llm_client.planner_calls == 1
         assert llm_client.synthesiser_calls == 1
 
+    def test_list_facets_fetched_exactly_once_per_query(self) -> None:
+        """Facets are fetched once (before planning) and reused for resolution.
+
+        The planner sees the live taxonomy and the retrieve phase reuses the same
+        facets — there must be no second ``list_facets`` round-trip.
+        """
+        store_reader = _store_reader_with_hits()
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("Answer [1].", citations=[1])
+            ],
+        )
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=llm_client,
+            store_reader=store_reader,
+            embedding_client=_embedding_client(),
+        )
+        core.answer("a normal query")
+
+        store_reader.list_facets.assert_called_once()
+
     def test_normal_query_reports_two_llm_calls_in_stats(self) -> None:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),

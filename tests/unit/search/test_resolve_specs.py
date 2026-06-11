@@ -527,3 +527,24 @@ def test_max_specs_none_means_no_twins() -> None:
     specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY)
 
     assert len(specs) == 1
+
+
+def test_safety_net_twin_deduplicates_against_original_broad_spec() -> None:
+    """With max_specs on, the safety-net spec's twin equals the original broad
+    spec (same query, no filters) and is deduped — no spurious third spec."""
+    plan = RetrievalPlan(specs=(_broad_spec(),))
+
+    specs = resolve_specs(
+        plan,
+        _facets(),
+        ui_filters=None,
+        today=_TODAY,
+        query="salary in April 2025",
+        max_specs=8,
+    )
+
+    # original broad (no date) + safety-net (date-scoped); the safety-net's
+    # filter-stripped twin equals the original broad spec, so it is deduped away.
+    assert len(specs) == 2
+    assert specs[0].filters.date_from is None
+    assert specs[1].filters.date_from == "2025-04-01"
