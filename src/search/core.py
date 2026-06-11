@@ -392,7 +392,7 @@ class SearchCore:
         plan = plan_outcome
 
         # --- Retrieve (broaden-and-retry once) ---
-        retrieved = self._retrieve_phase(plan, ui_filters, tele)
+        retrieved = self._retrieve_phase(plan, ui_filters, tele, query=query)
         chunks, signal = retrieved.chunks, retrieved.signal
         current_specs = retrieved.specs
         if not chunks:
@@ -549,7 +549,7 @@ class SearchCore:
         plan = plan_outcome
 
         # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
-        retrieved = self._retrieve_phase(plan, ui_filters, tele)
+        retrieved = self._retrieve_phase(plan, ui_filters, tele, query=query)
         sources = assemble_sources(
             retrieved.chunks,
             self._store_reader,
@@ -637,6 +637,8 @@ class SearchCore:
         plan: RetrievalPlan,
         ui_filters: SearchFilters | None,
         tele: _Telemetry,
+        *,
+        query: str,
     ) -> _RetrievalPhaseResult:
         """Resolve the plan's specs then retrieve, emitting both phases.
 
@@ -651,10 +653,17 @@ class SearchCore:
         :class:`_RetrievalPhaseResult` so the refinement pass can re-plan against
         the same taxonomy and run the no-op guard without a second
         ``list_facets`` round-trip.
+
+        The raw *query* is threaded through to :func:`~search.retriever.resolve_specs`
+        to power the deterministic date safety net (design §5.2): if no resolved
+        spec carries a date filter but the query names an explicit period, a
+        date-scoped spec is appended automatically.
         """
         facets = self._store_reader.list_facets()
         today = date.today()
-        specs = resolve_specs(plan, facets, ui_filters=ui_filters, today=today)
+        specs = resolve_specs(
+            plan, facets, ui_filters=ui_filters, today=today, query=query
+        )
         self._emit_resolve_phase(plan, specs, tele)
 
         tele.start("retrieve", "Retrieving documents")
