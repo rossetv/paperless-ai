@@ -269,6 +269,21 @@ export type StreamEvent =
  */
 export type OutcomeKind = 'answered' | 'clarify' | 'no_match';
 
+/**
+ * Machine-readable reason for a zero-result response (spec §7.1).
+ *
+ * ``"empty_retrieval"``  — the vector store returned no candidates for the
+ *                          query (before any judge ran).
+ * ``"weak_relevance"``   — candidates were retrieved but the vector similarity
+ *                          scores were all below the relevance gate threshold.
+ * ``"judge_rejected"``   — the judge evaluated candidates but rejected them
+ *                          all as not answering the question.
+ *
+ * `null` when `outcome_kind` is ``"answered"`` or the backend does not supply
+ * the field (older API versions).
+ */
+export type NoMatchReason = 'empty_retrieval' | 'weak_relevance' | 'judge_rejected';
+
 /** Response body for POST /api/search. */
 export interface SearchResponse {
   answer: string;
@@ -287,6 +302,21 @@ export interface SearchResponse {
   cost: CostSummary;
   /** Discriminator for the result type — branch on this in the UI. */
   outcome_kind: OutcomeKind;
+  /**
+   * Machine-readable reason for a zero-result response.
+   *
+   * Present (and non-null) only when `outcome_kind` is ``"no_match"``.
+   * `null` for a ``"clarify"`` or ``"answered"`` result, and absent on older
+   * API responses that pre-date this field.
+   */
+  no_match_reason?: NoMatchReason | null;
+  /**
+   * Number of candidate documents evaluated by the judge before it rejected
+   * them all (only meaningful when `no_match_reason` is ``"judge_rejected"``).
+   *
+   * `null` / absent when the count is not available (e.g. empty retrieval).
+   */
+  candidate_count?: number | null;
 }
 
 /** Response body for GET /api/facets. */
