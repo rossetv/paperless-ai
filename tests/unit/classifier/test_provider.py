@@ -269,6 +269,31 @@ class TestUserMessageOrdering:
         assert prefix_a == prefix_b
         assert "Acme" in prefix_a
 
+    def test_states_cap_when_taxonomy_limited(self):
+        provider = make_provider(
+            CLASSIFY_MODELS=["gpt-5.4-mini"], CLASSIFY_TAXONOMY_LIMIT=40
+        )
+        taxonomy = TaxonomyContext(
+            correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]
+        )
+
+        user_msg = self._capture_user_message(provider, "body", taxonomy)
+
+        assert "most-used" in user_msg.lower()
+        assert "may contain more" in user_msg.lower()
+
+    def test_no_cap_note_when_taxonomy_uncapped(self):
+        provider = make_provider(
+            CLASSIFY_MODELS=["gpt-5.4-mini"], CLASSIFY_TAXONOMY_LIMIT=0
+        )
+        taxonomy = TaxonomyContext(
+            correspondents=["Acme"], document_types=["Invoice"], tags=["bills"]
+        )
+
+        user_msg = self._capture_user_message(provider, "body", taxonomy)
+
+        assert "may contain more" not in user_msg.lower()
+
     def test_taxonomy_json_serialisation_unchanged(self):
         provider = make_provider(CLASSIFY_MODELS=["gpt-5.4-mini"])
         taxonomy = TaxonomyContext(

@@ -147,7 +147,20 @@ class ClassificationProvider(OpenAIChatMixin):
 
         No per-document content is interpolated here, so the block is identical
         for every document in a batch — which is what lets OpenAI cache it.
+
+        When ``CLASSIFY_TAXONOMY_LIMIT`` is a positive cap, a trailing note tells
+        the model the lists are the most-used names only and the archive may hold
+        more — so if the right name is not shown it should still give the correct
+        name (the cache resolves or creates it afterwards).
         """
+        limit = self.settings.CLASSIFY_TAXONOMY_LIMIT
+        cap_note = (
+            f"\n\nNote: each list above shows only the {limit} most-used names — "
+            "the archive may contain more. If the right one is not shown, give "
+            "the correct name anyway; it will be reused or created."
+            if limit > 0
+            else ""
+        )
         return (
             "Existing correspondents (prefer these when possible):\n"
             f"{json.dumps(taxonomy.correspondents, ensure_ascii=True)}\n\n"
@@ -155,6 +168,7 @@ class ClassificationProvider(OpenAIChatMixin):
             f"{json.dumps(taxonomy.document_types, ensure_ascii=True)}\n\n"
             "Existing tags (prefer these when possible):\n"
             f"{json.dumps(taxonomy.tags, ensure_ascii=True)}"
+            f"{cap_note}"
         )
 
     def _build_params(self, model: str, messages: list[dict]) -> dict:
