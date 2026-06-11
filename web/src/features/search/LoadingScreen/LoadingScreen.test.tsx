@@ -111,22 +111,60 @@ describe('LoadingScreen', () => {
     renderLoading({ phaseRecords: [PLAN_RECORD], activePhase: 'retrieve' });
     expect(screen.getByText(/Rewritten:/)).toBeInTheDocument();
     expect(screen.getByText(/npower bills 2024/)).toBeInTheDocument();
-    // The LLM phase carries a token/cost chip.
-    expect(screen.getByText('1.2k tok · $0.004')).toBeInTheDocument();
+    // The LLM phase carries a token/cost chip; the same figure also appears as
+    // the header's cumulative counter (one phase → counter equals the chip).
+    expect(
+      screen.getAllByText('1.2k tok · $0.004').length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders the judge kept/dropped verdicts', () => {
+  it('shows the judge summary line in the live rail (no verdict details)', () => {
     renderLoading({
       phaseRecords: [PLAN_RECORD, JUDGE_RECORD],
       activePhase: 'synthesise',
     });
-    expect(screen.getByText('Annual statement')).toBeInTheDocument();
-    expect(screen.getByText('Old letter')).toBeInTheDocument();
-    expect(screen.getByText('wrong year')).toBeInTheDocument();
-    expect(screen.getByText('keep')).toBeInTheDocument();
-    expect(screen.getByText('drop')).toBeInTheDocument();
+    // Summary lines are shown
+    expect(screen.getByText(/planning the query/i)).toBeInTheDocument();
+    expect(screen.getByText(/judging relevance/i)).toBeInTheDocument();
+    // Verdict details NOT shown in lean rail
+    expect(screen.queryByText('Annual statement')).toBeNull();
+    expect(screen.queryByText('wrong year')).toBeNull();
     // The synthesise phase is the active row.
     expect(screen.getByText(/synthesising the answer/i)).toBeInTheDocument();
+  });
+
+  it('shows a cumulative token/cost total summed across phase records', () => {
+    const record1: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: { skipped_trivial: false, specs: [] },
+      tokens: { prompt: 2900, completion: 200, reasoning: 0, total: 3100 },
+      cost: { usd: 0.0091, local: false },
+      ms: 1,
+    };
+    const record2: PhaseRecord = {
+      phase: 'judge',
+      label: 'Judging relevance',
+      detail: { bailed: true, degraded: false, verdicts: [] },
+      tokens: { prompt: 2400, completion: 200, reasoning: 0, total: 2600 },
+      cost: { usd: 0.0050, local: false },
+      ms: 1,
+    };
+    renderLoading({
+      phaseRecords: [record1, record2],
+      activePhase: null,
+    });
+    // 3100 + 2600 = 5700 → "5.7k tok"; 0.0091 + 0.0050 = 0.0141 → "$0.0141"
+    expect(screen.getByText(/5\.7k tok · \$0\.014/)).toBeInTheDocument();
+  });
+
+  it('does not render the cost counter when total tokens is zero', () => {
+    renderLoading({
+      phaseRecords: [],
+      activePhase: null,
+    });
+    // no phases → no counter
+    expect(screen.queryByText(/tok ·/)).toBeNull();
   });
 
   it('renders no rail before any phase has started', () => {

@@ -8,7 +8,7 @@ import { Text } from '../../../components/primitives/Text/Text';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
 import { PipelineStages } from '../../../components/primitives/PipelineStages/PipelineStages';
 import { FilterControls } from '../FilterControls/FilterControls';
-import { phaseToStages } from '../trace/phaseStages';
+import { formatCostLabel, phaseToStages } from '../trace/phaseStages';
 import type { FilterRequest, PhaseRecord, SearchPhase } from '../../../api/types';
 import styles from './LoadingScreen.module.css';
 
@@ -74,6 +74,24 @@ export function LoadingScreen({
 
   const stages = phaseToStages(phaseRecords, activePhase);
 
+  // Cumulative spend so far — summed across every completed phase. Shown as a
+  // single live counter in the header so the user sees the running cost without
+  // the per-phase chips that the lean rail omits.
+  const spent = phaseRecords.reduce(
+    (acc, r) => ({
+      tokens: acc.tokens + (r.tokens?.total ?? 0),
+      usd: acc.usd + (r.cost?.usd ?? 0),
+    }),
+    { tokens: 0, usd: 0 },
+  );
+  const costCounter =
+    spent.tokens > 0
+      ? formatCostLabel(
+          { prompt: 0, completion: 0, reasoning: 0, total: spent.tokens },
+          { usd: spent.usd, local: false },
+        )
+      : undefined;
+
   return (
     <SearchScreenLayout
       variant="rail"
@@ -103,6 +121,11 @@ export function LoadingScreen({
               <Text as="span" variant="micro" tone="tertiary">
                 {elapsedSeconds}s
               </Text>
+              {costCounter !== undefined && (
+                <Text as="span" variant="micro" tone="tertiary">
+                  {costCounter}
+                </Text>
+              )}
             </Stack>
             {stages.length > 0 && (
               <PipelineStages
