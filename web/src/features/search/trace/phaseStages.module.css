@@ -26,14 +26,6 @@
   color: var(--colour-text-secondary);
 }
 
-/* A "loosened from …" annotation on a resolved taxonomy match — a quiet aside
-   noting the planner's guess was widened to land a real id. Rendered in the
-   ordinary tertiary body colour (the wording alone carries the meaning; no
-   colour highlight). */
-.loosened {
-  color: var(--colour-text-tertiary);
-}
-
 /* A vertical stack of body subrows (retrieved chunks / gated documents). */
 .sublist {
   display: flex;
@@ -195,14 +187,102 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Resolving redesign — ordinal lines ── */
+/* ── Resolving redesign — per-query status chips ──
+ * Mirrors the planning step: one block per query, each filter shown as a chip
+ * annotated with its fate (kept / loosened / dropped + why). */
 
-/* One resolve line: ordinal label + resolved/dropped text. */
-.rline {
-  padding: var(--spacing-2) 0;
+/* One query block inside the resolve body. */
+.fblock {
+  padding: var(--spacing-7) 0;
 }
 
-/* Resolved taxonomy name — secondary colour. */
-.rname {
+/* Thin top border between consecutive query blocks (matches .qblock). */
+.fblock + .fblock {
+  border-top: var(--spacing-1) solid var(--colour-border);
+}
+
+/* The block header — carries the ordinal label (reuses .qord). */
+.fhead {
+  margin-bottom: var(--spacing-3);
+}
+
+/* One filter row: status mark, chip, then the muted annotation. */
+.frow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-6);
+  padding: var(--spacing-1) 0;
+}
+
+/* Status mark — a small leading glyph. Decorative; outcome is also carried by
+   the chip styling and annotation text. */
+.mark {
+  flex: none;
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-micro-bold);
+}
+
+/* Kept / loosened — a quiet tick in the tertiary body colour. */
+.mark-kept {
+  color: var(--colour-text-tertiary);
+}
+
+/* Dropped — a cross in the danger colour. */
+.mark-drop {
+  color: var(--colour-status-danger-fg);
+}
+
+/* Filter chip — same skin as the planning chip (.qfilter). */
+.fchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-nano);
+  padding: var(--spacing-1) var(--spacing-6);
+  border-radius: var(--radius-micro);
+  background-color: var(--colour-status-neutral-bg);
   color: var(--colour-text-secondary);
+}
+
+/* The chip's dimension label (e.g. "type") — dimmer than the value. */
+.dim {
+  color: var(--colour-text-tertiary);
+}
+
+/* The chip's resolved value (the taxonomy name / date / id). */
+.val {
+  color: var(--colour-text-secondary);
+}
+
+/* Dropped chip — dashed danger outline, no fill; the value is struck through. */
+.fchip-dropped {
+  background-color: transparent;
+  border: var(--spacing-1) dashed var(--colour-status-danger-bg);
+}
+
+.fchip-dropped .val {
+  color: var(--colour-text-tertiary);
+  text-decoration: line-through;
+  text-decoration-color: var(--colour-status-danger-fg);
+}
+
+/* The trailing annotation — "loosened from …" / drop reason. */
+.annot {
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+}
+
+/* Drop-reason annotation — same tertiary weight (no alarm); the chip carries
+   the danger signal. */
+.annot-drop {
+  color: var(--colour-text-tertiary);
+}
+
+/* "No filters proposed" — a quiet placeholder for a query that resolved nothing. */
+.nofilters {
+  padding: var(--spacing-1) 0;
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+  font-style: italic;
 }

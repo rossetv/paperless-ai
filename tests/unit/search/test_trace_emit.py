@@ -204,6 +204,8 @@ class TestResolvePhaseEmitDropped:
         dropped = _record(records, "resolve").detail["dropped"]
         assert len(dropped) == 1
         assert dropped[0] == {
+            "spec_index": 0,
+            "field": "document_type",
             "name": "Completely Unknown",
             "reason": "none",
             "candidates": [],
@@ -249,6 +251,34 @@ class TestResolvePhaseEmitDropped:
         assert len(dropped) == 1
         assert dropped[0]["name"] == "nonexistent-tag"
         assert dropped[0]["reason"] == "none"
+        assert dropped[0]["field"] == "tags"
+        assert dropped[0]["spec_index"] == 0
+
+    def test_dropped_carries_spec_index_of_originating_query(self) -> None:
+        """A guess dropped on the 2nd query reports spec_index=1, not a flat 0.
+
+        This is the crux of the per-query trace: the drop must be attributable to
+        the query that proposed it, so the UI can show it under that query.
+        """
+        facets = make_facet_set(
+            tags=(make_taxonomy_entry(kind="tag", entry_id=3, name="mortgage"),)
+        )
+        plan = RetrievalPlan(
+            specs=(
+                _planned_spec(),  # 1st query — no guesses
+                _planned_spec(tags=("Spain",)),  # 2nd query — unmatched tag
+            )
+        )
+        specs = (_spec(), _spec())
+
+        tele, records = _tele()
+        SearchCore._emit_resolve_phase(plan, specs, facets, tele)
+
+        dropped = _record(records, "resolve").detail["dropped"]
+        assert len(dropped) == 1
+        assert dropped[0]["spec_index"] == 1
+        assert dropped[0]["field"] == "tags"
+        assert dropped[0]["name"] == "Spain"
 
     def test_no_dropped_when_all_resolve(self) -> None:
         facets = make_facet_set(
