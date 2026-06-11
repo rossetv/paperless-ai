@@ -82,3 +82,71 @@ def test_to_search_response_maps_no_match_outcome_kind() -> None:
     assert response.outcome_kind == "no_match"
     assert "No relevant documents" in response.answer
     assert response.sources == []
+
+
+def test_to_search_response_surfaces_no_match_reason_and_candidate_count() -> None:
+    """to_search_response copies no_match_reason and candidate_count from the result."""
+    from search.models import SearchResult
+
+    plan = make_retrieval_plan()
+    stats = make_search_stats()
+    result = SearchResult(
+        answer="I couldn't find any documents matching that.",
+        sources=(),
+        plan=plan,
+        stats=stats,
+        outcome_kind="no_match",
+        no_match_reason="weak_relevance",
+        candidate_count=3,
+    )
+    response = to_search_response(result)
+    assert response.no_match_reason == "weak_relevance"
+    assert response.candidate_count == 3
+
+
+def test_to_search_response_empty_retrieval_reason_and_zero_count() -> None:
+    """empty_retrieval reason with candidate_count=0 round-trips correctly."""
+    from search.models import SearchResult
+
+    plan = make_retrieval_plan()
+    stats = make_search_stats()
+    result = SearchResult(
+        answer="I couldn't find any documents matching that.",
+        sources=(),
+        plan=plan,
+        stats=stats,
+        outcome_kind="no_match",
+        no_match_reason="empty_retrieval",
+        candidate_count=0,
+    )
+    response = to_search_response(result)
+    assert response.no_match_reason == "empty_retrieval"
+    assert response.candidate_count == 0
+
+
+def test_to_search_response_judge_rejected_reason_round_trips() -> None:
+    """judge_rejected reason round-trips through to_search_response."""
+    from search.models import SearchResult
+
+    plan = make_retrieval_plan()
+    stats = make_search_stats()
+    result = SearchResult(
+        answer="I couldn't find any documents matching that.",
+        sources=(),
+        plan=plan,
+        stats=stats,
+        outcome_kind="no_match",
+        no_match_reason="judge_rejected",
+        candidate_count=5,
+    )
+    response = to_search_response(result)
+    assert response.no_match_reason == "judge_rejected"
+    assert response.candidate_count == 5
+
+
+def test_to_search_response_answered_leaves_no_match_fields_none() -> None:
+    """An answered result surfaces no_match_reason=None and candidate_count=None."""
+    result = make_search_result()
+    response = to_search_response(result)
+    assert response.no_match_reason is None
+    assert response.candidate_count is None
