@@ -2,11 +2,19 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SearchErrorScreen } from './SearchErrorScreen';
 
+// FilterControls calls useFacets (needs a query client) — mock it to a probe,
+// as the sibling NoResultsScreen test does. We only assert the rail renders it.
+vi.mock('../FilterControls/FilterControls', () => ({
+  FilterControls: () => <div data-testid="mock-filter-controls" />,
+}));
+
 function renderScreen(overrides = {}) {
   return render(
     <SearchErrorScreen
       query="how much did I pay npower in 2024"
       message="API error 500"
+      filters={{ tag_ids: [] }}
+      onFiltersChange={() => {}}
       onRetry={() => {}}
       onSearch={() => {}}
       {...overrides}
@@ -23,6 +31,11 @@ describe('SearchErrorScreen', () => {
   it('shows the error detail message', () => {
     renderScreen();
     expect(screen.getByText(/API error 500/)).toBeInTheDocument();
+  });
+
+  it('renders the filter rail — same chrome as the no-match screen', () => {
+    renderScreen();
+    expect(screen.getByTestId('mock-filter-controls')).toBeInTheDocument();
   });
 
   it('renders a "Try again" action', () => {

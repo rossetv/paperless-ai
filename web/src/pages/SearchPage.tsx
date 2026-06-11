@@ -150,6 +150,8 @@ export function SearchPage(): React.ReactElement {
         <SearchErrorScreen
           query={query}
           message={state.error.message}
+          filters={filters}
+          onFiltersChange={setFilters}
           phaseRecords={state.phaseRecords}
           onRetry={() => run(query.trim(), filters)}
           onSearch={runSearch}

@@ -4,14 +4,20 @@ import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Button } from '../../../components/primitives/Button/Button';
+import { FilterControls } from '../FilterControls/FilterControls';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
-import type { PhaseRecord } from '../../../api/types';
+import type { FilterRequest, PhaseRecord } from '../../../api/types';
 
 export interface SearchErrorScreenProps {
   /** The query that failed — recapped in the editable inline field. */
   query: string;
   /** The error detail message to show beneath the headline. */
   message: string;
+  /** The active filters — rendered in the left rail so the failure screen keeps
+   *  the same chrome as the no-match and results screens. */
+  filters: FilterRequest;
+  /** Called when the user changes a filter in the rail. */
+  onFiltersChange: (filters: FilterRequest) => void;
   /** Called when the user asks to retry — the page re-runs the search. */
   onRetry: () => void;
   /**
@@ -31,26 +37,34 @@ export interface SearchErrorScreenProps {
  * The search-failure screen.
  *
  * Shown when a search fails for a reason other than a 503 index-not-ready or
- * a 401 — a 500, a network drop, a malformed response. An editable query
- * recap sits above a centred `EmptyState` that reports the failure and
+ * a 401 — a 500, a network drop, a malformed response. The same rail chrome as
+ * the no-match and results screens (the filter rail on the left, the editable
+ * query recap on top) wraps a centred `EmptyState` that reports the failure and
  * offers a "Try again" action; submitting the recap field starts a fresh
  * search, so the user is never stranded. When the stream failed mid-pipeline,
  * a partial `SearchTracePanel` below shows how far it got. Distinct from
  * `NoResultsScreen`, which is a *successful* search that matched nothing.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, EmptyState, Button,
- * SearchTracePanel. No own CSS module (§12.5 — features layer is
- * composition-only).
+ * FilterControls, SearchTracePanel. No own CSS module (§12.5 — features layer
+ * is composition-only).
  */
 export function SearchErrorScreen({
   query,
   message,
+  filters,
+  onFiltersChange,
   onRetry,
   onSearch,
   phaseRecords = [],
 }: SearchErrorScreenProps): React.ReactElement {
   return (
-    <SearchScreenLayout variant="centred">
+    <SearchScreenLayout
+      variant="rail"
+      rail={
+        <FilterControls filters={filters} onFiltersChange={onFiltersChange} />
+      }
+    >
       <Stack direction="vertical" gap={10} align="center">
         {/* Editable query recap — submitting it runs a fresh search. Keyed
             by `query` so it re-seeds whenever a new search is attempted. */}

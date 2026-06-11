@@ -7,6 +7,8 @@ const meta = {
   parameters: { layout: 'fullscreen' },
   args: {
     query: 'how much did I pay Npower across 2024?',
+    filters: { tag_ids: [] },
+    onFiltersChange: () => globalThis.console.log('filters change'),
     onRetry: () => globalThis.console.log('retry'),
     onSearch: (q: string) => globalThis.console.log('search', q),
   },
