@@ -4,6 +4,7 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import { useFacets } from '../../../api/hooks';
 import type { FilterRequest } from '../../../api/types';
+import { hasActiveFilters } from '../filters';
 import styles from './ActiveFiltersStrip.module.css';
 
 export interface ActiveFiltersStripProps {
@@ -16,17 +17,6 @@ export interface ActiveFiltersStripProps {
   docCount: number;
   /** Called when the user activates "Clear all". */
   onClearAll: () => void;
-}
-
-/** Returns true when at least one filter value is set. */
-function hasActiveFilters(filters: FilterRequest): boolean {
-  return (
-    filters.tag_ids.length > 0 ||
-    filters.correspondent_id != null ||
-    filters.document_type_id != null ||
-    filters.date_from != null ||
-    filters.date_to != null
-  );
 }
 
 /**
