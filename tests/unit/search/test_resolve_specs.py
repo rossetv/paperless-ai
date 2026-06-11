@@ -466,9 +466,7 @@ def test_filtered_spec_gets_unfiltered_twin() -> None:
     """A spec with a resolved filter gains a filter-stripped twin (same query)."""
     plan = RetrievalPlan(specs=(_semantic_spec(correspondent="eBay"),))
 
-    specs = resolve_specs(
-        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
-    )
+    specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8)
 
     assert len(specs) == 2
     assert specs[0].filters.correspondent_id == 132  # original keeps its filter
@@ -481,9 +479,7 @@ def test_unfiltered_spec_gets_no_twin() -> None:
     """A spec that resolved to no filters needs no twin."""
     plan = RetrievalPlan(specs=(_semantic_spec(),))
 
-    specs = resolve_specs(
-        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
-    )
+    specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8)
 
     assert len(specs) == 1
 
@@ -494,9 +490,7 @@ def test_twin_deduped_against_existing_unfiltered_spec() -> None:
     plain = _semantic_spec(semantic="same")
     plan = RetrievalPlan(specs=(filtered, plain))
 
-    specs = resolve_specs(
-        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8
-    )
+    specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY, max_specs=8)
 
     # filtered + plain only; the twin equals `plain` and is deduped away.
     assert len(specs) == 2
@@ -511,9 +505,7 @@ def test_twins_respect_max_specs_dropping_twins_not_originals() -> None:
         )
     )
 
-    specs = resolve_specs(
-        plan, _facets(), ui_filters=None, today=_TODAY, max_specs=3
-    )
+    specs = resolve_specs(plan, _facets(), ui_filters=None, today=_TODAY, max_specs=3)
 
     assert len(specs) == 3  # 2 originals + 1 twin (capped)
     assert specs[0].filters.correspondent_id == 132
