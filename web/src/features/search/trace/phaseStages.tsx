@@ -401,6 +401,397 @@ function replanNode(d: Record<string, unknown>): React.ReactNode {
 }
 
 // ---------------------------------------------------------------------------
+// Per-phase one-line summary (the always-visible row text)
+// ---------------------------------------------------------------------------
+
+/** Pluralise a noun by count: 1 → "1 chunk", 2 → "2 chunks". Handles the
+ *  "-ch → -ches" case (search → searches) used by the planner summary. */
+function plural(count: number, noun: string): string {
+  if (count === 1) {
+    return `${count} ${noun}`;
+  }
+  const suffix = noun.endsWith('ch') ? 'es' : 's';
+  return `${count} ${noun}${suffix}`;
+}
+
+/** Does one resolved spec carry at least one real, resolved filter? Tolerates
+ *  both the new object wire ({correspondent: {id,name,method}}) and the legacy
+ *  id wire ({correspondent_id: 7}). */
+function specHasResolvedFilter(spec: Record<string, unknown>): boolean {
+  const hasObj =
+    spec['correspondent'] != null ||
+    spec['document_type'] != null ||
+    objList(spec, 'tags').length > 0;
+  const hasLegacy =
+    fieldNum(spec, 'correspondent_id') !== null ||
+    fieldNum(spec, 'document_type_id') !== null ||
+    fieldNumList(spec, 'tag_ids').length > 0;
+  const dateRange = formatDateRange(
+    fieldStr(spec, 'date_from'),
+    fieldStr(spec, 'date_to'),
+  );
+  return hasObj || hasLegacy || dateRange !== null;
+}
+
+/**
+ * The one-line summary for a phase — the always-visible row text in the
+ * collapsible trace and the only text shown in the lean live rail. Each phase
+ * compresses its outcome to a single readable line; phases without a bespoke
+ * summary fall back to `phaseDetailNode`.
+ */
+export function phaseSummary(record: PhaseRecord): React.ReactNode {
+  const d = record.detail;
+  switch (record.phase) {
+    case 'plan': {
+      if (bool(d, 'skipped_trivial')) {
+        return 'Trivial query — planning skipped';
+      }
+      const specs = objList(d, 'specs');
+      if (specs.length === 0) {
+        // Older shape / clarify: fall back to the legacy rewritten-query line.
+        return phaseDetailNode(record);
+      }
+      let keyword = 0;
+      let semantic = 0;
+      specs.forEach((spec) => {
+        const mode = fieldStr(spec, 'mode');
+        if (mode === 'keyword') {
+          keyword += 1;
+        } else {
+          semantic += 1;
+        }
+      });
+      const modeBits: string[] = [];
+      if (keyword > 0) {
+        modeBits.push(`${keyword} keyword`);
+      }
+      if (semantic > 0) {
+        modeBits.push(`${semantic} semantic`);
+      }
+      const head = plural(specs.length, 'search') + ' planned';
+      return modeBits.length > 0 ? `${head} · ${modeBits.join(', ')}` : head;
+    }
+    case 'resolve': {
+      const resolved = objList(d, 'resolved');
+      const dropped = objList(d, 'dropped');
+      const resolvedCount = resolved.filter(specHasResolvedFilter).length;
+      const droppedCount = dropped.length;
+      return (
+        <span className={styles['accent']}>
+          {plural(resolvedCount, 'filter')} resolved · {droppedCount} dropped
+        </span>
+      );
+    }
+    case 'retrieve': {
+      const chunks = num(d, 'chunk_count') ?? 0;
+      const docs = num(d, 'doc_count') ?? 0;
+      return `${plural(chunks, 'chunk')} · ${plural(docs, 'document')}`;
+    }
+    case 'gate': {
+      if (bool(d, 'rejected')) {
+        return 'Rejected — retrieval too weak';
+      }
+      const evaluated = num(d, 'evaluated') ?? 0;
+      const best = num(d, 'best_similarity');
+      const bestText = best !== null ? ` · best ${best.toFixed(2)}` : '';
+      return `Passed ${plural(evaluated, 'document')}${bestText}`;
+    }
+    case 'judge':
+      return phaseDetailNode(record);
+    default:
+      return phaseDetailNode(record);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-phase expandable body nodes (the rich detail shown when expanded)
+// ---------------------------------------------------------------------------
+
+/** Read a nested object field as a plain record, or null for any other shape. */
+function fieldObj(
+  item: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | null {
+  const value = item[key];
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+/**
+ * Render the resolve phase body with the new object wire shape — each resolved
+ * spec carries `{correspondent, document_type, tags}` objects with `{id, name,
+ * method}` (or null). A `method === 'loose'` field is annotated as loosened
+ * from the planner's original guess (read from the threaded plan specs).
+ * Tolerates the legacy id wire shape (falls back to `#id`).
+ */
+function resolveBodyNode(
+  d: Record<string, unknown>,
+  planSpecs: Record<string, unknown>[] = [],
+): React.ReactNode {
+  const resolved = objList(d, 'resolved');
+  const dropped = objList(d, 'dropped');
+  if (resolved.length === 0 && dropped.length === 0) {
+    return null;
+  }
+
+  /** The planner's free-text guess for a field on the spec at `index`. */
+  function guessFor(index: number, key: string): string | null {
+    const planSpec = planSpecs[index];
+    if (planSpec === undefined) {
+      return null;
+    }
+    const filters = (planSpec['filters'] ?? {}) as Record<string, unknown>;
+    return fieldStr(filters, key);
+  }
+
+  const rows: React.ReactNode[] = resolved.map((spec, i): React.ReactNode => {
+    const index = fieldNum(spec, 'spec_index') ?? i;
+    const bits: React.ReactNode[] = [];
+
+    /** Render one resolved taxonomy field (correspondent / document_type). */
+    function renderField(
+      key: string,
+      verb: string,
+      guessKey: string,
+    ): void {
+      const obj = fieldObj(spec, key);
+      if (obj !== null) {
+        const name = fieldStr(obj, 'name');
+        const method = fieldStr(obj, 'method');
+        if (name !== null) {
+          const loose = method === 'loose';
+          const guess = loose ? guessFor(index, guessKey) : null;
+          bits.push(
+            <React.Fragment key={`${key}-${bits.length}`}>
+              {`${verb} ${name}`}
+              {loose && (
+                <span className={styles['loosened']}>
+                  {guess !== null
+                    ? ` · loosened from “${guess}”`
+                    : ' · loosened'}
+                </span>
+              )}
+            </React.Fragment>,
+          );
+          return;
+        }
+      }
+      // Legacy id wire fallback.
+      const legacyId = fieldNum(spec, `${key}_id`);
+      if (legacyId !== null) {
+        bits.push(`${verb} #${legacyId}`);
+      }
+    }
+
+    renderField('correspondent', 'from', 'correspondent');
+    renderField('document_type', 'type', 'document_type');
+
+    // Tags — new object wire, with a legacy id-list fallback.
+    const tagObjs = objList(spec, 'tags');
+    if (tagObjs.length > 0) {
+      const tagBits: React.ReactNode[] = tagObjs.map((tag, ti) => {
+        const name = fieldStr(tag, 'name');
+        const method = fieldStr(tag, 'method');
+        const loose = method === 'loose';
+        return (
+          <React.Fragment key={ti}>
+            {ti > 0 ? ', ' : ''}
+            {name ?? '?'}
+            {loose && <span className={styles['loosened']}> · loosened</span>}
+          </React.Fragment>
+        );
+      });
+      bits.push(
+        <React.Fragment key={`tags-${bits.length}`}>
+          {'tags '}
+          {tagBits}
+        </React.Fragment>,
+      );
+    } else {
+      const tagIds = fieldNumList(spec, 'tag_ids');
+      if (tagIds.length > 0) {
+        bits.push(`tags ${tagIds.map((id) => `#${id}`).join(', ')}`);
+      }
+    }
+
+    const dateRange = formatDateRange(
+      fieldStr(spec, 'date_from'),
+      fieldStr(spec, 'date_to'),
+    );
+    if (dateRange !== null) {
+      bits.push(`date ${dateRange}`);
+    }
+
+    return (
+      <>
+        {`${index + 1}. `}
+        {bits.length > 0
+          ? bits.map((bit, bi) => (
+              <React.Fragment key={bi}>
+                {bi > 0 ? ' · ' : ''}
+                {bit}
+              </React.Fragment>
+            ))
+          : 'no filters proposed'}
+      </>
+    );
+  });
+
+  dropped.forEach((entry, i) => {
+    const name = fieldStr(entry, 'name');
+    if (name !== null) {
+      const reason = fieldStr(entry, 'reason');
+      const candidates = fieldStrList(entry, 'candidates');
+      if (reason === 'ambiguous' && candidates.length > 0) {
+        rows.push(
+          <React.Fragment key={`drop-${i}`}>
+            {`Dropped (ambiguous): ${name} → ${candidates.join(', ')}`}
+          </React.Fragment>,
+        );
+      } else {
+        rows.push(
+          <React.Fragment key={`drop-${i}`}>
+            {`Dropped (no match): ${name}`}
+          </React.Fragment>,
+        );
+      }
+    } else {
+      // Legacy dropped wire: {spec_index, names: [...]}.
+      const names = fieldStrList(entry, 'names');
+      if (names.length > 0) {
+        rows.push(
+          <React.Fragment key={`drop-${i}`}>
+            {`Dropped (no match): ${names.join(', ')}`}
+          </React.Fragment>,
+        );
+      }
+    }
+  });
+
+  return lines(rows);
+}
+
+/**
+ * Render the retrieve phase body — one subrow per retrieved chunk: a dot, the
+ * document title with a monospace similarity-score prefix, and the snippet as
+ * a focusable `.chunk-snip` element carrying the full text in data-attributes
+ * for the shared ChunkPopover.
+ */
+function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
+  const chunks = objList(d, 'chunks');
+  if (chunks.length === 0) {
+    return null;
+  }
+  return (
+    <div className={styles['sublist']}>
+      {chunks.map((chunk, i) => {
+        const title = fieldStr(chunk, 'title') ?? `Document ${fieldNum(chunk, 'document_id') ?? '?'}`;
+        const snippet = fieldStr(chunk, 'snippet') ?? '';
+        const sim = fieldNum(chunk, 'vector_similarity');
+        const scoreText = sim !== null ? sim.toFixed(2) : '';
+        return (
+          <div key={i} className={styles['subrow']}>
+            <span className={styles['sdot']} aria-hidden="true" />
+            <span className={styles['stext']}>
+              <span className={styles['stitle']}>
+                {scoreText !== '' && (
+                  <span className={styles['score']}>{scoreText}</span>
+                )}
+                {title}
+              </span>
+              {snippet !== '' && (
+                <span
+                  className={styles['chunk-snip']}
+                  tabIndex={0}
+                  data-title={title}
+                  data-score={scoreText}
+                  data-full={snippet}
+                >
+                  {snippet}
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Render the gate phase body — one subrow per evaluated document: a dot, the
+ * title, and a similarity bar whose fill width tracks the best vector
+ * similarity for that document.
+ */
+function gateBodyNode(d: Record<string, unknown>): React.ReactNode {
+  const documents = objList(d, 'documents');
+  if (documents.length === 0) {
+    return null;
+  }
+  return (
+    <div className={styles['sublist']}>
+      {documents.map((doc, i) => {
+        const title = fieldStr(doc, 'title') ?? `Document ${fieldNum(doc, 'document_id') ?? '?'}`;
+        const sim = fieldNum(doc, 'best_similarity');
+        const pct = Math.round((sim ?? 0) * 100);
+        const scoreText = sim !== null ? sim.toFixed(2) : '';
+        return (
+          <div key={i} className={styles['subrow']}>
+            <span className={styles['sdot']} aria-hidden="true" />
+            <span className={styles['stext']}>
+              <span className={styles['stitle']}>
+                {scoreText !== '' && (
+                  <span className={styles['score']}>{scoreText}</span>
+                )}
+                {title}
+              </span>
+              <div className={styles['bar']}>
+                <i style={{ width: `${pct}%` } as React.CSSProperties} />
+              </div>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The expandable body node for a phase, or null when the phase has nothing to
+ * expand (its summary line carries everything). `planSpecs` threads the
+ * planner's free-text guesses into the resolve body so loosened matches can
+ * name what they loosened from.
+ */
+export function phaseBodyNode(
+  record: PhaseRecord,
+  planSpecs: Record<string, unknown>[] = [],
+): React.ReactNode {
+  const d = record.detail;
+  switch (record.phase) {
+    case 'plan':
+      return planNode(d);
+    case 'resolve':
+      return resolveBodyNode(d, planSpecs);
+    case 'retrieve':
+      return retrieveBodyNode(d);
+    case 'gate':
+      return gateBodyNode(d);
+    case 'judge':
+      // The judge's verdict list (with the View control) is rendered by
+      // PipelineStages from the `verdicts` field, so there is no separate body.
+      return null;
+    case 'refine':
+      return refineNode(d);
+    case 'replan':
+      return replanNode(d);
+    default:
+      return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Per-phase detail node
 // ---------------------------------------------------------------------------
 
@@ -487,15 +878,25 @@ export function phaseToStages(
   records: PhaseRecord[],
   activePhase: SearchPhase | null,
 ): PipelineStage[] {
+  // The planner's per-spec free-text guesses, threaded into the resolve body so
+  // loosened taxonomy matches can name what they were loosened from.
+  const planRecord = records.find((r) => r.phase === 'plan');
+  const planSpecs =
+    planRecord !== undefined ? objList(planRecord.detail, 'specs') : [];
+
   const stages: PipelineStage[] = records.map((record) => {
     const state: PipelineStageState = 'done';
     const detailNode = phaseDetailNode(record);
+    const summary = phaseSummary(record);
+    const body = phaseBodyNode(record, planSpecs);
     const costLabel = formatCostLabel(record.tokens, record.cost);
     const verdicts = verdictsOf(record);
     return {
       label: record.label,
       detail: '',
       state,
+      ...(summary !== null ? { summary } : {}),
+      ...(body !== null ? { body } : {}),
       ...(detailNode !== null ? { detailNode } : {}),
       ...(costLabel !== undefined ? { costLabel } : {}),
       ...(verdicts !== undefined ? { verdicts } : {}),

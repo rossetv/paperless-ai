@@ -18,3 +18,101 @@
 .line + .line {
   margin-top: var(--spacing-1);
 }
+
+/* The resolved-filter count in a summary line — drawn in the accent colour so
+   "N filters resolved" reads as the phase's positive outcome. */
+.accent {
+  color: var(--colour-link);
+}
+
+/* A "loosened from …" annotation on a resolved taxonomy match — a quiet green
+   aside noting the planner's guess was widened to land a real id. */
+.loosened {
+  color: var(--colour-status-ready);
+}
+
+/* A vertical stack of body subrows (retrieved chunks / gated documents). */
+.sublist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* One body subrow: a leading dot then a flexible text column. */
+.subrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-6);
+}
+
+/* The leading dot on a body subrow. */
+.sdot {
+  flex-shrink: 0;
+  width: var(--spacing-4);
+  height: var(--spacing-4);
+  margin-top: var(--spacing-3);
+  border-radius: var(--radius-circle);
+  background-color: var(--colour-border-strong);
+}
+
+/* The text column of a body subrow — title above snippet / bar. */
+.stext {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* A subrow's document title line. */
+.stitle {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-secondary);
+}
+
+/* The monospace similarity-score prefix on a subrow title. */
+.score {
+  margin-right: var(--spacing-4);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-nano);
+  color: var(--colour-text-tertiary);
+}
+
+/* A retrieved chunk's snippet — a single clamped line that reveals the full
+   text in the shared ChunkPopover on hover / focus. */
+.chunk-snip {
+  display: block;
+  margin-top: var(--spacing-1);
+  overflow: hidden;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* Focus ring so keyboard users can see which snippet drives the popover. */
+.chunk-snip:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-accent);
+  outline-offset: var(--spacing-1);
+}
+
+/* The gate similarity bar — a thin track with an accent-filled inner element
+   whose width tracks the document's best vector similarity. */
+.bar {
+  margin-top: var(--spacing-3);
+  width: 100%;
+  max-width: var(--width-search-narrow);
+  height: var(--spacing-3);
+  border-radius: var(--radius-pill);
+  background-color: var(--colour-border);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background-color: var(--colour-accent);
+}

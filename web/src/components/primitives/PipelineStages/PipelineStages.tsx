@@ -42,6 +42,18 @@ export interface PipelineStage {
    */
   detailNode?: React.ReactNode;
   /**
+   * A one-line phase summary shown on the stage row (e.g. "3 searches planned").
+   * In collapsible mode this is the always-visible `<summary>` line; in the
+   * lean live rail it is the only thing shown. Falls back to `detailNode`/`detail`.
+   */
+  summary?: React.ReactNode;
+  /**
+   * The expandable rich detail for the phase, shown only in collapsible mode
+   * inside the disclosure body (e.g. the per-spec search list, the resolved
+   * filters, the retrieved chunks). Absent for phases with nothing to expand.
+   */
+  body?: React.ReactNode;
+  /**
    * A compact "tokens · cost" label (e.g. "1.2k tok · $0.004"), shown as a chip
    * on the stage row. Absent for non-LLM stages.
    */

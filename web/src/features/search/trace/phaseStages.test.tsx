@@ -5,6 +5,7 @@ import {
   formatCostLabel,
   formatUsd,
   phaseDetailNode,
+  phaseSummary,
   phaseToStages,
   verdictsOf,
 } from './phaseStages';
@@ -383,5 +384,255 @@ describe('phaseToStages', () => {
   it('produces an all-done trace when activePhase is null', () => {
     const stages = phaseToStages([planRecord], null);
     expect(stages.every((s) => s.state === 'done')).toBe(true);
+  });
+});
+
+// Helper to create a plan record with N specs
+function makePlanRecord(numSpecs: number): PhaseRecord {
+  return {
+    phase: 'plan',
+    label: 'Planning the query',
+    detail: {
+      skipped_trivial: false,
+      specs: Array.from({ length: numSpecs }, (_, i) => ({
+        mode: i === 0 ? 'keyword' : 'semantic',
+        query: `query ${i + 1}`,
+        filters: {},
+        rationale: null,
+      })),
+    },
+    tokens: null,
+    cost: null,
+    ms: 1,
+  };
+}
+
+function makeResolveRecord(options: {
+  resolved?: Record<string, unknown>[];
+  dropped?: Record<string, unknown>[];
+} = {}): PhaseRecord {
+  return {
+    phase: 'resolve',
+    label: 'Resolving filters',
+    detail: {
+      resolved: options.resolved ?? [],
+      dropped: options.dropped ?? [],
+    },
+    tokens: null,
+    cost: null,
+    ms: 1,
+  };
+}
+
+function makeRetrieveRecord(chunks: Record<string, unknown>[]): PhaseRecord {
+  return {
+    phase: 'retrieve',
+    label: 'Retrieving documents',
+    detail: {
+      chunk_count: chunks.length,
+      doc_count: 2,
+      chunks,
+    },
+    tokens: null,
+    cost: null,
+    ms: 1,
+  };
+}
+
+function makeGateRecord(documents: Record<string, unknown>[]): PhaseRecord {
+  return {
+    phase: 'gate',
+    label: 'Relevance gate',
+    detail: {
+      evaluated: documents.length,
+      best_similarity: documents.length > 0 ? (documents[0] as Record<string, unknown>)['best_similarity'] : null,
+      documents,
+    },
+    tokens: null,
+    cost: null,
+    ms: 1,
+  };
+}
+
+describe('phaseSummary', () => {
+  it('plan: shows N searches planned', () => {
+    const record = makePlanRecord(3);
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('3 searches planned');
+    expect(container.textContent).toContain('1 keyword');
+    expect(container.textContent).toContain('2 semantic');
+  });
+
+  it('plan: skipped_trivial returns the single summary string', () => {
+    const record: PhaseRecord = {
+      phase: 'plan',
+      label: 'Planning the query',
+      detail: { skipped_trivial: true, specs: [] },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toMatch(/trivial/i);
+  });
+
+  it('resolve: shows N filters resolved and M dropped', () => {
+    const record = makeResolveRecord({
+      resolved: [
+        { spec_index: 0, correspondent: { id: 7, name: 'Npower', method: 'exact' }, document_type: null, tags: [], date_from: null, date_to: null },
+        { spec_index: 1, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
+      ],
+      dropped: [
+        { name: 'Acme', reason: 'none', candidates: [] },
+      ],
+    });
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('1 filter resolved');
+    expect(container.textContent).toContain('1 dropped');
+  });
+
+  it('retrieve: shows chunk and doc counts', () => {
+    const record = makeRetrieveRecord([
+      { chunk_id: 1, document_id: 1, title: 'Doc A', snippet: 'abc', vector_similarity: 0.9 },
+    ]);
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('1 chunk');
+    expect(container.textContent).toContain('2 document');
+  });
+
+  it('gate: shows passed documents and best similarity', () => {
+    const record = makeGateRecord([
+      { document_id: 1, title: 'Doc A', best_similarity: 0.64 },
+    ]);
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('Passed 1 document');
+    expect(container.textContent).toContain('0.64');
+  });
+
+  it('judge: shows all-dropped summary when bailed', () => {
+    const record: PhaseRecord = {
+      phase: 'judge',
+      label: 'Judging relevance',
+      detail: { bailed: true, degraded: false, verdicts: [] },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('No document judged relevant');
+  });
+
+  it('judge: shows kept/dropped counts', () => {
+    const record: PhaseRecord = {
+      phase: 'judge',
+      label: 'Judging relevance',
+      detail: {
+        bailed: false,
+        degraded: false,
+        verdicts: [
+          { doc_id: 1, title: 'A', keep: true, reason: 'yes', score: 0.8, paperless_url: null },
+          { doc_id: 2, title: 'B', keep: false, reason: 'no', score: 0.1, paperless_url: null },
+        ],
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const { container } = render(<>{phaseSummary(record)}</>);
+    expect(container.textContent).toContain('Kept 1');
+    expect(container.textContent).toContain('dropped 1');
+  });
+});
+
+describe('phaseToStages summary/body split', () => {
+  it('plan: stage has summary and body', () => {
+    const stage = phaseToStages([makePlanRecord(2)], null)[0]!;
+    const { container: sc } = render(<>{stage.summary}</>);
+    expect(sc.textContent).toContain('2 searches planned');
+    expect(stage.body).toBeTruthy();
+  });
+
+  it('resolve: body shows "no filters proposed" for specs with no filters', () => {
+    const record = makeResolveRecord({
+      resolved: [
+        { spec_index: 0, correspondent: null, document_type: null, tags: [], date_from: null, date_to: null },
+      ],
+      dropped: [],
+    });
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.textContent).toContain('no filters proposed');
+  });
+
+  it('resolve: body shows resolved name and loosened tag when method=loose', () => {
+    const record = makeResolveRecord({
+      resolved: [
+        {
+          spec_index: 0,
+          correspondent: null,
+          document_type: { id: 12, name: 'Property Deed', method: 'loose' },
+          tags: [],
+          date_from: null,
+          date_to: null,
+        },
+      ],
+      dropped: [],
+    });
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.textContent).toContain('Property Deed');
+    expect(container.textContent).toContain('loosened');
+  });
+
+  it('resolve: body shows reason-aware dropped lines', () => {
+    const record = makeResolveRecord({
+      resolved: [],
+      dropped: [
+        { name: 'Acme', reason: 'none', candidates: [] },
+        { name: 'Deed', reason: 'ambiguous', candidates: ['Property Deed', 'Trust Deed'] },
+      ],
+    });
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.textContent).toContain('Dropped (no match): Acme');
+    expect(container.textContent).toContain('Dropped (ambiguous): Deed → Property Deed, Trust Deed');
+  });
+
+  it('retrieve: body lists chunks with title and snippet', () => {
+    const record = makeRetrieveRecord([
+      { chunk_id: 1, document_id: 1, title: 'Land Registry Deed', snippet: 'some snippet text', vector_similarity: 0.74 },
+    ]);
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.textContent).toContain('Land Registry Deed');
+    expect(container.textContent).toContain('some snippet text');
+    expect(container.textContent).toContain('0.74');
+  });
+
+  it('gate: body lists documents with title and similarity bar', () => {
+    const record = makeGateRecord([
+      { document_id: 1, title: 'Property Deed Folio', best_similarity: 0.64 },
+    ]);
+    const stage = phaseToStages([record], null)[0]!;
+    const { container } = render(<>{stage.body}</>);
+    expect(container.textContent).toContain('Property Deed Folio');
+    expect(container.textContent).toContain('0.64');
+  });
+
+  it('judge: body contains verdict list from verdictsOf', () => {
+    const record: PhaseRecord = {
+      phase: 'judge',
+      label: 'Judging relevance',
+      detail: {
+        bailed: false,
+        degraded: false,
+        verdicts: [
+          { doc_id: 1, title: 'Alpha Doc', keep: true, reason: 'relevant', score: 0.9, paperless_url: null },
+        ],
+      },
+      tokens: null, cost: null, ms: 1,
+    };
+    const stage = phaseToStages([record], null)[0]!;
+    // judge keeps its verdicts on the dedicated field; the body is left to
+    // PipelineStages, which renders the verdict list (with the View control)
+    // from `verdicts` so it does not duplicate with `body`.
+    expect(stage.body == null).toBe(true);
+    // verdicts still populated for back-compat
+    expect(stage.verdicts).toBeDefined();
+    expect(stage.verdicts!.length).toBe(1);
   });
 });
