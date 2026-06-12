@@ -503,7 +503,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     # EMBEDDING_PROVIDER defaults to LLM_PROVIDER (privacy fix: ollama chat ⇒
     # ollama embeddings), overridable explicitly. Resolved here because it
     # drives the OPENAI_API_KEY requirement below.
-    embedding_provider = _resolve_embedding_provider(source, llm_provider)
+    embedding_provider = _resolve_embedding_provider(source)
     post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
     chunk_size = _require_at_least_one(
         "CHUNK_SIZE", _get_int_env(source, "CHUNK_SIZE", 2000)

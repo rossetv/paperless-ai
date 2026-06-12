@@ -17,9 +17,11 @@ _MINIMAL_ENV = {
     "OPENAI_API_KEY": "sk-test",
 }
 
-# A fully-local ollama deployment may omit OPENAI_API_KEY (EMBEDDING_PROVIDER
-# defaults to ollama too), but most of these tests still supply it because they
-# exercise unrelated ollama defaults; the key is harmless when present.
+# A fully-local deployment (LLM and embeddings both ollama) may omit
+# OPENAI_API_KEY, but it must set EMBEDDING_PROVIDER=ollama explicitly — the
+# embedding provider is independent of LLM_PROVIDER and defaults to openai. Most
+# of these tests supply the key anyway because they exercise unrelated ollama
+# defaults; the key is harmless when present.
 _MINIMAL_OLLAMA_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
     "OPENAI_API_KEY": "sk-test",
@@ -177,11 +179,18 @@ class TestMissingRequired:
     def test_openai_api_key_optional_when_both_providers_are_ollama(self, mocker):
         """A fully-local deployment (LLM + embeddings ollama) may omit the key.
 
-        The privacy fix: with LLM_PROVIDER=ollama defaulting EMBEDDING_PROVIDER
-        to ollama too, no call ever reaches OpenAI, so OPENAI_API_KEY is not
-        required and resolves to an empty string.
+        EMBEDDING_PROVIDER is independent and defaults to openai, so a local
+        deployment must set it to ollama explicitly; then no call ever reaches
+        OpenAI and OPENAI_API_KEY is not required (resolves to an empty string).
         """
-        s = _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
+        s = _build(
+            mocker,
+            {
+                "PAPERLESS_TOKEN": "tok",
+                "LLM_PROVIDER": "ollama",
+                "EMBEDDING_PROVIDER": "ollama",
+            },
+        )
         assert s.OPENAI_API_KEY == ""
         assert s.EMBEDDING_PROVIDER == "ollama"
 
@@ -197,6 +206,14 @@ class TestMissingRequired:
                     "EMBEDDING_PROVIDER": "ollama",
                 },
             )
+
+    def test_openai_api_key_required_when_llm_ollama_but_embeddings_default(
+        self, mocker
+    ):
+        """LLM_PROVIDER=ollama alone leaves embeddings on the openai default, so
+        OPENAI_API_KEY is still required until EMBEDDING_PROVIDER is set local."""
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
 
     def test_empty_paperless_token_is_treated_as_missing(self, mocker):
         """An empty PAPERLESS_TOKEN must fail at validation, not at runtime.
@@ -265,20 +282,23 @@ class TestOllamaConfig:
 
 
 class TestEmbeddingProvider:
-    """EMBEDDING_PROVIDER resolution: defaults to LLM_PROVIDER, overridable."""
+    """EMBEDDING_PROVIDER resolution: defaults to openai, independent of
+    LLM_PROVIDER, overridable."""
 
     def test_defaults_to_openai_when_llm_provider_is_openai(self, mocker):
-        """The prod default: EMBEDDING_PROVIDER follows LLM_PROVIDER=openai."""
+        """The prod default: EMBEDDING_PROVIDER is openai."""
         s = _build(mocker, _MINIMAL_ENV)
         assert s.EMBEDDING_PROVIDER == "openai"
 
-    def test_defaults_to_ollama_when_llm_provider_is_ollama(self, mocker):
-        """The privacy fix: LLM_PROVIDER=ollama defaults embeddings to local too."""
+    def test_defaults_to_openai_independent_of_llm_provider(self, mocker):
+        """The embedding provider is independent: it stays openai by default even
+        when the chat provider is ollama, so flipping chat never moves
+        embeddings (and never triggers a re-embed)."""
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
-        assert s.EMBEDDING_PROVIDER == "ollama"
+        assert s.EMBEDDING_PROVIDER == "openai"
 
-    def test_explicit_override_wins_over_llm_provider(self, mocker):
-        """An explicit EMBEDDING_PROVIDER overrides the LLM_PROVIDER default."""
+    def test_explicit_override_selects_the_embedding_provider(self, mocker):
+        """An explicit EMBEDDING_PROVIDER selects it, decoupled from the chat one."""
         s = _build(
             mocker,
             {**_MINIMAL_ENV, "LLM_PROVIDER": "openai", "EMBEDDING_PROVIDER": "ollama"},
@@ -291,10 +311,11 @@ class TestEmbeddingProvider:
         )
         assert s2.EMBEDDING_PROVIDER == "openai"
 
-    def test_blank_override_falls_back_to_llm_provider(self, mocker):
-        """A blank EMBEDDING_PROVIDER (cleared in the UI) falls back, not crashes."""
+    def test_blank_override_falls_back_to_openai_default(self, mocker):
+        """A blank EMBEDDING_PROVIDER (cleared in the UI) falls back to the openai
+        default, not a crash."""
         s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "EMBEDDING_PROVIDER": "  "})
-        assert s.EMBEDDING_PROVIDER == "ollama"
+        assert s.EMBEDDING_PROVIDER == "openai"
 
     def test_invalid_value_rejected(self, mocker):
         """Junk fails closed at config-build time, naming the key."""
