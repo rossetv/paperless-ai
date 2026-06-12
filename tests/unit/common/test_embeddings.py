@@ -27,6 +27,8 @@ def _make_settings(
     embedding_max_concurrent: int = 0,
     embedding_dimensions: int = 1536,
     openai_api_key: str = "sk-test",
+    embedding_provider: str = "openai",
+    ollama_base_url: str | None = "http://localhost:11434/v1/",
 ) -> MagicMock:
     settings = MagicMock()
     settings.MAX_RETRIES = max_retries
@@ -35,6 +37,8 @@ def _make_settings(
     settings.EMBEDDING_MAX_CONCURRENT = embedding_max_concurrent
     settings.EMBEDDING_DIMENSIONS = embedding_dimensions
     settings.OPENAI_API_KEY = openai_api_key
+    settings.EMBEDDING_PROVIDER = embedding_provider
+    settings.OLLAMA_BASE_URL = ollama_base_url
     return settings
 
 
@@ -56,13 +60,16 @@ def _client_with(mock_openai: MagicMock) -> Iterator[None]:
 
 class TestClientIsPinnedToOpenAI:
     def test_constructs_openai_client_with_configured_api_key(self) -> None:
-        """EmbeddingClient builds its own openai.OpenAI with OPENAI_API_KEY.
+        """OpenAI/prod regression: EMBEDDING_PROVIDER=openai builds the SAME client.
 
-        Embeddings always go to OpenAI, never to the Ollama-pointed shared
-        singleton — so the client must be constructed explicitly with the
-        configured key and OpenAI's default base_url.
+        The default (and production) embedding provider is OpenAI. The client
+        must be constructed exactly as before this feature: pinned to
+        OPENAI_API_KEY with OpenAI's default base_url (no override). Any drift
+        here would change how prod embeds against its real, un-backed-up index.
         """
-        settings = _make_settings(openai_api_key="sk-embeddings-key")
+        settings = _make_settings(
+            embedding_provider="openai", openai_api_key="sk-embeddings-key"
+        )
 
         with patch("common.embeddings.openai.OpenAI") as mock_openai_cls:
             EmbeddingClient(settings)
@@ -72,6 +79,46 @@ class TestClientIsPinnedToOpenAI:
         assert call.kwargs.get("api_key") == "sk-embeddings-key"
         # No base_url override — embeddings use OpenAI's default endpoint.
         assert "base_url" not in call.kwargs or call.kwargs["base_url"] is None
+
+
+class TestClientUsesOllamaWhenProviderIsOllama:
+    def test_constructs_client_against_ollama_base_url_with_placeholder_key(
+        self,
+    ) -> None:
+        """EMBEDDING_PROVIDER=ollama points the client at OLLAMA_BASE_URL.
+
+        The privacy fix: under ollama the embedding client must target the
+        local OpenAI-compatible /v1/ endpoint with a placeholder key (Ollama
+        ignores it), never OpenAI — so no chunk leaves the box.
+        """
+        settings = _make_settings(
+            embedding_provider="ollama",
+            ollama_base_url="http://localhost:11434/v1/",
+            openai_api_key="",  # a fully-local box need not set it
+        )
+
+        with patch("common.embeddings.openai.OpenAI") as mock_openai_cls:
+            EmbeddingClient(settings)
+
+        mock_openai_cls.assert_called_once()
+        call = mock_openai_cls.call_args
+        assert call.kwargs.get("base_url") == "http://localhost:11434/v1/"
+        # A non-empty placeholder key — the OpenAI key is never used here.
+        assert call.kwargs.get("api_key") == "dummy"
+
+    def test_custom_ollama_base_url_is_honoured(self) -> None:
+        """A custom OLLAMA_BASE_URL (e.g. a GPU host) is forwarded verbatim."""
+        settings = _make_settings(
+            embedding_provider="ollama",
+            ollama_base_url="http://gpu:11434/v1/",
+        )
+
+        with patch("common.embeddings.openai.OpenAI") as mock_openai_cls:
+            EmbeddingClient(settings)
+
+        assert (
+            mock_openai_cls.call_args.kwargs.get("base_url") == "http://gpu:11434/v1/"
+        )
 
 
 # ---------------------------------------------------------------------------

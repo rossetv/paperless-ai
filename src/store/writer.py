@@ -349,38 +349,60 @@ class StoreWriter:
             raise StoreError("failed to refresh taxonomy") from exc
 
     def check_embedding_model(self) -> bool:
-        """Compare the configured embedding model against the stored meta.
+        """Compare the configured embedding identity against the stored meta.
 
+        The embedding identity is the triple ``(provider, model, dimensions)``.
         On a mismatch (or first run) it calls :meth:`_wipe_and_stamp_model`,
         which empties chunks, chunks_fts, documents, and taxonomy, clears the
-        modified_watermark, and stamps the new model/dimensions — so the next
+        modified_watermark, and stamps the new identity — so the next
         reconciliation re-indexes and re-embeds everything from scratch — then
         returns True. Documents MUST be wiped along with the chunks: keeping
         them lets the reconcile's content-hash check skip re-embedding (a
         metadata-only pass), which would leave the index permanently empty after
-        a model change.
+        an identity change.
 
-        If the model and dimensions already match, returns False (no wipe).
+        Provider back-compat (the load-bearing part): an index built before this
+        field existed has **no** ``embedding_provider`` meta key. A missing key
+        is read as ``"openai"`` — the only provider embeddings ever used before
+        this change — so a production OpenAI index whose meta predates the
+        provider field reads ``(openai, model, dims)`` and, when the config is
+        still ``openai`` with the same model/dims, MATCHES and is **not** wiped.
+        A genuine provider switch (openai↔ollama) mismatches and triggers the
+        wipe, which is correct: OpenAI and Ollama vectors are not comparable.
+
+        If the identity already matches, returns False (no wipe).
 
         Returns:
-            True if a rebuild is needed (model or dimensions changed or first
-            run); False if the stored model already matches the configured one.
+            True if a rebuild is needed (provider, model, or dimensions changed,
+            or first run); False if the stored identity matches the configured
+            one.
 
         Raises:
             StoreError: On SQLite error.
         """
+        # Absent embedding_provider meta ⇒ "openai": every index built before
+        # this field existed embedded with OpenAI, so an upgrade of an existing
+        # OpenAI index reads as openai and does NOT trigger a false re-embed.
+        stored_provider = self.read_meta("embedding_provider") or "openai"
         stored_model = self.read_meta("embedding_model")
         stored_dims = self.read_meta("embedding_dimensions")
+        configured_provider = self._settings.EMBEDDING_PROVIDER
         configured_model = self._settings.EMBEDDING_MODEL
         configured_dims = str(self._settings.EMBEDDING_DIMENSIONS)
 
-        if stored_model == configured_model and stored_dims == configured_dims:
+        if (
+            stored_provider == configured_provider
+            and stored_model == configured_model
+            and stored_dims == configured_dims
+        ):
             return False
 
         log.warning(
             "store.embedding_model_changed",
+            stored_provider=stored_provider,
             stored_model=stored_model,
             stored_dimensions=stored_dims,
+            configured_provider=configured_provider,
             configured_model=configured_model,
             configured_dimensions=configured_dims,
         )
@@ -396,6 +418,7 @@ class StoreWriter:
 
         try:
             self._wipe_and_stamp_model(
+                embedding_provider=configured_provider,
                 embedding_model=configured_model,
                 embedding_dimensions=self._settings.EMBEDDING_DIMENSIONS,
             )
@@ -405,26 +428,33 @@ class StoreWriter:
         return True
 
     def _wipe_and_stamp_model(
-        self, *, embedding_model: str, embedding_dimensions: int
+        self,
+        *,
+        embedding_provider: str,
+        embedding_model: str,
+        embedding_dimensions: int,
     ) -> None:
-        """Empty every indexed table and stamp the model the next reconcile uses.
+        """Empty every indexed table and stamp the identity the next reconcile uses.
 
         The shared wipe behind :meth:`rebuild_index` (the operator "Rebuild
-        index") and :meth:`check_embedding_model` (a model change detected on
+        index") and :meth:`check_embedding_model` (an identity change detected on
         boot). Both must leave the index FULLY empty so the next incremental
         sync re-indexes and re-embeds everything.
 
         Deleting ``documents`` is load-bearing and the subtle part: keeping the
         document rows lets the reconcile's content-hash check classify every
         document as unchanged and take a metadata-only pass — which leaves the
-        index permanently chunk-less (an empty search index) after a model
+        index permanently chunk-less (an empty search index) after an identity
         change. ``taxonomy`` is wiped too; the next cycle refreshes it. The
         ``modified_watermark`` is cleared so the sync runs with no server-side
         filter and re-fetches every document.
 
-        The model/dims meta is stamped in the SAME transaction as the wipe, so a
-        crash leaves meta and chunks consistent and the stored model can never
-        disagree with the (now empty) chunk set.
+        The provider/model/dims meta is stamped in the SAME transaction as the
+        wipe, so a crash leaves meta and chunks consistent and the stored
+        identity can never disagree with the (now empty) chunk set. The
+        ``embedding_provider`` key is always written here — so once an index is
+        wiped under this code, its provider is recorded explicitly rather than
+        relying on the absent-⇒-openai back-compat default.
 
         Acquires the write lock. Propagates ``sqlite3.Error``; callers wrap it
         in :class:`StoreError` with their own context.
@@ -438,6 +468,10 @@ class StoreWriter:
                 self._conn.execute("DELETE FROM meta WHERE key = 'modified_watermark'")
                 self._conn.execute(
                     "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
+                    ("embedding_provider", embedding_provider),
+                )
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
                     ("embedding_model", embedding_model),
                 )
                 self._conn.execute(
@@ -445,7 +479,13 @@ class StoreWriter:
                     ("embedding_dimensions", str(embedding_dimensions)),
                 )
 
-    def rebuild_index(self, *, embedding_model: str, embedding_dimensions: int) -> None:
+    def rebuild_index(
+        self,
+        *,
+        embedding_model: str,
+        embedding_dimensions: int,
+        embedding_provider: str | None = None,
+    ) -> None:
         """Wipe the entire index so the next reconcile rebuilds it from scratch.
 
         The destructive "Rebuild index" operation (web-redesign spec §5, Wave 6).
@@ -454,15 +494,23 @@ class StoreWriter:
         mid-wipe leaves the index either wholly intact or wholly empty, never
         half-wiped.
 
-        The embedding-model meta is stamped with *embedding_model* /
-        *embedding_dimensions* — the model the next reconcile will re-embed
-        with. The caller passes the **live** (hot-reloaded) config, not the
-        writer's boot settings: a "Rebuild index" triggered after the operator
-        switches the embedding model in the UI re-embeds with the NEW model, so
-        leaving the stored meta on the old model would make the next boot's
-        ``check_embedding_model`` detect a false drift and redundantly re-embed
-        the whole corpus. When the model is unchanged the write is a harmless
-        no-op (same value).
+        The embedding-identity meta is stamped with *embedding_provider* /
+        *embedding_model* / *embedding_dimensions* — the identity the next
+        reconcile will re-embed with. The caller passes the **live**
+        (hot-reloaded) config, not the writer's boot settings: a "Rebuild index"
+        triggered after the operator switches the embedding model in the UI
+        re-embeds with the NEW model, so leaving the stored meta on the old model
+        would make the next boot's ``check_embedding_model`` detect a false drift
+        and redundantly re-embed the whole corpus. When the identity is unchanged
+        the write is a harmless no-op (same value).
+
+        *embedding_provider* is optional for source-compatibility with the
+        indexer call site, which passes only model/dimensions: when ``None`` it
+        falls back to the writer's ``settings.EMBEDDING_PROVIDER`` (the boot
+        value). This is the same provider the freshly-built per-cycle
+        ``EmbeddingClient`` uses, so the stamp matches the re-embed unless the
+        provider was hot-switched without restarting the indexer — an edge the
+        next-boot ``check_embedding_model`` self-heals by detecting the drift.
 
         After this returns the index has no documents; the indexer's next
         incremental sync (watermark cleared → no server-side filter) re-indexes
@@ -473,10 +521,17 @@ class StoreWriter:
                 live resolved ``EMBEDDING_MODEL`` (stamped into meta).
             embedding_dimensions: The matching ``EMBEDDING_DIMENSIONS`` (stamped
                 into meta as a string, mirroring ``check_embedding_model``).
+            embedding_provider: The provider the next reconcile will embed with;
+                ``None`` (the default) resolves to ``settings.EMBEDDING_PROVIDER``.
 
         Raises:
             StoreError: On SQLite error — the transaction is rolled back.
         """
+        provider = (
+            embedding_provider
+            if embedding_provider is not None
+            else self._settings.EMBEDDING_PROVIDER
+        )
         log.warning("store.index_rebuild_started")
         # LLM-11 / IDX-04: a "Rebuild index" wipes every chunk and forces a full
         # re-embed on the next reconcile — log the projected scope at CRITICAL
@@ -484,6 +539,7 @@ class StoreWriter:
         log_reembed_projection(self._conn, trigger="index_rebuild")
         try:
             self._wipe_and_stamp_model(
+                embedding_provider=provider,
                 embedding_model=embedding_model,
                 embedding_dimensions=embedding_dimensions,
             )
