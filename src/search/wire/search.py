@@ -223,12 +223,20 @@ class CostSummaryResponse(BaseModel):
     ``usd`` is ``None`` when any LLM call was unpriced-and-not-local (there is
     no honest total to show); ``local`` is ``True`` when every billed call was
     local. Mirrors :class:`~search.models.CostSummary`.
+
+    ``prices_as_of`` / ``prices_source`` carry the provenance of the price table
+    the dollars were computed against — the as-of date and source (``"bundled"``
+    for the seed, or the refresh URL) of the live price book — so a client could
+    render "prices as of <date>". Optional with backwards-compatible defaults so
+    an older client that ignores them is unaffected.
     """
 
     tokens: TokenUsageResponse
     usd: float | None
     local: bool
     llm_calls: int
+    prices_as_of: str | None = None
+    prices_source: str = ""
 
 
 class SearchResponse(BaseModel):
@@ -409,6 +417,8 @@ def to_search_response(result: SearchResult) -> SearchResponse:
         usd=cost_summary.usd,
         local=cost_summary.local,
         llm_calls=cost_summary.llm_calls,
+        prices_as_of=cost_summary.prices_as_of,
+        prices_source=cost_summary.prices_source,
     )
     return SearchResponse(
         answer=result.answer,

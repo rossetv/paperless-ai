@@ -527,6 +527,14 @@ def make_search_settings(**overrides: Any) -> Any:
         # production defaults (SEARCH_PER_SPEC_K defaults to SEARCH_TOP_K=10).
         "SEARCH_PER_SPEC_K": 10,
         "SEARCH_MAX_CHUNKS_PER_DOC": 3,
+        # Price-book refresh OFF by default (empty URL = disabled), matching
+        # prod: create_app then starts no refresh thread and makes no network
+        # call, so building the app over these defaults is network-free. A bare
+        # MagicMock attribute would be a truthy URL and spuriously start the
+        # refresh thread (CODE_GUIDELINES §11.5). Tests exercising refresh
+        # override PRICING_REFRESH_URL with a real URL.
+        "PRICING_REFRESH_URL": "",
+        "PRICING_REFRESH_INTERVAL_HOURS": 24,
     }
     defaults.update(overrides)
     settings = MagicMock()

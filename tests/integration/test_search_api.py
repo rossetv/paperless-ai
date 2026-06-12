@@ -699,3 +699,263 @@ class TestSecurityHeaders:
             self._assert_security_headers(response.headers)
         finally:
             store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Refreshable price book — startup load, background refresh, response provenance
+# ---------------------------------------------------------------------------
+
+
+def _real_core_over_seeded_store(
+    settings: MagicMock, store_reader: StoreReader
+) -> object:
+    """Build a real SearchCore that answers from the seeded store.
+
+    The scripted planner returns one semantic spec matching the seeded chunk;
+    the embedding client returns ``_AXIS_A`` (the seeded chunk's vector), so
+    retrieval finds the document and the synthesiser produces an answer. Used by
+    the price-book tests so the cost summary carries the live book's provenance
+    rather than a mock core's fixed result.
+    """
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(specs=[_make_spec(semantic="gas bill")]),
+        synthesiser_responses=[
+            answered_response_json("The bill is £198.", citations=[100])
+        ],
+    )
+    embedding_client = MagicMock()
+    embedding_client.embed.return_value = [list(_AXIS_A)]
+    return build_search_core(
+        settings=settings,
+        llm_client=llm_client,
+        store_reader=store_reader,
+        embedding_client=embedding_client,
+    )
+
+
+def _seed_price_cache(settings: MagicMock, *, source: str, as_of: str) -> None:
+    """Write one model_pricing cache row into the create_app-migrated app.db.
+
+    Opens a second connection to ``settings.APP_DB_PATH`` (already migrated by
+    create_app) and replaces the cache, mirroring the per-request connection
+    pattern the other seed helpers use.
+    """
+    from appdb.connection import connect
+    from appdb.model_pricing import CachedModelPrice, save_cached_prices
+
+    conn = connect(settings.APP_DB_PATH)
+    try:
+        save_cached_prices(
+            conn,
+            table={
+                "gpt-5.4": CachedModelPrice(input_per_mtok=1.0, output_per_mtok=4.0)
+            },
+            as_of=as_of,
+            source=source,
+            fetched_at="2026-07-01T00:00:00+00:00",
+        )
+    finally:
+        conn.close()
+
+
+class TestPriceBookWiring:
+    """The live price book reaches the cost summary; refresh is opt-in only.
+
+    The headline guarantee: with ``PRICING_REFRESH_URL`` unset (prod's default),
+    create_app starts NO refresh thread and makes NO network call, and the cost
+    summary reports the bundled seed's provenance — byte-identical behaviour.
+    """
+
+    def _search(
+        self, settings: MagicMock, store_reader: StoreReader
+    ) -> dict[str, object]:
+        """Run one authorised search against a real core; return the JSON body."""
+        from search.api import create_app
+
+        core = _real_core_over_seeded_store(settings, store_reader)
+        app = create_app(settings, core=core, store_reader=store_reader)
+        client = TestClient(
+            app, raise_server_exceptions=False, base_url="https://testserver"
+        )
+        raw_key = _seed_api_key(settings)
+        response = client.post(
+            "/api/search",
+            json={"query": "gas bill amount"},
+            headers=_bearer(raw_key),
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    def test_no_url_starts_no_refresh_thread_and_no_network(
+        self, tmp_path: Path
+    ) -> None:
+        """The prod default: empty URL ⇒ no refresh thread, zero network calls.
+
+        respx with ``assert_all_mocked`` and no routes turns any outbound HTTP
+        into an error, so a passing test proves create_app made none. The
+        refresh thread is also asserted absent by name.
+        """
+        import threading
+
+        import respx
+
+        settings = _make_settings(tmp_path)
+        assert settings.PRICING_REFRESH_URL == ""  # the behaviour-preserving default
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            from search.api import create_app
+
+            core = _make_mock_core()
+            with respx.mock(assert_all_mocked=True):
+                create_app(settings, core=core, store_reader=store_reader)
+            # No background price-refresh thread was started.
+            assert not any(
+                t.name == "search-price-refresh" for t in threading.enumerate()
+            )
+        finally:
+            store_reader.close()
+
+    def test_no_url_search_reports_bundled_seed_provenance(
+        self, tmp_path: Path
+    ) -> None:
+        """With no URL the cost summary carries the bundled seed's as-of + source.
+
+        Proves the only visible addition on the default path: the cost figure now
+        also reports where the prices came from — and they come from the seed.
+        """
+        from search.pricing import SEED_PRICES_AS_OF
+
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            body = self._search(settings, store_reader)
+            cost = body["cost"]
+            assert cost["prices_source"] == "bundled"
+            assert cost["prices_as_of"] == SEED_PRICES_AS_OF
+            # The default path is honestly priced (zero scripted tokens → $0),
+            # never None — the seed prices every prod model.
+            assert cost["usd"] == 0.0
+        finally:
+            store_reader.close()
+
+    def test_startup_loads_the_app_db_price_cache(self, tmp_path: Path) -> None:
+        """A pre-existing model_pricing cache becomes the live book at startup.
+
+        create_app migrates app.db first, so seed the cache, then build the app
+        again over the same path: the live book — and therefore the search's
+        cost provenance — is the cached source/as-of, not the seed.
+        """
+        from search.api import create_app
+
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            # First build migrates app.db (so the table exists to seed).
+            create_app(settings, core=_make_mock_core(), store_reader=store_reader)
+            _seed_price_cache(
+                settings,
+                source="https://prices.example/openai.json",
+                as_of="2026-07-01",
+            )
+            # Second build loads the just-seeded cache into the live book.
+            body = self._search(settings, store_reader)
+            cost = body["cost"]
+            assert cost["prices_source"] == "https://prices.example/openai.json"
+            assert cost["prices_as_of"] == "2026-07-01"
+        finally:
+            store_reader.close()
+
+    def test_background_refresh_persists_and_publishes(self, tmp_path: Path) -> None:
+        """A configured URL refreshes once, persists the cache, and swaps the book.
+
+        The refresh helper is driven directly (no real multi-hour sleep) against
+        a respx-mocked URL; it must save the fetched table to app.db and publish
+        it as the live book.
+        """
+        import httpx
+        import respx
+
+        from appdb.connection import connect
+        from appdb.model_pricing import load_cached_prices
+        from search.api import _refresh_once
+        from search.pricing_book import get_current_price_book
+
+        url = "https://prices.example/openai.json"
+        payload = {
+            "as_of": "2026-08-15",
+            "currency": "USD",
+            "models": {"gpt-5.5": {"input_per_mtok": 7.0, "output_per_mtok": 33.0}},
+        }
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            # Migrate app.db so the cache write target exists.
+            create_app_path = settings.APP_DB_PATH
+            from search.api import create_app
+
+            create_app(settings, core=_make_mock_core(), store_reader=store_reader)
+
+            with respx.mock:
+                respx.get(url).mock(return_value=httpx.Response(200, json=payload))
+                _refresh_once(url, create_app_path)
+
+            # Published as the live book.
+            live = get_current_price_book()
+            assert live.source == url
+            assert live.as_of == "2026-08-15"
+            # Persisted to app.db so it survives a restart.
+            conn = connect(create_app_path)
+            try:
+                cached = load_cached_prices(conn)
+            finally:
+                conn.close()
+            assert cached is not None
+            assert cached.source == url and cached.as_of == "2026-08-15"
+        finally:
+            store_reader.close()
+
+    def test_refresh_failure_keeps_the_previous_book(self, tmp_path: Path) -> None:
+        """A failed fetch logs and keeps the current book — it never crashes."""
+        import httpx
+        import respx
+
+        from search.api import _refresh_once
+        from search.pricing_book import (
+            BUNDLED_SOURCE,
+            get_current_price_book,
+            reset_current_price_book,
+        )
+
+        url = "https://prices.example/openai.json"
+        settings = _make_settings(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            reset_current_price_book()  # start from the seed
+            from search.api import create_app
+
+            create_app(settings, core=_make_mock_core(), store_reader=store_reader)
+            with respx.mock:
+                respx.get(url).mock(return_value=httpx.Response(503, text="down"))
+                # Must not raise — a flaky host never crashes the server.
+                _refresh_once(url, settings.APP_DB_PATH)
+            # The seed book is untouched.
+            assert get_current_price_book().source == BUNDLED_SOURCE
+        finally:
+            store_reader.close()
+
+    def test_cost_response_carries_provenance_fields(self, tmp_path: Path) -> None:
+        """The wire response exposes prices_as_of and prices_source for the UI."""
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            body = self._search(settings, store_reader)
+            cost = body["cost"]
+            assert "prices_as_of" in cost
+            assert "prices_source" in cost
+        finally:
+            store_reader.close()

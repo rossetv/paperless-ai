@@ -7,7 +7,8 @@ phase's LLM token usage, prices it, and accumulates the whole-query
 :class:`CostSummary`. The assembled :class:`SearchTrace` and ``CostSummary`` ride
 on ``SearchStats`` so they are cacheable and reach every consumer.
 
-Allowed deps: search.models, search.pricing. Forbidden: I/O, FastAPI, LLM calls.
+Allowed deps: search.models, search.pricing, search.pricing_book. Forbidden:
+I/O, FastAPI, LLM calls.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from search.models import (
     TokenUsage,
 )
 from search.pricing import price_call
+from search.pricing_book import PriceBook, get_current_price_book
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,15 +55,35 @@ def _sum_usage(sink: Sequence[LlmCallUsage]) -> TokenUsage:
 class _Telemetry:
     """Accumulates the trace + cost for one search, emitting events as it goes.
 
+    The price book is resolved ONCE per search (at construction) — pinned for the
+    request so every call is priced against a single consistent table even if a
+    background refresh swaps the live book mid-search, and so the provenance the
+    cost summary reports matches the dollars it computed.
+
     Args:
         on_event: Optional sink for live phase events (the streaming route). When
             None, the telemetry still assembles the trace/cost for the result.
         provider: ``settings.LLM_PROVIDER`` — selects local-vs-priced costing.
+        price_book: The price book to cost against. Defaults to the process-wide
+            live book (:func:`~search.pricing_book.get_current_price_book`) —
+            the bundled seed unless a cache/refresh replaced it. Injectable so
+            unit tests stay deterministic against a known table.
     """
 
-    def __init__(self, on_event: OnEvent | None, provider: str) -> None:
+    def __init__(
+        self,
+        on_event: OnEvent | None,
+        provider: str,
+        *,
+        price_book: PriceBook | None = None,
+    ) -> None:
         self._on_event = on_event
         self._provider = provider
+        # Resolve the live book once and pin it for the whole search (see the
+        # class docstring). Tests inject a known book to stay deterministic.
+        self._price_book = (
+            price_book if price_book is not None else get_current_price_book()
+        )
         self._phases: list[PhaseRecord] = []
         self._usd_total = 0.0
         self._usd_known = True  # flips False if any call is unpriced-and-not-local
@@ -109,7 +131,12 @@ class _Telemetry:
             call_tokens = TokenUsage(
                 call.prompt, call.completion, call.reasoning, call.total
             )
-            cost = price_call(call.model, self._provider, call_tokens)
+            cost = price_call(
+                call.model,
+                self._provider,
+                call_tokens,
+                table=self._price_book.effective_table(),
+            )
             if not cost.local:
                 phase_local = False
                 self._all_local = False
@@ -133,10 +160,18 @@ class _Telemetry:
         return SearchTrace(phases=tuple(self._phases))
 
     def cost_summary(self) -> CostSummary:
-        """Produce the whole-query cost summary."""
+        """Produce the whole-query cost summary, stamped with price provenance.
+
+        ``prices_as_of`` / ``prices_source`` carry the as-of date and source of
+        the price book this search costed against (the pinned live book — the
+        bundled seed unless a refresh replaced it), so the UI can show "prices as
+        of <date>" alongside the dollar figure.
+        """
         return CostSummary(
             tokens=self._tokens_total,
             usd=self._usd_total if self._usd_known else None,
             local=self._all_local,
             llm_calls=self._call_count,
+            prices_as_of=self._price_book.as_of,
+            prices_source=self._price_book.source,
         )

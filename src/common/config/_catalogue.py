@@ -112,6 +112,8 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_PLANNER_TAXONOMY_LIMIT",
         "SEARCH_PER_SPEC_K",
         "SEARCH_MAX_CHUNKS_PER_DOC",
+        "PRICING_REFRESH_URL",
+        "PRICING_REFRESH_INTERVAL_HOURS",
     }
 )
 
