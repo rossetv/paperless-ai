@@ -468,3 +468,133 @@ class TestUnparseableDateIsLogged:
         assert not [
             event for event in captured if event["event"] == "worker.unparseable_date"
         ]
+
+
+# ---------------------------------------------------------------------------
+# Zero-chunk guard: marker-only content must not create a blocking hash row
+# ---------------------------------------------------------------------------
+
+# OCR page markers are stripped by chunk_text; content consisting solely of
+# them passes the whitespace gate but yields zero chunks.  Without the guard
+# the worker would upsert a documents row with chunk_count=0 and store a
+# content_hash — permanently trapping the document in METADATA_ONLY with no
+# search results (IDX-M1).  The tests below verify the guard using the real
+# chunker so the test is coupled to the actual stripping behaviour, not a mock.
+
+_MARKERS_ONLY = "--- Page 1 ---\n--- Page 2 ---"
+
+
+class TestZeroChunkGuard:
+    """Content that passes the whitespace gate but yields zero chunks is skipped.
+
+    IDX-M1: the worker must not upsert a chunk-less documents row whose stored
+    content_hash would block every future re-attempt.  Specifically:
+
+    * ``upsert_document`` is never called.
+    * No hash is stored → a later cycle with real content CAN be indexed.
+    * The outcome is ``SKIPPED``.
+    """
+
+    def test_marker_only_content_returns_skipped(self) -> None:
+        """Marker-only content is SKIPPED, not INDEXED."""
+        settings = make_settings_obj()
+        indexer = DocumentIndexer(settings, MagicMock(), make_mock_embedding_client())
+
+        doc = _make_doc(content=_MARKERS_ONLY)
+        outcome = indexer.index_document(doc, existing=None)
+
+        assert outcome is IndexOutcome.SKIPPED
+
+    def test_marker_only_content_does_not_call_upsert(self) -> None:
+        """No documents row is written — no blocking hash is stored."""
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
+
+        doc = _make_doc(content=_MARKERS_ONLY)
+        indexer.index_document(doc, existing=None)
+
+        store_writer.upsert_document.assert_not_called()
+        store_writer.update_metadata.assert_not_called()
+        embedding_client.embed.assert_not_called()
+
+    def test_marker_only_content_logs_warning(self) -> None:
+        """A WARNING is emitted so the operator can see the un-indexable document."""
+        import structlog.testing
+
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
+
+        doc = _make_doc(content=_MARKERS_ONLY)
+        with structlog.testing.capture_logs() as captured:
+            indexer.index_document(doc, existing=None)
+
+        skipped_events = [
+            e for e in captured if e["event"] == "worker.document_skipped"
+        ]
+        assert len(skipped_events) == 1
+        assert skipped_events[0]["log_level"] == "warning"
+        assert skipped_events[0]["reason"] == "indexed_content_produced_zero_chunks"
+
+    def test_marker_only_new_document_does_not_delete(self) -> None:
+        """No existing row → nothing to prune; delete_documents must not be called."""
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
+
+        doc = _make_doc(content=_MARKERS_ONLY)
+        indexer.index_document(doc, existing=None)
+
+        store_writer.delete_documents.assert_not_called()
+
+    def test_marker_only_previously_indexed_prunes_stale_row(self) -> None:
+        """An existing row for a now-marker-only document must be pruned.
+
+        Without pruning the stale row persists in the store and continues to
+        serve empty search results.  The existing row was created when the
+        document had real content; it must be deleted so the store is clean.
+        """
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
+
+        doc = _make_doc(content=_MARKERS_ONLY)
+        existing = IndexState(
+            modified="2024-05-01T00:00:00+00:00",
+            content_hash="some_previously_indexed_hash",
+        )
+        outcome = indexer.index_document(doc, existing=existing)
+
+        assert outcome is IndexOutcome.SKIPPED
+        store_writer.delete_documents.assert_called_once_with((doc["id"],))
+        store_writer.upsert_document.assert_not_called()
+
+    def test_future_cycle_with_real_content_can_be_indexed(self) -> None:
+        """After a zero-chunk skip, a later cycle that supplies real content succeeds.
+
+        Because no hash is stored on the zero-chunk path, the hash gate never
+        fires and the document goes through the full chunk + embed + upsert path
+        on the next cycle.  This test simulates the two-cycle sequence:
+
+        Cycle 1 — marker-only: SKIPPED, nothing stored.
+        Cycle 2 — real content added: existing=None (no row was ever written),
+                  outcome INDEXED, upsert_document called.
+        """
+        settings = make_settings_obj()
+        store_writer = MagicMock()
+        embedding_client = make_mock_embedding_client()
+        indexer = DocumentIndexer(settings, store_writer, embedding_client)
+
+        # Cycle 1: marker-only content, no row written.
+        doc_cycle1 = _make_doc(content=_MARKERS_ONLY)
+        outcome1 = indexer.index_document(doc_cycle1, existing=None)
+        assert outcome1 is IndexOutcome.SKIPPED
+        store_writer.upsert_document.assert_not_called()
+
+        # Cycle 2: real content arrives — existing=None because cycle 1 wrote nothing.
+        doc_cycle2 = _make_doc(content=_DEFAULT_DOC_CONTENT)
+        outcome2 = indexer.index_document(doc_cycle2, existing=None)
+        assert outcome2 is IndexOutcome.INDEXED
+        store_writer.upsert_document.assert_called_once()
