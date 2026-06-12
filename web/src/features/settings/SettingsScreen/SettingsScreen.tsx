@@ -133,6 +133,7 @@ function SettingsContent({
         isPending={save.isPending}
         onDiscard={discard}
         onSave={handleSave}
+        reindexPending={changedKeys.some((k) => reindexKeys.has(k))}
       />
       {reindexNotice && (
         <Toast

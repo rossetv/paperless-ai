@@ -212,4 +212,49 @@ describe('settings field model', () => {
     expect(advancedKeys).toContain('OCR_INCLUDE_PAGE_MODELS');
     expect(advancedKeys).toContain('OCR_REFUSAL_MARKERS');
   });
+
+  // ── Embedding-provider decoupling assertions ──────────────────────────────
+
+  it('embeddings group contains an EMBEDDING_PROVIDER segmented field as the first field', () => {
+    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
+    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
+    const providerField = embeddings.fields.find((f) => f.key === 'EMBEDDING_PROVIDER');
+    expect(providerField).toBeDefined();
+    expect(providerField!.control.kind).toBe('segmented');
+    expect(embeddings.fields[0]!.key).toBe('EMBEDDING_PROVIDER');
+  });
+
+  it('EMBEDDING_PROVIDER segmented control has openai and ollama options', () => {
+    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
+    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
+    const providerField = embeddings.fields.find((f) => f.key === 'EMBEDDING_PROVIDER')!;
+    expect(providerField.control.kind).toBe('segmented');
+    if (providerField.control.kind === 'segmented') {
+      const values = providerField.control.options.map((o) => o.value);
+      expect(values).toContain('openai');
+      expect(values).toContain('ollama');
+    }
+  });
+
+  it('EMBEDDING_MODEL control kind is text (not select)', () => {
+    const field = fieldByKey('EMBEDDING_MODEL')!;
+    expect(field).toBeDefined();
+    expect(field.control.kind).toBe('text');
+  });
+
+  it('provider group subtitle no longer mentions "always use OpenAI"', () => {
+    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
+    const provider = connections.groups.find((g) => g.id === 'provider')!;
+    expect(provider.subtitle).not.toMatch(/always use openai/i);
+  });
+
+  it('provider group subtitle mentions embeddings are configured separately', () => {
+    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
+    const provider = connections.groups.find((g) => g.id === 'provider')!;
+    expect(provider.subtitle).toMatch(/embeddings are configured separately/i);
+  });
+
+  it('allFieldKeys includes EMBEDDING_PROVIDER', () => {
+    expect(allFieldKeys()).toContain('EMBEDDING_PROVIDER');
+  });
 });
