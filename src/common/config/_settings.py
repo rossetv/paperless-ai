@@ -41,6 +41,7 @@ from ._parsers import (
     _resolve_log_format,
     _resolve_ocr_image_detail,
     _resolve_ocr_reasoning_effort,
+    _resolve_pricing_refresh_url,
     _resolve_relevance_tiers,
     _resolve_search_max_refinements,
     _resolve_search_reasoning_effort,
@@ -404,6 +405,33 @@ class Settings:
     the context window. Clamped to >= 1. Default ``3``.
     """
 
+    # Model-price book settings (refreshable, locally-cached pricing)
+    PRICING_REFRESH_URL: str
+    """Operator-provided URL serving the model-price refresh JSON, or ``""`` to disable.
+
+    There is **no official OpenAI pricing API** (``/v1/models`` returns models,
+    not prices), so live prices cannot be fetched from OpenAI. When this is set
+    to an absolute ``http``/``https`` URL, the price book periodically fetches it
+    — a self-hosted or community-maintained price list the operator trusts — and
+    caches the result in ``app.db`` (surviving restarts), falling back to the
+    bundled seed on any fetch/validation failure. The expected JSON schema is
+    ``{"as_of": "YYYY-MM-DD", "currency": "USD", "models": {"<model>":
+    {"input_per_mtok": <num>, "output_per_mtok": <num>}}}``.
+
+    Empty (the default, and prod's config) **disables refresh entirely**: the
+    price book equals the bundled seed exactly, produces identical dollar
+    figures, and makes zero network calls. Validated as empty-or-absolute-URL at
+    config-build time; a bare path or bad scheme is rejected naming the key.
+    """
+    PRICING_REFRESH_INTERVAL_HOURS: int
+    """How often to refresh the price book from ``PRICING_REFRESH_URL``, in hours.
+
+    Inert when ``PRICING_REFRESH_URL`` is empty (no refresh runs at all). When a
+    URL is set, the background refresh task re-fetches at most this often.
+    Clamped to ``>= 1`` so a typo (``0`` or negative) cannot turn the refresh
+    into a hot loop hammering the price-list host. Default ``24``.
+    """
+
     @classmethod
     def from_environment(cls) -> Settings:
         """Build a :class:`Settings` from the process environment alone.
@@ -739,5 +767,14 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_MAX_CHUNKS_PER_DOC=max(
             1, _get_int_env(source, "SEARCH_MAX_CHUNKS_PER_DOC", 3)
+        ),
+        # Empty (the default) disables price refresh: the book uses the bundled
+        # seed only and makes no network call. A non-empty value is validated as
+        # an absolute http/https URL at config-build time.
+        PRICING_REFRESH_URL=_resolve_pricing_refresh_url(source),
+        # Clamped >= 1 so a 0/negative typo cannot turn the background refresh
+        # into a hot loop against the price-list host.
+        PRICING_REFRESH_INTERVAL_HOURS=max(
+            1, _get_int_env(source, "PRICING_REFRESH_INTERVAL_HOURS", 24)
         ),
     )

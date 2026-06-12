@@ -1,7 +1,14 @@
 """Tests for search.pricing — the model-price table and per-call cost calculator."""
 
+import re
+
 from search.models import Cost, TokenUsage
-from search.pricing import MODEL_PRICES, ModelPrice, price_call
+from search.pricing import (
+    MODEL_PRICES,
+    SEED_PRICES_AS_OF,
+    ModelPrice,
+    price_call,
+)
 
 
 def test_prices_a_known_openai_model():
@@ -28,3 +35,9 @@ def test_unknown_openai_model_is_unpriced():
 def test_default_table_is_populated_and_typed():
     assert isinstance(MODEL_PRICES, dict)
     assert all(isinstance(v, ModelPrice) for v in MODEL_PRICES.values())
+
+
+def test_seed_prices_as_of_is_an_iso_date():
+    """The seed as-of date is a YYYY-MM-DD string the price book can stamp."""
+    assert isinstance(SEED_PRICES_AS_OF, str)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", SEED_PRICES_AS_OF)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Literal
+from urllib.parse import urlparse
 
 # Default Ollama base URL, used when LLM_PROVIDER=ollama and OLLAMA_BASE_URL is
 # unset. Lives here because the provider-default resolver in _settings imports
@@ -335,6 +336,34 @@ def _resolve_server_port(source: Mapping[str, str]) -> int:
     if not 1 <= port <= 65535:
         raise ValueError(f"SEARCH_SERVER_PORT must be between 1 and 65535, got {port}.")
     return port
+
+
+def _resolve_pricing_refresh_url(source: Mapping[str, str]) -> str:
+    """Resolve and validate ``PRICING_REFRESH_URL`` (defaults to ``""`` = disabled).
+
+    An empty, unset, or whitespace-only value means the price-refresh feature is
+    disabled — the price book uses the bundled seed only, makes no network call,
+    and prices the identical dollar figures the hardcoded table did. This is the
+    default and prod's configuration.
+
+    A non-empty value must be an absolute ``http``/``https`` URL with a host;
+    anything else (a bare path, a ``file://`` URL, a typo'd scheme) fails closed
+    naming the key (CODE_GUIDELINES §1.11, §10.8) rather than being discovered
+    when the first refresh fails. The URL is returned stripped of surrounding
+    whitespace; no trailing-slash normalisation is applied because it is fetched
+    verbatim, not used as a base for path joins.
+    """
+    raw = source.get("PRICING_REFRESH_URL", "")
+    url = raw.strip()
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(
+            "PRICING_REFRESH_URL must be an absolute http:// or https:// URL "
+            f"(or empty to disable), got {raw!r}."
+        )
+    return url
 
 
 def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:

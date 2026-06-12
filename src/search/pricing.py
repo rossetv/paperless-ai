@@ -50,6 +50,13 @@ MODEL_PRICES: dict[str, ModelPrice] = {
     "o4-mini": ModelPrice(input_per_mtok=1.1, output_per_mtok=4.4),
 }
 
+# The date :data:`MODEL_PRICES` was last confirmed against the operator's
+# OpenAI account (the comment above). Carried as a named constant so the price
+# book (:mod:`search.pricing_book`) can stamp the bundled-seed book's ``as_of``
+# from the single source of truth here rather than re-typing the date — when
+# the seed table is updated, this date moves with it in the same edit.
+SEED_PRICES_AS_OF: str = "2026-06-10"
+
 
 def price_call(
     model: str,

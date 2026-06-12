@@ -93,6 +93,8 @@ A few properties of the pipeline matter at the server level:
 
 **Cheaper paths exist, never more expensive ones.** Several things let a query finish with *fewer* calls: a repeated query is served from a result cache with **zero** LLM calls; a query that is too short or too vague is rejected before any synthesis; a retrieval that finds nothing relevant skips synthesis entirely. These are the fail-fast gates, described next.
 
+**The cost figure carries its price provenance.** Each result's `cost` block now also reports `prices_as_of` (the price list's effective date) and `prices_source`, so the UI can show "prices as of \<date\>". By default the prices come from a **bundled seed** table baked into the code (`prices_source` is `"bundled"`), confirmed against the operator's OpenAI account on a fixed date — so with no extra configuration the dollar figures are exactly what they have always been, computed with zero network calls. Optionally, set `PRICING_REFRESH_URL` to an operator-trusted URL serving a USD price list (there is no official OpenAI pricing API), and the server refreshes the table in the background every `PRICING_REFRESH_INTERVAL_HOURS` (default 24), caches it in `app.db` so it survives a restart, and stamps `prices_source` with that URL. A refresh that fails is logged and ignored — the previous prices stand, and the server never crashes over a flaky price host. Leaving `PRICING_REFRESH_URL` unset (the default) starts no refresh and touches no network.
+
 ### Fail-fast gates
 
 Three cheap checks short-circuit queries that cannot be answered well, cheapest first. Each can be toggled independently, and all of them lean towards *trying* to answer rather than refusing:
