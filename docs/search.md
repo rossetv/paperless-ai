@@ -174,7 +174,7 @@ These map to the FastAPI dependencies in `search/deps.py` (`require_api_scope`, 
 
 The store, the LLM client, and the per-request SQLite connections all do **blocking** I/O. A single asyncio event loop serves every request, so blocking work must run *off* it or one slow upstream would freeze the whole server. Every such call goes through one shared helper, `run_blocking` (`search/offload.py`), which dispatches it to the loop's default thread-pool executor. This covers the search pipeline, the health check, and every document route — every `StoreReader`, Paperless, and PDF/thumbnail call.
 
-A `LazySemaphore` (also in `offload.py`) bounds the number of in-flight `/api/search` requests to `SEARCH_MAX_CONCURRENT` (default 4); the MCP tools share the same primitive with the same ceiling. It is created lazily on first use (so it binds to the serving loop) and is hot-reloadable — a changed cap takes effect on the next request. A ceiling of 0 means unbounded. Together with the per-query LLM-call budget, this caps aggregate spend on an exposed, billable endpoint.
+A single `LazySemaphore` (also in `offload.py`) bounds the number of in-flight searches to `SEARCH_MAX_CONCURRENT` (default 4). The app factory (`search/api.py`) creates **one** instance and injects the *same object* into both `build_api_router` (HTTP `/api/search`) and `build_mcp_app` (the MCP tools), so the two surfaces share one ceiling rather than enforcing `SEARCH_MAX_CONCURRENT` twice — the real cap is N across both, not 2N. It is created lazily on first use (so it binds to the serving loop) and is hot-reloadable — a changed cap takes effect on the next request. A ceiling of 0 means unbounded. Together with the per-query LLM-call budget, this caps aggregate spend on an exposed, billable endpoint.
 
 A separate per-username login throttle (`search/login_throttle.py`) limits password-guessing on `POST /api/auth/login`, blocking a burst of failures *before* any expensive password-hash work.
 
@@ -182,14 +182,14 @@ A separate per-username login throttle (`search/login_throttle.py`) limits passw
 
 ## MCP endpoint
 
-The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `FastMCP` streamable-HTTP transport — an ASGI app mounted at `/mcp` — and exposes two tools, both backed by the same `SearchCore`:
+The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `FastMCP` streamable-HTTP transport — an ASGI app mounted at `/mcp` — and exposes two tools, both backed by the live `SearchCore`:
 
 | Tool | Calls | Returns |
 |:---|:---|:---|
 | `search_documents(query, filters?)` | `core.retrieve()` | Ranked source documents with snippets and Paperless deep-links; no written answer |
 | `ask_documents(question, filters?)` | `core.answer()` | The full result, including a synthesised answer |
 
-`search_documents` saves one LLM call — the calling agent writes its own answer from the sources. `ask_documents` is the right choice when the agent just wants a direct prose answer. Both tool bodies run off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration.) The query is normalised at the boundary — trimmed, non-empty, length-bounded — and any pipeline failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail.
+`search_documents` saves one LLM call — the calling agent writes its own answer from the sources. `ask_documents` is the right choice when the agent just wants a direct prose answer. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Both tool bodies run off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration.) The query is normalised at the boundary — trimmed, non-empty, length-bounded — and any pipeline failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail.
 
 **Every MCP request is authenticated.** An ASGI bearer-token middleware wraps the MCP app: a request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential gets HTTP 401 without ever reaching the MCP handler. The middleware opens a fresh `app.db` connection per request (off the loop); a successful cookie auth also refreshes `last_seen_at`. Credentials are never logged — a rejection records only whether a header or cookie was present.
 
@@ -220,6 +220,8 @@ Each key carries **scopes**: `api` (the REST data routes), `mcp` (the `/mcp` sur
 A key can be given an **expiry** and can be **revoked** at any time; revocation takes effect immediately. The owner can **edit** it — rename it, change its scopes, or change its expiry. Editing is owner-only: an admin may view and revoke other users' keys but not edit them.
 
 **`SEARCH_API_KEY` is retired.** The `SEARCH_API_KEY` environment variable is no longer read by the search server (Wave 3). A fresh install has no programmatic or MCP access until an account is created and a key is minted — there is no default credential.
+
+**Security response headers.** A global middleware (`search/security_headers.py`) stamps a conservative, SPA-safe header set onto every response — the API routers, the MCP mount, and the static SPA alike: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security` (one year, `includeSubDomains`), and an **enforcing** `Content-Security-Policy`. The CSP is `default-src 'self'` with `frame-ancestors 'none'`, `base-uri 'self'`, `object-src 'none'`, and `connect-src`/`img-src`/`font-src` scoped to same-origin (plus `data:` images). `script-src` and `style-src` allow `'unsafe-inline'` because the built `index.html` carries one inline theme-bootstrap script and the Vite/React runtime injects `<style>` elements — a stricter policy would blank the app, and the bundle uses no `eval`. This is defence-in-depth: the real auth lives in the routers; the headers shrink the blast radius of a mistake elsewhere.
 
 ---
 
@@ -302,4 +304,5 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 | `setup.py` | First-run setup-token generation, comparison, and setup-mode detection |
 | `login_throttle.py` | The per-username login-attempt throttle |
 | `cookies.py` | The session-cookie attributes (`HttpOnly`, `Secure`, `SameSite=Strict`) |
+| `security_headers.py` | The global response-header middleware (CSP, HSTS, nosniff, frame/referrer policy) |
 | `identity.py` | Resolves the "who is asking" signal threaded to the identity-aware pipeline |
