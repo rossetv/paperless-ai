@@ -9,7 +9,7 @@ import openai
 from PIL import Image
 
 from common.content_checks import is_error_content
-from ocr.provider import OcrProvider
+from ocr.provider import OcrProvider, _is_model_refusal
 
 
 def _make_settings(**overrides):
@@ -513,3 +513,89 @@ class TestOcrProviderReadsOcrModels:
         page = provider.transcribe_image(image)
 
         assert page.model == "ocr-only-model"
+
+
+class TestIsModelRefusal:
+    """M5: refusal detection must not discard genuine document content.
+
+    A document body that happens to contain a phrase like "I cannot assist
+    you" (e.g. a denial or legal letter) must NOT be treated as a model
+    refusal. Only short responses dominated by the phrase, or responses
+    containing the hard sentinel, are genuine refusals.
+    """
+
+    _SENTINEL = "CHATGPT REFUSED TO TRANSCRIBE"
+    _MARKERS = ["i cannot assist", "i can't assist"]
+
+    def test_long_document_containing_phrase_is_not_a_refusal(self):
+        # A 300-character document body with a refusal phrase buried in it
+        # must pass through — it is real content from a denial letter, not a
+        # model refusing to work.
+        long_body = (
+            "Dear Sir/Madam, I cannot assist you with this request at this time "
+            "due to regulatory requirements. Please contact your local office for "
+            "further information regarding the matter described in your application."
+        )
+        assert len(long_body) > 200
+
+        assert _is_model_refusal(long_body, self._MARKERS, self._SENTINEL) is False
+
+    def test_short_genuine_refusal_is_detected(self):
+        short_refusal = "I cannot assist with this request."
+        assert len(short_refusal) < 200
+
+        assert _is_model_refusal(short_refusal, self._MARKERS, self._SENTINEL) is True
+
+    def test_hard_sentinel_is_always_a_refusal_regardless_of_length(self):
+        # The hard sentinel must be detected even when surrounded by other text
+        # in a response long enough to defeat the soft-phrase length gate.
+        long_text = (
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do "
+            "eiusmod tempor incididunt. CHATGPT REFUSED TO TRANSCRIBE this page "
+            "for unspecified reasons. Ut enim ad minim veniam, quis nostrud "
+            "exercitation ullamco laboris nisi ut aliquip ex ea commodo."
+        )
+        assert len(long_text) > 200
+
+        assert _is_model_refusal(long_text, self._MARKERS, self._SENTINEL) is True
+
+    def test_hard_sentinel_case_insensitive(self):
+        assert (
+            _is_model_refusal(
+                "chatgpt refused to transcribe", self._MARKERS, self._SENTINEL
+            )
+            is True
+        )
+
+    def test_empty_markers_with_short_text_not_a_refusal(self):
+        # No markers configured — only the sentinel should fire.
+        assert _is_model_refusal("Short response.", [], self._SENTINEL) is False
+
+    def test_provider_does_not_treat_long_document_as_refusal(self):
+        # End-to-end: a long OCR result containing a refusal phrase is accepted
+        # by the provider and NOT treated as a refused page.
+        long_response = (
+            "Dear Applicant, I cannot assist you further with case 12345. "
+            "Your application has been reviewed and rejected per section 4.2. "
+            "Please note that you may appeal this decision within 30 days by "
+            "submitting form B-22 to the appeals division. Signed, The Committee."
+        )
+        assert len(long_response) > 200
+        settings = _make_settings(
+            OCR_MODELS=["model-a", "model-b"],
+            OCR_REFUSAL_MARKERS=["i cannot assist"],
+            REFUSAL_MARK="CHATGPT REFUSED TO TRANSCRIBE",
+        )
+        provider = OcrProvider(settings)
+        provider._create_completion = MagicMock(
+            return_value=_make_response(long_response)
+        )
+        image = _make_test_image()
+
+        page = provider.transcribe_image(image)
+
+        # The long document body must NOT trigger the refusal fallback.
+        assert page.text == long_response
+        assert page.model == "model-a"
+        # Only one API call — the second (fallback) model was never tried.
+        assert provider._create_completion.call_count == 1
