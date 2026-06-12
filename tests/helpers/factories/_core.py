@@ -114,6 +114,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         # Indexer / store fields.
         "INDEX_DB_PATH": "/tmp/test-index.db",
         "APP_DB_PATH": "/tmp/test-app.db",
+        "EMBEDDING_PROVIDER": "openai",
         "EMBEDDING_MODEL": "test-model",
         "EMBEDDING_DIMENSIONS": DEFAULT_EMBEDDING_DIMENSIONS,
         "CHUNK_SIZE": 2000,

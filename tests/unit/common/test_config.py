@@ -17,8 +17,9 @@ _MINIMAL_ENV = {
     "OPENAI_API_KEY": "sk-test",
 }
 
-# OPENAI_API_KEY is required even under LLM_PROVIDER=ollama: the embedding
-# client always uses OpenAI (CODE_GUIDELINES §10.8, §15.4).
+# A fully-local ollama deployment may omit OPENAI_API_KEY (EMBEDDING_PROVIDER
+# defaults to ollama too), but most of these tests still supply it because they
+# exercise unrelated ollama defaults; the key is harmless when present.
 _MINIMAL_OLLAMA_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
     "OPENAI_API_KEY": "sk-test",
@@ -156,14 +157,46 @@ class TestMissingRequired:
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(mocker, {"PAPERLESS_TOKEN": "tok"})
 
-    def test_openai_api_key_required_even_for_ollama_provider(self, mocker):
-        """OPENAI_API_KEY is required regardless of LLM_PROVIDER.
+    def test_openai_api_key_required_when_embedding_provider_is_openai(self, mocker):
+        """OPENAI_API_KEY is required when OpenAI is used by EITHER provider.
 
-        Embeddings always use OpenAI, so the indexer and search server need
-        the key even under LLM_PROVIDER=ollama (CODE_GUIDELINES §10.8, §15.4).
+        Under LLM_PROVIDER=ollama the LLM is local, but an explicit
+        EMBEDDING_PROVIDER=openai means embeddings still go to OpenAI, so the
+        key is required (CODE_GUIDELINES §10.8, §15.4).
         """
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-            _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
+            _build(
+                mocker,
+                {
+                    "PAPERLESS_TOKEN": "tok",
+                    "LLM_PROVIDER": "ollama",
+                    "EMBEDDING_PROVIDER": "openai",
+                },
+            )
+
+    def test_openai_api_key_optional_when_both_providers_are_ollama(self, mocker):
+        """A fully-local deployment (LLM + embeddings ollama) may omit the key.
+
+        The privacy fix: with LLM_PROVIDER=ollama defaulting EMBEDDING_PROVIDER
+        to ollama too, no call ever reaches OpenAI, so OPENAI_API_KEY is not
+        required and resolves to an empty string.
+        """
+        s = _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
+        assert s.OPENAI_API_KEY == ""
+        assert s.EMBEDDING_PROVIDER == "ollama"
+
+    def test_openai_api_key_required_when_only_llm_provider_is_openai(self, mocker):
+        """OPENAI_API_KEY is required when the LLM uses OpenAI even if embeddings
+        are local (EMBEDDING_PROVIDER=ollama)."""
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            _build(
+                mocker,
+                {
+                    "PAPERLESS_TOKEN": "tok",
+                    "LLM_PROVIDER": "openai",
+                    "EMBEDDING_PROVIDER": "ollama",
+                },
+            )
 
     def test_empty_paperless_token_is_treated_as_missing(self, mocker):
         """An empty PAPERLESS_TOKEN must fail at validation, not at runtime.
@@ -221,14 +254,52 @@ class TestOllamaConfig:
         )
         assert s.OLLAMA_BASE_URL == "http://gpu:11434/v1/"
 
-    def test_ollama_still_loads_openai_api_key(self, mocker):
-        """Under ollama, OPENAI_API_KEY is still loaded — embeddings need it."""
+    def test_ollama_still_loads_openai_api_key_when_present(self, mocker):
+        """A supplied OPENAI_API_KEY is still loaded under ollama (harmless)."""
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.OPENAI_API_KEY == "sk-test"
 
     def test_openai_provider_ollama_base_url_is_none(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         assert s.OLLAMA_BASE_URL is None
+
+
+class TestEmbeddingProvider:
+    """EMBEDDING_PROVIDER resolution: defaults to LLM_PROVIDER, overridable."""
+
+    def test_defaults_to_openai_when_llm_provider_is_openai(self, mocker):
+        """The prod default: EMBEDDING_PROVIDER follows LLM_PROVIDER=openai."""
+        s = _build(mocker, _MINIMAL_ENV)
+        assert s.EMBEDDING_PROVIDER == "openai"
+
+    def test_defaults_to_ollama_when_llm_provider_is_ollama(self, mocker):
+        """The privacy fix: LLM_PROVIDER=ollama defaults embeddings to local too."""
+        s = _build(mocker, _MINIMAL_OLLAMA_ENV)
+        assert s.EMBEDDING_PROVIDER == "ollama"
+
+    def test_explicit_override_wins_over_llm_provider(self, mocker):
+        """An explicit EMBEDDING_PROVIDER overrides the LLM_PROVIDER default."""
+        s = _build(
+            mocker,
+            {**_MINIMAL_ENV, "LLM_PROVIDER": "openai", "EMBEDDING_PROVIDER": "ollama"},
+        )
+        assert s.EMBEDDING_PROVIDER == "ollama"
+        # The reverse split is also honoured.
+        s2 = _build(
+            mocker,
+            {**_MINIMAL_OLLAMA_ENV, "EMBEDDING_PROVIDER": "openai"},
+        )
+        assert s2.EMBEDDING_PROVIDER == "openai"
+
+    def test_blank_override_falls_back_to_llm_provider(self, mocker):
+        """A blank EMBEDDING_PROVIDER (cleared in the UI) falls back, not crashes."""
+        s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "EMBEDDING_PROVIDER": "  "})
+        assert s.EMBEDDING_PROVIDER == "ollama"
+
+    def test_invalid_value_rejected(self, mocker):
+        """Junk fails closed at config-build time, naming the key."""
+        with pytest.raises(ValueError, match="EMBEDDING_PROVIDER must be"):
+            _build(mocker, {**_MINIMAL_ENV, "EMBEDDING_PROVIDER": "anthropic"})
 
 
 class TestValidation:
@@ -629,19 +700,21 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_seven_entries() -> None:
-    """CONFIG_KEYS is the 77-key universe.
+def test_config_keys_has_seventy_eight_entries() -> None:
+    """CONFIG_KEYS is the 78-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
     SEARCH_PLANNER_TAXONOMY_LIMIT was added to feed the planner the live taxonomy.
     STALE_LOCK_RECOVERY was added so a multi-replica deployment can disable the
-    unconditional startup stale-lock sweep.
+    unconditional startup stale-lock sweep. EMBEDDING_PROVIDER was added so a
+    fully-local deployment can embed via Ollama instead of always OpenAI.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 77
+    assert len(CONFIG_KEYS) == 78
     assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
+    assert "EMBEDDING_PROVIDER" in CONFIG_KEYS
     assert "STALE_LOCK_RECOVERY" in CONFIG_KEYS
     assert "SEARCH_PER_SPEC_K" in CONFIG_KEYS
     assert "SEARCH_MAX_CHUNKS_PER_DOC" in CONFIG_KEYS
@@ -710,5 +783,7 @@ def test_reindex_keys_are_the_chunking_and_embedding_keys() -> None:
     every one is a real config key."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS
 
-    assert REINDEX_KEYS == frozenset({"EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"})
+    assert REINDEX_KEYS == frozenset(
+        {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
+    )
     assert REINDEX_KEYS <= CONFIG_KEYS

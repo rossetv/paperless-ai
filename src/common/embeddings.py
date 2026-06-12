@@ -14,17 +14,26 @@ catch an embedding failure imports ``EMBEDDING_FAILURE_EXCEPTIONS`` rather
 than importing ``openai`` to name its error types — the OpenAI SDK stays an
 implementation detail of this module.
 
-Embeddings always use OpenAI
-----------------------------
-Unlike the LLM (chat-completion) calls, which follow the ``LLM_PROVIDER``
-setting, embeddings **always** go to OpenAI's ``text-embedding-3-*`` models —
-local Ollama embeddings are not supported. ``EmbeddingClient`` therefore builds
-its own ``openai.OpenAI`` client pinned to ``OPENAI_API_KEY`` and the default
-OpenAI ``base_url``, rather than reusing the provider-dependent shared singleton
-in :mod:`common.llm`. Reusing that singleton would, under ``LLM_PROVIDER=ollama``,
-silently route embedding requests to the Ollama URL with a dummy key
-(CODE_GUIDELINES §10.8, §15.4). ``OPENAI_API_KEY`` is required by ``Settings``
-regardless of ``LLM_PROVIDER`` precisely so this client can always be built.
+Provider-aware embeddings
+-------------------------
+Embeddings follow the ``EMBEDDING_PROVIDER`` setting (which itself defaults to
+``LLM_PROVIDER``), so a fully-local ``ollama`` deployment vectorises chunks on
+the local box and no document chunk leaves it. ``EmbeddingClient`` builds its
+own ``openai.OpenAI`` client rather than reusing the provider-dependent shared
+singleton in :mod:`common.llm` (CODE_GUIDELINES §10.8, §15.4):
+
+* ``EMBEDDING_PROVIDER=openai`` (the default for an ``openai`` deployment, and
+  the production posture) — pinned to ``OPENAI_API_KEY`` and OpenAI's default
+  ``base_url``, byte-for-byte identical to the historic OpenAI-only behaviour.
+* ``EMBEDDING_PROVIDER=ollama`` — pointed at ``OLLAMA_BASE_URL`` (the
+  OpenAI-compatible ``/v1/`` endpoint) with a placeholder API key, mirroring how
+  :func:`common.library_setup.setup_libraries` builds the Ollama chat client.
+  ``EMBEDDING_MODEL`` must name a local embedding model with a matching
+  ``EMBEDDING_DIMENSIONS``.
+
+``OPENAI_API_KEY`` is required by ``Settings`` whenever OpenAI is used by either
+provider, so an ``openai`` embedding client can always be built; only a
+fully-local (both ``ollama``) deployment may omit it.
 
 Concurrency
 -----------
@@ -90,19 +99,47 @@ EMBEDDING_FAILURE_EXCEPTIONS: tuple[type[Exception], ...] = (
     openai.APIError,
 )
 
+# Placeholder key for Ollama's OpenAI-compatible endpoint: it ignores the key,
+# but the SDK requires a non-empty string. Same sentinel and rationale as the
+# chat client in common.library_setup (CODE_GUIDELINES §10.8).
+_OLLAMA_PLACEHOLDER_API_KEY = "dummy"
+
+
+def _build_embedding_client(settings: Settings) -> openai.OpenAI:
+    """Build the provider-pinned ``openai.OpenAI`` client for embeddings.
+
+    Branches on ``settings.EMBEDDING_PROVIDER`` (see the module docstring):
+    under ``ollama`` it targets ``OLLAMA_BASE_URL`` with a placeholder key;
+    otherwise (``openai``, the default and prod posture) it constructs the
+    client exactly as before — ``api_key=OPENAI_API_KEY`` and OpenAI's default
+    ``base_url`` (no override), so the OpenAI path stays byte-for-byte unchanged.
+    """
+    if settings.EMBEDDING_PROVIDER == "ollama":
+        return openai.OpenAI(
+            api_key=_OLLAMA_PLACEHOLDER_API_KEY,
+            base_url=settings.OLLAMA_BASE_URL,
+        )
+    return openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+
 
 class EmbeddingClient:
-    """Batched, retried embedding client pinned to OpenAI.
+    """Batched, retried embedding client, provider-aware via ``EMBEDDING_PROVIDER``.
 
-    The client owns its own ``openai.OpenAI`` instance, constructed with
-    ``settings.OPENAI_API_KEY`` and OpenAI's default ``base_url`` — it does
-    **not** use the shared :mod:`common.llm` singleton, because that singleton
-    points at the Ollama URL when ``LLM_PROVIDER=ollama`` whereas embeddings
-    always go to OpenAI (see the module docstring).
+    The client owns its own ``openai.OpenAI`` instance — it does **not** use the
+    shared :mod:`common.llm` singleton (see the module docstring). Construction
+    branches on ``settings.EMBEDDING_PROVIDER``:
+
+    * ``openai`` — ``api_key=settings.OPENAI_API_KEY`` and OpenAI's default
+      ``base_url`` (no override). This is the default for an ``openai``
+      deployment and is byte-for-byte identical to the historic behaviour.
+    * ``ollama`` — ``base_url=settings.OLLAMA_BASE_URL`` with a placeholder key
+      (Ollama's OpenAI-compatible endpoint ignores it), mirroring
+      :func:`common.library_setup.setup_libraries`.
 
     Args:
         settings: The daemon ``Settings`` instance.  Must expose
-            ``OPENAI_API_KEY``, ``EMBEDDING_MODEL``, ``EMBEDDING_DIMENSIONS``,
+            ``EMBEDDING_PROVIDER``, ``OPENAI_API_KEY``, ``OLLAMA_BASE_URL``,
+            ``EMBEDDING_MODEL``, ``EMBEDDING_DIMENSIONS``,
             ``EMBEDDING_MAX_CONCURRENT``, ``MAX_RETRIES``, and
             ``MAX_RETRY_BACKOFF_SECONDS``.
 
@@ -115,9 +152,7 @@ class EmbeddingClient:
         # ``self.settings`` must be the attribute name; the @retry decorator
         # reads it via duck-typing — it must not be renamed.
         self.settings = settings
-        # Pin to OpenAI explicitly: api_key from OPENAI_API_KEY, default
-        # base_url. Embeddings never go to Ollama (CODE_GUIDELINES §10.8).
-        self._client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        self._client = _build_embedding_client(settings)
         self._concurrency = ConcurrencyGuard(settings.EMBEDDING_MAX_CONCURRENT)
 
     def close(self) -> None:

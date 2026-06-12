@@ -18,7 +18,7 @@ To get a working install, you need just a few values. Everything else has a sens
 |:---|:---|
 | `PAPERLESS_URL` | Where your Paperless-ngx instance lives (defaults to `http://paperless:8000`, which is correct for the standard Docker setup). |
 | `PAPERLESS_TOKEN` | The API token paperless-ai uses to talk to Paperless. **Required.** |
-| `OPENAI_API_KEY` | The OpenAI key. **Required even if you run Ollama** — the search indexer always embeds with OpenAI. |
+| `OPENAI_API_KEY` | The OpenAI key. **Required whenever OpenAI is used** — for any deployment with `LLM_PROVIDER=openai` or `EMBEDDING_PROVIDER=openai`. A fully-local deployment (both `ollama`) can omit it. |
 | `PRE_TAG_ID`, `POST_TAG_ID`, `ERROR_TAG_ID` | The Paperless tag IDs that drive the pipeline: which documents need OCR, which are done, which failed. They have defaults (`443` / `444` / `552`), but those are example IDs — set them to match the tags in *your* Paperless. |
 
 Set those, save, and the pipeline runs. Everything below is for tuning: model choice, concurrency, classification behaviour, the search server, cost controls, logging. Skip it until you have a reason to change it.
@@ -102,14 +102,16 @@ set will see no effect — the variable is silently ignored.
 ## LLM Provider
 
 Which AI provider runs OCR and classification, and the model fallback chains.
-`openai` is the default; `ollama` runs everything locally — except embeddings,
-which always use OpenAI.
+`openai` is the default; `ollama` runs everything locally. Embeddings follow
+`EMBEDDING_PROVIDER` (see [Embedding & Indexing](#embedding--indexing)), which
+itself defaults to `LLM_PROVIDER` — so `LLM_PROVIDER=ollama` embeds locally too
+unless you set `EMBEDDING_PROVIDER` explicitly.
 
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
 | `LLM_PROVIDER` | AI provider for OCR and classification: `openai` or `ollama` | `openai` | No |
-| `OPENAI_API_KEY` | OpenAI API key. **Required regardless of `LLM_PROVIDER`** — the embedding step (used by the indexer) always uses OpenAI. | — | **Yes** |
-| `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`). Used only when `LLM_PROVIDER=ollama`. | `http://localhost:11434/v1/` | No |
+| `OPENAI_API_KEY` | OpenAI API key. **Required whenever OpenAI is used by either the LLM or the embedding provider** — i.e. for any deployment with `LLM_PROVIDER=openai` or `EMBEDDING_PROVIDER=openai`. Only a fully-local deployment (`LLM_PROVIDER=ollama` *and* `EMBEDDING_PROVIDER=ollama`) may omit it. | — | When OpenAI is used |
+| `OLLAMA_BASE_URL` | Ollama API base URL (must end with `/v1/`). Used when `LLM_PROVIDER=ollama` and/or `EMBEDDING_PROVIDER=ollama`. | `http://localhost:11434/v1/` | No |
 | `OCR_MODELS` | Comma-separated model fallback chain for OCR. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
 | `CLASSIFY_MODELS` | Comma-separated model fallback chain for classification. Tried in order; first success wins. | OpenAI: `gpt-5.4-mini,gpt-5.4,gpt-5.5`; Ollama: `gemma3:27b,gemma3:12b` | No |
 
@@ -228,13 +230,21 @@ know your provider can take it.
 
 ## Embedding & Indexing
 
-These drive the indexer daemon, which builds the search index. The **embedding
-step always uses OpenAI**, so `OPENAI_API_KEY` is required even when
-`LLM_PROVIDER=ollama`.
+These drive the indexer daemon, which builds the search index. By default the
+embedding step follows `EMBEDDING_PROVIDER`, which itself defaults to
+`LLM_PROVIDER` — so an `openai` deployment embeds with OpenAI and an `ollama`
+deployment embeds locally with no document chunk leaving the box.
+
+`OPENAI_API_KEY` is required whenever `EMBEDDING_PROVIDER=openai` (or
+`LLM_PROVIDER=openai`); a fully-local deployment (both `ollama`) does not need
+it. For a local embedding setup, set `EMBEDDING_MODEL` to an Ollama embedding
+model (e.g. `nomic-embed-text`) and `EMBEDDING_DIMENSIONS` to that model's
+native vector width.
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `EMBEDDING_MODEL` | OpenAI embedding model used to vectorise chunks. **Changing this requires a full re-index** (see [Re-indexing](#how-configuration-works)). | `text-embedding-3-small` |
+| `EMBEDDING_PROVIDER` | Provider that vectorises chunks: `openai` or `ollama`. Defaults to `LLM_PROVIDER`. Under `ollama` the indexer embeds against `OLLAMA_BASE_URL` (no `OPENAI_API_KEY` needed) and `EMBEDDING_MODEL` must name a local embedding model with a matching `EMBEDDING_DIMENSIONS`. **Switching this forces a full re-embed** (the stored OpenAI and Ollama vectors are not comparable) — run a full re-index from the Index page after changing it. | `LLM_PROVIDER` |
+| `EMBEDDING_MODEL` | Embedding model used to vectorise chunks (an OpenAI model under `openai`, a local Ollama embedding model under `ollama`). **Changing this requires a full re-index** (see [Re-indexing](#how-configuration-works)). | `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensionality. Locked to the embedding model and pinned in the index schema on first reconcile — a lone change is rejected, not warned. | `1536` |
 | `EMBEDDING_MAX_CONCURRENT` | Max concurrent embedding API calls. `0` = unlimited. | `4` |
 | `CHUNK_SIZE` | Target characters per text chunk. **Changing this requires a full re-index.** | `2000` |

@@ -136,6 +136,33 @@ def _resolve_llm_provider(source: Mapping[str, str]) -> Literal["openai", "ollam
     return provider  # type: ignore[return-value]
 
 
+def _resolve_embedding_provider(
+    source: Mapping[str, str], llm_provider: Literal["openai", "ollama"]
+) -> Literal["openai", "ollama"]:
+    """Resolve and validate ``EMBEDDING_PROVIDER`` (defaults to *llm_provider*).
+
+    The embedding provider decides whether document chunks are vectorised by
+    OpenAI or a local Ollama model. It **defaults to the value of
+    ``LLM_PROVIDER``** so a fully-local ``LLM_PROVIDER=ollama`` deployment also
+    embeds locally (the privacy posture) while an ``LLM_PROVIDER=openai``
+    deployment keeps OpenAI embeddings unchanged. An explicit
+    ``EMBEDDING_PROVIDER`` env/config value overrides that default, so the two
+    can be split (e.g. local chat, OpenAI embeddings) when desired.
+
+    A blank or unset value falls back to *llm_provider*; any non-blank value
+    other than ``openai`` / ``ollama`` fails closed naming the key
+    (CODE_GUIDELINES §1.11), mirroring :func:`_resolve_llm_provider`.
+    """
+    raw = source.get("EMBEDDING_PROVIDER")
+    if raw is None or not raw.strip():
+        return llm_provider
+    provider = raw.strip()
+    if provider not in ("openai", "ollama"):
+        raise ValueError("EMBEDDING_PROVIDER must be 'openai' or 'ollama'")
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    return provider  # type: ignore[return-value]
+
+
 def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]:
     """Resolve and validate ``LOG_FORMAT`` (defaults to ``console``)."""
     log_format = source.get("LOG_FORMAT", "console")

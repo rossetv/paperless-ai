@@ -184,6 +184,104 @@ class TestCheckEmbeddingModel:
         assert model_stored == "model-b"
         assert dims_stored == "8"
 
+    def test_existing_openai_index_without_provider_meta_is_not_rebuilt(
+        self, db_path: str
+    ) -> None:
+        """Prod-upgrade regression: an index whose meta predates EMBEDDING_PROVIDER.
+
+        THE critical no-false-rebuild proof. A production OpenAI index built
+        before this feature has model + dimensions meta but NO embedding_provider
+        key. On upgrade, the configured provider is the default "openai". An
+        absent stored provider must read as "openai", so the identity matches and
+        check_embedding_model() returns False — no wipe, no surprise full re-embed
+        of the real, un-backed-up index.
+        """
+        # Seed an index the OLD way: model + dims meta, but deliberately NO
+        # embedding_provider key (mirroring a pre-feature index on disk).
+        seed = open_writer(db_path, model="text-embedding-3-small", dimensions=1536)
+        seed.write_meta("embedding_model", "text-embedding-3-small")
+        seed.write_meta("embedding_dimensions", "1536")
+        seed.upsert_document(make_document_meta(id=1), make_chunks(2))
+        assert seed.read_meta("embedding_provider") is None  # precondition
+        seed.close()
+
+        # Reopen with the default OpenAI config (provider="openai").
+        writer = open_writer(
+            db_path,
+            model="text-embedding-3-small",
+            dimensions=1536,
+            EMBEDDING_PROVIDER="openai",
+        )
+        rebuild = writer.check_embedding_model()
+        remaining_docs = writer.get_all_document_ids()
+        writer.close()
+
+        assert rebuild is False, "an existing OpenAI index must NOT be wiped"
+        assert remaining_docs == {1}, "the document must survive the upgrade"
+
+    def test_provider_switch_openai_to_ollama_triggers_rebuild(
+        self, db_path: str
+    ) -> None:
+        """Switching openai→ollama (same model/dims) must wipe and re-embed.
+
+        OpenAI and Ollama vectors are not comparable, so a provider switch must
+        rebuild even when the model name and dimensions are unchanged.
+        """
+        seed = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="openai")
+        seed.check_embedding_model()  # stamps provider=openai, model, dims
+        seed.upsert_document(make_document_meta(id=1), make_chunks(2))
+        seed.close()
+
+        writer = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="ollama")
+        rebuild = writer.check_embedding_model()
+        remaining_docs = writer.get_all_document_ids()
+        stored_provider = writer.read_meta("embedding_provider")
+        writer.close()
+
+        assert rebuild is True, "a provider switch must trigger a rebuild"
+        assert remaining_docs == set(), "the index must be wiped on a provider switch"
+        assert stored_provider == "ollama", "the new provider must be stamped"
+
+    def test_provider_switch_ollama_to_openai_triggers_rebuild(
+        self, db_path: str
+    ) -> None:
+        """The reverse switch (ollama→openai) also wipes and re-stamps."""
+        seed = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="ollama")
+        seed.check_embedding_model()  # stamps provider=ollama
+        seed.close()
+
+        writer = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="openai")
+        rebuild = writer.check_embedding_model()
+        stored_provider = writer.read_meta("embedding_provider")
+        writer.close()
+
+        assert rebuild is True
+        assert stored_provider == "openai"
+
+    def test_unchanged_ollama_identity_is_not_rebuilt(self, db_path: str) -> None:
+        """A stable ollama config across boots must not re-embed each restart."""
+        seed = open_writer(
+            db_path, model="nomic-embed-text", EMBEDDING_PROVIDER="ollama"
+        )
+        seed.check_embedding_model()  # first run — stamps the identity
+        seed.close()
+
+        writer = open_writer(
+            db_path, model="nomic-embed-text", EMBEDDING_PROVIDER="ollama"
+        )
+        rebuild = writer.check_embedding_model()  # identity matches
+        writer.close()
+
+        assert rebuild is False
+
+    def test_first_run_stamps_the_provider(self, db_path: str) -> None:
+        """First run records the configured provider into meta explicitly."""
+        writer = open_writer(db_path, model="model-a", EMBEDDING_PROVIDER="openai")
+        writer.check_embedding_model()
+        stored_provider = writer.read_meta("embedding_provider")
+        writer.close()
+        assert stored_provider == "openai"
+
 
 # ---------------------------------------------------------------------------
 # refresh_taxonomy
