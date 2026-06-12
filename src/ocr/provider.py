@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
+from typing import Iterable
 
 import openai
 import structlog
@@ -11,11 +12,49 @@ from PIL import Image
 
 from common.config import Settings
 from common.llm import OpenAIChatMixin, unique_models
-from common.content_checks import is_error_content
 from .prompts import TRANSCRIPTION_PROMPT
 from .text_assembly import PageResult
 
 log = structlog.get_logger(__name__)
+
+# A model response shorter than this threshold that contains a refusal phrase is
+# treated as a genuine refusal. Longer responses — which may be real document
+# content that happens to contain the phrase (e.g. a denial letter) — are not.
+_REFUSAL_DOMINANCE_THRESHOLD_CHARS = 200
+
+
+def _is_model_refusal(
+    text: str, refusal_markers: Iterable[str], refusal_mark: str
+) -> bool:
+    """Return ``True`` only when *text* is a genuine model refusal.
+
+    Two tiers of detection:
+
+    1. **Hard sentinel** — the *refusal_mark* (e.g. ``"CHATGPT REFUSED TO
+       TRANSCRIBE"``): matched unconditionally regardless of response length.
+       This sentinel is written by this provider itself; if a downstream model
+       echoes it back verbatim the page is genuinely unprocessable.
+    2. **Soft phrases** (e.g. ``"i cannot assist"``): treated as a refusal only
+       when the response is *dominated* by the phrase — the full response is
+       shorter than :data:`_REFUSAL_DOMINANCE_THRESHOLD_CHARS`.  A long response
+       containing such a phrase mid-text is real document content (a denial
+       letter, a legal notice) and must not be silently discarded.
+
+    This prevents permanent data loss when a scanned document contains common
+    refusal-adjacent language, while still catching genuine short refusals
+    (CODE_GUIDELINES §1.4 / M5 fix).
+    """
+    text_lower = text.lower()
+
+    # Hard sentinel: match anywhere, regardless of surrounding text or length.
+    if refusal_mark.lower() in text_lower:
+        return True
+
+    # Soft markers: only a short response that is essentially nothing but the
+    # refusal phrase is genuinely a refusal.
+    if len(text) >= _REFUSAL_DOMINANCE_THRESHOLD_CHARS:
+        return False
+    return any(phrase.lower() in text_lower for phrase in refusal_markers)
 
 
 def is_blank(image: Image.Image, threshold: int = 5) -> bool:
@@ -111,7 +150,11 @@ class OcrProvider(OpenAIChatMixin):
                 response = self._create_completion(**params)
                 text = (response.choices[0].message.content or "").strip()
 
-                if is_error_content(text, self.settings.OCR_REFUSAL_MARKERS):
+                if _is_model_refusal(
+                    text,
+                    self.settings.OCR_REFUSAL_MARKERS,
+                    self.settings.REFUSAL_MARK,
+                ):
                     log.warning("Model refused to transcribe", model=model, **log_ctx)
                     self._stats.inc("refusals")
                     continue

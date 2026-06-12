@@ -38,6 +38,12 @@ from typing import Any, cast
 
 from PIL import Image, ImageSequence, UnidentifiedImageError
 from pdf2image import convert_from_bytes
+from pdf2image.exceptions import (
+    PDFPageCountError,
+    PDFPopplerTimeoutError,
+    PDFSyntaxError,
+    PopplerNotInstalledError,
+)
 
 # pdf2image renders PDF pages to this raster format when streaming to a folder.
 # PNG is lossless (no OCR-quality loss versus the default PPM) and far smaller
@@ -180,6 +186,7 @@ def open_page_source(
     *,
     dpi: int = 300,
     max_side: int | None = None,
+    timeout: int | None = None,
 ) -> PageSource:
     """Decode raw document bytes into a streamable :class:`PageSource`.
 
@@ -200,6 +207,12 @@ def open_page_source(
             *width* and leave a portrait page taller than intended, so an int is
             used deliberately. Leaves non-PDF inputs untouched; the provider
             still clamps every page to ``OCR_MAX_SIDE`` as a backstop.
+        timeout: Seconds before Poppler's ``pdftoppm`` is killed. Passed
+            through to ``convert_from_bytes`` as its ``timeout`` kwarg. ``None``
+            means no limit (the default). A timeout triggers a
+            :exc:`PDFPopplerTimeoutError`, which is wrapped as
+            :exc:`ImageConversionError` so the worker can error-tag the
+            document and remove it from the queue.
 
     Returns:
         A :class:`PageSource`; use it as a context manager so its backing
@@ -207,18 +220,23 @@ def open_page_source(
 
     Raises:
         ImageConversionError: If the image bytes cannot be identified by Pillow
-            or the file is truncated/corrupt.
+            or the file is truncated/corrupt, or if PDF rasterisation fails for
+            any reason (corrupt PDF, Poppler timeout, Poppler not installed).
     """
     if "pdf" in content_type.lower():
-        return _pdf_to_page_source(content, dpi=dpi, max_side=max_side)
+        return _pdf_to_page_source(content, dpi=dpi, max_side=max_side, timeout=timeout)
 
     try:
         img = Image.open(BytesIO(content))
         img.load()
         if getattr(img, "n_frames", 1) > 1:
-            frames = [frame.copy() for frame in ImageSequence.Iterator(img)]
+            # Multi-frame image (e.g. TIFF): mirror the PDF streaming strategy.
+            # Decoding all frames into RAM at once is ~2.6 GB for a 100-page
+            # 300-DPI TIFF; writing each frame to a temp file and loading one at
+            # a time keeps peak RSS bounded to ~PAGE_WORKERS bitmaps, exactly
+            # like the PDF path (M6 fix).
             img.close()
-            return PageSource(images=frames)
+            return _multiframe_to_page_source(content)
         # Copy the frame so the backing BytesIO can be released immediately.
         single = img.copy()
         img.close()
@@ -229,24 +247,66 @@ def open_page_source(
         raise ImageConversionError(f"Unable to open image: {e}") from e
 
 
+def _multiframe_to_page_source(content: bytes) -> PageSource:
+    """Write each frame of a multi-frame image (TIFF, etc.) to a temp PNG file.
+
+    This mirrors the PDF streaming strategy: rather than holding every decoded
+    frame in RAM simultaneously (which can reach ~2.6 GB for a 100-page
+    300-DPI TIFF), each frame is saved to an individual PNG temp file and
+    loaded on demand. At most ``PAGE_WORKERS`` bitmaps are resident at once.
+
+    The temp directory's lifetime belongs to the returned :class:`PageSource`,
+    which removes it on ``close()``. On any failure the directory is removed
+    before propagating (M6 fix).
+
+    Raises:
+        ImageConversionError: If the image bytes cannot be decoded by Pillow.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="paperless-ocr-tiff-")
+    paths: list[str] = []
+    try:
+        with Image.open(BytesIO(content)) as img:
+            for frame_index, frame in enumerate(ImageSequence.Iterator(img)):
+                # copy() materialises the frame pixels independently of the
+                # ImageSequence iterator so saving does not re-seek the source.
+                frame_copy = frame.copy()
+                path = os.path.join(temp_dir, f"frame-{frame_index:04d}.png")
+                frame_copy.save(path, format="PNG")
+                frame_copy.close()
+                paths.append(path)
+    except (UnidentifiedImageError, OSError) as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise ImageConversionError(f"Unable to open image: {exc}") from exc
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+    return PageSource(paths=paths, temp_dir=temp_dir)
+
+
 def _pdf_to_page_source(
-    content: bytes, *, dpi: int, max_side: int | None
+    content: bytes, *, dpi: int, max_side: int | None, timeout: int | None
 ) -> PageSource:
     """Rasterise a PDF to per-page temp files and wrap them in a PageSource.
 
-    poppler writes one image file per page into a freshly created temp
+    Poppler writes one image file per page into a freshly created temp
     directory and we take back the paths (``paths_only=True``); the directory's
     lifetime then belongs to the returned :class:`PageSource`. On any failure
     the directory is removed before propagating, so a half-written render never
     leaks a temp dir.
+
+    Raises:
+        ImageConversionError: Wraps any pdf2image / Poppler failure (corrupt PDF,
+            page-count error, Poppler timeout, Poppler not installed) so that the
+            caller sees a uniform domain error and the worker can error-tag the
+            document and remove it from the queue (CODE_GUIDELINES §6.1).
     """
     temp_dir = tempfile.mkdtemp(prefix="paperless-ocr-")
     # Omit ``size`` entirely when no cap is requested: poppler's runtime default
     # is ``None`` but the published type rejects it, and an absent kwarg is the
     # honest way to say "render at the natural DPI".
     # rationale: pdf2image.convert_from_bytes takes a heterogeneous kwarg dict
-    # (int dpi, str output_folder/fmt, bool paths_only, int size) with no
-    # published TypedDict, so dict[str, Any] is the only honest value type.
+    # (int dpi, str output_folder/fmt, bool paths_only, int size, int timeout)
+    # with no published TypedDict, so dict[str, Any] is the only honest value type.
     kwargs: dict[str, Any] = {
         "dpi": dpi,
         "output_folder": temp_dir,
@@ -255,12 +315,31 @@ def _pdf_to_page_source(
     }
     if max_side is not None:
         kwargs["size"] = max_side
+    if timeout is not None:
+        # Signals pdftoppm after *timeout* seconds; raises PDFPopplerTimeoutError
+        # which is caught below and re-raised as ImageConversionError so the
+        # worker error-tags the document and removes it from the queue.
+        kwargs["timeout"] = timeout
     try:
         raw_paths = convert_from_bytes(content, **kwargs)
+    except (
+        PDFSyntaxError,
+        PDFPageCountError,
+        PDFPopplerTimeoutError,
+        PopplerNotInstalledError,
+    ) as exc:
+        # rationale: rasterisation-boundary translation — these pdf2image
+        # exceptions do not inherit from ImageConversionError, so the worker's
+        # `except ImageConversionError` clause would miss them. Wrapping them
+        # here ensures the worker's error path fires, the PRE_TAG is removed,
+        # the document is error-tagged, and it leaves the queue. Temp dir is
+        # cleaned up before we raise (CODE_GUIDELINES §6.3).
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise ImageConversionError(f"PDF rasterisation failed: {exc}") from exc
     except Exception:
-        # rationale: rasterisation-boundary cleanup — any failure inside poppler
-        # (corrupt PDF, OOM, missing binary) must not strand the temp directory.
-        # The error itself is re-raised unchanged for the worker to handle.
+        # rationale: rasterisation-boundary cleanup — any other unexpected failure
+        # inside Poppler (OOM, missing binary variant, etc.) must not strand the
+        # temp directory. The original exception propagates for triage.
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
     # paths_only=True makes convert_from_bytes yield str paths (the published

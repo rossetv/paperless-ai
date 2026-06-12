@@ -122,7 +122,10 @@ class OcrProcessor:
             )
             try:
                 outcome = self._update_paperless_document(full_text, models_used)
-                success = True
+                # Only a full successful write-back counts as success; the
+                # error-content path returns None, and QUARANTINED (caught below)
+                # is not a successful write (CODE_GUIDELINES §7.3 / L8 fix).
+                success = outcome is WriteBackOutcome.SAVED
                 return outcome
             except PAPERLESS_CALL_EXCEPTIONS as exc:
                 # The vision tokens for every page are already spent. A 4xx on
@@ -185,6 +188,7 @@ class OcrProcessor:
                 content_type,
                 dpi=self.settings.OCR_DPI,
                 max_side=self.settings.OCR_MAX_SIDE,
+                timeout=self.settings.REQUEST_TIMEOUT,
             )
         except ImageConversionError:
             log.exception(
