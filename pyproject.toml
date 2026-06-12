@@ -28,6 +28,12 @@ paperless-search-server = "search.api:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.mypy]
+python_version = "3.11"
+# Third-party stubs are sparse; suppress missing-import noise so the check
+# focuses on actual type errors in our own code rather than stub gaps.
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
