@@ -7,7 +7,9 @@
 # so running the Node toolchain under QEMU emulation when cross-building the
 # linux/arm64 image would needlessly slow every multi-arch build for an
 # identical output.
-FROM --platform=$BUILDPLATFORM node:22-slim AS frontend-builder
+# Pinned to manifest-list digest (multi-arch; resolves amd64 and arm64).
+# Resolved 2026-06-12: docker buildx imagetools inspect node:22-slim
+FROM --platform=$BUILDPLATFORM node:22-slim@sha256:e21fc383b50d5347dc7a9f1cae45b8f4e2f0d39f7ade28e4eef7d2934522b752 AS frontend-builder
 
 WORKDIR /web
 
@@ -31,7 +33,9 @@ RUN npm run build
 # HERE — where a C/Rust toolchain exists — means the final stage never needs a
 # compiler, even on linux/arm64 where a dependency might lack a prebuilt
 # manylinux aarch64 wheel and would otherwise have to compile from an sdist.
-FROM python:3.11-slim AS builder
+# Pinned to manifest-list digest (multi-arch; resolves amd64 and arm64).
+# Resolved 2026-06-12: docker buildx imagetools inspect python:3.11-slim
+FROM python:3.11-slim@sha256:f9fa7f851e38bfb19c9de3afbc4b86ae7176ea7aaf94535c31df5458d5849457 AS builder
 
 # Install system dependencies required for building Python packages and running tests
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -92,7 +96,7 @@ RUN if [ "$RUN_TESTS" = "1" ]; then \
 # Lean runtime image with NO build toolchain. Production dependencies are
 # installed from the prebuilt wheelhouse (offline, --no-index), so this stage
 # needs neither a compiler nor network access to PyPI on any architecture.
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:f9fa7f851e38bfb19c9de3afbc4b86ae7176ea7aaf94535c31df5458d5849457
 
 # Create a non-root user and group for security
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
