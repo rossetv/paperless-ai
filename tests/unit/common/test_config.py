@@ -389,6 +389,7 @@ class TestPositiveOrNone:
 
 
 _CLAMPED_TO_ZERO = [
+    ("CLASSIFY_MAX_CHARS", "-1"),
     ("CLASSIFY_MAX_TOKENS", "-10"),
     ("CLASSIFY_TAG_LIMIT", "-1"),
     ("CLASSIFY_TAXONOMY_LIMIT", "-1"),
@@ -628,17 +629,20 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_six_entries() -> None:
-    """CONFIG_KEYS is the 76-key universe.
+def test_config_keys_has_seventy_seven_entries() -> None:
+    """CONFIG_KEYS is the 77-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
     SEARCH_PLANNER_TAXONOMY_LIMIT was added to feed the planner the live taxonomy.
+    STALE_LOCK_RECOVERY was added so a multi-replica deployment can disable the
+    unconditional startup stale-lock sweep.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 76
+    assert len(CONFIG_KEYS) == 77
     assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
+    assert "STALE_LOCK_RECOVERY" in CONFIG_KEYS
     assert "SEARCH_PER_SPEC_K" in CONFIG_KEYS
     assert "SEARCH_MAX_CHUNKS_PER_DOC" in CONFIG_KEYS
     assert "SEARCH_PLANNER_MAX_SPECS" in CONFIG_KEYS

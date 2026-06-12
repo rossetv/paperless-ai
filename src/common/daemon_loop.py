@@ -45,20 +45,83 @@ def _process_batch(
     process_item: Callable[[T], None],
     max_workers: int,
     daemon_name: str,
-) -> None:
-    """Process a batch of work items concurrently using a thread pool.
+    halt_check: Callable[[], str | None] | None,
+) -> int:
+    """Process a batch of work items concurrently, halt-aware and chunked.
 
-    Exceptions raised while processing one item are logged but do not
-    prevent other items from completing.
+    The batch is dispatched in bounded sub-batches of ``max_workers`` items
+    rather than all at once. Between sub-batches — and again immediately before
+    each worker runs its item — ``halt_check`` is consulted: once it reports a
+    reason (the write-back circuit breaker has tripped, or shutdown was
+    requested) no further items are dispatched and any already-submitted worker
+    short-circuits before spending LLM/vision tokens.
+
+    This is the second half of the circuit breaker's promise. ``_poll_once``
+    stops *new* polls once the breaker trips, but a single first pass over a
+    deep, already-materialised queue would otherwise submit every document up
+    front and burn one LLM call each before the next poll's ``halt_check`` ran.
+    Chunking plus the per-item pre-call check bounds that first-pass burn to at
+    most one in-flight sub-batch.
+
+    A halted skip is **not** a failure: the item is simply not processed, so the
+    daemon's write-back-outcome reporting (and therefore the breaker's failure
+    streak) is never touched. The queued documents wait, untouched, for the
+    daemon to resume.
+
+    Exceptions raised while processing one item are logged but do not prevent
+    other items in the same sub-batch from completing (per-document isolation,
+    CODE_GUIDELINES §6.4 site 2).
+
+    Returns:
+        The number of items dispatched to a worker (i.e. not skipped by a halt).
+        A halt part-way through a batch yields a count below ``len(items)``.
     """
+    dispatched = 0
+    for start in range(0, len(items), max_workers):
+        if halt_check is not None and halt_check() is not None:
+            # The breaker tripped (or shutdown began) between sub-batches: stop
+            # dispatching. Remaining items stay queued for a later poll.
+            break
+        chunk = items[start : start + max_workers]
+        dispatched += _process_chunk(
+            chunk, process_item, max_workers, daemon_name, halt_check
+        )
+    return dispatched
+
+
+def _process_chunk(
+    chunk: list[T],
+    process_item: Callable[[T], None],
+    max_workers: int,
+    daemon_name: str,
+    halt_check: Callable[[], str | None] | None,
+) -> int:
+    """Process one bounded sub-batch concurrently; return the count actually run.
+
+    Each worker re-checks ``halt_check`` immediately before calling
+    ``process_item`` so an item submitted just as the breaker trips skips the
+    expensive call cleanly — it spends no tokens and records no failure.
+    """
+    ran = 0
+
+    def _run_one(item: T) -> bool:
+        if halt_check is not None and halt_check() is not None:
+            # Tripped while this item sat in the pool queue: skip before the
+            # LLM/vision call. Returning False marks it as not-run; it is not a
+            # failure and the breaker's streak is untouched.
+            return False
+        process_item(item)
+        return True
+
     with ThreadPoolExecutor(
         max_workers=max_workers, thread_name_prefix=f"{daemon_name}-worker"
     ) as executor:
-        future_to_item = {executor.submit(process_item, item): item for item in items}
+        future_to_item = {executor.submit(_run_one, item): item for item in chunk}
         for future in as_completed(future_to_item):
             item = future_to_item[future]
             try:
-                future.result()
+                if future.result():
+                    ran += 1
             except Exception:
                 # rationale: per-document worker-dispatch boundary
                 # (CODE_GUIDELINES §6.4, site 2) — one document's failure is
@@ -70,6 +133,7 @@ def _process_batch(
                     daemon=daemon_name,
                     item=_safe_item_summary(item),
                 )
+    return ran
 
 
 def _poll_once(
@@ -107,8 +171,15 @@ def _poll_once(
         max_workers=max_workers,
     )
 
-    _process_batch(items, process_item, max_workers, daemon_name)
-    return CycleOutcome(processed=len(items), idle=False)
+    # halt_check is threaded into the batch so a breaker that trips mid-pass
+    # stops dispatching the rest of an already-materialised queue, and any
+    # in-flight worker short-circuits before its LLM/vision call. ``dispatched``
+    # is what was actually processed — below len(items) when a halt cut the
+    # batch short — so the heartbeat reports real work, not the queue depth.
+    dispatched = _process_batch(
+        items, process_item, max_workers, daemon_name, halt_check
+    )
+    return CycleOutcome(processed=dispatched, idle=False)
 
 
 def run_polling_threadpool(

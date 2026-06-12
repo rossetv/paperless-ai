@@ -55,6 +55,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "MAX_RETRY_BACKOFF_SECONDS",
         "REQUEST_TIMEOUT",
         "LLM_MAX_CONCURRENT",
+        "STALE_LOCK_RECOVERY",
         "OCR_DPI",
         "OCR_MAX_SIDE",
         "OCR_IMAGE_DETAIL",
