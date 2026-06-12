@@ -209,12 +209,21 @@ export interface SearchTrace {
  *
  * `usd` is `null` when any LLM call was unpriced-and-not-local (no honest
  * total); `local` is `true` when every billed call was local.
+ *
+ * `prices_as_of` carries the date (YYYY-MM-DD) of the price table used to
+ * compute `usd`. `prices_source` identifies the table origin: `"bundled"` for
+ * the shipped defaults, or a URL / label when overridden by configuration.
+ * Both fields are optional — older API versions omit them.
  */
 export interface CostSummary {
   tokens: TokenUsage;
   usd: number | null;
   local: boolean;
   llm_calls: number;
+  /** Date of the price table used (YYYY-MM-DD), or null / absent when unknown. */
+  prices_as_of?: string | null;
+  /** Source of the price table: `"bundled"` or a URL. Absent on older responses. */
+  prices_source?: string;
 }
 
 // ---------------------------------------------------------------------------
