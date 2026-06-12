@@ -263,7 +263,9 @@ def _put_settings(
             # we refuse the whole save, so a new EMBEDDING_MODEL / chunking value
             # can NEVER persist (and hot-load) without its wipe scheduled. We
             # only drop the sentinel; the indexer (sole writer) does the wipe.
-            if changed and reindex_required(changed):
+            if changed and reindex_required(
+                changes=body.changes, config_table=config_table, environ=os.environ
+            ):
                 try:
                     request_index_rebuild(settings.INDEX_DB_PATH)
                 except OSError as exc:
@@ -304,7 +306,7 @@ def _put_settings(
     log.info(
         "search.settings_updated",
         changed_count=len(changed),
-        requires_reindex=reindex_required(changed),
+        requires_reindex=reindex_triggered,
         reindex_triggered=reindex_triggered,
     )
     # Re-read so the response reflects exactly what was persisted.
