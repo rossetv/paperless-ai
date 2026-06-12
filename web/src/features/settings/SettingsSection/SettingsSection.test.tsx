@@ -332,4 +332,81 @@ describe('SettingsSection', () => {
       expect(onChange).toHaveBeenCalledWith('MODEL_REASONING_KEY', 'high');
     });
   });
+
+  describe('conditional control', () => {
+    const CONDITIONAL_SECTION: SectionModel = {
+      id: 'cond-demo',
+      title: 'Conditional Demo',
+      subtitle: 'A control whose kind depends on another field.',
+      groups: [
+        {
+          id: 'group-cond',
+          title: 'Embeddings',
+          fields: [
+            {
+              key: 'EMBEDDING_PROVIDER',
+              label: 'Embedding provider',
+              hint: 'provider',
+              control: {
+                kind: 'segmented',
+                options: [
+                  { value: 'openai', label: 'OpenAI' },
+                  { value: 'ollama', label: 'Ollama' },
+                ],
+              },
+            },
+            {
+              key: 'EMBEDDING_MODEL',
+              label: 'Embedding model',
+              hint: 'model',
+              control: {
+                kind: 'conditional',
+                on: 'EMBEDDING_PROVIDER',
+                variants: {
+                  openai: {
+                    kind: 'select',
+                    options: [
+                      { value: 'text-embedding-3-small', label: 'text-embedding-3-small' },
+                      { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
+                    ],
+                  },
+                },
+                fallback: { kind: 'text', mono: true },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    it('renders the embedding model as a dropdown when the provider is OpenAI', () => {
+      render(
+        <SettingsSection
+          section={CONDITIONAL_SECTION}
+          values={{
+            EMBEDDING_PROVIDER: 'openai',
+            EMBEDDING_MODEL: 'text-embedding-3-large',
+          }}
+          onChange={() => {}}
+        />,
+      );
+      const control = screen.getByRole('combobox', { name: 'Embedding model' });
+      expect(control).toHaveValue('text-embedding-3-large');
+    });
+
+    it('renders the embedding model as a free-text field when the provider is Ollama', () => {
+      render(
+        <SettingsSection
+          section={CONDITIONAL_SECTION}
+          values={{
+            EMBEDDING_PROVIDER: 'ollama',
+            EMBEDDING_MODEL: 'nomic-embed-text',
+          }}
+          onChange={() => {}}
+        />,
+      );
+      const control = screen.getByRole('textbox', { name: 'Embedding model' });
+      expect(control).toHaveValue('nomic-embed-text');
+    });
+  });
 });
