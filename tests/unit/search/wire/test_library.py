@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from search.wire import (
     DocumentListResponse,
+    DocumentPatchRequest,
     DocumentSummaryResponse,
     to_document_list_response,
     to_document_summary_response,
@@ -223,3 +227,31 @@ class TestBrowseQueryParser:
         assert query.correspondent_id == 10
         assert query.document_type_id == 20
         assert query.tag_ids == (101, 102)
+
+
+class TestDocumentPatchRequest:
+    """The PATCH body's length bounds on the verbatim-forwarded fields (L17)."""
+
+    def test_accepts_an_empty_body(self) -> None:
+        """An empty PATCH body is a valid no-op."""
+        body = DocumentPatchRequest()
+        assert body.title is None
+        assert body.notes is None
+
+    def test_accepts_bounded_title_and_notes(self) -> None:
+        body = DocumentPatchRequest(title="x" * 512, notes="y" * 8192)
+        assert body.title == "x" * 512
+        assert body.notes == "y" * 8192
+
+    def test_rejects_an_empty_title(self) -> None:
+        """Paperless rejects a blank title — reject it at the boundary."""
+        with pytest.raises(ValidationError):
+            DocumentPatchRequest(title="")
+
+    def test_rejects_an_overlong_title(self) -> None:
+        with pytest.raises(ValidationError):
+            DocumentPatchRequest(title="x" * 513)
+
+    def test_rejects_overlong_notes(self) -> None:
+        with pytest.raises(ValidationError):
+            DocumentPatchRequest(notes="y" * 8193)

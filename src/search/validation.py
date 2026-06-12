@@ -24,7 +24,7 @@ _USERNAME_MIN = 3
 _USERNAME_MAX = 64
 
 # Password: a minimum length only (no composition rules — length beats them).
-_PASSWORD_MIN = 8
+_PASSWORD_MIN = 12
 
 # Display name: an optional free-text field, length-capped.
 _DISPLAY_NAME_MAX = 120
@@ -63,7 +63,7 @@ def validate_username(username: str) -> str:
 def validate_password(password: str) -> str:
     """Return *password* if it is long enough, else raise ``ValueError``.
 
-    The rule: at least 8 characters. No composition rules are imposed —
+    The rule: at least 12 characters. No composition rules are imposed —
     length is the more useful constraint.
 
     Args:

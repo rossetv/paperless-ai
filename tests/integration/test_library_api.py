@@ -61,12 +61,12 @@ class TestLibraryAuth:
             seed_user(
                 app_db,
                 username="reader",
-                password="reader-pw",
+                password="reader-pw-123",
                 role="readonly",
             )
             client = build_account_client(settings, app_db, store_reader)
             assert (
-                login(client, username="reader", password="reader-pw").status_code
+                login(client, username="reader", password="reader-pw-123").status_code
                 == 200
             )
             response = client.get("/api/documents")
@@ -87,7 +87,7 @@ class TestLibraryAuth:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             response = client.get("/api/documents")
             assert response.status_code == 401
@@ -102,7 +102,7 @@ class TestLibraryAuth:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get("/api/documents", headers=_bearer(raw_key))
@@ -128,7 +128,7 @@ class TestLibraryPagination:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -153,7 +153,7 @@ class TestLibraryPagination:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -181,7 +181,7 @@ class TestLibraryPagination:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -210,7 +210,7 @@ class TestLibrarySorting:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -233,7 +233,7 @@ class TestLibrarySorting:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -261,7 +261,7 @@ class TestLibrarySorting:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -282,7 +282,7 @@ class TestLibrarySorting:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -311,7 +311,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             # correspondent_id 1 = British Gas → documents 1, 2, 5.
@@ -335,7 +335,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             # document_type_id 11 = Letter → documents 1, 3.
@@ -357,7 +357,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             # tag_ids 100 = utilities → documents 2, 4, 5.
@@ -379,7 +379,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             # 2024 only → documents 1, 2, 5.
@@ -404,7 +404,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -427,7 +427,7 @@ class TestLibraryFiltering:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -458,7 +458,7 @@ class TestLibraryDocumentPayload:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -515,7 +515,7 @@ class TestLibraryDocumentPayload:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -547,7 +547,7 @@ class TestLibraryInputBounds:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
@@ -567,7 +567,7 @@ class TestLibraryInputBounds:
         app_db = open_app_db(tmp_path)
         store_reader = StoreReader(settings)
         try:
-            seed_admin(app_db, username="boss", password="boss-pw")
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
             client = build_account_client(settings, app_db, store_reader)
             raw_key = mint_bearer(app_db)
             response = client.get(
