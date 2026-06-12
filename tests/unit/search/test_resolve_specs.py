@@ -448,6 +448,101 @@ class TestDateSafetyNet:
 
 
 # ---------------------------------------------------------------------------
+# H3: empty plan + dated query must not crash the safety net
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyPlanSafetyNet:
+    """An empty ``RetrievalPlan(specs=())`` must never crash resolve_specs.
+
+    The planner can return ``RetrievalPlan(specs=())`` for an LLM response of
+    ``{"specs": []}`` (e.g. a clarify-shaped reply with the adequacy gate off).
+    core then calls ``resolve_specs(..., query=...)``; if the query names a
+    period the deterministic date safety net fires with an empty resolved list.
+    The old ``resolved[0]`` indexed an empty list → IndexError → 500 on a
+    billable endpoint. The safety net now synthesises a broad-semantic base from
+    the raw query instead.
+    """
+
+    def test_empty_plan_with_dated_query_does_not_raise(self) -> None:
+        """The exact reproduction: empty plan + a year in the query must not raise."""
+        resolved = resolve_specs(
+            RetrievalPlan(specs=()),
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="invoices 2025",
+            max_specs=8,
+        )
+
+        # A date-scoped semantic spec on the raw query is synthesised (plus its
+        # unfiltered recall twin), not an IndexError.
+        assert len(resolved) >= 1
+        safety = resolved[0]
+        assert safety.mode == "semantic"
+        assert safety.semantic == "invoices 2025"
+        assert safety.filters.date_from == "2025-01-01"
+        assert safety.filters.date_to == "2025-12-31"
+        assert "safety net" in safety.rationale
+
+    def test_empty_plan_dated_query_synthesised_spec_twinned(self) -> None:
+        """The synthesised date-scoped spec also yields its unfiltered recall twin.
+
+        ``max_specs`` is set, so the date-carrying safety-net spec gains a
+        filter-stripped twin — the same recall insurance every filtered spec gets.
+        """
+        resolved = resolve_specs(
+            RetrievalPlan(specs=()),
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="invoices 2025",
+            max_specs=8,
+        )
+
+        assert len(resolved) == 2
+        # Original safety-net spec keeps the date; the twin strips all filters.
+        assert resolved[0].filters.date_from == "2025-01-01"
+        assert _empty_filters(resolved[1].filters)
+        assert resolved[1].semantic == resolved[0].semantic
+
+    def test_empty_plan_non_dated_query_yields_no_specs(self) -> None:
+        """An empty plan with a non-temporal query resolves to no specs (clean)."""
+        resolved = resolve_specs(
+            RetrievalPlan(specs=()),
+            _facets(),
+            ui_filters=None,
+            today=_TODAY,
+            query="invoices",
+            max_specs=8,
+        )
+
+        assert resolved == ()
+
+    def test_empty_plan_dated_query_intersects_ui_filters(self) -> None:
+        """A UI correspondent (no date) is carried into the synthesised spec."""
+        ui = SearchFilters(
+            date_from=None,
+            date_to=None,
+            correspondent_id=42,
+            document_type_id=None,
+            tag_ids=(),
+        )
+
+        resolved = resolve_specs(
+            RetrievalPlan(specs=()),
+            _facets(),
+            ui_filters=ui,
+            today=_TODAY,
+            query="invoices 2025",
+        )
+
+        assert len(resolved) == 1
+        assert resolved[0].filters.date_from == "2025-01-01"
+        assert resolved[0].filters.correspondent_id == 42
+
+
+# ---------------------------------------------------------------------------
 # Unfiltered recall twins (max_specs)
 # ---------------------------------------------------------------------------
 

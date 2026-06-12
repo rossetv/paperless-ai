@@ -307,18 +307,22 @@ def make_index_stats(
     chunk_count: int = 0,
     last_reconcile_at: str | None = "2024-06-01T12:00:00Z",
     embedding_model: str | None = "text-embedding-3-small",
+    latest_indexed_at: str | None = None,
 ) -> IndexStats:
     """Create an IndexStats; defaults model a reconciled, empty index.
 
     ``last_reconcile_at`` defaults to a real timestamp so the common healthz
     "index is ready" path needs no override; pass ``None`` for the
-    never-reconciled case.
+    never-reconciled case. ``latest_indexed_at`` is the cache content signal
+    (``MAX(documents.indexed_at)``); defaults to ``None`` (empty index) and is
+    varied by the result-cache tests to model an in-place re-index.
     """
     return IndexStats(
         document_count=document_count,
         chunk_count=chunk_count,
         last_reconcile_at=last_reconcile_at,
         embedding_model=embedding_model,
+        latest_indexed_at=latest_indexed_at,
     )
 
 

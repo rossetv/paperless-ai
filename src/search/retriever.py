@@ -368,7 +368,12 @@ def resolve_specs(
     *ui_filters*.  This preserves the recall floor — the original, date-unbound
     spec remains in the tuple — while guaranteeing that a dated query reaches
     at least one date-scoped search even when the planner is degraded or produced
-    a broad fallback plan with no date hints.
+    a broad fallback plan with no date hints.  When the plan resolved to *no*
+    specs at all (an empty ``{"specs": []}`` response reaching this far), the
+    safety net synthesises a broad-semantic spec from *query* as its base, so the
+    empty-plan path never indexes into an empty list (it would otherwise raise
+    ``IndexError`` on a dated query) — the result is one date-scoped semantic
+    search on the raw query.
 
     The safety net fires only on the degraded / fallback path; in the normal case
     the planner or the deterministic filter resolution already binds at least one
@@ -409,7 +414,7 @@ def resolve_specs(
         date_from, date_to = extract_date_range(query, today)
         if date_from is not None or date_to is not None:
             resolved.append(
-                _make_safety_net_spec(resolved, date_from, date_to, ui_filters)
+                _make_safety_net_spec(resolved, query, date_from, date_to, ui_filters)
             )
 
     if max_specs is not None:
@@ -484,8 +489,26 @@ def _append_unfiltered_twins(
     return out
 
 
+def _broad_semantic_base(query: str) -> RetrievalSpec:
+    """Synthesise a broad, unfiltered semantic spec on the raw *query*.
+
+    The base the safety net grafts a date range onto when no spec resolved —
+    mirrors the planner's own degraded-fallback spec (a single broad semantic
+    search on the raw query) so the empty-plan path stays a vector search on the
+    user's words rather than an ``IndexError``.
+    """
+    return RetrievalSpec(
+        mode="semantic",
+        semantic=query,
+        keywords=(),
+        filters=_EMPTY_FILTERS,
+        rationale="fallback: broad semantic search",
+    )
+
+
 def _make_safety_net_spec(
     resolved: list[RetrievalSpec],
+    query: str,
     date_from: str | None,
     date_to: str | None,
     ui_filters: SearchFilters | None,
@@ -498,11 +521,24 @@ def _make_safety_net_spec(
     then the combined filters are intersected with *ui_filters* once more so the
     UI constraint still wins.
 
+    When *resolved* is empty — an empty plan (e.g. an LLM response of
+    ``{"specs": []}`` under a degraded/clarify path) reaching this far — there is
+    no base spec to copy, so a broad-semantic spec is synthesised from *query*.
+    This keeps the empty-plan path non-crashing (a bare ``resolved[0]`` would
+    raise ``IndexError``) while still honouring the safety net's job: a dated
+    query reaches at least one date-scoped search even when the planner produced
+    no specs at all.
+
     The ``rationale`` describes the safety net so the trace is honest about why
     the extra spec exists.
     """
-    # Prefer the first semantic spec; fall back to the first spec.
-    base = next((s for s in resolved if s.mode == "semantic"), resolved[0])
+    # Prefer the first semantic spec; fall back to the first spec; when the plan
+    # resolved to nothing, synthesise a broad-semantic base from the raw query so
+    # the empty-plan path neither crashes nor loses the dated-recall guarantee.
+    base = next(
+        (s for s in resolved if s.mode == "semantic"),
+        resolved[0] if resolved else _broad_semantic_base(query),
+    )
 
     # Graft the query date range onto the base spec's filters.
     date_scoped_filters = SearchFilters(

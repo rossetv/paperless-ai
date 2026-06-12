@@ -535,19 +535,36 @@ class SearchCore:
         )
 
     def _index_version(self) -> str | None:
-        """Return ``document_count:chunk_count`` as the cache index version.
+        """Return ``document_count:chunk_count:latest_indexed_at`` as the cache version.
 
-        A change in either count (a document indexed, re-chunked, or pruned)
-        moves the version string and invalidates prior cache entries (spec §7).
-        A store read failure logs at DEBUG and returns None — the caller then
-        bypasses the cache rather than failing the search.
+        The counts move when a document is indexed, re-chunked, or pruned. The
+        third component — ``MAX(documents.indexed_at)`` — is the content signal:
+        an *in-place* re-index (corrected OCR, re-classification, an edited
+        title/tags) that chunks to the same count leaves both counts unchanged,
+        so without it a stale answer would be served until the TTL expired (up to
+        ``SEARCH_CACHE_TTL_SECONDS``, default 4 h). The indexer stamps
+        ``indexed_at`` on every upsert, so any content change advances this and
+        busts prior cache entries on the next query.
+
+        It must be ``MAX(indexed_at)``, not ``last_reconcile_at``: the latter is
+        rewritten at the end of *every* reconcile cycle (including no-op ones),
+        which would needlessly drop the cache each cycle and, worse, evict a
+        valid no-match after a reconcile that indexed nothing — the exact case
+        the cache is documented to preserve. ``indexed_at`` moves only when a
+        document actually changes.
+
+        A ``None`` ``latest_indexed_at`` (an empty index) renders as the literal
+        ``"none"`` so the version string stays well-formed. A store read failure
+        logs at DEBUG and returns None — the caller then bypasses the cache
+        rather than failing the search.
         """
         try:
             stats = self._store_reader.get_stats()
         except StoreError as exc:
             log.debug("search.cache_version_unavailable", error=str(exc))
             return None
-        return f"{stats.document_count}:{stats.chunk_count}"
+        content_signal = stats.latest_indexed_at or "none"
+        return f"{stats.document_count}:{stats.chunk_count}:{content_signal}"
 
     def retrieve(
         self,

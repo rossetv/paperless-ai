@@ -202,6 +202,78 @@ class TestLayer0ShortQueryGuard:
 
 
 # ---------------------------------------------------------------------------
+# H3 — an empty-specs plan + a dated query must not 500 the endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyPlanDatedQuery:
+    """A planner ``{"specs": []}`` response over a dated query is handled cleanly.
+
+    With the adequacy gate off, ``{"specs": []}`` parses to
+    ``RetrievalPlan(specs=())``; the deterministic date safety net then fires on
+    the dated query with an empty resolved list. This used to raise an uncaught
+    IndexError (a 500 on the billable search endpoint); the safety net now
+    synthesises a broad-semantic base from the raw query instead.
+    """
+
+    def setup_method(self) -> None:
+        reset_search_result_cache()
+
+    def _empty_specs_llm(self) -> ScriptedLLMClient:
+        return ScriptedLLMClient(
+            planner_response=planner_response_json(specs=[]),
+            synthesiser_responses=[
+                answered_response_json("Found something [1].", citations=[1])
+            ],
+        )
+
+    def test_answer_empty_plan_dated_query_does_not_500(self) -> None:
+        """core.answer with an empty plan + a year in the query returns cleanly."""
+        llm_client = self._empty_specs_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(),
+            SEARCH_GATE_ADEQUACY=False,
+            SEARCH_GATE_JUDGE=False,
+        )
+
+        # The reproduction query names an explicit period; the old code raised
+        # IndexError here. It must now return a real SearchResult.
+        result = core.answer("invoices 2025")
+
+        assert result.outcome_kind in ("answered", "no_match")
+        assert llm_client.planner_calls == 1
+
+    def test_retrieve_empty_plan_dated_query_does_not_500(self) -> None:
+        """core.retrieve with an empty plan + a dated query returns cleanly too."""
+        llm_client = self._empty_specs_llm()
+        core = _core(
+            llm_client,
+            _store_reader_with_hits(),
+            SEARCH_GATE_ADEQUACY=False,
+        )
+
+        result = core.retrieve("invoices 2025")
+
+        # retrieve() never synthesises; it returns sources (or none) without raising.
+        assert result.outcome_kind in ("answered", "no_match")
+
+    def test_answer_empty_plan_non_dated_query_no_match(self) -> None:
+        """An empty plan + a non-temporal query yields a clean no-match, not a crash."""
+        llm_client = self._empty_specs_llm()
+        core = _core(
+            llm_client,
+            _empty_store_reader(),
+            SEARCH_GATE_ADEQUACY=False,
+        )
+
+        result = core.answer("invoices")
+
+        # No specs, no safety net, no hits — a no-match, never an exception.
+        assert result.outcome_kind == "no_match"
+
+
+# ---------------------------------------------------------------------------
 # Layer 2 — relevance gate
 # ---------------------------------------------------------------------------
 

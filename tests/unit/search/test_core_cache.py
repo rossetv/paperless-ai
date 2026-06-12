@@ -123,6 +123,70 @@ class TestIndexChangeBustsCache:
         core.answer("a query")
         assert llm_client.total_calls == 4
 
+    def test_in_place_reindex_same_counts_busts_cache(self) -> None:
+        """An in-place re-index (same counts, newer indexed_at) busts the cache (M10).
+
+        A document re-indexed in place — corrected OCR, re-classification — that
+        chunks to the same number of chunks leaves document_count and
+        chunk_count identical. Only ``MAX(documents.indexed_at)`` advances. The
+        index version now folds that content signal in, so the next identical
+        query recomputes rather than serving a stale answer until the TTL
+        expires (the bug M10 fixes).
+        """
+        reset_search_result_cache()
+        store_reader = _store_reader(document_count=3, chunk_count=10)
+        store_reader.get_stats.return_value = make_index_stats(
+            document_count=3,
+            chunk_count=10,
+            latest_indexed_at="2026-06-12T09:00:00+00:00",
+        )
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("before [1].", citations=[1]),
+                answered_response_json("after [1].", citations=[1]),
+            ],
+        )
+        core = _core(store_reader, llm_client)
+        core.answer("a query")
+        assert llm_client.total_calls == 2
+
+        # Same doc/chunk counts, but the content signal advances — an in-place
+        # re-index. The cache key changes, so the query recomputes.
+        store_reader.get_stats.return_value = make_index_stats(
+            document_count=3,
+            chunk_count=10,
+            latest_indexed_at="2026-06-12T10:30:00+00:00",
+        )
+        core.answer("a query")
+        assert llm_client.total_calls == 4
+
+    def test_unchanged_content_signal_still_serves_from_cache(self) -> None:
+        """The same counts AND the same indexed_at keep serving from cache.
+
+        The content signal must not be so eager it defeats the cache: an
+        unchanged corpus (identical counts and identical latest_indexed_at) is
+        still a hit, so a repeat query makes no further LLM calls.
+        """
+        reset_search_result_cache()
+        store_reader = _store_reader(document_count=3, chunk_count=10)
+        store_reader.get_stats.return_value = make_index_stats(
+            document_count=3,
+            chunk_count=10,
+            latest_indexed_at="2026-06-12T09:00:00+00:00",
+        )
+        llm_client = ScriptedLLMClient(
+            planner_response=planner_response_json(),
+            synthesiser_responses=[
+                answered_response_json("answer [1].", citations=[1]),
+            ],
+        )
+        core = _core(store_reader, llm_client)
+        core.answer("a query")
+        core.answer("a query")
+        # Second call is a cache hit — only the first query's 2 calls were made.
+        assert llm_client.total_calls == 2
+
 
 class TestNoMatchCached:
     def _no_match_core(self):

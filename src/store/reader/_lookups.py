@@ -223,7 +223,13 @@ def list_facets(conn: sqlite3.Connection, query_lock: threading.Lock) -> FacetSe
         documents table.
 
     Raises:
-        StoreError: On SQLite error.
+        SchemaNotReadyError: The index schema is not present (a present-but-empty
+            file, or the brief mid-rebuild window where the indexer has dropped
+            and not yet recreated the tables).  Distinguished from a generic
+            failure — exactly as :func:`get_stats` does — so the search server
+            can answer "index not ready" (503) rather than crashing the search
+            path with a 500.
+        StoreError: On any other SQLite error.
     """
     try:
         with query_lock:
@@ -235,6 +241,10 @@ def list_facets(conn: sqlite3.Connection, query_lock: threading.Lock) -> FacetSe
                 "WHERE created IS NOT NULL"
             ).fetchone()
     except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "list_facets query failed: the index schema is not present"
+            ) from exc
         raise StoreError("list_facets query failed") from exc
 
     correspondents: list[TaxonomyEntry] = []
@@ -267,7 +277,9 @@ def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStat
 
     Returns:
         IndexStats with document count, chunk count, last_reconcile_at (from
-        meta), and embedding_model (from meta).
+        meta), embedding_model (from meta), and latest_indexed_at
+        (``MAX(documents.indexed_at)`` — the content signal the result cache
+        keys on).
 
     Raises:
         SchemaNotReadyError: The database has no schema yet (a present-but-empty
@@ -280,6 +292,14 @@ def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStat
         with query_lock:
             doc_count_row = conn.execute("SELECT COUNT(*) FROM documents").fetchone()
             chunk_count_row = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()
+            # MAX(indexed_at) is the cache's content signal: it advances on every
+            # document upsert (corrected OCR, re-classification, edited metadata)
+            # even when the counts do not move, and is served by
+            # idx_documents_indexed_at so the aggregate is an index scan, not a
+            # table scan. NULL on an empty index.
+            latest_indexed_row = conn.execute(
+                "SELECT MAX(indexed_at) FROM documents"
+            ).fetchone()
             reconcile_row = conn.execute(
                 "SELECT value FROM meta WHERE key = 'last_reconcile_at'"
             ).fetchone()
@@ -298,6 +318,7 @@ def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStat
         chunk_count=chunk_count_row[0],
         last_reconcile_at=reconcile_row[0] if reconcile_row else None,
         embedding_model=model_row[0] if model_row else None,
+        latest_indexed_at=latest_indexed_row[0] if latest_indexed_row else None,
     )
 
 
