@@ -93,6 +93,38 @@ def _settings_to_str_map() -> dict[str, str | None]:
 #: ``None`` for secret keys and optional keys whose default is ``None``.
 _CODED_DEFAULTS: dict[str, str | None] = _settings_to_str_map()
 
+# Placeholder for the two required secret keys when building a Settings purely
+# to validate or resolve *other* keys — the caller may be changing an unrelated
+# key on an instance whose secrets are not yet configured.
+_VALIDATION_SENTINEL = "__validation_placeholder__"
+
+
+def _merged_for_build(
+    *,
+    config_table: Mapping[str, str],
+    environ: Mapping[str, str],
+    changes: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Layer *changes* over the config table over the environment, inject secret
+    sentinels, and return a mapping ready for :func:`build_settings`."""
+    merged: dict[str, str] = dict(environ)
+    merged.update(config_table)
+    if changes:
+        merged.update(changes)
+    for req in SECRET_KEYS:
+        merged.setdefault(req, _VALIDATION_SENTINEL)
+    return merged
+
+
+def _is_openai_embedding_model(model: str) -> bool:
+    """Whether *model* names an OpenAI embedding model.
+
+    Every OpenAI embedding model is named ``text-embedding-*``; no Ollama
+    embedding model is. Used to reject the incoherent ``EMBEDDING_PROVIDER=ollama``
+    + OpenAI-model combination that would wipe the index and then fail to embed.
+    """
+    return model.startswith("text-embedding-")
+
 
 @dataclass(frozen=True, slots=True)
 class SettingView:
@@ -193,19 +225,31 @@ def validate_change_set(
         raise ValueError(f"unknown configuration key(s): {', '.join(sorted(unknown))}")
 
     # Build the would-be merged mapping and run the real Settings builder; it
-    # raises ValueError naming the offending key on any invalid value.
-    merged: dict[str, str] = dict(environ)
-    merged.update(config_table)
-    merged.update(changes)
-    # build_settings requires PAPERLESS_TOKEN and OPENAI_API_KEY — the same
-    # two keys as SECRET_KEYS. They may be absent when the caller changes an
-    # unrelated key on a fresh instance that has not yet been configured. Inject
-    # sentinel values so the builder can validate the type/range of the changed
-    # keys without failing on an unrelated missing required key.
-    _VALIDATION_SENTINEL = "__validation_placeholder__"
-    for req in SECRET_KEYS:
-        merged.setdefault(req, _VALIDATION_SENTINEL)
-    build_settings(merged)  # raises ValueError on a bad value
+    # raises ValueError naming the offending key on any invalid value. (Secret
+    # keys absent on an unconfigured instance are filled with a sentinel so the
+    # builder can validate the changed keys without failing on a missing secret.)
+    merged = _merged_for_build(
+        config_table=config_table, environ=environ, changes=changes
+    )
+    after = build_settings(merged)  # raises ValueError on a bad value
+
+    # Embedding-coherence guard. EMBEDDING_PROVIDER follows LLM_PROVIDER unless
+    # set explicitly, so flipping the provider silently moves embeddings onto it
+    # and stales every vector. The bundled EMBEDDING_MODEL default is an OpenAI
+    # model name, which an Ollama embedding endpoint cannot serve — saving that
+    # combination would wipe the index (a re-index key changed) and then fail to
+    # re-embed, leaving search permanently broken. Refuse it here so a one-click
+    # provider flip can never destroy the index into a dead state.
+    if after.EMBEDDING_PROVIDER == "ollama" and _is_openai_embedding_model(
+        after.EMBEDDING_MODEL
+    ):
+        raise ValueError(
+            f"EMBEDDING_MODEL '{after.EMBEDDING_MODEL}' is an OpenAI model and "
+            "cannot run on Ollama. Switching embeddings to Ollama wipes and "
+            "rebuilds the whole index, so set EMBEDDING_MODEL to a local "
+            "embedding model and EMBEDDING_DIMENSIONS to its width in the same "
+            "save."
+        )
 
     # Determine which keys genuinely change. The current effective value is
     # the table value if present, else the environment value, else absent.
@@ -220,20 +264,40 @@ def validate_change_set(
     return changed
 
 
-def reindex_required(changed_keys: set[str]) -> bool:
-    """Return whether *changed_keys* needs a full document re-index.
+def reindex_required(
+    *,
+    changes: Mapping[str, str],
+    config_table: Mapping[str, str],
+    environ: Mapping[str, str],
+) -> bool:
+    """Return whether applying *changes* needs a full document re-index.
 
     Saving configuration hot-loads — no daemon restarts (spec §5). The one
     operator-facing consequence of a change is whether the existing index
-    becomes stale: that happens exactly when a key governing chunking or the
-    embedding model changes. This is true when *changed_keys* intersects
-    :data:`common.config.REINDEX_KEYS`.
+    becomes stale: that happens exactly when the *resolved* value of a
+    :data:`common.config.REINDEX_KEYS` setting moves.
+
+    The comparison is made on the built :class:`~common.config.Settings`, not on
+    the raw changed keys, so a **derived** change is caught: ``EMBEDDING_PROVIDER``
+    follows ``LLM_PROVIDER`` unless set explicitly, so flipping the provider
+    stales every vector even though only ``LLM_PROVIDER`` — which is not itself a
+    re-index key — appears in the change set. A raw changed-key intersection
+    missed exactly this case.
 
     Args:
-        changed_keys: The config keys that actually changed.
+        changes: The proposed key→value changes from the request body.
+        config_table: The current ``config`` table.
+        environ: The process environment.
 
     Returns:
-        ``True`` when at least one changed key requires re-indexing every
-        document; ``False`` otherwise (including for an empty change set).
+        ``True`` when applying *changes* moves the resolved embedding model,
+        embedding provider, or chunking; ``False`` otherwise (including for an
+        empty change set).
     """
-    return bool(changed_keys & set(REINDEX_KEYS))
+    before = build_settings(
+        _merged_for_build(config_table=config_table, environ=environ)
+    )
+    after = build_settings(
+        _merged_for_build(config_table=config_table, environ=environ, changes=changes)
+    )
+    return any(getattr(before, key) != getattr(after, key) for key in REINDEX_KEYS)

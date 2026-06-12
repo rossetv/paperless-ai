@@ -109,15 +109,100 @@ def test_validate_accepts_a_good_change_set() -> None:
     assert changed == {"CHUNK_SIZE"}
 
 
+_SECRETS = {"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"}
+
+
 def test_reindex_required_is_true_when_a_reindex_key_changed() -> None:
-    # CHUNK_SIZE is a re-index key.
-    assert reindex_required({"CHUNK_SIZE", "OCR_DPI"}) is True
+    # CHUNK_SIZE is a re-index key; changing it stales every chunk.
+    assert (
+        reindex_required(
+            changes={"CHUNK_SIZE": "3000", "OCR_DPI": "200"},
+            config_table={},
+            environ=_SECRETS,
+        )
+        is True
+    )
 
 
 def test_reindex_required_is_false_when_no_reindex_key_changed() -> None:
     # OCR_DPI and LOG_LEVEL hot-load with no re-index.
-    assert reindex_required({"OCR_DPI", "LOG_LEVEL"}) is False
+    assert (
+        reindex_required(
+            changes={"OCR_DPI": "200", "LOG_LEVEL": "DEBUG"},
+            config_table={},
+            environ=_SECRETS,
+        )
+        is False
+    )
 
 
-def test_reindex_required_of_an_empty_set_is_false() -> None:
-    assert reindex_required(set()) is False
+def test_reindex_required_of_an_empty_change_set_is_false() -> None:
+    assert reindex_required(changes={}, config_table={}, environ=_SECRETS) is False
+
+
+def test_reindex_required_is_true_when_llm_provider_flip_changes_embeddings() -> None:
+    """Flipping LLM_PROVIDER stales the index via the derived EMBEDDING_PROVIDER.
+
+    LLM_PROVIDER is not itself a re-index key, so the old raw changed-key
+    intersection missed this and the index would have been silently wiped with no
+    warning. The resolved-identity comparison catches it.
+    """
+    assert (
+        reindex_required(
+            changes={"LLM_PROVIDER": "ollama"},
+            config_table={},
+            environ=_SECRETS,
+        )
+        is True
+    )
+
+
+def test_reindex_required_is_false_for_a_no_op_llm_provider_change() -> None:
+    assert (
+        reindex_required(
+            changes={"LLM_PROVIDER": "openai"},
+            config_table={},
+            environ=_SECRETS,
+        )
+        is False
+    )
+
+
+def test_validate_rejects_ollama_provider_with_an_openai_embedding_model() -> None:
+    """A provider flip that would leave an OpenAI embedding model on Ollama is
+    refused — saving it would wipe the index and then fail to re-embed."""
+    with pytest.raises(ValueError, match="OpenAI model and"):
+        validate_change_set(
+            changes={"LLM_PROVIDER": "ollama"},
+            config_table={},
+            environ=_SECRETS,
+        )
+
+
+def test_validate_rejects_setting_an_openai_model_while_on_ollama() -> None:
+    """The guard fires on the resulting config, not just on a provider flip."""
+    with pytest.raises(ValueError, match="OpenAI model and"):
+        validate_change_set(
+            changes={"EMBEDDING_MODEL": "text-embedding-3-large"},
+            config_table={
+                "LLM_PROVIDER": "ollama",
+                "EMBEDDING_MODEL": "nomic-embed-text",
+                "EMBEDDING_DIMENSIONS": "768",
+            },
+            environ=_SECRETS,
+        )
+
+
+def test_validate_accepts_ollama_with_a_local_embedding_model() -> None:
+    """Flipping to Ollama WITH a local embedding model and its dimensions is a
+    coherent, allowed change."""
+    changed = validate_change_set(
+        changes={
+            "LLM_PROVIDER": "ollama",
+            "EMBEDDING_MODEL": "nomic-embed-text",
+            "EMBEDDING_DIMENSIONS": "768",
+        },
+        config_table={},
+        environ=_SECRETS,
+    )
+    assert changed == {"LLM_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"}
