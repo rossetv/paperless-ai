@@ -9,7 +9,8 @@ runner records in ``meta``.
 The Wave 1 schema (migration v1) is the ``users`` and ``sessions`` tables of
 spec §4.2. Wave 2 adds ``recent_searches`` (migration v2); Wave 3 adds
 ``api_keys`` and Wave 4 adds ``config`` as further migrations — each a new
-entry in :data:`appdb.migrations.MIGRATIONS`, never an edit to v1.
+entry in :data:`appdb.migrations.MIGRATIONS`, never an edit to v1. Migration
+v7 adds ``api_key_usage`` (the per-key daily LLM spend quota).
 
 Allowed deps: sqlite3, appdb.migrations. Forbidden: store, search, daemons.
 """
@@ -26,7 +27,7 @@ from appdb.migrations import run_migrations
 # store._migrate_v1). A ``;`` inside a comment would split into a fragment that
 # starts with plain text rather than a SQL keyword and break the migration. Keep
 # comments inside these strings semicolon-free, or strip comments before split.
-SCHEMA_VERSION: int = 6
+SCHEMA_VERSION: int = 7
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
@@ -196,6 +197,32 @@ CREATE TABLE IF NOT EXISTS reconcile_activity (
     ok          INTEGER NOT NULL CHECK (ok IN (0, 1)),
     summary     TEXT NOT NULL,
     detail      TEXT NOT NULL
+);
+"""
+
+
+# Migration v7 DDL — the api_key_usage table (per-key daily LLM spend quota).
+#
+# One row per (api_key_id, usage_date) pair, where usage_date is the UTC
+# calendar date (YYYY-MM-DD) the spend was recorded on. tokens is the
+# cumulative LLM token count and calls the cumulative completed-query count
+# the key consumed on that day; both are advanced by an upsert so a day's
+# bucket grows in place rather than stacking a row per query.
+#
+# api_key_id REFERENCES api_keys(id) ON DELETE CASCADE: deleting (or hard-
+# deleting) a key atomically drops its whole usage history — the cap is a
+# property of a live credential, not an audit log that must outlive it. The
+# composite PRIMARY KEY (api_key_id, usage_date) is the upsert conflict target
+# and serves the per-key, per-day lookup the pre-request check performs
+# directly, so no separate index is needed.
+SCHEMA_V7: str = """
+CREATE TABLE IF NOT EXISTS api_key_usage (
+    api_key_id  INTEGER NOT NULL
+                    REFERENCES api_keys(id) ON DELETE CASCADE,
+    usage_date  TEXT NOT NULL,
+    tokens      INTEGER NOT NULL DEFAULT 0,
+    calls       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (api_key_id, usage_date)
 );
 """
 

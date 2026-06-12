@@ -24,6 +24,7 @@ import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -34,11 +35,17 @@ from fastapi.responses import StreamingResponse
 from appdb import recent_searches as recent_search_store
 from appdb.connection import connect
 from search.appstate import AppState, get_app_state
-from search.deps import get_app_db
+from search.deps import Caller, get_app_db, resolve_caller
 from search.errors import LlmBudgetExceededError
 from search.identity import resolve_asker
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import CurrentUser
+from search.spend_quota import (
+    QuotaExceededError,
+    check_quota,
+    record_usage,
+    record_usage_blocking,
+)
 from search.wire import (
     BrowseSort,
     DocumentListResponse,
@@ -72,6 +79,9 @@ _RECONCILE_SENTINEL_NAME = "reconcile.request"
 
 # HTTP status the healthz endpoint returns when the index is not yet usable.
 _HEALTHZ_UNAVAILABLE_STATUS = 503
+
+# HTTP status returned when an API key has reached its daily LLM-token quota.
+_QUOTA_EXCEEDED_STATUS = 429
 
 # Heartbeat cadence for the search stream. A phase such as synthesis can hold the
 # worker on a single LLM call for 40s+ with nothing to enqueue; without traffic an
@@ -167,6 +177,40 @@ def _health_response(state: IndexHealthState) -> Response:
     )
 
 
+def _seconds_to_next_utc_midnight(now: datetime) -> int:
+    """Return whole seconds from *now* until the next UTC midnight.
+
+    The quota bucket is keyed on the UTC calendar date, so it refills the moment
+    a new UTC day begins. This is the ``Retry-After`` a quota-rejected client is
+    told to wait — at least 1 so a request landing in the final second of the
+    day is never told to retry immediately.
+    """
+    tomorrow = (now + timedelta(days=1)).date()
+    next_midnight = datetime(
+        tomorrow.year, tomorrow.month, tomorrow.day, tzinfo=timezone.utc
+    )
+    return max(1, int((next_midnight - now).total_seconds()))
+
+
+def _raise_quota_429(exc: QuotaExceededError) -> None:
+    """Translate a :class:`QuotaExceededError` into an HTTP 429 with Retry-After.
+
+    The ``Retry-After`` header points at the next UTC midnight, when the daily
+    bucket refills; the JSON detail names the cap so a client can react without
+    parsing the message. The chain is severed with ``from exc`` so the traceback
+    is preserved for the server log (the detail carries no secret).
+    """
+    retry_after = _seconds_to_next_utc_midnight(datetime.now(timezone.utc))
+    raise HTTPException(
+        status_code=_QUOTA_EXCEEDED_STATUS,
+        detail=(
+            "Daily LLM token quota for this API key has been reached. "
+            "It resets at UTC midnight."
+        ),
+        headers={"Retry-After": str(retry_after)},
+    ) from exc
+
+
 def build_api_router(
     settings: Settings,
     resolve_core: Callable[[str], SearchCore],
@@ -242,6 +286,7 @@ def build_api_router(
     async def search(
         body: SearchRequest,
         state: AppState = Depends(get_app_state),
+        caller: Caller = Depends(resolve_caller),
         _role: object = Depends(require_reader),
         user: CurrentUser = Depends(get_current_user),
         app_db: sqlite3.Connection = Depends(get_app_db),
@@ -256,6 +301,12 @@ def build_api_router(
         recent-search history. The :class:`SearchCore` is resolved per
         request so a saved configuration change takes effect on the next
         query — web-redesign §5, Wave 4.
+
+        When ``SEARCH_KEY_DAILY_TOKEN_QUOTA`` is positive, an API-key caller
+        that has reached its daily token cap is rejected with HTTP 429 before
+        the pipeline runs, and the completed query's tokens are recorded
+        against the key. A cookie/browser caller (and the default disabled
+        quota) skips both, doing no extra database work.
         """
         # resolve_core opens app.db, runs ensure_schema, and on a config-version
         # change rebuilds the whole core (new StoreReader/index.db connection) —
@@ -266,11 +317,30 @@ def build_api_router(
         # semaphore. set_limit is a no-op when nothing changed, and ignores
         # non-int values so a stub core in tests does not crash the handler.
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
+        # Pre-check BEFORE the pipeline so an over-quota key never spends a
+        # token. A disabled quota or a cookie caller short-circuits with no I/O.
+        try:
+            await check_quota(
+                api_key_id=caller.api_key_id,
+                quota=quota,
+                app_db_path=state.app_db_path,
+            )
+        except QuotaExceededError as exc:
+            _raise_quota_429(exc)
         asker = resolve_asker(
             user.display_name,
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
         )
         result = await _search(body, core, search_semaphore, asker=asker)
+        # Record the completed query's total tokens against the key's daily
+        # bucket (best-effort; a disabled quota / cookie caller records nothing).
+        await record_usage(
+            api_key_id=caller.api_key_id,
+            quota=quota,
+            tokens=result.cost.tokens.total,
+            app_db_path=state.app_db_path,
+        )
         # The recent-search write is a blocking multi-statement SQLite
         # transaction (delete+insert+trim); keep it off the loop too.
         await run_blocking(lambda: _record_recent_search(app_db, user, body.query))
@@ -280,6 +350,7 @@ def build_api_router(
     async def search_stream(
         body: SearchRequest,
         state: AppState = Depends(get_app_state),
+        caller: Caller = Depends(resolve_caller),
         _role: object = Depends(require_reader),
         user: CurrentUser = Depends(get_current_user),
     ) -> StreamingResponse:
@@ -298,9 +369,26 @@ def build_api_router(
         from. A successful search records the caller's recent search inside the
         worker thread (see :func:`_search_stream`), since the response body has
         already begun streaming by the time the pipeline finishes.
+
+        The per-key spend quota is enforced identically to ``/api/search``: the
+        pre-check runs here, before the body begins, so an over-quota key gets a
+        clean HTTP 429; the post-record runs inside the worker once the total is
+        known (see :func:`_search_stream`). Both are no-ops for a disabled quota
+        or a cookie caller.
         """
         core = await run_blocking(lambda: resolve_core(state.app_db_path))
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
+        # Pre-check while a clean HTTP status is still possible — once the body
+        # streams, the only failure channel is an error frame, never a 429.
+        try:
+            await check_quota(
+                api_key_id=caller.api_key_id,
+                quota=quota,
+                app_db_path=state.app_db_path,
+            )
+        except QuotaExceededError as exc:
+            _raise_quota_429(exc)
         asker = resolve_asker(
             user.display_name,
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
@@ -312,6 +400,8 @@ def build_api_router(
             asker=asker,
             app_db_path=state.app_db_path,
             user=user,
+            api_key_id=caller.api_key_id,
+            quota=quota,
         )
 
     @router.get("/api/facets", dependencies=[reader_auth])
@@ -464,6 +554,8 @@ async def _search_stream(
     asker: str | None = None,
     app_db_path: str | None = None,
     user: CurrentUser | None = None,
+    api_key_id: int | None = None,
+    quota: int = 0,
 ) -> StreamingResponse:
     """Stream-search handler body: bridge the sync pipeline to an NDJSON stream.
 
@@ -485,30 +577,36 @@ async def _search_stream(
       each frame a monotonically increasing ``seq``, and ``await``\\ s the worker
       in a ``finally`` so a client disconnect still reaps the thread.
 
-    Recent-search recording happens **inside the worker**, on the success path
-    only: the response body has already begun streaming by the time the
-    pipeline finishes, so the ``/api/search`` pattern of recording after the
-    call in the handler is impossible here. The write uses a **short-lived
-    connection the worker opens from** ``app_db_path`` **and closes itself** —
-    never the request's per-request ``app.db`` connection. That is what makes it
-    race-free: on a client disconnect (the SPA aborts the stream on every new
-    query) the event loop tears the request down and closes its own connection
-    while this detached worker may still be finishing, but the two touch
-    *different* connections, so there is no concurrent-use hazard on a
-    ``check_same_thread=False`` connection. The write is best-effort
-    (try/except, logged and swallowed) and skipped when ``app_db_path``/``user``
-    are absent, as in the unit tests that drive this body directly.
+    Recent-search recording **and** the per-key spend-quota record happen
+    **inside the worker**, on the success path only: the response body has
+    already begun streaming by the time the pipeline finishes, so the
+    ``/api/search`` pattern of recording after the call in the handler is
+    impossible here. Both writes use a **short-lived connection the worker opens
+    from** ``app_db_path`` **and closes itself** — never the request's
+    per-request ``app.db`` connection. That is what makes them race-free: on a
+    client disconnect (the SPA aborts the stream on every new query) the event
+    loop tears the request down and closes its own connection while this
+    detached worker may still be finishing, but the two touch *different*
+    connections, so there is no concurrent-use hazard on a
+    ``check_same_thread=False`` connection. The recent-search write is
+    best-effort and skipped when ``app_db_path``/``user`` are absent, as in the
+    unit tests that drive this body directly; the usage record is best-effort
+    and a no-op for a disabled quota or a cookie caller.
 
     Args:
         body: The validated search request.
         core: The resolved :class:`SearchCore`.
         semaphore: The shared concurrency bound (caps simultaneous LLM spend).
         asker: The identity-aware asker name, or ``None``.
-        app_db_path: The filesystem path to ``app.db`` for recent-search
-            recording (the worker opens its own connection), or ``None`` to skip
-            recording (tests).
+        app_db_path: The filesystem path to ``app.db`` for recent-search and
+            usage recording (the worker opens its own connection), or ``None``
+            to skip recent-search recording (tests).
         user: The authenticated caller whose history the search is recorded
-            against, or ``None`` to skip recording (tests).
+            against, or ``None`` to skip recent-search recording (tests).
+        api_key_id: The caller's ``api_keys`` row id, or ``None`` for a cookie
+            caller — usage is recorded only for an API key under a positive
+            quota.
+        quota: ``SEARCH_KEY_DAILY_TOKEN_QUOTA`` — ``0`` disables usage recording.
 
     Returns:
         A :class:`StreamingResponse` of ``application/x-ndjson`` frames.
@@ -549,6 +647,20 @@ async def _search_stream(
                         record_conn.close()
                 except Exception:
                     log.exception("api.search_stream_record_failed")
+            # Record the query's tokens against the API key's daily quota
+            # bucket. record_usage_blocking is itself a no-op for a disabled
+            # quota or a cookie caller and opens/closes its own connection, so
+            # it is safe to call unconditionally once a DB path exists. It never
+            # raises — a write fault degrades to a logged warning, never the
+            # stream. Tests that drive this body without a DB pass app_db_path
+            # None and skip it.
+            if app_db_path is not None:
+                record_usage_blocking(
+                    api_key_id=api_key_id,
+                    quota=quota,
+                    tokens=result.stats.cost.tokens.total,
+                    app_db_path=app_db_path,
+                )
         except LlmBudgetExceededError as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", ("budget", str(exc))))
         except SchemaNotReadyError:
