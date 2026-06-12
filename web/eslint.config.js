@@ -95,7 +95,7 @@ export default [
       // React
       'react/react-in-jsx-scope': 'off',
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      'react-hooks/exhaustive-deps': 'error',
 
       // Layer-boundary rules — CODE_GUIDELINES §12.3.
       //
