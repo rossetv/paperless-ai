@@ -16,6 +16,9 @@ tests/unit/store/conftest.py.
 
 from __future__ import annotations
 
+import pytest
+
+from store import SchemaNotReadyError
 from store.models import ChunkHit, IndexedDocument, IndexStats, TaxonomyEntry
 from tests.helpers.factories import make_search_filters
 from tests.helpers.store import open_reader, open_writer
@@ -196,6 +199,23 @@ def test_list_facets_earliest_latest(populated_db: str) -> None:
     assert "2024" in facets.latest
 
 
+def test_list_facets_raises_schema_not_ready_on_schemaless_db(db_path: str) -> None:
+    """A present-but-schema-less index raises the typed SchemaNotReadyError (M9).
+
+    ``StoreReader.__init__`` connects but does not create the schema; an
+    unwritten ``db_path`` therefore has no taxonomy table — the mid-rebuild
+    window where the indexer has dropped and not yet recreated the tables.
+    list_facets must mirror get_stats and raise SchemaNotReadyError (a 503 at
+    the API), not a bare StoreError (a 500 on every search).
+    """
+    reader = open_reader(db_path)
+    try:
+        with pytest.raises(SchemaNotReadyError):
+            reader.list_facets()
+    finally:
+        reader.close()
+
+
 # ---------------------------------------------------------------------------
 # get_stats
 # ---------------------------------------------------------------------------
@@ -233,6 +253,102 @@ def test_get_stats_empty_db_returns_zero_counts(db_path: str) -> None:
     assert stats.chunk_count == 0
     assert stats.last_reconcile_at is None
     assert stats.embedding_model is None
+    # An empty index has no documents, so MAX(indexed_at) is NULL → None.
+    assert stats.latest_indexed_at is None
+
+
+def test_get_stats_raises_schema_not_ready_on_schemaless_db(db_path: str) -> None:
+    """get_stats on a present-but-schema-less DB raises SchemaNotReadyError.
+
+    The sibling of the list_facets case (M9): a connected-but-not-built index
+    must surface the typed not-ready fault, not a generic StoreError.
+    """
+    reader = open_reader(db_path)
+    try:
+        with pytest.raises(SchemaNotReadyError):
+            reader.get_stats()
+    finally:
+        reader.close()
+
+
+def test_get_stats_reports_latest_indexed_at(populated_db: str) -> None:
+    """get_stats surfaces MAX(documents.indexed_at) as the cache content signal (M10)."""
+    reader = open_reader(populated_db)
+    stats = reader.get_stats()
+    reader.close()
+
+    # Two documents were upserted, each stamped with indexed_at; the field is
+    # the latest of those ISO timestamps (non-None on a populated index).
+    assert stats.latest_indexed_at is not None
+    assert isinstance(stats.latest_indexed_at, str)
+
+
+def test_latest_indexed_at_advances_on_in_place_reindex(db_path: str) -> None:
+    """An in-place re-index with the SAME doc/chunk counts still moves the signal (M10).
+
+    This is the precise staleness M10 fixes: a document re-indexed in place
+    (corrected OCR, re-classification) that chunks to the same number of chunks
+    leaves document_count and chunk_count identical — only indexed_at advances.
+    The cache version must therefore key on latest_indexed_at, which this proves
+    moves while the counts stand still.
+    """
+    from store.models import ChunkInput, DocumentMeta
+
+    writer = open_writer(db_path)
+    meta = DocumentMeta(
+        id=1,
+        title="Doc",
+        correspondent_id=None,
+        document_type_id=None,
+        tag_ids=(),
+        created="2024-01-01T00:00:00+00:00",
+        modified="2024-01-01T00:00:00+00:00",
+        content_hash="hash-v1",
+        page_count=1,
+    )
+    one_chunk = [
+        ChunkInput(
+            chunk_index=0, text="original text", page_hint=1, embedding=unit_vec(4, 0)
+        )
+    ]
+    writer.upsert_document(meta, one_chunk)
+
+    reader = open_reader(db_path)
+    before = reader.get_stats()
+
+    # Re-index in place: same id, same chunk COUNT (1), new content.
+    writer.upsert_document(
+        DocumentMeta(
+            id=1,
+            title="Doc",
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(),
+            created="2024-01-01T00:00:00+00:00",
+            modified="2024-06-01T00:00:00+00:00",
+            content_hash="hash-v2",  # content changed
+            page_count=1,
+        ),
+        [
+            ChunkInput(
+                chunk_index=0,
+                text="corrected text",
+                page_hint=1,
+                embedding=unit_vec(4, 0),
+            )
+        ],
+    )
+    after = reader.get_stats()
+    reader.close()
+    writer.close()
+
+    # Counts are unchanged — the in-place re-index produced the same shape.
+    assert after.document_count == before.document_count == 1
+    assert after.chunk_count == before.chunk_count == 1
+    # …but the content signal advanced, so the cache version moves.
+    assert after.latest_indexed_at is not None
+    assert before.latest_indexed_at is not None
+    assert after.latest_indexed_at >= before.latest_indexed_at
 
 
 # ---------------------------------------------------------------------------
