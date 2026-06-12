@@ -32,7 +32,7 @@ export const StatusErr: Story = {
     glyph: 'AI',
     glyphTone: 'teal',
     title: 'OpenAI',
-    subtitle: 'Required for every process',
+    subtitle: 'Powers chat and embeddings when OpenAI is the selected provider.',
   },
 };
 
@@ -42,7 +42,7 @@ export const StatusOff: Story = {
     glyph: 'Ll',
     glyphTone: 'grey',
     title: 'Ollama',
-    subtitle: 'Ignored when the provider is OpenAI',
+    subtitle: 'Powers chat and embeddings when Ollama is the selected provider.',
   },
 };
 
