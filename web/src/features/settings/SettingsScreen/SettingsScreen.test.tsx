@@ -35,6 +35,7 @@ const SETTINGS = {
   SEARCH_RELEVANCE_TIER_STRONG: 0.7,
   SEARCH_RELEVANCE_TIER_GOOD: 0.66,
   SEARCH_RELEVANCE_TIER_PARTIAL: 0.6,
+  EMBEDDING_PROVIDER: 'openai',
   EMBEDDING_MODEL: 'text-embedding-3-small',
   EMBEDDING_DIMENSIONS: 1536,
   EMBEDDING_MAX_CONCURRENT: 4,
@@ -74,7 +75,7 @@ const SETTINGS = {
 };
 
 const SECRET = new Set(['PAPERLESS_TOKEN', 'OPENAI_API_KEY']);
-const REINDEX = new Set(['EMBEDDING_MODEL', 'CHUNK_SIZE', 'CHUNK_OVERLAP']);
+const REINDEX = new Set(['EMBEDDING_PROVIDER', 'EMBEDDING_MODEL', 'CHUNK_SIZE', 'CHUNK_OVERLAP']);
 
 /**
  * Convert the flat typed map above into the wire shape `{ settings: [...] }`.
@@ -351,5 +352,29 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Search' });
     expect(screen.getByText('default')).toBeInTheDocument();
+  });
+
+  it('shows the rebuild warning in SaveBar when a reindex key is edited', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    // Wait for the Indexing section to render, then click Increase on Chunk size
+    await screen.findByRole('spinbutton', { name: 'Chunk size' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Chunk size' }));
+    // The SaveBar uses aria-live="polite" on the outer div; scope the assertion
+    // inside it to avoid matching static reindex pills or hints elsewhere.
+    const saveBar = document.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(saveBar).not.toBeNull();
+    expect(saveBar.textContent).toMatch(/rebuild|re-embed/i);
+  });
+
+  it('shows the normal "no restart" caption when only a non-reindex key is edited', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('spinbutton', { name: 'Top K' });
+    await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
+    // Scope to the SaveBar to avoid matching the SettingsLayout subtitle.
+    const saveBar = document.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(saveBar).not.toBeNull();
+    expect(saveBar.textContent).toMatch(/no restart/i);
   });
 });

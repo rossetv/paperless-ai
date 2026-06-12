@@ -12,6 +12,12 @@ export interface SaveBarProps {
   onDiscard: () => void;
   /** Called when the user clicks Save. */
   onSave: () => void;
+  /**
+   * When true, at least one changed key requires a full search-index rebuild.
+   * The caption swaps to an amber warning so the operator knows saving will
+   * re-embed the whole library.
+   */
+  reindexPending?: boolean;
 }
 
 /**
@@ -33,6 +39,7 @@ export function SaveBar({
   isPending,
   onDiscard,
   onSave,
+  reindexPending = false,
 }: SaveBarProps): React.ReactElement {
   const isHidden = dirtyCount === 0;
   return (
@@ -47,8 +54,15 @@ export function SaveBar({
         <span className={styles['message']}>
           {dirtyCount} unsaved {dirtyCount === 1 ? 'change' : 'changes'}
         </span>
-        <span className={styles['caption']}>
-          Daemons hot-load saved settings — no restart needed
+        <span
+          className={cn(
+            styles['caption'],
+            reindexPending && styles['caption-reindex'],
+          )}
+        >
+          {reindexPending
+            ? 'Saving rebuilds the search index — every document will be re-embedded.'
+            : 'Daemons hot-load saved settings — no restart needed'}
         </span>
         <Button
           variant="secondary"

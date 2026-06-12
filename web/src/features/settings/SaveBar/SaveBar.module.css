@@ -65,3 +65,9 @@
   margin-left: auto;
   margin-right: var(--spacing-6);
 }
+
+/* ── Amber override — rebuild warning when a reindex key is dirty. ── */
+.caption-reindex {
+  color: var(--colour-status-warn-fg);
+  font-weight: var(--font-weight-caption-bold);
+}
