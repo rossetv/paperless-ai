@@ -567,6 +567,51 @@ describe('DocumentScreen', () => {
     expect(firstCall.patch.tags).toContain(200);
   });
 
+  // ── M17: isPending guard prevents overlapping saves ────────────────────────
+
+  it('discards a second mutate call while a save is already in flight', async () => {
+    const mutate = vi.fn();
+    // Render with the mutation in pending state. We set up the mock directly
+    // rather than using renderScreen() because renderScreen overwrites it.
+    mockUseUpdateDocument.mockReturnValue(
+      mutationStub({
+        mutate: mutate as unknown as UseMutateFunction<
+          LibraryDocument,
+          Error,
+          { id: number; patch: object }
+        >,
+        isPending: true,
+        isIdle: false,
+        status: 'pending',
+      }),
+    );
+
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <MemoryRouter>
+          <DocumentScreen
+            document={DOC}
+            parent="library"
+            parentSearch=""
+            role="member"
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // The title renders as a button because canEdit is true (role=member).
+    // Click it, change the value, blur — commitTitle calls mutate() which
+    // the isPending guard should discard.
+    fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
+    const input = screen.getByDisplayValue('eBay Payslip 05/2026');
+    fireEvent.change(input, { target: { value: 'Attempted while pending' } });
+    fireEvent.blur(input);
+
+    // mutate must NOT have been called — the isPending guard stops it.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   // ── Bug 8: Retry button re-fires the last attempted mutation ──────────────
 
   it('retry button re-fires the last attempted PATCH with the same args', async () => {

@@ -265,6 +265,38 @@ describe('useLogout', () => {
     result.current.mutate();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
+
+  it('clears the entire query cache on settle (not just the me entry)', async () => {
+    // Shared-machine security: after logout, all cached query data must be
+    // gone — not just the me entry — so the next user cannot see stale data.
+    mockFetch(204, null);
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client }, children);
+
+    // Seed several cache entries to simulate a signed-in user's state.
+    client.setQueryData(['me'], { user: SAMPLE_USER });
+    client.setQueryData(['documents', { page: 1 }], { documents: [] });
+    client.setQueryData(['settings'], { settings: [] });
+
+    expect(client.getQueryData(['me'])).toBeDefined();
+    expect(client.getQueryData(['documents', { page: 1 }])).toBeDefined();
+    expect(client.getQueryData(['settings'])).toBeDefined();
+
+    const { result } = renderHook(() => useLogout(), { wrapper });
+    result.current.mutate();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // All cache entries must be gone after logout.
+    expect(client.getQueryData(['me'])).toBeUndefined();
+    expect(client.getQueryData(['documents', { page: 1 }])).toBeUndefined();
+    expect(client.getQueryData(['settings'])).toBeUndefined();
+    // The cache must be completely empty.
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

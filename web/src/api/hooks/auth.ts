@@ -126,13 +126,13 @@ export function useLogout(): UseMutationResult<void, Error, void> {
     // "logged-in" me entry would bounce the /login redirect straight back into
     // the app. Fail-closed: a sign-out click always lands signed out locally.
     onSettled: () => {
-      // Remove (not merely invalidate) the me query so no stale "logged-in"
-      // user lingers in the cache — invalidating would keep the old user as
-      // placeholder data and bounce the /login redirect straight back to the
-      // app. With the entry removed, `me` resolves to "no user" and the
-      // router settles on /login. Paired with the BootstrapGate change that
-      // renders the login form immediately rather than a loading screen.
-      queryClient.removeQueries({ queryKey: queryKeys.me() });
+      // Clear the entire query cache on logout so no stale data (documents,
+      // library, settings, API keys, taxonomy, …) from the previous session
+      // lingers and is visible to the next user within the staleTime window.
+      // `clear()` is equivalent to removeQueries for every key — it wipes
+      // both the me entry (which triggers the /login redirect) and all other
+      // cached entries, preventing cross-user data leakage on shared machines.
+      queryClient.clear();
     },
   });
 }

@@ -116,9 +116,11 @@ export function ChunkPopover({ containerRef }: ChunkPopoverProps): React.ReactEl
     }
     function onMouseMove(e: MouseEvent): void {
       const el = (e.target as HTMLElement).closest('[data-full]') as HTMLElement | null;
-      if (el !== null && state.visible) {
-        setState((prev) => ({ ...prev, x: e.clientX, y: e.clientY }));
-      }
+      if (el === null) return;
+      // Use the functional setState form so the handler never closes over a
+      // stale `state.visible` value — the effect dependency array previously
+      // included `state.visible`, causing the handler to lag a render behind.
+      setState((prev) => prev.visible ? { ...prev, x: e.clientX, y: e.clientY } : prev);
     }
     function onMouseLeave(e: MouseEvent): void {
       const el = (e.target as HTMLElement).closest('[data-full]') as HTMLElement | null;
@@ -153,7 +155,9 @@ export function ChunkPopover({ containerRef }: ChunkPopoverProps): React.ReactEl
       container.removeEventListener('focus', onFocus, true);
       container.removeEventListener('blur', onBlur, true);
     };
-  }, [containerRef, showPop, hidePop, state.visible]);
+    // `state.visible` is intentionally omitted — onMouseMove now uses the
+    // functional setState form, so it no longer needs the closure value.
+  }, [containerRef, showPop, hidePop]);
 
   // Dismiss on Escape key.
   useEffect(() => {

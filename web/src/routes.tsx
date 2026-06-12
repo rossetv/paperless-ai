@@ -23,11 +23,12 @@
  */
 
 import React, { Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 // Eager — these are the entry-path pages hit on every load.
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
+import { ErrorBoundary } from './components/layout/ErrorBoundary/ErrorBoundary';
 // Lazy — rarely-hit routes; split into separate async chunks.
 const IndexPage = React.lazy(() =>
   import('./pages/IndexPage').then((m) => ({ default: m.IndexPage })),
@@ -162,6 +163,106 @@ function BootstrapGate({
 }
 
 /**
+ * Inner route body. Reads the current pathname so the `ErrorBoundary` can
+ * reset automatically on navigation, isolating per-route crashes without
+ * requiring a full page reload.
+ *
+ * `AppRoutes` (the public export) keeps `BrowserRouter` outside this
+ * component so `useLocation` is available here.
+ */
+function RoutesBody(): React.ReactElement {
+  const location = useLocation();
+  return (
+    <ErrorBoundary resetKeys={[location.pathname]}>
+      <Suspense fallback={<FullPageLoading />}>
+        <Routes>
+          <Route
+            path="/setup"
+            element={
+              <BootstrapGate intent="setup">
+                <SetupPage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/login"
+            element={
+              <BootstrapGate intent="login">
+                <LoginPage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/"
+            element={
+              <RootRoute />
+            }
+          />
+          <Route
+            path="/index"
+            element={
+              <ProtectedRoute>
+                <IndexPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/library"
+            element={
+              <ProtectedRoute>
+                <LibraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAdmin>
+                <SettingsPage />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/settings/users"
+            element={
+              <RequireAdmin>
+                <UsersPage />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/settings/keys"
+            element={
+              <RequireAdmin>
+                <KeysPage />
+              </RequireAdmin>
+            }
+          />
+          <Route
+            path="/library/document/:id"
+            element={
+              <ProtectedRoute>
+                <LibraryDocumentPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/document/:id"
+            element={
+              <ProtectedRoute>
+                <DocumentPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Unknown paths fall back to the root, which re-resolves the gate. */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+
+/**
  * Top-level route table.
  *
  * `/` resolves through `BootstrapGate` semantics inside `ProtectedRoute`
@@ -169,92 +270,7 @@ function BootstrapGate({
  * signed-out user on `/login`, and a signed-in user on `SearchPage`.
  */
 export function AppRoutes(): React.ReactElement {
-  return (
-    <Suspense fallback={<FullPageLoading />}>
-    <Routes>
-      <Route
-        path="/setup"
-        element={
-          <BootstrapGate intent="setup">
-            <SetupPage />
-          </BootstrapGate>
-        }
-      />
-      <Route
-        path="/login"
-        element={
-          <BootstrapGate intent="login">
-            <LoginPage />
-          </BootstrapGate>
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <RootRoute />
-        }
-      />
-      <Route
-        path="/index"
-        element={
-          <ProtectedRoute>
-            <IndexPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/library"
-        element={
-          <ProtectedRoute>
-            <LibraryPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <RequireAdmin>
-            <SettingsPage />
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/settings/users"
-        element={
-          <RequireAdmin>
-            <UsersPage />
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/settings/keys"
-        element={
-          <RequireAdmin>
-            <KeysPage />
-          </RequireAdmin>
-        }
-      />
-      <Route
-        path="/library/document/:id"
-        element={
-          <ProtectedRoute>
-            <LibraryDocumentPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/document/:id"
-        element={
-          <ProtectedRoute>
-            <DocumentPage />
-          </ProtectedRoute>
-        }
-      />
-      {/* Unknown paths fall back to the root, which re-resolves the gate. */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-    </Suspense>
-  );
+  return <RoutesBody />;
 }
 
 /**
