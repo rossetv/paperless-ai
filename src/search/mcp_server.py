@@ -59,7 +59,6 @@ from search.wire import FilterRequest, normalise_query, to_search_filters
 from store import SearchFilters
 
 if TYPE_CHECKING:
-    from common.config import Settings
     from search.core import SearchCore
 
 log = structlog.get_logger(__name__)
@@ -315,44 +314,58 @@ class _McpApp:
         await self._asgi_app(scope, receive, send)
 
 
-def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
-    """Register the two search tools on *mcp*, both backed by *core*.
+def _register_search_tools(
+    mcp: FastMCP,
+    resolve_core: Callable[[str], SearchCore],
+    app_db_path: str,
+    search_semaphore: LazySemaphore,
+) -> None:
+    """Register the two search tools on *mcp*, both resolving the live core.
 
     Each tool is a thin closure over :func:`_run_search_tool`:
     ``search_documents`` calls ``core.retrieve`` (sources only),
-    ``ask_documents`` calls ``core.answer`` (synthesised answer).
+    ``ask_documents`` calls ``core.answer`` (synthesised answer). The core is
+    resolved per call through *resolve_core* — mirroring the HTTP
+    ``/api/search`` handler — so a saved configuration change (answer model,
+    ``SEARCH_MAX_CONCURRENT``, ``OPENAI_API_KEY``, ``SEARCH_IDENTITY_AWARE``,
+    ...) hot-loads for MCP callers on the very next call, with no restart.
 
     Args:
         mcp: The FastMCP server to register the tools on.
-        core: The search pipeline backing both tools.
+        resolve_core: Returns the live :class:`SearchCore` for the request's
+            ``app.db`` path. Called per tool dispatch so MCP gets the same
+            per-request hot-reload as the HTTP surface; it owns its own caching,
+            so a steady-state call pays one cheap one-row ``SELECT``.
+        app_db_path: The ``app.db`` path forwarded to *resolve_core* each call.
+        search_semaphore: The concurrency bound, shared with the HTTP
+            ``/api/search`` surface so ``SEARCH_MAX_CONCURRENT`` is one ceiling
+            across both, not 2N. It binds lazily to the serving event loop.
     """
-
-    # Bound how many agentic searches run at once (LLM cost ceiling) and keep
-    # the blocking pipeline off the event loop, mirroring the REST /api/search
-    # handler. FastMCP 1.27 calls a sync tool DIRECTLY on the loop with no
-    # offload, so an unwrapped sync tool body would freeze every other MCP
-    # request and the co-mounted REST API for its multi-second, LLM-bound
-    # duration.
-    search_semaphore = LazySemaphore(core.settings.SEARCH_MAX_CONCURRENT)
 
     async def _dispatch(
         *,
         query: str,
         filters: dict[str, Any] | None,
-        core_call: Callable[[str, SearchFilters | None, str | None], SearchResult],
+        core_call: Callable[
+            [SearchCore, str, SearchFilters | None, str | None], SearchResult
+        ],
         error_event: str,
     ) -> str:
         """Run one tool body off the loop, under the shared concurrency bound.
 
-        ``core.settings`` is re-read each call so a hot-reloaded
-        ``SEARCH_MAX_CONCURRENT`` takes effect without a restart; a ceiling of
-        0 (unbounded) makes the acquire a no-op (see :class:`LazySemaphore`).
+        The live core is resolved per call via *resolve_core* (blocking SQLite,
+        so it runs off the loop), so a hot-reloaded answer model / API key /
+        ``SEARCH_MAX_CONCURRENT`` / ``SEARCH_IDENTITY_AWARE`` takes effect
+        without a restart. The per-call ``SEARCH_MAX_CONCURRENT`` is applied to
+        the shared semaphore; a ceiling of 0 (unbounded) makes the acquire a
+        no-op (see :class:`LazySemaphore`).
 
         The caller's identity is read from :data:`~search.identity.mcp_asker`
         (set by the auth middleware for this request context) and resolved via
         :func:`~search.identity.resolve_asker` before being forwarded to the
         core, so the SEARCH_IDENTITY_AWARE gate is honoured here.
         """
+        core = await run_blocking(lambda: resolve_core(app_db_path))
         asker = resolve_asker(
             mcp_asker.get(),
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
@@ -364,7 +377,9 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
                     _run_search_tool,
                     query=query,
                     filters=filters,
-                    core_call=core_call,
+                    core_call=lambda text, ui_filters, asker: core_call(
+                        core, text, ui_filters, asker
+                    ),
                     error_event=error_event,
                     asker=asker,
                 )
@@ -386,7 +401,7 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         return await _dispatch(
             query=query,
             filters=filters,
-            core_call=lambda text, ui_filters, asker: core.retrieve(
+            core_call=lambda core, text, ui_filters, asker: core.retrieve(
                 query=text, ui_filters=ui_filters, asker=asker
             ),
             error_event="mcp.search_documents_error",
@@ -408,14 +423,19 @@ def _register_search_tools(mcp: FastMCP, core: SearchCore) -> None:
         return await _dispatch(
             query=question,
             filters=filters,
-            core_call=lambda text, ui_filters, asker: core.answer(
+            core_call=lambda core, text, ui_filters, asker: core.answer(
                 query=text, ui_filters=ui_filters, asker=asker
             ),
             error_event="mcp.ask_documents_error",
         )
 
 
-def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _McpApp:
+def build_mcp_app(
+    resolve_core: Callable[[str], SearchCore],
+    app_db_path: str,
+    *,
+    search_semaphore: LazySemaphore,
+) -> _McpApp:
     """Build and return the MCP ASGI application (spec §7.2/§7.3).
 
     Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
@@ -425,14 +445,16 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
     session cookie or ``mcp``-scoped API key.
 
     Args:
-        core: The :class:`~search.core.SearchCore` orchestrating the search
-            pipeline.  Its ``retrieve`` and ``answer`` methods back the tools.
-        settings: Application settings; currently unused (reserved for future
-            middleware configuration — the auth middleware reads no setting
-            directly).
-        app_db_path: The filesystem path to ``app.db``, passed to the auth
-            middleware so a session cookie or an API key can authenticate an
-            MCP request. The middleware opens a fresh connection per request.
+        resolve_core: Returns the live :class:`~search.core.SearchCore` for the
+            request's ``app.db`` path. Called per tool dispatch so MCP callers
+            pick up a hot-loaded configuration change without a restart — the
+            same per-request resolution the HTTP ``/api/search`` handler uses.
+        app_db_path: The filesystem path to ``app.db``. Passed both to the auth
+            middleware (a fresh connection per request resolves a session cookie
+            or an API key) and to *resolve_core* on every tool dispatch.
+        search_semaphore: The :class:`~search.offload.LazySemaphore` shared with
+            the HTTP ``/api/search`` surface, so ``SEARCH_MAX_CONCURRENT`` caps
+            both surfaces with one ceiling rather than one per surface (2N).
 
     Returns:
         An ASGI application wrapping the FastMCP server with cookie/API-key auth.
@@ -446,5 +468,5 @@ def build_mcp_app(core: SearchCore, settings: Settings, app_db_path: str) -> _Mc
         ),
         stateless_http=True,
     )
-    _register_search_tools(mcp, core)
+    _register_search_tools(mcp, resolve_core, app_db_path, search_semaphore)
     return _McpApp(mcp, app_db_path)

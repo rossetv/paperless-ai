@@ -271,7 +271,9 @@ class QueryPlanner(OpenAIChatMixin):
             )
 
         try:
-            return _build_retrieval_plan(data, self.settings.SEARCH_PLANNER_MAX_SPECS)
+            return _build_retrieval_plan(
+                data, self.settings.SEARCH_PLANNER_MAX_SPECS, query=query
+            )
         except (KeyError, TypeError, ValueError) as exc:
             return self._fallback_plan(
                 query, reason=f"LLM response had unexpected structure: {exc}"
@@ -345,19 +347,31 @@ def _extract_clarify(data: dict[str, object]) -> ClarifyNeeded | None:
     return ClarifyNeeded(reason=reason_stripped)
 
 
-def _build_retrieval_plan(data: dict[str, object], max_specs: int) -> RetrievalPlan:
+def _build_retrieval_plan(
+    data: dict[str, object], max_specs: int, *, query: str
+) -> RetrievalPlan:
     """Construct a RetrievalPlan from a validated dict.
 
     Reads ``data["specs"]`` (a list), builds :class:`~search.models.PlannedSpec`
     objects (coercing via :func:`_str_list` / :func:`_str_or_none`), caps the
     list at *max_specs*, and returns a :class:`~search.models.RetrievalPlan`.
 
+    When the parsed list is empty — the model returned ``"specs": []`` (or only
+    non-dict junk that was filtered out) — the single broad-semantic fallback
+    spec on the raw *query* is substituted (mirroring
+    :meth:`QueryPlanner._fallback_plan`), so the planner upholds the pipeline
+    invariant "a plan always carries at least one spec". The retriever's date
+    safety net is already crash-proof; this is the belt-and-braces guard at the
+    planner.
+
     Args:
         data: A dict parsed from the LLM JSON response.  Must contain ``specs``.
         max_specs: Maximum number of specs to keep (``SEARCH_PLANNER_MAX_SPECS``).
+        query: The raw user query, used to build the broad-semantic fallback
+            spec when the parsed list is empty.
 
     Returns:
-        A frozen RetrievalPlan dataclass.
+        A frozen RetrievalPlan dataclass with at least one spec.
 
     Raises:
         KeyError: If a required nested key is absent.
@@ -402,6 +416,24 @@ def _build_retrieval_plan(data: dict[str, object], max_specs: int) -> RetrievalP
                 filter_guess=filter_guess,
                 rationale=rationale,
             )
+        )
+
+    # An empty list — the model returned "specs": [] or only junk that was
+    # filtered out — would leave a plan with zero specs and nothing to retrieve.
+    # Substitute the broad-semantic fallback so "a plan always has >=1 spec"
+    # holds at the planner (the same spec _fallback_plan builds).
+    if not planned_specs:
+        return RetrievalPlan(
+            specs=(
+                PlannedSpec(
+                    mode="semantic",
+                    semantic=query,
+                    keywords=(),
+                    filter_guess=EMPTY_FILTER_CANDIDATES,
+                    rationale="fallback: broad semantic search",
+                ),
+            ),
+            clarify=None,
         )
 
     # Cap at SEARCH_PLANNER_MAX_SPECS — a model returning more than asked must

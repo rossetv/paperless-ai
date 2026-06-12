@@ -63,6 +63,17 @@ log = structlog.get_logger(__name__)
 _SECRET_MASK = "********"
 
 
+class _ReindexScheduleError(Exception):
+    """Internal signal: scheduling the index rebuild failed mid-save.
+
+    Raised inside the config-write transaction when a re-index-forcing change
+    (EMBEDDING_MODEL / chunking) cannot drop its rebuild sentinel. It rolls the
+    transaction back — so the new value is never persisted without its wipe
+    scheduled — and is translated to an HTTP 503 once the transaction has
+    unwound. Never escapes this module.
+    """
+
+
 def build_settings_router(settings: Settings) -> APIRouter:
     """Build the admin Settings ``/api`` router (web-redesign §5).
 
@@ -226,50 +237,69 @@ def _put_settings(
     # validate against their own snapshot and commit a combined state that
     # violates an invariant of either snapshot (e.g. CHUNK_OVERLAP > CHUNK_SIZE
     # after one save changes the size and another changes the overlap).
-    with transaction(app_db):
-        config_table = config_store.get_all(app_db)
-        try:
-            changed = validate_change_set(
-                changes=body.changes,
-                config_table=config_table,
-                environ=os.environ,
-            )
-        except ValueError as exc:
-            # A bad key or value — a client error. The transaction rolls
-            # back via the context manager's exception path, so the table is
-            # untouched. raise HTTPException after escaping the transaction
-            # block so structlog sees the failure cleanly.
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        if changed:
-            # Persist only the keys that genuinely changed. set_many_in_transaction
-            # writes inside the outer BEGIN IMMEDIATE (SQLite forbids a nested
-            # BEGIN, so the in-transaction variant exists for exactly this
-            # case) and bumps config_version in the same transaction, so the
-            # change hot-loads on every other process's next check.
-            config_store.set_many_in_transaction(
-                app_db, {k: body.changes[k] for k in changed}
-            )
-
-    # A change to a re-index key (the embedding model or the chunking) makes the
-    # existing vectors stale, so force a full rebuild: the indexer wipes every
-    # chunk and re-embeds the archive with the new config. Without it the old
-    # and new vectors coexist and search silently degrades. We only drop the
-    # sentinel; the indexer (sole writer) does the wipe. Best-effort: a save
-    # that already persisted must not 500 because the data dir is unwritable —
-    # log it and report reindex_triggered=False so the UI can prompt a manual
-    # rebuild from the Index page.
     reindex_triggered = False
-    if reindex_required(changed):
-        try:
-            request_index_rebuild(settings.INDEX_DB_PATH)
-            reindex_triggered = True
-        except OSError as exc:
-            log.error(
-                "search.settings_reindex_trigger_failed",
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
+    try:
+        with transaction(app_db):
+            config_table = config_store.get_all(app_db)
+            try:
+                changed = validate_change_set(
+                    changes=body.changes,
+                    config_table=config_table,
+                    environ=os.environ,
+                )
+            except ValueError as exc:
+                # A bad key or value — a client error. The transaction rolls
+                # back via the context manager's exception path, so the table is
+                # untouched. raise HTTPException after escaping the transaction
+                # block so structlog sees the failure cleanly.
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            # A change to a re-index key (the embedding model or the chunking)
+            # makes the existing vectors stale, so the indexer must wipe every
+            # chunk and re-embed the archive with the new config — old and new
+            # vectors cannot coexist (a single mismatched-width row makes every
+            # vector search raise StoreError → 500). Schedule the rebuild
+            # *before* committing the config change: if the sentinel write fails
+            # we refuse the whole save, so a new EMBEDDING_MODEL / chunking value
+            # can NEVER persist (and hot-load) without its wipe scheduled. We
+            # only drop the sentinel; the indexer (sole writer) does the wipe.
+            if changed and reindex_required(changed):
+                try:
+                    request_index_rebuild(settings.INDEX_DB_PATH)
+                except OSError as exc:
+                    log.error(
+                        "search.settings_reindex_trigger_failed",
+                        error=str(exc),
+                        error_type=type(exc).__name__,
+                    )
+                    # Raise inside the transaction so the context manager rolls
+                    # the config change back — nothing is persisted. Translated
+                    # to an HTTP 503 once the transaction has unwound.
+                    raise _ReindexScheduleError from exc
+                reindex_triggered = True
+
+            if changed:
+                # Persist only the keys that genuinely changed.
+                # set_many_in_transaction writes inside the outer BEGIN IMMEDIATE
+                # (SQLite forbids a nested BEGIN, so the in-transaction variant
+                # exists for exactly this case) and bumps config_version in the
+                # same transaction, so the change hot-loads on every other
+                # process's next check.
+                config_store.set_many_in_transaction(
+                    app_db, {k: body.changes[k] for k in changed}
+                )
+    except _ReindexScheduleError as exc:
+        # The rebuild could not be scheduled and the config change has been
+        # rolled back. Refuse the save with a 5xx so the operator knows nothing
+        # persisted — a re-index key must never hot-load without its wipe.
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not schedule the index rebuild required by this change; "
+                "the configuration was not saved. Check the index data "
+                "directory is writable and retry."
+            ),
+        ) from exc
 
     log.info(
         "search.settings_updated",
@@ -289,13 +319,23 @@ def _probe_openai(probe_settings: Settings) -> None:
     — the cheapest authenticated endpoint. Raises an :exc:`openai.APIError`
     subclass on any authentication or connectivity failure.
 
+    The client is bounded by ``REQUEST_TIMEOUT`` (mirroring
+    :mod:`common.library_setup`). Without it the OpenAI SDK applies its default
+    read timeout of 600s, so a hung endpoint would pin a FastAPI threadpool
+    worker for up to ten minutes — a handful of concurrent admin probes could
+    then starve every synchronous handler. The bound is applied both to the
+    SDK and to the inner ``httpx`` client so neither layer can hang unbounded.
+
     Args:
         probe_settings: A fully-built :class:`Settings` instance whose
             ``OPENAI_API_KEY`` is the key under test.
     """
     client = openai.OpenAI(
         api_key=probe_settings.OPENAI_API_KEY,
-        http_client=httpx.Client(trust_env=False),
+        http_client=httpx.Client(
+            trust_env=False, timeout=probe_settings.REQUEST_TIMEOUT
+        ),
+        timeout=probe_settings.REQUEST_TIMEOUT,
     )
     try:
         client.models.list()

@@ -29,8 +29,9 @@ from unittest.mock import MagicMock
 import pytest
 from starlette.testclient import TestClient
 
-from search.mcp_server import build_mcp_app
+from search.mcp_server import build_mcp_app as _real_build_mcp_app
 from search.models import SearchResult
+from search.offload import LazySemaphore
 from tests.helpers.factories import (
     make_search_result,
     make_search_settings,
@@ -43,6 +44,29 @@ from tests.helpers.factories import (
 
 # A junk bearer that resolves to no api_keys row — used by the rejection tests.
 _WRONG_KEY = "sk-pls-this-key-was-never-minted"
+
+
+def build_mcp_app(core: object, settings: object, app_db_path: str) -> object:
+    """Build the MCP app from a stub *core*, mirroring the production wiring.
+
+    ``build_mcp_app`` now takes a ``resolve_core`` callable (the per-request
+    hot-reload accessor) and a shared :class:`LazySemaphore`, not a captured
+    core. These tests drive a single stub core, so this shim hands the real
+    builder a ``resolve_core`` that returns that stub and a fresh per-app
+    semaphore — keeping the test bodies unchanged while exercising the new
+    signature. *settings* is accepted for call-site compatibility and unused
+    (the builder no longer reads it).
+    """
+    del settings
+    # Some tests pass a bare MagicMock core (no pinned settings); fall back to 0
+    # (unbounded) so LazySemaphore gets a real int rather than a truthy mock.
+    raw_limit = core.settings.SEARCH_MAX_CONCURRENT
+    limit = raw_limit if isinstance(raw_limit, int) else 0
+    return _real_build_mcp_app(
+        lambda _app_db_path: core,
+        app_db_path,
+        search_semaphore=LazySemaphore(limit),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +183,51 @@ def _app_db_with_key(scopes: str = "mcp") -> tuple[str, str]:
     finally:
         conn.close()
     return path, raw
+
+
+# ---------------------------------------------------------------------------
+# M11 regression — MCP tools resolve the live core per call (hot-reload)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
+    """A tool call resolves the live core per dispatch, not a startup capture (M11).
+
+    Before the fix, ``build_mcp_app`` captured the startup ``SearchCore`` in the
+    tool closures, so a saved settings change (answer model, API key,
+    SEARCH_MAX_CONCURRENT, identity-awareness) never reached MCP callers without
+    a restart — unlike the HTTP handler, which calls ``resolve_core`` per
+    request. This test drives a ``resolve_core`` that returns a *different* core
+    on the second call (as a config_version bump would) and asserts the second
+    tool call hits the new core, never the first.
+    """
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core_v1 = _make_core()
+    core_v2 = _make_core()
+    cores = iter([core_v1, core_v2])
+
+    # Each resolve hands back the next core — modelling _resolve_search_core
+    # returning a freshly-rebuilt core after a config_version bump.
+    def resolve_core(_app_db_path: str) -> MagicMock:
+        return next(cores)
+
+    mcp_app = _real_build_mcp_app(
+        resolve_core,
+        _app_db_path(),
+        search_semaphore=LazySemaphore(0),
+    )
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        await client.call_tool("search_documents", {"query": "first"})
+        await client.call_tool("search_documents", {"query": "second"})
+
+    # The first dispatch used core_v1; the second used the rebuilt core_v2.
+    core_v1.retrieve.assert_called_once()
+    core_v2.retrieve.assert_called_once()
+    assert core_v1.retrieve.call_args.kwargs.get("query") == "first"
+    assert core_v2.retrieve.call_args.kwargs.get("query") == "second"
 
 
 # ---------------------------------------------------------------------------

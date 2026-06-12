@@ -21,7 +21,9 @@ from appdb.connection import connect
 from appdb.schema import ensure_schema
 from appdb.users import create as create_user
 from search.identity import mcp_asker
-from search.mcp_server import _run_search_tool, build_mcp_app
+from search.mcp_server import _run_search_tool
+from search.mcp_server import build_mcp_app as _real_build_mcp_app
+from search.offload import LazySemaphore
 from tests.helpers.factories import make_search_result, make_search_settings
 from tests.helpers.search import mint_api_key
 
@@ -29,6 +31,24 @@ from tests.helpers.search import mint_api_key
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def build_mcp_app(core: object, settings: object, app_db_path: str) -> object:
+    """Build the MCP app from a stub *core*, mirroring the production wiring.
+
+    ``build_mcp_app`` now takes a ``resolve_core`` callable and a shared
+    :class:`LazySemaphore`; this shim hands the real builder a ``resolve_core``
+    returning the test's stub core and a fresh per-app semaphore so the test
+    bodies stay unchanged. *settings* is accepted for compatibility and unused.
+    """
+    del settings
+    raw_limit = core.settings.SEARCH_MAX_CONCURRENT
+    limit = raw_limit if isinstance(raw_limit, int) else 0
+    return _real_build_mcp_app(
+        lambda _app_db_path: core,
+        app_db_path,
+        search_semaphore=LazySemaphore(limit),
+    )
 
 
 def _make_core(settings: object) -> object:

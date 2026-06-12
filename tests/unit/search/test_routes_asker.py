@@ -21,6 +21,7 @@ from appdb.users import create as create_user
 from search.appstate import AppState, attach_app_state
 from search.auth import SESSION_COOKIE_NAME
 from search.deps import get_current_user, require_role
+from search.offload import LazySemaphore
 from search.routes import build_api_router
 from search.sessions import begin_session
 from search.setup import SetupState
@@ -54,6 +55,7 @@ def _build_app(tmp_path, core: MagicMock, settings: object) -> FastAPI:
             require_reader=require_role("readonly"),
             require_member=require_role("member"),
             get_current_user=get_current_user,
+            search_semaphore=LazySemaphore(settings.SEARCH_MAX_CONCURRENT),
         )
     )
     return app
