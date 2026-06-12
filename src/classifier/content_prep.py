@@ -92,7 +92,12 @@ def max_char_truncation_note(limit: int) -> str:
 
 def truncate_content_by_chars(content: str, max_chars: int) -> str:
     """
-    Truncate OCR content to *max_chars* characters, preserving the footer.
+    Truncate OCR content so the total result is at most *max_chars* characters,
+    preserving the footer.
+
+    The footer is always kept intact.  The body is sliced so that
+    ``len(body_slice) + len(footer) <= max_chars``.  When the footer alone
+    exceeds *max_chars* the body is dropped entirely (body slice is empty).
 
     Returns the original content unchanged when *max_chars* ≤ 0 or the
     content is already within the limit.
@@ -100,9 +105,8 @@ def truncate_content_by_chars(content: str, max_chars: int) -> str:
     if max_chars <= 0 or len(content) <= max_chars:
         return content
     body, footer = _split_footer(content)
-    if len(body) <= max_chars:
-        return body + footer
-    return body[:max_chars] + footer
+    body_budget = max(0, max_chars - len(footer))
+    return body[:body_budget] + footer
 
 
 def truncate_content_by_pages(
