@@ -18,6 +18,13 @@ export interface AnswerSurfaceProps {
    * omitted entirely when undefined (e.g. a cache hit with no spend).
    */
   costLabel?: string;
+  /**
+   * Date of the price table used to compute the cost (YYYY-MM-DD). When
+   * present and `costLabel` is rendered, a small provenance note — "prices as
+   * of YYYY-MM-DD" — is appended to the cost chip. Omitted when `costLabel`
+   * is absent (no dollar figure to qualify).
+   */
+  pricesAsOf?: string | null;
   /** Additional class names to merge. */
   className?: string;
 }
@@ -42,6 +49,7 @@ export function AnswerSurface({
   latencyMs,
   refined = false,
   costLabel,
+  pricesAsOf,
   className,
 }: AnswerSurfaceProps): React.ReactElement {
   const latencySeconds = (latencyMs / 1000).toFixed(1);
@@ -70,7 +78,14 @@ export function AnswerSurface({
           </span>
         )}
         {costLabel !== undefined && (
-          <span className={styles['cost']}>{costLabel}</span>
+          <span className={styles['cost']}>
+            {costLabel}
+            {pricesAsOf != null && (
+              <span className={styles['prices-as-of']}>
+                {' '}prices as of {pricesAsOf}
+              </span>
+            )}
+          </span>
         )}
       </div>
     </article>
