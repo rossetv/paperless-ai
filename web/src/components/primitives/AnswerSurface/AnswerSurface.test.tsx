@@ -91,4 +91,41 @@ describe('AnswerSurface', () => {
     );
     expect(screen.queryByText(/tok/)).not.toBeInTheDocument();
   });
+
+  it('shows a "prices as of" provenance note when pricesAsOf and costLabel are both set', () => {
+    render(
+      <AnswerSurface
+        sourceCount={4}
+        latencyMs={1842}
+        costLabel="3.4k tok · $0.012"
+        pricesAsOf="2026-06-10"
+      >
+        <span>x</span>
+      </AnswerSurface>,
+    );
+    expect(screen.getByText(/prices as of 2026-06-10/i)).toBeInTheDocument();
+  });
+
+  it('omits the provenance note when pricesAsOf is null', () => {
+    render(
+      <AnswerSurface
+        sourceCount={4}
+        latencyMs={1842}
+        costLabel="3.4k tok · $0.012"
+        pricesAsOf={null}
+      >
+        <span>x</span>
+      </AnswerSurface>,
+    );
+    expect(screen.queryByText(/prices as of/i)).not.toBeInTheDocument();
+  });
+
+  it('omits the provenance note when there is no costLabel (no dollar figure to qualify)', () => {
+    render(
+      <AnswerSurface sourceCount={4} latencyMs={1842} pricesAsOf="2026-06-10">
+        <span>x</span>
+      </AnswerSurface>,
+    );
+    expect(screen.queryByText(/prices as of/i)).not.toBeInTheDocument();
+  });
 });

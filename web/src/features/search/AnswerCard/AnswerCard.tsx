@@ -144,6 +144,10 @@ export function AnswerCard({
   const segments = parseAnswer(answer);
   const costLabel =
     cost !== undefined ? formatSummaryCostLabel(cost) : undefined;
+  const pricesAsOf =
+    costLabel !== undefined && cost !== undefined
+      ? (cost.prices_as_of ?? null)
+      : null;
 
   return (
     <AnswerSurface
@@ -151,6 +155,7 @@ export function AnswerCard({
       latencyMs={stats.latency_ms}
       refined={stats.refined}
       {...(costLabel !== undefined ? { costLabel } : {})}
+      {...(pricesAsOf !== null ? { pricesAsOf } : {})}
     >
       {segments.map((segment, i) => {
         if (segment.type === 'text') {
