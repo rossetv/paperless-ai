@@ -62,7 +62,7 @@ describe('LoginScreen', () => {
   it('shows a username validation error when too short', async () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText('Username'), 'ab');
-    await userEvent.type(screen.getByLabelText('Password'), 'longenough');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenoughpw12');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
     expect(screen.getByText(/between 3 and 64 characters/i)).toBeInTheDocument();
   });
@@ -70,17 +70,17 @@ describe('LoginScreen', () => {
   it('shows a username validation error on illegal characters', async () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText('Username'), 'bad name!');
-    await userEvent.type(screen.getByLabelText('Password'), 'longenough');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenoughpw12');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
     expect(screen.getByText(/letters, numbers/i)).toBeInTheDocument();
   });
 
-  it('shows a password validation error when shorter than 8 characters', async () => {
+  it('shows a password validation error when shorter than 12 characters', async () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText('Username'), 'alex.morgan');
-    await userEvent.type(screen.getByLabelText('Password'), 'short');
+    await userEvent.type(screen.getByLabelText('Password'), 'tooshort123');
     await userEvent.click(screen.getByRole('button', { name: /sign in/i }));
-    expect(screen.getByText(/at least 8 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/at least 12 characters/i)).toBeInTheDocument();
   });
 
   it('does not call the login mutation when validation fails', async () => {

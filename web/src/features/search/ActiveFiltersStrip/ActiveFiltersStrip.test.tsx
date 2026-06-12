@@ -125,4 +125,40 @@ describe('ActiveFiltersStrip', () => {
     await userEvent.click(screen.getByRole('button', { name: /clear all/i }));
     expect(onClearAll).toHaveBeenCalledTimes(1);
   });
+
+  it('uses stable dimension keys — chips survive a tag reorder without losing content', () => {
+    // Render with one tag chip, then re-render with an extra tag prepended.
+    // If keys were index-based the first chip would re-mount; with stable
+    // dimension keys (tag-10, tag-11) React preserves the existing node.
+    const { rerender } = render(
+      <ActiveFiltersStrip
+        filters={{ ...EMPTY_FILTERS, tag_ids: [10] }}
+        docCount={4}
+        onClearAll={() => {}}
+      />,
+    );
+
+    // One chip visible initially.
+    expect(screen.getByText('Banking')).toBeInTheDocument();
+    expect(screen.queryByText('Tax')).not.toBeInTheDocument();
+
+    // Capture the DOM node for the "Banking" chip before re-render.
+    const bankingBefore = screen.getByText('Banking');
+
+    rerender(
+      <ActiveFiltersStrip
+        filters={{ ...EMPTY_FILTERS, tag_ids: [11, 10] }}
+        docCount={2}
+        onClearAll={() => {}}
+      />,
+    );
+
+    // Both chips must be visible after the re-render.
+    expect(screen.getByText('Banking')).toBeInTheDocument();
+    expect(screen.getByText('Tax')).toBeInTheDocument();
+
+    // The "Banking" chip rendered at a different position but with the same
+    // stable key (tag-10) — React reconciled it, so it's the same DOM node.
+    expect(screen.getByText('Banking')).toBe(bankingBefore);
+  });
 });

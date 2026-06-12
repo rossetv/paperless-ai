@@ -102,8 +102,18 @@ export function DocumentScreen({
   // Track the last attempted mutation args so the retry button can re-fire it.
   const lastAttemptRef = React.useRef<{ id: number; patch: Parameters<typeof update.mutate>[0]['patch'] } | null>(null);
 
-  /** Wrap update.mutate to record the attempt before firing. */
+  /**
+   * Wrap update.mutate to record the attempt before firing.
+   *
+   * Guards against overlapping saves: if a save is already in flight, the
+   * second call is discarded. Concurrent calls read render-time snapshots of
+   * the document state and would clobber each other — e.g. a tag edit fired
+   * while a title save is pending would overwrite the title with the
+   * render-time value. The in-flight guard makes all edit affordances
+   * effectively single-write-at-a-time.
+   */
   function mutate(args: Parameters<typeof update.mutate>[0]): void {
+    if (update.isPending) return;
     lastAttemptRef.current = args;
     update.mutate(args);
   }
