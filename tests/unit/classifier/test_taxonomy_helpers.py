@@ -101,6 +101,44 @@ class TestMatchItem:
 
         assert result is None
 
+    def test_normalised_to_empty_falls_back_to_raw_name_match(self):
+        """A name whose normalised form is "" (all tokens are suffixes) should
+        still be found via the raw lowercase key, not return None."""
+        # "AS" normalises to "" because it is a COMPANY_SUFFIXES entry.
+        # _index_items stores such items under their raw lowercase name.
+        item = {"id": 5, "name": "AS"}
+        mapping: dict = {"as": item}
+
+        result = _match_item("AS", mapping, normalise_name, allow_substring=False)
+
+        assert result == item
+
+    def test_normalised_to_empty_raw_mismatch_returns_none(self):
+        """When normalised key is "" and no raw match exists, return None."""
+        mapping: dict = {"acme": {"id": 1, "name": "Acme"}}
+
+        result = _match_item("Ltd", mapping, normalise_name, allow_substring=False)
+
+        assert result is None
+
+
+class TestIndexItemsEmptyNormalisedKey:
+    """_index_items must not store items at the "" key."""
+
+    def test_suffix_only_name_stored_under_raw_lowercase(self):
+        """'AS' normalises to '' with normalise_name — must be stored under
+        its raw lowercase name "as", not under the empty-string key."""
+        items = [{"id": 1, "name": "AS"}, {"id": 2, "name": "Acme"}]
+
+        mapping = _index_items(items, normalise_name)
+
+        assert "" not in mapping
+        # "AS" must be reachable via its raw lowercase name.
+        assert "as" in mapping
+        # "Acme" is stored under its normalised form "acme".
+        assert "acme" in mapping
+        assert len(mapping) == 2
+
 
 class TestGetUsageCount:
     """_get_usage_count handles different Paperless field name variants."""

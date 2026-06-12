@@ -108,3 +108,31 @@ class TestParseClassificationResponse:
         assert result.document_type == ""
         assert result.language == ""
         assert result.person == ""
+
+    def test_bool_false_document_type_treated_as_absent(self):
+        """On providers without JSON-schema enforcement the LLM may return
+        ``false`` for a text field.  It must be treated as absent (empty
+        string), not coerced to the string "False"."""
+        result = parse_classification_response(self._full_response(document_type=False))
+        assert result.document_type == ""
+        assert result.document_type != "False"
+
+    def test_bool_true_field_treated_as_absent(self):
+        result = parse_classification_response(self._full_response(correspondent=True))
+        assert result.correspondent == ""
+
+    def test_int_field_treated_as_absent(self):
+        result = parse_classification_response(self._full_response(title=0))
+        assert result.title == ""
+        assert result.title != "0"
+
+    def test_float_field_treated_as_absent(self):
+        result = parse_classification_response(self._full_response(language=1.5))
+        assert result.language == ""
+
+    def test_string_fields_still_parsed_correctly(self):
+        """OpenAI schema-enforced responses always deliver strings — verify no
+        regression."""
+        result = parse_classification_response(self._full_response())
+        assert result.document_type == "Invoice"
+        assert result.title == "Invoice 2024"

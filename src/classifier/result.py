@@ -50,7 +50,18 @@ def parse_classification_response(text: str) -> ClassificationResult:
 
     def get_str(key: str) -> str:
         value = data.get(key, "")
-        return str(value).strip() if value is not None else ""
+        # Treat None as absent → empty string, as before.
+        if value is None:
+            return ""
+        # On providers without JSON-schema enforcement the LLM can return
+        # scalars such as ``false`` or ``0`` for text fields.  Coercing those
+        # to "False"/"0" would write nonsense taxonomy names into Paperless, so
+        # we treat non-string scalar types as absent instead.  OpenAI with a
+        # JSON schema always delivers strings here, so this guard does not
+        # affect the happy path.
+        if isinstance(value, (bool, int, float)):
+            return ""
+        return str(value).strip()
 
     # Coerce the tags field: the LLM sometimes returns a single string
     tags_value = data.get("tags", [])

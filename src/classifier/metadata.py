@@ -30,17 +30,36 @@ def parse_iso_date_prefix(value: str | None) -> dt.date | None:
         return None
 
 
+_DATE_FLOOR = dt.date(1900, 1, 1)
+# Reject dates more than ~366 days in the future; injected/hallucinated dates
+# tend to be absurdly far out (e.g. "9999-12-31") rather than slightly future.
+_DATE_FUTURE_DAYS = 366
+
+
 def parse_document_date(value: str) -> str | None:
     """
     Validate and normalise a date string to ``YYYY-MM-DD``.
 
     Accepts ISO-8601 date strings (optionally with a ``T`` time component).
-    Returns ``None`` when the value is empty or unparseable.
+    Returns ``None`` when the value is empty, unparseable, or outside the
+    plausibility window (before 1900-01-01 or more than 366 days in the
+    future).  Out-of-window dates are logged as a warning so operators can
+    spot prompt-injection or hallucination.
     """
     parsed = parse_iso_date_prefix(value)
     if parsed is None:
         if value:
             log.warning("Invalid document_date from classifier", value=value)
+        return None
+    today = dt.date.today()
+    ceiling = today + dt.timedelta(days=_DATE_FUTURE_DAYS)
+    if parsed < _DATE_FLOOR or parsed > ceiling:
+        log.warning(
+            "Implausible document_date from classifier; ignoring",
+            value=value,
+            floor=_DATE_FLOOR.isoformat(),
+            ceiling=ceiling.isoformat(),
+        )
         return None
     return parsed.isoformat()
 

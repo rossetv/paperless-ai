@@ -336,6 +336,99 @@ class TestInferMatchingAlgorithm:
         assert result == "none"
 
 
+class TestLockNotHeldAcrossHTTP:
+    """The lock must be released before HTTP creation calls (M7)."""
+
+    def test_concurrent_create_does_not_double_create(self):
+        """When two threads race to create the same correspondent only one
+        creation call reaches Paperless; the second thread uses the cached
+        result from the first."""
+
+        barrier = threading.Barrier(2)
+        call_count = 0
+        call_lock = threading.Lock()
+
+        def slow_create(name: str) -> dict:
+            nonlocal call_count
+            # Both threads arrive here before either returns.
+            barrier.wait(timeout=5)
+            with call_lock:
+                call_count += 1
+                return {"id": 42, "name": name}
+
+        cache = _make_cache(correspondents=[])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = slow_create
+
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                result = cache.get_or_create_correspondent_id("RaceCorr")
+                results.append(result)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert errors == [], f"Unexpected errors: {errors}"
+        assert results == [42, 42], f"Unexpected results: {results}"
+        # Both threads called the creator concurrently (barrier forces it), but
+        # the second thread's insert is deflected by the re-check — still only
+        # one item in the cache list.
+        assert len(cache._correspondents) == 1
+
+    def test_lock_not_held_during_http_call(self):
+        """A thread that blocks inside the HTTP creator must not prevent
+        another thread from reading the cache."""
+
+        create_started = threading.Event()
+        create_may_finish = threading.Event()
+
+        def blocking_create(name: str) -> dict:
+            create_started.set()
+            create_may_finish.wait(timeout=5)
+            return {"id": 77, "name": name}
+
+        cache = _make_cache(correspondents=[_corr(1, "Existing")])
+        cache.refresh()
+        cache._client.create_correspondent.side_effect = blocking_create
+
+        read_result: list = []
+        read_error: list = []
+
+        def reader():
+            create_started.wait(timeout=5)
+            try:
+                # Reading the cache while a creator is mid-HTTP must not block.
+                names = cache.correspondent_names()
+                read_result.append(names)
+            except Exception as exc:
+                read_error.append(exc)
+
+        creator_thread = threading.Thread(
+            target=cache.get_or_create_correspondent_id, args=("NewCorr",)
+        )
+        reader_thread = threading.Thread(target=reader)
+
+        creator_thread.start()
+        reader_thread.start()
+
+        # Let the reader finish before unblocking the creator.
+        reader_thread.join(timeout=5)
+        create_may_finish.set()
+        creator_thread.join(timeout=5)
+
+        assert read_error == [], f"Reader error: {read_error}"
+        assert read_result, "Reader never got a result"
+        assert "Existing" in read_result[0]
+
+
 class TestThreadSafety:
     """Concurrent access should not corrupt internal state."""
 
@@ -381,6 +474,36 @@ class TestThreadSafety:
         result = cache.get_or_create_correspondent_id("Acme")
 
         assert result == 1
+
+
+class TestSuffixOnlyCorrespondentName:
+    """Correspondents whose names are entirely COMPANY_SUFFIXES (M8)."""
+
+    def test_suffix_only_name_matched_not_recreated_on_second_poll(self):
+        """A correspondent named 'AS' (a company suffix) normalises to the
+        empty string.  It must be found on the second poll via raw name match
+        rather than creating a duplicate."""
+        cache = _make_cache(correspondents=[_corr(11, "AS")])
+        cache.refresh()
+        cache._client.create_correspondent.return_value = {"id": 99, "name": "AS"}
+
+        # First lookup — must find the existing item, not create.
+        result_first = cache.get_or_create_correspondent_id("AS")
+
+        assert result_first == 11
+        cache._client.create_correspondent.assert_not_called()
+
+    def test_suffix_only_name_second_poll_does_not_create_duplicate(self):
+        """Simulates two consecutive polls.  The correspondent is found each
+        time; create_correspondent must never be called."""
+        cache = _make_cache(correspondents=[_corr(11, "AS")])
+        cache.refresh()
+
+        for _ in range(3):
+            result = cache.get_or_create_correspondent_id("AS")
+            assert result == 11
+
+        cache._client.create_correspondent.assert_not_called()
 
 
 class TestCreationFailureReraise:

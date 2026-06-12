@@ -45,7 +45,14 @@ def _index_items(
         name = str(item.get("name", "")).strip()
         if not name:
             continue
-        mapping[normaliser(name)] = item
+        key = normaliser(name)
+        if not key:
+            # The normaliser stripped all tokens (e.g. a correspondent named
+            # "AS" or "Ltd").  Store under the raw lowercase name so the
+            # fallback path in _match_item can reach it via a direct lookup.
+            mapping[name.lower()] = item
+        else:
+            mapping[key] = item
     return mapping
 
 
@@ -61,10 +68,25 @@ def _match_item(
     Substring matching is enabled for correspondents so that *"Revolut Ltd"*
     finds an existing *"Revolut"* entry.  Document types and tags use exact
     normalised matching only.
+
+    When *normaliser* strips all tokens (e.g. a correspondent named *"AS"* or
+    *"Ltd"* whose entire name is a company suffix), the normalised key is the
+    empty string.  Rather than giving up and returning ``None`` — which would
+    cause a duplicate to be created on every poll — we fall back to a
+    case-insensitive exact match on the raw name against every item in the
+    mapping.
     """
     normalised = normaliser(name)
     if not normalised:
-        return None
+        # Fallback: case-insensitive exact match on the raw name so that
+        # correspondents whose name collapses to "" (e.g. "AS", "Ltd") are
+        # found rather than repeatedly re-created.
+        # _index_items stores such items under their lowercase raw name, so a
+        # direct lookup avoids a full scan.
+        lower = name.strip().lower()
+        if not lower:
+            return None
+        return mapping.get(lower)
     matched = mapping.get(normalised)
     if matched:
         return matched
@@ -261,9 +283,28 @@ class TaxonomyCache:
         name: str,
         kind_factory: Callable[[], _TaxonomyKind],
     ) -> int | None:
-        """Look up an item by name, creating it if necessary."""
+        """Look up an item by name, creating it in Paperless if necessary.
+
+        The lock is released before the HTTP POST so that other workers can
+        continue reading the cache while one worker waits on a slow Paperless
+        call.  This avoids serialising all taxonomy work when
+        DOCUMENT_WORKERS > 1.
+
+        The pattern is:
+        1. Acquire lock → check mapping → snapshot *creator* and *label* →
+           release.
+        2. HTTP create WITHOUT the lock.
+        3. Acquire lock → re-check mapping (another thread may have created
+           the item in the meantime) → insert if still absent → release.
+
+        The re-check in step 3 prevents duplicate creation when two threads
+        race to create the same item.
+        """
         if not name.strip():
             return None
+
+        # Step 1 — fast path: check the cache while holding the lock and
+        # snapshot the creator so it can be called outside the lock.
         with self._lock:
             kind = kind_factory()
             matched = _match_item(
@@ -271,19 +312,25 @@ class TaxonomyCache:
             )
             if matched:
                 return self._extract_id(matched)
+            creator = kind.creator
+            label = kind.label
+
+        # Step 2 — slow path: call the Paperless API without holding the lock
+        # so other threads remain unblocked.
+        try:
+            created = creator(name.strip())
+        except PAPERLESS_CALL_EXCEPTIONS:
+            log.exception(
+                "Failed to create item; refreshing cache",
+                item_label=label,
+                name=name,
+            )
             try:
-                created = kind.creator(name.strip())
+                self.refresh()
             except PAPERLESS_CALL_EXCEPTIONS:
-                log.exception(
-                    "Failed to create item; refreshing cache",
-                    item_label=kind.label,
-                    name=name,
-                )
-                try:
-                    self.refresh()
-                except PAPERLESS_CALL_EXCEPTIONS:
-                    log.exception("Cache refresh also failed", item_label=kind.label)
-                    raise
+                log.exception("Cache refresh also failed", item_label=label)
+                raise
+            with self._lock:
                 kind = kind_factory()
                 matched = _match_item(
                     name,
@@ -293,9 +340,27 @@ class TaxonomyCache:
                 )
                 if matched:
                     return self._extract_id(matched)
-                raise
+            raise
+
+        # Step 3 — insert into the cache while holding the lock.  Re-check
+        # first: another thread may have created the same item concurrently.
+        with self._lock:
+            kind = kind_factory()
+            matched = _match_item(
+                name, kind.mapping, kind.normaliser, kind.allow_substring
+            )
+            if matched:
+                # Another thread beat us to it — discard our duplicate.
+                return self._extract_id(matched)
+            created_name = str(created.get("name", name))
+            key = kind.normaliser(created_name)
+            if not key:
+                # Normaliser stripped all tokens (suffix-only name like "AS").
+                # Store under raw lowercase so _match_item can find it next time.
+                key = created_name.strip().lower()
+            if key:
+                kind.mapping[key] = created
             kind.items.append(created)
-            kind.mapping[kind.normaliser(str(created.get("name", name)))] = created
             return self._extract_id(created)
 
     def get_or_create_correspondent_id(self, name: str) -> int | None:
