@@ -35,19 +35,23 @@ describe('validateUsername', () => {
 });
 
 describe('validatePassword', () => {
-  it('accepts a password of exactly 8 characters', () => {
-    expect(validatePassword('12345678')).toBeUndefined();
+  it('accepts a password of exactly 12 characters', () => {
+    expect(validatePassword('123456789012')).toBeUndefined();
   });
 
-  it('accepts a longer password', () => {
+  it('accepts a password longer than 12 characters', () => {
     expect(validatePassword('a-long-password')).toBeUndefined();
   });
 
-  it('rejects a password shorter than 8 characters', () => {
-    expect(validatePassword('short')).toMatch(/at least 8 characters/i);
+  it('rejects a password shorter than 12 characters', () => {
+    expect(validatePassword('short')).toMatch(/at least 12 characters/i);
+  });
+
+  it('rejects a password of exactly 11 characters (one below the floor)', () => {
+    expect(validatePassword('12345678901')).toMatch(/at least 12 characters/i);
   });
 
   it('rejects an empty password', () => {
-    expect(validatePassword('')).toMatch(/at least 8 characters/i);
+    expect(validatePassword('')).toMatch(/at least 12 characters/i);
   });
 });

@@ -70,4 +70,31 @@ describe('ChunkPopover', () => {
     const pop = document.querySelector('[role="tooltip"]');
     expect(pop!.getAttribute('data-visible')).toBe('false');
   });
+
+  it('stays visible after a mousemove over the chunk (no stale-closure flicker)', async () => {
+    // L6 fix: onMouseMove must use functional setState so it reads the
+    // current `visible` flag from prev rather than a stale closure value.
+    // If the closure were stale, the popover would remain hidden after
+    // entering via mouseenter then immediately moving the mouse.
+    render(<PopoverHarness />);
+    const snip = screen.getByText('snippet preview');
+
+    await act(async () => {
+      // Simulate mouseenter to show the popover.
+      snip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: 100, clientY: 200 }));
+    });
+
+    let pop = document.querySelector('[role="tooltip"]');
+    expect(pop!.getAttribute('data-visible')).toBe('true');
+
+    await act(async () => {
+      // Simulate mousemove — with the stale-closure bug, visible could flip
+      // to false on the first render cycle after the listener was bound.
+      snip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 110, clientY: 210 }));
+    });
+
+    pop = document.querySelector('[role="tooltip"]');
+    // Popover must remain visible after mousemove.
+    expect(pop!.getAttribute('data-visible')).toBe('true');
+  });
 });

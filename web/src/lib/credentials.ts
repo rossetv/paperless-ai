@@ -8,7 +8,7 @@
  *
  * Rules:
  *   - username: 3–64 characters, only `A-Z a-z 0-9 . _ -`
- *   - password: at least 8 characters
+ *   - password: at least 12 characters
  *
  * Allowed deps: none. `lib/` is a leaf layer (CODE_GUIDELINES §12.3) — every
  * layer may import it; it imports nothing.
@@ -34,8 +34,8 @@ export function validateUsername(value: string): string | undefined {
  * Validate a password. Returns an error message, or `undefined` when valid.
  */
 export function validatePassword(value: string): string | undefined {
-  if (value.length < 8) {
-    return 'Password must be at least 8 characters.';
+  if (value.length < 12) {
+    return 'Password must be at least 12 characters.';
   }
   return undefined;
 }

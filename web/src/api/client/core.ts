@@ -111,5 +111,12 @@ export async function request<T>(url: string, init: RequestInit): Promise<T> {
     return undefined as T;
   }
 
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // A non-JSON 2xx body (proxy error page, CDN HTML, etc.) must not surface
+    // as a raw SyntaxError ("Unexpected token <") — throw a typed ApiError so
+    // the app's error-handling path handles it uniformly.
+    throw new ApiError(response.status, 'Server returned a non-JSON response');
+  }
 }

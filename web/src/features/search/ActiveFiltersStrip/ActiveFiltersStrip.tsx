@@ -45,36 +45,38 @@ export function ActiveFiltersStrip({
     return null;
   }
 
-  // Build a flat list of active filter labels to render as chips.
-  const chips: string[] = [];
+  // Build a flat list of active filter chips with stable dimension keys.
+  // Index keys are unstable across add/remove — use the filter dimension as
+  // the key so React can reconcile correctly without remounting chips.
+  const chips: Array<{ key: string; label: string }> = [];
 
   if (filters.correspondent_id != null && facets !== undefined) {
     const match = facets.correspondents.find((c) => c.id === filters.correspondent_id);
-    if (match !== undefined) chips.push(match.name);
+    if (match !== undefined) chips.push({ key: 'correspondent', label: match.name });
   }
 
   if (filters.document_type_id != null && facets !== undefined) {
     const match = facets.document_types.find((d) => d.id === filters.document_type_id);
-    if (match !== undefined) chips.push(match.name);
+    if (match !== undefined) chips.push({ key: 'type', label: match.name });
   }
 
   if (facets !== undefined) {
     for (const tagId of filters.tag_ids) {
       const match = facets.tags.find((t) => t.id === tagId);
-      if (match !== undefined) chips.push(match.name);
+      if (match !== undefined) chips.push({ key: `tag-${tagId}`, label: match.name });
     }
   } else {
     // Facets not yet loaded — show placeholder chip counts so the strip
     // still communicates that filters are set.
-    for (let i = 0; i < filters.tag_ids.length; i++) {
-      chips.push('…');
+    for (const tagId of filters.tag_ids) {
+      chips.push({ key: `tag-${tagId}`, label: '…' });
     }
   }
 
   if (filters.date_from != null || filters.date_to != null) {
     const from = filters.date_from ?? '…';
     const to = filters.date_to ?? '…';
-    chips.push(`${from} – ${to}`);
+    chips.push({ key: 'date', label: `${from} – ${to}` });
   }
 
   return (
@@ -84,8 +86,8 @@ export function ActiveFiltersStrip({
         Filtered by
       </Text>
 
-      {chips.map((label, i) => (
-        <Chip key={i} selected>
+      {chips.map(({ key, label }) => (
+        <Chip key={key} selected>
           {label}
         </Chip>
       ))}

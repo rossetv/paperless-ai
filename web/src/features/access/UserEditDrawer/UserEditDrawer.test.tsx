@@ -76,8 +76,8 @@ describe('UserEditDrawer — create mode', () => {
     // Wait for the Modal focus-trap rAF to settle before driving the keyboard.
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/username/i), 'ab');
-    await userEvent.type(screen.getByLabelText(/^new password/i), 'password1');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1');
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'password-valid1');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password-valid1');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
     // The canonical validateUsername message (shared with the auth screens).
     expect(
@@ -89,18 +89,18 @@ describe('UserEditDrawer — create mode', () => {
     render(<UserEditDrawer user={null} isSelf={false} onClose={vi.fn()} />);
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/username/i), 'sam.patel');
-    await userEvent.type(screen.getByLabelText(/^new password/i), 'short');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'short');
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'tooshort123');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'tooshort123');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
-    expect(screen.getByText(/at least 8 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/at least 12 characters/i)).toBeInTheDocument();
   });
 
   it('rejects mismatched passwords on submit', async () => {
     render(<UserEditDrawer user={null} isSelf={false} onClose={vi.fn()} />);
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/username/i), 'sam.patel');
-    await userEvent.type(screen.getByLabelText(/^new password/i), 'password1');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password2');
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'password-alpha1');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password-beta2');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
     expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
   });
@@ -113,13 +113,13 @@ describe('UserEditDrawer — create mode', () => {
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
     await userEvent.type(screen.getByLabelText(/username/i), 'sam.patel');
     await userEvent.type(screen.getByLabelText(/display name/i), 'Sam Patel');
-    await userEvent.type(screen.getByLabelText(/^new password/i), 'password1');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password1');
+    await userEvent.type(screen.getByLabelText(/^new password/i), 'password-valid1');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'password-valid1');
     await userEvent.click(screen.getByRole('button', { name: /create user/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     expect(mutateAsync.mock.calls[0]?.[0]).toMatchObject({
       username: 'sam.patel',
-      password: 'password1',
+      password: 'password-valid1',
       role: 'member',
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());

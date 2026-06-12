@@ -64,8 +64,8 @@ describe('FirstRunSetupScreen', () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText(/setup token/i), 'tok');
     await userEvent.type(screen.getByLabelText(/^username/i), 'ab');
-    await userEvent.type(screen.getByLabelText(/^password/i), 'longenough');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenough');
+    await userEvent.type(screen.getByLabelText(/^password/i), 'longenoughpw12');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenoughpw12');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
     expect(screen.getByText(/between 3 and 64 characters/i)).toBeInTheDocument();
   });
@@ -77,15 +77,15 @@ describe('FirstRunSetupScreen', () => {
     await userEvent.type(screen.getByLabelText(/^password/i), 'short');
     await userEvent.type(screen.getByLabelText(/confirm password/i), 'short');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
-    expect(screen.getByText(/at least 8 characters/i)).toBeInTheDocument();
+    expect(screen.getByText(/at least 12 characters/i)).toBeInTheDocument();
   });
 
   it('shows a mismatch error when the passwords differ', async () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText(/setup token/i), 'tok');
     await userEvent.type(screen.getByLabelText(/^username/i), 'admin');
-    await userEvent.type(screen.getByLabelText(/^password/i), 'longenough');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'different1');
+    await userEvent.type(screen.getByLabelText(/^password/i), 'longenoughpw12');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'different1-pw12');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
     expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
   });
@@ -93,8 +93,8 @@ describe('FirstRunSetupScreen', () => {
   it('requires a non-empty setup token', async () => {
     renderScreen();
     await userEvent.type(screen.getByLabelText(/^username/i), 'admin');
-    await userEvent.type(screen.getByLabelText(/^password/i), 'longenough');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenough');
+    await userEvent.type(screen.getByLabelText(/^password/i), 'longenoughpw12');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenoughpw12');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
     expect(screen.getByText(/enter the setup token/i)).toBeInTheDocument();
   });
@@ -111,11 +111,11 @@ describe('FirstRunSetupScreen', () => {
     renderScreen(makeSetup({ mutate }));
     await userEvent.type(screen.getByLabelText(/setup token/i), 'the-setup-token');
     await userEvent.type(screen.getByLabelText(/^username/i), 'admin');
-    await userEvent.type(screen.getByLabelText(/^password/i), 'longenough');
-    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenough');
+    await userEvent.type(screen.getByLabelText(/^password/i), 'longenoughpw12');
+    await userEvent.type(screen.getByLabelText(/confirm password/i), 'longenoughpw12');
     await userEvent.click(screen.getByRole('button', { name: /create admin account/i }));
     expect(mutate).toHaveBeenCalledWith(
-      { token: 'the-setup-token', username: 'admin', password: 'longenough' },
+      { token: 'the-setup-token', username: 'admin', password: 'longenoughpw12' },
       expect.anything(),
     );
   });

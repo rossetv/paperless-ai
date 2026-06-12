@@ -95,8 +95,14 @@ export interface SourceDocument extends PreviewableDocument {
   paperless_url: string;
   /** A search result always carries a relevance tier (required override). */
   relevance_tier: RelevanceTier;
-  /** Tag names attached to this document, as returned by the search API. */
-  tags: string[];
+  /**
+   * Tag names attached to this document.
+   *
+   * Optional: the backend `SourceDocumentResponse` wire model does not emit
+   * a `tags` field, so callers must guard with `?? []`. Made optional here
+   * so TypeScript enforces that guard at every call site.
+   */
+  tags?: string[];
 }
 
 /**

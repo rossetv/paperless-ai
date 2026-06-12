@@ -365,6 +365,44 @@ describe('empty-body guard', () => {
     const result = await getHealthz();
     expect(result.status).toBe('ok');
   });
+
+  it('throws ApiError when a 2xx response body is non-JSON (proxy error page)', async () => {
+    // A reverse proxy may return an HTML error page with a 200 status.
+    // Before the fix this surfaced as a raw SyntaxError; now it must be an
+    // ApiError so the app's error-handling path handles it uniformly.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html' }),
+        text: () => Promise.resolve('<html><body>Bad Gateway</body></html>'),
+        json: () => { throw new SyntaxError('Unexpected token <'); },
+      }),
+    );
+    await expect(getHealthz()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('ApiError from a non-JSON body carries the HTTP status code', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/html' }),
+        text: () => Promise.resolve('not json'),
+        json: () => { throw new SyntaxError('Unexpected token n'); },
+      }),
+    );
+    let caught: unknown;
+    try {
+      await getHealthz();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(200);
+  });
 });
 
 // ---------------------------------------------------------------------------
