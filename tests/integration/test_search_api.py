@@ -684,21 +684,44 @@ class TestSecurityHeaders:
     def test_headers_present_on_an_spa_response(self, tmp_path: Path) -> None:
         """The security headers are on the SPA index.html deep-link shell.
 
-        The default ``_FRONTEND_DIST`` resolves to the repo's built
-        ``web/dist`` at import time, so a deep-link GET serves index.html with a
-        200 — the same response a browser hard-refresh would get.
+        ``search.api`` reads ``FRONTEND_DIST`` at import time, so a fake built
+        ``dist`` is supplied via the env var and the module reloaded before
+        ``create_app`` — the Python CI job does not build ``web/dist``, so the
+        test must not depend on the real build being present.
         """
-        settings = _make_settings(tmp_path)
-        _seed_store(settings)
-        store_reader = StoreReader(settings)
+        import importlib
+        import os
+
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.html").write_text(
+            "<!doctype html><html><body><div id=root></div></body></html>"
+        )
+
+        os.environ["FRONTEND_DIST"] = str(dist)
+        import search.api as search_api
+
+        importlib.reload(search_api)
         try:
-            client = _build_client(settings, store_reader)
-            response = client.get("/login")
-            assert response.status_code == 200
-            assert "text/html" in response.headers["content-type"]
-            self._assert_security_headers(response.headers)
+            settings = _make_settings(tmp_path)
+            _seed_store(settings)
+            store_reader = StoreReader(settings)
+            try:
+                app = search_api.create_app(
+                    settings, core=_make_mock_core(), store_reader=store_reader
+                )
+                client = TestClient(
+                    app, raise_server_exceptions=False, base_url="https://testserver"
+                )
+                response = client.get("/login")
+                assert response.status_code == 200
+                assert "text/html" in response.headers["content-type"]
+                self._assert_security_headers(response.headers)
+            finally:
+                store_reader.close()
         finally:
-            store_reader.close()
+            os.environ.pop("FRONTEND_DIST", None)
+            importlib.reload(search_api)
 
 
 # ---------------------------------------------------------------------------
