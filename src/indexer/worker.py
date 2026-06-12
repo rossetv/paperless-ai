@@ -42,7 +42,10 @@ class IndexOutcome(enum.Enum):
     """Result of a single call to :meth:`DocumentIndexer.index_document`.
 
     Attributes:
-        SKIPPED: Document was not indexed — empty content or error tag.
+        SKIPPED: Document was not indexed — empty content, error tag, or
+            content that produced zero chunks after chunking (e.g. OCR page
+            markers with no surrounding text).  No ``content_hash`` is stored,
+            so a future cycle can retry the document once its content changes.
         METADATA_ONLY: Content hash unchanged; only metadata columns updated.
         INDEXED: Full chunk + embed + upsert cycle completed.
     """
@@ -92,7 +95,8 @@ class DocumentIndexer:
                 if this is a first-time index.
 
         Returns:
-            ``SKIPPED`` — content empty or error tag present.
+            ``SKIPPED`` — content empty, error tag present, or content that
+            produced zero chunks (e.g. only OCR page markers); no hash stored.
             ``METADATA_ONLY`` — content hash unchanged; metadata updated.
             ``INDEXED`` — full chunk + embed + upsert completed.
 
@@ -163,6 +167,32 @@ class DocumentIndexer:
             chunk_size=self._settings.CHUNK_SIZE,
             overlap=self._settings.CHUNK_OVERLAP,
         )
+
+        # Guard: content passed the whitespace gate but the chunker produced
+        # nothing — the most common cause is content consisting solely of OCR
+        # page markers (e.g. "--- Page 1 ---\n--- Page 2 ---") which the
+        # chunker strips before building paragraphs.  We must NOT upsert here:
+        # doing so writes a documents row with chunk_count=0 and stores a
+        # content_hash, causing the hash gate on every subsequent cycle to
+        # classify the document as METADATA_ONLY → it is permanently stuck with
+        # no chunks and never surfaces in search (IDX-M1).  Treat it like the
+        # empty-content gate: prune any existing row and skip this cycle so a
+        # later cycle can re-attempt once Paperless supplies real content.
+        if not text_chunks:
+            if existing is not None:
+                self._store_writer.delete_documents((document_id,))
+                log.info(
+                    "worker.stale_document_pruned",
+                    document_id=document_id,
+                    reason="zero_chunks_after_chunking",
+                )
+            else:
+                log.warning(
+                    "worker.document_skipped",
+                    document_id=document_id,
+                    reason="indexed_content_produced_zero_chunks",
+                )
+            return IndexOutcome.SKIPPED
 
         texts = [chunk.text for chunk in text_chunks]
         vectors = self._embedding_client.embed(texts)
