@@ -236,10 +236,25 @@ describe('settings field model', () => {
     }
   });
 
-  it('EMBEDDING_MODEL control kind is text (not select)', () => {
+  it('EMBEDDING_MODEL is a conditional control: select for OpenAI, text for Ollama', () => {
     const field = fieldByKey('EMBEDDING_MODEL')!;
     expect(field).toBeDefined();
-    expect(field.control.kind).toBe('text');
+    const control = field.control;
+    expect(control.kind).toBe('conditional');
+    if (control.kind === 'conditional') {
+      expect(control.on).toBe('EMBEDDING_PROVIDER');
+      expect(control.variants['openai']?.kind).toBe('select');
+      expect(control.fallback.kind).toBe('text');
+    }
+  });
+
+  it('connection card subtitles no longer imply one provider does both', () => {
+    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
+    for (const id of ['openai', 'ollama']) {
+      const group = connections.groups.find((g) => g.id === id)!;
+      expect(group.subtitle).not.toMatch(/powers chat and embeddings/i);
+      expect(group.subtitle).toMatch(/whichever you set to/i);
+    }
   });
 
   it('provider group subtitle no longer mentions "always use OpenAI"', () => {
