@@ -10,7 +10,8 @@ The Wave 1 schema (migration v1) is the ``users`` and ``sessions`` tables of
 spec §4.2. Wave 2 adds ``recent_searches`` (migration v2); Wave 3 adds
 ``api_keys`` and Wave 4 adds ``config`` as further migrations — each a new
 entry in :data:`appdb.migrations.MIGRATIONS`, never an edit to v1. Migration
-v7 adds ``api_key_usage`` (the per-key daily LLM spend quota).
+v7 adds ``api_key_usage`` (the per-key daily LLM spend quota). Migration v8
+adds ``model_pricing`` (the locally cached, refreshable model-price book).
 
 Allowed deps: sqlite3, appdb.migrations. Forbidden: store, search, daemons.
 """
@@ -27,7 +28,7 @@ from appdb.migrations import run_migrations
 # store._migrate_v1). A ``;`` inside a comment would split into a fragment that
 # starts with plain text rather than a SQL keyword and break the migration. Keep
 # comments inside these strings semicolon-free, or strip comments before split.
-SCHEMA_VERSION: int = 7
+SCHEMA_VERSION: int = 8
 
 # Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
 # three sessions indexes. Every statement uses IF NOT EXISTS so the migration
@@ -223,6 +224,36 @@ CREATE TABLE IF NOT EXISTS api_key_usage (
     tokens      INTEGER NOT NULL DEFAULT 0,
     calls       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (api_key_id, usage_date)
+);
+"""
+
+
+# Migration v8 DDL — the model_pricing table (the cached, refreshable USD
+# model-price book).
+#
+# One row per priced model. input_per_mtok / output_per_mtok are the USD list
+# prices per million tokens, mirroring search.pricing.ModelPrice. The
+# provenance columns are denormalised onto every row rather than split into a
+# separate metadata table: the whole cache is replaced atomically on each
+# refresh (appdb.model_pricing.save_cached_prices truncates then re-inserts in
+# one BEGIN IMMEDIATE transaction), so every row always shares one consistent
+# (fetched_at, source, as_of) — there is never a mixed-provenance state to
+# normalise away, and a single SELECT loads both the prices and where they came
+# from.
+#
+# as_of is the price list's own effective date (YYYY-MM-DD, from the seed or the
+# refresh payload). source is the provenance: the literal 'bundled' for the seed
+# table, or the refresh URL the prices were fetched from. fetched_at is the
+# ISO-8601 UTC timestamp the row was written (when the cache was last refreshed).
+# model is the PRIMARY KEY so a model name appears at most once.
+SCHEMA_V8: str = """
+CREATE TABLE IF NOT EXISTS model_pricing (
+    model           TEXT PRIMARY KEY,
+    input_per_mtok  REAL NOT NULL,
+    output_per_mtok REAL NOT NULL,
+    as_of           TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    fetched_at      TEXT NOT NULL
 );
 """
 

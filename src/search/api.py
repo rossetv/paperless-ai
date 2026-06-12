@@ -27,8 +27,10 @@ Allowed deps: fastapi, uvicorn, starlette, search (routes, account_routes,
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,11 +42,19 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from appdb.connection import connect as connect_app_db
+from appdb.model_pricing import load_cached_prices, save_cached_prices
 from appdb.schema import ensure_schema as ensure_app_db_schema
 from common.concurrency import llm_limiter
 from common.heartbeat import Heartbeat, run_heartbeat_ticker
 from common.library_setup import setup_libraries
 from common.shutdown import is_shutdown_requested
+from search.pricing_book import (
+    PricingRefreshError,
+    price_book_from_cache,
+    refresh_price_book,
+    set_current_price_book,
+    to_cached_table,
+)
 from search.account_routes import build_account_router
 from search.api_key_routes import build_api_key_router
 from search.appdb_setup import open_app_db
@@ -122,6 +132,140 @@ def _start_search_heartbeat(settings: Settings) -> None:
     thread = threading.Thread(target=_run, name="search-heartbeat", daemon=True)
     thread.start()
     log.info("api.heartbeat_started")
+
+
+# Seconds the background price-refresh loop sleeps between its wake-checks of the
+# shutdown flag. The refresh cadence itself is PRICING_REFRESH_INTERVAL_HOURS;
+# this short tick only bounds how long the daemon thread lingers after shutdown
+# is requested, so the process can exit promptly rather than sleeping out a
+# multi-hour interval. (The thread is daemon=True, so it never blocks exit
+# regardless — this just keeps it tidy.)
+_PRICE_REFRESH_TICK_SECONDS = 60
+
+
+def _load_cached_price_book(app_db_path: str) -> None:
+    """Set the live price book from the app.db cache, if one exists.
+
+    Run once at startup BEFORE any refresh task. When the ``model_pricing`` cache
+    holds rows (a prior refresh persisted them), the live book is set to that
+    cache so a refreshed price survives a restart; when it is empty the bundled
+    seed (the import-time default of the price-book singleton) stands. A failure
+    reading the cache is logged and ignored — the seed is a safe fallback, and a
+    cache read must never abort startup.
+
+    With ``PRICING_REFRESH_URL`` unset this is the ONLY price-book action: a
+    fresh deployment has an empty cache, so the seed stands and the dollar
+    figures are byte-identical to before this feature existed — and no network
+    call is made here.
+    """
+    try:
+        conn = connect_app_db(app_db_path)
+        try:
+            cached = load_cached_prices(conn)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        # rationale: a cache read must never abort startup — the seed book is a
+        # correct fallback, so degrade to it and log rather than crash.
+        log.warning("api.price_cache_load_failed", error=str(exc))
+        return
+    if cached is None:
+        return
+    set_current_price_book(price_book_from_cache(cached))
+    log.info(
+        "api.price_cache_loaded",
+        source=cached.source,
+        as_of=cached.as_of,
+        model_count=len(cached.table),
+    )
+
+
+def _start_price_refresh(settings: Settings, app_db_path: str) -> None:
+    """Start the background price-refresh thread — ONLY when a URL is configured.
+
+    With ``PRICING_REFRESH_URL`` empty (the default, and prod's config) this is a
+    no-op: NO thread is started and NO network call is ever made — the seed (or
+    the cache loaded at startup) stands and the dollar figures are unchanged.
+
+    When a URL is set, a ``daemon=True`` thread (mirroring the heartbeat) fetches
+    immediately on start, then re-fetches every ``PRICING_REFRESH_INTERVAL_HOURS``
+    until the shared shutdown flag is set. Each success persists the new table via
+    :func:`appdb.model_pricing.save_cached_prices` (so it survives a restart) and
+    publishes it via :func:`~search.pricing_book.set_current_price_book`. A
+    :class:`~search.pricing_book.PricingRefreshError` is logged at WARNING and the
+    current book is kept — a flaky price-list host never crashes the server nor
+    changes the live prices. The fetch runs entirely off the request path, so it
+    can never block request handling.
+
+    Args:
+        settings: Application settings — ``PRICING_REFRESH_URL`` and
+            ``PRICING_REFRESH_INTERVAL_HOURS`` are read.
+        app_db_path: Path to ``app.db`` for persisting a refreshed cache.
+    """
+    url = settings.PRICING_REFRESH_URL
+    if not url:
+        # The behaviour-preserving default: no URL ⇒ no thread, no network.
+        return
+
+    interval_seconds = settings.PRICING_REFRESH_INTERVAL_HOURS * 3600
+
+    def _run() -> None:
+        _refresh_once(url, app_db_path)
+        # Sleep in short ticks so shutdown is honoured promptly rather than
+        # blocking out a multi-hour interval; refresh only when a full interval
+        # has elapsed since the last fetch.
+        next_refresh = time.monotonic() + interval_seconds
+        while not is_shutdown_requested():
+            time.sleep(_PRICE_REFRESH_TICK_SECONDS)
+            if is_shutdown_requested():
+                return
+            if time.monotonic() >= next_refresh:
+                _refresh_once(url, app_db_path)
+                next_refresh = time.monotonic() + interval_seconds
+
+    thread = threading.Thread(target=_run, name="search-price-refresh", daemon=True)
+    thread.start()
+    log.info(
+        "api.price_refresh_started",
+        source=url,
+        interval_hours=settings.PRICING_REFRESH_INTERVAL_HOURS,
+    )
+
+
+def _refresh_once(url: str, app_db_path: str) -> None:
+    """Fetch the price book from *url* once; persist and publish on success.
+
+    A :class:`~search.pricing_book.PricingRefreshError` (any fetch/parse failure)
+    is logged at WARNING and swallowed — the current book stands. A failure
+    persisting the cache after a successful fetch is also logged and swallowed,
+    but the freshly fetched book is still published so the running process uses
+    it even if it could not be cached for next restart.
+    """
+    try:
+        book = refresh_price_book(url)
+    except PricingRefreshError as exc:
+        log.warning("api.price_refresh_failed", source=url, error=str(exc))
+        return
+    try:
+        conn = connect_app_db(app_db_path)
+        try:
+            save_cached_prices(
+                conn,
+                table=to_cached_table(book),
+                as_of=book.as_of,
+                source=book.source,
+                fetched_at=book.fetched_at,
+            )
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError) as exc:
+        # rationale: persistence is best-effort — a DB lock / disk error must not
+        # lose the freshly fetched prices for the running process, so publish
+        # anyway and log; the next successful refresh re-attempts the cache write.
+        # A non-DB error (a logic bug) is NOT swallowed — it surfaces loudly.
+        log.warning("api.price_cache_save_failed", source=url, error=str(exc))
+    set_current_price_book(book)
+    log.info("api.price_refreshed", source=url, as_of=book.as_of)
 
 
 def register_paperless_exception_handlers(app: FastAPI) -> None:
@@ -246,6 +390,11 @@ def create_app(
     finally:
         startup_conn.close()
 
+    # Load any persisted price cache into the live price book before serving.
+    # With no PRICING_REFRESH_URL and an empty cache this is a no-op (the seed
+    # stands) and makes no network call — the behaviour-preserving default.
+    _load_cached_price_book(app_db_path)
+
     attach_app_state(
         app.state,
         AppState(app_db_path=app_db_path, setup_state=setup_state),
@@ -295,6 +444,9 @@ def create_app(
 
     register_spa(app, _FRONTEND_DIST)
     _start_search_heartbeat(settings)
+    # Start the background price refresh ONLY when a URL is configured; with the
+    # prod default (unset) no thread starts and no network call is made.
+    _start_price_refresh(settings, app_db_path)
     return app
 
 

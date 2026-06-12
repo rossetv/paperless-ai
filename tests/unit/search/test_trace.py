@@ -1,6 +1,13 @@
 """Tests for the _Telemetry accumulator and phase events in search.trace (Task 4)."""
 
 from search.models import LlmCallUsage, PhaseRecord, TokenUsage
+from search.pricing import SEED_PRICES_AS_OF, ModelPrice
+from search.pricing_book import (
+    BUNDLED_SOURCE,
+    PriceBook,
+    reset_current_price_book,
+    set_current_price_book,
+)
 from search.trace import PhaseStart, _Telemetry
 
 
@@ -70,3 +77,83 @@ def test_non_llm_phase_has_no_tokens():
         now=lambda: 0.0,
     )
     assert events[0].tokens is None and events[0].cost is None
+
+
+# --------------------------------------------------------------------------- #
+# Price-book provenance (PART 2)
+# --------------------------------------------------------------------------- #
+
+
+def test_cost_summary_carries_seed_provenance_by_default():
+    """With no book injected, the telemetry reports the live (seed) provenance."""
+    reset_current_price_book()
+    tele = _Telemetry(on_event=None, provider="openai")
+    cs = tele.cost_summary()
+    assert cs.prices_source == BUNDLED_SOURCE
+    assert cs.prices_as_of == SEED_PRICES_AS_OF
+
+
+def test_telemetry_prices_against_the_live_book_by_default():
+    """A swapped-in live book changes the dollars the default telemetry computes."""
+    reset_current_price_book()
+    # 2 $/Mtok input — distinct from the seed's gpt-5.4-mini (0.75) so the swap
+    # is observable in the dollar figure.
+    set_current_price_book(
+        PriceBook(
+            table={"gpt-5.4-mini": ModelPrice(input_per_mtok=2.0, output_per_mtok=8.0)},
+            as_of="2099-01-01",
+            source="https://prices.example/openai.json",
+            fetched_at="2099-01-01T00:00:00+00:00",
+        )
+    )
+    try:
+        tele = _Telemetry(on_event=None, provider="openai")
+        tele.done(
+            "plan",
+            "Planning",
+            {},
+            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            started=0.0,
+            now=lambda: 0.0,
+        )
+        cs = tele.cost_summary()
+        assert cs.usd == 2.0  # 1 Mtok input × 2 $/Mtok, the swapped-in rate
+        assert cs.prices_source == "https://prices.example/openai.json"
+        assert cs.prices_as_of == "2099-01-01"
+    finally:
+        reset_current_price_book()
+
+
+def test_injected_book_overrides_the_live_book_for_determinism():
+    """An explicit price_book is used verbatim, ignoring the live singleton."""
+    # Set a different live book to prove the injected one wins.
+    set_current_price_book(
+        PriceBook(
+            table={"gpt-5.4-mini": ModelPrice(99.0, 99.0)},
+            as_of="2000-01-01",
+            source="ignored",
+            fetched_at="2000-01-01T00:00:00+00:00",
+        )
+    )
+    try:
+        injected = PriceBook(
+            table={"gpt-5.4-mini": ModelPrice(input_per_mtok=1.0, output_per_mtok=4.0)},
+            as_of="2030-06-06",
+            source="injected-source",
+            fetched_at="2030-06-06T00:00:00+00:00",
+        )
+        tele = _Telemetry(on_event=None, provider="openai", price_book=injected)
+        tele.done(
+            "plan",
+            "Planning",
+            {},
+            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            started=0.0,
+            now=lambda: 0.0,
+        )
+        cs = tele.cost_summary()
+        assert cs.usd == 1.0  # the injected rate, not the live 99.0
+        assert cs.prices_source == "injected-source"
+        assert cs.prices_as_of == "2030-06-06"
+    finally:
+        reset_current_price_book()

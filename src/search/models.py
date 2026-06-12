@@ -207,12 +207,29 @@ class SearchTrace:
 class CostSummary:
     """Whole-query token + cost totals. ``usd`` is None when any LLM call was
     unpriced-and-not-local (no honest total). ``local`` is True when every billed
-    call was local."""
+    call was local.
+
+    ``prices_as_of`` and ``prices_source`` record the *provenance* of the price
+    table the dollars were computed against (the live price book — the bundled
+    seed unless ``PRICING_REFRESH_URL`` is configured), so the UI can show
+    "prices as of <date>". They default to ``None`` / ``""`` so the well-known
+    zero-cost default instance and every pre-provenance constructor stay valid;
+    the telemetry stamps the real values from the book it priced against.
+
+    Attributes:
+        prices_as_of: The live price list's effective date (``YYYY-MM-DD``), or
+            ``None`` when no priced model was costed (no book was consulted).
+        prices_source: Provenance of the price table — ``"bundled"`` for the
+            seed, or the refresh URL the prices were fetched from; ``""`` only on
+            the well-known default instance.
+    """
 
     tokens: TokenUsage
     usd: float | None
     local: bool
     llm_calls: int
+    prices_as_of: str | None = None
+    prices_source: str = ""
 
 
 @dataclass(frozen=True, slots=True)

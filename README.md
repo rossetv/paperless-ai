@@ -277,6 +277,21 @@ The search server has the most dials because the search pipeline has the most st
 | `SEARCH_GATE_JUDGE` | bool | `true` | **Layer 3** — an LLM relevance judge screens the retrieved documents and drops the irrelevant ones before the answer is written. On by default; each judging pass costs one extra (cheap) LLM call |
 | `SEARCH_JUDGE_MODEL` | string | `gpt-5.4-mini` / `gemma3:12b` | Model for the Layer 3 relevance judge (defaults to the planner model) |
 | `SEARCH_JUDGE_REASONING_EFFORT` | string | `low` | Judge `reasoning_effort` (one of `minimal`/`low`/`medium`/`high`) |
+| `PRICING_REFRESH_URL` | string | `""` (disabled) | URL serving a model-price refresh JSON (schema below), or empty to disable. When set to an absolute `http`/`https` URL, the price book refreshes from it and caches the result in `app.db` (surviving restarts); on any fetch/validation failure it keeps the previous prices, ultimately the bundled seed. **Disabled by default**: bundled seed only, **no network call**, identical dollar figures to before |
+| `PRICING_REFRESH_INTERVAL_HOURS` | int | `24` | How often to refresh from `PRICING_REFRESH_URL`, in hours. Inert when the URL is empty. Clamped to `≥ 1` |
+
+The dollar cost shown per search comes from a bundled USD price table (price per million input/output tokens, per model). You no longer need to hand-edit it when OpenAI changes rates: `PRICING_REFRESH_URL` lets the deployment refresh prices from a URL and cache them in `app.db`, falling back to the bundled seed. **There is no official OpenAI pricing API** (`/v1/models` returns models, not prices), so this URL is an **operator-provided** price list — a self-hosted or community-maintained one you trust; no third-party URL is baked in. The refresh URL must serve this JSON (only `USD` is supported; negative or non-numeric prices are rejected):
+
+```json
+{
+  "as_of": "2026-06-10",
+  "currency": "USD",
+  "models": {
+    "gpt-5.5":      { "input_per_mtok": 5.0,  "output_per_mtok": 30.0 },
+    "gpt-5.4-mini": { "input_per_mtok": 0.75, "output_per_mtok": 4.5 }
+  }
+}
+```
 
 ---
 

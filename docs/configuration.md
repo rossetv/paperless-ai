@@ -315,6 +315,48 @@ and cap the result cache. For how the layers fit together, see
 For how the pipeline uses these — the per-query LLM-call budget, RRF fusion,
 filter resolution — see [The Search Server](search.md).
 
+### Model pricing
+
+The search UI shows a dollar cost per query, computed from a built-in USD
+price table (input/output price per million tokens, per model). That table is a
+**bundled seed** — current values shipped with the release — that you no longer
+have to hand-edit when OpenAI changes rates: optionally point the deployment at
+a price-list URL and it refreshes periodically, caching the result in `app.db`
+so it survives restarts, and falling back to the bundled seed on any failure.
+
+**There is no official OpenAI pricing API.** OpenAI's `/v1/models` endpoint
+returns models, not prices, so live prices cannot be pulled from OpenAI. The
+refresh source is therefore an **operator-provided URL** — a self-hosted or
+community-maintained price list you trust and point this at. No third-party URL
+is baked in. The feature is **disabled by default** (bundled seed only), and
+while disabled it makes **zero network calls** and prices the identical dollar
+figures the built-in table always did.
+
+| Variable | Description | Default |
+|:---|:---|:---|
+| `PRICING_REFRESH_URL` | URL serving the model-price refresh JSON (schema below), or empty to disable. When set to an absolute `http`/`https` URL, the price book refreshes from it and caches the result in `app.db`; on any fetch/validation failure it keeps the previous prices (ultimately the bundled seed). Empty (the default) = disabled: bundled seed only, no network. Validated as empty-or-absolute-URL at startup. | `""` (disabled) |
+| `PRICING_REFRESH_INTERVAL_HOURS` | How often to refresh from `PRICING_REFRESH_URL`, in hours. Inert when the URL is empty. Clamped to `≥ 1` so a `0`/negative typo cannot hammer the price-list host. | `24` |
+
+The refresh URL must serve JSON in this schema (only `USD` is supported — a
+non-USD `currency`, or a negative/non-numeric price, is rejected and the
+previous prices are kept):
+
+```json
+{
+  "as_of": "2026-06-10",
+  "currency": "USD",
+  "models": {
+    "gpt-5.5":      { "input_per_mtok": 5.0,  "output_per_mtok": 30.0 },
+    "gpt-5.4-mini": { "input_per_mtok": 0.75, "output_per_mtok": 4.5 }
+  }
+}
+```
+
+`as_of` is the price list's effective date (`YYYY-MM-DD`); `models` maps each
+model name to its USD price per million input and output tokens. Models absent
+from the list (or a local Ollama provider) are unpriced — the UI shows "—" or
+`$0` respectively, exactly as before.
+
 ---
 
 ## Logging

@@ -248,6 +248,26 @@ def _migrate_v7(conn: sqlite3.Connection) -> None:
     _apply_schema_string(conn, SCHEMA_V7)
 
 
+def _migrate_v8(conn: sqlite3.Connection) -> None:
+    """Apply the v8 schema: the model_pricing table (cached model-price book).
+
+    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V8`
+    individually via ``conn.execute`` so every statement stays inside the
+    single explicit transaction :func:`run_migrations` opens —
+    ``conn.executescript`` is avoided because it issues an implicit ``COMMIT``.
+
+    The import of ``SCHEMA_V8`` is deferred to the function body to break the
+    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
+    :func:`_migrate_v1` does. The table is created empty: the price book seeds
+    from :data:`search.pricing.MODEL_PRICES` when the cache is empty, so there
+    is no seed INSERT to run here.
+    """
+    # Deferred import breaks the schema <-> migrations circular dependency.
+    from appdb.schema import SCHEMA_V8  # noqa: PLC0415
+
+    _apply_schema_string(conn, SCHEMA_V8)
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
@@ -259,6 +279,7 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (5, _migrate_v5),
     (6, _migrate_v6),
     (7, _migrate_v7),
+    (8, _migrate_v8),
 ]
 
 

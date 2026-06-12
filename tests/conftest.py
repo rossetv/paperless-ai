@@ -75,6 +75,23 @@ def _reset_search_result_cache():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_current_price_book():
+    """Restore the bundled-seed live price book before each test.
+
+    The live price book is a process singleton (one per server process). A test
+    that loads an app.db cache or runs a refresh into it via ``create_app``
+    leaves a non-seed book standing; a later test that asserts seed-identical
+    dollars or ``prices_source == "bundled"`` would then read the leaked book.
+    Reset to the seed up front so every test starts from the behaviour-preserving
+    default, closing the cross-suite leak at source.
+    """
+    from search.pricing_book import reset_current_price_book
+
+    reset_current_price_book()
+    yield
+
+
 @pytest.fixture
 def settings():
     """A real Settings instance with minimal valid configuration."""

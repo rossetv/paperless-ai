@@ -716,8 +716,8 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_nine_entries() -> None:
-    """CONFIG_KEYS is the 79-key universe.
+def test_config_keys_has_eighty_one_entries() -> None:
+    """CONFIG_KEYS is the 81-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
@@ -726,10 +726,14 @@ def test_config_keys_has_seventy_nine_entries() -> None:
     unconditional startup stale-lock sweep. EMBEDDING_PROVIDER was added so a
     fully-local deployment can embed via Ollama instead of always OpenAI.
     SEARCH_KEY_DAILY_TOKEN_QUOTA was added as the per-API-key daily LLM-spend cap.
+    PRICING_REFRESH_URL and PRICING_REFRESH_INTERVAL_HOURS were added for the
+    refreshable, locally-cached model-price book (default disabled = bundled seed).
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 79
+    assert len(CONFIG_KEYS) == 81
+    assert "PRICING_REFRESH_URL" in CONFIG_KEYS
+    assert "PRICING_REFRESH_INTERVAL_HOURS" in CONFIG_KEYS
     assert "SEARCH_KEY_DAILY_TOKEN_QUOTA" in CONFIG_KEYS
     assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
     assert "EMBEDDING_PROVIDER" in CONFIG_KEYS
@@ -780,6 +784,75 @@ def test_search_judge_rationales_defaults_true_and_parses_false(mocker) -> None:
 
     settings_off = _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_RATIONALES": "false"})
     assert settings_off.SEARCH_JUDGE_RATIONALES is False
+
+
+class TestPricingRefreshConfig:
+    """PRICING_REFRESH_URL / PRICING_REFRESH_INTERVAL_HOURS — the price-book knobs."""
+
+    def test_defaults_are_disabled_and_daily(self, mocker) -> None:
+        """The default is the behaviour-preserving one: no URL, 24h interval."""
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.PRICING_REFRESH_URL == ""
+        assert settings.PRICING_REFRESH_INTERVAL_HOURS == 24
+
+    def test_blank_url_stays_disabled(self, mocker) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "PRICING_REFRESH_URL": "   "})
+        assert settings.PRICING_REFRESH_URL == ""
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://prices.example/openai.json",
+            "http://prices.local:9000/list",
+        ],
+    )
+    def test_accepts_absolute_http_urls(self, mocker, url: str) -> None:
+        settings = _build(mocker, {**_MINIMAL_ENV, "PRICING_REFRESH_URL": url})
+        assert settings.PRICING_REFRESH_URL == url
+
+    def test_strips_surrounding_whitespace(self, mocker) -> None:
+        settings = _build(
+            mocker,
+            {**_MINIMAL_ENV, "PRICING_REFRESH_URL": "  https://x.example/p.json  "},
+        )
+        assert settings.PRICING_REFRESH_URL == "https://x.example/p.json"
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "prices.example/list.json",  # no scheme
+            "ftp://prices.example/list",  # wrong scheme
+            "file:///etc/passwd",  # local file scheme
+            "https://",  # no host
+        ],
+    )
+    def test_rejects_non_http_urls(self, mocker, bad: str) -> None:
+        with pytest.raises(ValueError, match="PRICING_REFRESH_URL"):
+            _build(mocker, {**_MINIMAL_ENV, "PRICING_REFRESH_URL": bad})
+
+    def test_interval_custom_value_is_honoured(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "PRICING_REFRESH_INTERVAL_HOURS": "6"}
+        )
+        assert settings.PRICING_REFRESH_INTERVAL_HOURS == 6
+
+    @pytest.mark.parametrize("raw", ["0", "-5"])
+    def test_interval_clamps_to_at_least_one(self, mocker, raw: str) -> None:
+        """A 0/negative typo clamps to 1 so the refresh never hot-loops."""
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "PRICING_REFRESH_INTERVAL_HOURS": raw}
+        )
+        assert settings.PRICING_REFRESH_INTERVAL_HOURS == 1
+
+    def test_pricing_keys_are_config_only(self) -> None:
+        """Both keys persist via the Settings API but are neither secrets nor
+        reindex keys."""
+        from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
+
+        for key in ("PRICING_REFRESH_URL", "PRICING_REFRESH_INTERVAL_HOURS"):
+            assert key in CONFIG_KEYS
+            assert key not in SECRET_KEYS
+            assert key not in REINDEX_KEYS
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:
