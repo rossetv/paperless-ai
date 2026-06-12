@@ -205,12 +205,24 @@ class IndexStats:
         last_reconcile_at: ISO-8601 timestamp of the last successful
             reconciliation cycle, or None if reconciliation has never run.
         embedding_model: The embedding model name recorded in meta, or None.
+        latest_indexed_at: ``MAX(documents.indexed_at)`` — the most recent
+            per-document index timestamp, or None on an empty index. The
+            indexer stamps ``indexed_at`` on every content or metadata upsert
+            (a corrected OCR, a re-classification, an edited title/tags), so
+            this moves whenever a document's *content* changes even when the
+            document and chunk counts do not — unlike ``last_reconcile_at``,
+            which is rewritten every cycle including no-op ones. It is the
+            content signal the result cache folds into its index-version key so
+            an in-place re-index busts stale answers (see ``search.cache``).
+            Optional with a ``None`` default so older callers and tests that
+            build an ``IndexStats`` positionally are unaffected.
     """
 
     document_count: int
     chunk_count: int
     last_reconcile_at: str | None
     embedding_model: str | None
+    latest_indexed_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

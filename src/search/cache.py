@@ -5,8 +5,8 @@ Answered, clarify, and no-match results are all cached, so an identical repeat
 synthesiser final-mode fallback is a degrade sentinel and is never cached. A
 no-match is invalidated not by a separate timer but by the index-version
 component of the cache key — a reconciliation that indexes or prunes a document
-moves ``document_count:chunk_count`` and drops every prior no-match, so a
-newly-indexed document is searchable on the next query (see :func:`is_cacheable`).
+moves the version and drops every prior no-match, so a newly-indexed document is
+searchable on the next query (see :func:`is_cacheable`).
 
 Why a process-global singleton
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -24,14 +24,26 @@ cache declares **both** a TTL and a max-size bound (§14.5).
 
 Invalidation
 ~~~~~~~~~~~~
-The cache key carries an *index version* — ``f"{document_count}:{chunk_count}"``
-from ``StoreReader.get_stats`` (computed by the caller, not here). When a
-document is indexed, re-chunked, or pruned, the counts move, the version string
-changes, and every prior entry stops matching, so an index change is normally
-visible on the next query (spec §7). The signal is the count *pair*, not a
-content digest, so the rare same-cycle add-and-prune that leaves both counts
-unchanged is not detected — that staleness is bounded by the TTL, which is why a
-content-collision-proof version is not warranted at this scale (§14.6).
+The cache key carries an *index version* —
+``f"{document_count}:{chunk_count}:{latest_indexed_at}"`` from
+``StoreReader.get_stats`` (computed by the caller in ``search.core``, not here).
+The first two components move when a document is indexed, re-chunked, or pruned.
+The third, ``MAX(documents.indexed_at)``, is the *content* signal: the indexer
+stamps ``indexed_at`` on every upsert, so an **in-place** re-index — a corrected
+OCR, a re-classification, an edited title/tags — that happens to chunk to the
+same number of chunks (so both counts are unchanged) still advances the version
+and evicts the stale answer on the next query. Before this signal existed, such
+an in-place change went unseen and a stale answer was served until the TTL
+expired (``SEARCH_CACHE_TTL_SECONDS``, default 4 h).
+
+``indexed_at`` is deliberately chosen over ``last_reconcile_at``: the latter is
+rewritten at the end of every reconcile cycle, including no-op ones, so keying on
+it would drop the whole cache each cycle and evict a valid no-match after a
+reconcile that indexed nothing — the staleness the count pair already handled
+correctly. The remaining un-detected case is a single same-cycle add-and-prune
+that leaves the counts *and* ``MAX(indexed_at)`` unchanged (the pruned document
+held the newest timestamp); that residual staleness is bounded by the TTL, which
+is why a full content digest is still not warranted at this scale (§14.6).
 
 Allowed deps: search.models (SearchResult), store.reader (SearchFilters),
     standard library.
@@ -68,7 +80,9 @@ class _CacheKey:
         normalised_query: The query with whitespace collapsed and case folded.
         filters: The authoritative UI filters, or None for an unfiltered query.
         index_version: A cheap stable signal of the indexed corpus state
-            (``document_count:chunk_count``); a change invalidates prior keys.
+            (``document_count:chunk_count:latest_indexed_at``); a change —
+            including an in-place re-index that moves only the content signal —
+            invalidates prior keys.
         asker: The sanitised asker identity, or None. Included so a personalised
             answer for one user is never served to another (cross-user-leak
             guard). Two users sending the identical query key to different entries
@@ -98,7 +112,8 @@ def build_cache_key(
     Args:
         query: The raw user query.
         filters: The authoritative UI filters, or None.
-        index_version: The ``document_count:chunk_count`` signal.
+        index_version: The ``document_count:chunk_count:latest_indexed_at``
+            signal.
         asker: The sanitised asker identity, or None for an anonymous query.
 
     Returns:
@@ -127,10 +142,11 @@ def is_cacheable(result: SearchResult) -> bool:
       answerable; a user who reworks the wording keys to a different entry
       anyway, so caching is safe and saves the planner call on an exact repeat.
     * **no_match** — cached, and invalidated by the cache key's index version
-      rather than a timer: a reconciliation that indexes a document moves
-      ``document_count:chunk_count`` and drops every prior no-match, so a
-      newly-indexed document is searchable on the next query. A no-match over an
-      unchanged corpus stays a no-match, so serving it from cache is correct.
+      rather than a timer: a reconciliation that indexes a document moves the
+      index version (a count or the ``latest_indexed_at`` content signal) and
+      drops every prior no-match, so a newly-indexed document is searchable on
+      the next query. A no-match over an unchanged corpus stays a no-match, so
+      serving it from cache is correct.
 
     The sentinel is imported lazily to avoid a circular import: ``synthesizer``
     imports this module, so importing it at module scope would cycle.
