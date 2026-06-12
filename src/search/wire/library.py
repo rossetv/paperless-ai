@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from store.models import DocumentBrowseQuery, DocumentSummary
 
@@ -95,14 +95,18 @@ class DocumentPatchRequest(BaseModel):
 
     Every field is optional — only fields present in the request are passed
     through to Paperless. An empty body is a valid no-op.
+
+    ``title`` and ``notes`` are forwarded verbatim to Paperless, so they are
+    length-bounded here: a supplied ``title`` is 1-512 characters (Paperless
+    rejects an empty title); ``notes`` is capped at 8 KiB.
     """
 
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=512)
     correspondent_id: int | None = None
     document_type_id: int | None = None
     document_date: str | None = None
     tags: list[int] | None = None
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=8192)
     archive_serial_number: int | None = None
 
 

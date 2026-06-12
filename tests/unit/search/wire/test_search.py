@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from search.wire import MAX_QUERY_LENGTH, SearchRequest
+from search.wire import MAX_QUERY_LENGTH, FilterRequest, SearchRequest
 
 
 def test_search_request_accepts_a_normal_query() -> None:
@@ -49,3 +49,15 @@ def test_search_request_accepts_a_query_at_the_maximum_length() -> None:
     """A query of exactly MAX_QUERY_LENGTH characters validates."""
     request = SearchRequest(query="x" * MAX_QUERY_LENGTH)
     assert len(request.query) == MAX_QUERY_LENGTH
+
+
+def test_filter_request_accepts_up_to_64_tag_ids() -> None:
+    """A filter naming up to 64 tags validates (L16)."""
+    filters = FilterRequest(tag_ids=list(range(64)))
+    assert len(filters.tag_ids) == 64
+
+
+def test_filter_request_rejects_over_64_tag_ids() -> None:
+    """A filter naming more than 64 tags is rejected, matching the GET bound (L16)."""
+    with pytest.raises(ValidationError):
+        FilterRequest(tag_ids=list(range(65)))

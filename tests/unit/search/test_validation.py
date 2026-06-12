@@ -32,13 +32,13 @@ def test_validate_username_rejects_invalid_names(name: str) -> None:
         validate_username(name)
 
 
-@pytest.mark.parametrize("password", ["12345678", "x" * 8, "a long passphrase"])
-def test_validate_password_accepts_eight_or_more_chars(password: str) -> None:
+@pytest.mark.parametrize("password", ["123456789012", "x" * 12, "a long passphrase"])
+def test_validate_password_accepts_twelve_or_more_chars(password: str) -> None:
     assert validate_password(password) == password
 
 
-@pytest.mark.parametrize("password", ["", "short", "1234567"])
-def test_validate_password_rejects_under_eight_chars(password: str) -> None:
+@pytest.mark.parametrize("password", ["", "short", "12345678", "x" * 11])
+def test_validate_password_rejects_under_twelve_chars(password: str) -> None:
     with pytest.raises(ValueError):
         validate_password(password)
 

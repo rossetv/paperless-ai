@@ -214,7 +214,7 @@ def test_concurrent_setup_requests_produce_exactly_one_admin(
         lock = threading.Lock()
 
         def attempt(username: str) -> None:
-            # Password must be at least 8 characters (_PASSWORD_MIN in
+            # Password must be at least 12 characters (_PASSWORD_MIN in
             # search.validation); the plan used "pw" which is too short and
             # would yield 422 before reaching any race-condition logic.
             r = client.post(
@@ -222,7 +222,7 @@ def test_concurrent_setup_requests_produce_exactly_one_admin(
                 json={
                     "token": token,
                     "username": username,
-                    "password": "password-ok",
+                    "password": "password-okay",
                 },
             )
             with lock:
