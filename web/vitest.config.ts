@@ -28,15 +28,15 @@ export default defineConfig({
         'src/test-setup.ts',
         'src/**/*.d.ts',
       ],
-      // A regression floor (CODE_GUIDELINES §11). The suite currently covers
-      // ~99% of statements; this floor sits below that with headroom, so a
-      // genuine drop — an empty test file, a deleted assertion, an untested
-      // new module — fails the lane instead of passing silently.
+      // Regression floor — set 2–3 points below measured baseline (June 2026):
+      //   statements 93.25 %, branches 85.91 %, functions 93.61 %, lines 93.94 %
+      // The gap prevents flakiness from tiny environment differences while still
+      // catching a genuine drop (an untested new module, a deleted assertion).
       thresholds: {
-        statements: 90,
-        branches: 85,
-        functions: 90,
-        lines: 90,
+        statements: 91,
+        branches: 83,
+        functions: 91,
+        lines: 91,
       },
     },
   },
