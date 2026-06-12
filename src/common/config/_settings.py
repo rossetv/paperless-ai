@@ -237,6 +237,30 @@ class Settings:
     SEARCH_SESSION_TTL: int
     SEARCH_MAX_CONCURRENT: int
 
+    SEARCH_KEY_DAILY_TOKEN_QUOTA: int
+    """Per-API-key daily LLM token quota — a cumulative spend cap on search.
+
+    The per-query LLM budget and :attr:`SEARCH_MAX_CONCURRENT` bound a single
+    query and simultaneous queries; neither bounds *cumulative* spend, so a
+    leaked low-privilege API key can run up arbitrary cost with unbounded
+    sequential queries. This caps the total LLM tokens one API key may consume
+    on the search endpoints (``/api/search``, ``/api/search/stream``, and the
+    MCP ``ask_documents`` / ``search_documents`` tools) per UTC calendar day.
+
+    ``0`` (the default) means **unlimited** — the quota is disabled and the
+    search path performs zero quota-related database I/O, so a deployment that
+    has not opted in is wholly unaffected. A positive value enables the cap:
+    an API-key caller whose tokens-used-today has reached the quota is rejected
+    (HTTP 429 on REST, an error on MCP) before the pipeline runs, and a
+    completed query's total tokens are recorded against the key's daily bucket.
+
+    Cookie/browser callers are never limited — the cap targets programmatic
+    keys, the credentials a leak exposes. It is a **soft** cap: usage is
+    recorded after each query, so concurrent queries can each pass the check
+    and slightly overshoot before the bucket updates. Floored at ``≥ 0``;
+    negative values clamp to ``0`` (disabled).
+    """
+
     # Search/RAG token-cost settings (token-cost programme Area 3)
     SEARCH_PLANNER_REASONING_EFFORT: str
     SEARCH_ANSWER_REASONING_EFFORT: str
@@ -655,6 +679,12 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
         SEARCH_MAX_CONCURRENT=max(0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)),
+        # 0 (the default) disables the per-key daily token quota entirely — the
+        # search path then does zero quota-related DB I/O. A negative value
+        # clamps to 0 (disabled), so a typo never enables a surprise cap.
+        SEARCH_KEY_DAILY_TOKEN_QUOTA=max(
+            0, _get_int_env(source, "SEARCH_KEY_DAILY_TOKEN_QUOTA", 0)
+        ),
         SEARCH_PLANNER_REASONING_EFFORT=_resolve_search_reasoning_effort(
             source, "SEARCH_PLANNER_REASONING_EFFORT"
         ),

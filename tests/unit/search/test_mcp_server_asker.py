@@ -160,19 +160,20 @@ def test_resolve_caller_returns_the_api_key_owners_display_name() -> None:
     app_db_path, raw_key = _app_db_with_user(display_name="Vilmar Rosset")
     middleware = _BearerAuthMiddleware(_noop_asgi, app_db_path)
 
-    authenticated, display_name = middleware._resolve_caller(raw_key, None)
+    authenticated, display_name, api_key_id = middleware._resolve_caller(raw_key, None)
 
     assert authenticated is True
     assert display_name == "Vilmar Rosset"
+    assert api_key_id is not None
 
 
 def test_resolve_caller_rejects_an_unknown_credential() -> None:
-    """An unresolvable credential is (False, None) — no identity, no access."""
+    """An unresolvable credential is (False, None, None) — no identity, no access."""
     from search.mcp_server import _BearerAuthMiddleware
 
     middleware = _BearerAuthMiddleware(_noop_asgi, _app_db_empty())
 
-    assert middleware._resolve_caller("sk-pls-bogus", None) == (False, None)
+    assert middleware._resolve_caller("sk-pls-bogus", None) == (False, None, None)
 
 
 def test_mcp_middleware_resets_mcp_asker_after_request() -> None:
