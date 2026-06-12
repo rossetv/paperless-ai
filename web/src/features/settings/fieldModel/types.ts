@@ -80,8 +80,8 @@ export interface ListControl {
   kind: 'list';
 }
 
-/** The discriminated union of every control kind. */
-export type FieldControl =
+/** Every control kind that renders directly (i.e. not the conditional wrapper). */
+export type ConcreteControl =
   | NumberControl
   | TextControl
   | SecretControl
@@ -89,6 +89,28 @@ export type FieldControl =
   | SegmentedControl
   | SelectControl
   | ListControl;
+
+/**
+ * A control whose concrete kind depends on another field's current value.
+ *
+ * `SettingsSection` resolves it at render time from the live draft: the
+ * `variants` entry matching the current value of the `on` key, or `fallback`
+ * when none matches. Used for the embedding model — a dropdown of OpenAI models
+ * when `EMBEDDING_PROVIDER` is `openai`, a free-text field for an Ollama model
+ * otherwise.
+ */
+export interface ConditionalControl {
+  kind: 'conditional';
+  /** The config key whose current draft value selects the variant. */
+  on: string;
+  /** Map of the `on` key's value → the control to render for it. */
+  variants: Record<string, ConcreteControl>;
+  /** The control to render when no variant matches the current value. */
+  fallback: ConcreteControl;
+}
+
+/** The discriminated union of every control kind. */
+export type FieldControl = ConcreteControl | ConditionalControl;
 
 // ---------------------------------------------------------------------------
 // Field, group, section

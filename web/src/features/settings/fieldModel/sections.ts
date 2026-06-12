@@ -109,7 +109,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'openai',
         title: 'OpenAI',
-        subtitle: 'Powers chat and embeddings when OpenAI is the selected provider.',
+        subtitle: 'Used for chat and/or embeddings — whichever you set to OpenAI.',
         fields: [
           {
             key: 'OPENAI_API_KEY',
@@ -123,12 +123,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'ollama',
         title: 'Ollama',
-        subtitle: 'Powers chat and embeddings when Ollama is the selected provider.',
+        subtitle: 'Used for chat and/or embeddings — whichever you set to Ollama.',
         fields: [
           {
             key: 'OLLAMA_BASE_URL',
             label: 'Ollama base URL',
-            hint: 'Must end with /v1/. Used when Ollama is the selected provider.',
+            hint: 'Must end with /v1/. Used when Ollama handles chat or embeddings.',
             control: { kind: 'text', mono: true, placeholder: 'http://ollama.lan:11434/v1/' },
           },
         ],
@@ -320,8 +320,23 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             key: 'EMBEDDING_MODEL',
             label: 'Embedding model',
-            hint: 'OpenAI: text-embedding-3-small/large. Ollama: a pulled embedding model (e.g. nomic-embed-text). Changing this re-embeds the library.',
-            control: { kind: 'text', mono: true, placeholder: 'text-embedding-3-large' },
+            hint: 'OpenAI: pick a model. Ollama: type a pulled embedding model (e.g. nomic-embed-text). Changing this re-embeds the library.',
+            // A dropdown of the OpenAI models when the embedding provider is
+            // OpenAI; a free-text field for an Ollama model otherwise.
+            control: {
+              kind: 'conditional',
+              on: 'EMBEDDING_PROVIDER',
+              variants: {
+                openai: {
+                  kind: 'select',
+                  options: [
+                    { value: 'text-embedding-3-small', label: 'text-embedding-3-small' },
+                    { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
+                  ],
+                },
+              },
+              fallback: { kind: 'text', mono: true, placeholder: 'nomic-embed-text' },
+            },
           },
           {
             key: 'EMBEDDING_DIMENSIONS',

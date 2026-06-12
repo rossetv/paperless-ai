@@ -5,11 +5,31 @@ import { Row } from '../../../components/primitives/Row/Row';
 import { Disclosure } from '../../../components/primitives/Disclosure/Disclosure';
 import { FieldControl } from '../FieldControl/FieldControl';
 import type {
+  ConcreteControl,
   ConfigValue,
   SettingsDraft,
   SettingsSection as SectionModel,
   SettingsField,
 } from '../fieldModel';
+
+/**
+ * Resolve a field's control to a concrete one for the current draft.
+ *
+ * A `conditional` control renders a different concrete control depending on the
+ * live value of another field (its `on` key) — e.g. the embedding model is a
+ * dropdown when `EMBEDDING_PROVIDER` is `openai` and a free-text field when it
+ * is `ollama`. Every other control kind is already concrete and returned as-is.
+ */
+function resolveControl(
+  control: SettingsField['control'],
+  values: SettingsDraft,
+): ConcreteControl {
+  if (control.kind !== 'conditional') return control;
+  const selector = values[control.on];
+  const variant =
+    typeof selector === 'string' ? control.variants[selector] : undefined;
+  return variant ?? control.fallback;
+}
 
 export interface SettingsSectionProps {
   /** The section descriptor from the field model. */
@@ -62,10 +82,15 @@ function FieldRow({
   onChange: (key: string, value: ConfigValue | null) => void;
   last: boolean;
 }): React.ReactElement {
+  // Resolve a conditional control (e.g. the embedding model) to the concrete
+  // control that applies to the current draft, then render that.
+  const control = resolveControl(field.control, values);
+  const resolvedField =
+    control === field.control ? field : { ...field, control };
+
   // A single-element control can be focused from its label; a Segmented
   // group or a SecretField (multiple elements) cannot.
-  const labellable =
-    field.control.kind !== 'segmented' && field.control.kind !== 'secret';
+  const labellable = control.kind !== 'segmented' && control.kind !== 'secret';
   const controlId = labellable ? `setting-${field.key}` : undefined;
   const requiresReindex = reindexKeys?.has(field.key) ?? false;
   const isDefault = defaultKeys?.has(field.key) ?? false;
@@ -73,8 +98,8 @@ function FieldRow({
   // For select controls with a reasoningKey, pass the reasoning draft value
   // through so FieldControl can bind the companion segmented.
   const reasoningValue =
-    field.control.kind === 'select' && field.control.reasoningKey !== undefined
-      ? values[field.control.reasoningKey]
+    control.kind === 'select' && control.reasoningKey !== undefined
+      ? values[control.reasoningKey]
       : undefined;
 
   return (
@@ -88,7 +113,7 @@ function FieldRow({
       requiresReindex={requiresReindex}
     >
       <FieldControl
-        field={field}
+        field={resolvedField}
         value={values[field.key]}
         onChange={onChange}
         {...(controlId !== undefined ? { controlId } : {})}
