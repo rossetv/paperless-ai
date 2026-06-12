@@ -30,11 +30,6 @@ const MODEL_OPTIONS = [
   { value: 'o4-mini', label: 'o4-mini' },
 ];
 
-const EMBEDDING_MODEL_OPTIONS = [
-  { value: 'text-embedding-3-small', label: 'text-embedding-3-small' },
-  { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
-];
-
 /**
  * OpenAI reasoning-effort tiers (the SDK's `ReasoningEffort` literal). Higher
  * tiers spend more reasoning tokens for better quality; OpenAI-only — the value
@@ -69,7 +64,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'provider',
         title: 'AI provider',
-        subtitle: 'OpenAI is hosted; Ollama runs locally. Embeddings always use OpenAI.',
+        subtitle: 'Sets the chat and vision provider. Embeddings are configured separately under Indexing.',
         fields: [
           {
             key: 'LLM_PROVIDER',
@@ -311,15 +306,27 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         subtitle: 'Changing the model or dimensions triggers a full rebuild.',
         fields: [
           {
+            key: 'EMBEDDING_PROVIDER',
+            label: 'Embedding provider',
+            hint: 'Independent of the chat provider. Changing it re-embeds the whole library.',
+            control: {
+              kind: 'segmented',
+              options: [
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'ollama', label: 'Ollama' },
+              ],
+            },
+          },
+          {
             key: 'EMBEDDING_MODEL',
             label: 'Embedding model',
-            hint: 'Always OpenAI. Changing this triggers a full rebuild on the next reconcile.',
-            control: { kind: 'select', options: EMBEDDING_MODEL_OPTIONS },
+            hint: 'OpenAI: text-embedding-3-small/large. Ollama: a pulled embedding model (e.g. nomic-embed-text). Changing this re-embeds the library.',
+            control: { kind: 'text', mono: true, placeholder: 'text-embedding-3-large' },
           },
           {
             key: 'EMBEDDING_DIMENSIONS',
             label: 'Embedding dimensions',
-            hint: 'Must match the model. The schema is locked to this on the first reconcile.',
+            hint: 'Must match the model exactly (e.g. text-embedding-3-large = 3072, nomic-embed-text = 768).',
             control: { kind: 'number', min: 1 },
           },
         ],

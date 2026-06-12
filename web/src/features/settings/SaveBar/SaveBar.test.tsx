@@ -75,4 +75,24 @@ describe('SaveBar', () => {
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     expect(onSave).toHaveBeenCalledOnce();
   });
+
+  it('shows the normal "no restart" caption when reindexPending is false', () => {
+    renderBar({ dirtyCount: 1, reindexPending: false });
+    expect(screen.getByText(/no restart/i)).toBeInTheDocument();
+  });
+
+  it('shows the normal "no restart" caption when reindexPending is absent', () => {
+    renderBar({ dirtyCount: 1 });
+    expect(screen.getByText(/no restart/i)).toBeInTheDocument();
+  });
+
+  it('shows the rebuild warning caption when reindexPending is true', () => {
+    renderBar({ dirtyCount: 1, reindexPending: true });
+    expect(screen.getByText(/rebuild|re-embed/i)).toBeInTheDocument();
+  });
+
+  it('rebuild warning caption does not contain "no restart" when reindexPending is true', () => {
+    renderBar({ dirtyCount: 1, reindexPending: true });
+    expect(screen.queryByText(/no restart/i)).toBeNull();
+  });
 });
