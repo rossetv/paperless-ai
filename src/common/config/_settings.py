@@ -160,6 +160,19 @@ class Settings:
     REQUEST_TIMEOUT: int
     LLM_MAX_CONCURRENT: int
 
+    STALE_LOCK_RECOVERY: bool
+    """Run the startup stale-lock sweep that re-queues orphaned documents.
+
+    When ``True`` (the default), each tag daemon sweeps documents still carrying
+    its processing-lock tag on startup and re-queues them — the crash-recovery
+    net for a daemon that died mid-document (CODE_GUIDELINES §1.12). The sweep is
+    unconditional (no age or owner check), so it is **unsafe with multiple
+    replicas sharing one processing tag**: a restarting replica would steal a
+    peer's live lock and re-spend LLM tokens on every rolling restart. Set
+    ``False`` on a multi-replica deployment to disable the sweep; single-instance
+    deployments leave it on to keep crash recovery.
+    """
+
     OCR_DPI: int
     OCR_MAX_SIDE: int
     OCR_IMAGE_DETAIL: Literal["low", "high", "auto"]
@@ -535,6 +548,11 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "REQUEST_TIMEOUT", _get_int_env(source, "REQUEST_TIMEOUT", 180)
         ),
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
+        # Default True: a single-instance deployment keeps its crash-recovery
+        # sweep. A multi-replica deployment sets this False so a restarting
+        # replica does not steal a peer's live processing lock (see the field
+        # docstring and common.stale_lock).
+        STALE_LOCK_RECOVERY=_get_bool_env(source, "STALE_LOCK_RECOVERY", True),
         OCR_DPI=_require_at_least_one("OCR_DPI", _get_int_env(source, "OCR_DPI", 300)),
         OCR_MAX_SIDE=_require_at_least_one(
             "OCR_MAX_SIDE", _get_int_env(source, "OCR_MAX_SIDE", 1600)
@@ -552,7 +570,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_DEFAULT_COUNTRY_TAG=source.get(
             "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
         ).strip(),
-        CLASSIFY_MAX_CHARS=_get_int_env(source, "CLASSIFY_MAX_CHARS", 0),
+        # Clamped >= 0 like its CLASSIFY_* siblings: a negative operator typo
+        # must not flow into the truncation logic (0 means "no char cap").
+        CLASSIFY_MAX_CHARS=max(0, _get_int_env(source, "CLASSIFY_MAX_CHARS", 0)),
         CLASSIFY_MAX_TOKENS=max(0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)),
         CLASSIFY_TAG_LIMIT=max(0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)),
         CLASSIFY_TAXONOMY_LIMIT=max(

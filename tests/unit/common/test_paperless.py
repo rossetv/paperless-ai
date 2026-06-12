@@ -664,6 +664,74 @@ class TestRetryBehavior:
         client.close()
 
 
+class TestPostRetryBehaviour:
+    """A POST is non-idempotent: it retries only on the connect phase, never on
+    a response-read drop the server may already have applied (M4)."""
+
+    def test_post_is_not_retried_on_read_timeout(self):
+        # A ReadTimeout drops while reading the RESPONSE to a request the server
+        # may already have processed — re-POSTing would double-write the note.
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/42/notes/")
+            route.side_effect = [
+                httpx.ReadTimeout("response read timed out"),
+                httpx.Response(201, json={"id": 7, "note": "hi"}),
+            ]
+            client = _make_client()
+
+            with pytest.raises(httpx.ReadTimeout):
+                client.add_note(42, "hi")
+            # Exactly one attempt — no retry.
+            assert route.call_count == 1
+        client.close()
+
+    def test_post_is_not_retried_on_remote_protocol_error(self):
+        # RemoteProtocolError likewise occurs after the request was sent.
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/42/notes/")
+            route.side_effect = [
+                httpx.RemoteProtocolError("server disconnected mid-response"),
+                httpx.Response(201, json={"id": 7, "note": "hi"}),
+            ]
+            client = _make_client()
+
+            with pytest.raises(httpx.RemoteProtocolError):
+                client.add_note(42, "hi")
+            assert route.call_count == 1
+        client.close()
+
+    def test_post_is_retried_on_connect_error(self):
+        # A ConnectError proves the request never reached the server, so a single
+        # retry is safe and must still happen — GET's connect-retry is preserved
+        # for POST's connect phase.
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/42/notes/")
+            route.side_effect = [
+                httpx.ConnectError("connection refused"),
+                httpx.Response(201, json={"id": 7, "note": "hi"}),
+            ]
+            client = _make_client()
+
+            client.add_note(42, "hi")
+            assert route.call_count == 2
+        client.close()
+
+    def test_post_is_retried_on_5xx_server_error(self):
+        # A 5xx means the server refused to process the request, so re-sending is
+        # safe — _raise_for_status_if_server_error raises and the breaker retries.
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/42/notes/")
+            route.side_effect = [
+                httpx.Response(503),
+                httpx.Response(201, json={"id": 7, "note": "hi"}),
+            ]
+            client = _make_client()
+
+            client.add_note(42, "hi")
+            assert route.call_count == 2
+        client.close()
+
+
 class TestPing:
     def test_single_request_without_retry(self):
         with respx.mock:
@@ -814,7 +882,8 @@ class TestNoteHelpers:
 
 class TestUpdateDocumentMetadataNotes:
     def test_update_document_metadata_supports_notes_replace(self):
-        """Notes are written via separate endpoint: delete all existing, then add new."""
+        """Notes are written via the separate endpoint: add the new note, then
+        delete the existing ones (add-before-delete)."""
         with respx.mock:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(
@@ -837,6 +906,66 @@ class TestUpdateDocumentMetadataNotes:
 
         assert delete_route.call_count == 2
         assert post_route.called
+        client.close()
+
+    def test_update_document_metadata_notes_adds_before_deleting(self):
+        """The new note is POSTed before the old notes are deleted, so a failure
+        mid-operation never leaves the document with zero notes (M4)."""
+        request_methods: list[str] = []
+
+        def _record(request: httpx.Request) -> httpx.Response:
+            request_methods.append(request.method)
+            if request.method == "POST":
+                return httpx.Response(201, json={"id": 9, "note": "fresh"})
+            return httpx.Response(204)
+
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "id": 42,
+                        "notes": [{"id": 1, "note": "old"}, {"id": 5, "note": "older"}],
+                    },
+                )
+            )
+            respx.post(f"{BASE}/api/documents/42/notes/").mock(side_effect=_record)
+            respx.delete(f"{BASE}/api/documents/42/notes/").mock(side_effect=_record)
+
+            client = _make_client()
+            client.update_document_metadata(42, notes="fresh")
+
+        # The POST precedes every DELETE — the add-before-delete ordering.
+        assert request_methods == ["POST", "DELETE", "DELETE"]
+        client.close()
+
+    def test_update_document_metadata_notes_does_not_delete_the_new_note(self):
+        """The freshly-added note's id is never passed to delete_note — only the
+        snapshot of pre-existing ids is deleted (M4 regression)."""
+        deleted_ids: list[str] = []
+
+        def _record_delete(request: httpx.Request) -> httpx.Response:
+            deleted_ids.append(request.url.params.get("id"))
+            return httpx.Response(204)
+
+        with respx.mock:
+            respx.get(f"{BASE}/api/documents/42/").mock(
+                return_value=httpx.Response(
+                    200, json={"id": 42, "notes": [{"id": 1, "note": "old"}]}
+                )
+            )
+            respx.post(f"{BASE}/api/documents/42/notes/").mock(
+                return_value=httpx.Response(201, json={"id": 9, "note": "fresh"})
+            )
+            respx.delete(f"{BASE}/api/documents/42/notes/").mock(
+                side_effect=_record_delete
+            )
+
+            client = _make_client()
+            client.update_document_metadata(42, notes="fresh")
+
+        # Only the pre-existing note id (1) is deleted — never the new note (9).
+        assert deleted_ids == ["1"]
         client.close()
 
     def test_update_document_metadata_notes_empty_string_deletes_all(self):
