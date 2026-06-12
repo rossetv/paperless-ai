@@ -6,6 +6,12 @@ from io import BytesIO
 from unittest.mock import patch
 
 import pytest
+from pdf2image.exceptions import (
+    PDFPageCountError,
+    PDFPopplerTimeoutError,
+    PDFSyntaxError,
+    PopplerNotInstalledError,
+)
 from PIL import Image
 
 from ocr.image_converter import ImageConversionError, PageSource, open_page_source
@@ -306,3 +312,150 @@ class TestPageSourceLifecycle:
         source.close()
 
         assert not sub.exists()
+
+
+class TestPdfRasterisationErrors:
+    """H4: pdf2image failures are translated to ImageConversionError.
+
+    None of the pdf2image / Poppler exceptions inherit from
+    ImageConversionError, so they must be wrapped at the rasterisation
+    boundary so the worker's ``except ImageConversionError`` branch fires,
+    error-tags the document, and removes it from the queue.
+    """
+
+    @pytest.mark.parametrize(
+        "exc_class",
+        [PDFSyntaxError, PDFPageCountError, PopplerNotInstalledError],
+    )
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_pdf2image_errors_become_image_conversion_error(
+        self, mock_convert, exc_class
+    ):
+        mock_convert.side_effect = exc_class("simulated failure")
+
+        with pytest.raises(ImageConversionError, match="PDF rasterisation failed"):
+            open_page_source(b"%PDF fake", "application/pdf")
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_poppler_timeout_becomes_image_conversion_error(self, mock_convert):
+        mock_convert.side_effect = PDFPopplerTimeoutError("timed out")
+
+        with pytest.raises(ImageConversionError, match="PDF rasterisation failed"):
+            open_page_source(b"%PDF fake", "application/pdf")
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_pdf2image_error_preserves_original_cause(self, mock_convert):
+        original = PDFSyntaxError("corrupt stream")
+        mock_convert.side_effect = original
+
+        with pytest.raises(ImageConversionError) as exc_info:
+            open_page_source(b"%PDF fake", "application/pdf")
+
+        # The chain must be preserved so operators can diagnose the root cause
+        # (CODE_GUIDELINES §6.3).
+        assert exc_info.value.__cause__ is original
+
+    @patch("ocr.image_converter.shutil.rmtree")
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_pdf2image_error_cleans_temp_dir(self, mock_convert, mock_rmtree):
+        mock_convert.side_effect = PDFSyntaxError("corrupt")
+
+        with pytest.raises(ImageConversionError):
+            open_page_source(b"%PDF fake", "application/pdf")
+
+        mock_rmtree.assert_called_once()
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_unexpected_exception_propagates_unchanged(self, mock_convert):
+        # Errors that are not pdf2image domain exceptions (e.g. OOM) must
+        # propagate unaltered — wrapping them would lose type information.
+        mock_convert.side_effect = MemoryError("OOM")
+
+        with pytest.raises(MemoryError):
+            open_page_source(b"%PDF fake", "application/pdf")
+
+
+class TestPdfTimeout:
+    """L1: convert_from_bytes receives the timeout kwarg when requested."""
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_timeout_forwarded_to_convert_from_bytes(self, mock_convert):
+        mock_convert.return_value = []
+
+        open_page_source(b"%PDF fake", "application/pdf", timeout=60)
+
+        assert mock_convert.call_args.kwargs["timeout"] == 60
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_no_timeout_omits_kwarg(self, mock_convert):
+        mock_convert.return_value = []
+
+        open_page_source(b"%PDF fake", "application/pdf")
+
+        assert "timeout" not in mock_convert.call_args.kwargs
+
+    @patch("ocr.image_converter.convert_from_bytes")
+    def test_timeout_triggers_image_conversion_error(self, mock_convert):
+        mock_convert.side_effect = PDFPopplerTimeoutError("pdftoppm timed out")
+
+        with pytest.raises(ImageConversionError, match="PDF rasterisation failed"):
+            open_page_source(b"%PDF fake", "application/pdf", timeout=1)
+
+
+class TestTiffStreaming:
+    """M6: multi-frame TIFF frames are streamed via temp files, not held in RAM.
+
+    The streaming path mirrors the PDF strategy: each frame is saved to a
+    temp PNG file, and the PageSource returns them one at a time from disk,
+    so at most PAGE_WORKERS bitmaps are ever resident simultaneously.
+    """
+
+    def test_multiframe_tiff_uses_path_backed_page_source(self):
+        tiff_bytes = _make_tiff_bytes(num_frames=3)
+
+        with open_page_source(tiff_bytes, "image/tiff") as source:
+            # The path-backed backing is used for multi-frame images.
+            assert len(source._paths) == 3
+            assert len(source._images) == 0
+
+    def test_multiframe_tiff_all_frames_loadable(self):
+        tiff_bytes = _make_tiff_bytes(num_frames=3)
+
+        with open_page_source(tiff_bytes, "image/tiff") as source:
+            assert len(source) == 3
+            for i in range(len(source)):
+                page = source.load_page(i)
+                assert isinstance(page, Image.Image)
+                assert page.size == (10, 10)
+                page.close()
+
+    def test_multiframe_tiff_temp_dir_removed_on_close(self, tmp_path):
+        tiff_bytes = _make_tiff_bytes(num_frames=2)
+
+        source = open_page_source(tiff_bytes, "image/tiff")
+        temp_dir = source._temp_dir
+        assert temp_dir is not None
+
+        source.close()
+
+        import os
+
+        assert not os.path.exists(temp_dir)
+
+    def test_multiframe_tiff_streaming_does_not_hold_all_frames_in_memory(self):
+        # After open, the PageSource must hold paths — not decoded Image objects.
+        # Holding all decoded frames would OOM-kill a container on large TIFFs.
+        tiff_bytes = _make_tiff_bytes(num_frames=3)
+
+        with open_page_source(tiff_bytes, "image/tiff") as source:
+            assert source._images == []
+            assert len(source._paths) == 3
+
+    def test_single_frame_image_stays_in_memory(self):
+        # Single-frame images are small; the in-memory path is kept for them
+        # to avoid unnecessary temp-file overhead.
+        png_bytes = _make_png_bytes()
+
+        with open_page_source(png_bytes, "image/png") as source:
+            assert len(source._images) == 1
+            assert source._paths == []

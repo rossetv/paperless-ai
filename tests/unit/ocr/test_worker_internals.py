@@ -203,3 +203,60 @@ class TestLogOcrStats:
 
         # Act — should not raise (empty dict is falsy -> returns early)
         proc._log_ocr_stats()
+
+
+class TestUpdatePaperlessDocumentSuccessFlag:
+    """L8: the success flag logged at the end of process() reflects the actual
+    write-back outcome, not merely the absence of an exception from
+    _update_paperless_document.
+
+    _update_paperless_document returns None for error/refusal/blank-page cases
+    and WriteBackOutcome.SAVED for genuine write-backs. The logged
+    ``success=True`` must only fire for SAVED, not for None.
+    """
+
+    @patch("ocr.worker.get_latest_tags")
+    def test_saved_outcome_is_success(self, mock_get_tags):
+        settings = make_settings_obj(
+            PRE_TAG_ID=443,
+            POST_TAG_ID=444,
+            OCR_PROCESSING_TAG_ID=999,
+        )
+        paperless = make_mock_paperless()
+        mock_get_tags.return_value = {443, 999}
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        outcome = proc._update_paperless_document("Good transcription text.", {"m"})
+
+        # A genuine write-back is SAVED — the process() loop sets success=True
+        # only for this outcome.
+        assert outcome is WriteBackOutcome.SAVED
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_error_content_outcome_is_not_saved(self, mock_clean, mock_get_tags):
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        # Empty text routes to finalise_with_error and returns None — the
+        # process() loop must log success=False for this outcome.
+        outcome = proc._update_paperless_document("   ", set())
+
+        assert outcome is None
+
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_refusal_mark_outcome_is_not_saved(self, mock_clean, mock_get_tags):
+        settings = make_settings_obj(
+            ERROR_TAG_ID=552,
+            REFUSAL_MARK="CHATGPT REFUSED TO TRANSCRIBE",
+        )
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        outcome = proc._update_paperless_document(
+            "CHATGPT REFUSED TO TRANSCRIBE", set()
+        )
+
+        assert outcome is None
