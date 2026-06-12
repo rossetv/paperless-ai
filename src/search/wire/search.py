@@ -54,7 +54,10 @@ class FilterRequest(BaseModel):
     date_to: str | None = None
     correspondent_id: int | None = None
     document_type_id: int | None = None
-    tag_ids: list[int] = Field(default_factory=list)
+    # Bounded to 64 to match the GET ``/api/documents`` counterpart
+    # (``routes.py``); a filter naming more tags than any real instance holds
+    # is malformed, and an unbounded list is a cheap payload-bloat vector.
+    tag_ids: list[int] = Field(default_factory=list, max_length=64)
 
 
 def normalise_query(query: str) -> str:

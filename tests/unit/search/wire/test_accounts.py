@@ -42,19 +42,19 @@ def _make_user(**overrides):
 
 
 def test_login_request_accepts_a_valid_body() -> None:
-    body = LoginRequest(username="alice", password="password1", remember=True)
+    body = LoginRequest(username="alice", password="password-1234", remember=True)
     assert body.username == "alice"
     assert body.remember is True
 
 
 def test_login_request_remember_defaults_to_false() -> None:
-    body = LoginRequest(username="alice", password="password1")
+    body = LoginRequest(username="alice", password="password-1234")
     assert body.remember is False
 
 
 def test_login_request_rejects_a_short_username() -> None:
     with pytest.raises(ValidationError):
-        LoginRequest(username="ab", password="password1")
+        LoginRequest(username="ab", password="password-1234")
 
 
 def test_login_request_rejects_a_short_password() -> None:
@@ -63,20 +63,20 @@ def test_login_request_rejects_a_short_password() -> None:
 
 
 def test_setup_request_accepts_a_valid_body() -> None:
-    body = SetupRequest(token="setup-token", username="admin", password="password1")
+    body = SetupRequest(token="setup-token", username="admin", password="password-1234")
     assert body.token == "setup-token"
     assert body.username == "admin"
 
 
 def test_setup_request_rejects_a_bad_username() -> None:
     with pytest.raises(ValidationError):
-        SetupRequest(token="t", username="bad name", password="password1")
+        SetupRequest(token="t", username="bad name", password="password-1234")
 
 
 def test_create_user_request_accepts_a_full_body() -> None:
     body = CreateUserRequest(
         username="bob",
-        password="password1",
+        password="password-1234",
         display_name="Bob",
         email="bob@example.com",
         role="member",
@@ -87,14 +87,14 @@ def test_create_user_request_accepts_a_full_body() -> None:
 
 def test_create_user_request_rejects_a_bad_role() -> None:
     with pytest.raises(ValidationError):
-        CreateUserRequest(username="bob", password="password1", role="superuser")
+        CreateUserRequest(username="bob", password="password-1234", role="superuser")
 
 
 def test_create_user_request_rejects_a_bad_email() -> None:
     with pytest.raises(ValidationError):
         CreateUserRequest(
             username="bob",
-            password="password1",
+            password="password-1234",
             role="member",
             email="not-an-email",
         )

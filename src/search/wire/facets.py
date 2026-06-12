@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from common.paperless_types import PaperlessItem
@@ -78,9 +78,14 @@ class TaxonomyItemResponse(BaseModel):
 
 
 class TaxonomyCreateRequest(BaseModel):
-    """Body for ``POST /api/correspondents`` | ``/api/document-types`` | ``/api/tags``."""
+    """Body for ``POST /api/correspondents`` | ``/api/document-types`` | ``/api/tags``.
 
-    name: str
+    ``name`` is forwarded verbatim to Paperless, so it is length-bounded here:
+    1-255 characters (Paperless's own ``name`` column cap). An empty name is
+    rejected at the boundary rather than creating a blank taxonomy entry.
+    """
+
+    name: str = Field(min_length=1, max_length=255)
 
 
 def to_facets_response(facets: FacetSet) -> FacetsResponse:

@@ -36,10 +36,12 @@ def env(tmp_path):
     settings = make_settings(tmp_path)
     seed_store(settings)
     app_db = open_app_db(tmp_path)
-    admin = seed_admin(app_db, username="admin", password="admin-pw")
-    member = seed_user(app_db, username="member", password="member-pw", role="member")
+    admin = seed_admin(app_db, username="admin", password="admin-pw-1234")
+    member = seed_user(
+        app_db, username="member", password="member-pw-123", role="member"
+    )
     readonly = seed_user(
-        app_db, username="reader", password="ro-password", role="readonly"
+        app_db, username="reader", password="ro-password-1", role="readonly"
     )
     store_reader = StoreReader(settings)
     client = build_account_client(settings, app_db, store_reader)
@@ -118,13 +120,13 @@ def test_mcp_scoped_key_passes_the_mcp_auth_gate(env) -> None:
 
 def test_readonly_user_cannot_list_keys(env) -> None:
     client, _, _ = env
-    assert login(client, username="reader", password="ro-password").status_code == 200
+    assert login(client, username="reader", password="ro-password-1").status_code == 200
     assert client.get("/api/api-keys").status_code == 403
 
 
 def test_readonly_user_cannot_create_a_key(env) -> None:
     client, _, _ = env
-    login(client, username="reader", password="ro-password")
+    login(client, username="reader", password="ro-password-1")
     response = client.post("/api/api-keys", json={"name": "x", "scopes": ["api"]})
     assert response.status_code == 403
 
@@ -139,7 +141,7 @@ def test_readonly_user_cannot_edit_a_key(env) -> None:
     member_key = get_by_hash(app_db, hash_key(raw))
     assert member_key is not None
 
-    login(client, username="reader", password="ro-password")
+    login(client, username="reader", password="ro-password-1")
     response = client.patch(f"/api/api-keys/{member_key.id}", json={"name": "x"})
     # A read-only user is blocked at the management gate (403) regardless of
     # ownership — it never reaches the owner-only check.
@@ -151,7 +153,7 @@ def test_member_creates_and_lists_only_their_own_keys(env) -> None:
     # An admin-owned key already exists.
     _mint(app_db, owner_user_id=ids["admin"], scopes="api")
 
-    login(client, username="member", password="member-pw")
+    login(client, username="member", password="member-pw-123")
     created = client.post("/api/api-keys", json={"name": "mine", "scopes": ["api"]})
     assert created.status_code == 201
     listing = client.get("/api/api-keys").json()["keys"]
@@ -166,7 +168,7 @@ def test_admin_lists_every_key(env) -> None:
     _mint(app_db, owner_user_id=ids["member"], scopes="api")
     _mint(app_db, owner_user_id=ids["admin"], scopes="mcp")
 
-    login(client, username="admin", password="admin-pw")
+    login(client, username="admin", password="admin-pw-1234")
     listing = client.get("/api/api-keys").json()["keys"]
     owners = {k["owner_id"] for k in listing}
     assert owners == {ids["member"], ids["admin"]}
@@ -182,7 +184,7 @@ def test_member_cannot_revoke_another_users_key(env) -> None:
     admin_key = get_by_hash(app_db, hash_key(raw))
     assert admin_key is not None
 
-    login(client, username="member", password="member-pw")
+    login(client, username="member", password="member-pw-123")
     response = client.delete(f"/api/api-keys/{admin_key.id}")
     # A member may not revoke a key they do not own — 404 rather than 403
     # so the existence of the key is not revealed (MINOR-1).
@@ -191,7 +193,7 @@ def test_member_cannot_revoke_another_users_key(env) -> None:
 
 def test_member_can_revoke_their_own_key(env) -> None:
     client, app_db, ids = env
-    login(client, username="member", password="member-pw")
+    login(client, username="member", password="member-pw-123")
     created = client.post(
         "/api/api-keys", json={"name": "mine", "scopes": ["api"]}
     ).json()
@@ -208,7 +210,7 @@ def test_admin_can_revoke_any_users_key(env) -> None:
     member_key = get_by_hash(app_db, hash_key(raw))
     assert member_key is not None
 
-    login(client, username="admin", password="admin-pw")
+    login(client, username="admin", password="admin-pw-1234")
     response = client.delete(f"/api/api-keys/{member_key.id}")
     # An admin manages every key.
     assert response.status_code == 204
@@ -219,7 +221,7 @@ def test_admin_can_revoke_any_users_key(env) -> None:
 
 def test_member_can_edit_their_own_key(env) -> None:
     client, app_db, ids = env
-    login(client, username="member", password="member-pw")
+    login(client, username="member", password="member-pw-123")
     created = client.post(
         "/api/api-keys", json={"name": "mine", "scopes": ["api"]}
     ).json()
@@ -240,7 +242,7 @@ def test_member_cannot_edit_another_users_key(env) -> None:
     admin_key = get_by_hash(app_db, hash_key(raw))
     assert admin_key is not None
 
-    login(client, username="member", password="member-pw")
+    login(client, username="member", password="member-pw-123")
     response = client.patch(f"/api/api-keys/{admin_key.id}", json={"name": "hijacked"})
     # A member may not edit a key they do not own — 404 rather than 403
     # so the existence of the key is not revealed (MINOR-1).
@@ -259,7 +261,7 @@ def test_admin_cannot_edit_another_users_key(env) -> None:
     member_key = get_by_hash(app_db, hash_key(raw))
     assert member_key is not None
 
-    login(client, username="admin", password="admin-pw")
+    login(client, username="admin", password="admin-pw-1234")
     response = client.patch(
         f"/api/api-keys/{member_key.id}",
         json={"scopes": ["api", "mcp", "admin"]},

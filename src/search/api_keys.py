@@ -208,12 +208,21 @@ def _is_expired(expires_at: str | None) -> bool:
 
     A key with no expiry (``None``) never expires. An unparseable expiry is
     treated as expired — corrupt data must fail closed, not grant access.
+
+    A stored expiry may be tz-naive (a legacy or hand-edited row, e.g.
+    ``"2099-01-01T00:00:00"``); a naive value is coerced to UTC before the
+    comparison so it can never raise ``TypeError`` (offset-naive vs.
+    offset-aware) and brick the key. The broad ``(ValueError, TypeError)``
+    catch keeps the "never raises / fail-closed" contract of
+    :func:`resolve_api_key` for any value the column might hold.
     """
     if expires_at is None:
         return False
     try:
         expiry = datetime.fromisoformat(expires_at)
-    except ValueError:
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
         return True
     return datetime.now(timezone.utc) >= expiry
 

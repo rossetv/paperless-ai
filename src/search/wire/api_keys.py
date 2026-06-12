@@ -13,6 +13,7 @@ Forbidden: FastAPI, sqlite3, any I/O.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
@@ -21,6 +22,37 @@ from search.api_keys import _VALID_SCOPES as _VALID_API_KEY_SCOPES_SET
 
 if TYPE_CHECKING:
     from appdb.api_keys import ApiKey
+
+
+def _normalise_expires_at(value: str | None) -> str | None:
+    """Validate and canonicalise a client-supplied ``expires_at`` string.
+
+    ``None`` passes straight through — it is itself a meaningful value (the key
+    never expires, or, on a ``PATCH``, "clear the expiry"). A present value
+    must be a parseable ISO-8601 timestamp; an unparseable one is rejected with
+    a ``ValueError`` (Pydantic turns this into a 422). A parseable but tz-naive
+    value (e.g. ``"2099-01-01T00:00:00"``) is coerced to UTC, and the result is
+    re-emitted as a canonical tz-aware UTC isoformat string. This means the
+    stored expiry is always tz-aware, so :func:`search.api_keys._is_expired`
+    can never trip the naive-vs-aware comparison that would otherwise brick the
+    key on every presentation.
+
+    A value in the past is **not** rejected — minting an already-expired key is
+    a no-op the auth layer handles cleanly, not a malformed request.
+
+    Shared by :class:`CreateApiKeyRequest` and :class:`UpdateApiKeyRequest`.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("expires_at must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed.isoformat()
 
 
 def _validate_scope_list(value: list[str]) -> list[str]:
@@ -42,7 +74,9 @@ class CreateApiKeyRequest(BaseModel):
     Attributes:
         name: A human label, 1-100 characters.
         scopes: A non-empty list drawn from ``api``/``mcp``/``admin``.
-        expires_at: An optional ISO-8601 UTC expiry; omitted = never expires.
+        expires_at: An optional ISO-8601 expiry; omitted = never expires. A
+            malformed value is rejected (422); a naive value is normalised to
+            tz-aware UTC before storage.
     """
 
     name: str = Field(min_length=1, max_length=100)
@@ -54,6 +88,12 @@ class CreateApiKeyRequest(BaseModel):
     def _scopes_are_valid(cls, value: list[str]) -> list[str]:
         """Reject any scope outside the documented three."""
         return _validate_scope_list(value)
+
+    @field_validator("expires_at")
+    @classmethod
+    def _expires_at_is_valid(cls, value: str | None) -> str | None:
+        """Reject a malformed expiry and normalise it to canonical UTC."""
+        return _normalise_expires_at(value)
 
 
 class UpdateApiKeyRequest(BaseModel):
@@ -78,8 +118,9 @@ class UpdateApiKeyRequest(BaseModel):
     Attributes:
         name: A new human label, 1-100 characters, or ``None``/absent.
         scopes: A new non-empty scope list, or ``None``/absent.
-        expires_at: A new ISO-8601 UTC expiry; ``null`` clears the expiry;
-            absent leaves it unchanged.
+        expires_at: A new ISO-8601 expiry, normalised to tz-aware UTC (a
+            malformed value is rejected with a 422); ``null`` clears the
+            expiry; absent leaves it unchanged.
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -93,6 +134,17 @@ class UpdateApiKeyRequest(BaseModel):
         if value is None:
             return None
         return _validate_scope_list(value)
+
+    @field_validator("expires_at")
+    @classmethod
+    def _expires_at_is_valid(cls, value: str | None) -> str | None:
+        """Reject a malformed expiry and normalise it to canonical UTC.
+
+        ``None`` is preserved (the route reads ``model_fields_set`` to tell
+        "clear the expiry" from "leave it unchanged"), so this only validates
+        and canonicalises a *supplied* non-null value.
+        """
+        return _normalise_expires_at(value)
 
 
 class ApiKeyResponse(BaseModel):

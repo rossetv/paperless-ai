@@ -66,6 +66,34 @@ def test_create_request_accepts_an_explicit_expiry() -> None:
     assert body.expires_at == "2027-01-01T00:00:00+00:00"
 
 
+def test_create_request_rejects_a_malformed_expiry() -> None:
+    """A non-ISO expiry is a 422 at the boundary, never stored (H1)."""
+    with pytest.raises(ValidationError):
+        CreateApiKeyRequest(name="CI", scopes=["api"], expires_at="not-a-date")
+
+
+def test_create_request_normalises_a_naive_expiry_to_utc() -> None:
+    """A tz-naive expiry is coerced to a canonical tz-aware UTC isoformat (H1)."""
+    body = CreateApiKeyRequest(
+        name="CI", scopes=["api"], expires_at="2099-01-01T00:00:00"
+    )
+    assert body.expires_at == "2099-01-01T00:00:00+00:00"
+
+
+def test_create_request_normalises_a_non_utc_offset_to_utc() -> None:
+    """An aware non-UTC expiry is re-expressed in UTC for a stable stored form."""
+    body = CreateApiKeyRequest(
+        name="CI", scopes=["api"], expires_at="2099-01-01T05:00:00+05:00"
+    )
+    assert body.expires_at == "2099-01-01T00:00:00+00:00"
+
+
+def test_create_request_keeps_a_none_expiry() -> None:
+    """An omitted expiry stays ``None`` — the key never expires."""
+    body = CreateApiKeyRequest(name="CI", scopes=["api"])
+    assert body.expires_at is None
+
+
 def test_create_request_rejects_an_empty_name() -> None:
     with pytest.raises(ValidationError):
         CreateApiKeyRequest(name="", scopes=["api"])
@@ -164,6 +192,35 @@ def test_update_request_rejects_an_empty_scope_list() -> None:
     """A supplied scope list cannot be empty — a scope-less key is useless."""
     with pytest.raises(ValidationError):
         UpdateApiKeyRequest(scopes=[])
+
+
+def test_update_request_rejects_a_malformed_expiry() -> None:
+    """A supplied non-ISO expiry is a 422 (H1)."""
+    with pytest.raises(ValidationError):
+        UpdateApiKeyRequest(expires_at="not-a-date")
+
+
+def test_update_request_normalises_a_naive_expiry_to_utc() -> None:
+    """A supplied naive expiry is coerced to canonical tz-aware UTC (H1)."""
+    body = UpdateApiKeyRequest(expires_at="2099-01-01T00:00:00")
+    assert body.expires_at == "2099-01-01T00:00:00+00:00"
+
+
+def test_update_request_distinguishes_cleared_from_absent_expiry() -> None:
+    """``None`` stays a meaningful "clear" signal; absent leaves unchanged.
+
+    The route reads ``model_fields_set`` to tell "clear the expiry"
+    (``expires_at`` present and ``null``) from "leave it unchanged" (absent),
+    so the validator must preserve both the ``None`` value *and* its presence
+    in ``model_fields_set``.
+    """
+    cleared = UpdateApiKeyRequest(expires_at=None)
+    assert cleared.expires_at is None
+    assert "expires_at" in cleared.model_fields_set
+
+    absent = UpdateApiKeyRequest(name="renamed")
+    assert absent.expires_at is None
+    assert "expires_at" not in absent.model_fields_set
 
 
 def test_api_key_envelope_wraps_one_key() -> None:
