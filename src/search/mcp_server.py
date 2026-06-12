@@ -26,10 +26,11 @@ Authentication (web-redesign §5):
   reaching the MCP handler if neither credential is valid. The legacy
   ``SEARCH_API_KEY`` was retired in Wave 3. No secret is ever logged.
 
-Allowed deps: search (core, api_keys, auth, sessions, models, wire), store
-    (SearchFilters), appdb (connection), mcp SDK, starlette. The ``app.db``
-    path is injected by the app factory; this module owns no SQL and opens a
-    fresh connection per request, mirroring ``search.deps.get_app_db``.
+Allowed deps: search (core, api_keys, auth, sessions, models, wire, identity,
+    offload, spend_quota), store (SearchFilters), appdb (connection), mcp SDK,
+    starlette. The ``app.db`` path is injected by the app factory; this module
+    owns no SQL and opens a fresh connection per request, mirroring
+    ``search.deps.get_app_db``.
 Forbidden: FastAPI (api.py), direct LLM/HTTP calls.
 """
 
@@ -55,6 +56,12 @@ from search.identity import mcp_asker, resolve_asker
 from search.models import SearchResult
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import resolve_session
+from search.spend_quota import (
+    QuotaExceededError,
+    check_quota,
+    mcp_api_key_id,
+    record_usage,
+)
 from search.wire import FilterRequest, normalise_query, to_search_filters
 from store import SearchFilters
 
@@ -112,8 +119,9 @@ class _BearerAuthMiddleware:
         cookie = request.cookies.get(SESSION_COOKIE_NAME)
 
         # _resolve_caller resolves the credential, runs blocking SQLite, and
-        # returns (authenticated, display_name). Offloaded so MCP auth never
-        # blocks the event loop per request (raw ASGI, no FastAPI auto-offload).
+        # returns (authenticated, display_name, api_key_id). Offloaded so MCP
+        # auth never blocks the event loop per request (raw ASGI, no FastAPI
+        # auto-offload).
         auth_result = await run_blocking(lambda: self._resolve_caller(bearer, cookie))
 
         if not auth_result[0]:
@@ -130,21 +138,26 @@ class _BearerAuthMiddleware:
             await response(scope, receive, send)
             return
 
-        # Set the caller's display name on the contextvar so the tool handlers
-        # downstream in the same async context can read it. Reset in a finally
-        # so the contextvar is restored even if the inner app raises — prevents
-        # state leaking to the next request sharing this async context.
+        # Set the caller's display name AND api-key id on the contextvars so the
+        # tool handlers downstream in the same async context can read them (the
+        # asker for identity-aware prompts, the key id for the spend quota). Both
+        # are reset in a finally so the contextvars are restored even if the
+        # inner app raises — prevents state leaking to the next request sharing
+        # this async context. api_key_id is ``None`` for a cookie caller, which
+        # the quota correctly treats as "not limited".
         display_name = auth_result[1]
-        token = mcp_asker.set(display_name)
+        asker_token = mcp_asker.set(display_name)
+        key_id_token = mcp_api_key_id.set(auth_result[2])
         try:
             await self._app(scope, receive, send)
         finally:
-            mcp_asker.reset(token)
+            mcp_asker.reset(asker_token)
+            mcp_api_key_id.reset(key_id_token)
 
     def _resolve_caller(
         self, bearer: str | None, cookie: str | None
-    ) -> tuple[bool, str | None]:
-        """Authenticate the request and return the caller's raw display name.
+    ) -> tuple[bool, str | None, int | None]:
+        """Authenticate the request; return display name and API-key id.
 
         Authenticated when EITHER a browser ``search_session`` cookie resolves
         to an active user (a human, not scope-limited) OR an API key resolves
@@ -157,10 +170,12 @@ class _BearerAuthMiddleware:
             cookie: The raw ``search_session`` cookie value, or ``None``.
 
         Returns:
-            A ``(authenticated, display_name)`` pair. When unauthenticated,
-            both ``False`` and ``None`` are returned. The display name is the
-            raw (unsanitised) value from the database — sanitisation happens
-            in :func:`~search.identity.resolve_asker` at call time.
+            An ``(authenticated, display_name, api_key_id)`` triple. When
+            unauthenticated, ``(False, None, None)`` is returned. The display
+            name is the raw (unsanitised) value from the database — sanitisation
+            happens in :func:`~search.identity.resolve_asker` at call time. The
+            ``api_key_id`` is the matched key's id for an API-key caller, or
+            ``None`` for a cookie caller (whom the spend quota never limits).
         """
         app_db = connect(self._app_db_path)
         try:
@@ -170,11 +185,11 @@ class _BearerAuthMiddleware:
                 # timestamp — mirrors what search.deps.resolve_caller does for
                 # the REST surface (CODE_GUIDELINES §10).
                 refresh_last_seen(app_db, cookie)
-                return True, user.display_name
+                return True, user.display_name, None
             resolved = resolve_api_key(app_db, bearer)
             if resolved is not None and SCOPE_MCP in resolved.scopes:
-                return True, resolved.owner_display_name
-            return False, None
+                return True, resolved.owner_display_name, resolved.api_key_id
+            return False, None, None
         finally:
             app_db.close()
 
@@ -203,6 +218,32 @@ def _serialise_result(result: SearchResult) -> str:
     if isinstance(stats, dict):
         stats.pop("trace", None)
     return json.dumps(payload)
+
+
+def _total_tokens(serialised_result: str) -> int:
+    """Read the whole-query total token count from a serialised tool result.
+
+    The token total rides on ``stats.cost.tokens.total`` of the JSON
+    :func:`_serialise_result` produces (the cost summary is retained — only the
+    verbose trace is dropped). This reads it back for the spend-quota record.
+
+    Defensive: any shape mismatch (a missing key, a non-numeric value, a future
+    schema change) returns ``0`` rather than raising — the usage record is
+    best-effort, so a parse failure must not break the tool response. Returns
+    ``0`` on anything it cannot read as a non-negative integer total.
+
+    Args:
+        serialised_result: The JSON string a tool returns.
+
+    Returns:
+        The whole-query total token count, or ``0`` when it cannot be read.
+    """
+    try:
+        payload = json.loads(serialised_result)
+        total = payload["stats"]["cost"]["tokens"]["total"]
+    except (ValueError, TypeError, KeyError):
+        return 0
+    return total if isinstance(total, int) and total >= 0 else 0
 
 
 def _to_search_filters(raw: dict[str, Any] | None) -> SearchFilters | None:
@@ -364,15 +405,36 @@ def _register_search_tools(
         (set by the auth middleware for this request context) and resolved via
         :func:`~search.identity.resolve_asker` before being forwarded to the
         core, so the SEARCH_IDENTITY_AWARE gate is honoured here.
+
+        The per-key spend quota is enforced around the tool body: the API-key id
+        comes from :data:`~search.spend_quota.mcp_api_key_id` (set by the auth
+        middleware) and the cap from the live ``SEARCH_KEY_DAILY_TOKEN_QUOTA``.
+        An over-quota key is rejected before the pipeline runs; the completed
+        query's tokens are recorded after. Both are no-ops for a disabled quota
+        or a cookie caller.
         """
         core = await run_blocking(lambda: resolve_core(app_db_path))
         asker = resolve_asker(
             mcp_asker.get(),
             identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
         )
+        api_key_id = mcp_api_key_id.get()
+        quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
+        # Pre-check BEFORE the pipeline runs so an over-quota key never spends a
+        # token. A QuotaExceededError becomes a clear tool error — the message
+        # carries no secret, so unlike a pipeline fault it is surfaced verbatim.
+        try:
+            await check_quota(
+                api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
+            )
+        except QuotaExceededError as exc:
+            raise ValueError(
+                "Daily LLM token quota for this API key has been reached; "
+                "it resets at UTC midnight."
+            ) from exc
         search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
         async with search_semaphore.acquire():
-            return await run_blocking(
+            output = await run_blocking(
                 functools.partial(
                     _run_search_tool,
                     query=query,
@@ -384,6 +446,16 @@ def _register_search_tools(
                     asker=asker,
                 )
             )
+        # Record the query's tokens against the key's daily bucket (best-effort;
+        # a no-op for a disabled quota / cookie caller). The token total is read
+        # from the serialised result, which retains the cost summary.
+        await record_usage(
+            api_key_id=api_key_id,
+            quota=quota,
+            tokens=_total_tokens(output),
+            app_db_path=app_db_path,
+        )
+        return output
 
     @mcp.tool(
         name="search_documents",

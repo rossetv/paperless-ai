@@ -278,14 +278,14 @@ def test_run_migrations_e2e_v5_to_v6_splits_ai_models(tmp_path) -> None:
         ).fetchone()
         assert int(row[0]) == 5
 
-        # Run all migrations — only v6 is pending.
+        # Run all migrations — v6 onwards are pending.
         run_migrations(conn)
 
-        # schema_version must now be 6.
+        # schema_version must now be the latest known migration.
         row = conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert int(row[0]) == 6
+        assert int(row[0]) == MIGRATIONS[-1][0]
 
         # Both new keys must carry the legacy value; AI_MODELS must be gone.
         stored = config_store.get_all(conn)

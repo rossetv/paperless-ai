@@ -27,6 +27,7 @@ from typing import Any
 
 from search.models import (
     Answered,
+    CostSummary,
     DocVerdict,
     FilterCandidates,
     JudgeCandidate,
@@ -38,6 +39,7 @@ from search.models import (
     SearchResult,
     SearchStats,
     SourceDocument,
+    TokenUsage,
 )
 from search.relevance import RelevanceThresholds, RelevanceTier
 from store.models import (
@@ -202,9 +204,27 @@ def make_search_stats(
     llm_calls: int = 2,
     latency_ms: int = 100,
     refined: bool = False,
+    total_tokens: int | None = None,
 ) -> SearchStats:
-    """Create a SearchStats — the default models a normal two-call query."""
-    return SearchStats(llm_calls=llm_calls, latency_ms=latency_ms, refined=refined)
+    """Create a SearchStats — the default models a normal two-call query.
+
+    Pass *total_tokens* to set the whole-query ``cost.tokens.total`` (the value
+    the spend-quota record reads); it defaults to the zero-token cost summary,
+    matching the production default for a result that carries no telemetry.
+    """
+    if total_tokens is None:
+        return SearchStats(llm_calls=llm_calls, latency_ms=latency_ms, refined=refined)
+    cost = CostSummary(
+        tokens=TokenUsage(
+            prompt=total_tokens, completion=0, reasoning=0, total=total_tokens
+        ),
+        usd=None,
+        local=False,
+        llm_calls=llm_calls,
+    )
+    return SearchStats(
+        llm_calls=llm_calls, latency_ms=latency_ms, refined=refined, cost=cost
+    )
 
 
 def make_search_result(
@@ -447,6 +467,10 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_ANSWER_MODEL": "gpt-5.4",
         "CLASSIFY_MODELS": ["gpt-5.4-mini", "gpt-5.4"],
         "SEARCH_SESSION_TTL": 3600,
+        # Per-key daily token quota OFF by default (0 = unlimited), so existing
+        # search tests do no quota I/O and behave exactly as before; quota tests
+        # override with a positive value (CODE_GUIDELINES §11.5).
+        "SEARCH_KEY_DAILY_TOKEN_QUOTA": 0,
         "MAX_RETRIES": 3,
         "MAX_RETRY_BACKOFF_SECONDS": 30,
         # Area-3 SEARCH_* settings. A MagicMock auto-creates any unset attribute

@@ -230,6 +230,24 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
     log.info("appdb.migration_v6_ai_models_split")
 
 
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """Apply the v7 schema: the api_key_usage table (per-key daily spend quota).
+
+    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V7`
+    individually via ``conn.execute`` so every statement stays inside the
+    single explicit transaction :func:`run_migrations` opens —
+    ``conn.executescript`` is avoided because it issues an implicit ``COMMIT``.
+
+    The import of ``SCHEMA_V7`` is deferred to the function body to break the
+    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
+    :func:`_migrate_v1` does.
+    """
+    # Deferred import breaks the schema <-> migrations circular dependency.
+    from appdb.schema import SCHEMA_V7  # noqa: PLC0415
+
+    _apply_schema_string(conn, SCHEMA_V7)
+
+
 # Ordered (version, migration_function) pairs. The version is the
 # schema_version written to meta after the migration commits. Entries must be
 # in strictly ascending version order; the runner relies on it.
@@ -240,6 +258,7 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (4, _migrate_v4),
     (5, _migrate_v5),
     (6, _migrate_v6),
+    (7, _migrate_v7),
 ]
 
 

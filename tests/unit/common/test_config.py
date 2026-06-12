@@ -481,6 +481,22 @@ class TestClassifyClamping:
         assert getattr(s, env_key) == 0
 
 
+class TestSearchKeyDailyTokenQuota:
+    """SEARCH_KEY_DAILY_TOKEN_QUOTA defaults to 0 (disabled) and clamps negatives."""
+
+    def test_defaults_to_zero_disabled(self, mocker):
+        s = _build(mocker, dict(_MINIMAL_ENV))
+        assert s.SEARCH_KEY_DAILY_TOKEN_QUOTA == 0
+
+    def test_positive_value_is_kept(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_KEY_DAILY_TOKEN_QUOTA": "50000"})
+        assert s.SEARCH_KEY_DAILY_TOKEN_QUOTA == 50000
+
+    def test_negative_value_clamps_to_zero(self, mocker):
+        s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_KEY_DAILY_TOKEN_QUOTA": "-1"})
+        assert s.SEARCH_KEY_DAILY_TOKEN_QUOTA == 0
+
+
 class TestModelListsValidation:
     def test_ocr_models_all_commas_raises(self, mocker):
         with pytest.raises(
@@ -700,8 +716,8 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_seventy_eight_entries() -> None:
-    """CONFIG_KEYS is the 78-key universe.
+def test_config_keys_has_seventy_nine_entries() -> None:
+    """CONFIG_KEYS is the 79-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
@@ -709,10 +725,12 @@ def test_config_keys_has_seventy_eight_entries() -> None:
     STALE_LOCK_RECOVERY was added so a multi-replica deployment can disable the
     unconditional startup stale-lock sweep. EMBEDDING_PROVIDER was added so a
     fully-local deployment can embed via Ollama instead of always OpenAI.
+    SEARCH_KEY_DAILY_TOKEN_QUOTA was added as the per-API-key daily LLM-spend cap.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 78
+    assert len(CONFIG_KEYS) == 79
+    assert "SEARCH_KEY_DAILY_TOKEN_QUOTA" in CONFIG_KEYS
     assert "SEARCH_JUDGE_KEEP_THRESHOLD" not in CONFIG_KEYS
     assert "EMBEDDING_PROVIDER" in CONFIG_KEYS
     assert "STALE_LOCK_RECOVERY" in CONFIG_KEYS
