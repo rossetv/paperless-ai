@@ -114,12 +114,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'openai',
         title: 'OpenAI',
-        subtitle: 'Required for every process — embeddings always go through OpenAI.',
+        subtitle: 'Powers chat and embeddings when OpenAI is the selected provider.',
         fields: [
           {
             key: 'OPENAI_API_KEY',
             label: 'OpenAI API key',
-            hint: 'Required for every process — embeddings always go through OpenAI.',
+            hint: 'Required whenever OpenAI handles chat or embeddings.',
             control: { kind: 'secret' },
             secret: true,
           },
@@ -128,12 +128,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'ollama',
         title: 'Ollama',
-        subtitle: 'Ignored when the provider is OpenAI.',
+        subtitle: 'Powers chat and embeddings when Ollama is the selected provider.',
         fields: [
           {
             key: 'OLLAMA_BASE_URL',
             label: 'Ollama base URL',
-            hint: 'Must end with /v1/. Ignored when the provider is OpenAI.',
+            hint: 'Must end with /v1/. Used when Ollama is the selected provider.',
             control: { kind: 'text', mono: true, placeholder: 'http://ollama.lan:11434/v1/' },
           },
         ],
