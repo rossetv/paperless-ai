@@ -74,6 +74,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "CLASSIFY_TAIL_PAGES",
         "CLASSIFY_HEADERLESS_CHAR_LIMIT",
         "CLASSIFY_REASONING_EFFORT",
+        "EMBEDDING_PROVIDER",
         "EMBEDDING_MODEL",
         "EMBEDDING_DIMENSIONS",
         "EMBEDDING_MAX_CONCURRENT",
@@ -117,9 +118,12 @@ CONFIG_KEYS: frozenset[str] = frozenset(
 # how text is chunked and embedded, so a change is only consistent once the
 # whole index is rebuilt. Saving still hot-loads (no restart); the Settings
 # UI warns the operator to run a full re-index from the Index page for these
-# keys, and only these. EMBEDDING_DIMENSIONS is deliberately excluded: it is
-# locked to the embedding model and the index schema pins it on first
-# reconcile, so a lone change is rejected by validation rather than warned.
+# keys, and only these. EMBEDDING_PROVIDER is included: stored vectors are
+# provider-specific (an OpenAI vector and an Ollama vector are not comparable),
+# so switching the provider — like switching the model — invalidates the whole
+# index. EMBEDDING_DIMENSIONS is deliberately excluded: it is locked to the
+# embedding model and the index schema pins it on first reconcile, so a lone
+# change is rejected by validation rather than warned.
 REINDEX_KEYS: frozenset[str] = frozenset(
-    {"EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
+    {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
 )

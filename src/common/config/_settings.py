@@ -36,6 +36,7 @@ from ._parsers import (
     _require_at_least_one,
     _resolve_chunk_overlap,
     _resolve_classify_reasoning_effort,
+    _resolve_embedding_provider,
     _resolve_llm_provider,
     _resolve_log_format,
     _resolve_ocr_image_detail,
@@ -136,8 +137,11 @@ class Settings:
 
     LLM_PROVIDER: Literal["openai", "ollama"]
     OLLAMA_BASE_URL: str | None
-    # OPENAI_API_KEY is required regardless of LLM_PROVIDER: the embedding
-    # client always uses OpenAI (CODE_GUIDELINES §10.8, §15.4).
+    # OPENAI_API_KEY is required whenever OpenAI is used by EITHER the LLM
+    # provider OR the embedding provider; it may be empty only on a fully-local
+    # deployment where both are ollama (CODE_GUIDELINES §10.8, §15.4). Kept a
+    # plain ``str`` (never optional) — an unused fully-local deployment carries
+    # ``""`` rather than ``None``, so no call site grows a None-guard.
     OPENAI_API_KEY: str
 
     OCR_MODELS: list[str]
@@ -200,6 +204,20 @@ class Settings:
     INDEX_DB_PATH: str
     # Application-database path (web-redesign spec §4.1) — accounts/sessions.
     APP_DB_PATH: str
+    EMBEDDING_PROVIDER: Literal["openai", "ollama"]
+    """Provider that vectorises document chunks: ``openai`` or ``ollama``.
+
+    Defaults to the value of ``LLM_PROVIDER`` so a fully-local
+    ``LLM_PROVIDER=ollama`` deployment also embeds locally (no chunk leaves the
+    box), while the default ``LLM_PROVIDER=openai`` deployment keeps OpenAI
+    embeddings byte-for-byte unchanged. Set it explicitly to split the two (e.g.
+    local chat with OpenAI embeddings). Under ``ollama`` the embedding client
+    talks to ``OLLAMA_BASE_URL`` with a placeholder key (Ollama ignores it) and
+    ``EMBEDDING_MODEL`` must name a local embedding model with a matching
+    ``EMBEDDING_DIMENSIONS``. Switching this value forces a full re-embed
+    (it is in ``REINDEX_KEYS``), because the stored vectors are model- and
+    provider-specific and cannot be compared across providers.
+    """
     EMBEDDING_MODEL: str
     EMBEDDING_DIMENSIONS: int
     EMBEDDING_MAX_CONCURRENT: int
@@ -430,6 +448,10 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     """
     # Resolved first: these drive the provider-dependent defaults below.
     llm_provider = _resolve_llm_provider(source)
+    # EMBEDDING_PROVIDER defaults to LLM_PROVIDER (privacy fix: ollama chat ⇒
+    # ollama embeddings), overridable explicitly. Resolved here because it
+    # drives the OPENAI_API_KEY requirement below.
+    embedding_provider = _resolve_embedding_provider(source, llm_provider)
     post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
     chunk_size = _require_at_least_one(
         "CHUNK_SIZE", _get_int_env(source, "CHUNK_SIZE", 2000)
@@ -498,8 +520,16 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         PAPERLESS_TOKEN=_get_required_env(source, "PAPERLESS_TOKEN"),
         LLM_PROVIDER=llm_provider,
         OLLAMA_BASE_URL=ollama_base_url,
-        # Required unconditionally — embeddings always use OpenAI.
-        OPENAI_API_KEY=_get_required_env(source, "OPENAI_API_KEY"),
+        # Required whenever OpenAI is actually used — by the LLM provider OR the
+        # embedding provider. A fully-local deployment (both ollama) may omit it,
+        # so it defaults to "" there; every other config (including any prod box
+        # on openai) keeps the unconditional-required behaviour and fails closed
+        # at config-build time if the key is absent (CODE_GUIDELINES §10.8, §1.11).
+        OPENAI_API_KEY=(
+            _get_required_env(source, "OPENAI_API_KEY")
+            if "openai" in (llm_provider, embedding_provider)
+            else source.get("OPENAI_API_KEY", "").strip()
+        ),
         OCR_MODELS=_get_csv_env(
             source,
             "OCR_MODELS",
@@ -586,6 +616,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_REASONING_EFFORT=_resolve_classify_reasoning_effort(source),
         INDEX_DB_PATH=source.get("INDEX_DB_PATH", _DEFAULT_INDEX_DB_PATH),
         APP_DB_PATH=source.get("APP_DB_PATH", _DEFAULT_APP_DB_PATH),
+        EMBEDDING_PROVIDER=embedding_provider,
         EMBEDDING_MODEL=source.get("EMBEDDING_MODEL", "text-embedding-3-small"),
         EMBEDDING_DIMENSIONS=_require_at_least_one(
             "EMBEDDING_DIMENSIONS",
