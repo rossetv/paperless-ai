@@ -47,8 +47,8 @@ jobs:
         # --cov-fail-under gate still measures the whole suite.
         run: pytest -q -n auto --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-report=term-missing --cov-fail-under=70
 
-      - name: Type-check store, indexer, search
-        run: mypy src/store src/indexer src/search
+      - name: Type-check (all packages)
+        run: mypy src
 
   lint:
     name: Lint (ruff)
@@ -67,7 +67,7 @@ jobs:
           cache: "pip"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install ruff==0.15.16
 
       - name: ruff check
         run: ruff check src tests
@@ -92,7 +92,7 @@ jobs:
           cache: "pip"
 
       - name: Install bandit
-        run: pip install "bandit[toml]"
+        run: pip install "bandit[toml]==1.9.4"
 
       - name: bandit
         # `-ll` reports MEDIUM severity and above (LOW noise filtered out).
@@ -122,7 +122,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
-          pip install pip-audit
+          pip install pip-audit==2.10.1
 
       - name: pip-audit
         run: pip-audit
@@ -150,6 +150,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        # --omit=dev: only production deps matter for deployed risk.
+        # --audit-level=high: treat high/critical as a build failure; moderate
+        # and below are noise in a vite/react dev toolchain.
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Type-check
         run: npm run typecheck
