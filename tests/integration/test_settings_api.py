@@ -157,6 +157,42 @@ def test_put_settings_changing_the_embedding_model_forces_a_rebuild(
     assert (tmp_path / "rebuild.request").exists()
 
 
+def test_put_settings_refuses_when_rebuild_sentinel_write_fails(
+    admin_client, tmp_path
+) -> None:
+    """A re-index save whose rebuild cannot be scheduled does NOT persist (H2).
+
+    The fix: when a change touches a re-index key (EMBEDDING_MODEL / chunking),
+    the rebuild sentinel is scheduled BEFORE the config commits. If that write
+    raises OSError the whole save is refused (5xx) and rolled back — so a new
+    EMBEDDING_MODEL can never hot-load without its index wipe scheduled, which
+    would otherwise leave mixed-width vectors that make every search 500.
+    """
+    from unittest.mock import patch
+
+    client, app_db = admin_client
+    before_version = config_store.get_config_version(app_db)
+
+    with patch(
+        "search.settings_routes.request_index_rebuild",
+        side_effect=OSError("data dir is read-only"),
+    ):
+        response = client.put(
+            "/api/settings",
+            json={"changes": {"EMBEDDING_MODEL": "text-embedding-3-large"}},
+        )
+
+    # The save is refused with a 5xx — nothing persisted.
+    assert response.status_code >= 500
+    # The new model was NOT written: a present-but-unwiped index of the old
+    # width would otherwise make every vector search raise.
+    assert config_store.get(app_db, "EMBEDDING_MODEL") is None
+    # config_version did not move, so no process hot-loads a half-applied change.
+    assert config_store.get_config_version(app_db) == before_version
+    # No sentinel was left behind on the failing path.
+    assert not (tmp_path / "rebuild.request").exists()
+
+
 def test_put_settings_changing_an_ordinary_key_does_not_rebuild(
     admin_client, tmp_path
 ) -> None:

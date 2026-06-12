@@ -175,6 +175,7 @@ def build_api_router(
     require_reader: Callable[..., CurrentUser],
     require_member: Callable[..., CurrentUser],
     get_current_user: Callable[..., CurrentUser],
+    search_semaphore: LazySemaphore,
 ) -> APIRouter:
     """Build the ``/api`` router with all seven route handlers (spec §7.1).
 
@@ -203,6 +204,12 @@ def build_api_router(
         get_current_user: The FastAPI dependency resolving the request to a
             :class:`~search.sessions.CurrentUser`. The ``/api/search``
             handler uses it to attribute a recorded recent search.
+        search_semaphore: The ``/api/search`` concurrency cap (spec §7.4,
+            CODE_GUIDELINES §10.6), shared with the MCP tool surface so
+            ``SEARCH_MAX_CONCURRENT`` is one ceiling across both, not 2N. It is
+            created by the app factory and binds lazily to the serving event
+            loop on first acquire; asyncio's single-threaded contract means only
+            one coroutine touches it at a time, so no lock is needed.
 
     Returns:
         A configured :class:`~fastapi.APIRouter`.
@@ -210,13 +217,6 @@ def build_api_router(
     router = APIRouter()
     reader_auth = Depends(require_reader)
     member_auth = Depends(require_member)
-
-    # The /api/search concurrency cap (spec §7.4, CODE_GUIDELINES §10.6).  The
-    # semaphore is created lazily on the first search so it is always bound to
-    # the event loop actually serving requests, not whichever loop (if any) was
-    # running at router-build time.  asyncio's single-threaded contract means
-    # only one coroutine touches the holder at a time, so no lock is needed.
-    search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
 
     # response_model=None: healthz returns a hand-built Response (a fixed
     # JSON body and an explicit status code), so FastAPI must not try to
@@ -316,14 +316,34 @@ def build_api_router(
 
     @router.get("/api/facets", dependencies=[reader_auth])
     async def facets() -> FacetsResponse:
-        """Return taxonomy facets for the search UI filter panel."""
-        facet_set = await run_blocking(store_reader.list_facets)
+        """Return taxonomy facets for the search UI filter panel.
+
+        A 503 when the index schema is not present yet (or is mid-rebuild) — the
+        same index-not-ready contract as the search and stats endpoints.
+        """
+        try:
+            facet_set = await run_blocking(store_reader.list_facets)
+        except SchemaNotReadyError as exc:
+            log.info("api.facets_index_not_ready")
+            raise HTTPException(
+                status_code=503, detail="The search index is not ready"
+            ) from exc
         return to_facets_response(facet_set)
 
     @router.get("/api/stats", dependencies=[reader_auth])
     async def stats() -> StatsResponse:
-        """Return summary statistics for the search index."""
-        index_stats = await run_blocking(store_reader.get_stats)
+        """Return summary statistics for the search index.
+
+        A 503 when the index schema is not present yet (or is mid-rebuild) — the
+        same index-not-ready contract as the search and facets endpoints.
+        """
+        try:
+            index_stats = await run_blocking(store_reader.get_stats)
+        except SchemaNotReadyError as exc:
+            log.info("api.stats_index_not_ready")
+            raise HTTPException(
+                status_code=503, detail="The search index is not ready"
+            ) from exc
         return to_stats_response(index_stats)
 
     @router.get("/api/documents", dependencies=[reader_auth])
@@ -411,13 +431,28 @@ async def _search(
     The concurrency semaphore caps simultaneous LLM spend (§10.6); the actual
     ``core.answer`` is CPU-light wiring around blocking I/O (LLM HTTP + SQLite),
     so ``run_in_executor`` keeps the event loop unblocked while it runs.
+
+    The pipeline reads the live taxonomy (``list_facets``) at the top of every
+    search, so a mid-rebuild window — where the indexer has dropped the schema
+    and not yet recreated it — surfaces as a
+    :class:`~store.SchemaNotReadyError`. That is mapped to a 503 "index not
+    ready", the same contract as ``/api/facets``, ``/api/stats``, and the
+    Library browse, rather than leaking a 500 on a transient rebuild.
     """
     ui_filters = to_search_filters(body.filters)
 
     async with semaphore.acquire():
-        result = await run_blocking(
-            lambda: core.answer(query=body.query, ui_filters=ui_filters, asker=asker)
-        )
+        try:
+            result = await run_blocking(
+                lambda: core.answer(
+                    query=body.query, ui_filters=ui_filters, asker=asker
+                )
+            )
+        except SchemaNotReadyError as exc:
+            log.info("api.search_index_not_ready")
+            raise HTTPException(
+                status_code=503, detail="The search index is not ready"
+            ) from exc
     return to_search_response(result)
 
 
@@ -516,6 +551,16 @@ async def _search_stream(
                     log.exception("api.search_stream_record_failed")
         except LlmBudgetExceededError as exc:
             loop.call_soon_threadsafe(queue.put_nowait, ("error", ("budget", str(exc))))
+        except SchemaNotReadyError:
+            # The index is mid-rebuild (schema dropped, not yet recreated). The
+            # body has already begun streaming, so this cannot be a 503; surface
+            # the same index-not-ready signal as a terminal error frame the SPA
+            # can render distinctly from a generic failure.
+            log.info("api.search_stream_index_not_ready")
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                ("error", ("index_not_ready", "The search index is not ready")),
+            )
         except Exception:
             # A streamed search cannot fail with an HTTP status once the body
             # has begun, so surface any pipeline fault as a terminal error

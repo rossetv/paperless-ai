@@ -433,6 +433,35 @@ class TestFallbackOnBadResponse:
 
         assert isinstance(plan, RetrievalPlan)
 
+    def test_empty_specs_list_produces_broad_semantic_fallback(self) -> None:
+        """A valid response with ``"specs": []`` yields the broad-semantic spec (H3).
+
+        The pipeline invariant is "a plan always carries at least one spec". A
+        model returning an empty specs list (well-formed JSON, just no specs)
+        must not leave a spec-less plan with nothing to retrieve — the planner
+        substitutes the single broad-semantic fallback on the raw query, exactly
+        as the malformed-response path does.
+        """
+        payload = _json.dumps({"specs": []})
+        planner = build_planner(make_search_settings(), payload)
+
+        plan = planner.plan("find boiler warranty")
+
+        _assert_is_fallback_plan(plan, "find boiler warranty")
+
+    def test_specs_of_only_non_dict_junk_produces_fallback(self) -> None:
+        """A specs list of only non-dict junk is filtered to empty → fallback (H3).
+
+        The parser drops non-dict items; if that leaves the list empty the same
+        broad-semantic back-fill must apply so the plan is never spec-less.
+        """
+        payload = _json.dumps({"specs": ["not-a-spec", 42, None]})
+        planner = build_planner(make_search_settings(), payload)
+
+        plan = planner.plan("array junk query")
+
+        _assert_is_fallback_plan(plan, "array junk query")
+
 
 # ---------------------------------------------------------------------------
 # I1 — string-valued list fields are not iterated character-by-character
@@ -724,10 +753,11 @@ class TestAdequacyGate:
     def test_gate_off_ignores_clarify_json(self) -> None:
         """When SEARCH_GATE_ADEQUACY=False a clarify JSON produces a RetrievalPlan.
 
-        _clarify_json emits specs=[] so the parser returns an empty-specs plan
-        (the gate is bypassed, so the clarify object is not extracted).  An
-        empty-specs plan is a valid RetrievalPlan — the clarify gate being off
-        means the pipeline proceeds rather than asking the user to clarify.
+        _clarify_json emits specs=[] so the gate is bypassed (the clarify object
+        is not extracted) and the parser falls through to the plan path. With
+        the gate off the pipeline must proceed rather than ask the user to
+        clarify — and an empty specs list is substituted with the broad-semantic
+        fallback spec so the "a plan always has >=1 spec" invariant holds.
         """
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=False),
@@ -736,8 +766,11 @@ class TestAdequacyGate:
         outcome = planner.plan("life")
 
         assert isinstance(outcome, RetrievalPlan)
-        # Gate is off: the clarify object is ignored, specs=[] → empty plan.
+        # Gate is off: the clarify object is ignored. specs=[] is back-filled
+        # with the broad-semantic fallback so the plan is never spec-less.
         assert outcome.clarify is None
+        assert len(outcome.specs) == 1
+        assert outcome.specs[0].semantic == "life"
 
     def test_malformed_json_never_returns_clarify_needed(self) -> None:
         """A garbled LLM response degrades to a RetrievalPlan, never ClarifyNeeded."""

@@ -20,8 +20,8 @@ Security invariants (web-redesign §4; CODE_GUIDELINES §10):
   built frontend directory.
 
 Allowed deps: fastapi, uvicorn, starlette, search (routes, account_routes,
-    deps, appstate, setup, spa, appdb_setup, mcp_server, core), store
-    (reader), appdb, common.config.
+    deps, appstate, setup, spa, appdb_setup, mcp_server, offload,
+    security_headers, core), store (reader), appdb, common.config.
 """
 
 from __future__ import annotations
@@ -53,7 +53,9 @@ from search.deps import get_current_user, require_api_scope, require_api_scope_m
 from search.document_routes import build_document_router
 from search.index_routes import build_index_router
 from search.mcp_server import build_mcp_app
+from search.offload import LazySemaphore
 from search.routes import build_api_router
+from search.security_headers import SecurityHeadersMiddleware
 from search.settings_routes import build_settings_router
 from search.setup import SetupState, generate_setup_token, is_setup_needed
 from search.spa import register_spa
@@ -217,6 +219,11 @@ def create_app(
 
     app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
 
+    # Conservative, SPA-safe security headers on every response (defence in
+    # depth). Registered first so it wraps the whole app — the API routers, the
+    # MCP mount, and the static SPA alike.
+    app.add_middleware(SecurityHeadersMiddleware)
+
     register_paperless_exception_handlers(app)
 
     # Startup uses ONE short-lived connection: migrate app.db, then decide
@@ -250,9 +257,25 @@ def create_app(
     # change (web-redesign §5, Wave 4).
     _seed_core_cache(app_db_path, core)
 
+    # ONE concurrency bound shared by the HTTP /api/search surface and the MCP
+    # tools, so the SEARCH_MAX_CONCURRENT ceiling is a single shared cap rather
+    # than 2N (one semaphore per surface). Created here and injected into both
+    # builders; it binds lazily to the serving event loop on first acquire.
+    search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
+
     # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
-    # precedence over static serving.
-    app.mount("/mcp", build_mcp_app(core, settings, app_db_path))
+    # precedence over static serving. The MCP tools resolve the live core per
+    # call through _resolve_search_core (the same per-request hot-reload the
+    # HTTP /api/search handler uses), so a saved config change reaches MCP
+    # callers without a restart.
+    app.mount(
+        "/mcp",
+        build_mcp_app(
+            _resolve_search_core,
+            app_db_path,
+            search_semaphore=search_semaphore,
+        ),
+    )
     app.include_router(build_account_router(settings, store_reader))
     app.include_router(build_settings_router(settings))
     app.include_router(build_api_key_router())
@@ -266,6 +289,7 @@ def create_app(
             require_reader=require_api_scope,
             require_member=require_api_scope_member,
             get_current_user=get_current_user,
+            search_semaphore=search_semaphore,
         )
     )
 

@@ -196,6 +196,55 @@ def test_test_connection_openai_bad_key(tmp_path) -> None:
         app_db.close()
 
 
+def test_probe_openai_uses_a_bounded_timeout() -> None:
+    """The OpenAI probe client must carry REQUEST_TIMEOUT, not the SDK default (M13).
+
+    Without an explicit timeout the OpenAI SDK applies a 600s read timeout, so a
+    hung endpoint pins a FastAPI threadpool worker for up to ten minutes — a few
+    concurrent admin probes then starve every synchronous handler. The fix
+    passes ``timeout=REQUEST_TIMEOUT`` to both the SDK and its inner httpx
+    client (mirroring common/library_setup). This asserts both layers are bound.
+    """
+    from unittest.mock import MagicMock as _MagicMock
+    from unittest.mock import patch
+
+    from common.config import build_settings
+    from search.settings_routes import _probe_openai
+
+    probe_settings = build_settings(
+        {
+            "PAPERLESS_URL": "http://paperless.example:8000",
+            "PAPERLESS_TOKEN": "t",
+            "OPENAI_API_KEY": "sk-under-test",
+            "REQUEST_TIMEOUT": "47",
+        }
+    )
+    assert probe_settings.REQUEST_TIMEOUT == 47
+
+    captured: dict[str, object] = {}
+
+    def fake_httpx_client(*_args, **kwargs):
+        captured["httpx_timeout"] = kwargs.get("timeout")
+        return _MagicMock(name="httpx_client")
+
+    def fake_openai(*_args, **kwargs):
+        captured["openai_timeout"] = kwargs.get("timeout")
+        client = _MagicMock(name="openai_client")
+        client.models.list.return_value = _MagicMock()
+        return client
+
+    with (
+        patch("search.settings_routes.httpx.Client", side_effect=fake_httpx_client),
+        patch("search.settings_routes.openai.OpenAI", side_effect=fake_openai),
+    ):
+        _probe_openai(probe_settings)
+
+    # Both the SDK and the inner httpx client are bounded by REQUEST_TIMEOUT, so
+    # neither layer can hang for the SDK's 600s default.
+    assert captured["openai_timeout"] == 47
+    assert captured["httpx_timeout"] == 47
+
+
 def test_test_connection_ollama_success(tmp_path) -> None:
     """service=ollama with a reachable base URL returns ok=True."""
     client, app_db, store_reader = _admin_client(tmp_path)

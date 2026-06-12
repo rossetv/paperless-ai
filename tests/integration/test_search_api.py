@@ -38,7 +38,13 @@ from tests.helpers.factories import (
     make_search_settings,
     make_source_document,
 )
-from tests.helpers.search import mint_api_key
+from tests.helpers.llm import (
+    ScriptedLLMClient,
+    _make_spec,
+    answered_response_json,
+    planner_response_json,
+)
+from tests.helpers.search import build_search_core, mint_api_key
 
 # ---------------------------------------------------------------------------
 # Embedding geometry
@@ -473,5 +479,223 @@ class TestSearchResponseIntegration:
             source = body["sources"][0]
             assert source["document_id"] == 100
             assert source["title"] == "BritishGas Invoice"
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Mid-rebuild — a schema-less index returns 503, never 500 (M9)
+# ---------------------------------------------------------------------------
+
+
+def _make_schemaless_index(tmp_path: Path) -> None:
+    """Create a present-but-schema-less index DB at the settings path.
+
+    sqlite3.connect() auto-creates an empty file; the indexer drops the schema
+    and recreates it mid-rebuild, so for a brief window the file exists with no
+    taxonomy table — exactly the state a real StoreReader sees here.
+    """
+    import sqlite3 as _sqlite3
+
+    db_path = tmp_path / "index.db"
+    conn = _sqlite3.connect(str(db_path))
+    conn.close()
+    assert db_path.exists()
+
+
+def _real_core(settings: MagicMock, store_reader: StoreReader) -> object:
+    """Build a real SearchCore so list_facets actually runs against the store.
+
+    The mock core in :func:`_make_mock_core` never touches the store; this test
+    needs the real pipeline so the schema-less ``list_facets`` raises
+    ``SchemaNotReadyError`` and the route's 503 mapping is exercised end to end.
+    """
+    llm_client = ScriptedLLMClient(
+        planner_response=planner_response_json(specs=[_make_spec(semantic="anything")]),
+        synthesiser_responses=[answered_response_json("unused", citations=[])],
+    )
+    embedding_client = MagicMock()
+    embedding_client.embed.return_value = [[1.0, 0.0, 0.0, 0.0]]
+    return build_search_core(
+        settings=settings,
+        llm_client=llm_client,
+        store_reader=store_reader,
+        embedding_client=embedding_client,
+    )
+
+
+class TestSearchMidRebuildReturns503:
+    """A search against a schema-less (mid-rebuild) index returns 503, not 500 (M9).
+
+    The pipeline reads the live taxonomy at the top of every search; a
+    mid-rebuild window — schema dropped, not yet recreated — makes that read
+    raise ``SchemaNotReadyError``. Before the fix it bubbled out as an uncaught
+    500 on the billable endpoint; it must now map to a 503 index-not-ready, the
+    same contract /api/facets, /api/stats, and the Library browse already honour.
+    """
+
+    def test_search_returns_503_when_schema_missing(self, tmp_path: Path) -> None:
+        settings = _make_settings(tmp_path)
+        _make_schemaless_index(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            from search.api import create_app
+
+            core = _real_core(settings, store_reader)
+            app = create_app(settings, core=core, store_reader=store_reader)
+            client = TestClient(
+                app, raise_server_exceptions=False, base_url="https://testserver"
+            )
+            raw_key = _seed_api_key(settings)
+            response = client.post(
+                "/api/search",
+                json={"query": "invoices 2025"},
+                headers=_bearer(raw_key),
+            )
+            assert response.status_code == 503
+        finally:
+            store_reader.close()
+
+    def test_facets_returns_503_when_schema_missing(self, tmp_path: Path) -> None:
+        """The sibling endpoint the search now matches: facets is 503 too."""
+        settings = _make_settings(tmp_path)
+        _make_schemaless_index(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            raw_key = _seed_api_key(settings)
+            response = client.get("/api/facets", headers=_bearer(raw_key))
+            assert response.status_code == 503
+        finally:
+            store_reader.close()
+
+    def test_stats_returns_503_when_schema_missing(self, tmp_path: Path) -> None:
+        """And /api/stats, which surfaces SchemaNotReadyError from get_stats."""
+        settings = _make_settings(tmp_path)
+        _make_schemaless_index(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            raw_key = _seed_api_key(settings)
+            response = client.get("/api/stats", headers=_bearer(raw_key))
+            assert response.status_code == 503
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# M12 — HTTP and MCP share ONE concurrency semaphore (not 2N)
+# ---------------------------------------------------------------------------
+
+
+class TestSharedConcurrencyBound:
+    """The app factory injects the same LazySemaphore into both surfaces."""
+
+    def test_http_and_mcp_share_the_same_semaphore_object(self, tmp_path: Path) -> None:
+        """SEARCH_MAX_CONCURRENT must be one ceiling, not one per surface (M12).
+
+        Before the fix, ``build_api_router`` and ``build_mcp_app`` each created
+        their own ``LazySemaphore``, so the real cap was 2N. The app factory now
+        creates one and injects the same instance into both; this test captures
+        the semaphore each builder receives and asserts they are the *same*
+        object.
+        """
+        from unittest.mock import patch
+
+        import search.api as api_module
+
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+
+        captured: dict[str, object] = {}
+        real_build_api_router = api_module.build_api_router
+        real_build_mcp_app = api_module.build_mcp_app
+
+        def spy_api_router(*args, **kwargs):
+            captured["http"] = kwargs["search_semaphore"]
+            return real_build_api_router(*args, **kwargs)
+
+        def spy_mcp_app(*args, **kwargs):
+            captured["mcp"] = kwargs["search_semaphore"]
+            return real_build_mcp_app(*args, **kwargs)
+
+        try:
+            with (
+                patch.object(api_module, "build_api_router", spy_api_router),
+                patch.object(api_module, "build_mcp_app", spy_mcp_app),
+            ):
+                from search.api import create_app
+
+                core = _make_mock_core()
+                create_app(settings, core=core, store_reader=store_reader)
+
+            assert "http" in captured and "mcp" in captured
+            # The SAME object backs both surfaces — one ceiling across HTTP+MCP.
+            assert captured["http"] is captured["mcp"]
+        finally:
+            store_reader.close()
+
+
+# ---------------------------------------------------------------------------
+# Security headers — defence-in-depth on every response
+# ---------------------------------------------------------------------------
+
+
+class TestSecurityHeaders:
+    """The global middleware stamps the security-header set on every response.
+
+    Covers both an API response (a JSON route) and an SPA response (the
+    ``index.html`` deep-link shell) so the headers are proven present on both
+    surfaces, and the CSP is asserted to be SPA-safe (allows the inline
+    theme-bootstrap script and runtime-injected styles).
+    """
+
+    def _assert_security_headers(self, headers) -> None:
+        """Assert the full conservative header set is present and correct."""
+        assert headers["x-content-type-options"] == "nosniff"
+        assert headers["x-frame-options"] == "DENY"
+        assert headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert "max-age=31536000" in headers["strict-transport-security"]
+        assert "includeSubDomains" in headers["strict-transport-security"]
+        csp = headers["content-security-policy"]
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "object-src 'none'" in csp
+        assert "base-uri 'self'" in csp
+        # SPA-safe: the built index.html carries one inline script and the
+        # Vite/React runtime injects <style> elements, so both must be allowed
+        # or the app blanks. (See web/dist/index.html.)
+        assert "'unsafe-inline'" in csp
+
+    def test_headers_present_on_an_api_response(self, tmp_path: Path) -> None:
+        """The security headers are on a JSON API response (healthz)."""
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.get("/api/healthz")
+            assert response.status_code == 200
+            self._assert_security_headers(response.headers)
+        finally:
+            store_reader.close()
+
+    def test_headers_present_on_an_spa_response(self, tmp_path: Path) -> None:
+        """The security headers are on the SPA index.html deep-link shell.
+
+        The default ``_FRONTEND_DIST`` resolves to the repo's built
+        ``web/dist`` at import time, so a deep-link GET serves index.html with a
+        200 — the same response a browser hard-refresh would get.
+        """
+        settings = _make_settings(tmp_path)
+        _seed_store(settings)
+        store_reader = StoreReader(settings)
+        try:
+            client = _build_client(settings, store_reader)
+            response = client.get("/login")
+            assert response.status_code == 200
+            assert "text/html" in response.headers["content-type"]
+            self._assert_security_headers(response.headers)
         finally:
             store_reader.close()
