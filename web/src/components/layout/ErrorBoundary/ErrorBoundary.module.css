@@ -3,7 +3,7 @@
  *
  * Centred in whatever space the boundary occupies (could be the full
  * viewport at the root or a widget-sized area at the trace level).
- * Uses design tokens exclusively — no hardcoded colours.
+ * All values come exclusively from design tokens (var(--…)).
  */
 
 .boundary {
@@ -11,36 +11,35 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-3, 12px);
-  padding: var(--space-6, 24px);
-  min-height: 120px;
+  gap: var(--spacing-10);
+  padding: var(--spacing-14);
   text-align: center;
 }
 
 .message {
   margin: 0;
-  font-size: var(--font-size-body, 1.0625rem);
+  font-size: var(--font-size-body);
   color: var(--colour-text-secondary);
-  line-height: var(--line-height-body, 1.47);
+  line-height: var(--line-height-body);
 }
 
 .reload {
   appearance: none;
-  background: var(--colour-button-light-bg, #fafafc);
-  border: 1px solid var(--colour-border-button, rgb(0 0 0 / 12%));
-  border-radius: 980px;
-  padding: 8px 20px;
-  font-size: var(--font-size-body, 1.0625rem);
-  color: var(--colour-accent, #0071e3);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-pill);
+  padding: var(--spacing-6) var(--spacing-13);
+  font-size: var(--font-size-body);
+  color: var(--colour-accent);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background-color var(--duration-standard) var(--easing-standard);
 }
 
 .reload:hover {
-  background: var(--colour-button-active-bg, #ededf2);
+  background-color: var(--colour-button-active-bg);
 }
 
 .reload:focus-visible {
-  outline: 2px solid var(--colour-focus-ring, #0071e3);
-  outline-offset: 2px;
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
 }
