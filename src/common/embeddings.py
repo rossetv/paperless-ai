@@ -16,14 +16,15 @@ implementation detail of this module.
 
 Provider-aware embeddings
 -------------------------
-Embeddings follow the ``EMBEDDING_PROVIDER`` setting (which itself defaults to
-``LLM_PROVIDER``), so a fully-local ``ollama`` deployment vectorises chunks on
-the local box and no document chunk leaves it. ``EmbeddingClient`` builds its
+Embeddings follow the ``EMBEDDING_PROVIDER`` setting, which is **independent of
+``LLM_PROVIDER`` and defaults to ``openai``**: chat and embeddings are chosen
+separately, so a fully-local ``ollama`` deployment sets ``EMBEDDING_PROVIDER=ollama``
+explicitly to vectorise chunks on the local box. ``EmbeddingClient`` builds its
 own ``openai.OpenAI`` client rather than reusing the provider-dependent shared
 singleton in :mod:`common.llm` (CODE_GUIDELINES §10.8, §15.4):
 
-* ``EMBEDDING_PROVIDER=openai`` (the default for an ``openai`` deployment, and
-  the production posture) — pinned to ``OPENAI_API_KEY`` and OpenAI's default
+* ``EMBEDDING_PROVIDER=openai`` (the default, and the production posture) —
+  pinned to ``OPENAI_API_KEY`` and OpenAI's default
   ``base_url``, byte-for-byte identical to the historic OpenAI-only behaviour.
 * ``EMBEDDING_PROVIDER=ollama`` — pointed at ``OLLAMA_BASE_URL`` (the
   OpenAI-compatible ``/v1/`` endpoint) with a placeholder API key, mirroring how

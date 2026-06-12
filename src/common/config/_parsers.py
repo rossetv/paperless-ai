@@ -138,25 +138,24 @@ def _resolve_llm_provider(source: Mapping[str, str]) -> Literal["openai", "ollam
 
 
 def _resolve_embedding_provider(
-    source: Mapping[str, str], llm_provider: Literal["openai", "ollama"]
+    source: Mapping[str, str],
 ) -> Literal["openai", "ollama"]:
-    """Resolve and validate ``EMBEDDING_PROVIDER`` (defaults to *llm_provider*).
+    """Resolve and validate ``EMBEDDING_PROVIDER`` (defaults to ``openai``).
 
     The embedding provider decides whether document chunks are vectorised by
-    OpenAI or a local Ollama model. It **defaults to the value of
-    ``LLM_PROVIDER``** so a fully-local ``LLM_PROVIDER=ollama`` deployment also
-    embeds locally (the privacy posture) while an ``LLM_PROVIDER=openai``
-    deployment keeps OpenAI embeddings unchanged. An explicit
-    ``EMBEDDING_PROVIDER`` env/config value overrides that default, so the two
-    can be split (e.g. local chat, OpenAI embeddings) when desired.
+    OpenAI or a local Ollama model. It is **independent of ``LLM_PROVIDER``**
+    and defaults to ``openai`` — chat and embeddings are chosen separately, so
+    flipping the chat provider never moves the embedding space (and so never
+    triggers a re-embed). A fully-local deployment sets
+    ``EMBEDDING_PROVIDER=ollama`` explicitly.
 
-    A blank or unset value falls back to *llm_provider*; any non-blank value
-    other than ``openai`` / ``ollama`` fails closed naming the key
-    (CODE_GUIDELINES §1.11), mirroring :func:`_resolve_llm_provider`.
+    A blank or unset value is the ``openai`` default; any non-blank value other
+    than ``openai`` / ``ollama`` fails closed naming the key (CODE_GUIDELINES
+    §1.11), mirroring :func:`_resolve_llm_provider`.
     """
     raw = source.get("EMBEDDING_PROVIDER")
     if raw is None or not raw.strip():
-        return llm_provider
+        return "openai"
     provider = raw.strip()
     if provider not in ("openai", "ollama"):
         raise ValueError("EMBEDDING_PROVIDER must be 'openai' or 'ollama'")
