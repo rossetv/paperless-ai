@@ -123,8 +123,13 @@ class TestTruncateContentByChars:
         body = "A" * 100
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
-        result = truncate_content_by_chars(content, 50)
-        assert result == "A" * 50 + footer
+        max_chars = 50
+
+        result = truncate_content_by_chars(content, max_chars)
+
+        # Total must not exceed max_chars; footer is always preserved intact.
+        assert len(result) <= max_chars
+        assert result.endswith(footer)
         assert len(result) < len(content)
 
     def test_max_chars_zero_unchanged(self):
@@ -139,9 +144,11 @@ class TestTruncateContentByChars:
         body = "A" * 50
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
-        # max_chars > body length: body is kept as-is, footer appended
-        result = truncate_content_by_chars(content, 60)
-        assert result == body + footer
+        max_chars = 60
+        # Total (50 + 37 = 87) exceeds max_chars (60) so truncation must occur.
+        result = truncate_content_by_chars(content, max_chars)
+        assert len(result) <= max_chars
+        assert result.endswith(footer)
 
     def test_no_footer(self):
         content = "A" * 100
@@ -151,6 +158,45 @@ class TestTruncateContentByChars:
     def test_exact_limit(self):
         content = "A" * 50
         assert truncate_content_by_chars(content, 50) == content
+
+    def test_total_never_exceeds_max_chars(self):
+        """Result length must not exceed max_chars even when a footer is present."""
+        body = "A" * 100
+        footer = "\n\nTranscribed by model: gpt-5.4-mini"
+        content = body + footer
+        max_chars = 50
+
+        result = truncate_content_by_chars(content, max_chars)
+
+        assert len(result) <= max_chars, (
+            f"Result length {len(result)} exceeds max_chars {max_chars}"
+        )
+        assert result.endswith(footer)
+
+    def test_body_budget_is_max_chars_minus_footer(self):
+        """The body slice should be exactly max_chars - len(footer) chars."""
+        body = "B" * 200
+        footer = "\n\nTranscribed by model: x"
+        content = body + footer
+        max_chars = 80
+
+        result = truncate_content_by_chars(content, max_chars)
+
+        expected_body_len = max_chars - len(footer)
+        assert result == "B" * expected_body_len + footer
+        assert len(result) == max_chars
+
+    def test_footer_larger_than_max_chars_yields_empty_body(self):
+        """When the footer is longer than max_chars the body is dropped."""
+        footer = "\n\nTranscribed by model: " + "X" * 100
+        body = "Content here"
+        content = body + footer
+        max_chars = 50  # less than len(footer)
+
+        result = truncate_content_by_chars(content, max_chars)
+
+        # Body must be empty; only the footer is returned.
+        assert result == footer
 
 
 class TestTruncateContentByPages:

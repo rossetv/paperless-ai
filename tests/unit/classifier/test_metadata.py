@@ -65,6 +65,38 @@ class TestParseDocumentDate:
             assert result is None
             mock_log.warning.assert_called_once()
 
+    def test_date_before_1900_rejected(self):
+        assert parse_document_date("1899-12-31") is None
+
+    def test_date_1900_01_01_accepted(self):
+        assert parse_document_date("1900-01-01") == "1900-01-01"
+
+    def test_far_future_date_rejected(self):
+        """A date like 9999-12-31 must be rejected as implausible."""
+        assert parse_document_date("9999-12-31") is None
+
+    def test_slightly_future_date_accepted(self):
+        """A date a few days in the future is within the window."""
+        import datetime as dt
+
+        soon = (dt.date.today() + dt.timedelta(days=10)).isoformat()
+        assert parse_document_date(soon) == soon
+
+    def test_date_exactly_at_1900_accepted(self):
+        assert parse_document_date("1900-01-01") == "1900-01-01"
+
+    def test_far_future_logs_warning(self):
+        with patch("classifier.metadata.log") as mock_log:
+            result = parse_document_date("9999-12-31")
+            assert result is None
+            mock_log.warning.assert_called_once()
+
+    def test_ancient_date_logs_warning(self):
+        with patch("classifier.metadata.log") as mock_log:
+            result = parse_document_date("0001-01-01")
+            assert result is None
+            mock_log.warning.assert_called_once()
+
 
 class TestResolveDateForTags:
     """Tests for resolve_date_for_tags(result_date, existing_date)."""
