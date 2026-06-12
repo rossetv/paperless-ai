@@ -44,6 +44,7 @@ __all__ = [
     "PaperlessDocument",
     "PaperlessItem",
     "RETRYABLE_HTTP_EXCEPTIONS",
+    "RETRYABLE_POST_EXCEPTIONS",
     "is_permanent_paperless_error",
 ]
 
@@ -51,7 +52,27 @@ log = structlog.get_logger(__name__)
 
 # Exceptions that should trigger a retry: transient network errors and
 # 5xx-induced HTTPStatusError (raised by _raise_for_status_if_server_error).
+# Used for the idempotent verbs (GET, PATCH, DELETE) where re-issuing a request
+# the server may already have processed is harmless.
 RETRYABLE_HTTP_EXCEPTIONS = (httpx.RequestError, httpx.HTTPStatusError)
+
+# A POST is **not** idempotent — re-issuing one the server already processed
+# double-applies a non-idempotent write. For ``add_note`` (Paperless notes are
+# not unique) that means a duplicate note. So a POST retries only on the
+# *connect phase*, where the request provably never reached the server:
+#   - ``httpx.ConnectError`` — the TCP/TLS connection could not be established.
+#   - ``httpx.ConnectTimeout`` — the connection attempt itself timed out.
+#   - ``httpx.HTTPStatusError`` — only 5xx reach this (4xx are not raised by
+#     ``_raise_for_status_if_server_error``); a 5xx means the server refused to
+#     process the request, so re-sending is safe.
+# Deliberately EXCLUDED (unlike the idempotent verbs): ``httpx.ReadTimeout`` and
+# ``httpx.RemoteProtocolError`` — those drop while reading the *response* to a
+# request the server may already have applied, so retrying would double-write.
+RETRYABLE_POST_EXCEPTIONS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.HTTPStatusError,
+)
 
 # Exceptions that callers should catch when wrapping PaperlessClient calls
 # in non-fatal error handling.  Covers network errors, HTTP errors, and
@@ -176,7 +197,10 @@ class PaperlessClient:
         return response
 
     # Any: see _get — pure passthrough to httpx.Client.post.
-    @retry(retryable_exceptions=RETRYABLE_HTTP_EXCEPTIONS)
+    # POST uses the narrowed connect-phase-only retry set: a non-idempotent write
+    # must not be re-issued after a response-read drop the server may have already
+    # applied (see RETRYABLE_POST_EXCEPTIONS).
+    @retry(retryable_exceptions=RETRYABLE_POST_EXCEPTIONS)
     def _post(self, url: str, **kwargs: Any) -> httpx.Response:
         response = self._client.post(url, **kwargs)
         self._raise_for_status_if_server_error(response)
@@ -503,18 +527,28 @@ class PaperlessClient:
         :attr:`_NON_NULLABLE_FIELDS` (``custom_fields`` and ``document_date``),
         which Paperless rejects when null and where None means "leave unchanged".
 
-        ``notes`` is handled separately from the PATCH payload: all existing
-        notes are deleted first, then the new text is posted (unless the value
-        is the empty string, in which case the document is left with no notes).
+        ``notes`` is handled separately from the PATCH payload: the new text is
+        posted FIRST (unless the value is the empty string), then the previously
+        existing notes are deleted. This add-before-delete order means a failure
+        mid-operation never leaves the document with zero notes — losing notes is
+        unrecoverable, a transient duplicate is not. An empty string leaves the
+        document with no notes (the old ones are deleted, nothing is added).
         ``archive_serial_number`` is passed through to the PATCH endpoint.
         """
         if "notes" in kwargs:
             notes_text = kwargs.pop("notes")  # type: ignore[misc]
+            # Add-before-delete: the new note is posted FIRST, then the old ones
+            # are removed. Posting before deleting means a failure part-way
+            # through never leaves the document with zero notes — at worst it
+            # leaves the new note alongside a stale one, which is recoverable;
+            # losing the notes entirely is not. The existing IDs are snapshotted
+            # before the add so the freshly-added note is never itself deleted.
             existing = self.list_notes(doc_id)
-            for note in existing:
-                self.delete_note(doc_id, note["id"])
+            existing_ids = [note["id"] for note in existing]
             if notes_text is not None and notes_text != "":
                 self.add_note(doc_id, notes_text)
+            for note_id in existing_ids:
+                self.delete_note(doc_id, note_id)
 
         payload: dict[str, object] = {}
         for key, api_field in self._METADATA_FIELDS.items():

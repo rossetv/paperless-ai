@@ -318,6 +318,124 @@ class TestRunPollingThreadpool:
         assert len(shutdown_calls) >= 1
 
 
+class TestHaltMidQueue:
+    """A breaker that trips mid-pass stops further LLM calls within the batch.
+
+    These cover the M2 fix: ``_poll_once`` only skips *new* polls, so a deep
+    already-materialised queue is bounded by the per-item pre-call halt check
+    and the chunked dispatch inside ``_process_batch``.
+    """
+
+    def test_a_trip_mid_batch_stops_processing_remaining_items(self):
+        # The breaker trips after the 2nd item is processed; the remaining items
+        # must short-circuit before their (expensive) process_item call runs.
+        items = [{"id": i} for i in range(10)]
+        fetch_work = MagicMock(return_value=items)
+        processed: list[int] = []
+        tripped = {"flag": False}
+
+        def process_item(item):
+            processed.append(item["id"])
+            if len(processed) >= 2:
+                tripped["flag"] = True  # systemic write-back failure detected
+
+        # Single worker so completion order is deterministic; halt_check reads
+        # the same flag the daemon's breaker would expose.
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=fetch_work,
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=1,
+                halt_check=lambda: "halted" if tripped["flag"] else None,
+                sleep=_make_sleep_noop(),
+            )
+
+        # Only the items up to the trip ran; the rest of the queue was skipped
+        # without a process_item (and therefore without an LLM) call.
+        assert processed == [0, 1]
+
+    def test_halt_between_sub_batches_stops_dispatch(self):
+        # With max_workers=2 the queue is dispatched in pairs. The breaker trips
+        # during the first pair, so the second pair is never dispatched.
+        items = [{"id": i} for i in range(6)]
+        processed: list[int] = []
+        tripped = {"flag": False}
+
+        def process_item(item):
+            processed.append(item["id"])
+            tripped["flag"] = True  # any failure trips it for this test
+
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=MagicMock(return_value=items),
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=2,
+                halt_check=lambda: "halted" if tripped["flag"] else None,
+                sleep=_make_sleep_noop(),
+            )
+
+        # At most the first sub-batch (2 items) ran; the remaining four were
+        # never dispatched. The exact count within the first pair depends on
+        # scheduling, but the queue must not have been processed in full.
+        assert len(processed) <= 2
+        assert set(processed).issubset({0, 1})
+
+    def test_processed_count_reflects_dispatched_not_queue_depth(self):
+        # When a halt cuts a batch short, on_cycle's outcome.processed must be
+        # the number actually dispatched — the heartbeat reports real work, not
+        # the materialised queue depth.
+        from common.daemon_loop import CycleOutcome
+
+        items = [{"id": i} for i in range(10)]
+        outcomes: list[CycleOutcome] = []
+        processed: list[int] = []
+        tripped = {"flag": False}
+
+        def process_item(item):
+            processed.append(item["id"])
+            if len(processed) >= 3:
+                tripped["flag"] = True
+
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=MagicMock(return_value=items),
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=1,
+                halt_check=lambda: "halted" if tripped["flag"] else None,
+                on_cycle=outcomes.append,
+                sleep=_make_sleep_noop(),
+            )
+
+        assert len(outcomes) == 1
+        assert outcomes[0].processed == len(processed)
+        assert outcomes[0].processed < len(items)
+        assert outcomes[0].idle is False
+
+    def test_no_halt_check_processes_the_whole_queue(self):
+        # Regression: with no halt_check the entire materialised queue is still
+        # processed exactly once — the conservative non-breaker path is unchanged.
+        items = [{"id": i} for i in range(7)]
+        process_item = MagicMock()
+
+        with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
+            run_polling_threadpool(
+                daemon_name="test",
+                fetch_work=MagicMock(return_value=items),
+                process_item=process_item,
+                poll_interval_seconds=5,
+                max_workers=3,
+                sleep=_make_sleep_noop(),
+            )
+
+        assert process_item.call_count == 7
+
+
 class TestSafeItemSummary:
     """Tests for _safe_item_summary()."""
 

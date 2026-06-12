@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from common.stale_lock import recover_stale_locks
 
+MODULE = "common.stale_lock"
+
 
 class TestRecoverStaleLocks:
-    """Tests for recover_stale_locks()."""
+    """Tests for recover_stale_locks().
+
+    Every test passes ``recovery_enabled=True`` explicitly so the sweep runs
+    without consulting ``current_settings()`` — the flag-resolution path has its
+    own dedicated tests below.
+    """
 
     def test_returns_zero_when_processing_tag_id_is_none(self):
         client = MagicMock()
 
-        result = recover_stale_locks(client, processing_tag_id=None, pre_tag_id=1)
+        result = recover_stale_locks(
+            client, processing_tag_id=None, pre_tag_id=1, recovery_enabled=True
+        )
 
         assert result == 0
         client.get_documents_by_tag.assert_not_called()
@@ -23,7 +32,9 @@ class TestRecoverStaleLocks:
         client = MagicMock()
         client.get_documents_by_tag.return_value = []
 
-        result = recover_stale_locks(client, processing_tag_id=0, pre_tag_id=1)
+        result = recover_stale_locks(
+            client, processing_tag_id=0, pre_tag_id=1, recovery_enabled=True
+        )
 
         assert result == 0
         client.get_documents_by_tag.assert_called_once_with(0)
@@ -39,6 +50,7 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=processing_tag,
             pre_tag_id=pre_tag,
+            recovery_enabled=True,
         )
 
         assert result == 1
@@ -63,6 +75,7 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=processing_tag,
             pre_tag_id=pre_tag,
+            recovery_enabled=True,
         )
 
         assert result == 3
@@ -76,6 +89,7 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=50,
             pre_tag_id=10,
+            recovery_enabled=True,
         )
 
         assert result == 0
@@ -99,6 +113,7 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=50,
             pre_tag_id=10,
+            recovery_enabled=True,
         )
 
         assert result == 2  # only doc 1 and doc 3 counted
@@ -117,6 +132,7 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=50,
             pre_tag_id=10,
+            recovery_enabled=True,
         )
 
         assert result == 0
@@ -134,6 +150,78 @@ class TestRecoverStaleLocks:
             client,
             processing_tag_id=50,
             pre_tag_id=10,
+            recovery_enabled=True,
         )
 
         assert result == 2
+
+
+class TestStaleLockRecoveryFlag:
+    """The STALE_LOCK_RECOVERY flag gates the startup sweep."""
+
+    def test_disabled_flag_skips_the_sweep_entirely(self):
+        # A multi-replica deployment disables the sweep so a restarting replica
+        # never steals a peer's live lock. No Paperless call is made.
+        client = MagicMock()
+
+        result = recover_stale_locks(
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
+            recovery_enabled=False,
+        )
+
+        assert result == 0
+        client.get_documents_by_tag.assert_not_called()
+        client.update_document_metadata.assert_not_called()
+
+    def test_enabled_flag_runs_the_sweep(self):
+        client = MagicMock()
+        client.get_documents_by_tag.return_value = [{"id": 1, "tags": [50]}]
+
+        result = recover_stale_locks(
+            client,
+            processing_tag_id=50,
+            pre_tag_id=10,
+            recovery_enabled=True,
+        )
+
+        assert result == 1
+        client.get_documents_by_tag.assert_called_once_with(50)
+
+    def test_default_resolves_the_flag_from_settings_true(self):
+        # When recovery_enabled is left at its default (None), the flag is read
+        # from current_settings(). STALE_LOCK_RECOVERY True runs the sweep.
+        client = MagicMock()
+        client.get_documents_by_tag.return_value = [{"id": 1, "tags": [50]}]
+        settings = MagicMock(STALE_LOCK_RECOVERY=True)
+
+        with patch(f"{MODULE}.current_settings", return_value=settings) as cs:
+            result = recover_stale_locks(client, processing_tag_id=50, pre_tag_id=10)
+
+        cs.assert_called_once()
+        assert result == 1
+        client.get_documents_by_tag.assert_called_once_with(50)
+
+    def test_default_resolves_the_flag_from_settings_false(self):
+        # STALE_LOCK_RECOVERY False, resolved from settings, skips the sweep.
+        client = MagicMock()
+        settings = MagicMock(STALE_LOCK_RECOVERY=False)
+
+        with patch(f"{MODULE}.current_settings", return_value=settings) as cs:
+            result = recover_stale_locks(client, processing_tag_id=50, pre_tag_id=10)
+
+        cs.assert_called_once()
+        assert result == 0
+        client.get_documents_by_tag.assert_not_called()
+
+    def test_none_processing_tag_id_never_consults_settings(self):
+        # The no-lock-configured early return short-circuits before any settings
+        # read, so a daemon with no processing tag pays nothing.
+        client = MagicMock()
+
+        with patch(f"{MODULE}.current_settings") as cs:
+            result = recover_stale_locks(client, processing_tag_id=None, pre_tag_id=10)
+
+        assert result == 0
+        cs.assert_not_called()
