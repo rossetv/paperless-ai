@@ -49,16 +49,13 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Inset detail/throughput row. ── */
+/* ── Detail/throughput row — spacing-only grouping, no nested border. ── */
 .metrics {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-8);
-  padding: var(--spacing-8) var(--spacing-9);
-  background-color: var(--colour-button-light-bg);
-  border: var(--spacing-1) solid var(--colour-border);
-  border-radius: var(--radius-comfortable);
+  padding: var(--spacing-8) 0;
 }
 
 .detail {

@@ -145,7 +145,7 @@ def _top_names(items: list[PaperlessItem], limit: int) -> list[str]:
         if existing is None:
             deduped[key] = _RankedName(name, usage)
         elif usage > existing.usage:
-            deduped[key] = _RankedName(existing.name, usage)
+            deduped[key] = _RankedName(name, usage)
 
     ranked = sorted(
         deduped.values(),
@@ -216,21 +216,6 @@ class TaxonomyCache:
                 document_types=list(self._cached_document_type_names),
                 tags=list(self._cached_tag_names),
             )
-
-    def correspondent_names(self) -> list[str]:
-        """Return correspondent names for the classification prompt."""
-        with self._lock:
-            return list(self._cached_correspondent_names)
-
-    def document_type_names(self) -> list[str]:
-        """Return document-type names for the classification prompt."""
-        with self._lock:
-            return list(self._cached_document_type_names)
-
-    def tag_names(self) -> list[str]:
-        """Return tag names for the classification prompt."""
-        with self._lock:
-            return list(self._cached_tag_names)
 
     def _correspondent_kind(self) -> _TaxonomyKind:
         return _TaxonomyKind(

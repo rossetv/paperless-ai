@@ -10,6 +10,8 @@ ever interpolated (CODE_GUIDELINES §9.5).
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from store.models import DocumentBrowseQuery, SearchFilters
 
 
@@ -23,13 +25,16 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
 
     Filter semantics:
 
-    - ``date_from`` / ``date_to``: inclusive range on the **date portion** of
-      ``d.created`` via SQLite ``date(d.created)``.  Documents store a full
-      ISO-8601 timestamp (e.g. ``"2025-04-25T00:00:00+00:00"``); the bare
-      ``YYYY-MM-DD`` bounds supplied by the search pipeline would fail a naïve
-      lexicographic comparison because the ``T…`` suffix sorts after a bare date
-      string.  Wrapping with ``date()`` strips the time and timezone so a bound
-      of ``"2025-04-25"`` correctly includes any stored timestamp on that date.
+    - ``date_from`` / ``date_to``: half-open date range on ``d.created``.
+      Documents store a full ISO-8601 timestamp
+      (e.g. ``"2025-04-25T00:00:00+00:00"``).  Bare ``YYYY-MM-DD`` bounds
+      compare correctly against full timestamps lexicographically:
+      ``"2025-04-25T..."`` sorts after ``"2025-04-25"`` so ``>= date_from``
+      captures every timestamp on that day.  For the upper bound we use a
+      half-open ``< (date_to + 1 day)`` so that any timestamp on ``date_to``
+      is included while the stored ``idx_documents_created`` index remains
+      usable (wrapping the column in ``date()`` would make the predicate
+      non-sargable and force a full table scan).
     - ``correspondent_id``: equality on ``d.correspondent_id``.
     - ``document_type_id``: equality on ``d.document_type_id``.
     - ``tag_ids``: each id in the tuple must appear as a value in
@@ -43,12 +48,17 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
     params: list[str | int] = []
 
     if filters.date_from is not None:
-        clauses.append("date(d.created) >= ?")
+        clauses.append("d.created >= ?")
         params.append(filters.date_from)
 
     if filters.date_to is not None:
-        clauses.append("date(d.created) <= ?")
-        params.append(filters.date_to)
+        # Half-open upper bound: advance by one day so any timestamp on
+        # date_to is captured. The plain column reference keeps the
+        # idx_documents_created index usable (a date() wrapper is non-sargable).
+        exclusive_upper = _exclusive_upper_bound(filters.date_to)
+        if exclusive_upper is not None:
+            clauses.append("d.created < ?")
+            params.append(exclusive_upper)
 
     if filters.correspondent_id is not None:
         clauses.append("d.correspondent_id = ?")
@@ -69,6 +79,25 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
         return "", params
 
     return "WHERE " + " AND ".join(clauses), params
+
+
+def _exclusive_upper_bound(date_to: str) -> str | None:
+    """Return the half-open ``< bound`` for an inclusive ``date_to`` day.
+
+    *date_to* is documented as a bare ``YYYY-MM-DD`` string, but it crosses an
+    untrusted boundary (a UI query param and the LLM planner both feed it
+    verbatim), so it can arrive as a full ISO-8601 timestamp
+    (``"2023-12-31T23:59:59+00:00"``) or as malformed garbage.  Only the date
+    portion matters for an inclusive whole-day bound, so we parse the leading
+    ``YYYY-MM-DD`` and advance it by one day.  An unparseable value yields
+    ``None`` — the caller then omits the upper bound rather than crashing the
+    search (the old ``date(d.created) <= ?`` form silently tolerated junk too).
+    """
+    try:
+        day = date.fromisoformat(date_to[:10])
+    except ValueError:
+        return None
+    return str(day + timedelta(days=1))
 
 
 def escape_fts_term(term: str) -> str:

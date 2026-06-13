@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import signal
 import threading
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from types import FrameType
 
 log = structlog.get_logger(__name__)
 
@@ -39,7 +43,7 @@ def reset_shutdown() -> None:
 def register_signal_handlers() -> None:
     """Install SIGTERM/SIGINT handlers. Must be called from the main thread."""
 
-    def _handler(signum: int, _frame) -> None:
+    def _handler(signum: int, _frame: FrameType | None) -> None:
         name = signal.Signals(signum).name
         log.info("Received signal; requesting graceful shutdown", signal=name)
         request_shutdown()

@@ -15,8 +15,8 @@ Allowed deps: search.models. Forbidden: config, I/O, network.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from search.models import Cost, TokenUsage
 
@@ -63,11 +63,19 @@ def price_call(
     provider: str,
     usage: TokenUsage,
     *,
-    table: Mapping[str, ModelPrice] = MODEL_PRICES,
+    table: Mapping[str, ModelPrice],
 ) -> Cost:
     """Price one call's *usage*. Local provider → $0/local; unknown model → None.
 
-    ``table`` is injectable for tests; production uses :data:`MODEL_PRICES`.
+    *provider* is the endpoint that actually served this call (the model's
+    routed provider, from :attr:`~common.llm.LlmCallUsage.provider`), so a
+    mixed-provider query prices each call against the right table — a local
+    (Ollama) call is free even when other steps ran on OpenAI, and vice versa.
+
+    ``table`` is required — the caller always passes the live price book's
+    effective table (:meth:`~search.pricing_book.PriceBook.effective_table`);
+    tests pass :data:`MODEL_PRICES` explicitly. Defaulting it would silently let
+    a caller price against the stale bundled seed instead of the live book.
     """
     if provider == "ollama":
         return Cost(usd=0.0, local=True)

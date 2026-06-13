@@ -35,7 +35,7 @@ from tests.helpers.factories import (
 def _tele() -> tuple[_Telemetry, list[PhaseRecord]]:
     """Return a (telemetry, records_list) pair; records accumulate on done()."""
     records: list[PhaseRecord] = []
-    tele = _Telemetry(on_event=records.append, provider="openai")
+    tele = _Telemetry(on_event=records.append)
     return tele, records
 
 

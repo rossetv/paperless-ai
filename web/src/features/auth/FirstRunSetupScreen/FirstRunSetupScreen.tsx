@@ -8,6 +8,18 @@ import { validateUsername, validatePassword } from '../../../lib/credentials';
 import styles from './FirstRunSetupScreen.module.css';
 
 /**
+ * Map a setup error to user-friendly copy.
+ *
+ * 403 → bad token; 409 → already set up; anything else → generic.
+ * The raw Error.message is never shown — it is internal (e.g. "API error 403").
+ */
+function setupErrorMessage(e: Error): string {
+  if (e instanceof ApiError && e.status === 403) return 'Invalid setup token.';
+  if (e instanceof ApiError && e.status === 409) return 'Paperless AI is already set up.';
+  return 'Setup failed. Please try again.';
+}
+
+/**
  * The dark first-run setup screen.
  *
  * Shown only while no users exist (the bootstrap gate routes here). Collects
@@ -33,18 +45,6 @@ export function FirstRunSetupScreen(): React.ReactElement {
   const [confirmError, setConfirmError] = React.useState<string | undefined>(undefined);
 
   const setup = useSetup();
-
-  /**
-   * Map a setup error to user-friendly copy.
-   *
-   * 403 → bad token; 409 → already set up; anything else → generic.
-   * The raw Error.message is never shown — it is internal (e.g. "API error 403").
-   */
-  function setupErrorMessage(e: Error): string {
-    if (e instanceof ApiError && e.status === 403) return 'Invalid setup token.';
-    if (e instanceof ApiError && e.status === 409) return 'Paperless AI is already set up.';
-    return 'Setup failed. Please try again.';
-  }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault();

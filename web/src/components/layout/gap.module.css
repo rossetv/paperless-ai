@@ -65,3 +65,11 @@
 .gap-14 {
   gap: var(--spacing-14);
 }
+
+.gap-15 {
+  gap: var(--spacing-15);
+}
+
+.gap-16 {
+  gap: var(--spacing-16);
+}

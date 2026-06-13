@@ -104,6 +104,86 @@ _SETTINGS_CACHE: dict[str, tuple[int, Settings]] = {}
 _SETTINGS_CACHE_LOCK = threading.Lock()
 
 
+def _resolve_app_db_path(app_db_path: str | None) -> str:
+    """Resolve *app_db_path* to the path that will be used as the cache key."""
+    return (
+        app_db_path
+        if app_db_path is not None
+        else os.environ.get("APP_DB_PATH", "/data/app.db")
+    )
+
+
+def _hot_load(resolved: str) -> tuple[int, Settings]:
+    """Core hot-load logic: snapshot, cache-check, rebuild-under-lock.
+
+    Returns ``(version, settings)`` where *version* is the ``config_version``
+    the returned :class:`Settings` was built from — they are always consistent
+    because both come from the same ``BEGIN DEFERRED`` snapshot.
+
+    Both :func:`current_settings` and :func:`current_settings_with_version`
+    delegate here so neither function ever reads ``_SETTINGS_CACHE`` without
+    holding the lock after a rebuild; the pair is written atomically inside
+    ``_SETTINGS_CACHE_LOCK`` and the return value comes from that same write,
+    not from a subsequent unlocked dict read.
+    """
+    # Deferred import — see load_settings for the rationale.
+    from appdb import config as config_store  # noqa: PLC0415
+    from appdb.connection import connect  # noqa: PLC0415
+    from appdb.schema import ensure_schema  # noqa: PLC0415
+
+    # Fast path: read the version under a snapshot, take the cache value if
+    # it matches. The snapshot also captures the config_table we will need
+    # if the version has moved, so we never re-open the DB on the rebuild
+    # path — the version and the data are consistent by construction.
+    conn = connect(resolved)
+    try:
+        ensure_schema(conn)
+        version, config_table = config_store.snapshot_config_with_version(conn)
+    finally:
+        conn.close()
+
+    cached = _SETTINGS_CACHE.get(resolved)
+    if cached is not None and cached[0] == version:
+        return cached
+
+    # Slow path under a lock: re-check the cache (another caller may have
+    # rebuilt while we waited), then build a Settings from the snapshot we
+    # took above and cache it under the version that snapshot reported. If
+    # the config table is empty we first seed it from the environment — that
+    # bumps config_version, so we re-snapshot and rebuild from the seeded
+    # data — and the cached pair is always (version, Settings-built-from-it).
+    with _SETTINGS_CACHE_LOCK:
+        cached = _SETTINGS_CACHE.get(resolved)
+        if cached is not None and cached[0] == version:
+            return cached
+
+        if not config_table:
+            # First-run seed (web-redesign §5). The seed runs inside its own
+            # ``BEGIN IMMEDIATE`` and bumps config_version; re-snapshot so the
+            # cache key matches the post-seed version.
+            #
+            # Cross-process precondition (COMMON-04): on a fresh deployment
+            # every process (the daemons, the search server) can boot at once,
+            # all see an empty config table, and all call seed_from_env. That is
+            # only safe because seed_from_env is idempotent — it no-ops once any
+            # row exists and writes via INSERT ... ON CONFLICT, so a concurrent
+            # double-seed converges on the same env-derived values rather than
+            # corrupting the table. Do not relax that idempotency in appdb.
+            conn = connect(resolved)
+            try:
+                config_store.seed_from_env(
+                    conn, environ=os.environ, keys=set(CONFIG_KEYS)
+                )
+                version, config_table = config_store.snapshot_config_with_version(conn)
+            finally:
+                conn.close()
+
+        settings = _build_settings(_merge_environment(config_table, resolved))
+        pair: tuple[int, Settings] = (version, settings)
+        _SETTINGS_CACHE[resolved] = pair
+        return pair
+
+
 def current_settings(app_db_path: str | None = None) -> Settings:
     """Return the up-to-date :class:`Settings`, rebuilding it on a config change.
 
@@ -147,67 +227,8 @@ def current_settings(app_db_path: str | None = None) -> Settings:
             :func:`load_settings`).
         appdb.migrations.AppDbError: ``app.db`` was written by newer code.
     """
-    # Deferred import — see load_settings for the rationale.
-    from appdb import config as config_store  # noqa: PLC0415
-    from appdb.connection import connect  # noqa: PLC0415
-    from appdb.schema import ensure_schema  # noqa: PLC0415
-
-    resolved = (
-        app_db_path
-        if app_db_path is not None
-        else os.environ.get("APP_DB_PATH", "/data/app.db")
-    )
-
-    # Fast path: read the version under a snapshot, take the cache value if
-    # it matches. The snapshot also captures the config_table we will need
-    # if the version has moved, so we never re-open the DB on the rebuild
-    # path — the version and the data are consistent by construction.
-    conn = connect(resolved)
-    try:
-        ensure_schema(conn)
-        version, config_table = config_store.snapshot_config_with_version(conn)
-    finally:
-        conn.close()
-
-    cached = _SETTINGS_CACHE.get(resolved)
-    if cached is not None and cached[0] == version:
-        return cached[1]
-
-    # Slow path under a lock: re-check the cache (another caller may have
-    # rebuilt while we waited), then build a Settings from the snapshot we
-    # took above and cache it under the version that snapshot reported. If
-    # the config table is empty we first seed it from the environment — that
-    # bumps config_version, so we re-snapshot and rebuild from the seeded
-    # data — and the cached pair is always (version, Settings-built-from-it).
-    with _SETTINGS_CACHE_LOCK:
-        cached = _SETTINGS_CACHE.get(resolved)
-        if cached is not None and cached[0] == version:
-            return cached[1]
-
-        if not config_table:
-            # First-run seed (web-redesign §5). The seed runs inside its own
-            # ``BEGIN IMMEDIATE`` and bumps config_version; re-snapshot so the
-            # cache key matches the post-seed version.
-            #
-            # Cross-process precondition (COMMON-04): on a fresh deployment
-            # every process (the daemons, the search server) can boot at once,
-            # all see an empty config table, and all call seed_from_env. That is
-            # only safe because seed_from_env is idempotent — it no-ops once any
-            # row exists and writes via INSERT ... ON CONFLICT, so a concurrent
-            # double-seed converges on the same env-derived values rather than
-            # corrupting the table. Do not relax that idempotency in appdb.
-            conn = connect(resolved)
-            try:
-                config_store.seed_from_env(
-                    conn, environ=os.environ, keys=set(CONFIG_KEYS)
-                )
-                version, config_table = config_store.snapshot_config_with_version(conn)
-            finally:
-                conn.close()
-
-        settings = _build_settings(_merge_environment(config_table, resolved))
-        _SETTINGS_CACHE[resolved] = (version, settings)
-        return settings
+    _, settings = _hot_load(_resolve_app_db_path(app_db_path))
+    return settings
 
 
 def current_settings_with_version(
@@ -228,12 +249,6 @@ def current_settings_with_version(
     produce a ``(newer_version, core_from_older_settings)`` pair that sticks
     until a *further* unrelated write bumps the counter again.
 
-    All caching logic (including the rebuild-under-lock slow path) is delegated
-    to :func:`current_settings`; after it returns the ``_SETTINGS_CACHE`` entry
-    for *resolved* is guaranteed to be at the version the settings were built
-    from (or a later one if another thread rebuilt first — which is fine, the
-    returned version always matches the returned Settings).
-
     Args:
         app_db_path: Filesystem path to ``app.db``. When ``None`` (the normal
             case) it is read from the ``APP_DB_PATH`` environment variable.
@@ -242,20 +257,7 @@ def current_settings_with_version(
         ``(config_version, Settings)`` where ``config_version`` is the
         version the settings snapshot was built from.
     """
-    resolved = (
-        app_db_path
-        if app_db_path is not None
-        else os.environ.get("APP_DB_PATH", "/data/app.db")
-    )
-
-    # Delegate to current_settings for all snapshot + cache logic. Every return
-    # path inside it leaves _SETTINGS_CACHE[resolved] populated with the
-    # (version, settings) pair it returned — the fast path returns an entry that
-    # already existed, the slow path writes one before returning — so the read
-    # below is always a hit. This is a GIL-atomic dict read, no lock needed.
-    current_settings(resolved)
-    version, settings = _SETTINGS_CACHE[resolved]
-    return version, settings
+    return _hot_load(_resolve_app_db_path(app_db_path))
 
 
 def _merge_environment(

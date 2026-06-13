@@ -102,10 +102,11 @@ set will see no effect — the variable is silently ignored.
 ## LLM Provider
 
 Which AI provider runs OCR and classification, and the model fallback chains.
-`openai` is the default; `ollama` runs everything locally. Embeddings follow
-`EMBEDDING_PROVIDER` (see [Embedding & Indexing](#embedding--indexing)), which
-itself defaults to `LLM_PROVIDER` — so `LLM_PROVIDER=ollama` embeds locally too
-unless you set `EMBEDDING_PROVIDER` explicitly.
+`openai` is the default; `ollama` runs everything locally. Embeddings are
+controlled separately by `EMBEDDING_PROVIDER` (see [Embedding &
+Indexing](#embedding--indexing)), which defaults to `openai` **independently of
+`LLM_PROVIDER`** — switching the LLM provider never silently moves the embedding
+space.
 
 | Variable | Description | Default | Required |
 |:---|:---|:---|:---|
@@ -131,7 +132,7 @@ cheaper options trade a little accuracy for lower cost.
 | `OCR_MAX_SIDE` | Max pixel dimension of the longest side. Images are thumbnailed to fit within this before being sent to the vision API. | `1600` |
 | `OCR_IMAGE_DETAIL` | The OpenAI vision `image_url.detail` level: `high`, `auto`, or `low`. `high` keeps the request identical to before this setting existed; `auto`/`low` are cheaper. | `high` |
 | `OCR_REASONING_EFFORT` | Reasoning effort for the OCR call (OpenAI only): `minimal`, `low`, `medium`, `high`. `medium` is the model's own default; tune *down* to cut the reasoning-token premium on this high-volume call. | `medium` |
-| `OCR_REFUSAL_MARKERS` | Comma-separated phrases (case-insensitive) that indicate a model refused to transcribe. If detected, the next model in the chain is tried. | `i can't assist, i cannot assist, i can't help with transcrib, i cannot help with transcrib, CHATGPT REFUSED TO TRANSCRIBE` |
+| `OCR_REFUSAL_MARKERS` | Comma-separated phrases (case-insensitive) that indicate a model refused to transcribe. If detected, the next model in the chain is tried. | `i can't assist, i cannot assist, i can't help with transcrib, i cannot help with transcrib, i'm sorry, i can't assist with that., chatgpt refused to transcribe` |
 | `OCR_INCLUDE_PAGE_MODELS` | If `true`, page headers include the model name (e.g. `--- Page 2 (gpt-5.5) ---`). | `false` |
 
 ---
@@ -230,20 +231,20 @@ know your provider can take it.
 
 ## Embedding & Indexing
 
-These drive the indexer daemon, which builds the search index. By default the
-embedding step follows `EMBEDDING_PROVIDER`, which itself defaults to
-`LLM_PROVIDER` — so an `openai` deployment embeds with OpenAI and an `ollama`
-deployment embeds locally with no document chunk leaving the box.
+These drive the indexer daemon, which builds the search index. The embedding
+provider is chosen independently of `LLM_PROVIDER`: `EMBEDDING_PROVIDER`
+defaults to `openai` regardless of what `LLM_PROVIDER` is set to. A
+fully-local deployment must set `EMBEDDING_PROVIDER=ollama` explicitly.
 
-`OPENAI_API_KEY` is required whenever `EMBEDDING_PROVIDER=openai` (or
-`LLM_PROVIDER=openai`); a fully-local deployment (both `ollama`) does not need
-it. For a local embedding setup, set `EMBEDDING_MODEL` to an Ollama embedding
-model (e.g. `nomic-embed-text`) and `EMBEDDING_DIMENSIONS` to that model's
-native vector width.
+`OPENAI_API_KEY` is required whenever `EMBEDDING_PROVIDER=openai`; a
+fully-local deployment (`EMBEDDING_PROVIDER=ollama`) does not need it. For a
+local embedding setup, set `EMBEDDING_MODEL` to an Ollama embedding model (e.g.
+`nomic-embed-text`) and `EMBEDDING_DIMENSIONS` to that model's native vector
+width.
 
 | Variable | Description | Default |
 |:---|:---|:---|
-| `EMBEDDING_PROVIDER` | Provider that vectorises chunks: `openai` or `ollama`. Defaults to `LLM_PROVIDER`. Under `ollama` the indexer embeds against `OLLAMA_BASE_URL` (no `OPENAI_API_KEY` needed) and `EMBEDDING_MODEL` must name a local embedding model with a matching `EMBEDDING_DIMENSIONS`. **Switching this forces a full re-embed** (the stored OpenAI and Ollama vectors are not comparable) — run a full re-index from the Index page after changing it. | `LLM_PROVIDER` |
+| `EMBEDDING_PROVIDER` | Provider that vectorises chunks: `openai` or `ollama`. Defaults to `openai` **independently of `LLM_PROVIDER`** — the two providers are chosen separately. Under `ollama` the indexer embeds against `OLLAMA_BASE_URL` (no `OPENAI_API_KEY` needed) and `EMBEDDING_MODEL` must name a local embedding model with a matching `EMBEDDING_DIMENSIONS`. **Switching this forces a full re-embed** (the stored OpenAI and Ollama vectors are not comparable) — run a full re-index from the Index page after changing it. | `openai` |
 | `EMBEDDING_MODEL` | Embedding model used to vectorise chunks (an OpenAI model under `openai`, a local Ollama embedding model under `ollama`). **Changing this requires a full re-index** (see [Re-indexing](#how-configuration-works)). | `text-embedding-3-small` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensionality. Locked to the embedding model and pinned in the index schema on first reconcile — a lone change is rejected, not warned. | `1536` |
 | `EMBEDDING_MAX_CONCURRENT` | Max concurrent embedding API calls. `0` = unlimited. | `4` |

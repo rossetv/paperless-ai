@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { cn } from '../../../lib/cn';
 import { DocThumb } from '../DocThumb/DocThumb';
-import type { DocThumbKind } from '../DocThumb/DocThumb';
+import type { DocThumbKind } from '../DocThumb/thumbKind';
 import styles from './SourceCardSurface.module.css';
 
 export interface SourceCardSurfaceProps {

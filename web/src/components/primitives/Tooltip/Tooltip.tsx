@@ -25,9 +25,9 @@ export interface TooltipProps {
  * - Hidden via conditional rendering (not just visibility) so screen readers
  *   do not encounter it when it is not triggered.
  *
- * The trigger's event handlers (onMouseEnter, onMouseLeave, onFocus, onBlur,
- * onKeyDown) are merged with the child's existing handlers so this wrapper
- * is non-destructive.
+ * All five trigger handlers (onMouseEnter, onMouseLeave, onFocus, onBlur,
+ * onKeyDown) are merged with the child's existing handlers — the child's
+ * handler fires first, then the tooltip's. No child handler is overwritten.
  */
 export function Tooltip({ content, children }: TooltipProps): React.ReactElement {
   const [visible, setVisible] = useState(false);
@@ -37,16 +37,52 @@ export function Tooltip({ content, children }: TooltipProps): React.ReactElement
   const show = useCallback(() => setVisible(true), []);
   const hide = useCallback(() => setVisible(false), []);
 
+  // Helpers that call the child's existing handler (if any) then the tooltip's.
+  type MouseHandler = (e: React.MouseEvent) => void;
+  type FocusHandler = (e: React.FocusEvent) => void;
+
+  const handleMouseEnter = useCallback(
+    (event: React.MouseEvent) => {
+      (children.props.onMouseEnter as MouseHandler | undefined)?.(event);
+      show();
+    },
+    [children.props.onMouseEnter, show],
+  );
+
+  const handleMouseLeave = useCallback(
+    (event: React.MouseEvent) => {
+      (children.props.onMouseLeave as MouseHandler | undefined)?.(event);
+      hide();
+    },
+    [children.props.onMouseLeave, hide],
+  );
+
+  const handleFocus = useCallback(
+    (event: React.FocusEvent) => {
+      (children.props.onFocus as FocusHandler | undefined)?.(event);
+      show();
+    },
+    [children.props.onFocus, show],
+  );
+
+  const handleBlur = useCallback(
+    (event: React.FocusEvent) => {
+      (children.props.onBlur as FocusHandler | undefined)?.(event);
+      hide();
+    },
+    [children.props.onBlur, hide],
+  );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setVisible(false);
-      }
-      // Forward to any existing onKeyDown on the child
+      // Forward to any existing onKeyDown on the child first.
       const existingHandler = children.props.onKeyDown as
         | ((e: React.KeyboardEvent) => void)
         | undefined;
       existingHandler?.(event);
+      if (event.key === 'Escape') {
+        setVisible(false);
+      }
     },
     [children.props.onKeyDown],
   );
@@ -55,10 +91,10 @@ export function Tooltip({ content, children }: TooltipProps): React.ReactElement
   // aria-describedby is only set when the tooltip is visible — when hidden
   // the tooltip element is not in the DOM so the reference would dangle.
   const triggerProps: Record<string, unknown> = {
-    onMouseEnter: show,
-    onMouseLeave: hide,
-    onFocus: show,
-    onBlur: hide,
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
+    onFocus: handleFocus,
+    onBlur: handleBlur,
     onKeyDown: handleKeyDown,
     ...(visible ? { 'aria-describedby': tooltipId } : {}),
   };

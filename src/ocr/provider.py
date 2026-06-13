@@ -1,4 +1,4 @@
-"""OCR provider with model fallback, image preparation, and refusal detection."""
+"""OCR provider: model fallback, image preparation, and refusal detection."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import base64
 from io import BytesIO
 from typing import Iterable
 
-import openai
 import structlog
 from PIL import Image
 
@@ -58,11 +57,12 @@ def _is_model_refusal(
 
 
 def is_blank(image: Image.Image, threshold: int = 5) -> bool:
-    """Return ``True`` if the image is essentially blank (all white).
+    """Return ``True`` if the image is pixel-perfect white (greyscale value 255).
 
-    Converts to greyscale and checks that the number of non-white pixels
-    is below *threshold*.  Used to skip blank pages without wasting an
-    API call.
+    Counts only exact-255 pixels as white; near-white scanner backgrounds
+    (values 250–254) are treated as non-blank.  Used to skip synthetically
+    blank pages without wasting an API call.  Real-world scans with slight
+    off-white backgrounds will not match this check.
     """
     histogram = image.convert("L").histogram()
     return (sum(histogram) - histogram[255]) < threshold
@@ -89,10 +89,10 @@ class OcrProvider(OpenAIChatMixin):
     def _reasoning_effort(self) -> str | None:
         """The OpenAI ``reasoning_effort`` for OCR, or ``None`` for non-OpenAI.
 
-        ``reasoning_effort`` is an OpenAI-only flat kwarg (SDK 1.109.1). Gating
-        it on the OCR step's *own* provider — exactly as the classifier gates
-        ``response_format`` (``classifier/provider.py``) — keeps Ollama/non-OpenAI
-        requests clean and keeps OCR independent of the shared compat layer.
+        Gated on the OCR step's own provider so non-OpenAI requests never
+        include the kwarg.  If an OpenAI model still rejects it,
+        ``_create_with_compat`` strips and caches the rejection rather than
+        failing the whole fallback chain.
         """
         if self.settings.OCR_PROVIDER != "openai":
             return None
@@ -104,12 +104,10 @@ class OcrProvider(OpenAIChatMixin):
         doc_id: int | None = None,
         page_num: int | None = None,
     ) -> PageResult:
-        """
-        Transcribe a single page image using the configured model chain.
+        """Transcribe a single page image using the configured model chain.
 
-        Returns a blank :class:`PageResult` for blank pages and for the case
-        where every model refuses or errors — in the latter case the text is
-        ``settings.REFUSAL_MARK``.
+        Returns a blank :class:`PageResult` for blank pages, and a
+        ``settings.REFUSAL_MARK`` result when every model refuses or errors.
         """
         log_ctx: dict[str, int] = {}
         if doc_id is not None:
@@ -122,7 +120,7 @@ class OcrProvider(OpenAIChatMixin):
 
         payload = self._encode_page(image)
 
-        messages = [
+        messages: list[dict[str, object]] = [
             {"role": "system", "content": TRANSCRIPTION_PROMPT},
             {
                 "role": "user",
@@ -142,7 +140,7 @@ class OcrProvider(OpenAIChatMixin):
         primary_model = models_to_try[0]
 
         for model in models_to_try:
-            params = {
+            params: dict[str, object] = {
                 "model": model,
                 "messages": messages,
                 "timeout": self.settings.REQUEST_TIMEOUT,
@@ -150,31 +148,26 @@ class OcrProvider(OpenAIChatMixin):
             reasoning_effort = self._reasoning_effort()
             if reasoning_effort is not None:
                 params["reasoning_effort"] = reasoning_effort
-            try:
-                self._stats.inc("attempts")
-                response = self._create_completion(**params)
-                text = (response.choices[0].message.content or "").strip()
 
-                if _is_model_refusal(
-                    text,
-                    self.settings.OCR_REFUSAL_MARKERS,
-                    self.settings.REFUSAL_MARK,
-                ):
-                    log.warning("Model refused to transcribe", model=model, **log_ctx)
-                    self._stats.inc("refusals")
-                    continue
-                if model != primary_model:
-                    log.info("Fallback model succeeded", model=model, **log_ctx)
-                    self._stats.inc("fallback_successes")
-                return PageResult(text=text, model=model)
-            except openai.APIError as e:
-                log.warning(
-                    "API call for model failed after all retries",
-                    model=model,
-                    error=str(e),
-                    **log_ctx,
-                )
-                self._stats.inc("api_errors")
+            response = self._create_with_compat(params, model)
+            if response is None:
+                # _create_with_compat already logged and counted the api_error.
+                continue
+
+            text = (response.choices[0].message.content or "").strip()
+
+            if _is_model_refusal(
+                text,
+                self.settings.OCR_REFUSAL_MARKERS,
+                self.settings.REFUSAL_MARK,
+            ):
+                log.warning("Model refused to transcribe", model=model, **log_ctx)
+                self._stats.inc("refusals")
+                continue
+            if model != primary_model:
+                log.info("Fallback model succeeded", model=model, **log_ctx)
+                self._stats.inc("fallback_successes")
+            return PageResult(text=text, model=model)
 
         log.error("All models failed or refused to transcribe the page", **log_ctx)
         return PageResult(text=self.settings.REFUSAL_MARK, model="")

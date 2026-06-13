@@ -229,6 +229,12 @@ def chunk_text(
         An ordered list of :class:`TextChunk` instances with contiguous
         ``chunk_index`` values starting from 0.
     """
+    if not 0 <= overlap < chunk_size:
+        raise ValueError(
+            f"overlap must satisfy 0 <= overlap < chunk_size, got overlap={overlap!r} "
+            f"chunk_size={chunk_size!r}"
+        )
+
     if not content.strip():
         return []
 

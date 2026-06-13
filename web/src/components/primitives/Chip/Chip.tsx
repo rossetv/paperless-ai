@@ -56,30 +56,45 @@ export function Chip({
     className,
   );
 
-  // Derive a default accessible label from string children.
-  // Callers with non-string children MUST supply removeLabel explicitly.
+  // Derive a default accessible label from string children; fall back to
+  // 'Remove' for non-string children with no explicit removeLabel (FE-35).
   const computedRemoveLabel =
     removeLabel ??
-    (typeof children === 'string' ? `Remove ${children}` : undefined);
+    (typeof children === 'string' ? `Remove ${children}` : 'Remove');
 
-  const inner = (
-    <>
-      <span className={styles['chip-label']}>{children}</span>
-      {onRemove !== undefined && (
-        <button
-          type="button"
-          className={styles['chip-remove']}
-          aria-label={computedRemoveLabel}
-          onClick={onRemove}
-        >
-          {/* × character — visually communicates dismissal without a dependency */}
-          <span aria-hidden="true">×</span>
-        </button>
-      )}
-    </>
-  );
+  const removeButton = onRemove !== undefined ? (
+    <button
+      type="button"
+      className={styles['chip-remove']}
+      aria-label={computedRemoveLabel}
+      onClick={onRemove}
+    >
+      {/* × character — visually communicates dismissal without a dependency */}
+      <span aria-hidden="true">×</span>
+    </button>
+  ) : null;
 
+  // When the root is a <button> (onClick) AND onRemove is supplied, the remove
+  // control must be a sibling — not nested — to avoid invalid button-in-button
+  // HTML (FE-34). Wrap both in a span so the pair can still share the chip
+  // visual class from the inner toggle button.
   if (onClick !== undefined) {
+    if (removeButton !== null) {
+      return (
+        <span className={cn(styles['chip-outer'], className)}>
+          <button
+            type="button"
+            className={cn(styles['chip-inner-toggle'], selected ? styles['selected'] : undefined)}
+            onClick={onClick}
+            aria-pressed={selected}
+          >
+            <span className={styles['chip-label']}>{children}</span>
+          </button>
+          {removeButton}
+        </span>
+      );
+    }
+
     return (
       <button
         type="button"
@@ -87,14 +102,15 @@ export function Chip({
         onClick={onClick}
         aria-pressed={selected}
       >
-        {inner}
+        <span className={styles['chip-label']}>{children}</span>
       </button>
     );
   }
 
   return (
     <span className={classes}>
-      {inner}
+      <span className={styles['chip-label']}>{children}</span>
+      {removeButton}
     </span>
   );
 }

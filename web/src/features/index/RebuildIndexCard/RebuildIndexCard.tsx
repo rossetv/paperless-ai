@@ -3,32 +3,12 @@ import { cn } from '../../../lib/cn';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Input } from '../../../components/primitives/Input/Input';
+import { Icon } from '../../../components/primitives/Icon/Icon';
 import { useRebuildIndex } from '../../../api/hooks';
 import styles from './RebuildIndexCard.module.css';
 
 /** The word the operator must type to arm the destructive rebuild. */
 const CONFIRM_WORD = 'REBUILD';
-
-/** Warning-triangle glyph for the danger-zone disc. */
-function WarningIcon(): React.ReactElement {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 4l9 16H3z" />
-      <line x1="12" y1="10" x2="12" y2="14" />
-      <circle cx="12" cy="17" r="0.8" fill="currentColor" />
-    </svg>
-  );
-}
 
 export interface RebuildIndexCardProps {
   /** Additional class names to merge onto the root card. */
@@ -80,7 +60,7 @@ export function RebuildIndexCard({
   return (
     <section className={cn(styles['card'], className)}>
       <span className={styles['icon']}>
-        <WarningIcon />
+        <Icon name="warning" size="small" />
       </span>
       <div>
         <h3 className={styles['title']}>Rebuild index from scratch</h3>

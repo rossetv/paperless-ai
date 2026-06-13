@@ -158,7 +158,7 @@ describe('MetadataCard', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /ebay/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Brand New Co' } });
-    fireEvent.click(screen.getByText(/create "brand new co"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
     expect(onCreateCorrespondent).toHaveBeenCalledWith('Brand New Co');
   });
 

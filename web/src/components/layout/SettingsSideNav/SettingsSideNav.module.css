@@ -9,7 +9,7 @@
  *   ≥ 960 px — vertical sticky rail on the left of a two-column grid.
  *   < 960 px — sticky horizontal chip strip pinned below the nav bar.
  *     Group titles and the eyebrow are hidden; each item becomes a pill chip.
- *     Full-bleed via negative margins; fade edges via ::before / ::after.
+ *     Full-bleed via negative margins; edge fade via mask-image gradient.
  *   < 700 px — sticks below the MobileTopBar (48 px) instead of the desktop
  *     nav-glass (--height-nav), so `top` changes at that sub-breakpoint.
  *
@@ -152,33 +152,33 @@
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     scroll-padding-inline: var(--spacing-16);
+
+    /*
+     * Edge fade — scroll affordance cuing off-screen tabs on the right.
+     * mask-image applies on the scroll container itself so it requires no
+     * extra DOM nodes; the left fade is narrow (equal to the padding) because
+     * the leftmost chip is nearly always visible.
+     * mask-image uses alpha channel only — black = opaque, transparent = hidden.
+     */
+    /* stylelint-disable-next-line property-no-vendor-prefix */
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--spacing-14),
+      #000 calc(100% - var(--spacing-16)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--spacing-14),
+      #000 calc(100% - var(--spacing-16)),
+      transparent 100%
+    );
   }
 
   .nav::-webkit-scrollbar {
     display: none;
-  }
-
-  /* Fade edges — cue horizontal scroll. Positioned against the sticky rail. */
-  .nav::before,
-  .nav::after {
-    content: "";
-    position: sticky;
-    top: 0;
-    bottom: 0;
-    width: var(--spacing-16);
-    pointer-events: none;
-    z-index: var(--spacing-1);
-    flex-shrink: 0;
-  }
-
-  .nav::before {
-    left: 0;
-    background: linear-gradient(to right, var(--colour-nav-bg), transparent);
-  }
-
-  .nav::after {
-    right: 0;
-    background: linear-gradient(to left, var(--colour-nav-bg), transparent);
   }
 
   /* Groups become inline containers — flattened into the flex row */

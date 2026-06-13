@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { cn } from '../../../lib/cn';
 import { Button } from '../../../components/primitives/Button/Button';
 import styles from './SaveBar.module.css';
@@ -23,13 +23,17 @@ export interface SaveBarProps {
 /**
  * Sticky bottom glass bar that slides up when there are unsaved settings.
  *
- * Hidden via the `.bar-hidden` CSS class (translateY(100%)) when
- * `dirtyCount === 0`; slides in when dirty. Shows a warning dot, an
+ * Hidden via the `.bar-hidden` CSS class (translateY(100%) + visibility:hidden)
+ * when `dirtyCount === 0`; slides in when dirty. Shows a warning dot, an
  * unsaved-changes count, a caption, and Discard / Save buttons.
  *
  * The bar element carries `aria-live="polite"` and `aria-atomic="true"` so
  * screen readers announce the unsaved-changes count when it changes.
- * `aria-hidden={isHidden}` suppresses announcements when the bar is off-screen.
+ * When hidden, the `inert` property (set imperatively via ref — not a React
+ * prop, as `inert` is only in @types/react experimental) removes all
+ * descendants from the tab order and suppresses AT announcements.
+ * `aria-hidden` is intentionally absent — WAI-ARIA §6.6 forbids it on
+ * containers that hold focusable descendants.
  *
  * Tier: features/settings — composes primitives, no domain knowledge beyond
  * the unsaved-count contract.
@@ -42,10 +46,24 @@ export function SaveBar({
   reindexPending = false,
 }: SaveBarProps): React.ReactElement {
   const isHidden = dirtyCount === 0;
+  const barRef = useRef<HTMLDivElement>(null);
+
+  // `inert` is a DOM property not yet in stable @types/react — set it
+  // imperatively so we avoid both `any` casts and the experimental import.
+  useEffect(() => {
+    const el = barRef.current;
+    if (el === null) return;
+    if (isHidden) {
+      el.setAttribute('inert', '');
+    } else {
+      el.removeAttribute('inert');
+    }
+  }, [isHidden]);
+
   return (
     <div
+      ref={barRef}
       className={cn(styles['bar'], isHidden && styles['bar-hidden'])}
-      aria-hidden={isHidden}
       aria-live="polite"
       aria-atomic="true"
     >

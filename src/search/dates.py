@@ -70,7 +70,7 @@ _RE_MONTH_YEAR = re.compile(
     re.IGNORECASE,
 )
 
-# Rule 4: bare 4-digit year in the range 1900–2100.  The negative lookahead
+# Rule 4: bare 4-digit year in the range 1900–2199.  The negative lookahead
 # ``(?!-)`` prevents matching a year that is immediately followed by a hyphen,
 # which means it is part of a date token (e.g. "2025-13-99") rather than a
 # standalone year expression.  The ISO rule (Rule 1) handles valid date
@@ -131,7 +131,7 @@ def extract_date_range(
        quarter.
     3. **Month + year** — a full or 3-letter English month name followed by a
        4-digit year resolves to the first and last day of that month.
-    4. **Year** — a bare 4-digit year in 1900–2100 resolves to
+    4. **Year** — a bare 4-digit year in 1900–2199 resolves to
        ``YYYY-01-01`` / ``YYYY-12-31``.
     5. **Relative phrases** — ``last month``, ``this month``, ``last year``,
        ``this year`` are computed from *today*.
@@ -179,7 +179,7 @@ def extract_date_range(
         date_to = f"{year:04d}-{month_num:02d}-{last_day:02d}"
         return date_from, date_to
 
-    # Rule 4 — bare 4-digit year (1900–2100).
+    # Rule 4 — bare 4-digit year (1900–2199).
     m = _RE_YEAR.search(text)
     if m:
         year = int(m.group(1))

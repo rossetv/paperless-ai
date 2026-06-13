@@ -64,7 +64,7 @@ describe('TagEditor', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'urgent' } });
-    fireEvent.click(screen.getByText(/create "urgent"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
     expect(onCreate).toHaveBeenCalledWith('urgent');
   });
 
@@ -76,6 +76,21 @@ describe('TagEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'INVOICE' } });
     expect(screen.queryByText(/create "invoice"/i)).not.toBeInTheDocument();
+  });
+
+  it('does not offer create when the typed name matches an ALREADY-SELECTED tag (regression: no duplicate minting)', () => {
+    // "invoice" (id 11) is already selected — it is absent from the selectable
+    // list shown in the dropdown. Typing its exact name must NOT reveal a
+    // "Create" row, and onCreate must never be called.
+    const onCreate = vi.fn();
+    render(
+      <TagEditor selectedIds={[11]} availableTags={ALL}
+        canEdit={true} onAdd={vi.fn()} onRemove={vi.fn()} onCreate={onCreate} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'invoice' } });
+    expect(screen.queryByRole('option', { name: /create/i })).not.toBeInTheDocument();
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it('renders an unknown-id chip as #<id> but still removable', () => {

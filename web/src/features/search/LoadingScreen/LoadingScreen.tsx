@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useReducer } from 'react';
 import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayout/SearchScreenLayout';
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
@@ -7,8 +7,8 @@ import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
 import { PipelineStages } from '../../../components/primitives/PipelineStages/PipelineStages';
-import { FilterControls } from '../FilterControls/FilterControls';
-import { formatCostLabel, phaseToStages } from '../trace/phaseStages';
+import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
+import { formatCostLabel, formatElapsed, phaseToStages } from '../trace/phaseStages';
 import type { FilterRequest, PhaseRecord, SearchPhase } from '../../../api/types';
 import styles from './LoadingScreen.module.css';
 
@@ -45,8 +45,9 @@ export interface LoadingScreenProps {
  * and two skeleton source placeholders. The rail now renders the REAL phases
  * streamed from `POST /api/search/stream` (planner rewrite, retrieval counts,
  * vector-gate outcome, per-document judge verdicts, synthesis), each with a
- * token/cost chip — not a time-based estimate. The counter still ticks the
- * measured wall-clock since the screen mounted.
+ * token/cost chip — not a time-based estimate. The elapsed counter is computed
+ * from a real wall-clock start timestamp (`now - startedAt`) on every render,
+ * formatted mm:ss, so it tracks true elapsed time rather than ticking ahead.
  *
  * Composed from: SearchScreenLayout, Stack, SearchField, Card, Spinner, Text,
  * Skeleton, PipelineStages, FilterControls; the phase→stage mapping lives in
@@ -61,17 +62,18 @@ export function LoadingScreen({
   activePhase,
   onPreview,
 }: LoadingScreenProps): React.ReactElement {
-  // Real elapsed seconds since this screen mounted — drives the visible
-  // counter. The interval is cleared on unmount, which happens as soon as the
-  // search resolves and results replace this view.
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // Real elapsed time since this screen first rendered — the single source of
+  // truth is the wall-clock `startedAt`, captured once in a ref (so it survives
+  // re-renders and never resets). Each render recomputes `now - startedAt`; a
+  // 500 ms interval only forces those re-renders. This drives the counter from
+  // true wall-clock, not per-frame/per-phase increments that ran ~2× fast.
+  const startedAtRef = useRef<number>(Date.now());
+  const [, forceTick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
-    const startedAt = Date.now();
-    const id = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 500);
+    const id = window.setInterval(forceTick, 500);
     return () => window.clearInterval(id);
   }, []);
+  const elapsedLabel = formatElapsed(Date.now() - startedAtRef.current);
 
   const stages = phaseToStages(phaseRecords, activePhase);
 
@@ -112,21 +114,21 @@ export function LoadingScreen({
         {/* Pipeline progress card. */}
         <Card elevated>
           <Stack direction="vertical" gap={10}>
-            {/* Spinner row: icon, heading, spacer, live elapsed counter. */}
+            {/* Spinner row: icon, heading, spacer, live elapsed + cost counters.
+                The two live counters share one polite status region so screen
+                readers hear the running progress without interruption (FE-30). */}
             <Stack direction="horizontal" gap={9} align="center">
               <Spinner size="small" label="Searching" />
               <Text as="span" variant="body-emphasis">
                 Searching your library…
               </Text>
               <span className={styles['spacer']} />
-              <Text as="span" variant="micro" tone="tertiary">
-                {elapsedSeconds}s
-              </Text>
-              {costCounter !== undefined && (
+              <span role="status" aria-live="polite" aria-atomic="true">
                 <Text as="span" variant="micro" tone="tertiary">
-                  {costCounter}
+                  {elapsedLabel}
+                  {costCounter !== undefined && ` · ${costCounter}`}
                 </Text>
-              )}
+              </span>
             </Stack>
             {stages.length > 0 && (
               <PipelineStages

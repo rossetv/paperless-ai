@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-import typing
 from pathlib import Path
 
 import structlog
@@ -81,9 +80,10 @@ def main() -> None:
     # is simply None and the dashboard's indexer tile goes stale.
     app_db = _open_app_db(app_db_path)
 
-    # Hold lock_handle open for the process lifetime.
+    # lock_handle is held open by this stack frame until finally closes it,
+    # which keeps the OS flock alive for the daemon's entire lifetime.
     try:
-        _start_daemon(settings, app_db_path, lock_handle, app_db)
+        _start_daemon(settings, app_db_path, app_db)
     finally:
         lock_handle.close()
         if app_db is not None:
@@ -93,7 +93,6 @@ def main() -> None:
 def _start_daemon(
     settings: Settings,
     app_db_path: str,
-    lock_handle: typing.IO[bytes],
     app_db: sqlite3.Connection | None = None,
 ) -> None:
     """Run signal registration, preflight, and the reconciliation loop.
@@ -108,9 +107,6 @@ def _start_daemon(
             with no restart (web-redesign §5).
         app_db_path: Filesystem path to ``app.db`` — threaded through to the
             loop so :func:`current_settings` watches the same file every cycle.
-        lock_handle: The open flock file handle from
-            :func:`~indexer.lock.acquire_writer_lock`, kept open to hold the
-            lock for the process lifetime.
         app_db: The open app.db connection for the dashboard recorder, or None
             when app.db is unavailable.
     """

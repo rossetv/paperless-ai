@@ -37,8 +37,8 @@ export interface RelevanceMeterProps {
  * DESIGN.md: monochrome only — filled dots use `--colour-text-primary`, empty
  * dots the faint `--colour-border`; no status colour (the blue accent is
  * reserved for interactive elements). Mirrors the PipelineStages status dots.
- * The dots are decorative (`aria-hidden`); the visible label carries the
- * meaning for assistive tech.
+ * The dots are decorative (`aria-hidden`); the visible label AND the root
+ * title/aria-label carry the meaning for assistive tech (UI-09).
  *
  * Tier: components/primitives — presentational, no data fetching.
  */
@@ -48,15 +48,22 @@ export function RelevanceMeter({
 }: RelevanceMeterProps): React.ReactElement {
   const { filled, label } = TIER_META[tier];
   return (
-    <span className={cn(styles['meter'], className)}>
+    <span
+      className={cn(styles['meter'], className)}
+      title={label}
+      aria-label={label}
+    >
       <span className={styles['dots']} aria-hidden="true">
-        {Array.from({ length: DOT_COUNT }, (_, i) => (
-          <span
-            key={i}
-            data-filled={i < filled}
-            className={cn(styles['dot'], i < filled ? styles['filled'] : styles['empty'])}
-          />
-        ))}
+        {Array.from({ length: DOT_COUNT }, (_, i) => {
+          const isFilled = i < filled;
+          return (
+            <span
+              key={i}
+              data-filled={isFilled}
+              className={cn(styles['dot'], isFilled ? styles['filled'] : styles['empty'])}
+            />
+          );
+        })}
       </span>
       <span className={styles['label']}>{label}</span>
     </span>

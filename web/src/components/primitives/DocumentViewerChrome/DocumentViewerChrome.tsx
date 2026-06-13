@@ -4,8 +4,14 @@ import { Icon } from '../Icon/Icon';
 import styles from './DocumentViewerChrome.module.css';
 
 export interface DocumentViewerChromeProps {
-  /** The document title — shown in the breadcrumb. */
+  /** The document title — shown in the breadcrumb after the separator. */
   title: string;
+  /**
+   * Context label shown at the start of the breadcrumb (e.g. "Search results",
+   * "Documents"). Defaults to "Search results" to preserve existing behaviour.
+   * Pass a custom value to reuse the chrome in other screens (FE-22).
+   */
+  breadcrumbLabel?: string;
   /**
    * The Paperless document URL — the "Open in Paperless" link target.
    *
@@ -19,6 +25,13 @@ export interface DocumentViewerChromeProps {
    * Download action is not rendered.
    */
   downloadUrl?: string;
+  /**
+   * Optional extra actions rendered in the action row alongside Download and
+   * Open-in-Paperless. Pass an array of rendered elements (e.g. anchor or
+   * button styled with the shared `action` class) so callers (FE-B8) can
+   * extend the toolbar without duplicating the chrome.
+   */
+  extraActions?: React.ReactNode;
   /** Called when the close control is activated. */
   onClose: () => void;
   /** The page area — the PDF iframe. */
@@ -30,9 +43,9 @@ export interface DocumentViewerChromeProps {
 /**
  * The in-app PDF viewer shell.
  *
- * A forced-dark top bar — a close control, a "Search results › title"
- * breadcrumb, and Download / Open-in-Paperless actions — above the page area
- * supplied as `children`, matching the handoff's dedicated viewer chrome.
+ * A forced-dark top bar — a close control, a configurable breadcrumb, and
+ * Download / Open-in-Paperless actions — above the page area supplied as
+ * `children`, matching the handoff's dedicated viewer chrome.
  *
  * Dark in both themes. Most surfaces and text use the forced-dark
  * `--colour-dark-*` tokens (theme-independent by definition). The bar
@@ -42,16 +55,20 @@ export interface DocumentViewerChromeProps {
  * the light `:root` and the dark theme, so the shell stays dark regardless
  * of the active theme.
  *
- * App-agnostic: it knows a title and two URLs, nothing about the document
- * API. The `DocumentPreviewScreen` feature supplies the page iframe.
+ * Generic: `breadcrumbLabel` sets the context segment (default "Search
+ * results") so the chrome can be reused by the document feature without
+ * hard-coding the search context (FE-22). `extraActions` extends the action
+ * row for callers that need additional toolbar controls (FE-B8).
  *
  * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
  * primitives (Icon), lib/.
  */
 export function DocumentViewerChrome({
   title,
+  breadcrumbLabel = 'Search results',
   paperlessUrl,
   downloadUrl,
+  extraActions,
   onClose,
   children,
   className,
@@ -69,7 +86,7 @@ export function DocumentViewerChrome({
         </button>
 
         <span className={styles['crumb']}>
-          <span className={styles['crumb-context']}>Search results</span>
+          <span className={styles['crumb-context']}>{breadcrumbLabel}</span>
           <span className={styles['crumb-context']} aria-hidden="true">
             ›
           </span>
@@ -100,6 +117,7 @@ export function DocumentViewerChrome({
               <Icon name="external-link" size="small" />
             </a>
           )}
+          {extraActions}
         </span>
       </div>
 

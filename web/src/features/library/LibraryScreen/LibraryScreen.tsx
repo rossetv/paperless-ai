@@ -8,7 +8,7 @@ import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Button } from '../../../components/primitives/Button/Button';
 import { Spinner } from '../../../components/primitives/Spinner/Spinner';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
-import { FilterControls } from '../../search/FilterControls/FilterControls';
+import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { LibraryCard } from '../LibraryCard/LibraryCard';
 import { useDocuments, useFacets } from '../../../api/hooks';
 import { useLibraryUrlState } from './useLibraryUrlState';
@@ -51,6 +51,21 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
   return entries.find((e) => e.id === id)?.name ?? `#${id}`;
 }
 
+/**
+ * Whether the viewport is narrow enough that SearchScreenLayout stacks the rail
+ * above the content (the 834 px breakpoint in SearchScreenLayout.module.css).
+ * On those viewports the filter rail starts collapsed so the document list and
+ * header controls are not pushed below the fold (UI-05). Guarded for non-browser
+ * environments (tests/SSR) where matchMedia is unavailable.
+ */
+function isNarrowViewport(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(max-width: 834px)').matches
+  );
+}
+
 
 /**
  * The Library browse screen.
@@ -78,6 +93,12 @@ export function LibraryScreen(): React.ReactElement {
 
   const documents = useDocuments(query);
   const facets = useFacets();
+
+  // UI-05: on narrow viewports the rail stacks above the content, so start the
+  // filter panel collapsed (behind its "Filters" toggle) to keep the document
+  // list above the fold. Computed once at mount — the fold concern is about the
+  // initial layout, matching FilterPanel's defaultExpanded semantics.
+  const [railDefaultExpanded] = React.useState(() => !isNarrowViewport());
 
   // ── Query mutators — each resets to page 1 except the pager. ──
   function submitSearch(text: string): void {
@@ -115,6 +136,11 @@ export function LibraryScreen(): React.ReactElement {
   }
 
   // ── Active-filter chip strip — resolves ids to names via the facets. ──
+  // rationale (FE-63): the chip-strip builder reads `query`, `facetData` and
+  // `setQuery` (each onRemove mutates a different filter dimension), so kept
+  // inline as a memoised value rather than extracted — pulling it into a helper
+  // would mean threading all three back in for no real reuse, leaving the body
+  // no shorter at the call site.
   const facetData = facets.data;
   const activeChips = useMemo(() => {
     if (facetData === undefined) {
@@ -192,6 +218,7 @@ export function LibraryScreen(): React.ReactElement {
     <FilterControls
       filters={toFilterRequest(query)}
       onFiltersChange={applyFilters}
+      defaultExpanded={railDefaultExpanded}
     />
   );
 

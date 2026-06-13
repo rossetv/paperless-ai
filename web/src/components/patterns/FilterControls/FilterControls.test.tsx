@@ -169,9 +169,9 @@ describe('FilterControls', () => {
     });
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
 
+    // Collapsed state — the label advertises the hidden count.
     const toggle = screen.getByRole('button', { name: /show all \(15\)/i });
     expect(toggle).toBeInTheDocument();
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('expands to show all tags when "Show all" is clicked', async () => {
@@ -190,9 +190,8 @@ describe('FilterControls', () => {
     const chips = within(group).getAllByRole('button');
     expect(chips).toHaveLength(15);
 
-    // The button label should change and aria-expanded should be true.
-    const collapseButton = screen.getByRole('button', { name: /show less/i });
-    expect(collapseButton).toHaveAttribute('aria-expanded', 'true');
+    // The label flips to the collapse affordance, conveying the expanded state.
+    expect(screen.getByRole('button', { name: /show less/i })).toBeInTheDocument();
   });
 
   it('collapses back to 12 when "Show less" is clicked', async () => {
@@ -279,5 +278,24 @@ describe('FilterControls', () => {
   it('tag group has an accessible name via aria-labelledby', () => {
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
     expect(screen.getByRole('group', { name: /tags/i })).toBeInTheDocument();
+  });
+
+  // ── Mobile collapse (UI-05) ──────────────────────────────────────────────
+
+  it('starts the Filters panel collapsed when defaultExpanded is false', () => {
+    render(
+      <FilterControls
+        filters={emptyFilters}
+        onFiltersChange={vi.fn()}
+        defaultExpanded={false}
+      />,
+    );
+    // FilterPanel renders only the "Filters" toggle when collapsed — the
+    // correspondent combobox inside the panel body is not mounted.
+    expect(screen.getByRole('button', { name: /filters/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByRole('combobox', { name: /correspondent/i })).not.toBeInTheDocument();
   });
 });

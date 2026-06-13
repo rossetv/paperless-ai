@@ -68,7 +68,7 @@ def get_app_state(request: Request) -> AppState:
     """Return the :class:`AppState` stashed on the request's application.
 
     The FastAPI dependency every account route and auth dependency uses to
-    reach the ``app.db`` path, the setup state, and the legacy key.
+    reach the ``app.db`` path and the setup state.
 
     Args:
         request: The incoming request.

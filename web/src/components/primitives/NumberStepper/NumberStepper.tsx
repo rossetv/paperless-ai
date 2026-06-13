@@ -77,7 +77,15 @@ export function NumberStepper({
     // A blank field maps to the minimum — a transient state while editing.
     const parsed = raw === '' ? min : Number(raw);
     if (!Number.isNaN(parsed)) {
-      emit(parsed);
+      const clamped = clamp(parsed);
+      // If the clamped value differs from what was typed, sync the draft
+      // immediately. Without this, typing '0' into a min=1 field that is
+      // already 1 leaves '0' stuck: onChange(1) is a no-op to the parent
+      // (value is already 1), so the useEffect [value] sync never fires.
+      if (clamped !== parsed) {
+        setDraft(String(clamped));
+      }
+      onChange(clamped);
     }
   };
 

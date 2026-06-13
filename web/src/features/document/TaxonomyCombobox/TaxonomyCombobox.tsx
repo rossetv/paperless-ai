@@ -4,17 +4,15 @@
  * Reused by the correspondent and document-type fields on the document page.
  * Closed state shows a trigger button with the selected item's name (or "—"
  * when nothing is selected). Open state renders a filtered text input plus a
- * listbox of matching options. When the query does not exactly match any
- * existing item, a "Create <query>" row is appended.
- *
- * Keyboard: Escape closes without firing onSelect or onCreate.
- * Arrow-key navigation is out of scope for v1 — the user clicks.
+ * listbox of matching options, via the FilterableListbox primitive.
  *
  * canEdit=false renders the selected item's name as static text; no button,
  * no chevron, no interaction.
  */
-import React from 'react';
+import React, { useId } from 'react';
 import type { TaxonomyItem } from '../../../api/types';
+import { FilterableListbox } from '../../../components/patterns/FilterableListbox/FilterableListbox';
+import type { FilterableItem } from '../../../components/patterns/FilterableListbox/FilterableListbox';
 import styles from './TaxonomyCombobox.module.css';
 
 export interface TaxonomyComboboxProps {
@@ -39,8 +37,7 @@ export interface TaxonomyComboboxProps {
 export function TaxonomyCombobox({
   label, items, selectedId, canEdit, onSelect, onCreate,
 }: TaxonomyComboboxProps): React.ReactElement {
-  const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState('');
+  const uid = useId();
   const selected = items.find((i) => i.id === selectedId) ?? null;
 
   // ── Read-only mode ──────────────────────────────────────────────────────────
@@ -53,82 +50,30 @@ export function TaxonomyCombobox({
     );
   }
 
-  const q = query.trim().toLowerCase();
-  const filtered = items.filter((i) => i.name.toLowerCase().includes(q));
-  const exactMatch = items.some((i) => i.name.toLowerCase() === q);
+  const listboxItems: FilterableItem<number>[] = items.map((i) => ({
+    value: i.id,
+    label: i.name,
+    meta: `${i.document_count} docs`,
+  }));
 
-  function close(): void {
-    setOpen(false);
-    setQuery('');
-  }
-
-  // ── Closed state ────────────────────────────────────────────────────────────
-  if (!open) {
-    return (
-      <div className={styles['row']}>
-        <div className={styles['label']}>{label}</div>
-        <div className={styles['cell']}>
-          <button
-            type="button"
-            className={styles['trigger']}
-            onClick={() => setOpen(true)}
-          >
-            {selected?.name ?? '—'}
-            <span className={styles['chevron']} aria-hidden="true">▾</span>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Open state ──────────────────────────────────────────────────────────────
   return (
     <div className={styles['row']}>
       <div className={styles['label']}>{label}</div>
       <div className={styles['cell']}>
-        <input
-          role="combobox"
-          aria-expanded
-          autoFocus
-          className={styles['input']}
-          value={query}
-          placeholder="Type to search…"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') close(); }}
+        <FilterableListbox<number>
+          id={`taxonomy-combobox-${uid}`}
+          items={listboxItems}
+          value={selectedId}
+          onSelect={(id) => onSelect(id)}
+          onCreate={onCreate}
+          triggerLabel="—"
+          selectedLabel={selected?.name}
+          clearOption={
+            selectedId !== null
+              ? { label: 'Clear', onClear: () => onSelect(null) }
+              : undefined
+          }
         />
-        <ul role="listbox" className={styles['list']}>
-          {selectedId !== null && (
-            <li
-              role="option"
-              aria-selected={false}
-              className={styles['clear']}
-              onClick={() => { onSelect(null); close(); }}
-            >
-              Clear
-            </li>
-          )}
-          {filtered.map((i) => (
-            <li
-              key={i.id}
-              role="option"
-              aria-selected={i.id === selectedId}
-              className={styles['opt']}
-              onClick={() => { onSelect(i.id); close(); }}
-            >
-              {i.name}
-              <small>{i.document_count} docs</small>
-            </li>
-          ))}
-          {q !== '' && !exactMatch && (
-            <li
-              role="option"
-              className={styles['create']}
-              onClick={() => { onCreate(query.trim()); close(); }}
-            >
-              Create "{query.trim()}"
-            </li>
-          )}
-        </ul>
       </div>
     </div>
   );

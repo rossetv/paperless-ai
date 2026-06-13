@@ -43,11 +43,22 @@
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
-/* The destructive cluster — suspend + delete. */
+/* The destructive cluster — reversible action left, permanent action right,
+   separated so the two cannot be misclicked for one another (DD-3). */
 .destructive {
   display: flex;
   align-items: center;
   gap: var(--spacing-8);
+}
+
+/* A thin vertical rule that spatially separates the reversible (Suspend) from
+   the permanent (Delete) action, satisfying the DD-3 spatial-separation rule. */
+.destructive-separator {
+  display: block;
+  width: var(--spacing-1);
+  height: var(--spacing-12);
+  background-color: var(--colour-border);
+  flex-shrink: 0;
 }
 
 /* The primary cluster — cancel + save. */
@@ -57,29 +68,3 @@
   gap: var(--spacing-8);
 }
 
-/* ── A bare destructive text button (suspend / delete / confirm). ── */
-.danger-button {
-  background: none;
-  border: none;
-  padding: var(--spacing-4) var(--spacing-6);
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-status-danger-fg);
-  cursor: pointer;
-  border-radius: var(--radius-micro);
-}
-
-.danger-button:disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
-}
-
-.danger-button:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-.danger-button:hover:not(:disabled) {
-  background-color: var(--colour-status-danger-bg);
-}
