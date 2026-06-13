@@ -390,6 +390,9 @@
   /* EmptyState — caps the description line length for comfortable reading */
   --width-empty-state:  360px;
 
+  /* EmptyState icon circle — the tinted circular container (DESIGN.md §12.4 / UI-17) */
+  --size-empty-state-icon: 72px;
+
   /* Search input in page headers — narrower than the empty-state cap so the
    * search + action buttons do not crush the title block on the same row */
   --width-search-narrow: 240px;
