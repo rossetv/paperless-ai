@@ -75,7 +75,11 @@ export function SettingsListField({
       {value.length > 0 && (
         <ol className={styles['pill-list']} aria-label={`${label} items`}>
           {value.map((item, index) => (
-            <li key={index} className={styles['pill']}>
+            // key={item} not key={index}: the list is reorderable, so
+            // positional keys cause React to mis-associate DOM/state on swap.
+            // Duplicates are not supported by this field — each entry is a
+            // distinct string value, making the item itself a stable key.
+            <li key={item} className={styles['pill']}>
               <span className={styles['pill-number']}>{index + 1}</span>
               <span className={styles['pill-text']}>{item}</span>
               <div className={styles['pill-actions']}>

@@ -201,11 +201,11 @@ describe('SettingsScreen', () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
-    // The SaveBar is always in the DOM but hidden via aria-hidden + CSS transform
+    // The SaveBar is always in the DOM but hidden via inert + CSS transform
     // when there are no dirty fields.
     const message = screen.queryByText(/unsaved change/i);
     if (message !== null) {
-      expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(message.closest('[inert]')).not.toBeNull();
     }
   });
 
@@ -225,10 +225,10 @@ describe('SettingsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /discard/i }));
     expect(topK).toHaveValue(10);
-    // After discard the SaveBar is hidden (aria-hidden) — not removed from DOM.
+    // After discard the SaveBar is hidden (inert) — not removed from DOM.
     const message = screen.queryByText(/unsaved change/i);
     if (message !== null) {
-      expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(message.closest('[inert]')).not.toBeNull();
     }
   });
 
@@ -260,11 +260,11 @@ describe('SettingsScreen', () => {
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
-    // After a successful save the SaveBar slides back out (aria-hidden).
+    // After a successful save the SaveBar slides back out (inert).
     await waitFor(() => {
       const message = screen.queryByText(/unsaved change/i);
       if (message !== null) {
-        expect(message.closest('[aria-hidden="true"]')).not.toBeNull();
+        expect(message.closest('[inert]')).not.toBeNull();
       }
     });
   });

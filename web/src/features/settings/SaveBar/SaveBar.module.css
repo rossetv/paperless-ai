@@ -22,11 +22,28 @@
   -webkit-backdrop-filter: var(--backdrop-nav);
   border-top: var(--spacing-1) solid var(--colour-hairline-strong);
   transform: translateY(0);
-  transition: transform var(--duration-panel) var(--easing-decelerate);
+  visibility: visible;
+
+  /* visibility is included so it flips to visible instantly when sliding in,
+     and only flips to hidden after the slide-out transition completes. */
+  transition:
+    transform var(--duration-panel) var(--easing-decelerate),
+    visibility var(--duration-panel);
 }
 
 .bar-hidden {
   transform: translateY(100%);
+
+  /* visibility:hidden removes the bar from paint and tab order as soon as
+     the transition ends; combined with the `inert` attribute set in JS,
+     off-screen buttons are unreachable by keyboard at all times. */
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
 }
 
 /* ── Inner — max-width centred row. ── */
@@ -61,7 +78,10 @@
 .caption {
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
-  color: var(--colour-text-tertiary);
+
+  /* text-secondary (80% opacity) instead of text-tertiary (48%) so the
+     caption stays legible against the glass savebar in both themes. */
+  color: var(--colour-text-secondary);
   margin-left: auto;
   margin-right: var(--spacing-6);
 }
