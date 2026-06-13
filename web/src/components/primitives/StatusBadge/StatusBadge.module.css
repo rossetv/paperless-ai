@@ -51,3 +51,8 @@
   background-color: var(--colour-status-info-bg);
   color: var(--colour-status-info-fg);
 }
+
+.neutral {
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-status-neutral-fg);
+}

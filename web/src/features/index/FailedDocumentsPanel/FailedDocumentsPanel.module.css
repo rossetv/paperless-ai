@@ -52,12 +52,14 @@
   margin-bottom: var(--spacing-2);
 }
 
-/* The document-id chip — monospace, danger-tinted. */
+/* The document-id chip — monospace, neutral. A bare identifier, not a status:
+   the failure signal lives in the red count badge and the "Failed N times"
+   line, so the id chip stays calm grey rather than shouting danger-red. */
 .id-chip {
   padding: var(--spacing-1) var(--spacing-4);
   border-radius: var(--radius-micro);
-  background-color: var(--colour-status-danger-bg);
-  color: var(--colour-status-danger-fg);
+  background-color: var(--colour-status-neutral-bg);
+  color: var(--colour-status-neutral-fg);
   font-family: var(--font-mono);
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro-bold);

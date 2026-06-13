@@ -7,7 +7,7 @@ const meta = {
   parameters: { layout: 'centered' },
   tags: ['autodocs'],
   argTypes: {
-    tone: { control: 'radio', options: ['ok', 'warn', 'danger', 'info'] },
+    tone: { control: 'radio', options: ['ok', 'warn', 'danger', 'info', 'neutral'] },
   },
 } satisfies Meta<typeof StatusBadge>;
 
@@ -17,6 +17,7 @@ type Story = StoryObj<typeof meta>;
 export const Active: Story = { args: { tone: 'ok', children: 'Active' } };
 export const Suspended: Story = { args: { tone: 'danger', children: 'Suspended' } };
 export const Expiring: Story = { args: { tone: 'warn', children: 'Expiring' } };
+export const Idle: Story = { args: { tone: 'neutral', children: 'Idle' } };
 
 export const AllTones: StoryObj = {
   render: () => (
@@ -25,6 +26,7 @@ export const AllTones: StoryObj = {
       <StatusBadge tone="warn">Expiring</StatusBadge>
       <StatusBadge tone="danger">Suspended</StatusBadge>
       <StatusBadge tone="info">Service</StatusBadge>
+      <StatusBadge tone="neutral">Idle</StatusBadge>
     </div>
   ),
 };
