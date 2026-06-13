@@ -2,12 +2,12 @@ import React from 'react';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
-import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
-import { cn } from '../../../lib/cn';
 import { useUpdateApiKey } from '../../../api/hooks';
 import type { ApiKey, ApiScope } from '../../../api/types';
-import { SCOPES, EXPIRY_CHOICES, expiryIso } from '../APIKeyCreatePanel/apiKeyFormData';
-import styles from './APIKeyEditPanel.module.css';
+import { expiryIso } from '../apiKeyFormData';
+import { ScopeChecklist } from '../ScopeChecklist/ScopeChecklist';
+import { ExpiryChips } from '../ExpiryChips/ExpiryChips';
+import shared from '../ScopeChecklist/ScopeChecklist.module.css';
 
 export interface APIKeyEditPanelProps {
   /** The key being edited — its current values pre-fill the form. */
@@ -114,65 +114,25 @@ export function APIKeyEditPanel({
           }}
         />
 
-        <div className={styles['section']}>
-          <span className={styles['section-label']}>Scopes</span>
-          <div className={styles['scope-list']}>
-            {SCOPES.map((scope) => {
-              const on = scopes.has(scope.id);
-              return (
-                <label
-                  key={scope.id}
-                  className={cn(styles['scope-row'], on && styles['scope-row-on'])}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleScope(scope.id)}
-                  />
-                  <span className={styles['scope-text']}>
-                    <span className={styles['scope-name']}>
-                      <ScopePill scope={scope.id} />
-                    </span>
-                    <span className={styles['scope-desc']}>{scope.description}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          {scopeError !== null && (
-            <p className={styles['error']} role="alert">
-              {scopeError}
-            </p>
-          )}
-        </div>
+        <ScopeChecklist
+          selectedScopes={scopes}
+          onToggle={toggleScope}
+          error={scopeError}
+        />
 
-        <div className={styles['section']}>
-          <span className={styles['section-label']}>Expiration</span>
-          <div className={styles['chip-row']}>
-            {EXPIRY_CHOICES.map((choice) => (
-              <button
-                key={choice.label}
-                type="button"
-                className={cn(
-                  styles['chip'],
-                  expiryTouched && expiryDays === choice.days && styles['chip-on'],
-                )}
-                aria-pressed={expiryTouched && expiryDays === choice.days}
-                onClick={() => selectExpiry(choice.days)}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ExpiryChips
+          selectedDays={expiryDays}
+          touched={expiryTouched}
+          onChange={selectExpiry}
+        />
 
         {serverError !== null && (
-          <p className={styles['error']} role="alert">
+          <p className={shared['error']} role="alert">
             {serverError}
           </p>
         )}
 
-        <div className={styles['footer']}>
+        <div className={shared['footer']}>
           <Button variant="secondary" type="button" onClick={onClose}>
             Cancel
           </Button>
