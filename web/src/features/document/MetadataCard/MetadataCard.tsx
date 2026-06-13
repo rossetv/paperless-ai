@@ -108,12 +108,13 @@ export function MetadataCard({
           onCommit={(next) => onPatch({ document_date: next === '' ? null : next })}
         />
       ) : (
-        <div className={styles['row']}>
-          <div className={styles['label']}>Date</div>
-          <div className={styles['value']}>
-            {document.created === null ? 'No date' : formatLongDate(document.created)}
-          </div>
-        </div>
+        <EditableField
+          label="Date"
+          value={document.created === null ? '' : formatLongDate(document.created)}
+          canEdit={false}
+          placeholder="No date"
+          onCommit={() => undefined}
+        />
       )}
     </Card>
   );

@@ -26,8 +26,12 @@
   flex-shrink: var(--z-base); /* never compress the toolbar */
 }
 
-/* ── Action links (Download + Open in Paperless) ─────────────────────────── */
+/* ── Toolbar actions ──────────────────────────────────────────────────────── */
 
+/*
+ * Download — the in-app action — keeps the bordered button treatment so it
+ * carries the primary emphasis of the toolbar (UI-24 / DD-3).
+ */
 .action {
   display: inline-flex;
   align-items: center;
@@ -49,39 +53,66 @@
   background-color: var(--colour-button-active-bg);
 }
 
-.action-primary {
-  background-color: var(--colour-accent);
-  color: var(--colour-text-on-dark);
-  border-color: var(--colour-accent);
-}
-
-.action-primary:hover {
-  opacity: var(--opacity-disabled);
+/*
+ * Open in Paperless — leaving the app — is demoted to a quiet inline external
+ * link (Link primitive) so the in-app Download keeps primary emphasis
+ * (UI-24 / DD-3). Only layout/icon alignment lives here; colour comes from the
+ * Link primitive's own tokens.
+ */
+.external-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
 }
 
 /* ── PDF frame area ──────────────────────────────────────────────────────── */
 
 /*
- * The frame wrapper produced by PdfFrame takes 100% width. We give it a
- * viewport-relative minimum height so the PDF viewer is immediately usable
- * — most of the screen — without scrolling.
- *
- * PdfFrame's internal iframe uses height: 100%, which only resolves when
- * the wrapper has a definite height. Because the wrapper sizes via
- * flex + min-height (no `height` rule), height: 100% collapses to the
- * iframe's default 150px. So we also set the iframe's height directly via
- * a descendant selector; PdfFrame's own min-height stays at 100% for the
- * other callers (IndexScreen) where the wrapper already has a definite
- * height.
+ * Viewport layers the live iframe over an app-owned dark backdrop. It is the
+ * positioning context (position: relative) and owns the height. Both the
+ * viewport and the placeholder fill with --colour-surface-dark, so the viewer
+ * area is dark from first paint and an unloaded/failed iframe never flashes
+ * white (UI-03).
  */
-.frame {
+.viewport {
+  position: relative;
   flex: 1;
   min-height: 70dvh;
-  background-color: var(--colour-surface-dark);
   border-radius: var(--radius-standard);
   overflow: hidden;
+  background-color: var(--colour-surface-dark);
 }
 
-.frame iframe {
-  height: 70dvh;
+/*
+ * Dark loading/error placeholder behind the iframe. Forced dark in both themes
+ * (--colour-surface-dark), so the standard EmptyState text tokens (dark ink)
+ * would be illegible — we redefine those token roles to on-dark values for the
+ * subtree, which the EmptyState reads via the cascade (UI-03).
+ */
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--colour-surface-dark);
+
+  --colour-text-primary: var(--colour-text-on-dark);
+  --colour-text-secondary: var(--colour-text-on-dark);
+  --colour-text-tertiary: var(--colour-text-on-dark);
+}
+
+/*
+ * PdfFrame's wrapper fills the viewport via inset: 0, giving its internal
+ * height: 100% iframe a definite box to resolve against. The frame is the later
+ * sibling, so it stacks above the placeholder without an explicit z-index —
+ * once the PDF paints it is opaque and hides the dark fallback behind it.
+ */
+.frame {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-standard);
+  overflow: hidden;
 }
