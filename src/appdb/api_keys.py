@@ -97,14 +97,6 @@ def _row_to_api_key(row: sqlite3.Row) -> ApiKey:
     )
 
 
-# The column list shared by every SELECT, so a schema change is a one-line
-# edit. Ordered to match _row_to_api_key (which indexes by name).
-_API_KEY_COLUMNS = (
-    "id, key_hash, key_prefix, name, owner_user_id, scopes, created_at, "
-    "expires_at, last_used_at, revoked_at, request_count"
-)
-
-
 def create(
     conn: sqlite3.Connection,
     *,
@@ -175,14 +167,22 @@ def create(
         api_key_id=new_api_key_id,
         owner_user_id=owner_user_id,
     )
-    created = get_by_id(conn, new_api_key_id)
-    if created is None:
-        # The row was just inserted on this connection — if it is missing the
-        # database is in an unrecoverable state.
-        raise RowVanishedError(
-            f"api_key {new_api_key_id} missing immediately after INSERT"
-        )
-    return created
+    # Build the ApiKey from the values just inserted rather than re-SELECTing the
+    # row: last_used_at/revoked_at are the NULL literals and request_count the 0
+    # literal in the INSERT above.
+    return ApiKey(
+        id=new_api_key_id,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        name=name,
+        owner_user_id=owner_user_id,
+        scopes=scopes,
+        created_at=now,
+        expires_at=expires_at,
+        last_used_at=None,
+        revoked_at=None,
+        request_count=0,
+    )
 
 
 def get_by_hash(conn: sqlite3.Connection, key_hash: str) -> ApiKey | None:
@@ -196,7 +196,9 @@ def get_by_hash(conn: sqlite3.Connection, key_hash: str) -> ApiKey | None:
         key_hash: The SHA-256 hex to look up.
     """
     row = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE key_hash = ?",  # nosec B608 - _API_KEY_COLUMNS is a module constant; key_hash bound via ?
+        "SELECT id, key_hash, key_prefix, name, owner_user_id, scopes, "
+        "created_at, expires_at, last_used_at, revoked_at, request_count "
+        "FROM api_keys WHERE key_hash = ?",
         (key_hash,),
     ).fetchone()
     return _row_to_api_key(row) if row is not None else None
@@ -213,7 +215,9 @@ def get_by_id(conn: sqlite3.Connection, api_key_id: int) -> ApiKey | None:
         api_key_id: The integer primary key to look up.
     """
     row = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE id = ?",  # nosec B608 - _API_KEY_COLUMNS is a module constant; api_key_id bound via ?
+        "SELECT id, key_hash, key_prefix, name, owner_user_id, scopes, "
+        "created_at, expires_at, last_used_at, revoked_at, request_count "
+        "FROM api_keys WHERE id = ?",
         (api_key_id,),
     ).fetchone()
     return _row_to_api_key(row) if row is not None else None
@@ -231,7 +235,9 @@ def list_all(conn: sqlite3.Connection) -> list[ApiKey]:
         A list of every :class:`ApiKey`; empty when none exist.
     """
     rows = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys ORDER BY id"  # nosec B608 - _API_KEY_COLUMNS is a module constant; no caller input in SQL
+        "SELECT id, key_hash, key_prefix, name, owner_user_id, scopes, "
+        "created_at, expires_at, last_used_at, revoked_at, request_count "
+        "FROM api_keys ORDER BY id"
     ).fetchall()
     return [_row_to_api_key(row) for row in rows]
 
@@ -250,7 +256,9 @@ def list_for_user(conn: sqlite3.Connection, owner_user_id: int) -> list[ApiKey]:
         The owner's :class:`ApiKey` list; empty when they have none.
     """
     rows = conn.execute(
-        f"SELECT {_API_KEY_COLUMNS} FROM api_keys WHERE owner_user_id = ? ORDER BY id",  # nosec B608 - _API_KEY_COLUMNS is a module constant; owner_user_id bound via ?
+        "SELECT id, key_hash, key_prefix, name, owner_user_id, scopes, "
+        "created_at, expires_at, last_used_at, revoked_at, request_count "
+        "FROM api_keys WHERE owner_user_id = ? ORDER BY id",
         (owner_user_id,),
     ).fetchall()
     return [_row_to_api_key(row) for row in rows]

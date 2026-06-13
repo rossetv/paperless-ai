@@ -143,28 +143,19 @@ def snapshot_config_with_version(
 def set_value(conn: sqlite3.Connection, key: str, value: str) -> None:
     """Insert or update one configuration key inside a ``BEGIN IMMEDIATE``.
 
-    Upserts on the ``key`` primary key, so calling it for an existing key
-    overwrites the value rather than failing. ``updated_at`` is stamped with
-    the current UTC time. The ``config_version`` counter is bumped in the
-    **same** ``BEGIN IMMEDIATE`` transaction so a hot-loading reader sees the
-    new value and the new counter together, never one without the other; two
-    concurrent writers serialise on SQLite's write lock so neither bump is
-    lost.
+    A thin single-key wrapper over :func:`set_many`, so the upsert SQL and the
+    ``config_version`` bump live in exactly one place. Upserts on the ``key``
+    primary key (an existing key is overwritten, not a conflict); ``updated_at``
+    is stamped with the current UTC time; the bump shares the same
+    ``BEGIN IMMEDIATE`` transaction as the write, so a hot-loading reader sees
+    the new value and the new counter together, never one without the other.
 
     Args:
         conn: An open ``app.db`` connection.
         key: The configuration key.
         value: The raw string value to store.
     """
-    with transaction(conn):
-        conn.execute(
-            "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
-            "updated_at = excluded.updated_at",
-            (key, value, utc_now_iso()),
-        )
-        _bump_config_version(conn)
-    log.info("appdb.config_set", key=key)
+    set_many(conn, {key: value})
 
 
 def set_many(conn: sqlite3.Connection, values: dict[str, str]) -> None:

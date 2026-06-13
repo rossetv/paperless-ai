@@ -110,7 +110,7 @@ def record_heartbeat(
 
 
 def _derive_state(
-    *, last_heartbeat: str, detail: str, now: datetime, stale_after: int
+    *, last_heartbeat: str, detail: str, now: datetime, stale_after_seconds: int
 ) -> DaemonState:
     """Derive the dashboard state from a row's heartbeat recency and detail.
 
@@ -124,7 +124,7 @@ def _derive_state(
     if beat.tzinfo is None:
         beat = beat.replace(tzinfo=timezone.utc)
     age_seconds = (now - beat).total_seconds()
-    if age_seconds > stale_after:
+    if age_seconds > stale_after_seconds:
         return "stopped"
     if detail.strip() == IDLE_DETAIL:
         return "idle"
@@ -164,7 +164,7 @@ def read_statuses(
                 last_heartbeat=row["last_heartbeat"],
                 detail=row["detail"],
                 now=reference,
-                stale_after=stale_after_seconds,
+                stale_after_seconds=stale_after_seconds,
             ),
             detail=row["detail"],
             processed_count=row["processed_count"],

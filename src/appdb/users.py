@@ -160,12 +160,23 @@ def create(
             "INSERT INTO users succeeded but cursor.lastrowid is None"
         )
     log.info("appdb.user_created", user_id=new_user_id, role=role)
-    created = get_by_id(conn, new_user_id)
-    if created is None:
-        # The row was just inserted on this connection — if it is missing the
-        # database is in an unrecoverable state.
-        raise RowVanishedError(f"user {new_user_id} missing immediately after INSERT")
-    return created
+    # Build the User from the values just inserted rather than re-SELECTing the
+    # row: every column was set by this statement, so a second round-trip would
+    # only confirm what we already know. status is the 'active' literal in the
+    # INSERT; last_login_at is the NULL literal.
+    return User(
+        id=new_user_id,
+        username=username,
+        password_hash=password_hash,
+        display_name=display_name,
+        email=email,
+        role=role,
+        status="active",
+        created_at=now,
+        updated_at=now,
+        last_login_at=None,
+        password_changed_at=now,
+    )
 
 
 def get_by_username(conn: sqlite3.Connection, username: str) -> User | None:
@@ -248,14 +259,21 @@ def create_initial_admin(
             "INSERT INTO users (initial admin) succeeded but cursor.lastrowid is None"
         )
     log.info("appdb.initial_admin_created", user_id=new_user_id)
-    created = get_by_id(conn, new_user_id)
-    if created is None:
-        # The row was just inserted on this connection — if it is missing the
-        # database is in an unrecoverable state.
-        raise RowVanishedError(
-            f"initial admin user {new_user_id} missing immediately after INSERT"
-        )
-    return created
+    # Build the User from the values just inserted rather than re-SELECTing the
+    # row: role/status/last_login_at are the literals in the INSERT above.
+    return User(
+        id=new_user_id,
+        username=username,
+        password_hash=password_hash,
+        display_name=display_name,
+        email=email,
+        role="admin",
+        status="active",
+        created_at=now,
+        updated_at=now,
+        last_login_at=None,
+        password_changed_at=now,
+    )
 
 
 def list_all(conn: sqlite3.Connection) -> list[User]:
