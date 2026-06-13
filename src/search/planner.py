@@ -24,6 +24,12 @@ Design notes:
   the safe fallback plan.  ``plan()`` therefore never raises.
 """
 
+# rationale: 508 lines, just over the §3.1 ceiling. Splitting is not
+# proportionate: the module-level JSON-parsing helpers (_extract_clarify,
+# _build_retrieval_plan, _str_list, _str_or_none) exist only to support
+# QueryPlanner._parse_response; separating them into a sibling module would
+# add indirection for no cohesion gain. Accepted marginal overage.
+
 from __future__ import annotations
 
 import json
@@ -34,12 +40,12 @@ import structlog
 
 from common.llm import OpenAIChatMixin, extract_json_object
 from search.models import (
-    EMPTY_FILTER_CANDIDATES,
     ClarifyNeeded,
     FilterCandidates,
     PlannedSpec,
     RetrievalPlan,
 )
+from search.refinement import build_broad_semantic_plan
 from search.prompts import (
     PLANNER_SYSTEM_PROMPT,
     _planner_response_format,
@@ -54,12 +60,6 @@ if TYPE_CHECKING:
     from search.models import RetrievalSpec
 
 log = structlog.get_logger(__name__)
-
-# The "search-query planning engine" opening phrase in PLANNER_SYSTEM_PROMPT is
-# the routing key the scripted test client keys off via ScriptedLLMClient.route.
-# Keep it as the opening words of the prompt.  This constant documents that
-# dependency so future prompt edits do not break the router silently.
-_PLANNER_ROUTING_PHRASE = "search-query planning engine"
 
 
 class QueryPlanner(OpenAIChatMixin):
@@ -316,17 +316,8 @@ class QueryPlanner(OpenAIChatMixin):
             reason=reason,
             query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
         )
-        return RetrievalPlan(
-            specs=(
-                PlannedSpec(
-                    mode="semantic",
-                    semantic=query,
-                    keywords=(),
-                    filter_guess=EMPTY_FILTER_CANDIDATES,
-                    rationale="fallback: broad semantic search",
-                ),
-            ),
-            clarify=None,
+        return build_broad_semantic_plan(
+            query, rationale="fallback: broad semantic search"
         )
 
 
@@ -441,17 +432,8 @@ def _build_retrieval_plan(
     # Substitute the broad-semantic fallback so "a plan always has >=1 spec"
     # holds at the planner (the same spec _fallback_plan builds).
     if not planned_specs:
-        return RetrievalPlan(
-            specs=(
-                PlannedSpec(
-                    mode="semantic",
-                    semantic=query,
-                    keywords=(),
-                    filter_guess=EMPTY_FILTER_CANDIDATES,
-                    rationale="fallback: broad semantic search",
-                ),
-            ),
-            clarify=None,
+        return build_broad_semantic_plan(
+            query, rationale="fallback: broad semantic search"
         )
 
     # Cap at SEARCH_PLANNER_MAX_SPECS — a model returning more than asked must

@@ -70,11 +70,6 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The path at which the streamable-HTTP MCP transport listens.  The session
-# manager is mounted here within the Starlette sub-app returned by
-# streamable_http_app().
-_MCP_PATH = "/mcp"
-
 
 # ---------------------------------------------------------------------------
 # ASGI bearer-token middleware

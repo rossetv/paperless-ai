@@ -12,9 +12,9 @@ Forbidden: FastAPI, sqlite3, any I/O.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Annotated, TYPE_CHECKING
 
-from pydantic import BaseModel, field_validator
+from pydantic import AfterValidator, BaseModel, field_validator
 
 from search.validation import (
     validate_display_name,
@@ -26,6 +26,28 @@ from search.validation import (
 
 if TYPE_CHECKING:
     from appdb.users import User
+
+# ---------------------------------------------------------------------------
+# Reusable annotated field types — one validator definition per rule.
+# ---------------------------------------------------------------------------
+
+_Username = Annotated[str, AfterValidator(validate_username)]
+_Password = Annotated[str, AfterValidator(validate_password)]
+_Role = Annotated[str, AfterValidator(validate_role)]
+_DisplayName = Annotated[str | None, AfterValidator(validate_display_name)]
+_Email = Annotated[str | None, AfterValidator(validate_email)]
+
+
+def _validate_optional_role(value: str | None) -> str | None:
+    return None if value is None else validate_role(value)
+
+
+def _validate_optional_password(value: str | None) -> str | None:
+    return None if value is None else validate_password(value)
+
+
+_OptionalRole = Annotated[str | None, AfterValidator(_validate_optional_role)]
+_OptionalPassword = Annotated[str | None, AfterValidator(_validate_optional_password)]
 
 
 # ---------------------------------------------------------------------------
@@ -40,81 +62,27 @@ class LoginRequest(BaseModel):
     lifetime: ticked → seven days, un-ticked → eight hours (spec §4.4).
     """
 
-    username: str
-    password: str
+    username: _Username
+    password: _Password
     remember: bool = False
-
-    @field_validator("username")
-    @classmethod
-    def _check_username(cls, value: str) -> str:
-        """Reject a username that breaks the length/charset contract."""
-        return validate_username(value)
-
-    @field_validator("password")
-    @classmethod
-    def _check_password(cls, value: str) -> str:
-        """Reject a password shorter than the minimum length."""
-        return validate_password(value)
 
 
 class SetupRequest(BaseModel):
     """Body for ``POST /api/setup`` — the setup token plus the first admin."""
 
     token: str
-    username: str
-    password: str
-
-    @field_validator("username")
-    @classmethod
-    def _check_username(cls, value: str) -> str:
-        """Reject an admin username that breaks the contract."""
-        return validate_username(value)
-
-    @field_validator("password")
-    @classmethod
-    def _check_password(cls, value: str) -> str:
-        """Reject an admin password shorter than the minimum length."""
-        return validate_password(value)
+    username: _Username
+    password: _Password
 
 
 class CreateUserRequest(BaseModel):
     """Body for ``POST /api/users`` — a new account created by an admin."""
 
-    username: str
-    password: str
-    role: str
-    display_name: str | None = None
-    email: str | None = None
-
-    @field_validator("username")
-    @classmethod
-    def _check_username(cls, value: str) -> str:
-        """Reject a username that breaks the length/charset contract."""
-        return validate_username(value)
-
-    @field_validator("password")
-    @classmethod
-    def _check_password(cls, value: str) -> str:
-        """Reject a password shorter than the minimum length."""
-        return validate_password(value)
-
-    @field_validator("role")
-    @classmethod
-    def _check_role(cls, value: str) -> str:
-        """Reject a role outside the admin/member/readonly enum."""
-        return validate_role(value)
-
-    @field_validator("display_name")
-    @classmethod
-    def _check_display_name(cls, value: str | None) -> str | None:
-        """Reject a display name longer than the cap."""
-        return validate_display_name(value)
-
-    @field_validator("email")
-    @classmethod
-    def _check_email(cls, value: str | None) -> str | None:
-        """Reject an email that does not look like an address."""
-        return validate_email(value)
+    username: _Username
+    password: _Password
+    role: _Role
+    display_name: _DisplayName = None
+    email: _Email = None
 
 
 class UpdateUserRequest(BaseModel):
@@ -124,17 +92,11 @@ class UpdateUserRequest(BaseModel):
     accepts ``active`` or ``suspended``; ``password`` triggers a reset.
     """
 
-    display_name: str | None = None
-    email: str | None = None
-    role: str | None = None
+    display_name: _DisplayName = None
+    email: _Email = None
+    role: _OptionalRole = None
     status: str | None = None
-    password: str | None = None
-
-    @field_validator("role")
-    @classmethod
-    def _check_role(cls, value: str | None) -> str | None:
-        """Reject a role outside the enum when one is supplied."""
-        return value if value is None else validate_role(value)
+    password: _OptionalPassword = None
 
     @field_validator("status")
     @classmethod
@@ -143,24 +105,6 @@ class UpdateUserRequest(BaseModel):
         if value is not None and value not in ("active", "suspended"):
             raise ValueError("status must be 'active' or 'suspended'")
         return value
-
-    @field_validator("password")
-    @classmethod
-    def _check_password(cls, value: str | None) -> str | None:
-        """Reject a too-short password when one is supplied."""
-        return value if value is None else validate_password(value)
-
-    @field_validator("display_name")
-    @classmethod
-    def _check_display_name(cls, value: str | None) -> str | None:
-        """Reject a display name longer than the cap when one is supplied."""
-        return validate_display_name(value)
-
-    @field_validator("email")
-    @classmethod
-    def _check_email(cls, value: str | None) -> str | None:
-        """Reject an email that does not look like an address when supplied."""
-        return validate_email(value)
 
 
 # ---------------------------------------------------------------------------

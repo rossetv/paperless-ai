@@ -327,7 +327,8 @@ class Answered:
 class NeedsMore:
     """The synthesiser determined retrieval was insufficient to answer.
 
-    core.py uses this signal to trigger the single allowed refinement pass.
+    core.py uses this signal to trigger a refinement pass (bounded by
+    SEARCH_MAX_REFINEMENTS).
 
     Attributes:
         adjustment: A description of how the query plan should be adjusted

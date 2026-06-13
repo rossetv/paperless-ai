@@ -1,6 +1,6 @@
 """System prompts for the search pipeline LLM stages.
 
-This module holds the static prompt templates for the two LLM stages:
+This module holds the static prompt templates for the three LLM stages:
 
 1. **Planner** (``PLANNER_SYSTEM_PROMPT`` + ``build_planner_user_message``)
    — analyses a user query and emits structured JSON that drives hybrid
@@ -8,7 +8,12 @@ This module holds the static prompt templates for the two LLM stages:
    provider can cache it; today's date lives in the *user* turn so the model can
    still resolve relative temporal language (RAG-09).
 
-2. **Synthesiser** (``SYNTHESISER_SYSTEM_PROMPT`` + ``build_synthesiser_user_message``)
+2. **Judge** (``JUDGE_SYSTEM_PROMPT`` + ``build_judge_user_message``)
+   — evaluates each retrieved candidate document for relevance to the query
+   (Layer 3, spec §7.3).  Emits a per-document keep/drop verdict with an
+   optional short rationale.
+
+3. **Synthesiser** (``SYNTHESISER_SYSTEM_PROMPT`` + ``build_synthesiser_user_message``)
    — assembles the user's question and retrieved chunks into a single user-role
    message.  The control plane (the question and any instructions) is placed
    *first*; the untrusted chunk content follows, wrapped in a data block fenced
@@ -27,6 +32,14 @@ prompt; they are control-plane prompts only.  Document chunks arrive in the
 *user* message of the synthesiser call, after the question and fenced inside a
 nonce-delimited data block the chunk cannot forge (CODE_GUIDELINES.md §10.2).
 """
+
+# rationale: 896 lines, over the §3.1 ceiling. The three stages (planner,
+# judge, synthesiser) are tightly coupled by shared JSON-schema helpers
+# (_planner_response_format, _synthesiser_response_format) and the nonce-fence
+# utility; splitting into per-stage modules would add cross-import plumbing
+# for little cohesion gain. All three are pure data + small builders — no
+# business logic, no I/O. Accepted as a data-heavy file with an authorised
+# rationale per §3.1.
 
 from __future__ import annotations
 

@@ -52,14 +52,6 @@ _ROLE_RANK: dict[str, int] = {
 }
 
 
-class AuthError(Exception):
-    """Raised for a configuration-shaped authentication failure.
-
-    A *failed credential check* is not an error — the resolve helpers return
-    ``None``. This type is reserved for genuine misconfiguration.
-    """
-
-
 def extract_bearer(authorization_header: str | None) -> str | None:
     """Extract the raw token from an ``Authorization: Bearer <token>`` header.
 
