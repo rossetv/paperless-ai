@@ -13,7 +13,20 @@
 .wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--spacing-4);
+
+  /*
+   * Two-value gap: row-gap column-gap.
+   *
+   * FilterableListbox's .trigger carries negative margins
+   * (−4 px vertical, −8 px horizontal) to extend its click target beyond its
+   * visual bounds. Those negative margins eat into a naïve single-value gap
+   * and cause the "+ Add tag" trigger to visually collide with the preceding
+   * chip. The column-gap must exceed the −8 px pull (var(--spacing-6) = 8 px)
+   * so there is always visible clearance; var(--spacing-10) = 14 px gives a
+   * comfortable 6 px net gap. The row-gap of var(--spacing-6) = 8 px similarly
+   * absorbs the −4 px vertical pull and keeps wrapped lines tidy.
+   */
+  gap: var(--spacing-6) var(--spacing-10);
   align-items: center;
   position: relative;
 }

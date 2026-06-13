@@ -114,7 +114,13 @@ export function SearchField({
             spellCheck={false}
           />
           <span className={styles['trailing-button']}>
-            <IconButton label="Search" type="button" disabled={disabled} onClick={submit}>
+            <IconButton
+              label="Search"
+              type="button"
+              disabled={disabled}
+              onClick={submit}
+              className={cn(styles['submit-button'])}
+            >
               <Icon name="search" size="small" />
             </IconButton>
           </span>

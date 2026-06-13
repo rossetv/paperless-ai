@@ -58,3 +58,13 @@
   display: flex;
   align-items: center;
 }
+
+/* The submit button's visual circle is sized down to --size-icon-xl (28 px) so
+   it sits comfortably inside the search bar with ~6–7 px of breathing room on
+   each side. The tap-target area is preserved by the absolute-positioned
+   .trailing-button span which remains 44 px tall via the flex alignment of the
+   .input-wrapper. Only the rendered circle shrinks; behaviour is unchanged. */
+.submit-button {
+  width: var(--size-icon-xl);
+  height: var(--size-icon-xl);
+}
