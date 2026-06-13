@@ -2,13 +2,16 @@
  * ConnectionsPanel — the Connections section rendered as integration accordion cards.
  *
  * Replaces the flat SettingsSection rendering for section.id === 'connections'.
- * Renders:
- *   1. An AI-provider strip (LLM_PROVIDER segmented control).
- *   2. A ConnectionCard for Paperless-ngx (always visible).
- *   3. A ConnectionCard for OpenAI (always visible).
- *   4. A ConnectionCard for Ollama (only when LLM_PROVIDER === 'ollama').
+ * Renders one ConnectionCard per service, all always visible:
+ *   1. Paperless-ngx.
+ *   2. OpenAI.
+ *   3. Ollama.
  *
- * On mount each visible service with credentials configured is auto-tested
+ * The provider role selectors (chat/embeddings) live in the separate
+ * 'providers' section — this panel is purely the services you connect to and
+ * test.
+ *
+ * On mount each service with credentials configured is auto-tested
  * (staggered by 200ms per index). Services with empty required credentials
  * show "Not configured" without probing. Each card's "Test" button re-runs
  * the probe for that one service.
@@ -32,7 +35,6 @@ import { Row } from '../../../components/primitives/Row/Row';
 import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
 import { useTestConnection } from '../../../api/hooks/settings';
 import { SECRET_MASK } from '../../../api/types/settings';
-import styles from './ConnectionsPanel.module.css';
 
 export interface ConnectionsPanelProps {
   /** The 'connections' section descriptor. */
@@ -81,9 +83,9 @@ function isConfigured(service: ServiceName, values: SettingsDraft): boolean {
 /**
  * ConnectionsPanel — accordion Connections section.
  *
- * Renders the provider segmented strip, then one ConnectionCard per visible
- * service. Auto-tests each configured service on mount (staggered). Unconfigured
- * services display "Not configured" without probing.
+ * Renders one ConnectionCard per service (Paperless, OpenAI, Ollama), all
+ * always visible. Auto-tests each configured service on mount (staggered).
+ * Unconfigured services display "Not configured" without probing.
  */
 export function ConnectionsPanel({
   section,
@@ -93,9 +95,6 @@ export function ConnectionsPanel({
   defaultKeys,
 }: ConnectionsPanelProps): React.ReactElement {
   const testMutation = useTestConnection();
-
-  const provider = typeof values['LLM_PROVIDER'] === 'string' ? values['LLM_PROVIDER'] : 'openai';
-  const showOllama = provider === 'ollama';
 
   const [statuses, setStatuses] = React.useState<Record<ServiceName, ServiceStatus>>({
     paperless: { tone: 'untested', label: 'Untested' },
@@ -167,12 +166,13 @@ export function ConnectionsPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values]);
 
-  // Auto-test on mount: stagger by 200ms per service index.
+  // Auto-test on mount: stagger by 200ms per service index. All three services
+  // are always shown, so each configured one is probed.
   React.useEffect(() => {
-    const visible: ServiceName[] = ['paperless', 'openai', ...(showOllama ? (['ollama'] as ServiceName[]) : [])];
+    const services: ServiceName[] = ['paperless', 'openai', 'ollama'];
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    visible.forEach((service, index) => {
+    services.forEach((service, index) => {
       if (!isConfigured(service, values)) {
         setStatus(service, { tone: 'off', label: 'Not configured' });
         return;
@@ -190,20 +190,6 @@ export function ConnectionsPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When Ollama becomes visible (LLM_PROVIDER switches to 'ollama') and its
-  // base URL is configured, auto-probe it. Does not re-probe on every keystroke.
-  const prevShowOllamaRef = React.useRef(showOllama);
-  React.useEffect(() => {
-    const wasHidden = !prevShowOllamaRef.current;
-    prevShowOllamaRef.current = showOllama;
-
-    if (showOllama && wasHidden && isConfigured('ollama', values)) {
-      void probeService('ollama');
-    }
-  // showOllama drives the hidden→visible transition; probeService is stable.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showOllama]);
-
   // Find field model groups from the section — looked up by group id.
   const groupById = React.useMemo(() => {
     const map: Record<string, typeof section.groups[0]> = {};
@@ -213,7 +199,6 @@ export function ConnectionsPanel({
     return map;
   }, [section]);
 
-  const providerGroup = groupById['provider'];
   const paperlessGroup = groupById['paperless'];
   const openaiGroup = groupById['openai'];
   const ollamaGroup = groupById['ollama'];
@@ -224,20 +209,6 @@ export function ConnectionsPanel({
       title={section.title}
       subtitle={section.subtitle}
     >
-      {/* AI provider strip */}
-      {providerGroup !== undefined && (
-        <div className={styles['provider-strip']}>
-          {providerGroup.fields.map((field) => (
-            <FieldControl
-              key={field.key}
-              field={field}
-              value={values[field.key]}
-              onChange={onChange}
-            />
-          ))}
-        </div>
-      )}
-
       {/* Paperless-ngx card — always shown */}
       {paperlessGroup !== undefined && (
         <ConnectionCard
@@ -298,8 +269,8 @@ export function ConnectionsPanel({
         </ConnectionCard>
       )}
 
-      {/* Ollama card — only when provider is ollama */}
-      {showOllama && ollamaGroup !== undefined && (
+      {/* Ollama card — always shown */}
+      {ollamaGroup !== undefined && (
         <ConnectionCard
           glyph="Ll"
           glyphTone="grey"

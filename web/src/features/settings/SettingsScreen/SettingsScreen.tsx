@@ -150,7 +150,7 @@ function SettingsContent({
 /**
  * The Settings screen — every configuration value, editable in-app.
  *
- * Fetches the configuration, then renders the nine config sections inside
+ * Fetches the configuration, then renders the config sections inside
  * the shared `SettingsLayout`. The server's `SettingItem[]` is parsed into a
  * typed draft; unsaved edits are tracked against it, the sticky `SaveBar`
  * slides up when dirty, and Save sends only the changed keys each serialised
