@@ -163,6 +163,30 @@ def _resolve_embedding_provider(
     return provider  # type: ignore[return-value]
 
 
+def _resolve_step_provider(
+    source: Mapping[str, str],
+    key: str,
+    default: Literal["openai", "ollama"],
+) -> Literal["openai", "ollama"]:
+    """Resolve a per-step provider key (``OCR_PROVIDER``, ``CLASSIFY_PROVIDER``,
+    ``SEARCH_PLANNER_PROVIDER`` / ``_JUDGE_`` / ``_ANSWER_``).
+
+    Mirrors :func:`_resolve_embedding_provider`: a blank or unset value resolves
+    to *default* — the per-step keys seed from ``LLM_PROVIDER`` (and the judge
+    seeds from the planner) so an existing deployment that set only
+    ``LLM_PROVIDER`` keeps behaving identically. Any non-blank value other than
+    ``openai`` / ``ollama`` fails closed naming the key (CODE_GUIDELINES §1.11).
+    """
+    raw = source.get(key)
+    if raw is None or not raw.strip():
+        return default
+    provider = raw.strip()
+    if provider not in ("openai", "ollama"):
+        raise ValueError(f"{key} must be 'openai' or 'ollama'")
+    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    return provider  # type: ignore[return-value]
+
+
 def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]:
     """Resolve and validate ``LOG_FORMAT`` (defaults to ``console``)."""
     log_format = source.get("LOG_FORMAT", "console")

@@ -737,8 +737,8 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_eighty_one_entries() -> None:
-    """CONFIG_KEYS is the 81-key universe.
+def test_config_keys_has_eighty_six_entries() -> None:
+    """CONFIG_KEYS is the 86-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
@@ -749,10 +749,14 @@ def test_config_keys_has_eighty_one_entries() -> None:
     SEARCH_KEY_DAILY_TOKEN_QUOTA was added as the per-API-key daily LLM-spend cap.
     PRICING_REFRESH_URL and PRICING_REFRESH_INTERVAL_HOURS were added for the
     refreshable, locally-cached model-price book (default disabled = bundled seed).
+    The five per-step provider keys (OCR_PROVIDER, CLASSIFY_PROVIDER,
+    SEARCH_PLANNER_PROVIDER, SEARCH_JUDGE_PROVIDER, SEARCH_ANSWER_PROVIDER) were
+    added so each AI step picks OpenAI/Ollama independently (default seeds from
+    LLM_PROVIDER), bringing the count from 81 to 86.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 81
+    assert len(CONFIG_KEYS) == 86
     assert "PRICING_REFRESH_URL" in CONFIG_KEYS
     assert "PRICING_REFRESH_INTERVAL_HOURS" in CONFIG_KEYS
     assert "SEARCH_KEY_DAILY_TOKEN_QUOTA" in CONFIG_KEYS
@@ -899,3 +903,119 @@ def test_reindex_keys_are_the_chunking_and_embedding_keys() -> None:
         {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
     )
     assert REINDEX_KEYS <= CONFIG_KEYS
+
+
+_STEP_PROVIDER_KEYS = (
+    "OCR_PROVIDER",
+    "CLASSIFY_PROVIDER",
+    "SEARCH_PLANNER_PROVIDER",
+    "SEARCH_JUDGE_PROVIDER",
+    "SEARCH_ANSWER_PROVIDER",
+)
+
+# A reachable Ollama URL so a step set to ollama builds (the API-layer guard,
+# not the config builder, enforces "configure the URL first").
+_OLLAMA_URL = "http://gpu.lan:11434/v1/"
+
+
+class TestPerStepProviders:
+    """Each AI step picks its provider independently; an absent per-step key
+    seeds from LLM_PROVIDER (the judge from the planner), so a deployment that
+    set only LLM_PROVIDER is byte-for-byte unchanged."""
+
+    def test_default_to_openai_when_unset(self, mocker):
+        s = _build(mocker, _MINIMAL_ENV)
+        for key in _STEP_PROVIDER_KEYS:
+            assert getattr(s, key) == "openai"
+
+    def test_all_seed_from_llm_provider_ollama(self, mocker):
+        s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "OLLAMA_BASE_URL": _OLLAMA_URL})
+        for key in _STEP_PROVIDER_KEYS:
+            assert getattr(s, key) == "ollama"
+
+    def test_judge_seeds_from_planner_not_llm_provider(self, mocker):
+        s = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_PLANNER_PROVIDER": "ollama",
+                "OLLAMA_BASE_URL": _OLLAMA_URL,
+            },
+        )
+        assert s.SEARCH_PLANNER_PROVIDER == "ollama"
+        assert s.SEARCH_JUDGE_PROVIDER == "ollama"  # mirrors the planner
+        assert s.SEARCH_ANSWER_PROVIDER == "openai"  # seeds from LLM_PROVIDER
+        assert s.OCR_PROVIDER == "openai"
+
+    def test_explicit_judge_overrides_planner_seed(self, mocker):
+        s = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_PLANNER_PROVIDER": "ollama",
+                "SEARCH_JUDGE_PROVIDER": "openai",
+                "OLLAMA_BASE_URL": _OLLAMA_URL,
+            },
+        )
+        assert s.SEARCH_JUDGE_PROVIDER == "openai"
+
+    def test_model_default_follows_step_provider(self, mocker):
+        # OCR on Ollama → Gemma OCR models; classification stays OpenAI → GPT.
+        s = _build(
+            mocker,
+            {**_MINIMAL_ENV, "OCR_PROVIDER": "ollama", "OLLAMA_BASE_URL": _OLLAMA_URL},
+        )
+        assert s.OCR_MODELS == ["gemma3:27b", "gemma3:12b"]
+        assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+
+    def test_search_model_default_follows_step_provider(self, mocker):
+        s = _build(
+            mocker,
+            {
+                **_MINIMAL_ENV,
+                "SEARCH_ANSWER_PROVIDER": "ollama",
+                "OLLAMA_BASE_URL": _OLLAMA_URL,
+            },
+        )
+        assert s.SEARCH_ANSWER_MODEL == "gemma3:27b"
+        assert s.SEARCH_PLANNER_MODEL == "gpt-5.4-mini"
+
+    def test_invalid_value_rejected_naming_the_key(self, mocker):
+        with pytest.raises(ValueError, match="OCR_PROVIDER"):
+            _build(mocker, {**_MINIMAL_ENV, "OCR_PROVIDER": "bogus"})
+
+    def test_openai_key_optional_when_every_step_ollama(self, mocker):
+        s = _build(
+            mocker,
+            {
+                "PAPERLESS_TOKEN": "tok-123",
+                "LLM_PROVIDER": "ollama",
+                "EMBEDDING_PROVIDER": "ollama",
+                "OLLAMA_BASE_URL": _OLLAMA_URL,
+            },
+        )
+        assert s.OPENAI_API_KEY == ""
+
+    def test_openai_key_required_when_one_step_openai(self, mocker):
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            _build(
+                mocker,
+                {
+                    "PAPERLESS_TOKEN": "tok-123",
+                    "LLM_PROVIDER": "ollama",
+                    "EMBEDDING_PROVIDER": "ollama",
+                    "OCR_PROVIDER": "openai",
+                    "OLLAMA_BASE_URL": _OLLAMA_URL,
+                },
+            )
+
+
+def test_per_step_provider_keys_are_config_only() -> None:
+    """The five per-step provider keys persist via the Settings API but are
+    neither secrets nor reindex keys (a chat-provider change needs no re-embed)."""
+    from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
+
+    for key in _STEP_PROVIDER_KEYS:
+        assert key in CONFIG_KEYS
+        assert key not in SECRET_KEYS
+        assert key not in REINDEX_KEYS
