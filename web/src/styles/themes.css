@@ -30,7 +30,7 @@
   /* Text */
   --colour-text-primary:    #fff;
   --colour-text-secondary:  rgb(255 255 255 / 80%);
-  --colour-text-tertiary:   rgb(255 255 255 / 48%);
+  --colour-text-tertiary:   rgb(255 255 255 / 64%);
   --colour-text-on-dark:    #fff;
 
   /* Interactive / accent — unchanged in dark mode */
