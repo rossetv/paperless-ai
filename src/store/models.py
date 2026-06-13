@@ -176,10 +176,15 @@ class SearchFilters:
     as the full document table.
 
     Attributes:
-        date_from: Lower bound on documents.created (inclusive, ISO-8601
-            string, lexicographic comparison).  None means no lower bound.
-        date_to: Upper bound on documents.created (inclusive, ISO-8601
-            string, lexicographic comparison).  None means no upper bound.
+        date_from: Inclusive lower bound on ``documents.created`` (bare
+            ``YYYY-MM-DD`` string; compared directly against the stored
+            ISO-8601 timestamp using a sargable ``>=`` predicate).  None
+            means no lower bound.
+        date_to: Inclusive upper bound on ``documents.created`` (bare
+            ``YYYY-MM-DD`` string).  The reader advances this by one day and
+            uses ``<`` so every timestamp on the given date is captured while
+            ``idx_documents_created`` remains usable.  None means no upper
+            bound.
         correspondent_id: Exact match on documents.correspondent_id.
             None means no restriction.
         document_type_id: Exact match on documents.document_type_id.
@@ -267,10 +272,15 @@ class DocumentBrowseQuery:
         text: Optional case-insensitive substring matched against the
             document title, correspondent name, and document-type name.
             None or empty means no text restriction.
-        date_from: Inclusive lower bound on ``documents.created`` (ISO-8601
-            string, lexicographic comparison).  None means no lower bound.
-        date_to: Inclusive upper bound on ``documents.created``.  None means
-            no upper bound.
+        date_from: Inclusive lower bound on ``documents.created`` (bare
+            ``YYYY-MM-DD`` string; compared directly against the stored
+            ISO-8601 timestamp using a sargable ``>=`` predicate).  None
+            means no lower bound.
+        date_to: Inclusive upper bound on ``documents.created`` (bare
+            ``YYYY-MM-DD`` string).  The reader advances this by one day
+            and uses ``<`` so every timestamp on the given date is captured
+            while ``idx_documents_created`` remains usable.  None means no
+            upper bound.
         correspondent_id: Exact match on ``documents.correspondent_id``.
             None means no restriction.
         document_type_id: Exact match on ``documents.document_type_id``.
