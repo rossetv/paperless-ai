@@ -7,7 +7,7 @@ import { Button } from '../../../components/primitives/Button/Button';
 import { Icon } from '../../../components/primitives/Icon/Icon';
 import { Text } from '../../../components/primitives/Text/Text';
 import { Card } from '../../../components/primitives/Card/Card';
-import { FilterControls } from '../FilterControls/FilterControls';
+import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { ActiveFiltersStrip } from '../ActiveFiltersStrip/ActiveFiltersStrip';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import { hasActiveFilters } from '../filters';
@@ -43,6 +43,13 @@ export interface NoResultsScreenProps {
    */
   onPreview: (documentId: number) => void;
 }
+
+/** Copy and action configuration for a specific zero-result case. */
+type CopyConfig = {
+  message: string;
+  description?: string;
+  showFilterActions: boolean;
+};
 
 /**
  * The zero-result search screen — handles both `"no_match"` and `"clarify"`
@@ -80,12 +87,6 @@ export function NoResultsScreen({
   const filtersActive = hasActiveFilters(filters);
 
   // ── Derive the copy/actions for this specific zero-result case ──────────────
-
-  type CopyConfig = {
-    message: string;
-    description?: string;
-    showFilterActions: boolean;
-  };
 
   function buildCopy(): CopyConfig {
     if (outcome_kind === 'clarify') {

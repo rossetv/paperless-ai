@@ -3,7 +3,7 @@ import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayou
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { Text } from '../../../components/primitives/Text/Text';
-import { FilterControls } from '../FilterControls/FilterControls';
+import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { AnswerCard } from '../AnswerCard/AnswerCard';
 import { SourceList } from '../SourceList/SourceList';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';

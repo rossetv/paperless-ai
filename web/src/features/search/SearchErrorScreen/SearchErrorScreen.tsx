@@ -4,7 +4,7 @@ import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
 import { Button } from '../../../components/primitives/Button/Button';
-import { FilterControls } from '../FilterControls/FilterControls';
+import { FilterControls } from '../../../components/patterns/FilterControls/FilterControls';
 import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import type { FilterRequest, PhaseRecord } from '../../../api/types';
 

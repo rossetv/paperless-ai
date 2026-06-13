@@ -451,6 +451,11 @@ across features. Current promoted homes:
 - `thumbKind` → `components/primitives` (beside `DocThumb`; used by library, search, document).
 - `parseSearchParams` → `lib/` (used by document + search).
 
+Patterns are **presentational by default**. A *connected pattern* — `FilterControls`
+is the example — MAY import `api/` data-hooks and types (it drives `useFacets`).
+This is a deliberate, narrow exception (mirrors the `hooks → api` allowance), **not**
+licence for every pattern to reach into `api/`; the default remains presentational.
+
 ### 11.2 CSS module policy — the `features/.module.css` exception
 
 CODE_GUIDELINES §12.5 states "only `components/` carries styling". In practice,
