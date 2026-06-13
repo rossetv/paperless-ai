@@ -98,11 +98,14 @@
   gap: var(--spacing-10);
 }
 
-/* The list view — one card per row, full width. */
+/* The list view — one card per row, full width.
+ * align-items: start lets each row be content-sized instead of stretching to
+ * the tallest sibling, collapsing the dead vertical space (UI-11). */
 .list {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--spacing-8);
+  align-items: start;
 }
 
 /* Responsive collapse — the handoff is a 1440 desktop artboard; step the
