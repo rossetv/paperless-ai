@@ -109,6 +109,45 @@ def test_validate_accepts_a_good_change_set() -> None:
     assert changed == {"CHUNK_SIZE"}
 
 
+def test_validate_rejects_selecting_ollama_without_a_base_url() -> None:
+    """A step may not select Ollama unless OLLAMA_BASE_URL is configured — the
+    backstop for the UI's disabled Ollama option (spec §3.3)."""
+    with pytest.raises(ValueError, match="OLLAMA_BASE_URL"):
+        validate_change_set(
+            changes={"OCR_PROVIDER": "ollama"},
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+        )
+
+
+def test_validate_names_the_offending_step_in_the_ollama_message() -> None:
+    with pytest.raises(ValueError, match="SEARCH_JUDGE_PROVIDER"):
+        validate_change_set(
+            changes={"SEARCH_JUDGE_PROVIDER": "ollama"},
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+        )
+
+
+def test_validate_accepts_ollama_when_base_url_is_configured() -> None:
+    changed = validate_change_set(
+        changes={"OCR_PROVIDER": "ollama"},
+        config_table={"OLLAMA_BASE_URL": "http://gpu.lan:11434/v1/"},
+        environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+    )
+    assert "OCR_PROVIDER" in changed
+
+
+def test_validate_rejects_selecting_openai_without_an_api_key() -> None:
+    """The mirror guard: a step may not select OpenAI with no key configured."""
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        validate_change_set(
+            changes={},  # every step defaults to openai, but no key anywhere
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t"},
+        )
+
+
 _SECRETS = {"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"}
 
 
@@ -191,15 +230,16 @@ def test_validate_rejects_setting_an_openai_model_while_on_ollama() -> None:
 
 
 def test_validate_accepts_ollama_embeddings_with_a_local_model() -> None:
-    """Switching embeddings to Ollama WITH a local model and its dimensions is a
-    coherent, allowed change."""
+    """Switching embeddings to Ollama WITH a local model, its dimensions, and the
+    Ollama connection configured is a coherent, allowed change."""
     changed = validate_change_set(
         changes={
             "EMBEDDING_PROVIDER": "ollama",
             "EMBEDDING_MODEL": "nomic-embed-text",
             "EMBEDDING_DIMENSIONS": "768",
         },
-        config_table={},
+        # Ollama must be configured under Connections before a step may use it.
+        config_table={"OLLAMA_BASE_URL": "http://gpu.lan:11434/v1/"},
         environ=_SECRETS,
     )
     assert changed == {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"}
