@@ -14,3 +14,76 @@
   min-width: 0;
   overflow-x: hidden;
 }
+
+/**
+ * Quick-search suggestion pill — the canned query prompts on the idle screen.
+ *
+ * Bespoke button style rather than Chip so the visual overrides are
+ * self-contained in this module (avoids cross-module specificity battles).
+ * Interaction vocabulary follows DESIGN.md §4 — ghost/chip pattern:
+ *   hover  → subtle background tint + stronger border (colour shift only)
+ *   active → scale(0.97) tactile press (DESIGN.md: chips scale slightly more)
+ *   focus  → standard 2 px accent ring
+ *   motion → --duration-standard / --duration-fast on --easing-out
+ */
+.suggestion-pill {
+  /* Reset browser button defaults */
+  appearance: none;
+  margin: 0;
+  cursor: pointer;
+
+  /* Shape and surface */
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-3) var(--spacing-10);
+  border-radius: var(--radius-pill);
+  background-color: var(--colour-button-light-bg);
+  border: var(--spacing-1) solid var(--colour-border-button);
+
+  /* Typography — caption scale, secondary tone */
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+  white-space: nowrap;
+
+  /* Smooth colour and tactile transitions */
+  transition:
+    background-color var(--duration-standard) var(--easing-out),
+    border-color var(--duration-standard) var(--easing-out),
+    transform var(--duration-fast) var(--easing-out);
+}
+
+/* Hover — subtle tint with stronger border; colour shift only (no lift for ghost variant). */
+.suggestion-pill:hover {
+  background-color: var(--colour-button-active-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+/* Active/press — quick tactile scale-down per DESIGN.md §4 chip spec. */
+.suggestion-pill:active {
+  transform: scale(0.97);
+  background-color: var(--colour-button-active-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+/* Focus ring — 2 px accent outline, consistent with the rest of the app. */
+.suggestion-pill:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+/* Reduced motion — drop the transform; keep colour transitions (they are motion-safe). */
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-pill {
+    transition:
+      background-color var(--duration-standard) var(--easing-out),
+      border-color var(--duration-standard) var(--easing-out);
+  }
+
+  .suggestion-pill:active {
+    transform: none;
+  }
+}

@@ -17,6 +17,21 @@
   margin-bottom: var(--spacing-13);
 }
 
+/* Tablet (≤834 px, after the settings rail collapses at 960 px): 2-up grid
+   so tiles have room to breathe instead of being crammed into 4 columns. */
+@media (width <= 833.98px) {
+  .stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Mobile (≤699 px): still 2-up but tighter gap to stay comfortable at 360 px. */
+@media (width <= 699.98px) {
+  .stat-row {
+    gap: var(--spacing-8);
+  }
+}
+
 /* ── Toolbar above the table — SearchField primitive on the left. ── */
 .toolbar {
   display: flex;
@@ -24,6 +39,13 @@
   gap: var(--spacing-8);
   margin-bottom: var(--spacing-9);
   max-width: var(--width-search-narrow);
+}
+
+/* On mobile the search field stretches to fill available width. */
+@media (width <= 699.98px) {
+  .toolbar {
+    max-width: 100%;
+  }
 }
 
 /* ── User identity cell — avatar beside name + username. ── */

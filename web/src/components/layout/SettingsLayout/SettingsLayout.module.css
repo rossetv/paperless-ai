@@ -13,7 +13,7 @@
   display: grid;
   grid-template-columns: var(--width-settings-nav) 1fr;
   gap: var(--gap-settings-layout);
-  max-width: var(--width-settings-content-max);
+  max-width: var(--width-app-content);
   margin: 0 auto;
   padding: 0 var(--spacing-14);
   padding-bottom: var(--padding-settings-bottom);

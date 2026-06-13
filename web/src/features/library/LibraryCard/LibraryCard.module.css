@@ -27,10 +27,13 @@
     box-shadow var(--duration-standard) var(--easing-standard);
 }
 
-/* List-view modifier — thumbnail left column, metadata right. */
+/* List-view modifier — thumbnail left column, metadata right.
+ * height: auto overrides the base height: 100% so the row is content-sized,
+ * not stretched to fill the grid track. */
 .card-list {
   flex-direction: row;
   align-items: stretch;
+  height: auto;
 
   /* Give the row a resting surface so the hover shadow reads against the page. */
   background: var(--colour-button-light-bg);
@@ -133,10 +136,33 @@
   width: var(--width-library-thumb);
   flex-shrink: 0;
   height: auto;
+
+  /* Vertical padding is halved in list view so the thumbnail strip is compact. */
+  padding-block: var(--spacing-9);
+}
+
+/* The real thumbnail image must not carry its grid-view fixed height into list
+ * view — that 220 px value is what forces the row tall. Let height follow the
+ * narrower list column width via object-fit instead. */
+.card-list .thumb-img {
+  width: 100%;
+  height: auto;
+  max-height: var(--height-library-preview);
 }
 
 .card-list .meta {
   flex: 1;
+}
+
+/* Pushes the chip row to the bottom of the meta block. */
+.spacer {
+  flex: 1;
+}
+
+/* In list view there is no space to fill vertically — the card is content-sized,
+ * so the spacer would just add dead air. Collapse it. */
+.card-list .spacer {
+  display: none;
 }
 
 .provenance {
@@ -181,11 +207,6 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-/* Pushes the chip row to the bottom of the meta block. */
-.spacer {
-  flex: 1;
 }
 
 .chips {

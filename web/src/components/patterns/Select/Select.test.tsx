@@ -160,6 +160,51 @@ describe('Select', () => {
     expect(screen.getByRole('combobox')).toBeDisabled();
   });
 
+  it('closes on an outside pointer-down', async () => {
+    render(
+      <div>
+        <Select
+          id="fruit"
+          options={OPTIONS}
+          onChange={vi.fn()}
+          placeholder="Choose a fruit"
+        />
+        <button type="button">outside</button>
+      </div>,
+    );
+    await userEvent.click(screen.getByRole('combobox'));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'outside' }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('closes the first dropdown when a second is opened', async () => {
+    render(
+      <div>
+        <Select id="fruit" options={OPTIONS} onChange={vi.fn()} placeholder="Fruit" />
+        <Select
+          id="colour"
+          options={[
+            { value: 'red', label: 'Red' },
+            { value: 'blue', label: 'Blue' },
+          ]}
+          onChange={vi.fn()}
+          placeholder="Colour"
+        />
+      </div>,
+    );
+    const [fruitTrigger, colourTrigger] = screen.getAllByRole('combobox');
+    // Open the first dropdown.
+    await userEvent.click(fruitTrigger!);
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    // Opening the second dropdown is an outside-click for the first.
+    await userEvent.click(colourTrigger!);
+    // Only one listbox should be visible — the second one (colour).
+    const listboxes = screen.getAllByRole('listbox');
+    expect(listboxes).toHaveLength(1);
+    expect(listboxes[0]).toHaveAttribute('id', 'colour-listbox');
+  });
+
   it('shows a visible label when label prop is provided', () => {
     render(
       <Select

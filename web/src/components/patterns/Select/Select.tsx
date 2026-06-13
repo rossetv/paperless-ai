@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../../primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
 import styles from './Select.module.css';
@@ -63,7 +63,23 @@ export function Select<T extends string = string>({
 
   const listboxId = `${id}-listbox`;
 
+  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Close on outside pointer-down (bound only while open).
+  // This also ensures a second dropdown opening dismisses this one, because
+  // clicking the other dropdown trigger is an outside-pointer-down for this root.
+  useEffect(() => {
+    if (!isOpen) return;
+    function onPointerDown(event: PointerEvent): void {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setHighlightedIndex(-1);
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [isOpen]);
 
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption?.label ?? placeholder;
@@ -142,7 +158,7 @@ export function Select<T extends string = string>({
   const wrapperClasses = cn(styles['select'], className);
 
   return (
-    <div className={wrapperClasses}>
+    <div ref={rootRef} className={wrapperClasses}>
       {label !== undefined && (
         <span id={`${id}-label`} className={styles['label']}>
           {label}

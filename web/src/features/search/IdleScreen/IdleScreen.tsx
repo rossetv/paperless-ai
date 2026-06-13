@@ -3,7 +3,6 @@ import { SearchScreenLayout } from '../../../components/layout/SearchScreenLayou
 import { Stack } from '../../../components/layout/Stack/Stack';
 import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { Text } from '../../../components/primitives/Text/Text';
-import { Chip } from '../../../components/primitives/Chip/Chip';
 import { RecentSearchStrip } from '../../../components/primitives/RecentSearchStrip/RecentSearchStrip';
 import { IndexStatusFooter } from '../../../components/primitives/IndexStatusFooter/IndexStatusFooter';
 import { useRecentSearches, useStats } from '../../../api/hooks';
@@ -27,9 +26,9 @@ export interface IdleScreenProps {
  * strip (the `RecentSearchStrip` primitive renders `null` for an empty list).
  * The status footer is shown only once `useStats` has resolved.
  *
- * Composed from: SearchScreenLayout, Stack, SearchField, Text, Chip,
+ * Composed from: SearchScreenLayout, Stack, SearchField, Text,
  * RecentSearchStrip, IndexStatusFooter.
- * Own CSS module provides the count-highlight class for the hero subtitle.
+ * Own CSS module provides the count-highlight and suggestion-pill classes.
  */
 export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
   const recent = useRecentSearches();
@@ -68,9 +67,14 @@ export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
 
         <Stack direction="horizontal" gap={6} wrap justify="center">
           {QUICK_FILTERS.map((filter) => (
-            <Chip key={filter} onClick={() => onSearch(filter)}>
+            <button
+              key={filter}
+              type="button"
+              className={styles['suggestion-pill']}
+              onClick={() => onSearch(filter)}
+            >
               {filter}
-            </Chip>
+            </button>
           ))}
         </Stack>
 

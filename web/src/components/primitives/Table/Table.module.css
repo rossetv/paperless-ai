@@ -18,6 +18,25 @@
   overflow: hidden;
 }
 
+/*
+ * On narrow viewports (≤699 px) the fixed-width columns exceed the
+ * container. Switch the wrapper to horizontal scroll so content is
+ * never silently clipped. The table gets a min-width floor so it
+ * never collapses below a legible layout (identity + badge + date +
+ * actions totals ≈ 560 px — comfortable at 360 px with scroll).
+ */
+@media (width <= 699.98px) {
+  .wrapper {
+    overflow-x: auto;
+  }
+
+  .table {
+    /* Widest caller (API Keys): fixed columns sum to ≈530 px, leaving ≈70 px
+       for the flex Name column — enough to read the key name at a scroll. */
+    min-width: var(--width-table-min-scroll);
+  }
+}
+
 /* ── The table itself. ── */
 .table {
   width: 100%;
