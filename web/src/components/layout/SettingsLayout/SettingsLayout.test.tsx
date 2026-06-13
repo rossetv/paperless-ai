@@ -45,11 +45,12 @@ describe('SettingsLayout', () => {
     expect(container.firstElementChild?.className).toContain('extra');
   });
 
-  it('renders the Pipeline nav group with the five pipeline section links', () => {
+  it('renders the Pipeline nav group with the six pipeline section links', () => {
     renderLayout();
     expect(screen.getByText('Pipeline')).toBeInTheDocument();
     const pipelineItems = [
       'Connections',
+      'AI providers',
       'OCR',
       'Classification',
       'Indexing',
@@ -58,6 +59,14 @@ describe('SettingsLayout', () => {
     for (const name of pipelineItems) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
+  });
+
+  it('points the AI providers link at the correct settings anchor', () => {
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'AI providers' })).toHaveAttribute(
+      'href',
+      '/settings#providers',
+    );
   });
 
   it('renders the Operations nav group', () => {

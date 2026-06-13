@@ -1,5 +1,5 @@
 /**
- * The seven settings sections, in pipeline display order.
+ * The settings sections, in pipeline display order.
  *
  * Each section contains one or more named sub-card groups, each group
  * containing an ordered list of field descriptors bound to one config key.
@@ -48,7 +48,7 @@ const REASONING_EFFORT_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 /**
- * The seven settings sections, in pipeline display order.
+ * The settings sections, in pipeline display order.
  *
  * The order and section ids match the SettingsSideNav Pipeline / Operations
  * groups. Each section contains one or more named groups (sub-cards). Field
@@ -61,25 +61,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: 'Connections',
     subtitle: 'External services this app talks to.',
     groups: [
-      {
-        id: 'provider',
-        title: 'AI provider',
-        subtitle: 'Sets the chat and vision provider. Embeddings are configured separately under Indexing.',
-        fields: [
-          {
-            key: 'LLM_PROVIDER',
-            label: 'LLM provider',
-            hint: 'Switches which credentials matter below.',
-            control: {
-              kind: 'segmented',
-              options: [
-                { value: 'openai', label: 'OpenAI' },
-                { value: 'ollama', label: 'Ollama' },
-              ],
-            },
-          },
-        ],
-      },
       {
         id: 'paperless',
         title: 'Paperless-ngx',
@@ -109,7 +90,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'openai',
         title: 'OpenAI',
-        subtitle: 'Used for chat and/or embeddings — whichever you set to OpenAI.',
+        subtitle: "OpenAI's hosted chat, vision and embedding API.",
         fields: [
           {
             key: 'OPENAI_API_KEY',
@@ -123,7 +104,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'ollama',
         title: 'Ollama',
-        subtitle: 'Used for chat and/or embeddings — whichever you set to Ollama.',
+        subtitle: 'A local Ollama server (OpenAI-compatible endpoint).',
         fields: [
           {
             key: 'OLLAMA_BASE_URL',
@@ -136,7 +117,56 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 2. OCR ────────────────────────────────────────────────────────────────
+  // ── 2. AI providers ───────────────────────────────────────────────────────
+  // One card per role — each job picks its provider independently. Credentials
+  // for the providers themselves live under Connections.
+  {
+    id: 'providers',
+    title: 'AI providers',
+    subtitle: 'Which provider serves each role. The two are set independently.',
+    groups: [
+      {
+        id: 'chat',
+        title: 'Chat & vision',
+        subtitle: 'Runs OCR transcription, classification, and search answers.',
+        fields: [
+          {
+            key: 'LLM_PROVIDER',
+            label: 'Provider',
+            hint: 'Where chat and vision calls run.',
+            control: {
+              kind: 'segmented',
+              options: [
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'ollama', label: 'Ollama' },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        id: 'embeddings',
+        title: 'Embeddings',
+        subtitle: 'Vectorises your library for semantic search. Switching this re-embeds every document.',
+        fields: [
+          {
+            key: 'EMBEDDING_PROVIDER',
+            label: 'Provider',
+            hint: 'Where document vectors are produced. The model is set under Indexing.',
+            control: {
+              kind: 'segmented',
+              options: [
+                { value: 'openai', label: 'OpenAI' },
+                { value: 'ollama', label: 'Ollama' },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  },
+
+  // ── 3. OCR ────────────────────────────────────────────────────────────────
   {
     id: 'ocr',
     title: 'OCR',
@@ -203,7 +233,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 3. Classification ─────────────────────────────────────────────────────
+  // ── 4. Classification ─────────────────────────────────────────────────────
   {
     id: 'classification',
     title: 'Classification',
@@ -294,7 +324,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 4. Indexing ───────────────────────────────────────────────────────────
+  // ── 5. Indexing ───────────────────────────────────────────────────────────
   {
     id: 'indexing',
     title: 'Indexing',
@@ -303,20 +333,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'embeddings',
         title: 'Embeddings',
-        subtitle: 'Changing the model or dimensions triggers a full rebuild.',
+        subtitle: 'Changing the model or dimensions triggers a full rebuild. The provider lives under AI providers.',
         fields: [
-          {
-            key: 'EMBEDDING_PROVIDER',
-            label: 'Embedding provider',
-            hint: 'Independent of the chat provider. Changing it re-embeds the whole library.',
-            control: {
-              kind: 'segmented',
-              options: [
-                { value: 'openai', label: 'OpenAI' },
-                { value: 'ollama', label: 'Ollama' },
-              ],
-            },
-          },
           {
             key: 'EMBEDDING_MODEL',
             label: 'Embedding model',
@@ -388,7 +406,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 5. Search ─────────────────────────────────────────────────────────────
+  // ── 6. Search ─────────────────────────────────────────────────────────────
   {
     id: 'search',
     title: 'Search',
@@ -532,7 +550,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 6. Automation & Daemons ───────────────────────────────────────────────
+  // ── 7. Automation & Daemons ───────────────────────────────────────────────
   {
     id: 'automation',
     title: 'Automation & Daemons',
@@ -635,7 +653,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 7. Logging ────────────────────────────────────────────────────────────
+  // ── 8. Logging ────────────────────────────────────────────────────────────
   {
     id: 'logging',
     title: 'Logging',

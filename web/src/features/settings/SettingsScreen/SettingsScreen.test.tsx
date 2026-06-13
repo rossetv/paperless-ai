@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -158,13 +158,14 @@ describe('SettingsScreen', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
-  it('renders the Settings title and all seven section headings', async () => {
+  it('renders the Settings title and all eight section headings', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     for (const name of [
       'Connections',
+      'AI providers',
       'OCR',
       'Classification',
       'Indexing',
@@ -307,15 +308,71 @@ describe('SettingsScreen', () => {
     expect(screen.queryByText(/re-embedding your library/i)).toBeNull();
   });
 
-  it('renders the Connections section as accordion cards (Paperless-ngx, OpenAI)', async () => {
+  it('renders the Connections section as accordion cards (Paperless-ngx, OpenAI, Ollama)', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
     // The ConnectionsPanel renders accordion cards — each has a Test button.
+    // All three services are always shown now, independent of LLM_PROVIDER.
     expect(screen.getByRole('button', { name: 'Test Paperless-ngx' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Test OpenAI' })).toBeInTheDocument();
-    // With LLM_PROVIDER=openai, Ollama card should not be present.
-    expect(screen.queryByRole('button', { name: 'Test Ollama' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Test Ollama' })).toBeInTheDocument();
+  });
+
+  it('renders the AI providers section with two "Provider" radiogroups inside their respective cards', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    // Wait for the section to appear.
+    await screen.findByRole('heading', { level: 2, name: 'AI providers' });
+    // The group titles are h3s; the radiogroups are labelled by the field label
+    // "Provider" (not the group title). There are exactly two "Provider" radiogroups
+    // inside the AI providers region.
+    const providersRegion = screen.getByRole('region', { name: 'AI providers' });
+    // The 'Chat & vision' and 'Embeddings' group titles are rendered as h3s within the region.
+    // There are two h3s named 'Embeddings' across the full page (AI providers + Indexing),
+    // so scope the query to the providers region.
+    const { getAllByRole: getAllByRoleInRegion } = within(providersRegion);
+    expect(getAllByRoleInRegion('heading', { level: 3, name: 'Chat & vision' })).toHaveLength(1);
+    expect(getAllByRoleInRegion('heading', { level: 3, name: 'Embeddings' })).toHaveLength(1);
+    // Both field controls are segmented radiogroups, each labelled "Provider".
+    const providerGroups = Array.from(
+      providersRegion.querySelectorAll('[role="radiogroup"][aria-label="Provider"]'),
+    );
+    expect(providerGroups).toHaveLength(2);
+  });
+
+  it('cross-section conditional: EMBEDDING_PROVIDER=openai renders a combobox for Embedding model', async () => {
+    // SETTINGS seeds EMBEDDING_PROVIDER='openai', so the conditional control in
+    // the Indexing section should resolve to the select variant.
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    await screen.findByRole('heading', { level: 2, name: 'Indexing' });
+    expect(screen.getByRole('combobox', { name: 'Embedding model' })).toBeInTheDocument();
+  });
+
+  it('cross-section conditional: EMBEDDING_PROVIDER=ollama renders a textbox for Embedding model', async () => {
+    // Override EMBEDDING_PROVIDER to 'ollama'; the conditional control in Indexing
+    // must fall back to the free-text variant because EMBEDDING_PROVIDER lives in
+    // the 'providers' section and shares the same draft.
+    const ollamaSettings = { ...SETTINGS, EMBEDDING_PROVIDER: 'ollama' };
+    mockFetchSequence([{ status: 200, body: toSettingsBody(ollamaSettings) }]);
+    renderScreen();
+    await screen.findByRole('heading', { level: 2, name: 'Indexing' });
+    expect(screen.getByRole('textbox', { name: 'Embedding model' })).toBeInTheDocument();
+  });
+
+  it('reindex pill is present inside the AI providers region for the Embeddings card', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    // Wait for the section.
+    const providersRegion = await screen.findByRole('region', { name: 'AI providers' });
+    // The Embeddings group card (h3 'Embeddings') is inside the providers region.
+    // EMBEDDING_PROVIDER has requires_reindex=true, so the amber pill must appear
+    // within the providers region.
+    const pills = Array.from(providersRegion.querySelectorAll('*')).filter(
+      (el) => el.textContent?.match(/rebuilds the index on save/i),
+    );
+    expect(pills.length).toBeGreaterThan(0);
   });
 
   it('shows a reindex pill on a re-index key', async () => {

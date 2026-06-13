@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectionsPanel } from './ConnectionsPanel';
@@ -83,19 +83,14 @@ describe('ConnectionsPanel', () => {
 
   it('always shows OpenAI card header', () => {
     renderPanel();
-    // "OpenAI" appears in both the provider segmented strip and the card title.
-    // We just check it's present in the accordion header by verifying the Test button exists.
+    // The provider strip is gone — "OpenAI" now appears only in the card title.
+    // We check the per-card Test button exists.
     expect(screen.getByRole('button', { name: 'Test OpenAI' })).toBeInTheDocument();
   });
 
-  it('hides Ollama card when provider is openai', () => {
+  it('always shows the Ollama card, regardless of the chat provider', () => {
+    // The Ollama card is no longer gated on LLM_PROVIDER — it is always visible.
     renderPanel(DRAFT_OPENAI);
-    // "Ollama" appears in the provider strip; the accordion card should be absent.
-    expect(screen.queryByRole('button', { name: 'Test Ollama' })).not.toBeInTheDocument();
-  });
-
-  it('shows Ollama card when provider is ollama', () => {
-    renderPanel(DRAFT_OLLAMA);
     expect(screen.getByRole('button', { name: 'Test Ollama' })).toBeInTheDocument();
   });
 
@@ -131,16 +126,11 @@ describe('ConnectionsPanel', () => {
     expect(screen.getByText('Server URL')).toBeVisible();
   });
 
-  it('renders the AI provider segmented strip', () => {
+  it('does NOT render a provider segmented strip (it moved to AI providers)', () => {
     renderPanel();
-    // The LLM_PROVIDER segmented control should be visible
-    expect(screen.getByRole('radiogroup', { name: /llm provider/i })).toBeInTheDocument();
-  });
-
-  it('renders the provider strip with OpenAI and Ollama options', () => {
-    renderPanel();
-    expect(screen.getByRole('radio', { name: 'OpenAI' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Ollama' })).toBeInTheDocument();
+    // The LLM_PROVIDER role selector now lives in the separate 'providers'
+    // section, so no segmented radiogroup is rendered inside this panel.
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
   // ── Failure-path tests (FIX 2) ──────────────────────────────────────────────
@@ -228,37 +218,15 @@ describe('ConnectionsPanel', () => {
     );
   });
 
-  // ── Ollama auto-probe on visibility (FIX 4) ───────────────────────────────
+  // ── Ollama auto-probe on mount ────────────────────────────────────────────
 
-  it('auto-probes Ollama exactly once when provider switches from openai to ollama', async () => {
+  it('auto-probes a configured Ollama on mount (no provider gating)', async () => {
     mockMutateAsync.mockClear();
     mockMutateAsync.mockResolvedValue({ ok: true, document_count: 0, detail: 'ok' });
 
-    const { rerender } = render(
-      <ConnectionsPanel
-        section={CONNECTIONS_SECTION}
-        values={DRAFT_OPENAI}
-        onChange={() => undefined}
-        reindexKeys={new Set()}
-        defaultKeys={new Set()}
-      />,
-      { wrapper: makeWrapper() },
-    );
-
-    // Let mount probes settle
-    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalled());
-    const callsAfterMount = mockMutateAsync.mock.calls.length;
-
-    // Switch to ollama
-    rerender(
-      <ConnectionsPanel
-        section={CONNECTIONS_SECTION}
-        values={DRAFT_OLLAMA}
-        onChange={() => undefined}
-        reindexKeys={new Set()}
-        defaultKeys={new Set()}
-      />,
-    );
+    // DRAFT_OLLAMA configures the Ollama base URL; the card is always shown, so
+    // the mount stagger-probe fires for it without any provider switch.
+    renderPanel(DRAFT_OLLAMA);
 
     await waitFor(() => {
       const ollamaCalls = (mockMutateAsync.mock.calls as unknown[][]).filter(
@@ -266,9 +234,30 @@ describe('ConnectionsPanel', () => {
       );
       expect(ollamaCalls).toHaveLength(1);
     });
+  });
 
-    // Total new calls = exactly 1 (ollama only; paperless + openai NOT re-probed)
-    const newCalls = mockMutateAsync.mock.calls.length - callsAfterMount;
-    expect(newCalls).toBe(1);
+  it('does NOT probe Ollama when its base URL is empty, even though the card is shown', async () => {
+    mockMutateAsync.mockClear();
+    mockMutateAsync.mockResolvedValue({ ok: true, document_count: 0, detail: 'ok' });
+
+    // DRAFT_OPENAI leaves OLLAMA_BASE_URL empty — the always-shown Ollama card
+    // reads "Not configured" and is never probed. Use fake timers so the stagger
+    // window (200ms × 3 services = 600ms) is advanced deterministically.
+    vi.useFakeTimers();
+    try {
+      renderPanel(DRAFT_OPENAI);
+      // Advance past the full stagger window — paper@0ms, openai@200ms,
+      // ollama@400ms. Nothing was scheduled for Ollama (empty URL), so
+      // advancing to 700ms simply lets any real scheduled timers fire.
+      await act(async () => {
+        vi.advanceTimersByTime(700);
+      });
+      const ollamaCalls = (mockMutateAsync.mock.calls as unknown[][]).filter(
+        (args) => (args[0] as { service: string }).service === 'ollama',
+      );
+      expect(ollamaCalls).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
