@@ -14,14 +14,40 @@
   padding: var(--spacing-13) var(--spacing-14);
 }
 
+/* Heading row — label on the left, optional Clear affordance on the right. */
+.heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-4);
+}
+
 .heading {
-  margin: 0 0 var(--spacing-4);
+  margin: 0;
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
   letter-spacing: var(--letter-spacing-caption);
   text-transform: uppercase;
   color: var(--colour-text-tertiary);
+}
+
+/* Clear affordance — text-link style, no chrome. */
+.clear-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-link);
+}
+
+.clear-btn:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-micro);
 }
 
 /* Two-column row grid; collapses to one column on narrow viewports. */
@@ -81,8 +107,37 @@
   color: var(--colour-text-tertiary);
 }
 
-.chevron {
+/* Left search-type icon — decorative, low-key tertiary. */
+.icon {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--colour-text-tertiary);
+}
+
+/* Right navigation chevron — raised to secondary for legibility (UI-22). */
+.chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--colour-text-secondary);
+}
+
+/* "Show more / Show less" toggle below the rows. */
+.show-more {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-8) 0;
+  background: none;
+  border: none;
+  border-top: var(--spacing-1) solid var(--colour-border);
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-link);
+  text-align: center;
+}
+
+.show-more:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
 }
