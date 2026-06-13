@@ -65,6 +65,11 @@ class Heartbeat:
         self._processed_count = 0
 
     @property
+    def name(self) -> str:
+        """The daemon name — ocr / classifier / indexer / search."""
+        return self._name
+
+    @property
     def processed_count(self) -> int:
         """The running total of work items this daemon has processed."""
         return self._processed_count
@@ -152,7 +157,7 @@ def run_heartbeat_ticker(
         except Exception:
             # rationale: observability boundary — a detail_fn bug must not
             # crash the heartbeat ticker. Fall back to a generic detail.
-            log.exception("heartbeat.detail_fn_failed", daemon=heartbeat._name)
+            log.exception("heartbeat.detail_fn_failed", daemon=heartbeat.name)
             detail = "alive"
         heartbeat.beat(detail=detail)
         if should_stop():
