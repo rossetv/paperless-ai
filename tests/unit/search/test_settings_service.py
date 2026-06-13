@@ -139,13 +139,25 @@ def test_validate_accepts_ollama_when_base_url_is_configured() -> None:
 
 
 def test_validate_rejects_selecting_openai_without_an_api_key() -> None:
-    """The mirror guard: a step may not select OpenAI with no key configured."""
+    """The mirror guard fires when a step is actively switched TO OpenAI with no
+    key configured anywhere."""
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         validate_change_set(
-            changes={},  # every step defaults to openai, but no key anywhere
+            changes={"OCR_PROVIDER": "openai"},
             config_table={},
-            environ={"PAPERLESS_TOKEN": "t"},
+            environ={"PAPERLESS_TOKEN": "t"},  # no OPENAI_API_KEY in the sources
         )
+
+
+def test_validate_does_not_require_openai_key_for_an_unrelated_change() -> None:
+    """An ordinary change must not force re-supplying the masked OPENAI_API_KEY
+    secret — the secret-sentinel workflow (regression for the over-eager guard)."""
+    changed = validate_change_set(
+        changes={"OCR_DPI": "175"},
+        config_table={},
+        environ={"PAPERLESS_TOKEN": "t"},  # no OPENAI_API_KEY in the sources
+    )
+    assert changed == {"OCR_DPI"}
 
 
 _SECRETS = {"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"}

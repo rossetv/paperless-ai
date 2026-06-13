@@ -278,17 +278,22 @@ def validate_change_set(
             "Configure OLLAMA_BASE_URL under Connections before selecting Ollama "
             f"for: {', '.join(ollama_steps)}."
         )
+    # The mirror guard for OpenAI fires only when the change-set *actively*
+    # selects OpenAI for a step (not on the ambient default), so an ordinary
+    # settings change never has to re-supply the masked OPENAI_API_KEY secret —
+    # preserving the secret-sentinel workflow — while switching a step TO OpenAI
+    # with no key configured is still rejected before it can break the next build.
     raw_openai_key = (
         changes.get("OPENAI_API_KEY")
         or config_table.get("OPENAI_API_KEY")
         or environ.get("OPENAI_API_KEY")
         or ""
     ).strip()
-    openai_steps = [k for k in _STEP_PROVIDER_KEYS if getattr(after, k) == "openai"]
-    if openai_steps and not raw_openai_key:
+    openai_selected = [k for k in _STEP_PROVIDER_KEYS if changes.get(k) == "openai"]
+    if openai_selected and not raw_openai_key:
         raise ValueError(
             "Configure OPENAI_API_KEY under Connections before selecting OpenAI "
-            f"for: {', '.join(openai_steps)}."
+            f"for: {', '.join(openai_selected)}."
         )
 
     # Determine which keys genuinely change. The current effective value is
