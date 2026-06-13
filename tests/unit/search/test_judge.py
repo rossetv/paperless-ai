@@ -70,8 +70,8 @@ def test_judge_user_message_fences_untrusted_candidates() -> None:
 
 
 def test_judge_response_format_is_openai_only() -> None:
-    openai_settings = make_search_settings(LLM_PROVIDER="openai")
-    ollama_settings = make_search_settings(LLM_PROVIDER="ollama")
+    openai_settings = make_search_settings(SEARCH_JUDGE_PROVIDER="openai")
+    ollama_settings = make_search_settings(SEARCH_JUDGE_PROVIDER="ollama")
     assert _judge_response_format(openai_settings)["type"] == "json_schema"
     assert _judge_response_format(ollama_settings) is None
 

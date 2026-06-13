@@ -479,6 +479,15 @@ def make_search_settings(**overrides: Any) -> Any:
         # so existing two-call assertions keep making real (mocked) LLM calls;
         # LLM_PROVIDER="openai" so the structured-output helpers build a schema.
         "LLM_PROVIDER": "openai",
+        # Per-step providers all default to openai (their seed) so the
+        # structured-output / reasoning gates fire and the cross-stage fallback
+        # to CLASSIFY_MODELS is provider-coherent; tests of the Ollama path pin
+        # the specific step provider instead (CODE_GUIDELINES §11.5).
+        "OCR_PROVIDER": "openai",
+        "CLASSIFY_PROVIDER": "openai",
+        "SEARCH_PLANNER_PROVIDER": "openai",
+        "SEARCH_JUDGE_PROVIDER": "openai",
+        "SEARCH_ANSWER_PROVIDER": "openai",
         "SEARCH_PLANNER_REASONING_EFFORT": "medium",
         "SEARCH_ANSWER_REASONING_EFFORT": "medium",
         "SEARCH_CACHE_TTL_SECONDS": 0,

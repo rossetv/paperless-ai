@@ -45,8 +45,13 @@ class ClassificationProvider(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
+    @property
+    def _provider(self) -> str:
+        """Route classification's chat calls to the classify step's provider."""
+        return self.settings.CLASSIFY_PROVIDER
+
     def _response_format(self) -> dict | None:
-        if self.settings.LLM_PROVIDER != "openai":
+        if self.settings.CLASSIFY_PROVIDER != "openai":
             return None
         return {"type": "json_schema", "json_schema": CLASSIFICATION_JSON_SCHEMA}
 
@@ -174,20 +179,22 @@ class ClassificationProvider(OpenAIChatMixin):
     def _build_params(self, model: str, messages: list[dict]) -> dict:
         """Build the chat-completion params, always requesting temperature.
 
-        Temperature, ``reasoning_effort`` and (for OpenAI) the ``json_schema``
-        response format are always *requested*; a model that rejects any of them
-        has it stripped and cached by the shared :meth:`_create_with_compat`
-        layer, so it is never *persistently* sent to a model that does not
-        accept it. ``max_tokens`` is requested only when
-        ``CLASSIFY_MAX_TOKENS > 0`` (default 0 → omitted).
+        ``reasoning_effort`` and the ``json_schema`` response format are
+        OpenAI-only, so both are gated on the classify step's *own* provider:
+        omitted entirely when ``CLASSIFY_PROVIDER`` is not ``openai`` (an Ollama
+        step never pays the wasted 400 round-trip the compat layer would
+        otherwise need to discover the rejection). On OpenAI a model that still
+        rejects one has it stripped/cached by :meth:`_create_with_compat`.
+        ``max_tokens`` is requested only when ``CLASSIFY_MAX_TOKENS > 0``.
         """
         params: dict = {
             "model": model,
             "messages": messages,
             "timeout": self.settings.REQUEST_TIMEOUT,
             "temperature": DEFAULT_CLASSIFY_TEMPERATURE,
-            "reasoning_effort": self.settings.CLASSIFY_REASONING_EFFORT,
         }
+        if self.settings.CLASSIFY_PROVIDER == "openai":
+            params["reasoning_effort"] = self.settings.CLASSIFY_REASONING_EFFORT
         if self.settings.CLASSIFY_MAX_TOKENS > 0:
             params["max_tokens"] = self.settings.CLASSIFY_MAX_TOKENS
         response_format = self._response_format()

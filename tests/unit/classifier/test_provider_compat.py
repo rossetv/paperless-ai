@@ -332,7 +332,9 @@ class TestResponseFormat:
     """response_format is only included for openai provider."""
 
     def test_response_format_included_for_openai(self):
-        provider = make_provider(LLM_PROVIDER="openai", CLASSIFY_MODELS=["claude-3"])
+        provider = make_provider(
+            CLASSIFY_PROVIDER="openai", CLASSIFY_MODELS=["claude-3"]
+        )
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
@@ -347,7 +349,7 @@ class TestResponseFormat:
         assert "response_format" in captured_kwargs
 
     def test_response_format_excluded_for_ollama(self):
-        provider = make_provider(LLM_PROVIDER="ollama", CLASSIFY_MODELS=["llama3"])
+        provider = make_provider(CLASSIFY_PROVIDER="ollama", CLASSIFY_MODELS=["llama3"])
         response = make_completion_response(valid_classification_json())
         captured_kwargs = {}
 
