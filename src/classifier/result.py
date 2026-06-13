@@ -53,12 +53,11 @@ def parse_classification_response(text: str) -> ClassificationResult:
         # Treat None as absent → empty string, as before.
         if value is None:
             return ""
-        # On providers without JSON-schema enforcement the LLM can return
-        # scalars such as ``false`` or ``0`` for text fields.  Coercing those
-        # to "False"/"0" would write nonsense taxonomy names into Paperless, so
-        # we treat non-string scalar types as absent instead.  OpenAI with a
-        # JSON schema always delivers strings here, so this guard does not
-        # affect the happy path.
+        # On providers without JSON-schema enforcement (Ollama, fallback models)
+        # the LLM can return scalars such as ``false`` or ``0`` for text fields.
+        # Coercing those to "False"/"0" would write nonsense taxonomy names into
+        # Paperless, so we treat non-string scalar types as absent instead.
+        # This guard is the real defence for the unstructured-output path.
         if isinstance(value, (bool, int, float)):
             return ""
         return str(value).strip()
