@@ -398,7 +398,7 @@ function, a conditional, or a computed value appears, the exemption is void and 
 file splits or moves the logic out. The exemption covers length only; the
 `one concept per file` rule ([§3.2](#32-one-concept-per-file)) and the import limit
 still apply. Motivating example: `web/src/features/settings/fieldModel/sections.ts`
-(627 lines of config-field definitions, pure data).
+(677 lines of config-field definitions, pure data).
 
 ### 3.2 One concept per file
 
@@ -999,11 +999,11 @@ iteration.
 
 ### 11.5 Factories over hand-built objects
 
-`tests/helpers/factories.py` grows `make_chunk`, `make_query_plan`,
-`make_source_document` alongside the existing `make_document` and
-`make_classification_result`. A test instantiates a dataclass through a factory that
-fills irrelevant fields with deterministic defaults, so the one field that matters
-is visible.
+`tests/helpers/factories/` (package) provides `make_chunk_input`,
+`make_source_document`, `make_retrieval_plan` alongside the existing `make_document`
+and `make_classification_result`. A test instantiates a dataclass through a factory
+that fills irrelevant fields with deterministic defaults, so the one field that
+matters is visible.
 
 ### 11.6 More than five mocks means the wrong layer
 

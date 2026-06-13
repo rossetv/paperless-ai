@@ -161,7 +161,7 @@ The whole upsert is a single transaction: delete the document's old chunks from 
 
 `indexer/chunker.py` splits OCR text into paragraph-aware windows of roughly `CHUNK_SIZE` characters (default 2000) with `CHUNK_OVERLAP` characters of overlap between adjacent windows (default 256). Page hints are parsed from the OCR page markers (`--- Page N ---`, optionally `--- Page N (model-name) ---`) that the **OCR daemon** writes into the assembled text (`ocr.text_assembly`).
 
-Chunking is character-based, not token-based. After the paragraph-aware pass, a defensive 6000-character ceiling is enforced so no single chunk can blow past `text-embedding-3-small`'s 8191-token input limit — even for dense, non-Latin OCR where one character can be close to one token. A normal `CHUNK_SIZE`-2000 chunk is far below the cap and passes through untouched.
+Chunking is character-based, not token-based. After the paragraph-aware pass, a defensive 6000-character ceiling is enforced as a conservative upper bound that keeps any chunk well inside OpenAI's 8191-token embedding input limit — even for dense, non-Latin OCR where one character can be close to one token. A normal `CHUNK_SIZE`-2000 chunk is far below the cap and passes through untouched. If you use a local embedding model with a smaller context window than OpenAI's, you may need to reduce `CHUNK_SIZE` and/or `CHUNK_OVERLAP` accordingly.
 
 **Source:** `indexer/chunker.py`
 
