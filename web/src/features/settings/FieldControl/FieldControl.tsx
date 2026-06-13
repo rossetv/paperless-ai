@@ -98,9 +98,13 @@ export function FieldControl({
       );
 
     case 'select': {
-      const hasReasoning =
-        control.reasoningKey !== undefined &&
-        (control.reasoningOptions?.length ?? 0) > 0;
+      // Destructure the guarded values so TS narrows them without `!` (FE-54):
+      // both are present exactly when there is a non-empty reasoning option set.
+      const { reasoningKey, reasoningOptions } = control;
+      const reasoning =
+        reasoningKey !== undefined && (reasoningOptions?.length ?? 0) > 0
+          ? { key: reasoningKey, options: reasoningOptions ?? [] }
+          : null;
 
       return (
         <div className={styles['composite']}>
@@ -111,12 +115,12 @@ export function FieldControl({
             value={typeof value === 'string' ? value : ''}
             onChange={(next) => onChange(field.key, next)}
           />
-          {hasReasoning && (
+          {reasoning !== null && (
             <Segmented
               label="Reasoning"
-              options={control.reasoningOptions!}
+              options={reasoning.options}
               value={typeof reasoningValue === 'string' ? reasoningValue : ''}
-              onChange={(next) => onChange(control.reasoningKey!, next)}
+              onChange={(next) => onChange(reasoning.key, next)}
             />
           )}
         </div>

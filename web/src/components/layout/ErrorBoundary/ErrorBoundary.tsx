@@ -71,9 +71,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return;
     }
 
-    // If any reset key has changed, clear the error state.
+    // If any reset key has changed (including a length-only change), clear the error state.
     const prevKeys = prevProps.resetKeys ?? [];
-    const changed = resetKeys.some((key, i) => key !== prevKeys[i]);
+    const changed =
+      resetKeys.length !== prevKeys.length ||
+      resetKeys.some((key, i) => key !== prevKeys[i]);
     if (changed) {
       this.setState({ hasError: false, error: null });
     }

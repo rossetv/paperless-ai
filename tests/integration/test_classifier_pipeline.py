@@ -270,13 +270,14 @@ class TestTaxonomyCacheIntegration:
         cache = TaxonomyCache(client, taxonomy_limit=100)
         cache.refresh()
 
-        correspondents = cache.correspondent_names()
+        context = cache.taxonomy_context()
+        correspondents = context.correspondents
         # Revolut (25) should come before Acme Corp (10) and Amazon (5)
         assert correspondents[0] == "Revolut"
         assert "Acme Corp" in correspondents
         assert "Amazon" in correspondents
 
-        doc_types = cache.document_type_names()
+        doc_types = context.document_types
         assert doc_types[0] == "Invoice"  # 50 uses
 
     def test_resolve_existing_document_type(self):

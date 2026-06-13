@@ -5,7 +5,7 @@
  * name used in the side-nav rail. Defined here once so both the rail
  * (`SettingsSideNav`) and any future consumer can import without coupling.
  *
- * The nine section ids match `SETTINGS_SECTIONS` in `fieldModel.ts`. The
+ * Section ids correspond to `SETTINGS_SECTIONS` in `fieldModel.ts`; the
  * `users` and `keys` ids cover the Access Control group.
  *
  * Tier: features/settings — shared domain knowledge for the settings area.

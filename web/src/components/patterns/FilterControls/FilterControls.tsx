@@ -1,12 +1,13 @@
 import React from 'react';
-import { FilterPanel } from '../../../components/patterns/FilterPanel/FilterPanel';
-import { Select } from '../../../components/patterns/Select/Select';
-import type { SelectOption } from '../../../components/patterns/Select/Select';
-import { Chip } from '../../../components/primitives/Chip/Chip';
-import { Skeleton } from '../../../components/primitives/Skeleton/Skeleton';
-import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
-import { Input } from '../../../components/primitives/Input/Input';
-import { Stack } from '../../../components/layout/Stack/Stack';
+import { FilterPanel } from '../FilterPanel/FilterPanel';
+import { Select } from '../Select/Select';
+import type { SelectOption } from '../Select/Select';
+import { Chip } from '../../primitives/Chip/Chip';
+import { Skeleton } from '../../primitives/Skeleton/Skeleton';
+import { EmptyState } from '../EmptyState/EmptyState';
+import { Input } from '../../primitives/Input/Input';
+import { Button } from '../../primitives/Button/Button';
+import { Stack } from '../../layout/Stack/Stack';
 import { useFacets } from '../../../api/hooks';
 import { useDebounce } from '../../../hooks/useDebounce';
 import type { FilterRequest, TaxonomyEntry } from '../../../api/types';
@@ -29,6 +30,13 @@ export interface FilterControlsProps {
    * The parent is responsible for applying the new filters to the search.
    */
   onFiltersChange: (filters: FilterRequest) => void;
+  /**
+   * Whether the wrapping "Filters" panel starts expanded. Defaults to true
+   * (open). Library passes `false` on narrow viewports so the rail collapses
+   * behind the "Filters" toggle and the document list is not pushed below the
+   * fold (UI-05).
+   */
+  defaultExpanded?: boolean;
 }
 
 /** Convert a TaxonomyEntry array into Select options. */
@@ -54,11 +62,16 @@ function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
  *     --max-height-tag-picker so the date range is never pushed off screen.
  *   - A debounced text input filters the visible tag list by name.
  *
- * Composed from: FilterPanel, Select, Chip, Skeleton, Stack, Input.
+ * Connected pattern (DESIGN.md §11.1): a presentational pattern that is
+ * permitted to import the api layer (useFacets / FilterRequest / TaxonomyEntry).
+ * Shared by features/search and features/library.
+ *
+ * Composed from: FilterPanel, Select, Chip, Skeleton, Stack, Input, Button.
  */
 export function FilterControls({
   filters,
   onFiltersChange,
+  defaultExpanded = true,
 }: FilterControlsProps): React.ReactElement {
   const { data: facets, isLoading, isError } = useFacets();
 
@@ -162,7 +175,7 @@ export function FilterControls({
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <FilterPanel title="Filters">
+    <FilterPanel title="Filters" defaultExpanded={defaultExpanded}>
       <Stack direction="vertical" gap={8}>
         {/* Correspondent filter — avoid passing undefined to value under
             exactOptionalPropertyTypes: use a conditional spread instead */}
@@ -231,18 +244,20 @@ export function FilterControls({
               </div>
             </div>
 
-            {/* Expand / collapse toggle — only shown when there are hidden tags. */}
+            {/* Expand / collapse toggle — only shown when there are hidden
+                tags. Ghost Button (FE-15) replaces the bespoke link button: it
+                carries the token focus ring and consistent styling. The visible
+                label ("Show all (N)" / "Show less") conveys the expanded state. */}
             {needsToggle && (
-              <button
-                type="button"
-                className={styles['tag-toggle-button']}
-                aria-expanded={expanded}
+              <Button
+                variant="ghost"
+                size="small"
                 onClick={() => setExpanded((prev) => !prev)}
               >
                 {expanded
                   ? 'Show less'
                   : `Show all (${unselectedFiltered.length})`}
-              </button>
+              </Button>
             )}
           </div>
         )}

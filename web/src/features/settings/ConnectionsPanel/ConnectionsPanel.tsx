@@ -22,16 +22,16 @@
  * with an empty/absent field for that secret so the backend falls back to the
  * stored one.
  *
- * Tier: features/ — composes ConnectionCard, FieldControl, fieldModel types.
- * Does NOT import sections.ts — the section is passed in as a prop.
+ * Tier: features/ — composes ConnectionCard and reuses SettingsSection's
+ * FieldRow (so label association and control-column layout match the rest of
+ * Settings). Does NOT import sections.ts — the section is passed in as a prop.
  */
 
 import React from 'react';
 import type { ConfigValue, SettingsDraft, SettingsSection as SectionModel } from '../fieldModel/types';
 import { ConnectionCard } from '../ConnectionCard/ConnectionCard';
 import type { StatusTone } from '../ConnectionCard/ConnectionCard';
-import { FieldControl } from '../FieldControl/FieldControl';
-import { Row } from '../../../components/primitives/Row/Row';
+import { FieldRow } from '../SettingsSection/SettingsSection';
 import { SettingsBlock } from '../../../components/primitives/SettingsBlock/SettingsBlock';
 import { useTestConnection } from '../../../api/hooks/settings';
 import { SECRET_MASK } from '../../../api/types/settings';
@@ -55,6 +55,21 @@ interface ServiceStatus {
   tone: StatusTone;
   label: string;
 }
+
+/** Static presentation for each connection card, in display order. */
+interface CardDef {
+  service: ServiceName;
+  /** Field-model group id holding this service's fields. */
+  groupId: string;
+  glyph: string;
+  title: string;
+}
+
+const CARD_DEFS: readonly CardDef[] = [
+  { service: 'paperless', groupId: 'paperless', glyph: 'P', title: 'Paperless-ngx' },
+  { service: 'openai', groupId: 'openai', glyph: 'AI', title: 'OpenAI' },
+  { service: 'ollama', groupId: 'ollama', glyph: 'Ll', title: 'Ollama' },
+];
 
 /** True when a string value is still the server-side mask (exact match). */
 function isMasked(v: string): boolean {
@@ -199,105 +214,38 @@ export function ConnectionsPanel({
     return map;
   }, [section]);
 
-  const paperlessGroup = groupById['paperless'];
-  const openaiGroup = groupById['openai'];
-  const ollamaGroup = groupById['ollama'];
-
   return (
     <SettingsBlock
       id={section.id}
       title={section.title}
       subtitle={section.subtitle}
     >
-      {/* Paperless-ngx card — always shown */}
-      {paperlessGroup !== undefined && (
-        <ConnectionCard
-          glyph="P"
-          glyphTone="blue"
-          title="Paperless-ngx"
-          {...(paperlessGroup.subtitle !== undefined ? { subtitle: paperlessGroup.subtitle } : {})}
-          status={statuses['paperless']}
-          onTest={() => { void probeService('paperless'); }}
-        >
-          {paperlessGroup.fields.map((field, index) => (
-            <Row
-              key={field.key}
-              label={field.label}
-              hint={field.hint}
-              env={field.key}
-              last={index === paperlessGroup.fields.length - 1}
-              isDefault={defaultKeys.has(field.key)}
-              requiresReindex={reindexKeys.has(field.key)}
-            >
-              <FieldControl
+      {CARD_DEFS.map((def) => {
+        const group = groupById[def.groupId];
+        if (group === undefined) return null;
+        return (
+          <ConnectionCard
+            key={def.service}
+            glyph={def.glyph}
+            title={def.title}
+            {...(group.subtitle !== undefined ? { subtitle: group.subtitle } : {})}
+            status={statuses[def.service]}
+            onTest={() => { void probeService(def.service); }}
+          >
+            {group.fields.map((field, index) => (
+              <FieldRow
+                key={field.key}
                 field={field}
-                value={values[field.key]}
+                values={values}
+                reindexKeys={reindexKeys}
+                defaultKeys={defaultKeys}
                 onChange={onChange}
+                last={index === group.fields.length - 1}
               />
-            </Row>
-          ))}
-        </ConnectionCard>
-      )}
-
-      {/* OpenAI card — always shown */}
-      {openaiGroup !== undefined && (
-        <ConnectionCard
-          glyph="AI"
-          glyphTone="teal"
-          title="OpenAI"
-          {...(openaiGroup.subtitle !== undefined ? { subtitle: openaiGroup.subtitle } : {})}
-          status={statuses['openai']}
-          onTest={() => { void probeService('openai'); }}
-        >
-          {openaiGroup.fields.map((field, index) => (
-            <Row
-              key={field.key}
-              label={field.label}
-              hint={field.hint}
-              env={field.key}
-              last={index === openaiGroup.fields.length - 1}
-              isDefault={defaultKeys.has(field.key)}
-              requiresReindex={reindexKeys.has(field.key)}
-            >
-              <FieldControl
-                field={field}
-                value={values[field.key]}
-                onChange={onChange}
-              />
-            </Row>
-          ))}
-        </ConnectionCard>
-      )}
-
-      {/* Ollama card — always shown */}
-      {ollamaGroup !== undefined && (
-        <ConnectionCard
-          glyph="Ll"
-          glyphTone="grey"
-          title="Ollama"
-          {...(ollamaGroup.subtitle !== undefined ? { subtitle: ollamaGroup.subtitle } : {})}
-          status={statuses['ollama']}
-          onTest={() => { void probeService('ollama'); }}
-        >
-          {ollamaGroup.fields.map((field, index) => (
-            <Row
-              key={field.key}
-              label={field.label}
-              hint={field.hint}
-              env={field.key}
-              last={index === ollamaGroup.fields.length - 1}
-              isDefault={defaultKeys.has(field.key)}
-              requiresReindex={reindexKeys.has(field.key)}
-            >
-              <FieldControl
-                field={field}
-                value={values[field.key]}
-                onChange={onChange}
-              />
-            </Row>
-          ))}
-        </ConnectionCard>
-      )}
+            ))}
+          </ConnectionCard>
+        );
+      })}
     </SettingsBlock>
   );
 }

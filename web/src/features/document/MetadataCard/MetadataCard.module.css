@@ -19,30 +19,3 @@
   text-transform: uppercase;
   color: var(--colour-text-tertiary);
 }
-
-/* ── Read-only date row (mirrors TaxonomyCombobox row layout) ── */
-.row {
-  display: grid;
-  grid-template-columns: var(--width-doc-field-label) 1fr;
-  gap: var(--spacing-10);
-  padding: var(--spacing-6) 0;
-  border-bottom: var(--spacing-1) solid var(--colour-border);
-}
-
-.row:last-child {
-  border-bottom: none;
-}
-
-.label {
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-tertiary);
-  padding-top: var(--spacing-4);
-}
-
-.value {
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  padding: var(--spacing-2) var(--spacing-6);
-  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
-  border-radius: var(--radius-micro);
-}

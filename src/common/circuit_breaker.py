@@ -51,18 +51,7 @@ class WriteBackCircuitBreaker:
             raise ValueError("failures_before_halt must be >= 1")
         self._failures_before_halt = failures_before_halt
         self._lock = threading.Lock()
-        # Limitation (known, accepted): under the daemon's ThreadPoolExecutor
-        # the streak counts *completion order*, not document order. Workers run
-        # concurrently and report their write-back outcome as each finishes, so
-        # an interleaving like success / fail / fail / success / fail can reset
-        # the streak even while failures dominate — a purely systemic fault is
-        # still caught quickly (every outcome is a failure, so no success ever
-        # resets), but a fault that fails most-but-not-all write-backs may take
-        # longer to trip than a strict document-ordered count would. A robust
-        # fix is a sliding failure-rate window rather than a consecutive count;
-        # it is deferred as too invasive to land safely here. The consecutive
-        # count remains correct for the case the breaker exists to stop: a
-        # blanket write-back rejection where nothing succeeds.
+        # Streak counts completion order, not document order (see docs/resilience.md).
         self._consecutive_failures = 0
         self._tripped = False
 

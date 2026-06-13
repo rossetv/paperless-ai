@@ -30,47 +30,27 @@ Forbidden: imports from search/, sqlite3, httpx direct, bare openai calls.
 
 from __future__ import annotations
 
-from indexer.daemon._boot import (
-    _PREFLIGHT_EMBED_TEXT,
-    _PREFLIGHT_EXCEPTIONS,
-    _open_app_db,
-    _run_preflight,
-    _start_daemon,
-    main,
-)
+from indexer.daemon._boot import main
 from indexer.daemon._loop import (
-    _IndexerResources,
     _LoopState,
     _rebuild_reconciler,
-    _REBUILD_SENTINEL_NAME,
     _run_loop,
     _run_one_cycle,
-    _run_rebuild,
 )
 from indexer.daemon._wait import (
     _IDLE_BEAT_INTERVAL,
     _WAKE_CHECK_INTERVAL,
-    _consume_sentinel,
     _interruptible_wait,
 )
 
 __all__ = [
     "_IDLE_BEAT_INTERVAL",
-    "_IndexerResources",
     "_LoopState",
-    "_PREFLIGHT_EMBED_TEXT",
-    "_PREFLIGHT_EXCEPTIONS",
-    "_REBUILD_SENTINEL_NAME",
     "_WAKE_CHECK_INTERVAL",
-    "_consume_sentinel",
     "_interruptible_wait",
-    "_open_app_db",
     "_rebuild_reconciler",
     "_run_loop",
     "_run_one_cycle",
-    "_run_preflight",
-    "_run_rebuild",
-    "_start_daemon",
     "main",
 ]
 

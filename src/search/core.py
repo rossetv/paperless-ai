@@ -309,7 +309,15 @@ class SearchCore:
             documents, the query plan, and execution statistics.
         """
         cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
-        cache_key = self._cache_key(query, ui_filters, asker)
+        # Only key the cache when it is actually enabled. With a TTL of 0 the
+        # cache's get/put are no-ops, so building the key — which pays a
+        # get_stats() store round-trip in _index_version() — would be wasted
+        # work on every query in the cache-off deployment (BE-perf-07).
+        cache_key = (
+            self._cache_key(query, ui_filters, asker)
+            if self._settings.SEARCH_CACHE_TTL_SECONDS > 0
+            else None
+        )
         if cache_key is not None:
             cached = cache.get(cache_key)
             if cached is not None:
@@ -383,7 +391,7 @@ class SearchCore:
           proceeds to synthesis.
         """
         started = time.monotonic()
-        tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
+        tele = _Telemetry(on_event)
         budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
         # --- Layer 0: degenerate-input guard (spec §7.0) ---
@@ -409,6 +417,12 @@ class SearchCore:
         )
         chunks, signal = retrieved.chunks, retrieved.signal
         current_specs = retrieved.specs
+        # Built once in the retrieve phase and threaded through the judge,
+        # synth-metadata, finding-titles, and (after a top-up for genuinely new
+        # ids) each refinement pass — so the document look-up is a single store
+        # read per query instead of one per phase (BE-perf-01). The map grows in
+        # place as refinement merges in new documents.
+        documents_by_id = retrieved.documents_by_id
         if not chunks:
             log.info(
                 "search.no_matches",
@@ -453,6 +467,7 @@ class SearchCore:
             budget,
             tele,
             judge_scores,
+            documents_by_id,
             asker=asker,
             today=today_iso,
         )
@@ -469,7 +484,13 @@ class SearchCore:
         chunks = filtered
 
         outcome = self._synthesise(
-            query, chunks, mode="exploratory", budget=budget, asker=asker, tele=tele
+            query,
+            chunks,
+            mode="exploratory",
+            budget=budget,
+            asker=asker,
+            tele=tele,
+            documents_by_id=documents_by_id,
         )
 
         # Refine while the synthesiser still wants more context, up to the
@@ -495,8 +516,8 @@ class SearchCore:
                 mode="final" if is_last else "exploratory",
                 asker=asker,
                 tele=tele,
-                pass_number=refinements + 1,
                 judge_scores=judge_scores,
+                documents_by_id=documents_by_id,
             )
             refinements += 1
         refined = refinements > 0
@@ -594,7 +615,7 @@ class SearchCore:
             ``sources`` are the ranked retrieved documents.
         """
         started = time.monotonic()
-        tele = _Telemetry(on_event, self._settings.LLM_PROVIDER)
+        tele = _Telemetry(on_event)
         budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
         # Layer 0: degenerate-input guard (spec §7.0) — same check as
@@ -751,7 +772,7 @@ class SearchCore:
         tele.start("retrieve", "Retrieving documents")
         started = time.monotonic()
         chunks, signal, broadened = self._retrieve_with_broaden(
-            plan, specs, ui_filters, facets, today
+            plan, specs, facets, today
         )
         doc_ids = {c.document_id for c in chunks}
         documents_by_id = {
@@ -861,14 +882,14 @@ class SearchCore:
         self,
         plan: RetrievalPlan,
         specs: tuple[RetrievalSpec, ...],
-        ui_filters: SearchFilters | None,
         facets: FacetSet,
         today: date,
     ) -> tuple[list[RetrievedChunk], RetrievalSignal, bool]:
         """Retrieve for the resolved *specs*; broaden and retry once if empty.
 
-        Runs hybrid retrieval over the already-resolved *specs*.  An empty
-        result is retried once with every spec's filters dropped (spec §6.3) — a
+        Runs hybrid retrieval over the already-resolved *specs* (the caller
+        resolved them with any UI filters already applied).  An empty result is
+        retried once with every spec's filters dropped (spec §6.3) — a
         mis-resolved or hallucinated filter is the most common cause of an
         otherwise-answerable query returning nothing.  The broadened pass
         re-resolves :func:`~search.refinement.broaden_plan`'s output against the
@@ -947,7 +968,8 @@ class SearchCore:
         chunks: list[RetrievedChunk],
         budget: _LlmBudget,
         tele: _Telemetry,
-        judge_scores: dict[int, float] | None = None,
+        judge_scores: dict[int, float] | None,
+        documents_by_id: dict[int, IndexedDocument],
         *,
         asker: str | None = None,
         today: str | None = None,
@@ -966,18 +988,18 @@ class SearchCore:
         ownership and temporal references — a document belonging to the asker
         is relevant to "my …" queries even when the title does not name them.
 
+        *documents_by_id* is the per-query document look-up built once in the
+        retrieve phase (and topped up before each refinement re-judge), reused
+        here for the judge candidates' metadata and the verdict trace titles —
+        no per-judge store read (BE-perf-01). A re-judge over merged chunks
+        relies on the caller having already merged the new documents into it.
+
         When *judge_scores* is supplied it is populated with each verdict's
         per-document score (the later, re-judge pass overwrites the earlier one),
         so the caller can rank the final sources by relevance (Phase 3B).
         """
         if not self._settings.SEARCH_GATE_JUDGE:
             return chunks
-        documents_by_id = {
-            doc.id: doc
-            for doc in self._store_reader.get_documents(
-                sorted({c.document_id for c in chunks})
-            )
-        }
         candidates = self._judge_candidates(chunks, documents_by_id=documents_by_id)
         tele.start("judge", "Judging relevance")
         started = time.monotonic()
@@ -1052,12 +1074,16 @@ class SearchCore:
         budget: _LlmBudget,
         asker: str | None = None,
         tele: _Telemetry,
+        documents_by_id: dict[int, IndexedDocument],
     ) -> Answered | NeedsMore:
         """Run one synthesiser LLM call, emit the ``synthesise`` phase, budget it.
 
         One ``synthesise`` phase is emitted per call (the exploratory pass and
         each refinement pass), carrying the mode and whether the model asked for
-        more context, plus the call's token usage.
+        more context, plus the call's token usage. *documents_by_id* is the
+        per-query look-up shared across the pipeline (BE-perf-01); the
+        synthesiser's title/date metadata is derived from it, not a fresh store
+        read.
         """
         tele.start("synthesise", "Synthesising the answer")
         started = time.monotonic()
@@ -1069,7 +1095,7 @@ class SearchCore:
             mode=mode,
             asker=asker,
             usage_sink=sink,
-            documents_by_id=self._synth_metadata(chunks),
+            documents_by_id=_synth_metadata(chunks, documents_by_id),
         )
         tele.done(
             "synthesise",
@@ -1079,26 +1105,6 @@ class SearchCore:
             started=started,
         )
         return outcome
-
-    def _synth_metadata(
-        self, chunks: list[RetrievedChunk]
-    ) -> dict[int, tuple[str | None, str | None]]:
-        """Build the ``{document_id: (title, created)}`` map for the synthesiser.
-
-        Resolves each distinct document id in *chunks* to its indexed title and
-        creation date via the same ``get_documents`` look-up the judge and
-        source assembly use, so the synthesiser can attribute and reconcile
-        documents by title and date (Phase 3B). A document no longer in the
-        index (pruned mid-query) is simply absent, and the message builder falls
-        back to its bare ``[id]`` label.
-        """
-        document_ids = sorted({c.document_id for c in chunks})
-        if not document_ids:
-            return {}
-        return {
-            doc.id: (doc.title, doc.created)
-            for doc in self._store_reader.get_documents(document_ids)
-        }
 
     def _refine(
         self,
@@ -1113,8 +1119,8 @@ class SearchCore:
         mode: SearchMode,
         asker: str | None = None,
         tele: _Telemetry,
-        pass_number: int,
         judge_scores: dict[int, float],
+        documents_by_id: dict[int, IndexedDocument],
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk], tuple[RetrievalSpec, ...]]:
         """Run one bounded refinement pass driven by the synth's gap hint (Phase 2).
 
@@ -1157,7 +1163,6 @@ class SearchCore:
                 the last allowed pass.
             asker: Optional sanitised display name of the requesting user.
             tele: The per-request telemetry accumulator.
-            pass_number: The 1-based refinement pass index, for the detail.
 
         Returns:
             A triple of the synthesiser outcome, the chunk list used as its
@@ -1170,7 +1175,7 @@ class SearchCore:
             query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
             adjustment=needs_more.adjustment[:ADJUSTMENT_LOG_PREFIX_CHARS],
         )
-        prior_findings = self._finding_titles(previous_chunks)
+        prior_findings = _finding_titles(previous_chunks, documents_by_id)
         replan_outcome = self._replan_phase(
             query,
             needs_more.adjustment,
@@ -1188,7 +1193,13 @@ class SearchCore:
                 needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
             )
             outcome = self._synthesise(
-                query, previous_chunks, mode=mode, budget=budget, asker=asker, tele=tele
+                query,
+                previous_chunks,
+                mode=mode,
+                budget=budget,
+                asker=asker,
+                tele=tele,
+                documents_by_id=documents_by_id,
             )
             return outcome, previous_chunks, prior_specs
 
@@ -1207,12 +1218,22 @@ class SearchCore:
                 needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
             )
             outcome = self._synthesise(
-                query, previous_chunks, mode=mode, budget=budget, asker=asker, tele=tele
+                query,
+                previous_chunks,
+                mode=mode,
+                budget=budget,
+                asker=asker,
+                tele=tele,
+                documents_by_id=documents_by_id,
             )
             return outcome, previous_chunks, prior_specs
 
         new_chunks, _signal = self._retriever.retrieve(new_specs)
         merged = merge_chunks(previous_chunks, new_chunks)
+        # Top up the shared look-up with only the genuinely-new document ids the
+        # re-retrieve introduced, then reuse it for the re-judge and synthesise —
+        # one store read for the new docs instead of three (BE-perf-01).
+        self._merge_documents(documents_by_id, new_chunks)
         self._emit_refine_marker(
             needs_more.adjustment,
             _spec_detail_for_resolved(new_specs),
@@ -1231,37 +1252,39 @@ class SearchCore:
             budget,
             tele,
             judge_scores,
+            documents_by_id,
             asker=asker,
             today=date.today().isoformat(),
         )
         kept = judged if judged is not None else merged
         outcome = self._synthesise(
-            query, kept, mode=mode, budget=budget, asker=asker, tele=tele
+            query,
+            kept,
+            mode=mode,
+            budget=budget,
+            asker=asker,
+            tele=tele,
+            documents_by_id=documents_by_id,
         )
         return outcome, kept, new_specs
 
-    def _finding_titles(self, chunks: list[RetrievedChunk]) -> tuple[str, ...]:
-        """Return the titles of the documents in *chunks*, for the re-plan turn.
+    def _merge_documents(
+        self,
+        documents_by_id: dict[int, IndexedDocument],
+        chunks: list[RetrievedChunk],
+    ) -> None:
+        """Fetch and merge any documents in *chunks* missing from the look-up.
 
-        Resolves each distinct document id to its indexed title via
-        ``get_documents`` (the same look-up source assembly uses). A document
-        with no title, or one no longer in the index, is dropped — the re-plan
-        only needs the titles it can name. Order follows first appearance in
-        *chunks* (descending fused score), so the strongest findings lead.
+        Reads only the document ids not already present, so a refinement pass
+        pays a store round-trip for genuinely-new documents alone — the ones a
+        previous pass already resolved stay cached in *documents_by_id*
+        (BE-perf-01). Mutates the map in place.
         """
-        seen: list[int] = []
-        for chunk in chunks:
-            if chunk.document_id not in seen:
-                seen.append(chunk.document_id)
-        if not seen:
-            return ()
-        by_id = {doc.id: doc for doc in self._store_reader.get_documents(seen)}
-        titles: list[str] = []
-        for document_id in seen:
-            doc = by_id.get(document_id)
-            if doc is not None and doc.title:
-                titles.append(doc.title)
-        return tuple(titles)
+        missing = sorted({c.document_id for c in chunks} - documents_by_id.keys())
+        if not missing:
+            return
+        for doc in self._store_reader.get_documents(missing):
+            documents_by_id[doc.id] = doc
 
     def _replan_phase(
         self,
@@ -1500,6 +1523,50 @@ def _title_for(
     """Return *document_id*'s indexed title, or None when it is not in the look-up."""
     indexed = documents_by_id.get(document_id)
     return indexed.title if indexed is not None else None
+
+
+def _synth_metadata(
+    chunks: list[RetrievedChunk],
+    documents_by_id: dict[int, IndexedDocument],
+) -> dict[int, tuple[str | None, str | None]]:
+    """Build the ``{document_id: (title, created)}`` map for the synthesiser.
+
+    Projects each distinct document id in *chunks* to its indexed title and
+    creation date from the shared per-query *documents_by_id* look-up (built
+    once in the retrieve phase, BE-perf-01) — no fresh store read. A document no
+    longer in the look-up (pruned mid-query, or not yet topped up) is simply
+    absent, and the synthesiser's message builder falls back to its bare
+    ``[id]`` label.
+    """
+    return {
+        document_id: (doc.title, doc.created)
+        for document_id in {c.document_id for c in chunks}
+        if (doc := documents_by_id.get(document_id)) is not None
+    }
+
+
+def _finding_titles(
+    chunks: list[RetrievedChunk],
+    documents_by_id: dict[int, IndexedDocument],
+) -> tuple[str, ...]:
+    """Return the titles of the documents in *chunks*, for the re-plan turn.
+
+    Reads each distinct document id's indexed title from the shared per-query
+    *documents_by_id* look-up (BE-perf-01) — no fresh store read. A document
+    with no title, or one absent from the look-up, is dropped — the re-plan only
+    needs the titles it can name. Order follows first appearance in *chunks*
+    (descending fused score), so the strongest findings lead.
+    """
+    seen: list[int] = []
+    for chunk in chunks:
+        if chunk.document_id not in seen:
+            seen.append(chunk.document_id)
+    titles: list[str] = []
+    for document_id in seen:
+        doc = documents_by_id.get(document_id)
+        if doc is not None and doc.title:
+            titles.append(doc.title)
+    return tuple(titles)
 
 
 def _max_llm_calls(settings: Settings) -> int:

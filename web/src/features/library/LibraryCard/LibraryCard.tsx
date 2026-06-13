@@ -4,7 +4,7 @@ import { Chip } from '../../../components/primitives/Chip/Chip';
 import { Icon } from '../../../components/primitives/Icon/Icon';
 import { cn } from '../../../lib/cn';
 import { formatShortDate } from '../../../lib/formatDate';
-import { thumbKindForDocumentType } from '../../document/thumbKind';
+import { thumbKindForDocumentType } from '../../../components/primitives/DocThumb/thumbKind';
 import type { LibraryDocument } from '../../../api/types';
 import { documentThumbUrl } from '../../../api/client';
 import styles from './LibraryCard.module.css';
@@ -21,6 +21,17 @@ export interface LibraryCardProps {
   /** Additional class names to merge onto the button root. */
   className?: string;
 }
+
+/**
+ * Tags whose names match this pattern are pipeline-internal metadata injected
+ * by the AI classification step (e.g. "gpt-5.4-mini", "gpt-5.5"). They carry
+ * no meaning to a reader browsing the library and are excluded from the card
+ * chip display (UI-08).
+ */
+const PIPELINE_TAG_PATTERN = /^gpt-|^claude-|^gemini-|^llama-|^mistral-|^ollama-/i;
+
+/** Maximum number of user-facing tag chips to show on a card before "+N" overflow. */
+const MAX_VISIBLE_TAGS = 3;
 
 /**
  * A single document card for the Library grid/list.
@@ -58,6 +69,11 @@ function LibraryCardInner({
   const correspondent = document.correspondent ?? 'Unknown sender';
   const [imageFailed, setImageFailed] = useState(false);
 
+  // Filter pipeline-metadata tags; cap to MAX_VISIBLE_TAGS with overflow count.
+  const userTags = document.tags.filter((t) => !PIPELINE_TAG_PATTERN.test(t));
+  const visibleTags = userTags.slice(0, MAX_VISIBLE_TAGS);
+  const overflowCount = userTags.length - visibleTags.length;
+
   return (
     <button
       type="button"
@@ -77,12 +93,9 @@ function LibraryCardInner({
               src={documentThumbUrl(document.id)}
               alt=""
               className={styles['thumb-img']}
-              // Fixed dimensions prevent layout shift; the browser reserves
-              // the space before the image loads. Values match the CSS tokens:
-              // --width-library-thumb (140 px) and --height-library-preview
-              // (220 px, cropped via object-fit/max-height in the CSS module).
-              width={140}
-              height={220}
+              // Intrinsic size is driven by CSS tokens (--width-library-thumb,
+              // --height-library-preview) in LibraryCard.module.css — one
+              // source of truth. No raw px attributes here (FE-07).
               loading="lazy"
               decoding="async"
               onError={() => setImageFailed(true)}
@@ -110,9 +123,12 @@ function LibraryCardInner({
           {document.document_type !== null && (
             <Chip>{document.document_type}</Chip>
           )}
-          {document.tags.map((tag) => (
+          {visibleTags.map((tag) => (
             <Chip key={tag}>{`#${tag}`}</Chip>
           ))}
+          {overflowCount > 0 && (
+            <Chip>{`+${overflowCount}`}</Chip>
+          )}
         </div>
       </div>
     </button>

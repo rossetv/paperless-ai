@@ -53,7 +53,7 @@ class TestRefresh:
 
         cache.refresh()
 
-        names = cache.correspondent_names()
+        names = cache.taxonomy_context().correspondents
         assert "Acme" in names
         assert "Beta" in names
 
@@ -62,14 +62,14 @@ class TestRefresh:
 
         cache.refresh()
 
-        assert "Invoice" in cache.document_type_names()
+        assert "Invoice" in cache.taxonomy_context().document_types
 
     def test_refresh_populates_tag_names(self):
         cache = _make_cache(tags=[_tag(1, "2025", 7)])
 
         cache.refresh()
 
-        assert "2025" in cache.tag_names()
+        assert "2025" in cache.taxonomy_context().tags
 
     def test_refresh_calls_client_list_methods(self):
         cache = _make_cache()
@@ -94,7 +94,7 @@ class TestNameLists:
         )
         cache.refresh()
 
-        names = cache.correspondent_names()
+        names = cache.taxonomy_context().correspondents
 
         assert names == ["Beta", "Gamma", "Alpha"]
 
@@ -103,7 +103,7 @@ class TestNameLists:
         cache = _make_cache(correspondents=corrs, taxonomy_limit=10)
         cache.refresh()
 
-        names = cache.correspondent_names()
+        names = cache.taxonomy_context().correspondents
 
         assert len(names) == 10
 
@@ -112,10 +112,10 @@ class TestNameLists:
         cache = _make_cache(correspondents=[_corr(1, "Acme", 1)])
         cache.refresh()
 
-        names = cache.correspondent_names()
+        names = cache.taxonomy_context().correspondents
         names.append("EXTRA")
 
-        assert "EXTRA" not in cache.correspondent_names()
+        assert "EXTRA" not in cache.taxonomy_context().correspondents
 
 
 class TestGetOrCreateCorrespondentId:
@@ -406,7 +406,7 @@ class TestLockNotHeldAcrossHTTP:
             create_started.wait(timeout=5)
             try:
                 # Reading the cache while a creator is mid-HTTP must not block.
-                names = cache.correspondent_names()
+                names = cache.taxonomy_context().correspondents
                 read_result.append(names)
             except Exception as exc:
                 read_error.append(exc)
@@ -447,7 +447,7 @@ class TestThreadSafety:
             try:
                 for _ in range(50):
                     cache.refresh()
-                    names = cache.correspondent_names()
+                    names = cache.taxonomy_context().correspondents
                     assert isinstance(names, list)
             except Exception as exc:
                 errors.append(exc)

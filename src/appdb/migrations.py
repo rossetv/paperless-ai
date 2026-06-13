@@ -25,6 +25,8 @@ from collections.abc import Callable
 
 import structlog
 
+from appdb.connection import utc_now_iso
+
 log = structlog.get_logger(__name__)
 
 # Substring SQLite puts in the OperationalError message when a queried table
@@ -55,11 +57,17 @@ class AppDbError(Exception):
 def _apply_schema_string(conn: sqlite3.Connection, schema: str) -> None:
     """Execute each ``CREATE``/``INSERT`` statement in *schema* on *conn*.
 
-    Splits *schema* on ``";"`` and executes every non-empty statement via
-    ``conn.execute``. ``conn.executescript`` is deliberately avoided — it
-    issues an implicit ``COMMIT`` before running, which would break the
-    atomicity of the surrounding transaction and could leave the schema applied
-    but ``schema_version`` un-advanced.
+    Strips ``--`` comment lines, splits *schema* on ``";"`` and executes every
+    non-empty statement via ``conn.execute``. ``conn.executescript`` is
+    deliberately avoided — it issues an implicit ``COMMIT`` before running,
+    which would break the atomicity of the surrounding transaction and could
+    leave the schema applied but ``schema_version`` un-advanced.
+
+    Comments are stripped before splitting: a ``";"`` inside a comment line
+    (e.g. ``-- …; the writer keeps…``) would otherwise produce a fragment
+    starting with plain text rather than a SQL keyword and break the migration.
+    This mirrors ``store.migrations._migrate_v1`` exactly (CODE_GUIDELINES
+    §2.2.1: a fix to one runner is applied to the sibling by hand).
 
     This is a package-private helper called only by the ``_migrate_vN``
     functions; it carries no deferred import because the callers do those.
@@ -68,7 +76,10 @@ def _apply_schema_string(conn: sqlite3.Connection, schema: str) -> None:
         conn: An open connection with an active transaction.
         schema: A ``;``-separated string of SQL DDL/DML statements.
     """
-    for statement in schema.split(";"):
+    comment_stripped = "\n".join(
+        line for line in schema.splitlines() if not line.strip().startswith("--")
+    )
+    for statement in comment_stripped.split(";"):
         stmt = statement.strip()
         if stmt:
             conn.execute(stmt)
@@ -202,9 +213,10 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
         return  # Nothing to migrate.
 
     legacy_value: str = row["value"]
-    now = conn.execute("SELECT STRFTIME('%Y-%m-%dT%H:%M:%S+00:00', 'now')").fetchone()[
-        0
-    ]
+    # Use the package-wide timestamp helper so this migration writes updated_at
+    # in the same ISO-8601 format every other appdb write uses (utc_now_iso
+    # lives in appdb.connection — sqlite3 + datetime only, no forbidden deps).
+    now = utc_now_iso()
 
     # Insert OCR_MODELS and CLASSIFY_MODELS only when they are absent so we
     # do not overwrite an operator who has already set one of them explicitly.

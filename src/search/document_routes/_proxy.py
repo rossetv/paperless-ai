@@ -62,7 +62,6 @@ _PDF_MEDIA_TYPE = "application/pdf"
 _ALLOWED_THUMB_CONTENT_TYPES: frozenset[str] = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/gif"}
 )
-_THUMB_FALLBACK_CONTENT_TYPE = "image/jpeg"
 _THUMB_RESPONSE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "private, max-age=3600",

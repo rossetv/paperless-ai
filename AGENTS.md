@@ -15,7 +15,7 @@ This file orients an agent quickly: what the system does, where each piece lives
 | [Classification Pipeline](docs/classification-pipeline.md) | Classification daemon flow, content truncation, taxonomy cache, LLM classification, parameter compatibility, metadata application, tag enrichment |
 | [Store](docs/store.md) | Search-index schema, WAL mode, StoreWriter/StoreReader split, migration runner, embedding-model rebuild, corruption recovery |
 | [Indexer](docs/indexer.md) | Reconciliation daemon: incremental sync via modified watermark, content-hash gate, deletion sweep, failed-document retry/dead-letter, flock single-writer guard |
-| [Search](docs/search.md) | Search server: bounded agentic pipeline (plan → hybrid retrieve → synthesise), RRF fusion, HTTP JSON API, React Web UI, MCP endpoint, authentication |
+| [Search](docs/search.md) | Search server: bounded agentic pipeline (plan → hybrid retrieve → judge → synthesise), RRF fusion, HTTP JSON API, React Web UI, MCP endpoint, authentication |
 | [Configuration](docs/configuration.md) | All environment variables by category, pipeline tag state diagram, performance tuning |
 | [Deployment](docs/deployment.md) | Docker run/compose examples, tag setup guide, multi-instance deployments, privacy & data handling |
 | [Development](docs/development.md) | Local setup, running tests, test organisation, adding tests, CI/CD pipeline, Docker image build |
@@ -46,8 +46,8 @@ The product ships as one Docker image that can run as **four separate processes*
 
 1. **OCR Daemon** (`src/ocr/`, CLI `paperless-ai`) — Downloads documents, converts pages to images, transcribes via a vision LLM, writes the text back to Paperless.
 2. **Classification Daemon** (`src/classifier/`, CLI `paperless-classifier-daemon`) — Reads the OCR'd text, classifies it via an LLM, and applies metadata: title, correspondent, document type, tags, date, language, person.
-3. **Indexer Daemon** (`src/indexer/`, CLI `paperless-indexer-daemon`) — Reconciles Paperless against the search index: chunks the text, embeds it with OpenAI, and upserts it into SQLite. **Sole writer** to the index.
-4. **Search Server** (`src/search/`, CLI `paperless-search-server`) — Serves an HTTP JSON API, the React Web UI, and an MCP endpoint; runs the agentic search pipeline (plan → hybrid retrieve → synthesise) over a read-only view of the index.
+3. **Indexer Daemon** (`src/indexer/`, CLI `paperless-indexer-daemon`) — Reconciles Paperless against the search index: chunks the text, embeds it with the configured embedding provider (OpenAI by default, or a local Ollama model), and upserts it into SQLite. **Sole writer** to the index.
+4. **Search Server** (`src/search/`, CLI `paperless-search-server`) — Serves an HTTP JSON API, the React Web UI, and an MCP endpoint; runs the agentic search pipeline (plan → hybrid retrieve → judge → synthesise) over a read-only view of the index.
 
 Two further packages are shared, not processes:
 
@@ -190,14 +190,15 @@ The agentic pipeline (`core`, `planner`, `retriever`, `synthesizer`, `refinement
 | File | Purpose |
 |:---|:---|
 | `core.py` | `SearchCore` — orchestrates the bounded agentic pipeline; `answer()` (full) and `retrieve()` (no synthesis) |
-| `planner.py` | `QueryPlanner` — one LLM call → `QueryPlan` |
+| `planner.py` | `QueryPlanner` — one LLM call → `RetrievalPlan` |
 | `retriever.py` | `Retriever` — vector + keyword searches, filter resolution, RRF fusion |
+| `judge.py` | `RelevanceJudge` — one LLM call screens retrieved chunks for relevance before synthesis |
 | `synthesizer.py` | `Synthesizer` — one LLM call → `Answered` or `NeedsMore` |
-| `refinement.py` | `adjust_plan` / `broaden_plan` — plan mutation for the single refinement step |
+| `refinement.py` | `broaden_plan` / `merge_chunks` / `trivial_plan` — plan mutation and chunk merging for the refinement step |
 | `sources.py` | Assembles the `SourceDocument` list for a result |
 | `cache.py` | Process-singleton TTL cache of successful answers; busted when the index changes |
-| `models.py` | Frozen dataclasses: `QueryPlan`, `FilterCandidates`, `RetrievedChunk`, `SourceDocument`, `SearchStats`, `SearchResult`, `Answered`, `NeedsMore` |
-| `prompts.py` | Module-constant system prompts (`PLANNER_SYSTEM_PROMPT`, `SYNTHESISER_SYSTEM_PROMPT`) and the `build_*_user_message` builders; embeds no document content in the system prompts |
+| `models.py` | Frozen dataclasses: `RetrievalPlan`, `PlannedSpec`, `FilterCandidates`, `RetrievedChunk`, `JudgeCandidate`, `JudgeVerdict`, `SourceDocument`, `SearchStats`, `SearchResult`, `Answered`, `NeedsMore` |
+| `prompts.py` | Module-constant system prompts (`PLANNER_SYSTEM_PROMPT`, `SYNTHESISER_SYSTEM_PROMPT`, `JUDGE_SYSTEM_PROMPT`) and the `build_*_user_message` builders; embeds no document content in the system prompts |
 | `text.py` | Shared text-length constants for the pipeline |
 | `errors.py` | Domain exception hierarchy for the pipeline |
 
@@ -238,7 +239,7 @@ The agentic pipeline (`core`, `planner`, `retriever`, `synthesizer`, `refinement
 
 ### Web Frontend (`web/src/`)
 
-React 19 + TypeScript SPA, built with Vite. Layered: `pages/` → `features/` → `components/` (`primitives/`, `layout/`, `patterns/`). Data layer under `api/`. See [DESIGN.md](DESIGN.md) for the full component catalogue.
+React 18 + TypeScript SPA, built with Vite. Layered: `pages/` → `features/` → `components/` (`primitives/`, `layout/`, `patterns/`). Data layer under `api/`. See [DESIGN.md](DESIGN.md) for the full component catalogue.
 
 | Path | Purpose |
 |:---|:---|
@@ -259,7 +260,7 @@ React 19 + TypeScript SPA, built with Vite. Layered: `pages/` → `features/` �
 
 | Path | Purpose |
 |:---|:---|
-| `tests/helpers/factories.py` | Test data factories: `make_settings_obj()`, `make_document()`, `make_classification_result()` |
+| `tests/helpers/factories/` | Test data factories (package): `_core.py` — `make_settings_obj()`, `make_document()`, `make_classification_result()`, `make_chunk_input()`; `_search.py` — `make_source_document()`, `make_retrieval_plan()`, `make_judge_candidate()`, and others |
 | `tests/helpers/mocks.py` | Mock builders: `make_mock_paperless()`, `make_mock_ocr_provider()` |
 | `tests/unit/` | Unit tests mirroring the `src/` layout |
 | `tests/integration/` | Cross-module pipeline integration tests |
@@ -280,7 +281,7 @@ A tag-driven state machine — no database, no queue. Overview → [Architecture
 OpenAI SDK wrapper in `src/common/llm.py`. OCR uses vision models via `src/ocr/provider.py`; classification uses chat models via `src/classifier/provider.py`; both support model fallback chains. Parameters a model rejects are cached and stripped on retry by `src/common/model_compat.py`.
 
 ### "What prompts are used?"
-OCR transcription prompt → `src/ocr/prompts.py`. Classification prompt + JSON schema → `src/classifier/prompts.py`. Search planner/synthesiser prompts → `src/search/prompts.py` (module constants `PLANNER_SYSTEM_PROMPT` / `SYNTHESISER_SYSTEM_PROMPT`). Untrusted content (retrieved chunks, document text) is isolated with per-request nonce fences from `src/common/prompt_fences.py`.
+OCR transcription prompt → `src/ocr/prompts.py`. Classification prompt + JSON schema → `src/classifier/prompts.py`. Search planner, judge, and synthesiser prompts → `src/search/prompts.py` (module constants `PLANNER_SYSTEM_PROMPT` / `JUDGE_SYSTEM_PROMPT` / `SYNTHESISER_SYSTEM_PROMPT`). Untrusted content (retrieved chunks, document text) is isolated with per-request nonce fences from `src/common/prompt_fences.py`.
 
 ### "How are documents processed concurrently?"
 Two-level `ThreadPoolExecutor`: `DOCUMENT_WORKERS` threads at the daemon level, `PAGE_WORKERS` threads within each OCR document. LLM calls are bounded by a semaphore. Details → [Architecture — Concurrency Model](docs/architecture.md#concurrency-model).
@@ -289,7 +290,7 @@ Two-level `ThreadPoolExecutor`: `DOCUMENT_WORKERS` threads at the daemon level, 
 Retry with exponential backoff → `src/common/retry.py`. Model fallback → `src/ocr/provider.py`, `src/classifier/provider.py`. Per-document isolation → `src/common/daemon_loop.py`. Repeated write-back failure trips a circuit breaker → `src/common/circuit_breaker.py`. Full details → [docs/resilience.md](docs/resilience.md).
 
 ### "How do I add a new test?"
-Mirror the source layout under `tests/`. Use factories from `tests/helpers/factories.py`. Web tests are co-located beside the source as `*.test.tsx`. Details → [docs/development.md](docs/development.md#running-the-tests).
+Mirror the source layout under `tests/`. Use factories from `tests/helpers/factories/` (package). Web tests are co-located beside the source as `*.test.tsx`. Details → [docs/development.md](docs/development.md#running-the-tests).
 
 ### "How does the Docker image work?"
 Multi-stage build. Tests run in the builder stage. The production stage is minimal with a non-root user. Details → [docs/development.md](docs/development.md#the-image-build).
@@ -301,7 +302,7 @@ State diagram → [docs/configuration.md](docs/configuration.md#tag-state-flow).
 Incremental sync via a `modified__gt` watermark plus a periodic deletion sweep. Details → [docs/indexer.md](docs/indexer.md#incremental-sync-indexing-only-what-changed). The indexer is the sole writer, enforced by `flock` — see [docs/indexer.md](docs/indexer.md#the-single-writer-lock).
 
 ### "How does the search pipeline work?"
-Bounded agentic loop: plan (1 LLM call) → hybrid retrieve (vector + FTS5, fused with RRF) → synthesise (1–2 LLM calls). Details → [docs/search.md](docs/search.md).
+Bounded agentic loop: plan (1 LLM call) → hybrid retrieve (vector + FTS5, fused with RRF) → judge (1 optional LLM call) → synthesise (1 LLM call); up to 3 LLM calls per pass (planner + judge + synthesiser), plus optional refinement passes (re-plan → re-retrieve → re-judge → re-synthesise). Details → [docs/search.md](docs/search.md).
 
 ### "How is the search server authenticated?"
 There is **no shared-secret env var** — the legacy `SEARCH_API_KEY` was retired. Two credential types:

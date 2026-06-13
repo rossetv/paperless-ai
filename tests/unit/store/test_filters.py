@@ -7,9 +7,12 @@ lexicographic comparison (``d.created >= ?``) fails because the ``T…``
 suffix sorts *after* the bare date string, meaning the upper bound silently
 excludes every document dated on the last day of the range.
 
-The fix wraps ``d.created`` in SQLite's ``date()`` function so the comparison
-operates on the date portion only.  These tests confirm the correct behaviour
-by running the actual SQL against a real in-memory SQLite database.
+The fix keeps a sargable plain-column comparison: ``d.created >= ?`` for the
+lower bound, and a half-open ``d.created < ?`` for the upper bound where the
+parameter is ``date_to`` advanced by one day.  This includes every timestamp
+on ``date_to`` while leaving ``idx_documents_created`` usable (a ``date()``
+wrapper would be non-sargable).  These tests confirm the correct behaviour by
+running the actual SQL against a real in-memory SQLite database.
 """
 
 from __future__ import annotations

@@ -13,6 +13,14 @@ config table over the environment, then call :func:`_build_settings` here.
 tests and any caller with no ``app.db``.
 """
 
+# rationale: this file exceeds the 500-line ceiling (CODE_GUIDELINES §3.1).
+# The bulk is the Settings dataclass — an irreducibly flat enumeration of every
+# configuration field with its docstring. Splitting it would scatter the single
+# authoritative field list across modules without reducing genuine complexity;
+# _build_settings carries its own §3.1 rationale comment (line ~505). No
+# further decomposition is possible without either duplicating the field list
+# or introducing an indirection layer that adds cost without benefit.
+
 from __future__ import annotations
 
 import os
@@ -217,16 +225,15 @@ class Settings:
     EMBEDDING_PROVIDER: Literal["openai", "ollama"]
     """Provider that vectorises document chunks: ``openai`` or ``ollama``.
 
-    Defaults to the value of ``LLM_PROVIDER`` so a fully-local
-    ``LLM_PROVIDER=ollama`` deployment also embeds locally (no chunk leaves the
-    box), while the default ``LLM_PROVIDER=openai`` deployment keeps OpenAI
-    embeddings byte-for-byte unchanged. Set it explicitly to split the two (e.g.
-    local chat with OpenAI embeddings). Under ``ollama`` the embedding client
-    talks to ``OLLAMA_BASE_URL`` with a placeholder key (Ollama ignores it) and
-    ``EMBEDDING_MODEL`` must name a local embedding model with a matching
-    ``EMBEDDING_DIMENSIONS``. Switching this value forces a full re-embed
-    (it is in ``REINDEX_KEYS``), because the stored vectors are model- and
-    provider-specific and cannot be compared across providers.
+    Defaults to ``openai``, independent of ``LLM_PROVIDER`` — chat and
+    embeddings are chosen separately, so flipping the chat provider never moves
+    the embedding space (and so never triggers a re-embed). A fully-local
+    deployment sets ``EMBEDDING_PROVIDER=ollama`` explicitly. Under ``ollama``
+    the embedding client talks to ``OLLAMA_BASE_URL`` with a placeholder key
+    (Ollama ignores it) and ``EMBEDDING_MODEL`` must name a local embedding
+    model with a matching ``EMBEDDING_DIMENSIONS``. Switching this value forces
+    a full re-embed (it is in ``REINDEX_KEYS``), because the stored vectors are
+    model- and provider-specific and cannot be compared across providers.
     """
     EMBEDDING_MODEL: str
     EMBEDDING_DIMENSIONS: int
@@ -325,15 +332,18 @@ class Settings:
     """Minimum absolute vector similarity required to proceed to synthesis.
 
     similarity = ``1 / (1 + best_cosine_distance)`` — higher is closer. The
-    default ``0.60`` sits between off-topic noise and real matches on the
-    ``text-embedding-3-large`` index: off-topic / unanswerable queries score
-    ~0.54–0.58 (e.g. "popcorn recipe" in a personal-document library), while
-    genuine matches score ~0.65+. A 0.60 floor rejects the former (fail fast →
-    "no matches") without touching the latter. Lower it toward recall-first if
-    too much is being rejected; raise it to bite harder. This is the *gate*
-    cut-off only — it is independent of the relevance-badge tier cut-points in
-    :mod:`search.relevance`, which stay calibrated so a shown result still
-    badges by its own similarity. Floored at ``≥ 0.0``; negative values are
+    default ``0.60`` was calibrated against a ``text-embedding-3-large`` @
+    3072-dim index: off-topic / unanswerable queries scored ~0.54–0.58 (e.g.
+    "popcorn recipe" in a personal-document library), while genuine matches
+    scored ~0.65+. The shipped default embedding model is
+    ``text-embedding-3-small`` @ 1536 dims, whose similarity distribution
+    differs — if the floor feels too strict or too lax, re-tune it for your
+    index. A 0.60 floor rejects off-topic queries (fail fast → "no matches")
+    without touching genuine matches on the large index; results may vary on
+    the small model. Lower it toward recall-first if too much is being
+    rejected; raise it to bite harder. This is the *gate* cut-off only — it
+    is independent of the relevance-badge tier cut-points in
+    :mod:`search.relevance`. Floored at ``≥ 0.0``; negative values are
     clamped to ``0.0``.
     """
     SEARCH_RELEVANCE_TIER_STRONG: float
@@ -343,13 +353,15 @@ class Settings:
     into one of four tiers: a similarity ``≥`` this value badges "strong",
     ``≥ SEARCH_RELEVANCE_TIER_GOOD`` badges "good", ``≥
     SEARCH_RELEVANCE_TIER_PARTIAL`` badges "partial", and anything lower badges
-    "weak". The defaults (0.70 / 0.66 / 0.60) are calibrated against the
-    ``text-embedding-3-large`` @ 3072-dim index. These cut-points are the
-    *badge* thresholds — deliberately independent of
-    ``SEARCH_RELEVANCE_MIN_SIMILARITY`` (the gate floor that decides what is
-    *shown*): the badge describes how good a shown result is. Validated as
-    ``0 ≤ partial ≤ good ≤ strong ≤ 1`` at config-build time; a violating value
-    is rejected naming the offending key.
+    "weak". The defaults (0.70 / 0.66 / 0.60) were calibrated against a
+    ``text-embedding-3-large`` @ 3072-dim index. The shipped default embedding
+    model is ``text-embedding-3-small`` @ 1536 dims, whose similarity
+    distribution differs — these cut-points may need re-tuning on the default
+    model. These cut-points are the *badge* thresholds — deliberately
+    independent of ``SEARCH_RELEVANCE_MIN_SIMILARITY`` (the gate floor that
+    decides what is *shown*): the badge describes how good a shown result is.
+    Validated as ``0 ≤ partial ≤ good ≤ strong ≤ 1`` at config-build time; a
+    violating value is rejected naming the offending key.
     """
     SEARCH_RELEVANCE_TIER_GOOD: float
     """Minimum absolute vector similarity for the "good match" badge.
@@ -509,9 +521,8 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     """
     # Resolved first: these drive the provider-dependent defaults below.
     llm_provider = _resolve_llm_provider(source)
-    # EMBEDDING_PROVIDER defaults to LLM_PROVIDER (privacy fix: ollama chat ⇒
-    # ollama embeddings), overridable explicitly. Resolved here because it
-    # drives the OPENAI_API_KEY requirement below.
+    # EMBEDDING_PROVIDER defaults to openai independently of LLM_PROVIDER.
+    # Resolved here because it drives the OPENAI_API_KEY requirement below.
     embedding_provider = _resolve_embedding_provider(source)
     post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
     chunk_size = _require_at_least_one(
@@ -605,7 +616,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
 
     # The three relevance-badge cut-points are validated together (range and
     # ordering) so a misconfigured tier fails closed at config-build time.
-    tier_strong, tier_good, tier_partial = _resolve_relevance_tiers(source)
+    tiers = _resolve_relevance_tiers(source)
 
     return Settings(
         PAPERLESS_URL=paperless_url,
@@ -798,9 +809,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         # Badge cut-points (calibrated, validated together above). Independent of
         # the gate floor: they describe how good a *shown* result is.
-        SEARCH_RELEVANCE_TIER_STRONG=tier_strong,
-        SEARCH_RELEVANCE_TIER_GOOD=tier_good,
-        SEARCH_RELEVANCE_TIER_PARTIAL=tier_partial,
+        SEARCH_RELEVANCE_TIER_STRONG=tiers.strong,
+        SEARCH_RELEVANCE_TIER_GOOD=tiers.good,
+        SEARCH_RELEVANCE_TIER_PARTIAL=tiers.partial,
         # Floored at 0 — a negative char floor disables the Layer-0 guard, same
         # as 0, so clamping matches the intent without refusing the daemon start.
         SEARCH_MIN_QUERY_CHARS=max(

@@ -11,6 +11,7 @@ naming the offending variable on bad input, fail-closed at config-build time
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -119,6 +120,22 @@ def _get_bool_env(source: Mapping[str, str], var_name: str, default: bool) -> bo
     if value in ("0", "false", "no", "n", "off"):
         return False
     raise ValueError(f"{var_name} must be a boolean value.")
+
+
+def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:
+    """Parse *var_name* from *source* as a float, falling back to *default*.
+
+    A non-numeric value raises a ``ValueError`` naming *var_name* — a typo'd
+    float cost knob fails loud at startup rather than silently defaulting
+    (CODE_GUIDELINES §1.11). Unset or blank falls back to *default*.
+    """
+    raw = source.get(var_name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{var_name} must be a number, got {raw!r}.") from exc
 
 
 def _require_at_least_one(var_name: str, value: int, minimum: int = 1) -> int:
@@ -315,21 +332,38 @@ def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
     return value
 
 
-def _resolve_relevance_tiers(source: Mapping[str, str]) -> tuple[float, float, float]:
+@dataclass(frozen=True, slots=True)
+class RelevanceTiers:
+    """The three relevance-badge cut-point floats resolved together.
+
+    Returned by :func:`_resolve_relevance_tiers` so the caller unpacks by
+    name (``tiers.strong``, ``tiers.good``, ``tiers.partial``) rather than
+    by position — guarding against a silent swap that would miscalibrate the
+    badges (CODE_GUIDELINES §5.8).
+    """
+
+    strong: float
+    good: float
+    partial: float
+
+
+def _resolve_relevance_tiers(source: Mapping[str, str]) -> RelevanceTiers:
     """Resolve and validate the three relevance-badge cut-points together.
 
     Parses ``SEARCH_RELEVANCE_TIER_STRONG`` / ``_GOOD`` / ``_PARTIAL`` (defaults
-    0.70 / 0.66 / 0.60, calibrated against the live ``text-embedding-3-large`` @
-    3072-dim index) and enforces the badge invariant
-    ``0 ≤ partial ≤ good ≤ strong ≤ 1`` — each value is a vector similarity in
-    [0, 1], and the bands must not cross or a tier becomes unreachable. A value
-    outside the range, or one that breaks the ordering, raises ``ValueError``
-    naming the offending key so the Settings API surfaces a precise message
-    (fail-closed at config-build time, CODE_GUIDELINES §1.11). Equal adjacent
-    cut-points are allowed (they collapse a band rather than corrupt it).
+    0.70 / 0.66 / 0.60, calibrated against a ``text-embedding-3-large`` @
+    3072-dim index — see the field docstrings for the caveat when running on
+    the default ``text-embedding-3-small`` / 1536-dim model) and enforces the
+    badge invariant ``0 ≤ partial ≤ good ≤ strong ≤ 1`` — each value is a
+    vector similarity in [0, 1], and the bands must not cross or a tier becomes
+    unreachable. A value outside the range, or one that breaks the ordering,
+    raises ``ValueError`` naming the offending key so the Settings API surfaces
+    a precise message (fail-closed at config-build time, CODE_GUIDELINES §1.11).
+    Equal adjacent cut-points are allowed (they collapse a band rather than
+    corrupt it).
 
     Returns:
-        ``(strong, good, partial)`` — ready to unpack into the Settings fields.
+        A :class:`RelevanceTiers` named triple — strong, good, partial.
     """
     strong = _get_float_env(source, "SEARCH_RELEVANCE_TIER_STRONG", 0.70)
     good = _get_float_env(source, "SEARCH_RELEVANCE_TIER_GOOD", 0.66)
@@ -350,7 +384,7 @@ def _resolve_relevance_tiers(source: Mapping[str, str]) -> tuple[float, float, f
             f"SEARCH_RELEVANCE_TIER_STRONG, got partial={partial}, good={good}, "
             f"strong={strong}."
         )
-    return strong, good, partial
+    return RelevanceTiers(strong=strong, good=good, partial=partial)
 
 
 def _resolve_server_port(source: Mapping[str, str]) -> int:
@@ -387,19 +421,3 @@ def _resolve_pricing_refresh_url(source: Mapping[str, str]) -> str:
             f"(or empty to disable), got {raw!r}."
         )
     return url
-
-
-def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:
-    """Parse *var_name* from *source* as a float, falling back to *default*.
-
-    A non-numeric value raises a ``ValueError`` naming *var_name* — a typo'd
-    float cost knob fails loud at startup rather than silently defaulting
-    (CODE_GUIDELINES §1.11). Unset or blank falls back to *default*.
-    """
-    raw = source.get(var_name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return float(raw)
-    except ValueError as exc:
-        raise ValueError(f"{var_name} must be a number, got {raw!r}.") from exc

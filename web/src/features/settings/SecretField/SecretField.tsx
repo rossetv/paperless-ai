@@ -82,6 +82,7 @@ export function SecretField({
             <button
               type="button"
               className={styles['reveal']}
+              aria-pressed={revealed}
               onClick={() => setRevealed((r) => !r)}
             >
               {revealed ? 'Hide' : 'Reveal'}

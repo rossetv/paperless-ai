@@ -69,8 +69,7 @@ def _interruptible_wait(
 
     # Check sentinel immediately at entry — a sentinel written just before the
     # wait begins is detected without sleeping first.
-    if sentinel_path.exists():
-        sentinel_path.unlink(missing_ok=True)
+    if _consume_sentinel(sentinel_path):
         log.debug("indexer.sentinel_consumed_at_wait_entry")
         return True
 
@@ -91,8 +90,7 @@ def _interruptible_wait(
             break
         time.sleep(slice_duration)
 
-        if sentinel_path.exists():
-            sentinel_path.unlink(missing_ok=True)
+        if _consume_sentinel(sentinel_path):
             log.debug("indexer.sentinel_consumed_mid_wait")
             return True
 

@@ -39,7 +39,7 @@ import { TagEditor } from '../TagEditor/TagEditor';
 import { SaveStatusPill, type SaveStatus } from '../SaveStatusPill/SaveStatusPill';
 import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
 import { MatchCard } from '../MatchCard/MatchCard';
-import { parseSearchParams } from '../../search/parseSearchParams';
+import { parseSearchParams } from '../../../lib/parseSearchParams';
 import styles from './DocumentScreen.module.css';
 
 export type { Role };
@@ -78,6 +78,9 @@ export interface DocumentScreenProps {
  * The `ActionsCard` fires reclassify / retranscribe / delete mutations; on
  * successful delete the component navigates to the breadcrumb href.
  */
+// rationale: single cohesive document view — mutations, tag-id resolution, breadcrumb
+// derivation, and sidebar composition all share `document`, `role`, and the single
+// `update` mutation lifecycle; extracting sub-units would scatter tightly coupled state.
 export function DocumentScreen({
   document,
   parent,

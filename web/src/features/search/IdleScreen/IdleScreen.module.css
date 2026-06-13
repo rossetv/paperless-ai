@@ -2,3 +2,15 @@
 .count-highlight {
   color: var(--colour-text-primary);
 }
+
+/**
+ * Constrains the RecentSearchStrip to the container width on narrow viewports
+ * so the two-column row grid cannot overflow the screen (UI-04).
+ * `min-width: 0` prevents the flex child from overflowing its parent;
+ * `overflow-x: hidden` is the backstop against any residual bleed.
+ */
+.strip-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}

@@ -90,7 +90,7 @@ Configuration is read from `app.db`'s config table layered over the environment,
 ```bash
 export PAPERLESS_URL="http://localhost:8000"
 export PAPERLESS_TOKEN="your-token"
-export OPENAI_API_KEY="sk-your-key"   # required even with Ollama — embeddings always use OpenAI
+export OPENAI_API_KEY="sk-your-key"   # required unless EMBEDDING_PROVIDER=ollama (and LLM_PROVIDER=ollama) — a fully-local deployment can omit it
 
 # Tag daemons
 python3 -m ocr.daemon            # or: paperless-ai
@@ -167,7 +167,7 @@ The three tiers each have a marker, declared in `pyproject.toml` and applied by 
 
 ### Test layout
 
-Tests mirror the source tree one-to-one (`src/indexer/chunker.py` ↔ `tests/unit/indexer/test_chunker.py`), so a moved function moves its test in the same change. Rather than hand-building objects, use the shared builders in `tests/helpers/` (`make_document`, `make_settings_obj`, `make_classification_result`, the mock-Paperless builders).
+Tests mirror the source tree one-to-one (`src/indexer/chunker.py` ↔ `tests/unit/indexer/test_chunker.py`), so a moved function moves its test in the same change. Rather than hand-building objects, use the shared builders in `tests/helpers/factories/` (`make_document`, `make_settings_obj`, `make_classification_result`, `make_chunk_input`, `make_source_document` and others) and the mock builders in `tests/helpers/mocks.py`.
 
 ### Known gap — no real-frontend → real-backend e2e test
 

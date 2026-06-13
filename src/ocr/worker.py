@@ -31,11 +31,7 @@ log = structlog.get_logger(__name__)
 
 
 class OcrProcessor:
-    """
-    Orchestrates the OCR processing of a single Paperless document.
-
-    Instantiated per-document by the daemon's thread pool.
-    """
+    """Per-document OCR worker: returns the write-back outcome for the circuit breaker."""
 
     def __init__(
         self,
@@ -43,7 +39,7 @@ class OcrProcessor:
         paperless_client: PaperlessClient,
         ocr_provider: OcrProvider,
         settings: Settings,
-    ):
+    ) -> None:
         self.doc = doc
         self.paperless_client = paperless_client
         self.ocr_provider = ocr_provider
@@ -52,18 +48,12 @@ class OcrProcessor:
         self.title: str = doc.get("title") or "<untitled>"
 
     def process(self) -> WriteBackOutcome | None:
-        """
-        Execute the end-to-end OCR workflow for this document.
+        """Run the end-to-end OCR workflow for one document.
 
-        Steps: refresh → check error tag → claim lock → download →
-        convert to images → OCR pages → assemble text → update Paperless →
-        release lock.
-
-        Returns the write-back outcome the daemon feeds to the circuit breaker:
-        :attr:`WriteBackOutcome.SAVED` when the transcription was written back,
-        :attr:`WriteBackOutcome.QUARANTINED` when a permanent Paperless rejection
-        error-tagged the document, or ``None`` for a cycle that saved no
-        transcription (skipped, no pages, undecodable, or bad OCR content).
+        Returns :attr:`WriteBackOutcome.SAVED` on a genuine write-back,
+        :attr:`WriteBackOutcome.QUARANTINED` on a permanent Paperless rejection,
+        or ``None`` when no transcription was saved (skipped, no pages, bad
+        content).
         """
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
         self.ocr_provider.reset_stats()
@@ -170,16 +160,10 @@ class OcrProcessor:
             )
 
     def _download_and_convert(self, current_tags: set[int]) -> PageSource | None:
-        """
-        Download the document and open it as a streamable page source.
+        """Download and open the document as a streamable :class:`PageSource`.
 
-        For PDFs the pages are rasterised to temp files and loaded one at a time
-        during OCR, so the whole document never sits in RAM; the returned
-        :class:`PageSource` owns that temp storage and is closed by the caller.
-
-        Returns the page source, or ``None`` when processing should stop: an
-        undecodable download finalises the document with an error tag, and a
-        document with no pages is logged and skipped.
+        Returns ``None`` (and finalises with error or skips) when the document
+        cannot be decoded or has no pages.
         """
         content, content_type = self.paperless_client.download_content(self.doc_id)
         try:
@@ -209,15 +193,7 @@ class OcrProcessor:
     def _ocr_pages_in_parallel(
         self, pages: PageSource
     ) -> tuple[list[PageResult], list[int]]:
-        """
-        Run OCR on each page concurrently and preserve the original order.
-
-        Each task loads its page only when it starts and closes the bitmap the
-        moment transcription returns, so at most ``PAGE_WORKERS`` page images
-        are resident at once — the document is streamed, never fully unpacked.
-
-        Returns ``(page_results, failed_page_numbers)``.
-        """
+        """OCR all pages concurrently; return ``(page_results, failed_page_numbers)``."""
         page_count = len(pages)
         with ThreadPoolExecutor(
             max_workers=self.settings.PAGE_WORKERS,
@@ -267,19 +243,11 @@ class OcrProcessor:
     def _update_paperless_document(
         self, full_text: str, models_used: set[str]
     ) -> WriteBackOutcome | None:
-        """
-        Upload OCR text and update tags in Paperless.
+        """Write *full_text* back to Paperless and swap the pipeline tags.
 
-        Detects error conditions (empty text, refusal markers, OCR errors)
-        and routes to :func:`~common.tags.finalise_document_with_error` instead
-        of the happy path.
-
-        Returns :attr:`WriteBackOutcome.SAVED` when the transcription was
-        written, or ``None`` for the bad-content case: that document failed OCR,
-        not the Paperless write, so it is not a write-back health signal and the
-        circuit breaker must not count it as a success (which would reset the
-        failure streak) — the same neutral treatment the classifier gives an
-        empty result.
+        Returns :attr:`WriteBackOutcome.SAVED` on a real write-back, or
+        ``None`` for bad-content (empty, refusal, OCR error marker) — a neutral
+        outcome the circuit breaker must not count as a success.
         """
         if (
             not full_text.strip()

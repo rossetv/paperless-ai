@@ -122,8 +122,14 @@ def _parse_summary(raw: str) -> dict[str, int]:
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
+        # A summary that will not decode means record_cycle wrote a corrupt JSON
+        # blob — a real write-side anomaly the operator should see. The recovery
+        # (return {} so the dashboard read survives) stays; the silence goes.
+        # Summary counts carry no secret, so logging the raw value is safe.
+        log.warning("appdb.reconcile_activity.summary_undecodable", raw=raw)
         return {}
     if not isinstance(decoded, dict):
+        log.warning("appdb.reconcile_activity.summary_not_object", raw=raw)
         return {}
     result: dict[str, int] = {}
     for k, v in decoded.items():

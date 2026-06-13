@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { SearchResponse } from '../../../api/types';
 import { ResultsScreen } from './ResultsScreen';
 
-vi.mock('../FilterControls/FilterControls', () => ({
+vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 

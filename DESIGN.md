@@ -26,9 +26,23 @@ The color story is starkly binary. Product sections alternate between pure black
 - **Near Black** (`#1d1d1f`): Primary text on light backgrounds, dark button fills. Slightly warmer than pure black for comfortable reading.
 
 ### Interactive
-- **Apple Blue** (`#0071e3`): `--sk-focus-color`, primary CTA backgrounds, focus rings. The ONLY chromatic color in the interface.
+- **Apple Blue** (`#0071e3`): `--sk-focus-color`, primary CTA backgrounds, focus rings, citation marks. The single chromatic accent for INTERACTIVITY. It signals "you can act on this" — it is never spent on a static label or a state indicator.
 - **Link Blue** (`#0066cc`): `--sk-body-link-color`, inline text links. Slightly darker than Apple Blue for text-level readability.
 - **Bright Blue** (`#2997ff`): Links on dark backgrounds. Higher luminance for contrast on black sections.
+
+### Two colour axes — interactive accent vs semantic status
+The interface has two — and only two — colour axes, and they must never be conflated:
+
+- **Axis 1 — the interactive accent.** The single Apple-Blue accent rule above governs **interactivity only**: links, buttons, focus rings, citation marks. Accent blue must never be spent on a static label or a non-interactive state indicator.
+- **Axis 2 — the semantic status palette.** State is communicated through a deliberately small, theme-independent palette defined once on `:root` (`--colour-status-*`, see §10.3) and **never** overridden per theme — status meaning does not change between light and dark:
+  - `--colour-status-ok` (green) — positive / on / connected / a kept (KEEP) verdict.
+  - `--colour-status-warn` (amber) — caution / idle / unsaved.
+  - `--colour-status-danger` (red) — destructive / expired. Note a dropped (DROP) verdict is **neutral, not danger** — discarding a candidate is not an error.
+  - `--colour-status-info` (blue tint) — informational; also the `admin` role badge.
+  - `--colour-status-violet` — the MCP scope.
+  - `--colour-status-neutral` (low-emphasis grey) — a plain, stateless chip, and the DROP verdict.
+
+  These are **not** decorative accents. Introducing any colour outside the accent plus this status set remains forbidden (§7). Provider/brand glyph tiles use a brand-neutral fill (`--colour-glyph-neutral`), never `--colour-status-ok` green, so a provider badge can never be mistaken for the green "Connected" status dot beside it.
 
 ### Text
 - **White** (`#ffffff`): Text on dark backgrounds, button text on blue/dark CTAs.
@@ -181,9 +195,13 @@ The color story is starkly binary. Product sections alternate between pure black
 - Minimal chrome — the products speak for themselves
 
 **Search experience (Wave 2)**
-- `DocThumb` — a fixed 96×124 SVG mockup of a document page: a header block,
-  a hairline, grey body line-stripes (matched rows drawn in `--colour-accent`),
-  and a footer totals band for statements and invoices.
+- `DocThumb` — a stylised 96×124 SVG document-page mock used as the
+  **fallback/placeholder**, not the primary image. The primary thumbnail is the
+  real first-page render proxied from Paperless-ngx (`documentThumbUrl`);
+  `DocThumb` is shown on `<img>` error or while the real image loads. The SVG
+  has a header block, a hairline, grey body line-stripes (matched rows drawn in
+  `--colour-accent` on the fallback only), and a footer totals band for
+  statements and invoices.
 - `AnswerSurface` — the synthesised-answer card: a "Synthesised answer"
   eyebrow with a spark glyph, the answer prose in SF Pro Display, and a
   hairline-topped provenance footer (source count, latency, an optional
@@ -270,7 +288,8 @@ content grid (loading, results, no-results).
 - Compress headline line-heights to 1.07-1.14 — Apple headlines are famously tight
 
 ### Don't
-- Don't introduce additional accent colors — the entire chromatic budget is spent on blue
+- Don't introduce colours outside the accent plus the documented semantic status palette (§2 "Two colour axes", §10.3) — the chromatic budget is the single blue accent for interactivity and the small fixed `--colour-status-*` set for state, and nothing else
+- Don't spend the interactive accent on non-interactive state — accent blue means "actionable", status tones mean "this is the condition"; a static label or a verdict pill never wears accent blue
 - Don't use heavy shadows or multiple shadow layers — Apple's shadow system is one soft diffused shadow or nothing
 - Don't use borders on cards or containers — Apple almost never uses visible borders (except on specific buttons)
 - Don't apply wide letter-spacing to SF Pro — it is designed to run tight at every size
@@ -299,6 +318,7 @@ content grid (loading, results, no-results).
 - Navigation links: 48px height with adequate spacing
 - Media controls: 50% radius circular buttons, minimum 44x44px
 - "Learn more" pills: generous padding for comfortable tapping
+- **Compact-control exception**: iOS-style `Toggle` and `NumberStepper` steppers may render below 44px visually, but MUST provide a ≥44px interactive hit-area via a transparent expanded pseudo-element (`::before`). The visible control size is a deliberate exception; the tap target is not.
 
 ### Collapsing Strategy
 - Hero headlines: 56px Display → 40px → 28px on mobile, maintaining tight line-height proportionally
@@ -384,6 +404,8 @@ Every design value is a `var(--…)` reference. Stylelint enforces this — a li
 | Colour roles | `--colour-*` | Backgrounds, text, accent, borders, overlays |
 | Forced-dark island | `--colour-dark-*` | Login/Setup screens — same in both themes |
 | Status colours | `--colour-status-*` | Badge/pill semantic colours |
+| Glyph tile | `--colour-glyph-neutral` | Brand-neutral fill for provider glyph tiles — distinct from status-ok green |
+| Icon sizes | `--size-icon-sm/md/lg/xl`, `--size-icon-xlarge` | Named brand-mark / inline-icon ladder (20/22/26/28, plus 32 for hero) |
 | Avatar palette | `--colour-avatar-0…5` | Deterministic per-user avatar backgrounds |
 | Accent variants | `--colour-accent-wash`, `--colour-accent-ring` | Translucent accent for highlights |
 | Font families | `--font-display`, `--font-text`, `--font-mono` | SF Pro stack |
@@ -421,6 +443,19 @@ api/, hooks/ → (nothing above)
 from `pages/`. A `pages/` component composes `features/` and `layout/` only —
 it never writes CSS or reaches into primitives directly.
 
+**Promote shared code down, never sideways** (DD-6): when two feature domains
+reach for the same helper, it is promoted to a shared layer rather than imported
+across features. Current promoted homes:
+
+- `FilterControls` → `components/patterns` (shared by search + library) — it is **not** search-owned.
+- `thumbKind` → `components/primitives` (beside `DocThumb`; used by library, search, document).
+- `parseSearchParams` → `lib/` (used by document + search).
+
+Patterns are **presentational by default**. A *connected pattern* — `FilterControls`
+is the example — MAY import `api/` data-hooks and types (it drives `useFacets`).
+This is a deliberate, narrow exception (mirrors the `hooks → api` allowance), **not**
+licence for every pattern to reach into `api/`; the default remains presentational.
+
 ### 11.2 CSS module policy — the `features/.module.css` exception
 
 CODE_GUIDELINES §12.5 states "only `components/` carries styling". In practice,
@@ -445,7 +480,7 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 
 | Component | Tier | Props/Variants | Notes |
 |-----------|------|----------------|-------|
-| `Button` | primitives | `variant` (primary/secondary/destructive/ghost), `size` (default/small), `type`, `disabled` | Focus ring, hover, active states |
+| `Button` | primitives | `variant` (primary/secondary/destructive/ghost), `size` (default/small), `type`, `disabled` | Focus ring, hover, active states. `variant="destructive"` (solid red) is the **one** canonical control for every irreversible action — see the destructive standard in §13.7. No bespoke red text-link buttons |
 | `IconButton` | primitives | `label` (a11y, required), `children` (icon element), `disabled`, `type`, `onClick`, `className` | Circular icon-only button; icon is supplied as `children` |
 | `Input` | primitives | `label`, `type`, `surface` (light/dark), `error`, `disabled` | Dark surface for Login/Setup island |
 | `TextArea` | primitives | `label`, `surface`, `error`, `disabled` | Multi-line companion to Input |
@@ -476,7 +511,7 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | `SettingsSelectField` | primitives | `label`, `options`, `value`, `onChange`, `disabled` | Settings-specific select row |
 | `Table` | primitives | `columns` (Column[]), `data`, `keyField` | Data table with typed columns |
 | `SnippetText` | primitives | `text` | Renders `**bold**` runs as `<mark>` highlight chips |
-| `DocThumb` | primitives | `kind` (invoice/letter/statement), `matched` (row indices) | SVG document thumbnail |
+| `DocThumb` | primitives | `kind` (invoice/letter/statement), `matched` (row indices) | Stylised 96×124 SVG document-page mock used as the **fallback/placeholder**. The primary thumbnail is the real first-page render proxied from Paperless-ngx (`documentThumbUrl`); `DocThumb` is shown on `<img>` error or during load. `matched[]` highlights body rows in `--colour-accent` on the fallback only |
 | `SourceCardSurface` | primitives | `index`, `thumbKind`, `matched`, `highlighted` | Two-column card shell (content + DocThumb + citation badge) |
 | `AnswerSurface` | primitives | `children` (the answer prose), `sourceCount`, `latencyMs`, `refined`, optional `costLabel` | Synthesised-answer card; `costLabel` renders a cost chip in the provenance footer (e.g. `"1.2k tok · $0.004"`; `"$0"` for local; `"—"` for unpriced) |
 | `CitationMark` | primitives | `index`, `onActivate` | Inline citation chip `[n]` button |
@@ -511,7 +546,9 @@ instead. Screen-level layout grids are fine to keep in `features/`.
 | Component | Props | Notes |
 |-----------|-------|-------|
 | `SearchField` | `id`, `placeholder`, `onSubmit`, `defaultValue` | Pill-shaped search input |
-| `Select` | `id`, `label`, `options`, `value`, `onChange` | Custom listbox select (keyboard-navigable) |
+| `Select` | `id`, `label`, `options`, `value`, `onChange` | Custom listbox select (keyboard-navigable). Fixed-option only — for a filtered/typeahead/create-new combobox use `FilterableListbox` |
+| `FilterableListbox` | `id`, `items`, `value`, `onSelect`, `onCreate?`, `placeholder` | Keyboard-navigable filtered single/multi-select combobox with optional create-new. Full WAI-ARIA combobox (`aria-controls`, `aria-activedescendant`, ArrowUp/Down/Enter/Escape, outside-pointerdown close). Backs `TaxonomyCombobox` and `TagEditor` (§13.8) |
+| `FilterControls` | `filters`, `value`, `onChange` | Shared facet/filter rail controls — used by both `features/search` and `features/library` (promoted out of search; see §13.3/§13.4) |
 | `FilterPanel` | `title`, `children`, `open`, `onToggle` | Collapsible filter section |
 | `EmptyState` | `icon`, `message`, `description`, `action`, `className` | Empty/error placeholder with icon |
 | `Modal` | `open`, `title`, `onClose`, `children` | Centred dialog with focus trap |
@@ -614,22 +651,25 @@ module the access-control `UserEditDrawer` uses, so the rules never diverge.
 - `ResultsScreen` — `AnswerCard` + `FilterControls` + `SourceList`.
 - `NoResultsScreen`, `SearchErrorScreen`, `IndexNotReadyScreen` — error/empty states.
 - `AnswerCard` — wraps `AnswerSurface` with citation-mark interaction.
-- `SourceCard` — a single search result; "Preview" opens `DocumentPreviewScreen`.
+- `SourceCard` — a single search result; "Preview" opens `DocumentPreviewScreen`. The real document thumbnail renders at a fixed portrait box (`--width-library-thumb` × `--height-library-preview`, the `DocThumb` artboard ratio) with `object-fit: cover` letterboxing; a consistent crop is required, with `DocThumb` as the load/error fallback (§4, DD-2).
 - `SourceList` — ordered list of `SourceCard`s.
-- `FilterControls` — filter rail (reused in Library).
+- `FilterControls` — filter rail. Shared with Library; lives in `components/patterns` (§11.5), not search-owned.
 - `QueryPlanSummary` — `Disclosure` wrapping the agentic query plan.
 - `SearchTracePanel` — "How this answer was found" folded `Disclosure` showing the per-phase trace (labels, token counts, cost chips) plus per-document judge rationales (kept/dropped with one-line reasons). Rendered beneath `ResultsScreen` once a search completes. Accepts `trace: SearchTrace` and `cost: CostSummary` from the wire response.
 - `DocumentPreviewScreen` — the in-app PDF viewer overlay (see §12.3).
 
 ### 13.4 `features/library`
 
-- `LibraryScreen` — browse grid/list with search, filters, sort and pager.
-- `LibraryCard` — a single document card; click opens `DocumentPreviewScreen`.
+- `LibraryScreen` — browse grid/list with search, filters, sort and pager. Filtering uses the shared `FilterControls` pattern (§11.5), not a search-local copy.
+- `LibraryCard` — a single document card; click opens `DocumentPreviewScreen`. The real document thumbnail renders at a fixed portrait box (`--width-library-thumb` × `--height-library-preview`, the `DocThumb` artboard ratio) with `object-fit: cover` letterboxing; a consistent crop is required, with `DocThumb` as the load/error fallback (§4, DD-2).
+
+Shared helpers used here live at their promoted homes (§11.1), not inside a feature: `thumbKind` in `components/primitives` (beside `DocThumb`; shared by library, search, document), and `parseSearchParams` in `lib/` (shared by document + search).
 
 ### 13.5 `features/index`
 
 - `IndexScreen` — ops dashboard: health hero, stat tiles, daemon cards, activity, failed docs.
 - `IndexHealthHero` — coloured health verdict banner.
+- **`StatTile` accent rule** (§2, DD-1): the interactive accent may colour **at most one hero stat per screen**, and it must denote the screen's primary metric — not an arbitrary tile. Here that is "Documents indexed". Every other tile is neutral.
 - `DaemonCard` — per-daemon status card.
 - `ActivityRow` — one reconcile-cycle row in the activity list.
 - `FailedDocumentsPanel` — failed-document list; "Preview" opens `DocumentPreviewScreen`.
@@ -639,6 +679,8 @@ module the access-control `UserEditDrawer` uses, so the rules never diverge.
 
 - `SettingsScreen` — settings form with sections; uses `SettingsLayout`.
 - `SettingsSection` — one section card (uses `SettingsBlock` / `SettingsCard` primitives).
+- `ConnectionCard` — provider integration card. The provider **glyph tile** uses a brand-neutral fill (`--colour-glyph-neutral`), never `--colour-status-ok` green, so it can never be confused with the green "Connected" status dot beside it (§2, DD-1d). The `Toggle` "on" state and the `RoleBadge.admin` info-blue are state, not accent, and are already tokenised — documentation only.
+- **`StatTile` accent rule** (§2, DD-1): where a settings view shows stat tiles, the interactive accent colours at most one hero tile — the screen's primary metric — and never an arbitrary tile.
 - `SecretField` — masked secret input with reveal toggle.
 - `TestConnectionAction` — Paperless API connection-test action row.
 - `fieldModel.ts` — typed field definitions for every settings key (re-exports the `fieldModel/` package: `sections.ts`, `helpers.ts`, `types.ts`).
@@ -650,6 +692,8 @@ module the access-control `UserEditDrawer` uses, so the rules never diverge.
 - `UserEditDrawer` — drawer modal for editing a user's role and status.
 - `APIKeysScreen` — API key list with create/edit/revoke actions.
 - `APIKeyCreatePanel`, `APIKeyEditPanel` — slide-in panels for key management.
+
+**Destructive standard** (DD-3): every irreversible action uses `Button variant="destructive"` (solid red). Reversible cautionary actions (e.g. Suspend) use `secondary`/`ghost`, never a red text link. A permanent action is always the heaviest control in its cluster and is spatially separated from its reversible siblings so the two cannot be misclicked for one another. No bespoke red text-link buttons.
 
 ### 13.8 `features/document`
 
@@ -665,8 +709,10 @@ from the read-only `DocumentPreviewScreen` overlay in `features/search` (§13.3)
   built from `EditableField` and `TaxonomyCombobox`.
 - `EditableField` — generic label + value row with click-to-edit input.
 - `TaxonomyCombobox` — searchable single-select with a create-new option
-  (correspondent and document-type pickers).
-- `TagEditor` — multi-select tag chips with inline add / remove / create.
+  (correspondent and document-type pickers). Composes the shared
+  `FilterableListbox` pattern (§11.5, DD-5) rather than hand-rolling its listbox.
+- `TagEditor` — multi-select tag chips with inline add / remove / create. Also
+  composes `FilterableListbox` (§11.5, DD-5).
 - `PdfViewerCard` — embeds the PDF for the document.
 - `ActionsCard` — AI re-classify / re-transcribe and (admins only) delete;
   renders nothing for read-only users.
@@ -717,6 +763,11 @@ a different information shape:
 | `RoleBadge` | Account role indicator — `admin` / `member` / `readonly`, plus `service` for an API-key identity |
 | `StatusBadge` | Status pill with a leading colour dot — tone `ok` / `warn` / `danger` / `info` |
 | `ScopePill` | API-key scope — `api` / `mcp` / `admin` |
+
+All four draw exclusively from the semantic status palette (`--colour-status-*`),
+never from the interactive accent: a badge communicates **state**, not
+interactivity (§2 "Two colour axes", DD-1). `RoleBadge.admin` reads `info`-blue
+as a status tone, not as the accent.
 
 ### 14.6 Authentication model
 

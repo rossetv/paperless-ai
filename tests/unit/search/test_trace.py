@@ -13,11 +13,12 @@ from search.trace import PhaseStart, _Telemetry
 
 def test_done_summarises_sink_prices_and_emits():
     events = []
-    tele = _Telemetry(on_event=events.append, provider="openai")
+    tele = _Telemetry(on_event=events.append)
     tele.start("judge", "Judging relevance")
     sink = [
         LlmCallUsage(
             model="gpt-5.4-mini",
+            provider="openai",
             prompt=1_000_000,
             completion=0,
             reasoning=0,
@@ -43,12 +44,12 @@ def test_done_summarises_sink_prices_and_emits():
 
 
 def test_cost_summary_totals_and_marks_unpriced():
-    tele = _Telemetry(on_event=None, provider="openai")
+    tele = _Telemetry(on_event=None)
     tele.done(
         "plan",
         "Planning",
         {},
-        usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+        usage_sink=[LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)],
         started=0.0,
         now=lambda: 0.0,
     )
@@ -56,7 +57,7 @@ def test_cost_summary_totals_and_marks_unpriced():
         "synth",
         "Synth",
         {},
-        usage_sink=[LlmCallUsage("unknown", 1_000_000, 0, 0, 1_000_000)],
+        usage_sink=[LlmCallUsage("unknown", "openai", 1_000_000, 0, 0, 1_000_000)],
         started=0.0,
         now=lambda: 0.0,
     )
@@ -65,9 +66,55 @@ def test_cost_summary_totals_and_marks_unpriced():
     assert cs.llm_calls == 2 and cs.tokens.prompt == 2_000_000
 
 
+def test_each_call_is_priced_against_its_own_provider():
+    """A mixed-provider query prices each call by the endpoint that served it.
+
+    A local (Ollama) judge call on a model absent from the price table is free,
+    not an unknown-OpenAI call — so it must NOT poison the whole-query total to
+    None. The OpenAI planner call still contributes its real dollars.
+    """
+    tele = _Telemetry(on_event=None)
+    tele.done(
+        "plan",
+        "Planning",
+        {},
+        usage_sink=[LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)],
+        started=0.0,
+        now=lambda: 0.0,
+    )
+    tele.done(
+        "judge",
+        "Judging",
+        {},
+        usage_sink=[LlmCallUsage("gemma3:12b", "ollama", 500_000, 0, 0, 500_000)],
+        started=0.0,
+        now=lambda: 0.0,
+    )
+    cs = tele.cost_summary()
+    # gpt-5.4-mini input is 0.75 $/Mtok; the Ollama judge is free, not unpriced.
+    assert cs.usd == 0.75
+    assert cs.local is False  # at least one paid (OpenAI) call ran
+    assert cs.llm_calls == 2
+
+
+def test_local_only_query_is_free_even_when_provider_field_drives_pricing():
+    """Every call on Ollama → whole-query cost is $0 and marked local."""
+    tele = _Telemetry(on_event=None)
+    tele.done(
+        "plan",
+        "Planning",
+        {},
+        usage_sink=[LlmCallUsage("gemma3:12b", "ollama", 1_000_000, 0, 0, 1_000_000)],
+        started=0.0,
+        now=lambda: 0.0,
+    )
+    cs = tele.cost_summary()
+    assert cs.usd == 0.0 and cs.local is True
+
+
 def test_non_llm_phase_has_no_tokens():
     events = []
-    tele = _Telemetry(on_event=events.append, provider="openai")
+    tele = _Telemetry(on_event=events.append)
     tele.done(
         "retrieve",
         "Retrieving",
@@ -87,7 +134,7 @@ def test_non_llm_phase_has_no_tokens():
 def test_cost_summary_carries_seed_provenance_by_default():
     """With no book injected, the telemetry reports the live (seed) provenance."""
     reset_current_price_book()
-    tele = _Telemetry(on_event=None, provider="openai")
+    tele = _Telemetry(on_event=None)
     cs = tele.cost_summary()
     assert cs.prices_source == BUNDLED_SOURCE
     assert cs.prices_as_of == SEED_PRICES_AS_OF
@@ -107,12 +154,14 @@ def test_telemetry_prices_against_the_live_book_by_default():
         )
     )
     try:
-        tele = _Telemetry(on_event=None, provider="openai")
+        tele = _Telemetry(on_event=None)
         tele.done(
             "plan",
             "Planning",
             {},
-            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            usage_sink=[
+                LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)
+            ],
             started=0.0,
             now=lambda: 0.0,
         )
@@ -142,12 +191,14 @@ def test_injected_book_overrides_the_live_book_for_determinism():
             source="injected-source",
             fetched_at="2030-06-06T00:00:00+00:00",
         )
-        tele = _Telemetry(on_event=None, provider="openai", price_book=injected)
+        tele = _Telemetry(on_event=None, price_book=injected)
         tele.done(
             "plan",
             "Planning",
             {},
-            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            usage_sink=[
+                LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)
+            ],
             started=0.0,
             now=lambda: 0.0,
         )

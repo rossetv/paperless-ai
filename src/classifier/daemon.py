@@ -37,7 +37,7 @@ from .worker import ClassificationProcessor
 log = structlog.get_logger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class _DaemonState:
     """The classifier daemon's config-derived resources, swapped on a config change.
 
@@ -96,7 +96,7 @@ def _reload_if_changed(
 
 
 def _process_document(
-    doc: dict, settings: Settings, taxonomy_cache: TaxonomyCache
+    doc: dict[str, object], settings: Settings, taxonomy_cache: TaxonomyCache
 ) -> WriteBackOutcome | None:
     """Process a single Paperless document with its own HTTP session and provider."""
     return run_per_document(
@@ -109,7 +109,9 @@ def _process_document(
 
 
 def _process_and_record(
-    doc: dict, state: _DaemonState, circuit_breaker: WriteBackCircuitBreaker
+    doc: dict[str, object],
+    state: _DaemonState,
+    circuit_breaker: WriteBackCircuitBreaker,
 ) -> None:
     """Process a document, then report its write-back outcome to the breaker.
 
@@ -126,7 +128,7 @@ def _process_and_record(
 
 def _iter_docs_to_classify(
     list_client: PaperlessClient, settings: Settings
-) -> Iterable[dict]:
+) -> Iterable[dict[str, object]]:
     return iter_documents_by_pipeline_tag(
         list_client,
         pre_tag_id=settings.CLASSIFY_PRE_TAG_ID,

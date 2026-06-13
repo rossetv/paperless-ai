@@ -21,6 +21,15 @@
   transition: background-color var(--duration-fast) var(--easing-standard);
 }
 
+/* Transparent expanded hit-area (DD-4 compact-control exception).
+   The toggle is intentionally below 44px visually; this ::before pseudo-
+   element expands the tap zone to ≥44px without affecting visual size. */
+.toggle::before {
+  content: '';
+  position: absolute;
+  inset: calc((var(--size-touch-target) - var(--size-toggle-height)) / -2) calc((var(--size-touch-target) - var(--size-toggle-width)) / -2);
+}
+
 .toggle-on {
   background-color: var(--colour-toggle-on);
 }

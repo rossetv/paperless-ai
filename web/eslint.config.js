@@ -128,9 +128,10 @@ export default [
             // styles/ — the bottom of the stack; imports nothing.
             { from: 'styles', allow: [] },
 
-            // lib/ — framework-agnostic leaf helpers; imports nothing, exactly
-            // like styles/. Every layer above may import it.
-            { from: 'lib', allow: [] },
+            // lib/ — framework-agnostic leaf helpers; may import api/ for
+            // type-only deps (e.g. parseSearchParams returns FilterRequest).
+            // No component or page imports permitted.
+            { from: 'lib', allow: ['api'] },
 
             // Component tiers — each may import lower tiers, plus the
             // cross-cutting leaves: hooks/ (§12.3 names hooks importable by
@@ -152,6 +153,11 @@ export default [
                 'hooks',
                 'styles',
                 'lib',
+                // Connected patterns (e.g. FilterControls) may import the api
+                // layer for their own data-hooks/types — mirrors the hooks→api
+                // allowance (eefa1a8). Narrow exception, not a licence for every
+                // pattern to reach into api.
+                'api',
               ],
             },
 

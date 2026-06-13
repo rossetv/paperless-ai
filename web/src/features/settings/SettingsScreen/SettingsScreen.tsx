@@ -79,7 +79,12 @@ function SettingsContent({
    * secret.
    */
   const handleChange = (key: string, value: ConfigValue | null): void => {
-    setValue(key, value === null ? (baseline[key] as ConfigValue) : value);
+    // `null` means "no change" (an untouched secret) — restore the baseline so
+    // the key counts as unchanged. The baseline lookup can be undefined for a
+    // key the model added but the server never sent; fall back to '' rather
+    // than laundering the undefined through a cast (FE-55).
+    const base = baseline[key];
+    setValue(key, value === null ? (base ?? '') : value);
   };
 
   const handleSave = (): void => {

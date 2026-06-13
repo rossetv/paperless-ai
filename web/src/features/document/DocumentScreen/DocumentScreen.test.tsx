@@ -496,7 +496,7 @@ describe('DocumentScreen', () => {
     // Open the correspondent combobox and type a new name that has no exact match.
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Corp' } });
-    fireEvent.click(screen.getByText(/create "new corp"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     // The create mutation must have been called.
     expect(correspondentMutate).toHaveBeenCalledWith('New Corp', expect.objectContaining({ onSuccess: expect.any(Function) }));
@@ -523,7 +523,7 @@ describe('DocumentScreen', () => {
     // Open the document-type combobox and type a new name.
     fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Type' } });
-    fireEvent.click(screen.getByText(/create "new type"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     expect(documentTypeMutate).toHaveBeenCalledWith('New Type', expect.objectContaining({ onSuccess: expect.any(Function) }));
     expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } });
@@ -558,7 +558,7 @@ describe('DocumentScreen', () => {
     fireEvent.click(addButton);
     const input = screen.getByRole('combobox');
     fireEvent.change(input, { target: { value: 'alpha-tag' } });
-    fireEvent.click(screen.getByText(/create "alpha-tag"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
     // First create was called — update must have been called once.
     expect(tagMutate).toHaveBeenCalledTimes(1);
@@ -647,8 +647,8 @@ describe('DocumentScreen', () => {
       </QueryClientProvider>,
     );
 
-    // The retry element is now visible — it renders as role="alert" (see SaveStatusPill).
-    const retryBtn = screen.getByRole('alert');
+    // The retry element is now visible — it renders as a button (see SaveStatusPill FE-26).
+    const retryBtn = screen.getByRole('button', { name: /couldn't save/i });
     fireEvent.click(retryBtn);
 
     // mutate must have been called a second time with the same args.

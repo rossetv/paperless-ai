@@ -4,7 +4,7 @@ import { SearchErrorScreen } from './SearchErrorScreen';
 
 // FilterControls calls useFacets (needs a query client) — mock it to a probe,
 // as the sibling NoResultsScreen test does. We only assert the rail renders it.
-vi.mock('../FilterControls/FilterControls', () => ({
+vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 

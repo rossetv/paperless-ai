@@ -11,24 +11,19 @@ The function takes the connection and the StoreReader's query lock by
 argument and holds the lock across both the count query and the page query
 so the reported total is consistent with the returned rows.
 
-Allowed deps: sqlite3, json, store.models, store.reader._filters,
-    store.migrations.
+Allowed deps: sqlite3, store.models, store.reader._filters,
+    store.reader._lookups, store.migrations.
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import threading
-
-import structlog
 
 from store.migrations import StoreError
 from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 from store.reader._filters import build_browse_where
-from store.reader._lookups import _names_for_tag_ids
-
-log = structlog.get_logger(__name__)
+from store.reader._lookups import _names_for_tag_ids, _parse_tag_ids, _resolve_tag_names
 
 # The browse sort whitelist.  ``sort`` is a SQL identifier, not a value, so it
 # cannot be bound as a ``?`` parameter — it is mapped here through a fixed
@@ -80,8 +75,8 @@ def list_documents(
     """List documents from the index with pagination, sorting and filtering.
 
     Joins the ``taxonomy`` table to resolve correspondent and document-type
-    display names; tag names are resolved by reading each document's
-    ``tag_ids`` JSON array against the full tag taxonomy.  The reported
+    display names; tag names are resolved by parsing each row's ``tag_ids``
+    and fetching only those ids (O(page's tags), not O(all tags)).  The reported
     :attr:`~store.models.DocumentPage.total` is the count of documents
     matching the query's filters ignoring pagination — the count query and
     the page query run under one held lock so the two are consistent.
@@ -141,30 +136,20 @@ def list_documents(
             page_rows = conn.execute(
                 page_sql, [*params, query.limit, query.offset]
             ).fetchall()
-            # Resolve tag names once for the whole page.
-            tag_rows = conn.execute(
-                "SELECT id, name FROM taxonomy WHERE kind = 'tag'"
-            ).fetchall()
+            # Parse each row's tag ids first, then resolve only the ids
+            # actually present on this page — O(page's tags), not O(all tags).
+            all_tag_ids: list[int] = []
+            per_row_tag_ids: list[list[int]] = []
+            for row in page_rows:
+                tag_ids = _parse_tag_ids(row["tag_ids"], document_id=row["id"])
+                per_row_tag_ids.append(tag_ids)
+                all_tag_ids.extend(tag_ids)
+            tag_name_by_id = _resolve_tag_names(conn, list(dict.fromkeys(all_tag_ids)))
     except sqlite3.Error as exc:
         raise StoreError("list_documents query failed") from exc
 
-    tag_name_by_id: dict[int, str] = {row["id"]: row["name"] for row in tag_rows}
-
     documents: list[DocumentSummary] = []
-    for row in page_rows:
-        raw_tag_ids = row["tag_ids"]
-        if raw_tag_ids:
-            try:
-                tag_ids: list[int] = json.loads(raw_tag_ids)
-            except json.JSONDecodeError:
-                log.warning(
-                    "browse.tag_ids_parse_error",
-                    document_id=row["id"],
-                    raw=raw_tag_ids[:80],
-                )
-                tag_ids = []
-        else:
-            tag_ids = []
+    for row, tag_ids in zip(page_rows, per_row_tag_ids):
         tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)
         documents.append(
             DocumentSummary(

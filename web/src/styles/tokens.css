@@ -340,6 +340,15 @@
   --gap-settings-layout:     56px;   /* grid column gap between sidenav and content */
   --padding-settings-bottom: 140px;  /* content column bottom padding (space for SaveBar) */
 
+  /* Settings sticky-nav header offset — the vertical zone, measured from the
+   * viewport top, occupied by the nav glass plus the sticky rail's top gap.
+   * The scroll-spy (SettingsSideNav useAnchorScrollSpy) treats a section
+   * heading as "active" once it crosses this line, and section anchors scroll
+   * to land just below it. Currently a magic 140 px literal in SettingsSideNav;
+   * this token replaces it (consumed by FE-B12). Value preserves the existing
+   * behaviour exactly — do not retune here without re-checking the scroll-spy. */
+  --height-settings-sticky:  140px;
+
   /* Settings section-block (SettingsBlock) — section-level vertical rhythm. */
   --padding-block-top:       56px;   /* SettingsBlock top padding (not first-of-type) */
   --padding-block-top-first: 32px;   /* SettingsBlock first-of-type top padding */
@@ -381,6 +390,9 @@
   /* EmptyState — caps the description line length for comfortable reading */
   --width-empty-state:  360px;
 
+  /* EmptyState icon circle — the tinted circular container (DESIGN.md §12.4 / UI-17) */
+  --size-empty-state-icon: 72px;
+
   /* Search input in page headers — narrower than the empty-state cap so the
    * search + action buttons do not crush the title block on the same row */
   --width-search-narrow: 240px;
@@ -399,6 +411,25 @@
 
   /* Select listbox — max height before the option list scrolls */
   --height-listbox:     240px;
+
+  /* ─────────────────────────────────────────────
+   * Icon / brand-glyph size scale (FE-43)
+   *
+   * A small named ladder for the brand mark and inline icons. Component props
+   * (Brand `size`, Avatar diameter, nav-bar logo) previously passed ad-hoc
+   * numeric literals — 20 / 22 / 26 / 28 — that Stylelint cannot police because
+   * they are TSX props, not CSS. These tokens give those call sites a named
+   * value to reference instead. Consumed by FE-B-icon-scale (LoginScreen 28,
+   * FirstRunSetup 26, AppNavBar 20, UserMenu Avatar 26, Brand default 22).
+   *   sm  — nav-bar brand mark
+   *   md  — Brand primitive default
+   *   lg  — first-run / user-menu avatar glyph
+   *   xl  — login hero brand mark
+   * ───────────────────────────────────────────── */
+  --size-icon-sm:       20px;
+  --size-icon-md:       22px;
+  --size-icon-lg:       26px;
+  --size-icon-xl:       28px;
 
   /* Icon — extra-large size for empty-state and hero illustration use */
   --size-icon-xlarge:   32px;
@@ -573,6 +604,17 @@
 
   /* Status dot diameter — the leading dot inside a StatusBadge */
   --size-status-dot:            6px;
+
+  /* Connection provider glyph tile — a brand-NEUTRAL plinth for a service
+   * logo/initials (ConnectionCard .glyph). It must NOT be --colour-status-ok
+   * green: a green provider tile sits directly beside the green "Connected"
+   * status dot and the two greens muddle (UI-23 / DD-1d). This is a slate
+   * neutral distinct from both the status-ok green and the translucent grey
+   * used elsewhere, with white glyph text reading clearly on it. Like the
+   * status palette it is theme-INDEPENDENT — a brand plinth does not flip
+   * between light and dark — so it lives on :root and is not overridden in
+   * themes.css. Consumed by FE-B-conn-glyph (ConnectionCard .glyph-teal). */
+  --colour-glyph-neutral:       #4b4d52;
 
   /* ─────────────────────────────────────────────
    * Settings form controls — Toggle, Segmented, NumberStepper, fields.

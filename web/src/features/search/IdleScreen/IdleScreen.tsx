@@ -74,7 +74,9 @@ export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
           ))}
         </Stack>
 
-        <RecentSearchStrip items={recentItems} onSelect={onSearch} />
+        <div className={styles['strip-wrap']}>
+          <RecentSearchStrip items={recentItems} onSelect={onSearch} />
+        </div>
 
         {stats.isSuccess && stats.data !== undefined && (
           <IndexStatusFooter

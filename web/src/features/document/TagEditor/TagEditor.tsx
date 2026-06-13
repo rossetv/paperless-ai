@@ -3,21 +3,19 @@
  *
  * Renders one chip per selected tag id. When `canEdit` is true:
  *  - Each chip carries a × dismiss button (via the Chip primitive's onRemove).
- *  - A "+ Add tag" chip-shaped button opens a combobox that lists only the
- *    tags not already selected. Typing filters options; an unmatched query
- *    reveals a "Create <query>" row that calls onCreate. Selecting an option
- *    or creating a new tag closes the combobox.
+ *  - A FilterableListbox in multi-select mode lists only the tags not already
+ *    selected. Typing filters options; an unmatched query reveals a "Create
+ *    <query>" row that calls onCreate. Full keyboard navigation and ARIA
+ *    combobox semantics are provided by the primitive (FE-04/05/23).
  *
  * Stale ids (present in selectedIds but absent from availableTags) render as
  * "#<id>" chips and remain removable.
- *
- * The onMouseDown + preventDefault pattern on listbox options is intentional:
- * without it the input's onBlur fires first, closing the combobox before the
- * click is registered.
  */
-import React from 'react';
+import React, { useId } from 'react';
 import { Chip } from '../../../components/primitives/Chip/Chip';
 import type { TaxonomyItem } from '../../../api/types';
+import { FilterableListbox } from '../../../components/patterns/FilterableListbox/FilterableListbox';
+import type { FilterableItem } from '../../../components/patterns/FilterableListbox/FilterableListbox';
 import styles from './TagEditor.module.css';
 
 export interface TagEditorProps {
@@ -49,8 +47,7 @@ export function TagEditor({
   onRemove,
   onCreate,
 }: TagEditorProps): React.ReactElement {
-  const [adding, setAdding] = React.useState(false);
-  const [query, setQuery] = React.useState('');
+  const uid = useId();
 
   // Resolve each selected id to its name; fall back to "#<id>" for stale ids.
   const selectedRows = selectedIds.map((id) => {
@@ -58,21 +55,19 @@ export function TagEditor({
     return { id, name: found?.name ?? `#${id}` };
   });
 
-  // Tags the user can still add (those not already selected).
-  const selectable = availableTags.filter((t) => !selectedIds.includes(t.id));
-  const q = query.trim().toLowerCase();
-  const filtered = selectable.filter((t) => t.name.toLowerCase().includes(q));
+  // Offer only tags not already selected so the listbox never shows duplicates.
+  const selectableItems: FilterableItem<number>[] = availableTags
+    .filter((t) => !selectedIds.includes(t.id))
+    .map((t) => ({
+      value: t.id,
+      label: t.name,
+      meta: `${t.document_count} docs`,
+    }));
 
-  // Create-new row: only when query is non-empty AND no tag (selected or not)
-  // has the same name case-insensitively. This prevents duplicating an existing
-  // tag even if it is already selected.
-  const exact = availableTags.some((t) => t.name.toLowerCase() === q);
-  const showCreate = q !== '' && !exact;
-
-  function close(): void {
-    setAdding(false);
-    setQuery('');
-  }
+  // Full set of existing tag names — used by FilterableListbox to suppress the
+  // "Create …" row when the typed query matches an ALREADY-SELECTED tag
+  // (which is absent from selectableItems but must not be duplicated).
+  const allTagNames: string[] = availableTags.map((t) => t.name);
 
   return (
     <div className={styles['wrap']}>
@@ -90,58 +85,17 @@ export function TagEditor({
         ),
       )}
 
-      {canEdit && !adding && (
-        <button
-          type="button"
-          className={styles['add-btn']}
-          aria-label="Add tag"
-          onClick={() => setAdding(true)}
-        >
-          + Add tag
-        </button>
-      )}
-
-      {canEdit && adding && (
-        <div className={styles['combo']}>
-          <input
-            role="combobox"
-            aria-expanded
-            autoFocus
-            className={styles['input']}
-            value={query}
-            placeholder="Type to search…"
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') close(); }}
-            onBlur={close}
-          />
-          <ul role="listbox" className={styles['list']}>
-            {filtered.map((t) => (
-              <li
-                key={t.id}
-                role="option"
-                className={styles['opt']}
-                // onMouseDown + preventDefault prevents the input's onBlur from firing
-                // before the click is registered in real browsers. onClick fires the
-                // handler (and also catches fireEvent.click in tests).
-                onMouseDown={(e) => { e.preventDefault(); }}
-                onClick={() => { onAdd(t.id); close(); }}
-              >
-                {t.name}
-                <small>{t.document_count} docs</small>
-              </li>
-            ))}
-            {showCreate && (
-              <li
-                role="option"
-                className={styles['create']}
-                onMouseDown={(e) => { e.preventDefault(); }}
-                onClick={() => { onCreate(query.trim()); close(); }}
-              >
-                Create "{query.trim()}"
-              </li>
-            )}
-          </ul>
-        </div>
+      {canEdit && (
+        <FilterableListbox<number>
+          id={`tag-editor-${uid}`}
+          items={selectableItems}
+          value={selectedIds}
+          onSelect={(id) => onAdd(id)}
+          onCreate={onCreate}
+          multiple
+          triggerLabel="+ Add tag"
+          existingNames={allTagNames}
+        />
       )}
     </div>
   );

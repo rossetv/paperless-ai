@@ -41,7 +41,7 @@ def retry(
                     return func(self, *args, **kwargs)
                 except retryable_exceptions as exc:
                     log.warning(
-                        "Function failed, retrying",
+                        "retry.attempt_failed",
                         func_name=func.__name__,
                         error=str(exc),
                         attempt=attempt,
@@ -56,7 +56,7 @@ def retry(
                 return func(self, *args, **kwargs)
             except retryable_exceptions:
                 log.exception(
-                    "Function failed after all retries",
+                    "retry.exhausted",
                     func_name=func.__name__,
                     attempt=settings.MAX_RETRIES,
                 )
@@ -72,11 +72,4 @@ def retry(
 def _sleep_backoff(attempt: int, settings: Any) -> None:
     delay = (2**attempt) * random.uniform(0.8, 1.2)
     delay = min(delay, settings.MAX_RETRY_BACKOFF_SECONDS)
-    log.info(
-        "Sleeping before retry",
-        delay=f"{delay:.1f}s",
-        attempt=attempt,
-        max_retries=settings.MAX_RETRIES,
-        max_backoff=settings.MAX_RETRY_BACKOFF_SECONDS,
-    )
     time.sleep(delay)

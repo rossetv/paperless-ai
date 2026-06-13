@@ -3,8 +3,8 @@
  *
  * A label + combobox row for selecting or creating a taxonomy item
  * (correspondent, document type). Follows the same row/label grid pattern as
- * EditableField.module.css, extended with a trigger button, search input,
- * and a popover listbox.
+ * EditableField.module.css. The interactive open/closed combobox is delegated
+ * to FilterableListbox (patterns tier) — only structural layout lives here.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -38,134 +38,7 @@
   border-radius: var(--radius-micro);
 }
 
-/* ── Cell — wraps the trigger / open-state controls, positions the listbox ── */
+/* ── Cell — wraps FilterableListbox; positioning context for its popover ── */
 .cell {
   position: relative;
-}
-
-/* ── Trigger button (closed state) ── */
-.trigger {
-  appearance: none;
-  background: none;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  padding: var(--spacing-2) var(--spacing-6);
-  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
-  border-radius: var(--radius-micro);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: calc(100% + 2 * var(--spacing-6));
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.trigger:hover {
-  background-color: var(--colour-button-active-bg);
-}
-
-.trigger:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-/* ── Chevron indicator ── */
-.chevron {
-  font-size: var(--font-size-micro);
-  color: var(--colour-text-tertiary);
-  flex-shrink: 0;
-  margin-left: var(--spacing-6);
-}
-
-/* ── Search input (open state) ── */
-.input {
-  font-family: inherit;
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  background: var(--colour-surface);
-  border: var(--spacing-1) solid var(--colour-accent);
-  border-radius: var(--radius-micro);
-  padding: var(--spacing-2) var(--spacing-6);
-  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
-  width: calc(100% + 2 * var(--spacing-6));
-  outline: none;
-}
-
-.input:focus {
-  box-shadow: var(--shadow-focus);
-}
-
-/* ── Listbox (popover) ── */
-.list {
-  position: absolute;
-  top: calc(100% + var(--spacing-2));
-  left: calc(-1 * var(--spacing-6));
-  right: calc(-1 * var(--spacing-6));
-  margin: 0;
-  padding: var(--spacing-2) 0;
-  list-style: none;
-  background: var(--colour-surface);
-  border: var(--spacing-1) solid var(--colour-border-button);
-  border-radius: var(--radius-standard);
-  box-shadow: var(--shadow-card);
-  max-height: var(--height-listbox);
-  overflow-y: auto;
-  z-index: var(--z-dropdown);
-}
-
-/* ── Option row ── */
-.opt {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-6) var(--spacing-10);
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.opt:hover {
-  background-color: var(--colour-button-active-bg);
-}
-
-.opt small {
-  font-size: var(--font-size-micro);
-  color: var(--colour-text-tertiary);
-  flex-shrink: 0;
-  margin-left: var(--spacing-10);
-}
-
-/* ── Create-new row ── */
-.create {
-  display: block;
-  padding: var(--spacing-6) var(--spacing-10);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-caption-bold);
-  color: var(--colour-accent);
-  cursor: pointer;
-  border-top: var(--spacing-1) solid var(--colour-border-button);
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.create:hover {
-  background-color: var(--colour-accent-wash);
-}
-
-/* ── Clear row (shown at the top when a selection exists) ── */
-.clear {
-  display: block;
-  padding: var(--spacing-6) var(--spacing-10);
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-tertiary);
-  cursor: pointer;
-  border-bottom: var(--spacing-1) solid var(--colour-border-button);
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.clear:hover {
-  background-color: var(--colour-button-active-bg);
 }

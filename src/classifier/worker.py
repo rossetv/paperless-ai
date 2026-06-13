@@ -46,6 +46,23 @@ log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
+class _PrepareOutcome:
+    """Carries pre-LLM screening results back to :meth:`ClassificationProcessor.process`.
+
+    ``content`` is the raw OCR text when screening passes; ``None`` means the
+    document was diverted (error-tagged, requeued, refused, or unclaimed) and
+    ``process()`` should return ``None`` immediately.  ``claimed`` records
+    whether the processing-lock tag was acquired so the ``finally`` block can
+    release it regardless of outcome.
+    """
+
+    content: str | None
+    claimed: bool
+    document: dict[str, object]  # re-used by _apply_classification
+    current_tags: set[int]  # extracted once, shared across screening and apply steps
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolvedTaxonomyIds:
     """The Paperless ids resolved from a classification result.
 
@@ -70,34 +87,31 @@ class ClassificationProcessor:
 
     def __init__(
         self,
-        doc: dict,
+        doc: dict[str, object],
         paperless_client: PaperlessClient,
         classifier: ClassificationProvider,
         taxonomy_cache: TaxonomyCache,
         settings: Settings,
     ):
-        self.doc = doc
         self.paperless_client = paperless_client
         self.classifier = classifier
         self.taxonomy_cache = taxonomy_cache
         self.settings = settings
-        self.doc_id: int = doc["id"]
-        self.title: str = doc.get("title") or "<untitled>"
+        self.document_id: int = doc["id"]  # type: ignore[assignment]
+        self.title: str = doc.get("title") or "<untitled>"  # type: ignore[assignment]
 
     def process(self) -> WriteBackOutcome | None:
         """
         Run the full classification workflow.
 
         Steps:
-        1. Refresh the document from Paperless.
-        2. Bail out early if the document already has an error tag.
-        3. Claim the processing-lock tag.
-        4. Requeue if the document has no OCR content yet.
-        5. Truncate content (by pages, then by characters).
-        6. Call the classification LLM.
-        7. Validate the result (non-empty, non-generic).
-        8. Apply metadata to Paperless (tags, correspondent, type, etc.).
-        9. Release the processing-lock tag.
+        1. Pre-LLM screening via :meth:`_prepare_or_divert` (fetch, error-tag
+           check, claim, empty-content requeue, refusal check).
+        2. Truncate content (by pages, then by characters).
+        3. Call the classification LLM.
+        4. Validate the result (non-empty, non-generic).
+        5. Apply metadata to Paperless (tags, correspondent, type, etc.).
+        6. Release the processing-lock tag.
 
         Returns the write-back outcome the daemon feeds to the circuit breaker:
         :attr:`WriteBackOutcome.SAVED` when the metadata was applied,
@@ -105,57 +119,19 @@ class ClassificationProcessor:
         rejection error-tagged the document, or ``None`` for a cycle that wrote
         back nothing (skipped, requeued, or already-errored).
         """
-        log.info("Classifying document", doc_id=self.doc_id, title=self.title)
+        log.info("Classifying document", doc_id=self.document_id, title=self.title)
         self.classifier.reset_stats()
-        claimed = False
+        # Initialise with a safe "not claimed, no content" sentinel so the
+        # finally block is always safe to read, even if _prepare_or_divert raises.
+        prepare = _PrepareOutcome(
+            content=None, claimed=False, document={}, current_tags=set()
+        )
         try:
-            document = self.paperless_client.get_document(self.doc_id)
-            content = document.get("content", "") or ""
-            current_tags = extract_tags(
-                document, doc_id=self.doc_id, context="classify-process"
-            )
-
-            if (
-                self.settings.ERROR_TAG_ID is not None
-                and self.settings.ERROR_TAG_ID in current_tags
-            ):
-                log.warning(
-                    "Document has error tag; skipping classification",
-                    doc_id=self.doc_id,
-                )
-                finalise_document_with_error(
-                    self.paperless_client, self.doc_id, current_tags, self.settings
-                )
+            prepare = self._prepare_or_divert()
+            if prepare.content is None:
                 return None
 
-            claimed = claim_processing_tag(
-                client=self.paperless_client,
-                doc_id=self.doc_id,
-                tag_id=self.settings.CLASSIFY_PROCESSING_TAG_ID,
-                purpose="classification",
-            )
-            if not claimed:
-                return None
-
-            if not content.strip():
-                log.warning(
-                    "Document has no OCR content; requeueing", doc_id=self.doc_id
-                )
-                self._requeue_for_ocr(current_tags)
-                return None
-
-            if needs_error_tag(content):
-                log.warning(
-                    "OCR content contains refusal markers; marking error",
-                    doc_id=self.doc_id,
-                )
-                finalise_document_with_error(
-                    self.paperless_client, self.doc_id, current_tags, self.settings
-                )
-                return None
-
-            input_text, truncation_notes = self._truncate_content(content)
-
+            input_text, truncation_notes = self._truncate_content(prepare.content)
             truncation_note = "\n".join(truncation_notes) if truncation_notes else None
             result, model = self.classifier.classify_text(
                 input_text,
@@ -163,12 +139,16 @@ class ClassificationProcessor:
                 truncation_note=truncation_note,
             )
 
-            usable = self._usable_result(result, current_tags)
+            usable = self._usable_result(result, prepare.current_tags)
             if usable is None:
                 return None
             try:
                 self._apply_classification(
-                    document, current_tags, content, usable, model
+                    prepare.document,
+                    prepare.current_tags,
+                    prepare.content,
+                    usable,
+                    model,
                 )
                 return WriteBackOutcome.SAVED
             except PAPERLESS_CALL_EXCEPTIONS as exc:
@@ -183,22 +163,100 @@ class ClassificationProcessor:
                 log.error(
                     "Paperless rejected classification write; quarantining "
                     "document to break the reprocessing loop",
-                    doc_id=self.doc_id,
+                    doc_id=self.document_id,
                     error=str(exc),
                 )
                 finalise_document_with_error(
-                    self.paperless_client, self.doc_id, current_tags, self.settings
+                    self.paperless_client,
+                    self.document_id,
+                    prepare.current_tags,
+                    self.settings,
                 )
                 return WriteBackOutcome.QUARANTINED
         finally:
-            if claimed:
+            if prepare.claimed:
                 release_processing_tag(
                     self.paperless_client,
-                    self.doc_id,
+                    self.document_id,
                     self.settings.CLASSIFY_PROCESSING_TAG_ID,
                     purpose="classification",
                 )
             self._log_classification_stats()
+
+    def _prepare_or_divert(self) -> _PrepareOutcome:
+        """
+        Fetch the document and run pre-LLM screening checks.
+
+        Returns a :class:`_PrepareOutcome` whose ``content`` is the raw OCR
+        text when the document should proceed to classification, or ``None``
+        when the document was diverted (error-tagged, unclaimed, empty-content
+        requeued, or contained refusal markers).  ``claimed`` records whether
+        the processing-lock tag was acquired; ``document`` is the refreshed
+        Paperless document dict.
+        """
+        document = self.paperless_client.get_document(self.document_id)
+        content: str = document.get("content", "") or ""  # type: ignore[assignment]
+        current_tags = extract_tags(
+            document, doc_id=self.document_id, context="classify-process"
+        )
+
+        def _divert(claimed: bool) -> _PrepareOutcome:
+            return _PrepareOutcome(
+                content=None,
+                claimed=claimed,
+                document=document,
+                current_tags=current_tags,
+            )
+
+        if (
+            self.settings.ERROR_TAG_ID is not None
+            and self.settings.ERROR_TAG_ID in current_tags
+        ):
+            log.warning(
+                "Document has error tag; skipping classification",
+                doc_id=self.document_id,
+            )
+            # Finalise with error: strips pipeline/queue tags and re-adds
+            # ERROR_TAG_ID so the document leaves the queue and the error state
+            # is preserved. clean_pipeline_tags() unconditionally removes
+            # ERROR_TAG_ID, so a bare strip-and-write would silently drop it.
+            finalise_document_with_error(
+                self.paperless_client, self.document_id, current_tags, self.settings
+            )
+            return _divert(claimed=False)
+
+        claimed = claim_processing_tag(
+            client=self.paperless_client,
+            doc_id=self.document_id,
+            tag_id=self.settings.CLASSIFY_PROCESSING_TAG_ID,
+            purpose="classification",
+        )
+        if not claimed:
+            return _divert(claimed=False)
+
+        if not content.strip():
+            log.warning(
+                "Document has no OCR content; requeueing", doc_id=self.document_id
+            )
+            self._requeue_for_ocr(current_tags)
+            return _divert(claimed=True)
+
+        if needs_error_tag(content):
+            log.warning(
+                "OCR content contains refusal markers; marking error",
+                doc_id=self.document_id,
+            )
+            finalise_document_with_error(
+                self.paperless_client, self.document_id, current_tags, self.settings
+            )
+            return _divert(claimed=True)
+
+        return _PrepareOutcome(
+            content=content,
+            claimed=True,
+            document=document,
+            current_tags=current_tags,
+        )
 
     def _usable_result(
         self, result: ClassificationResult | None, current_tags: set[int]
@@ -212,20 +270,20 @@ class ClassificationProcessor:
         the error has already been recorded — not a swallowed failure.
         """
         if not result or is_empty_classification(result):
-            log.warning("Classification returned empty result", doc_id=self.doc_id)
+            log.warning("Classification returned empty result", doc_id=self.document_id)
             finalise_document_with_error(
-                self.paperless_client, self.doc_id, current_tags, self.settings
+                self.paperless_client, self.document_id, current_tags, self.settings
             )
             return None
 
         if is_generic_document_type(result.document_type):
             log.warning(
                 "Classification returned generic document type",
-                doc_id=self.doc_id,
+                doc_id=self.document_id,
                 document_type=result.document_type,
             )
             finalise_document_with_error(
-                self.paperless_client, self.doc_id, current_tags, self.settings
+                self.paperless_client, self.document_id, current_tags, self.settings
             )
             return None
         return result
@@ -252,7 +310,7 @@ class ClassificationProcessor:
                     truncation_notes.append(note)
                 log.info(
                     "Truncated document content by pages",
-                    doc_id=self.doc_id,
+                    doc_id=self.document_id,
                     max_pages=self.settings.CLASSIFY_MAX_PAGES,
                     tail_pages=self.settings.CLASSIFY_TAIL_PAGES,
                 )
@@ -271,7 +329,7 @@ class ClassificationProcessor:
             )
             log.info(
                 "Truncated document content by characters",
-                doc_id=self.doc_id,
+                doc_id=self.document_id,
                 max_chars=self.settings.CLASSIFY_MAX_CHARS,
             )
 
@@ -282,16 +340,19 @@ class ClassificationProcessor:
         updated = clean_pipeline_tags(tags, self.settings)
         updated.add(self.settings.PRE_TAG_ID)
         try:
-            self.paperless_client.update_document_metadata(self.doc_id, tags=updated)
+            self.paperless_client.update_document_metadata(
+                self.document_id, tags=updated
+            )
         except PAPERLESS_CALL_EXCEPTIONS:
             log.exception(
-                "Failed to requeue document for OCR; marking error", doc_id=self.doc_id
+                "Failed to requeue document for OCR; marking error",
+                doc_id=self.document_id,
             )
             finalise_document_with_error(
-                self.paperless_client, self.doc_id, tags, self.settings
+                self.paperless_client, self.document_id, tags, self.settings
             )
             return
-        log.info("Requeued document for OCR", doc_id=self.doc_id)
+        log.info("Requeued document for OCR", doc_id=self.document_id)
 
     def _build_tag_names(
         self,
@@ -338,7 +399,7 @@ class ClassificationProcessor:
 
     def _apply_classification(
         self,
-        document: dict,
+        document: dict[str, object],
         current_tags: set[int],
         content: str,
         result: ClassificationResult,
@@ -346,7 +407,7 @@ class ClassificationProcessor:
     ) -> None:
         """Apply the classifier's output to Paperless metadata and tags."""
         parsed_date = parse_document_date(result.document_date)
-        date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))
+        date_for_tags = resolve_date_for_tags(parsed_date, document.get("created"))  # type: ignore[arg-type]
 
         tag_names = self._build_tag_names(result, content, date_for_tags)
         resolved = self._resolve_taxonomy_ids(result, tag_names)
@@ -359,7 +420,7 @@ class ClassificationProcessor:
         custom_fields = None
         if self.settings.CLASSIFY_PERSON_FIELD_ID and result.person:
             custom_fields = update_custom_fields(
-                document.get("custom_fields"),
+                document.get("custom_fields"),  # type: ignore[arg-type]
                 self.settings.CLASSIFY_PERSON_FIELD_ID,
                 result.person,
             )
@@ -371,7 +432,7 @@ class ClassificationProcessor:
         # update), so collapse "" → None at this API boundary to make the intent
         # explicit and avoid a redundant PATCH field.
         self.paperless_client.update_document_metadata(
-            self.doc_id,
+            self.document_id,
             title=title or None,
             correspondent_id=resolved.correspondent_id,
             document_type_id=resolved.document_type_id,
@@ -383,7 +444,7 @@ class ClassificationProcessor:
 
         log.info(
             "Document classification applied",
-            doc_id=self.doc_id,
+            doc_id=self.document_id,
             model=model,
             tags_added=len(resolved.tag_ids),
         )
@@ -392,4 +453,4 @@ class ClassificationProcessor:
         stats = self.classifier.get_stats()
         if not stats or not stats.get("attempts"):
             return
-        log.info("Classification stats", doc_id=self.doc_id, **stats)
+        log.info("Classification stats", doc_id=self.document_id, **stats)

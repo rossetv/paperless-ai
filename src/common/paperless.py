@@ -18,8 +18,7 @@ from .paperless_types import (
 )
 from .retry import retry
 
-# rationale: this module is 763 lines, over CODE_GUIDELINES §3.1's 500-line
-# ceiling. The bulk is the single ``PaperlessClient`` class: every Paperless
+# rationale: this module exceeds the CODE_GUIDELINES §3.1 500-line ceiling. The bulk is the single ``PaperlessClient`` class: every Paperless
 # operation (documents, tags, custom fields, the streaming download for the
 # in-app PDF viewer, the count for the test-connection probe) is a method on the
 # same instance, sharing one ``httpx`` session and the retry/timeout/auth state
@@ -242,7 +241,7 @@ class PaperlessClient:
             The decoded JSON body of the created item (raw Paperless shape).
         """
         log.info(
-            "Creating item",
+            "paperless.item_creating",
             item_label=item_label,
             name=name,
             matching_algorithm=matching_algorithm,
@@ -480,7 +479,7 @@ class PaperlessClient:
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
         tags_list = list(new_tags)
         log.info(
-            "Updating document",
+            "paperless.document_updating",
             doc_id=doc_id,
             new_tags=tags_list,
             content_len=len(content),
@@ -490,7 +489,7 @@ class PaperlessClient:
         self._raise_for_status_logging_body(
             response, doc_id=doc_id, payload_keys=list(payload)
         )
-        log.info("Successfully updated document", doc_id=doc_id)
+        log.info("paperless.document_updated", doc_id=doc_id)
 
     # Maps DocumentMetadataUpdate keys to Paperless API field names.
     # ``notes`` is intentionally absent: it is handled via the separate notes
@@ -578,18 +577,18 @@ class PaperlessClient:
             payload[api_field] = value
 
         if not payload:
-            log.info("No metadata updates to apply", doc_id=doc_id)
+            log.info("paperless.metadata_noop", doc_id=doc_id)
             return
 
         url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/"
         log.info(
-            "Updating document metadata", doc_id=doc_id, payload_keys=list(payload)
+            "paperless.metadata_updating", doc_id=doc_id, payload_keys=list(payload)
         )
         response = self._patch(url, json=payload)
         self._raise_for_status_logging_body(
             response, doc_id=doc_id, payload_keys=list(payload)
         )
-        log.info("Successfully updated document metadata", doc_id=doc_id)
+        log.info("paperless.metadata_updated", doc_id=doc_id)
 
     def _list_named_items(self, url: str) -> list[PaperlessItem]:
         """List a taxonomy endpoint, typing each row as a :class:`PaperlessItem`.

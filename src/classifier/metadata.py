@@ -49,13 +49,13 @@ def parse_document_date(value: str) -> str | None:
     parsed = parse_iso_date_prefix(value)
     if parsed is None:
         if value:
-            log.warning("Invalid document_date from classifier", value=value)
+            log.warning("classification.invalid_date", value=value)
         return None
     today = dt.date.today()
     ceiling = today + dt.timedelta(days=_DATE_FUTURE_DAYS)
     if parsed < _DATE_FLOOR or parsed > ceiling:
         log.warning(
-            "Implausible document_date from classifier; ignoring",
+            "classification.implausible_date",
             value=value,
             floor=_DATE_FLOOR.isoformat(),
             ceiling=ceiling.isoformat(),
@@ -143,7 +143,7 @@ def is_empty_classification(result: ClassificationResult) -> bool:
     A result is "empty" when every scalar field is blank and the tag list
     contains no non-whitespace entries.
     """
-    if result.tags and any(tag.strip() for tag in result.tags if isinstance(tag, str)):
+    if result.tags and any(tag.strip() for tag in result.tags):
         return False
     fields = [
         result.title,

@@ -24,7 +24,13 @@
   align-items: center;
   justify-content: center;
 
-  /* Icon colour only — the icon's size comes from its own `xlarge` token
+  /* Tinted circular container so the icon reads intentional (UI-17). */
+  width: var(--size-empty-state-icon);
+  height: var(--size-empty-state-icon);
+  border-radius: 50%;
+  background-color: var(--colour-accent-wash);
+
+  /* Icon colour — the icon's size comes from its own `xlarge` token
    * (size prop), not from a font-size context. */
   color: var(--colour-text-tertiary);
 }
@@ -48,8 +54,9 @@
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-secondary);
 
-  /* Keep description text narrower than the container so it reads well. */
+  /* Tighten width and left-align multi-line copy (DESIGN.md §7). */
   max-width: var(--width-empty-state);
+  text-align: left;
 }
 
 .action {

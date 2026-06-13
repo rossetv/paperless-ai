@@ -112,18 +112,21 @@ def get_documents(
     try:
         with query_lock:
             rows = conn.execute(sql, document_ids).fetchall()
-            # Fetch the full tag taxonomy once to resolve names.
-            tag_rows = conn.execute(
-                "SELECT id, name FROM taxonomy WHERE kind = 'tag'"
-            ).fetchall()
+            # Parse each row's tag ids first, then resolve only the ids
+            # actually present on these documents — O(this page's tags),
+            # not O(all tags). Identical fix to get_document_summary (§14.1).
+            all_tag_ids: list[int] = []
+            per_row_tag_ids: list[list[int]] = []
+            for row in rows:
+                tag_ids = _parse_tag_ids(row["tag_ids"], document_id=row["id"])
+                per_row_tag_ids.append(tag_ids)
+                all_tag_ids.extend(tag_ids)
+            tag_name_by_id = _resolve_tag_names(conn, list(dict.fromkeys(all_tag_ids)))
     except sqlite3.Error as exc:
         raise StoreError("get_documents query failed") from exc
 
-    tag_name_by_id: dict[int, str] = {row["id"]: row["name"] for row in tag_rows}
-
     documents: list[IndexedDocument] = []
-    for row in rows:
-        tag_ids: list[int] = json.loads(row["tag_ids"]) if row["tag_ids"] else []
+    for row, tag_ids in zip(rows, per_row_tag_ids):
         tag_names = _names_for_tag_ids(tag_ids, tag_name_by_id)
         documents.append(
             IndexedDocument(
@@ -392,8 +395,12 @@ def _parse_failed_documents(raw: str | None) -> dict[int, int]:
         return {}
     try:
         decoded = json.loads(raw)
+        # Non-dict JSON (e.g. a bare string) → AttributeError on .items();
+        # non-int keys/values → ValueError; unexpected None-like types → TypeError.
+        if not isinstance(decoded, dict):
+            return {}
         return {int(key): int(value) for key, value in decoded.items()}
-    except (ValueError, AttributeError, TypeError):
+    except (json.JSONDecodeError, ValueError, TypeError):
         return {}
 
 

@@ -13,21 +13,3 @@ Forbidden: imports from ``store``, ``indexer``, ``search``, or ``classifier``;
 any ``sqlite3`` import; FastAPI. Outbound I/O goes through the shared clients —
 Paperless HTTP through ``common.paperless``, LLM calls through ``common.llm``.
 """
-
-from __future__ import annotations
-
-from .image_converter import ImageConversionError, PageSource, open_page_source
-from .provider import OcrProvider
-from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
-from .worker import OcrProcessor
-
-__all__ = [
-    "ImageConversionError",
-    "OCR_ERROR_MARKER",
-    "OcrProcessor",
-    "OcrProvider",
-    "PageResult",
-    "PageSource",
-    "assemble_full_text",
-    "open_page_source",
-]

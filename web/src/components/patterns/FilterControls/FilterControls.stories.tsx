@@ -8,7 +8,7 @@ import { FilterControls } from './FilterControls';
 const emptyFilters: FilterRequest = { tag_ids: [] };
 
 const meta = {
-  title: 'Features/Search/FilterControls',
+  title: 'Patterns/FilterControls',
   component: FilterControls,
   parameters: { layout: 'padded' },
 } satisfies Meta<typeof FilterControls>;
@@ -30,6 +30,14 @@ export const WithActiveFilters: Story = {
       document_type_id: 10,
       tag_ids: [100],
     },
+    onFiltersChange: (f) => console.log('filters changed:', f),
+  },
+};
+
+export const CollapsedOnMobile: Story = {
+  args: {
+    filters: emptyFilters,
+    defaultExpanded: false,
     onFiltersChange: (f) => console.log('filters changed:', f),
   },
 };

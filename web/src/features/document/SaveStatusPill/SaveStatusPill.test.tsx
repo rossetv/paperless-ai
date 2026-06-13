@@ -34,7 +34,7 @@ describe('SaveStatusPill', () => {
     const onRetry = vi.fn();
     const user = userEvent.setup();
     render(<SaveStatusPill status="error" onRetry={onRetry} />);
-    await user.click(screen.getByRole('alert'));
+    await user.click(screen.getByRole('button', { name: /couldn't save/i }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 

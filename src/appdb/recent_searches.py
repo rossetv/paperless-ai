@@ -35,10 +35,6 @@ log = structlog.get_logger(__name__)
 # short strip, so a deeper history would never be read.
 MAX_PER_USER = 20
 
-# The default page size for list_for_user — the same as the per-user cap, so
-# an unqualified list returns a user's whole retained history.
-_DEFAULT_LIMIT = 20
-
 
 @dataclass(frozen=True, slots=True)
 class RecentSearch:
@@ -137,7 +133,7 @@ def _trim_to_cap(conn: sqlite3.Connection, user_id: int) -> None:
 
 
 def list_for_user(
-    conn: sqlite3.Connection, user_id: int, *, limit: int = _DEFAULT_LIMIT
+    conn: sqlite3.Connection, user_id: int, *, limit: int = MAX_PER_USER
 ) -> list[RecentSearch]:
     """Return *user_id*'s recent searches, newest first.
 

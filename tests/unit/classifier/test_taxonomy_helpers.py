@@ -189,7 +189,7 @@ class TestTopNames:
         ]
         result = _top_names(items, limit=10)
         assert len(result) == 1
-        # The first occurrence's name is kept; max count is used
+        # The highest-usage casing wins (here "Acme" with count 5); max count is used
         assert result[0] == "Acme"
 
     def test_limit_zero_returns_all(self):
