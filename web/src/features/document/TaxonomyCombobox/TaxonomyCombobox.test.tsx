@@ -72,7 +72,7 @@ describe('TaxonomyCombobox', () => {
     );
     fireEvent.click(screen.getByRole('button'));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Brand New Co' } });
-    fireEvent.click(screen.getByText(/create "brand new co"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
     expect(onCreate).toHaveBeenCalledWith('Brand New Co');
   });
 

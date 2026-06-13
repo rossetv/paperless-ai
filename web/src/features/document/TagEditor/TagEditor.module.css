@@ -1,10 +1,10 @@
 /*
  * TagEditor — CSS Module.
  *
- * Chip row with an inline add-combobox for multi-select tag editing.
+ * Chip row with an inline FilterableListbox for multi-select tag editing.
  * The Chip primitive styles are used for selected-tag chips (Chip.module.css).
- * The add button mirrors the chip visual but uses the chip-interactive cursor.
- * The combobox listbox reuses the same tokens as TaxonomyCombobox.module.css.
+ * The interactive combobox (trigger, input, listbox) is fully owned by the
+ * FilterableListbox primitive; no combobox rules live here.
  *
  * All values come exclusively from design tokens (var(--…)).
  */
@@ -16,117 +16,4 @@
   gap: var(--spacing-4);
   align-items: center;
   position: relative;
-}
-
-/* ── "+ Add tag" chip-shaped trigger button ── */
-.add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  border-radius: var(--radius-micro);
-  padding: var(--spacing-2) var(--spacing-6);
-  background: none;
-  border: var(--spacing-1) dashed var(--colour-border);
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-caption);
-  line-height: var(--line-height-caption);
-  letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-text-tertiary);
-  white-space: nowrap;
-  vertical-align: middle;
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard),
-              border-color var(--duration-fast) var(--easing-standard),
-              color var(--duration-fast) var(--easing-standard);
-}
-
-.add-btn:hover {
-  background-color: var(--colour-button-active-bg);
-  border-color: var(--colour-accent);
-  color: var(--colour-accent);
-}
-
-.add-btn:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-}
-
-/* ── Combobox container — positions the popover listbox ── */
-.combo {
-  position: relative;
-}
-
-/* ── Search input (open state) ── */
-.input {
-  font-family: inherit;
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  background: var(--colour-surface);
-  border: var(--spacing-1) solid var(--colour-accent);
-  border-radius: var(--radius-micro);
-  padding: var(--spacing-2) var(--spacing-6);
-  width: var(--width-search-narrow);
-  outline: none;
-}
-
-.input:focus {
-  box-shadow: var(--shadow-focus);
-}
-
-/* ── Listbox (popover) ── */
-.list {
-  position: absolute;
-  top: calc(100% + var(--spacing-2));
-  left: 0;
-  min-width: var(--width-search-narrow);
-  margin: 0;
-  padding: var(--spacing-2) 0;
-  list-style: none;
-  background: var(--colour-surface);
-  border: var(--spacing-1) solid var(--colour-border-button);
-  border-radius: var(--radius-standard);
-  box-shadow: var(--shadow-card);
-  max-height: var(--height-listbox);
-  overflow-y: auto;
-  z-index: var(--z-dropdown);
-}
-
-/* ── Option row ── */
-.opt {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-6) var(--spacing-10);
-  font-size: var(--font-size-caption);
-  color: var(--colour-text-primary);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.opt:hover {
-  background-color: var(--colour-button-active-bg);
-}
-
-.opt small {
-  font-size: var(--font-size-micro);
-  color: var(--colour-text-tertiary);
-  flex-shrink: 0;
-  margin-left: var(--spacing-10);
-}
-
-/* ── Create-new row ── */
-.create {
-  display: block;
-  padding: var(--spacing-6) var(--spacing-10);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-caption-bold);
-  color: var(--colour-accent);
-  cursor: pointer;
-  border-top: var(--spacing-1) solid var(--colour-border-button);
-  transition: background var(--duration-fast) var(--easing-standard);
-}
-
-.create:hover {
-  background-color: var(--colour-accent-wash);
 }
