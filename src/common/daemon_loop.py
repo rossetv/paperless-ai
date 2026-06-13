@@ -50,11 +50,12 @@ def _process_batch(
     """Process a batch of work items concurrently, halt-aware and chunked.
 
     The batch is dispatched in bounded sub-batches of ``max_workers`` items
-    rather than all at once. Between sub-batches — and again immediately before
-    each worker runs its item — ``halt_check`` is consulted: once it reports a
-    reason (the write-back circuit breaker has tripped, or shutdown was
-    requested) no further items are dispatched and any already-submitted worker
-    short-circuits before spending LLM/vision tokens.
+    into a single ``ThreadPoolExecutor`` (one pool per poll, not per sub-batch).
+    Between sub-batches — and again immediately before each worker runs its
+    item — ``halt_check`` is consulted: once it reports a reason (the write-back
+    circuit breaker has tripped, or shutdown was requested) no further items are
+    dispatched and any already-submitted worker short-circuits before spending
+    LLM/vision tokens.
 
     This is the second half of the circuit breaker's promise. ``_poll_once``
     stops *new* polls once the breaker trips, but a single first pass over a
@@ -77,32 +78,6 @@ def _process_batch(
         A halt part-way through a batch yields a count below ``len(items)``.
     """
     dispatched = 0
-    for start in range(0, len(items), max_workers):
-        if halt_check is not None and halt_check() is not None:
-            # The breaker tripped (or shutdown began) between sub-batches: stop
-            # dispatching. Remaining items stay queued for a later poll.
-            break
-        chunk = items[start : start + max_workers]
-        dispatched += _process_chunk(
-            chunk, process_item, max_workers, daemon_name, halt_check
-        )
-    return dispatched
-
-
-def _process_chunk(
-    chunk: list[T],
-    process_item: Callable[[T], None],
-    max_workers: int,
-    daemon_name: str,
-    halt_check: Callable[[], str | None] | None,
-) -> int:
-    """Process one bounded sub-batch concurrently; return the count actually run.
-
-    Each worker re-checks ``halt_check`` immediately before calling
-    ``process_item`` so an item submitted just as the breaker trips skips the
-    expensive call cleanly — it spends no tokens and records no failure.
-    """
-    ran = 0
 
     def _run_one(item: T) -> bool:
         if halt_check is not None and halt_check() is not None:
@@ -116,24 +91,31 @@ def _process_chunk(
     with ThreadPoolExecutor(
         max_workers=max_workers, thread_name_prefix=f"{daemon_name}-worker"
     ) as executor:
-        future_to_item = {executor.submit(_run_one, item): item for item in chunk}
-        for future in as_completed(future_to_item):
-            item = future_to_item[future]
-            try:
-                if future.result():
-                    ran += 1
-            except Exception:
-                # rationale: per-document worker-dispatch boundary
-                # (CODE_GUIDELINES §6.4, site 2) — one document's failure is
-                # logged with its traceback and isolated so the rest of the
-                # batch still completes. The traceback is attached via
-                # log.exception.
-                log.exception(
-                    "Work item failed",
-                    daemon=daemon_name,
-                    item=_safe_item_summary(item),
-                )
-    return ran
+        for start in range(0, len(items), max_workers):
+            if halt_check is not None and halt_check() is not None:
+                # The breaker tripped (or shutdown began) between sub-batches:
+                # stop dispatching. Remaining items stay queued for a later poll.
+                break
+            chunk = items[start : start + max_workers]
+            future_to_item = {executor.submit(_run_one, item): item for item in chunk}
+            for future in as_completed(future_to_item):
+                item = future_to_item[future]
+                try:
+                    if future.result():
+                        dispatched += 1
+                except Exception:
+                    # rationale: per-document worker-dispatch boundary
+                    # (CODE_GUIDELINES §6.4, site 2) — one document's failure
+                    # is logged with its traceback and isolated so the rest of
+                    # the batch still completes. The traceback is attached via
+                    # log.exception.
+                    log.exception(
+                        "Work item failed",
+                        daemon=daemon_name,
+                        item=_safe_item_summary(item),
+                    )
+
+    return dispatched
 
 
 def _poll_once(

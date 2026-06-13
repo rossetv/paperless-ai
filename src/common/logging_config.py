@@ -49,8 +49,11 @@ def configure_logging(settings: Settings) -> None:
             processor=structlog.dev.ConsoleRenderer(colors=True),
         )
 
-    # Configure the root logger
+    # Configure the root logger — clear any existing handlers first so
+    # repeated calls (e.g. a test calling configure_logging twice) do not
+    # accumulate duplicate handlers and emit every log line N times.
     root_logger = logging.getLogger()
+    root_logger.handlers.clear()
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)

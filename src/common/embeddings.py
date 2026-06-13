@@ -111,16 +111,21 @@ def _build_embedding_client(settings: Settings) -> openai.OpenAI:
 
     Branches on ``settings.EMBEDDING_PROVIDER`` (see the module docstring):
     under ``ollama`` it targets ``OLLAMA_BASE_URL`` with a placeholder key;
-    otherwise (``openai``, the default and prod posture) it constructs the
-    client exactly as before — ``api_key=OPENAI_API_KEY`` and OpenAI's default
-    ``base_url`` (no override), so the OpenAI path stays byte-for-byte unchanged.
+    otherwise (``openai``, the default and prod posture) it uses
+    ``api_key=OPENAI_API_KEY`` and OpenAI's default ``base_url`` (no override).
+    Both paths enforce ``timeout=settings.REQUEST_TIMEOUT`` so a hung provider
+    fails fast into retry rather than blocking on the SDK's ~600s default
+    (CODE_GUIDELINES §8.7).
     """
     if settings.EMBEDDING_PROVIDER == "ollama":
         return openai.OpenAI(
             api_key=_OLLAMA_PLACEHOLDER_API_KEY,
             base_url=settings.OLLAMA_BASE_URL,
+            timeout=settings.REQUEST_TIMEOUT,
         )
-    return openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+    return openai.OpenAI(
+        api_key=settings.OPENAI_API_KEY, timeout=settings.REQUEST_TIMEOUT
+    )
 
 
 class EmbeddingClient:
@@ -131,8 +136,8 @@ class EmbeddingClient:
     branches on ``settings.EMBEDDING_PROVIDER``:
 
     * ``openai`` — ``api_key=settings.OPENAI_API_KEY`` and OpenAI's default
-      ``base_url`` (no override). This is the default for an ``openai``
-      deployment and is byte-for-byte identical to the historic behaviour.
+      ``base_url`` (no override), with ``timeout=settings.REQUEST_TIMEOUT``
+      so a hung provider fails fast.
     * ``ollama`` — ``base_url=settings.OLLAMA_BASE_URL`` with a placeholder key
       (Ollama's OpenAI-compatible endpoint ignores it), mirroring
       :func:`common.library_setup.setup_libraries`.
