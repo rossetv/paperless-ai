@@ -127,7 +127,10 @@ class TestBothProviders:
         and tracks both httpx clients."""
         import common.llm as llm_mod
 
-        mock_client_cls.side_effect = [MagicMock(name="openai_http"), MagicMock(name="ollama_http")]
+        mock_client_cls.side_effect = [
+            MagicMock(name="openai_http"),
+            MagicMock(name="ollama_http"),
+        ]
         settings = _make_settings(api_key="sk-x", base_url="http://ollama:11434/v1/")
         setup_libraries(settings)
 
