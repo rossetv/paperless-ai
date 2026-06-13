@@ -220,6 +220,13 @@ export function PipelineStages({
                         <span className={styles['label']}>{stage.label}</span>
                         <span className={styles['detail']}>{summaryContent}</span>
                       </span>
+                      {/* The per-stage cost chip sits on the always-visible
+                          summary row, right-aligned, so every stage shows its
+                          per-step tokens · cost without being expanded — the
+                          collapsed row is the read-out (UI-16). */}
+                      {stage.costLabel !== undefined && (
+                        <span className={styles['cost-chip']}>{stage.costLabel}</span>
+                      )}
                       <svg
                         className={styles['chevron']}
                         viewBox="0 0 16 16"
@@ -237,13 +244,6 @@ export function PipelineStages({
                     </div>
                   </summary>
                   <div className={styles['stage-body']}>
-                    {/* The per-stage cost chip lives inside the expanded body, not
-                        on the always-visible summary row — the aggregate already
-                        shows once in the header/footer, so the collapsed row no
-                        longer repeats each figure (UI-16). */}
-                    {stage.costLabel !== undefined && (
-                      <span className={styles['cost-chip']}>{stage.costLabel}</span>
-                    )}
                     {stage.body}
                     {verdicts !== undefined && (
                       <VerdictList

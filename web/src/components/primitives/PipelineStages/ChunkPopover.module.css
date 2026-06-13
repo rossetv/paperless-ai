@@ -11,9 +11,14 @@
 .popover {
   position: fixed;
   z-index: var(--z-tooltip);
+  display: flex;
+  flex-direction: column;
   max-width: var(--width-toast-max);
-  max-height: var(--height-listbox);
-  overflow: auto;
+
+  /* Viewport-relative so a long chunk's card never overflows the screen; the
+     header stays pinned and the body (.pop-body) scrolls within this cap. */
+  max-height: 70dvh;
+  overflow: hidden;
   padding: var(--spacing-7) var(--spacing-8);
   border-radius: var(--radius-large);
   background: var(--colour-surface);
@@ -46,6 +51,7 @@
 
 .pophead {
   display: flex;
+  flex-shrink: 0;
   gap: var(--spacing-4);
   align-items: baseline;
   margin-bottom: var(--spacing-4);
@@ -65,6 +71,12 @@
 
 .pop-body {
   margin: 0;
+
+  /* Take the remaining height under the fixed header and scroll long chunk
+     text rather than clipping it at the card's bottom edge. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   font-size: var(--font-size-nano);
   color: var(--colour-text-secondary);
   line-height: 1.55;

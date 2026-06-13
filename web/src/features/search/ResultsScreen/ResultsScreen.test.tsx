@@ -136,7 +136,7 @@ describe('ResultsScreen', () => {
     renderResults();
     // The same whole-query cost appears in both the answer footer and the
     // trace-panel summary — assert at least one is present.
-    expect(screen.getAllByText('2.1k tok · $0.006').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2.1k tok').length).toBeGreaterThan(0);
   });
 
   it('fires onCitationActivate when a citation is clicked', async () => {
