@@ -13,7 +13,7 @@ import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { Card } from '../../../components/primitives/Card/Card';
 import { TaxonomyCombobox } from '../TaxonomyCombobox/TaxonomyCombobox';
 import { EditableField } from '../EditableField/EditableField';
-import { formatLongDate } from '../../../lib/formatDate';
+import { formatLongDate, isoDateOnly } from '../../../lib/formatDate';
 import styles from './MetadataCard.module.css';
 
 /** Subset of a PATCH request covered by MetadataCard. */
@@ -74,7 +74,12 @@ export function MetadataCard({
 }: MetadataCardProps): React.ReactElement {
   const correspondentId = resolveId(correspondents, document.correspondent);
   const documentTypeId = resolveId(documentTypes, document.document_type);
-  const dateValue = document.created ?? '';
+  // The API returns the document date as a full offset timestamp
+  // (`2026-01-13T00:00:00+00:00`). The editable input and the PATCH need the
+  // bare `YYYY-MM-DD`; the view text shows the formatted long date. An empty
+  // string drives the "No date" placeholder in both modes.
+  const dateValue = isoDateOnly(document.created);
+  const dateDisplay = document.created === null ? '' : formatLongDate(document.created);
 
   return (
     <Card>
@@ -102,6 +107,7 @@ export function MetadataCard({
         <EditableField
           label="Date"
           value={dateValue}
+          displayValue={dateDisplay}
           canEdit={true}
           type="date"
           placeholder="No date"
@@ -110,7 +116,8 @@ export function MetadataCard({
       ) : (
         <EditableField
           label="Date"
-          value={document.created === null ? '' : formatLongDate(document.created)}
+          value={dateValue}
+          displayValue={dateDisplay}
           canEdit={false}
           placeholder="No date"
           onCommit={() => undefined}

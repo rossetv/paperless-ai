@@ -42,6 +42,21 @@ import { MatchCard } from '../MatchCard/MatchCard';
 import { parseSearchParams } from '../../../lib/parseSearchParams';
 import styles from './DocumentScreen.module.css';
 
+/** Characters that are illegal in filenames across Windows, macOS, and Linux. */
+const FILENAME_ILLEGAL_RE = /[/\\:*?"<>|]/g;
+
+/**
+ * Derive a safe download filename from a document title.
+ *
+ * Strips filesystem-illegal characters, collapses leading/trailing whitespace,
+ * and appends ".pdf". Falls back to "Document {id}.pdf" when the title is
+ * absent or reduces to an empty string after sanitisation.
+ */
+function toDownloadFilename(title: string | null, id: number): string {
+  const sanitised = (title ?? '').replace(FILENAME_ILLEGAL_RE, '').trim();
+  return sanitised.length > 0 ? `${sanitised}.pdf` : `Document ${id}.pdf`;
+}
+
 export type { Role };
 
 export interface DocumentScreenProps {
@@ -231,6 +246,7 @@ export function DocumentScreen({
           documentId={document.id}
           title={document.title ?? `Document ${document.id}`}
           paperlessUrl={document.paperless_url}
+          downloadFilename={toDownloadFilename(document.title, document.id)}
         />
 
         <aside className={styles['side']}>

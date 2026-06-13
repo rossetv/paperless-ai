@@ -69,6 +69,44 @@ describe('MetadataCard', () => {
     expect(screen.getByText('22 May 2026')).toBeInTheDocument();
   });
 
+  it('formats a full offset timestamp from the API, never the raw ISO', () => {
+    // The real API returns the date as a full offset timestamp; the row must
+    // show the human date, not the raw "2026-01-13T00:00:00+00:00".
+    const doc: LibraryDocument = { ...DOC, created: '2026-01-13T00:00:00+00:00' };
+    render(
+      <MetadataCard
+        document={doc}
+        correspondents={CORRESPONDENTS}
+        documentTypes={DOC_TYPES}
+        canEdit={false}
+        onPatch={vi.fn()}
+        onCreateCorrespondent={vi.fn()}
+        onCreateDocumentType={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('13 January 2026')).toBeInTheDocument();
+    expect(screen.queryByText('2026-01-13T00:00:00+00:00')).not.toBeInTheDocument();
+  });
+
+  it('shows the formatted date in editable view mode (not the raw ISO)', () => {
+    const doc: LibraryDocument = { ...DOC, created: '2026-01-13T00:00:00+00:00' };
+    render(
+      <MetadataCard
+        document={doc}
+        correspondents={CORRESPONDENTS}
+        documentTypes={DOC_TYPES}
+        canEdit={true}
+        onPatch={vi.fn()}
+        onCreateCorrespondent={vi.fn()}
+        onCreateDocumentType={vi.fn()}
+      />,
+    );
+    // The view button reads as the formatted date, and the underlying date
+    // input pre-fills with the bare YYYY-MM-DD the native control accepts.
+    fireEvent.click(screen.getByRole('button', { name: /13 January 2026/i }));
+    expect(screen.getByDisplayValue('2026-01-13')).toBeInTheDocument();
+  });
+
   it('shows "—" for null taxonomy fields and "No date" for null created', () => {
     render(
       <MetadataCard
@@ -175,8 +213,9 @@ describe('MetadataCard', () => {
         onCreateDocumentType={vi.fn()}
       />,
     );
-    // EditableField for date — click the value button to enter edit mode.
-    fireEvent.click(screen.getByRole('button', { name: /2026-05-22/i }));
+    // EditableField for date — the view button shows the formatted date; click
+    // it to enter edit mode, where the input carries the bare ISO.
+    fireEvent.click(screen.getByRole('button', { name: /22 May 2026/i }));
     const input = screen.getByDisplayValue('2026-05-22');
     fireEvent.change(input, { target: { value: '2026-06-01' } });
     fireEvent.blur(input);

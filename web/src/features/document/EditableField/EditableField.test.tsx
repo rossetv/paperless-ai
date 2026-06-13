@@ -65,4 +65,55 @@ describe('EditableField', () => {
     fireEvent.click(screen.getByText('2026-05-22'));
     expect(screen.getByDisplayValue('2026-05-22').getAttribute('type')).toBe('date');
   });
+
+  it('shows displayValue in view mode but edits the raw value', () => {
+    const onCommit = vi.fn();
+    render(
+      <EditableField
+        label="Date"
+        value="2026-01-13"
+        displayValue="13 January 2026"
+        canEdit={true}
+        type="date"
+        onCommit={onCommit}
+      />,
+    );
+    // View button reads as the formatted display text.
+    const button = screen.getByRole('button', { name: '13 January 2026' });
+    fireEvent.click(button);
+    // The input pre-fills with the raw value, not the display text.
+    const input = screen.getByDisplayValue('2026-01-13');
+    fireEvent.change(input, { target: { value: '2026-02-01' } });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith('2026-02-01');
+  });
+
+  it('renders displayValue as static text when canEdit=false', () => {
+    render(
+      <EditableField
+        label="Date"
+        value="2026-01-13"
+        displayValue="13 January 2026"
+        canEdit={false}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('13 January 2026')).toBeInTheDocument();
+    expect(screen.queryByText('2026-01-13')).not.toBeInTheDocument();
+  });
+
+  it('shows the placeholder for an empty value even with a displayValue', () => {
+    render(
+      <EditableField
+        label="Date"
+        value=""
+        displayValue="ignored"
+        canEdit={false}
+        placeholder="No date"
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('No date')).toBeInTheDocument();
+    expect(screen.queryByText('ignored')).not.toBeInTheDocument();
+  });
 });
