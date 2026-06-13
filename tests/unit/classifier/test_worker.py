@@ -154,6 +154,13 @@ class TestProcessEarlyExits:
         proc.process()
 
         proc.classifier.classify_text.assert_not_called()
+        # ERROR_TAG_ID must survive the pipeline-tag strip so the document
+        # remains quarantined and does not re-enter classification.
+        proc.paperless_client.update_document_metadata.assert_called()
+        tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get(
+            "tags"
+        )
+        assert 552 in tags  # ERROR_TAG_ID preserved
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
