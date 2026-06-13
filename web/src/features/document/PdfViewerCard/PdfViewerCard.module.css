@@ -70,11 +70,10 @@
 /* ── PDF frame area ──────────────────────────────────────────────────────── */
 
 /*
- * Viewport layers the live iframe over an app-owned dark backdrop. It is the
- * positioning context (position: relative) and owns the height. Both the
- * viewport and the placeholder fill with --colour-surface-dark, so the viewer
- * area is dark from first paint and an unloaded/failed iframe never flashes
- * white (UI-03).
+ * Viewport layers an app-owned error state over the live iframe. It is the
+ * positioning context (position: relative) and owns the height. The viewport
+ * fills with --colour-surface-dark, so the viewer area is dark from first paint
+ * and an unloaded iframe never flashes white (UI-03).
  */
 .viewport {
   position: relative;
@@ -86,10 +85,12 @@
 }
 
 /*
- * Dark loading/error placeholder behind the iframe. Forced dark in both themes
- * (--colour-surface-dark), so the standard EmptyState text tokens (dark ink)
- * would be illegible — we redefine those token roles to on-dark values for the
- * subtree, which the EmptyState reads via the cascade (UI-03).
+ * Dark error overlay shown ONLY when the iframe reports a load failure. It is
+ * the later sibling and fully opaque, so it stacks over the frame and covers
+ * the browser's grey "refused to connect" / broken-document box (UI-03). Forced
+ * dark in both themes (--colour-surface-dark), so the standard EmptyState text
+ * tokens (dark ink) would be illegible — we redefine those token roles to
+ * on-dark values for the subtree, which the EmptyState reads via the cascade.
  */
 .placeholder {
   position: absolute;
@@ -104,11 +105,18 @@
   --colour-text-tertiary: var(--colour-text-on-dark);
 }
 
+/* Download + Open-in-Paperless escape hatches inside the error EmptyState. */
+.fallback-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
 /*
  * PdfFrame's wrapper fills the viewport via inset: 0, giving its internal
- * height: 100% iframe a definite box to resolve against. The frame is the later
- * sibling, so it stacks above the placeholder without an explicit z-index —
- * once the PDF paints it is opaque and hides the dark fallback behind it.
+ * height: 100% iframe a definite box to resolve against. The error overlay,
+ * when present, is the later sibling and stacks above it without an explicit
+ * z-index.
  */
 .frame {
   position: absolute;

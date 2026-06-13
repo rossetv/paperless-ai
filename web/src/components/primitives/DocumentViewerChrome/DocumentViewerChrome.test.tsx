@@ -80,6 +80,15 @@ describe('DocumentViewerChrome', () => {
     expect(link).toHaveAttribute('href', '/api/documents/9823/pdf');
   });
 
+  it('sets the download attribute to the supplied filename', () => {
+    renderChrome({
+      downloadUrl: '/api/documents/9823/pdf',
+      downloadFilename: 'Annual energy statement.pdf',
+    });
+    const link = screen.getByRole('link', { name: /download/i });
+    expect(link).toHaveAttribute('download', 'Annual energy statement.pdf');
+  });
+
   it('merges a custom className', () => {
     const { container } = renderChrome({ className: 'extra' });
     expect((container.firstChild as Element).className).toContain('extra');

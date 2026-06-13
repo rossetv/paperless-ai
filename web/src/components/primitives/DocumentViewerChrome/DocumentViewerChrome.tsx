@@ -26,6 +26,13 @@ export interface DocumentViewerChromeProps {
    */
   downloadUrl?: string;
   /**
+   * Suggested filename for the download (e.g. "Allianz Invoice 2026.pdf").
+   * When provided, sets the `download` attribute so the browser saves the
+   * file under this name rather than deriving one from the URL path.
+   * Ignored when `downloadUrl` is absent.
+   */
+  downloadFilename?: string;
+  /**
    * Optional extra actions rendered in the action row alongside Download and
    * Open-in-Paperless. Pass an array of rendered elements (e.g. anchor or
    * button styled with the shared `action` class) so callers (FE-B8) can
@@ -68,6 +75,7 @@ export function DocumentViewerChrome({
   breadcrumbLabel = 'Search results',
   paperlessUrl,
   downloadUrl,
+  downloadFilename,
   extraActions,
   onClose,
   children,
@@ -100,7 +108,7 @@ export function DocumentViewerChrome({
             <a
               className={styles['action']}
               href={downloadUrl}
-              download
+              download={downloadFilename ?? true}
             >
               <Icon name="document" size="small" />
               Download

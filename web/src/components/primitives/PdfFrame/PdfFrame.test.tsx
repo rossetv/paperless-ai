@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { PdfFrame } from './PdfFrame';
 
 describe('PdfFrame', () => {
@@ -30,5 +31,39 @@ describe('PdfFrame', () => {
     render(<PdfFrame src="/api/documents/9823/pdf" title="t" />);
     const frame = screen.getByTitle('t');
     expect(frame).not.toHaveAttribute('sandbox');
+  });
+
+  // Failure is detected by a load timeout: a refused-framing or stalled stream
+  // never fires `load` *or* a reliable `error` event (the iframe `error` event
+  // is famously inconsistent across browsers — that unreliability is exactly
+  // why the timeout is the authoritative signal). The iframe still carries an
+  // `onError` handler as a cheap early-out for the browsers that do fire it.
+  describe('load-failure reporting', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('reports failure when the frame never loads within the grace window', () => {
+      const onLoadError = vi.fn();
+      render(<PdfFrame src="/x" title="t" onLoadError={onLoadError} />);
+      expect(onLoadError).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(8000);
+      expect(onLoadError).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not report failure after a successful load', () => {
+      const onLoadError = vi.fn();
+      render(<PdfFrame src="/x" title="t" onLoadError={onLoadError} />);
+      fireEvent.load(screen.getByTitle('t'));
+      vi.advanceTimersByTime(8000);
+      expect(onLoadError).not.toHaveBeenCalled();
+    });
+
+    it('reports failure at most once', () => {
+      const onLoadError = vi.fn();
+      render(<PdfFrame src="/x" title="t" onLoadError={onLoadError} />);
+      vi.advanceTimersByTime(8000);
+      vi.advanceTimersByTime(8000);
+      expect(onLoadError).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -71,3 +71,25 @@ export function formatLongDate(iso: string | null): string {
   }
   return `${parts.day} ${MONTHS_LONG[parts.monthIndex]} ${parts.year}`;
 }
+
+/**
+ * Extract the `YYYY-MM-DD` calendar prefix from an ISO date or timestamp.
+ *
+ * A native `<input type="date">` only accepts a bare `YYYY-MM-DD` value, but the
+ * API returns the document date as a full offset timestamp
+ * (`2026-01-13T00:00:00+00:00`). This strips it back to the date the input — and
+ * the resulting PATCH — should carry, without timezone drift (the calendar
+ * prefix is taken verbatim, never reinterpreted through `new Date()`).
+ *
+ * @returns the `YYYY-MM-DD` prefix, or `''` for a null or unparseable value so
+ *   callers can pass it straight to an input/`value` prop.
+ */
+export function isoDateOnly(iso: string | null): string {
+  const parts = isoDateParts(iso);
+  if (parts === null) {
+    return '';
+  }
+  const month = String(parts.monthIndex + 1).padStart(2, '0');
+  const day = String(parts.day).padStart(2, '0');
+  return `${parts.year}-${month}-${day}`;
+}

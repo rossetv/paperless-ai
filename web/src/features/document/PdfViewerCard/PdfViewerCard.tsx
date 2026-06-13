@@ -18,6 +18,12 @@ export interface PdfViewerCardProps {
    * When null the "Open in Paperless" action is omitted.
    */
   paperlessUrl: string | null;
+  /**
+   * Suggested filename for the Download anchor (e.g. "Allianz Invoice 2026.pdf").
+   * Sets the `download` attribute so the browser uses this name rather than
+   * deriving one from the proxy URL path (which ends in "/pdf", producing "pdf.pdf").
+   */
+  downloadFilename: string;
 }
 
 /**
@@ -30,11 +36,13 @@ export interface PdfViewerCardProps {
  *     deliberately demoted to a secondary/inline link so leaving the app reads
  *     as lower-priority than the in-app action (UI-24, DD-3). Omitted when null.
  *
- * The PDF iframe sits over an app-owned dark backdrop: the viewport and a
- * placeholder layer both fill with --colour-surface-dark and the placeholder
- * carries a "Couldn't load preview" warning EmptyState. The backdrop paints
- * before (and behind) the iframe, so an unloaded or failed iframe never flashes
- * bright white — the viewer area is dark from first paint (UI-03).
+ * The PDF iframe sits over an app-owned dark backdrop: the viewport fills with
+ * --colour-surface-dark so an unloaded iframe never flashes bright white. When
+ * the frame reports a load failure (a 4xx/5xx proxy response, a refused-framing
+ * response, or a stalled stream — all of which would otherwise show the
+ * browser's grey error box), an app-owned dark error EmptyState is rendered
+ * *over* the frame, with the same Download / Open-in-Paperless escape hatches.
+ * The user never sees the bare grey iframe box (UI-03).
  *
  * Pager and zoom are intentionally absent; the browser's native PDF chrome handles them.
  *
@@ -44,40 +52,58 @@ export function PdfViewerCard({
   documentId,
   title,
   paperlessUrl,
+  downloadFilename,
 }: PdfViewerCardProps): React.ReactElement {
   const pdfUrl = documentPdfUrl(documentId);
+  const [failed, setFailed] = React.useState(false);
+
+  // A new document gets a fresh chance to load before any stale failure shows.
+  React.useEffect(() => {
+    setFailed(false);
+  }, [documentId]);
+
+  const downloadAction = (
+    <a className={styles['action']} href={pdfUrl} download={downloadFilename}>
+      <Icon name="document" size="small" />
+      Download
+    </a>
+  );
+
+  const openInPaperlessAction = paperlessUrl !== null && (
+    <Link href={paperlessUrl} external className={cn(styles['external-action'])}>
+      <Icon name="external-link" size="small" />
+      Open in Paperless
+    </Link>
+  );
 
   return (
     <Card as="section" className={cn(styles['card'])}>
       <div className={styles['toolbar']}>
-        <a
-          className={styles['action']}
-          href={pdfUrl}
-          download
-        >
-          <Icon name="document" size="small" />
-          Download
-        </a>
-        {paperlessUrl !== null && (
-          <Link
-            href={paperlessUrl}
-            external
-            className={cn(styles['external-action'])}
-          >
-            <Icon name="external-link" size="small" />
-            Open in Paperless
-          </Link>
-        )}
+        {downloadAction}
+        {openInPaperlessAction}
       </div>
       <div className={styles['viewport']}>
-        <div className={styles['placeholder']} aria-hidden="true">
-          <EmptyState icon="warning" message="Couldn't load preview" />
-        </div>
         <PdfFrame
           src={pdfUrl}
           title={`${title} PDF`}
+          onLoadError={() => setFailed(true)}
           className={cn(styles['frame'])}
         />
+        {failed && (
+          <div className={styles['placeholder']} role="alert">
+            <EmptyState
+              icon="warning"
+              message="Couldn't load the preview"
+              description="Open it in Paperless or download the original."
+              action={
+                <div className={styles['fallback-actions']}>
+                  {downloadAction}
+                  {openInPaperlessAction}
+                </div>
+              }
+            />
+          </div>
+        )}
       </div>
     </Card>
   );

@@ -277,6 +277,15 @@ describe('DocumentScreen', () => {
     expect(screen.getByRole('link', { name: /search results/i })).toHaveAttribute('href', '/?q=invoice');
   });
 
+  // ── Download filename ─────────────────────────────────────────────────────
+
+  it('Download anchor carries the document title as the suggested filename', () => {
+    renderScreen({ role: 'readonly' });
+    // DOC.title = 'eBay Payslip 05/2026' — the "/" is stripped by sanitisation.
+    const link = screen.getByRole('link', { name: /^download$/i });
+    expect(link.getAttribute('download')).toBe('eBay Payslip 052026.pdf');
+  });
+
   // ── Title editing ──────────────────────────────────────────────────────────
 
   it('changing the title fires PATCH with the new title on blur', async () => {
