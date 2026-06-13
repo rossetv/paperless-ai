@@ -65,7 +65,9 @@
 
 .thumb {
   /* Fills the preview area; the real thumbnail <img> sits inside it.
-   * When falling back to DocThumb, it is centred and scaled up as before. */
+   * position: relative lets the real image be absolutely placed on top of the
+   * DocThumb placeholder so the placeholder is always visible during lazy-load. */
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -75,25 +77,49 @@
 
 /* Real thumbnail image — portrait page sitting at the top of the preview.
  * Width and height both come from tokens (one source of truth); the removed
- * width/height HTML attributes on <img> previously duplicated these values. */
+ * width/height HTML attributes on <img> previously duplicated these values.
+ * Absolutely positioned so it layers on top of the DocThumb placeholder;
+ * left/right: 0 + margin: auto re-creates the flex justify-content: center
+ * that the static position relied on.
+ * The border frames the image against the dark preview background so it never
+ * reads as faint — matching the border/shadow the DocThumb wrapper already has. */
 .thumb-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: var(--width-library-thumb);
   height: var(--height-library-preview);
   max-height: 100%;
   object-fit: cover;
   object-position: top;
   border-radius: var(--radius-micro);
+  border: var(--spacing-1) solid var(--colour-border);
   box-shadow: var(--shadow-card);
+  transition: opacity var(--duration-standard) var(--easing-standard);
 }
 
-/* DocThumb fallback — when the real image fails, render the placeholder at
- * 1.5× the artboard size so it fills the preview area without letterboxing.
- * Expressed as explicit width/height from the DocThumb tokens instead of a
- * magic scale factor (FE-41): calc(1.5 * --size-doc-thumb-{width,height}). */
+/* Hidden until the image has loaded — keeps the DocThumb visible underneath. */
+.thumb-img-loading {
+  opacity: 0;
+}
+
+/* DocThumb placeholder — rendered at 1.5× the artboard size so it fills the
+ * preview area without letterboxing. Shown while the real image lazy-loads and
+ * permanently when the real image fails. Expressed as explicit width/height from
+ * the DocThumb tokens instead of a magic scale factor (FE-41). */
 .thumb-fallback {
   width: calc(1.5 * var(--size-doc-thumb-width));
   height: calc(1.5 * var(--size-doc-thumb-height));
   margin-block-start: var(--spacing-9);
+}
+
+/* Once the real image has loaded successfully, collapse the DocThumb. Using
+ * display: none (not visibility: hidden) so it takes no space in list view,
+ * where the real image is position: static and the two would stack otherwise. */
+.thumb-fallback-hidden {
+  display: none;
 }
 
 /* Hover "Preview" pill — hidden until the card is hovered or focused. */
@@ -143,11 +169,19 @@
 
 /* The real thumbnail image must not carry its grid-view fixed height into list
  * view — that 220 px value is what forces the row tall. Let height follow the
- * narrower list column width via object-fit instead. */
+ * narrower list column width via object-fit instead.
+ * Also undo the absolute position so the image drives the column height. */
 .card-list .thumb-img {
+  position: static;
   width: 100%;
   height: auto;
   max-height: var(--height-library-preview);
+}
+
+/* In list view the loading image is display: none (not just opacity: 0) so it
+ * takes no space — the DocThumb placeholder drives the column height instead. */
+.card-list .thumb-img-loading {
+  display: none;
 }
 
 .card-list .meta {

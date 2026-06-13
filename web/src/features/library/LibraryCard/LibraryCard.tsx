@@ -68,6 +68,7 @@ function LibraryCardInner({
   const title = document.title ?? 'Untitled document';
   const correspondent = document.correspondent ?? 'Unknown sender';
   const [imageFailed, setImageFailed] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   // Filter pipeline-metadata tags; cap to MAX_VISIBLE_TAGS with overflow count.
   const userTags = document.tags.filter((t) => !PIPELINE_TAG_PATTERN.test(t));
@@ -83,21 +84,24 @@ function LibraryCardInner({
     >
       <div className={styles['preview']}>
         <div className={styles['thumb']}>
-          {imageFailed ? (
-            <DocThumb
-              kind={thumbKindForDocumentType(document.document_type)}
-              className={styles['thumb-fallback'] ?? ''}
-            />
-          ) : (
+          {/* Always render the DocThumb placeholder; the real image is layered
+           *  on top and revealed once it has loaded (or hidden if it errors).
+           *  This prevents an empty dark box during the lazy-load window. */}
+          <DocThumb
+            kind={thumbKindForDocumentType(document.document_type)}
+            className={cn(styles['thumb-fallback'] ?? '', !imageFailed && imageLoaded ? styles['thumb-fallback-hidden'] ?? '' : '')}
+          />
+          {!imageFailed && (
             <img
               src={documentThumbUrl(document.id)}
               alt=""
-              className={styles['thumb-img']}
+              className={cn(styles['thumb-img'], !imageLoaded && (styles['thumb-img-loading'] ?? ''))}
               // Intrinsic size is driven by CSS tokens (--width-library-thumb,
               // --height-library-preview) in LibraryCard.module.css — one
               // source of truth. No raw px attributes here (FE-07).
               loading="lazy"
               decoding="async"
+              onLoad={() => setImageLoaded(true)}
               onError={() => setImageFailed(true)}
             />
           )}
