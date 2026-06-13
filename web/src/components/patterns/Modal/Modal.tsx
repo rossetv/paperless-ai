@@ -89,9 +89,7 @@ export function Modal({
           <IconButton
             label="Close modal"
             onClick={onClose}
-            {...(styles['close-button'] !== undefined
-              ? { className: styles['close-button'] }
-              : {})}
+            className={styles['close-button'] ?? ''}
           >
             <Icon name="close" size="small" />
           </IconButton>
