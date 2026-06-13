@@ -45,6 +45,12 @@
   }
 }
 
+/* Full-width header above the rail/content columns — spans both in rail variant. */
+.header-region {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .rail-region {
   min-width: 0;
 }

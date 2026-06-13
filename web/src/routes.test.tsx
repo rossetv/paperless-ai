@@ -213,6 +213,13 @@ describe('AppRoutes', () => {
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
   });
 
+  it('redirects an unknown /settings/* path to the settings page, not the search home', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));
+    renderAt('/settings/api-keys');
+    await waitFor(() => expect(screen.getByTestId('settings-page')).toBeInTheDocument());
+  });
+
   it('renders LibraryPage for an authenticated user at /library', async () => {
     mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
     mockUseMe.mockReturnValue(meResult({ isSuccess: true, data: { user: SAMPLE_USER } }));

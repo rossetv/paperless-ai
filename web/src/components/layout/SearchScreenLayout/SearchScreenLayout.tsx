@@ -17,6 +17,12 @@ export interface SearchScreenLayoutProps {
    * `centred`.
    */
   rail?: React.ReactNode;
+  /**
+   * Optional full-width header rendered above the rail/content columns.
+   * Spans both grid columns in the `rail` variant so it aligns to the page
+   * gutter rather than the content column edge.
+   */
+  header?: React.ReactNode;
   /** The main content. */
   children: React.ReactNode;
   /** Additional class names to merge. */
@@ -31,6 +37,9 @@ export interface SearchScreenLayoutProps {
  * content two-column grid that stacks on narrow viewports (the loading,
  * results and no-results screens).
  *
+ * The optional `header` prop renders a full-width element above the columns
+ * so page titles align to the page gutter on all variants.
+ *
  * App-agnostic — it knows nothing about search. The screen features supply
  * the rail and the content.
  *
@@ -39,11 +48,15 @@ export interface SearchScreenLayoutProps {
 export function SearchScreenLayout({
   variant,
   rail,
+  header,
   children,
   className,
 }: SearchScreenLayoutProps): React.ReactElement {
   return (
     <div className={cn(styles['layout'], styles[variant], className)}>
+      {header !== undefined && (
+        <div className={styles['header-region']}>{header}</div>
+      )}
       {variant === 'rail' && (
         <div className={styles['rail-region']} data-screen-rail>
           {rail}

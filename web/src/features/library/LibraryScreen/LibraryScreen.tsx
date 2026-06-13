@@ -222,37 +222,38 @@ export function LibraryScreen(): React.ReactElement {
     />
   );
 
-  return (
-    <SearchScreenLayout variant="rail" rail={rail}>
-      <div className={styles['screen']}>
-        {/* ── Header ── */}
-        <div className={styles['header']}>
-          <div className={styles['heading-block']}>
-            <h1 className={styles['heading']}>Library</h1>
-            <p className={styles['subheading']}>
-              Every indexed document.{' '}
-              <strong>{total.toLocaleString('en-GB')}</strong> total
-              {total > 0 && (
-                <>
-                  {' '}· showing {rangeStart.toLocaleString('en-GB')}–
-                  {rangeEnd.toLocaleString('en-GB')}
-                </>
-              )}
-              .
-            </p>
-          </div>
-          <div className={styles['header-controls']}>
-            <ViewToggle value={view} onChange={setView} />
-            <SortControl
-              id="library-sort"
-              label="Sort"
-              options={SORT_OPTIONS}
-              value={query.sort}
-              onChange={changeSort}
-            />
-          </div>
-        </div>
+  const header = (
+    <div className={styles['header']}>
+      <div className={styles['heading-block']}>
+        <h1 className={styles['heading']}>Library</h1>
+        <p className={styles['subheading']}>
+          Every indexed document.{' '}
+          <strong>{total.toLocaleString('en-GB')}</strong> total
+          {total > 0 && (
+            <>
+              {' '}· showing {rangeStart.toLocaleString('en-GB')}–
+              {rangeEnd.toLocaleString('en-GB')}
+            </>
+          )}
+          .
+        </p>
+      </div>
+      <div className={styles['header-controls']}>
+        <ViewToggle value={view} onChange={setView} />
+        <SortControl
+          id="library-sort"
+          label="Sort"
+          options={SORT_OPTIONS}
+          value={query.sort}
+          onChange={changeSort}
+        />
+      </div>
+    </div>
+  );
 
+  return (
+    <SearchScreenLayout variant="rail" rail={rail} header={header}>
+      <div className={styles['screen']}>
         {/* ── In-library search ── */}
         <SearchField
           id="library-search"

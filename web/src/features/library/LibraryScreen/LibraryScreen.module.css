@@ -24,7 +24,6 @@
 
 .heading-block {
   flex: 1;
-  min-width: var(--width-empty-state);
 }
 
 .heading {
