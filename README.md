@@ -77,7 +77,7 @@ To use Ollama instead of OpenAI for the vision and chat calls, add these alongsi
   -e OLLAMA_BASE_URL="http://your-ollama:11434/v1/" \
 ```
 
-By default `LLM_PROVIDER=ollama` also embeds locally (`EMBEDDING_PROVIDER` defaults to `LLM_PROVIDER`), so a fully-local deployment needs **no** `OPENAI_API_KEY`. Keep `OPENAI_API_KEY` only if you still want OpenAI embeddings (set `EMBEDDING_PROVIDER=openai` explicitly) — see the note under [Semantic Search](#semantic-search--additional-services) below.
+`EMBEDDING_PROVIDER` defaults to `openai` independently of `LLM_PROVIDER`, so a fully-local deployment must set **both** `LLM_PROVIDER=ollama` and `EMBEDDING_PROVIDER=ollama` to avoid needing an `OPENAI_API_KEY`. See the note under [Semantic Search](#semantic-search--additional-services) below.
 
 ### Classification Daemon
 
@@ -153,7 +153,7 @@ services:
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"      # always required — see note below
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"      # required when EMBEDDING_PROVIDER=openai (the default)
       INDEX_DB_PATH: "/data/index.db"
       RECONCILE_INTERVAL: "300"
       DELETION_SWEEP_INTERVAL: "3600"
@@ -169,7 +169,7 @@ services:
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"      # always required — see note below
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"      # required when EMBEDDING_PROVIDER=openai (the default)
       INDEX_DB_PATH: "/data/index.db"
     depends_on:
       paperless-indexer:
@@ -191,7 +191,7 @@ The search subsystem keeps **two** SQLite databases on that shared volume, and t
 
 They're kept apart so that wiping and rebuilding the index never touches your accounts.
 
-> **Note on `OPENAI_API_KEY` with Ollama:** embeddings follow `EMBEDDING_PROVIDER`, which defaults to `LLM_PROVIDER`. So `LLM_PROVIDER=ollama` embeds locally via Ollama by default and needs **no** `OPENAI_API_KEY` — a fully-local deployment where no document chunk leaves the box. `OPENAI_API_KEY` is **required** whenever OpenAI is used by either provider: any deployment with `LLM_PROVIDER=openai`, or one that sets `EMBEDDING_PROVIDER=openai` to keep OpenAI embeddings while the LLM runs on Ollama. Configuration loading fails closed at startup if the key is missing in those cases. For a local embedding setup set `EMBEDDING_MODEL` to an Ollama embedding model (e.g. `nomic-embed-text`) with a matching `EMBEDDING_DIMENSIONS`. **Switching `EMBEDDING_PROVIDER` forces a full re-embed** of the whole index (OpenAI and Ollama vectors are not comparable) — run a full re-index from the Index page after changing it.
+> **Note on `OPENAI_API_KEY` and embeddings:** `EMBEDDING_PROVIDER` defaults to `openai` **independently of `LLM_PROVIDER`** — the two are chosen separately. `OPENAI_API_KEY` is **required** whenever `EMBEDDING_PROVIDER=openai` (the default) or `LLM_PROVIDER=openai`; a fully-local deployment must set both `LLM_PROVIDER=ollama` **and** `EMBEDDING_PROVIDER=ollama` to omit it. For a local embedding setup set `EMBEDDING_MODEL` to an Ollama embedding model (e.g. `nomic-embed-text`) with a matching `EMBEDDING_DIMENSIONS`. **Switching `EMBEDDING_PROVIDER` forces a full re-embed** of the whole index (OpenAI and Ollama vectors are not comparable) — run a full re-index from the Index page after changing it.
 
 ---
 
@@ -238,7 +238,7 @@ These govern where the index lives, how text is chunked, and how embeddings are 
 |:---|:---|:---|:---|
 | `INDEX_DB_PATH` | string | `/data/index.db` | Path to the SQLite search index file |
 | `APP_DB_PATH` | string | `/data/app.db` | Path to the SQLite application database (accounts, sessions, config) — kept separate from the index so rebuilding the index never destroys accounts |
-| `EMBEDDING_PROVIDER` | `openai`/`ollama` | `LLM_PROVIDER` | Provider that vectorises chunks. Defaults to `LLM_PROVIDER` (so `ollama` embeds locally). Under `ollama` no `OPENAI_API_KEY` is needed and `EMBEDDING_MODEL` must name a local model. **Switching it forces a full re-embed** (see note above) |
+| `EMBEDDING_PROVIDER` | `openai`/`ollama` | `openai` | Provider that vectorises chunks. Defaults to `openai` **independently of `LLM_PROVIDER`**. Under `ollama` no `OPENAI_API_KEY` is needed and `EMBEDDING_MODEL` must name a local model. **Switching it forces a full re-embed** (see note above) |
 | `EMBEDDING_MODEL` | string | `text-embedding-3-small` | Embedding model (an OpenAI model under `openai`; a local Ollama embedding model under `ollama`) |
 | `EMBEDDING_DIMENSIONS` | int | `1536` | Vector dimensions — must match the model |
 | `EMBEDDING_MAX_CONCURRENT` | int | `4` | Maximum concurrent embedding API calls |

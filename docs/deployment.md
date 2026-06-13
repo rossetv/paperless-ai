@@ -41,8 +41,10 @@ Before any of the commands below will work you need:
 2. **A Paperless API token** — *Settings → Users & Groups → [your user] → API
    Token* in the Paperless admin.
 3. **An AI provider** — an **OpenAI API key**, or a running **Ollama** instance
-   (with a vision-capable model pulled, e.g. `gemma3:27b`). Note: an OpenAI key
-   is required even with Ollama, because the embedding step always uses OpenAI.
+   (with a vision-capable model pulled, e.g. `gemma3:27b`). An OpenAI key is
+   required whenever any step (OCR, classification, planner, judge, answer, or
+   embedding) uses OpenAI; a fully-local deployment (all of those on Ollama,
+   including `EMBEDDING_PROVIDER=ollama`) needs no key.
 4. **Tags created in Paperless** — at least an OCR queue tag and an OCR-complete
    tag; note their numeric IDs. See [Tag Setup](#tag-setup) below.
 
@@ -183,7 +185,7 @@ services:
     environment:
       PAPERLESS_URL: "http://paperless:8000"
       PAPERLESS_TOKEN: "${PAPERLESS_TOKEN}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"   # embeddings always use OpenAI
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"   # required when EMBEDDING_PROVIDER=openai (the default)
       LOG_FORMAT: "json"
 
   paperless-search:
@@ -346,13 +348,17 @@ Know what goes where before you deploy:
 |:---|:---|:---|
 | OCR | Page images (base64 PNG) | The vision model provider |
 | Classification | OCR text (may be truncated) | The LLM provider |
-| Indexing | Document text (chunked) | OpenAI (the embedding model) |
+| Indexing | Document text (chunked) | The embedding provider (`openai` by default; `ollama` if `EMBEDDING_PROVIDER=ollama`) |
 | Search | The user's query + retrieved chunks | The LLM provider (planner + synthesiser) |
 
 - **With OpenAI**, this data is sent to OpenAI's API. Review
   [OpenAI's data-usage policies](https://openai.com/policies/api-data-usage-policies).
-- **With Ollama**, OCR and classification stay on your own infrastructure — but
-  embeddings still go to OpenAI, so the indexer is not fully offline.
+- **With Ollama for LLM and embeddings** (`LLM_PROVIDER=ollama` and
+  `EMBEDDING_PROVIDER=ollama`), OCR, classification, and indexing all stay on
+  your own infrastructure — no document content leaves the box.
+- **Mixed mode** (e.g. `LLM_PROVIDER=ollama` but `EMBEDDING_PROVIDER=openai`,
+  which is the default): OCR and classification run locally, but chunked
+  document text is still sent to OpenAI for embedding.
 
 ### Security recommendations
 
