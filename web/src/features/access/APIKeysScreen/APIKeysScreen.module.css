@@ -47,10 +47,6 @@
 }
 
 /* ── Expiry label tones. ── */
-.expiry-warn {
-  color: var(--colour-status-warn-fg);
-}
-
 .expiry-expired {
   color: var(--colour-status-danger-fg);
 }
