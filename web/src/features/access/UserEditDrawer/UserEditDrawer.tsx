@@ -63,6 +63,10 @@ function initialState(user: User | null): FormState {
  *
  * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
  * api/, hooks/, lib/.
+ *
+ * // rationale: single cohesive form — validation, submit, and destructive
+ * // handlers all operate on the same user entity and share mutation state;
+ * // extracting them would scatter closely coupled logic across files.
  */
 export function UserEditDrawer({
   user,
@@ -259,32 +263,38 @@ export function UserEditDrawer({
           <div className={styles['destructive']}>
             {!isCreate && (
               <>
-                <button
+                {/* Reversible — ghost weight (DD-3: secondary/ghost for cautionary) */}
+                <Button
+                  variant="ghost"
+                  size="small"
                   type="button"
-                  className={styles['danger-button']}
                   disabled={isSelf || busy}
                   onClick={() => void handleToggleStatus()}
                 >
                   {suspendLabel}
-                </button>
+                </Button>
+                {/* Permanent — spatially separated and visually heavier (DD-3) */}
+                <span className={styles['destructive-separator']} aria-hidden="true" />
                 {confirmingDelete ? (
-                  <button
+                  <Button
+                    variant="destructive"
+                    size="small"
                     type="button"
-                    className={styles['danger-button']}
                     disabled={isSelf || busy}
                     onClick={() => void handleDelete()}
                   >
                     Confirm delete
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
+                    variant="destructive"
+                    size="small"
                     type="button"
-                    className={styles['danger-button']}
                     disabled={isSelf || busy}
                     onClick={() => setConfirmingDelete(true)}
                   >
                     Delete account
-                  </button>
+                  </Button>
                 )}
               </>
             )}
