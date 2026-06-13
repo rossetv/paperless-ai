@@ -8,13 +8,14 @@ import {
 } from './fieldModel';
 
 describe('settings field model', () => {
-  it('defines exactly seven sections', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(7);
+  it('defines exactly eight sections', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(8);
   });
 
-  it('uses the seven expected section anchor ids in pipeline order', () => {
+  it('uses the eight expected section anchor ids in pipeline order', () => {
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
       'connections',
+      'providers',
       'ocr',
       'classification',
       'indexing',
@@ -120,10 +121,10 @@ describe('settings field model', () => {
     expect(paperless.fields.map((f) => f.key)).toContain('PAPERLESS_URL');
   });
 
-  it('structures connections into provider/paperless/openai/ollama groups', () => {
+  it('structures connections into paperless/openai/ollama groups (no provider strip)', () => {
     const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
     const groupIds = connections.groups.map((g) => g.id);
-    expect(groupIds).toEqual(['provider', 'paperless', 'openai', 'ollama']);
+    expect(groupIds).toEqual(['paperless', 'openai', 'ollama']);
   });
 
   it('fieldByKey resolves a key nested inside any group', () => {
@@ -213,27 +214,81 @@ describe('settings field model', () => {
     expect(advancedKeys).toContain('OCR_REFUSAL_MARKERS');
   });
 
-  // ── Embedding-provider decoupling assertions ──────────────────────────────
+  // ── AI providers section: independent role selectors ──────────────────────
 
-  it('embeddings group contains an EMBEDDING_PROVIDER segmented field as the first field', () => {
-    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
-    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
-    const providerField = embeddings.fields.find((f) => f.key === 'EMBEDDING_PROVIDER');
-    expect(providerField).toBeDefined();
-    expect(providerField!.control.kind).toBe('segmented');
-    expect(embeddings.fields[0]!.key).toBe('EMBEDDING_PROVIDER');
+  it("the 'providers' section sits immediately after 'connections' and before 'ocr'", () => {
+    const ids = SETTINGS_SECTIONS.map((s) => s.id);
+    expect(ids.indexOf('providers')).toBe(ids.indexOf('connections') + 1);
+    expect(ids.indexOf('providers')).toBe(ids.indexOf('ocr') - 1);
   });
 
-  it('EMBEDDING_PROVIDER segmented control has openai and ollama options', () => {
+  it("the 'providers' section subtitle is correct", () => {
+    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
+    expect(providers.subtitle).toBe(
+      'Which provider serves each role. The two are set independently.',
+    );
+  });
+
+  it("the 'providers' section has exactly two groups: 'chat' and 'embeddings'", () => {
+    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
+    expect(providers.title).toBe('AI providers');
+    expect(providers.groups.map((g) => g.id)).toEqual(['chat', 'embeddings']);
+  });
+
+  it("the 'chat' group has correct title, subtitle, and LLM_PROVIDER as a 'Provider' segmented", () => {
+    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
+    const chat = providers.groups.find((g) => g.id === 'chat')!;
+    expect(chat.title).toBe('Chat & vision');
+    expect(chat.subtitle).toBe(
+      'Runs OCR transcription, classification, and search answers.',
+    );
+    expect(chat.fields).toHaveLength(1);
+    const field = chat.fields[0]!;
+    expect(field.key).toBe('LLM_PROVIDER');
+    expect(field.label).toBe('Provider');
+    expect(field.control.kind).toBe('segmented');
+    if (field.control.kind === 'segmented') {
+      expect(field.control.options.map((o) => o.value)).toEqual(['openai', 'ollama']);
+    }
+  });
+
+  it("the 'embeddings' group has correct title, subtitle, and EMBEDDING_PROVIDER as a 'Provider' segmented", () => {
+    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
+    const embeddings = providers.groups.find((g) => g.id === 'embeddings')!;
+    expect(embeddings.title).toBe('Embeddings');
+    expect(embeddings.subtitle).toBe(
+      'Vectorises your library for semantic search. Switching this re-embeds every document.',
+    );
+    expect(embeddings.fields).toHaveLength(1);
+    const field = embeddings.fields[0]!;
+    expect(field.key).toBe('EMBEDDING_PROVIDER');
+    expect(field.label).toBe('Provider');
+    expect(field.control.kind).toBe('segmented');
+    if (field.control.kind === 'segmented') {
+      expect(field.control.options.map((o) => o.value)).toEqual(['openai', 'ollama']);
+    }
+  });
+
+  it("the indexing/embeddings group subtitle cross-references AI providers (regression pin)", () => {
     const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
     const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
-    const providerField = embeddings.fields.find((f) => f.key === 'EMBEDDING_PROVIDER')!;
-    expect(providerField.control.kind).toBe('segmented');
-    if (providerField.control.kind === 'segmented') {
-      const values = providerField.control.options.map((o) => o.value);
-      expect(values).toContain('openai');
-      expect(values).toContain('ollama');
-    }
+    expect(embeddings.subtitle).toBe(
+      'Changing the model or dimensions triggers a full rebuild. The provider lives under AI providers.',
+    );
+  });
+
+  it('EMBEDDING_PROVIDER no longer lives in the indexing/embeddings group', () => {
+    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
+    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
+    expect(embeddings.fields.map((f) => f.key)).not.toContain('EMBEDDING_PROVIDER');
+  });
+
+  it('the indexing/embeddings group still holds EMBEDDING_MODEL and EMBEDDING_DIMENSIONS', () => {
+    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
+    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
+    const keys = embeddings.fields.map((f) => f.key);
+    expect(keys).toContain('EMBEDDING_MODEL');
+    expect(keys).toContain('EMBEDDING_DIMENSIONS');
   });
 
   it('EMBEDDING_MODEL is a conditional control: select for OpenAI, text for Ollama', () => {
@@ -248,25 +303,24 @@ describe('settings field model', () => {
     }
   });
 
-  it('connection card subtitles no longer imply one provider does both', () => {
+  it('connection card subtitles are neutral, with no role-selection language', () => {
     const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
-    for (const id of ['openai', 'ollama']) {
-      const group = connections.groups.find((g) => g.id === id)!;
-      expect(group.subtitle).not.toMatch(/powers chat and embeddings/i);
-      expect(group.subtitle).toMatch(/whichever you set to/i);
+    const openai = connections.groups.find((g) => g.id === 'openai')!;
+    const ollama = connections.groups.find((g) => g.id === 'ollama')!;
+
+    // No "whichever you set to" / "selected provider" phrasing — the cards now
+    // describe the service itself, not which role it serves.
+    for (const group of [openai, ollama]) {
+      expect(group.subtitle).not.toMatch(/whichever you set to/i);
+      expect(group.subtitle).not.toMatch(/selected provider/i);
     }
+    expect(openai.subtitle).toBe("OpenAI's hosted chat, vision and embedding API.");
+    expect(ollama.subtitle).toBe('A local Ollama server (OpenAI-compatible endpoint).');
   });
 
-  it('provider group subtitle no longer mentions "always use OpenAI"', () => {
+  it("connections no longer has a 'provider' group (the strip moved to AI providers)", () => {
     const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
-    const provider = connections.groups.find((g) => g.id === 'provider')!;
-    expect(provider.subtitle).not.toMatch(/always use openai/i);
-  });
-
-  it('provider group subtitle mentions embeddings are configured separately', () => {
-    const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
-    const provider = connections.groups.find((g) => g.id === 'provider')!;
-    expect(provider.subtitle).toMatch(/embeddings are configured separately/i);
+    expect(connections.groups.find((g) => g.id === 'provider')).toBeUndefined();
   });
 
   it('allFieldKeys includes EMBEDDING_PROVIDER', () => {
