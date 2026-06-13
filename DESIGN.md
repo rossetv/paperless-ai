@@ -104,6 +104,56 @@ The interface has two — and only two — colour axes, and they must never be c
 
 ## 4. Component Stylings
 
+### Interaction motion (the micro-interaction standard)
+
+Every interactive control — buttons, steppers, toggles, chips, the
+connection Test button, table row actions — shares one motion vocabulary so
+the whole app feels responsive and crafted rather than static. Apple-subtle:
+swift, smooth, decelerating to rest, never flashy. The standard is defined in
+tokens and implemented in the shared `Button` primitive; bespoke controls
+mirror it.
+
+**Tokens (tokens.css)** — reuse these, never raw `s`/`ms` or ad-hoc curves:
+
+| Token | Value | Role |
+|-------|-------|------|
+| `--duration-fast` | `0.1s` (100 ms) | the tactile press (transform) |
+| `--duration-standard` | `0.15s` (150 ms) | hover / focus colour & shadow shifts |
+| `--easing-out` | `cubic-bezier(0.33, 1, 0.68, 1)` | micro-interactions — swift out, decelerates to rest (the Apple "settle") |
+
+`--easing-out` is the curve for every interaction transition added under this
+standard. `--easing-standard` (`ease`) remains for legacy transitions; new
+interaction motion uses `--easing-out`.
+
+**States** — applied consistently across all interactive controls:
+
+- **Hover (filled / elevated — primary, destructive CTAs):** a small upward
+  `translateY(-1px)` lift plus the soft `--shadow-card` (§6 depth), and a
+  background brightness shift. The lift signals "this is liftable / pressable".
+- **Hover (ghost / secondary / chip / Test button):** no lift — a subtle
+  background tint appears (`--colour-button-light-bg`) and, where bordered, the
+  border strengthens to `--colour-text-tertiary`. Colour only.
+- **Active / press (all variants):** a quick tactile `transform: scale(0.97)`
+  (steppers `0.92`, chips `0.96` — smaller controls scale slightly more so the
+  press is perceptible) plus a darker fill (`--colour-button-active-bg`) or a
+  dip in opacity. Filled variants drop their hover lift and shadow on press, so
+  the button reads as pressed-in, not floating. This physical press is the
+  single biggest "feel" win — every clickable control must have it.
+- **Focus-visible:** the standard 2 px accent ring
+  (`outline: var(--spacing-1) solid var(--colour-focus-ring)` with
+  `outline-offset: var(--spacing-1)`). Unchanged — kept and standardised.
+- **Disabled:** `--opacity-disabled`, `cursor: not-allowed`, and **no** hover or
+  active feedback (every hover/active rule is guarded `:not(:disabled)`).
+- **`prefers-reduced-motion: reduce`:** drop the `translate`/`scale` transforms
+  (they are motion); **keep** the colour, opacity and shadow transitions, which
+  are motion-safe. Each control re-declares its `transition` without the
+  `transform` channel and resets the relevant `:active`/`:hover` `transform` to
+  `none` under the media query.
+
+Toggle/NumberStepper remain compact-control exceptions for hit-area (§8); the
+knob slide and track-colour swap on a `Toggle` run on `--duration-standard`
+`--easing-out`, and the knob slide is dropped under reduced motion (it snaps).
+
 ### Buttons
 
 **Primary Blue (CTA)**

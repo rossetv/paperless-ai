@@ -18,7 +18,7 @@
   border-radius: var(--radius-pill);
   background-color: var(--colour-toggle-off);
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--easing-standard);
+  transition: background-color var(--duration-standard) var(--easing-out);
 }
 
 /* Transparent expanded hit-area (DD-4 compact-control exception).
@@ -54,7 +54,7 @@
   border-radius: var(--radius-circle);
   background-color: var(--colour-surface);
   box-shadow: var(--shadow-card);
-  transition: transform var(--duration-fast) var(--easing-standard);
+  transition: transform var(--duration-standard) var(--easing-out);
 }
 
 /* On: slide the knob to the right end (track − knob − 2×inset). */
@@ -62,4 +62,14 @@
   transform: translateX(calc(
     var(--size-toggle-width) - var(--size-toggle-knob) - var(--spacing-1) - var(--spacing-1)
   ));
+}
+
+/* Reduced motion — the knob slide is motion; drop its transition so it
+   snaps to position. The track colour swap stays (motion-safe). The
+   --easing-out track transition above is colour-only, so it is left intact;
+   only the knob transform is removed here. */
+@media (prefers-reduced-motion: reduce) {
+  .knob {
+    transition: none;
+  }
 }
