@@ -107,8 +107,13 @@ export interface SettingsSectionProps {
  * Handles the `controlId` labellability rule (segmented and secret are not
  * labellable), the `requiresReindex` pill, the `isDefault` badge, and the
  * `reasoningValue` pass-through for composite select+reasoning controls.
+ *
+ * Exported so other settings panels (e.g. `ConnectionsPanel`) render rows
+ * through the identical Row + FieldControl wiring — keeping label association,
+ * the shared control-column width and compact-control centring consistent
+ * rather than re-implementing it per panel.
  */
-function FieldRow({
+export function FieldRow({
   field,
   values,
   reindexKeys,

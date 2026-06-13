@@ -15,22 +15,39 @@
   overflow: hidden;
 }
 
-/* ── Header row — the always-visible trigger ── */
+/* ── Header row — the always-visible toggle button + Test sibling ── */
 .header {
   display: flex;
   align-items: center;
   gap: var(--spacing-10);
   padding: var(--spacing-13) var(--spacing-14);
+}
+
+/* ── Toggle — the real <button> that expands/collapses the card ── */
+.toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-10);
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
   user-select: none;
 }
 
-.header:focus-visible {
+.toggle:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Brand glyph — coloured rounded square ── */
+/* ── Brand glyph — brand-neutral rounded square (DD-1d) ──
+ * Always a neutral fill (--colour-glyph-neutral), never status-ok green, so the
+ * provider badge can never be confused with the green "Connected" status dot. */
 .glyph {
   flex-shrink: 0;
   display: inline-flex;
@@ -43,23 +60,12 @@
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro-bold);
   color: var(--colour-text-on-dark);
+  background-color: var(--colour-glyph-neutral);
   transition: opacity var(--duration-fast) var(--easing-standard);
 }
 
-.header:hover .glyph {
+.toggle:hover .glyph {
   opacity: var(--opacity-subdued);
-}
-
-.glyph-blue {
-  background-color: var(--colour-accent);
-}
-
-.glyph-teal {
-  background-color: var(--colour-status-ok-fg);
-}
-
-.glyph-grey {
-  background-color: var(--colour-text-tertiary);
 }
 
 /* ── Title + subtitle ── */
@@ -198,7 +204,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chevron {
+  .chevron,
+  .glyph,
+  .pill,
+  .pill-dot {
     transition: none;
   }
 }
