@@ -10,6 +10,11 @@ const SETTINGS = {
   PAPERLESS_PUBLIC_URL: 'http://paperless.lan:8000',
   PAPERLESS_TOKEN: '********',
   LLM_PROVIDER: 'openai',
+  OCR_PROVIDER: 'openai',
+  CLASSIFY_PROVIDER: 'openai',
+  SEARCH_PLANNER_PROVIDER: 'openai',
+  SEARCH_JUDGE_PROVIDER: 'openai',
+  SEARCH_ANSWER_PROVIDER: 'openai',
   OPENAI_API_KEY: '********',
   OLLAMA_BASE_URL: 'http://ollama.lan:11434/v1/',
   OCR_MODELS: ['gpt-5.4-mini', 'gpt-5.4'],
@@ -158,14 +163,14 @@ describe('SettingsScreen', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
-  it('renders the Settings title and all eight section headings', async () => {
+  it('renders the Settings title and all seven section headings', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    // No "AI providers" heading — provider choice lives on each step's card now.
     for (const name of [
       'Connections',
-      'AI providers',
       'OCR',
       'Classification',
       'Indexing',
@@ -175,6 +180,9 @@ describe('SettingsScreen', () => {
     ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'AI providers' }),
+    ).toBeNull();
   });
 
   it('shows an error placeholder when the fetch fails', async () => {
@@ -319,26 +327,28 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('button', { name: 'Test Ollama' })).toBeInTheDocument();
   });
 
-  it('renders the AI providers section with two "Provider" radiogroups inside their respective cards', async () => {
+  it('co-locates a Provider radiogroup on each pipeline step (no separate AI providers section)', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // Wait for the section to appear.
-    await screen.findByRole('heading', { level: 2, name: 'AI providers' });
-    // The group titles are h3s; the radiogroups are labelled by the field label
-    // "Provider" (not the group title). There are exactly two "Provider" radiogroups
-    // inside the AI providers region.
-    const providersRegion = screen.getByRole('region', { name: 'AI providers' });
-    // The 'Chat & vision' and 'Embeddings' group titles are rendered as h3s within the region.
-    // There are two h3s named 'Embeddings' across the full page (AI providers + Indexing),
-    // so scope the query to the providers region.
-    const { getAllByRole: getAllByRoleInRegion } = within(providersRegion);
-    expect(getAllByRoleInRegion('heading', { level: 3, name: 'Chat & vision' })).toHaveLength(1);
-    expect(getAllByRoleInRegion('heading', { level: 3, name: 'Embeddings' })).toHaveLength(1);
-    // Both field controls are segmented radiogroups, each labelled "Provider".
-    const providerGroups = Array.from(
-      providersRegion.querySelectorAll('[role="radiogroup"][aria-label="Provider"]'),
-    );
-    expect(providerGroups).toHaveLength(2);
+    await screen.findByRole('heading', { level: 2, name: 'OCR' });
+
+    // OCR, Classification and Indexing each carry a "Provider" radiogroup.
+    const ocrRegion = screen.getByRole('region', { name: 'OCR' });
+    expect(
+      within(ocrRegion).getByRole('radiogroup', { name: 'Provider' }),
+    ).toBeInTheDocument();
+    const indexingRegion = screen.getByRole('region', { name: 'Indexing' });
+    expect(
+      within(indexingRegion).getByRole('radiogroup', { name: 'Provider' }),
+    ).toBeInTheDocument();
+
+    // Search has an independent provider radiogroup per sub-step.
+    const searchRegion = screen.getByRole('region', { name: 'Search' });
+    for (const name of ['Planner provider', 'Judge provider', 'Answer provider']) {
+      expect(
+        within(searchRegion).getByRole('radiogroup', { name }),
+      ).toBeInTheDocument();
+    }
   });
 
   it('cross-section conditional: EMBEDDING_PROVIDER=openai renders a combobox for Embedding model', async () => {
@@ -352,8 +362,8 @@ describe('SettingsScreen', () => {
 
   it('cross-section conditional: EMBEDDING_PROVIDER=ollama renders a textbox for Embedding model', async () => {
     // Override EMBEDDING_PROVIDER to 'ollama'; the conditional control in Indexing
-    // must fall back to the free-text variant because EMBEDDING_PROVIDER lives in
-    // the 'providers' section and shares the same draft.
+    // must fall back to the free-text variant. EMBEDDING_PROVIDER now sits in the
+    // Indexing/embeddings group, right beside the model it gates.
     const ollamaSettings = { ...SETTINGS, EMBEDDING_PROVIDER: 'ollama' };
     mockFetchSequence([{ status: 200, body: toSettingsBody(ollamaSettings) }]);
     renderScreen();
@@ -361,18 +371,59 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('textbox', { name: 'Embedding model' })).toBeInTheDocument();
   });
 
-  it('reindex pill is present inside the AI providers region for the Embeddings card', async () => {
+  it('reindex pill is present inside the Indexing region for the Embeddings card', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // Wait for the section.
-    const providersRegion = await screen.findByRole('region', { name: 'AI providers' });
-    // The Embeddings group card (h3 'Embeddings') is inside the providers region.
-    // EMBEDDING_PROVIDER has requires_reindex=true, so the amber pill must appear
-    // within the providers region.
-    const pills = Array.from(providersRegion.querySelectorAll('*')).filter(
+    // The Embeddings card (now co-locating EMBEDDING_PROVIDER, a reindex key)
+    // lives in the Indexing region, so the amber pill must appear there.
+    const indexingRegion = await screen.findByRole('region', { name: 'Indexing' });
+    const pills = Array.from(indexingRegion.querySelectorAll('*')).filter(
       (el) => el.textContent?.match(/rebuilds the index on save/i),
     );
     expect(pills.length).toBeGreaterThan(0);
+  });
+
+  it("shows the OCR reasoning-effort row when OCR is on OpenAI", async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody({ ...SETTINGS, OCR_PROVIDER: 'openai' }) },
+    ]);
+    renderScreen();
+    const ocrRegion = await screen.findByRole('region', { name: 'OCR' });
+    expect(
+      within(ocrRegion).getByRole('radiogroup', { name: 'Reasoning effort' }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the OCR reasoning-effort row when OCR is on Ollama (OpenAI-only param)", async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody({ ...SETTINGS, OCR_PROVIDER: 'ollama' }) },
+    ]);
+    renderScreen();
+    const ocrRegion = await screen.findByRole('region', { name: 'OCR' });
+    expect(
+      within(ocrRegion).queryByRole('radiogroup', { name: 'Reasoning effort' }),
+    ).toBeNull();
+  });
+
+  it('locks the Ollama provider option until OLLAMA_BASE_URL is configured', async () => {
+    mockFetchSequence([
+      { status: 200, body: toSettingsBody({ ...SETTINGS, OLLAMA_BASE_URL: '' }) },
+    ]);
+    renderScreen();
+    const ocrRegion = await screen.findByRole('region', { name: 'OCR' });
+    const providerGroup = within(ocrRegion).getByRole('radiogroup', { name: 'Provider' });
+    const ollama = within(providerGroup).getByRole('radio', { name: 'Ollama' });
+    expect(ollama).toBeDisabled();
+    // OpenAI stays selectable — only the unconfigured provider is locked.
+    expect(within(providerGroup).getByRole('radio', { name: 'OpenAI' })).toBeEnabled();
+  });
+
+  it('unlocks the Ollama provider option once OLLAMA_BASE_URL is set', async () => {
+    mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
+    renderScreen();
+    const ocrRegion = await screen.findByRole('region', { name: 'OCR' });
+    const providerGroup = within(ocrRegion).getByRole('radiogroup', { name: 'Provider' });
+    expect(within(providerGroup).getByRole('radio', { name: 'Ollama' })).toBeEnabled();
   });
 
   it('shows a reindex pill on a re-index key', async () => {

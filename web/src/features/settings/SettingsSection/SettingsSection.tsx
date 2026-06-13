@@ -31,6 +31,47 @@ function resolveControl(
   return variant ?? control.fallback;
 }
 
+/**
+ * Grey out any segmented option whose `disabledWhenEmpty` key has no value.
+ *
+ * Locks the "Ollama" provider choice until `OLLAMA_BASE_URL` is configured under
+ * Connections — a step may not select a provider whose connection is missing
+ * (the Settings API enforces the same rule on save). Returns the control
+ * unchanged when nothing is locked, so referential identity is preserved.
+ */
+function applySegmentedLocks(
+  control: ConcreteControl,
+  values: SettingsDraft,
+): ConcreteControl {
+  if (control.kind !== 'segmented') return control;
+  let changed = false;
+  const options = control.options.map((option) => {
+    if (
+      option.disabledWhenEmpty !== undefined &&
+      String(values[option.disabledWhenEmpty] ?? '').trim() === ''
+    ) {
+      changed = true;
+      return {
+        ...option,
+        disabled: true,
+        title: 'Configure Ollama under Connections to enable',
+      };
+    }
+    return option;
+  });
+  return changed ? { ...control, options } : control;
+}
+
+/**
+ * Whether a field's row should render for the current draft. A field with a
+ * `visibleWhen` condition (e.g. a reasoning-effort row) shows only when the
+ * referenced key matches — hiding `reasoning_effort` when the step is on Ollama.
+ */
+function isFieldVisible(field: SettingsField, values: SettingsDraft): boolean {
+  if (field.visibleWhen === undefined) return true;
+  return values[field.visibleWhen.key] === field.visibleWhen.equals;
+}
+
 export interface SettingsSectionProps {
   /** The section descriptor from the field model. */
   section: SectionModel;
@@ -83,8 +124,12 @@ function FieldRow({
   last: boolean;
 }): React.ReactElement {
   // Resolve a conditional control (e.g. the embedding model) to the concrete
-  // control that applies to the current draft, then render that.
-  const control = resolveControl(field.control, values);
+  // control that applies to the current draft, then lock any provider option
+  // whose connection is not configured (Ollama before OLLAMA_BASE_URL is set).
+  const control = applySegmentedLocks(
+    resolveControl(field.control, values),
+    values,
+  );
   const resolvedField =
     control === field.control ? field : { ...field, control };
 
@@ -150,12 +195,19 @@ export function SettingsSection({
       subtitle={section.subtitle}
     >
       {section.groups.map((group) => {
-        const advancedFields = group.advanced ?? [];
+        // Drop rows hidden for the current draft (e.g. a reasoning-effort row
+        // whose step is on Ollama) before the "last row" divider maths, so the
+        // divider lands on the last *visible* row.
+        const advancedFields = (group.advanced ?? []).filter((field) =>
+          isFieldVisible(field, values),
+        );
         const hasAdvanced = advancedFields.length > 0;
         // The "last" row logic must account for both primary and advanced fields.
         // If there are advanced fields, the last primary row is never truly last
         // in the visual card — the disclosure follows — so we keep the divider.
-        const primaryFields = group.fields;
+        const primaryFields = group.fields.filter((field) =>
+          isFieldVisible(field, values),
+        );
 
         return (
           <SettingsCard
