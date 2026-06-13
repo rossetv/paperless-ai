@@ -14,9 +14,8 @@ I/O, FastAPI, LLM calls.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from common.llm import LlmCallUsage
 from search.models import (
@@ -60,10 +59,15 @@ class _Telemetry:
     background refresh swaps the live book mid-search, and so the provenance the
     cost summary reports matches the dollars it computed.
 
+    Each LLM call is priced against the provider recorded on its own
+    :class:`~common.llm.LlmCallUsage` (the endpoint that actually served it),
+    not a single telemetry-wide provider — so a mixed-provider query (e.g. the
+    judge on Ollama while the planner and answer run on OpenAI) costs each step
+    correctly instead of mispricing every call against one global provider.
+
     Args:
         on_event: Optional sink for live phase events (the streaming route). When
             None, the telemetry still assembles the trace/cost for the result.
-        provider: ``settings.LLM_PROVIDER`` — selects local-vs-priced costing.
         price_book: The price book to cost against. Defaults to the process-wide
             live book (:func:`~search.pricing_book.get_current_price_book`) —
             the bundled seed unless a cache/refresh replaced it. Injectable so
@@ -73,12 +77,10 @@ class _Telemetry:
     def __init__(
         self,
         on_event: OnEvent | None,
-        provider: str,
         *,
         price_book: PriceBook | None = None,
     ) -> None:
         self._on_event = on_event
-        self._provider = provider
         # Resolve the live book once and pin it for the whole search (see the
         # class docstring). Tests inject a known book to stay deterministic.
         self._price_book = (
@@ -133,7 +135,7 @@ class _Telemetry:
             )
             cost = price_call(
                 call.model,
-                self._provider,
+                call.provider,
                 call_tokens,
                 table=self._price_book.effective_table(),
             )
