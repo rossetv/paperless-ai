@@ -220,17 +220,33 @@ class Synthesizer(OpenAIChatMixin):
         outcome_type = data.get("outcome")
 
         if outcome_type == "answered":
-            try:
-                answer = str(data.get("answer") or "").strip()
-                citations = tuple(int(cid) for cid in (data.get("citations") or []))
-                return Answered(answer=answer, citations=citations)
-            except (TypeError, ValueError) as exc:
+            raw_answer = data.get("answer")
+            if not isinstance(raw_answer, str):
                 return self._degrade(
-                    mode, reason=f"answered payload had unexpected structure: {exc}"
+                    mode,
+                    reason=f"answered payload 'answer' is not a string: {type(raw_answer).__name__}",
                 )
+            answer = raw_answer.strip()
+            raw_citations = data.get("citations")
+            cit_list = raw_citations if isinstance(raw_citations, list) else []
+            # Parse citations defensively: skip any element that cannot be
+            # coerced to int (e.g. "n/a", null).  A single junk element must
+            # not discard a valid answer.
+            citations: tuple[int, ...] = tuple(
+                int(c)
+                for c in cit_list
+                if isinstance(c, (int, str)) and str(c).strip().lstrip("-").isdigit()
+            )
+            return Answered(answer=answer, citations=citations)
 
         if outcome_type == "needs_more":
-            adjustment = str(data.get("adjustment") or "").strip()
+            raw_adjustment = data.get("adjustment")
+            if not isinstance(raw_adjustment, str):
+                return self._degrade(
+                    mode,
+                    reason=f"needs_more payload 'adjustment' is not a string: {type(raw_adjustment).__name__}",
+                )
+            adjustment = raw_adjustment.strip()
             if mode == "final":
                 # In final mode, NeedsMore is not allowed — coerce to Answered.
                 log.warning(

@@ -2,6 +2,8 @@
 
 These pure functions serve the branches of the refinement loop in core.py:
 
+- ``build_broad_semantic_plan`` — shared builder for the minimal single-spec
+  plan used by both the trivial short-circuit and the planner fallback.
 - ``broaden_plan`` — used when filtered retrieval returns nothing: drop every
   spec's (possibly mis-resolved) filter guess and retry without them.
 - ``merge_chunks`` — used after the refined retrieval round: union the two
@@ -55,18 +57,19 @@ def broaden_plan(plan: RetrievalPlan) -> RetrievalPlan:
     return RetrievalPlan(specs=broadened_specs, clarify=plan.clarify)
 
 
-def trivial_plan(query: str) -> RetrievalPlan:
-    """Build the planner-fallback-shaped plan for a trivial query (RAG-08).
+def build_broad_semantic_plan(query: str, rationale: str) -> RetrievalPlan:
+    """Return a single-spec broad semantic ``RetrievalPlan`` on *query*.
 
-    Identical in shape to ``planner._fallback_plan``: a single broad semantic
-    spec on the raw query with empty filters.  Used by the core when the
-    ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` short-circuit fires — retrieval runs a
-    vector search on the raw query exactly as it would for the planner's own
-    fallback, so skipping the planner LLM costs nothing for a query the planner
-    would only have restated.
+    The shared builder for every code path that needs the minimal safe plan
+    (one semantic spec, no filters, no clarify signal).  Using one builder
+    keeps the shape consistent: both the trivial short-circuit and the planner
+    fallback always produce the same structure, differing only in their rationale
+    label.
 
     Args:
-        query: The raw user search query.
+        query: The raw user search query used as the semantic text.
+        rationale: A short label describing why this broad plan was chosen
+            (e.g. ``"trivial: broad semantic search"``).
 
     Returns:
         A frozen ``RetrievalPlan`` containing one broad semantic spec.
@@ -78,11 +81,29 @@ def trivial_plan(query: str) -> RetrievalPlan:
                 semantic=query,
                 keywords=(),
                 filter_guess=EMPTY_FILTER_CANDIDATES,
-                rationale="trivial: broad semantic search",
+                rationale=rationale,
             ),
         ),
         clarify=None,
     )
+
+
+def trivial_plan(query: str) -> RetrievalPlan:
+    """Build the planner-fallback-shaped plan for a trivial query (RAG-08).
+
+    Delegates to :func:`build_broad_semantic_plan` with the trivial rationale.
+    Used by the core when the ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` short-circuit
+    fires — retrieval runs a vector search on the raw query exactly as it would
+    for the planner's own fallback, so skipping the planner LLM costs nothing
+    for a query the planner would only have restated.
+
+    Args:
+        query: The raw user search query.
+
+    Returns:
+        A frozen ``RetrievalPlan`` containing one broad semantic spec.
+    """
+    return build_broad_semantic_plan(query, rationale="trivial: broad semantic search")
 
 
 def merge_chunks(
