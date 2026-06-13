@@ -238,6 +238,12 @@ function RoutesBody(): React.ReactElement {
               </RequireAdmin>
             }
           />
+          {/* Unknown /settings/* sub-paths stay within Settings rather than
+              bouncing to the Search home. */}
+          <Route
+            path="/settings/*"
+            element={<Navigate to="/settings" replace />}
+          />
           <Route
             path="/library/document/:id"
             element={
