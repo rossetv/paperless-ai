@@ -49,9 +49,22 @@ log = structlog.get_logger(__name__)
 # same-origin viewer iframe (a stored-XSS vector). The response is pinned to
 # application/pdf, with nosniff so the browser cannot second-guess it, and an
 # inline disposition so it renders in the viewer rather than downloading.
+#
+# Framing: the SPA embeds this stream in a same-origin <iframe>. The global
+# SecurityHeadersMiddleware stamps `X-Frame-Options: DENY` and CSP
+# `frame-ancestors 'none'` on every response that does not already carry them,
+# which makes the browser refuse to frame the PDF ("refused to connect"). The
+# middleware is additive — it skips a header a handler set itself — so this
+# route overrides *both* framing controls to permit same-origin framing only:
+# `X-Frame-Options: SAMEORIGIN` for older browsers, plus a CSP whose
+# `frame-ancestors 'self'` takes precedence where both are present. No other
+# protection is relaxed — nosniff and the pinned content-type still hold, and
+# only our own PDF stream (not the app shell) becomes framable, and only by us.
 _PDF_RESPONSE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Content-Disposition": "inline",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Content-Security-Policy": "frame-ancestors 'self'",
 }
 _PDF_MEDIA_TYPE = "application/pdf"
 

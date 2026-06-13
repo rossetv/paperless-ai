@@ -167,6 +167,25 @@ def test_pdf_proxy_pins_content_type_to_pdf(app_db_path, conn) -> None:
     assert response.headers["content-disposition"] == "inline"
 
 
+def test_pdf_proxy_allows_same_origin_framing(app_db_path, conn) -> None:
+    """The PDF stream permits same-origin framing — and only same-origin.
+
+    The SPA embeds this stream in a same-origin <iframe>. The global security
+    middleware otherwise stamps X-Frame-Options: DENY / CSP frame-ancestors
+    'none' on every response, which makes the browser refuse to frame the PDF.
+    This route overrides both framing controls to 'self' so the viewer renders,
+    without exposing the stream to cross-origin framing.
+    """
+    paperless = MagicMock()
+    paperless.download_stream.return_value = ("application/pdf", iter([_PDF_BYTES]))
+    client = _client(app_db_path, paperless)
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+    response = client.get("/api/documents/100/pdf")
+    assert response.status_code == 200
+    assert response.headers["x-frame-options"] == "SAMEORIGIN"
+    assert response.headers["content-security-policy"] == "frame-ancestors 'self'"
+
+
 def test_pdf_proxy_closes_the_client_on_success(app_db_path, conn) -> None:
     """The per-request Paperless client is closed once the body is drained.
 
