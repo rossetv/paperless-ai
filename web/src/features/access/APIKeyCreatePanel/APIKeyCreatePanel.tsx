@@ -2,16 +2,77 @@ import React from 'react';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Input } from '../../../components/primitives/Input/Input';
 import { Button } from '../../../components/primitives/Button/Button';
-import { ScopePill } from '../../../components/primitives/ScopePill/ScopePill';
-import { cn } from '../../../lib/cn';
 import { useCreateApiKey } from '../../../api/hooks';
 import type { ApiScope } from '../../../api/types';
-import { SCOPES, EXPIRY_CHOICES, expiryIso } from './apiKeyFormData';
+import { expiryIso } from '../apiKeyFormData';
+import { ScopeChecklist } from '../ScopeChecklist/ScopeChecklist';
+import { ExpiryChips } from '../ExpiryChips/ExpiryChips';
 import styles from './APIKeyCreatePanel.module.css';
+import shared from '../ScopeChecklist/ScopeChecklist.module.css';
 
 export interface APIKeyCreatePanelProps {
   /** Called to dismiss the panel (cancel, Escape, or Done after a mint). */
   onClose: () => void;
+}
+
+// ── Reveal sub-component. ──
+// rationale: The reveal panel and the create form share the same Modal but
+// have no shared state after the secret is set — two logically distinct
+// screens. Extracting this keeps each screen's JSX below ~60 lines and makes
+// the one-time-view guarantee easy to audit.
+interface RevealPanelProps {
+  secret: string;
+  onClose: () => void;
+}
+
+function RevealPanel({ secret, onClose }: RevealPanelProps): React.ReactElement {
+  const [copied, setCopied] = React.useState(false);
+  const [copyError, setCopyError] = React.useState(false);
+
+  async function handleCopy(): Promise<void> {
+    setCopied(false);
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      setCopyError(false);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access was denied — the user must copy the key manually.
+      // Surface an error so they know the one-time secret was not captured
+      // and the key text above is still selectable.
+      setCopied(false);
+      setCopyError(true);
+    }
+  }
+
+  return (
+    <Modal isOpen title="API key created" onClose={onClose}>
+      <div className={styles['reveal']}>
+        <p className={styles['reveal-note']}>
+          Copy this key now — it is shown <strong>once</strong>. After you
+          close this panel only the prefix is stored and the full key cannot
+          be recovered.
+        </p>
+        <div className={styles['secret-box']}>
+          <code className={styles['secret-value']}>{secret}</code>
+          <Button variant="secondary" type="button" onClick={() => void handleCopy()}>
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </div>
+        {copyError && (
+          <p className={shared['error']} role="alert">
+            Copy failed — your browser blocked clipboard access. Select the
+            key text above and copy it manually before closing this panel.
+          </p>
+        )}
+        <div className={shared['footer']}>
+          <Button variant="primary" type="button" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 /**
@@ -40,9 +101,6 @@ export function APIKeyCreatePanel({
   const [serverError, setServerError] = React.useState<string | null>(null);
   // Once set, the form is replaced by the reveal panel.
   const [secret, setSecret] = React.useState<string | null>(null);
-  const [copied, setCopied] = React.useState(false);
-  // Set when the clipboard write fails — prompts the user to copy manually.
-  const [copyError, setCopyError] = React.useState(false);
 
   /** Toggle a scope on or off. */
   function toggleScope(scope: ApiScope): void {
@@ -81,52 +139,8 @@ export function APIKeyCreatePanel({
     }
   }
 
-  /** Copy the revealed secret to the clipboard. */
-  async function handleCopy(): Promise<void> {
-    if (secret === null) return;
-    try {
-      await navigator.clipboard.writeText(secret);
-      setCopied(true);
-      setCopyError(false);
-    } catch {
-      // Clipboard access was denied — the user must copy the key manually.
-      // Surface an error so they know the one-time secret was not captured
-      // and the key text above is still selectable.
-      setCopied(false);
-      setCopyError(true);
-    }
-  }
-
-  // ── Reveal panel — shown once the key is minted. ──
   if (secret !== null) {
-    return (
-      <Modal isOpen title="API key created" onClose={onClose}>
-        <div className={styles['reveal']}>
-          <p className={styles['reveal-note']}>
-            Copy this key now — it is shown <strong>once</strong>. After you
-            close this panel only the prefix is stored and the full key cannot
-            be recovered.
-          </p>
-          <div className={styles['secret-box']}>
-            <code className={styles['secret-value']}>{secret}</code>
-            <Button variant="secondary" type="button" onClick={() => void handleCopy()}>
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
-          {copyError && (
-            <p className={styles['error']} role="alert">
-              Copy failed — your browser blocked clipboard access. Select the
-              key text above and copy it manually before closing this panel.
-            </p>
-          )}
-          <div className={styles['footer']}>
-            <Button variant="primary" type="button" onClick={onClose}>
-              Done
-            </Button>
-          </div>
-        </div>
-      </Modal>
-    );
+    return <RevealPanel secret={secret} onClose={onClose} />;
   }
 
   // ── Create form. ──
@@ -146,65 +160,25 @@ export function APIKeyCreatePanel({
           />
         </div>
 
-        <div className={styles['section']}>
-          <span className={styles['section-label']}>Scopes</span>
-          <div className={styles['scope-list']}>
-            {SCOPES.map((scope) => {
-              const on = scopes.has(scope.id);
-              return (
-                <label
-                  key={scope.id}
-                  className={cn(styles['scope-row'], on && styles['scope-row-on'])}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleScope(scope.id)}
-                  />
-                  <span className={styles['scope-text']}>
-                    <span className={styles['scope-name']}>
-                      <ScopePill scope={scope.id} />
-                    </span>
-                    <span className={styles['scope-desc']}>{scope.description}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          {scopeError !== null && (
-            <p className={styles['error']} role="alert">
-              {scopeError}
-            </p>
-          )}
-        </div>
+        <ScopeChecklist
+          selectedScopes={scopes}
+          onToggle={toggleScope}
+          error={scopeError}
+        />
 
-        <div className={styles['section']}>
-          <span className={styles['section-label']}>Expiration</span>
-          <div className={styles['chip-row']}>
-            {EXPIRY_CHOICES.map((choice) => (
-              <button
-                key={choice.label}
-                type="button"
-                className={cn(
-                  styles['chip'],
-                  expiryDays === choice.days && styles['chip-on'],
-                )}
-                aria-pressed={expiryDays === choice.days}
-                onClick={() => setExpiryDays(choice.days)}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ExpiryChips
+          selectedDays={expiryDays}
+          touched={true}
+          onChange={setExpiryDays}
+        />
 
         {serverError !== null && (
-          <p className={styles['error']} role="alert">
+          <p className={shared['error']} role="alert">
             {serverError}
           </p>
         )}
 
-        <div className={styles['footer']}>
+        <div className={shared['footer']}>
           <Button variant="secondary" type="button" onClick={onClose}>
             Cancel
           </Button>

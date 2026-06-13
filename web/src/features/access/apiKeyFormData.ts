@@ -7,7 +7,7 @@
  *
  * Allowed deps: api/types (leaf; no React, no hooks, no components).
  */
-import type { ApiScope } from '../../../api/types';
+import type { ApiScope } from '../../api/types';
 
 /** The selectable scopes, with their human descriptions. */
 export const SCOPES: { id: ApiScope; description: string }[] = [
