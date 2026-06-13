@@ -216,20 +216,13 @@ class ClassificationProcessor:
                 "Document has error tag; skipping classification",
                 doc_id=self.document_id,
             )
-            # Strip only the classify pre-tag so the document leaves the queue.
-            # ERROR_TAG_ID is already present — no need to re-finalise, which
-            # would make a redundant Paperless write on every poll until the
-            # pre-tag is removed.
-            stripped = clean_pipeline_tags(current_tags, self.settings)
-            try:
-                self.paperless_client.update_document_metadata(
-                    self.document_id, tags=stripped
-                )
-            except PAPERLESS_CALL_EXCEPTIONS:
-                log.exception(
-                    "Failed to remove classify pre-tag from errored document",
-                    doc_id=self.document_id,
-                )
+            # Finalise with error: strips pipeline/queue tags and re-adds
+            # ERROR_TAG_ID so the document leaves the queue and the error state
+            # is preserved. clean_pipeline_tags() unconditionally removes
+            # ERROR_TAG_ID, so a bare strip-and-write would silently drop it.
+            finalise_document_with_error(
+                self.paperless_client, self.document_id, current_tags, self.settings
+            )
             return _divert(claimed=False)
 
         claimed = claim_processing_tag(
