@@ -15,14 +15,22 @@
  * Tier: features/ — leaf module, no deps outside the settings feature.
  */
 
-import type { SettingsField, SettingsSection } from './types';
+// rationale: pure data literal exempt under CODE_GUIDELINES §3.1 — this file
+// is the declarative settings model (the §3.1 sanctioned exemplar). It carries
+// no logic: the shared option lists and `SETTINGS_SECTIONS` are plain literals,
+// and the only function-shaped construct — `searchStageFields`, which expands
+// one Search sub-step into its three rows — lives in the sibling `helpers.ts`
+// and is imported here purely to keep the literal DRY (FE-06).
+
+import type { SettingsSection } from './types';
+import { searchStageFields } from './helpers';
 
 // ---------------------------------------------------------------------------
 // Shared option lists
 // ---------------------------------------------------------------------------
 
 /** A small fixed model-identifier list, reused by the planner/answer/judge selects. */
-const MODEL_OPTIONS = [
+export const MODEL_OPTIONS = [
   { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
   { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
   { value: 'gpt-5.4', label: 'gpt-5.4' },
@@ -36,7 +44,7 @@ const MODEL_OPTIONS = [
  * is ignored when the provider is Ollama. Reused by the OCR, classifier, and
  * search planner/answer/judge reasoning selects.
  */
-const REASONING_EFFORT_OPTIONS = [
+export const REASONING_EFFORT_OPTIONS = [
   { value: 'minimal', label: 'Minimal' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
@@ -49,57 +57,13 @@ const REASONING_EFFORT_OPTIONS = [
  * `OLLAMA_BASE_URL` is configured under Connections (`disabledWhenEmpty`) — a
  * step may not select a provider whose connection is missing.
  */
-const PROVIDER_OPTIONS = [
+export const PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'ollama', label: 'Ollama', disabledWhenEmpty: 'OLLAMA_BASE_URL' },
 ];
 
 /** The hint shown under every step's Provider row. */
 const PROVIDER_HINT = 'Where this step runs. Ollama needs its URL under Connections.';
-
-/**
- * The three rows for one Search sub-step (Planner / Judge / Answer): its
- * provider, its model (an OpenAI dropdown or a free-text Ollama model, keyed on
- * that sub-step's provider), and its reasoning effort (shown only on OpenAI).
- * Each sub-step chooses its provider and model independently — mix freely, e.g.
- * a local judge with a cloud answer.
- */
-function searchStageFields(stage: {
-  key: 'PLANNER' | 'JUDGE' | 'ANSWER';
-  label: string;
-  hint: string;
-  ollamaPlaceholder: string;
-}): SettingsField[] {
-  const provider = `SEARCH_${stage.key}_PROVIDER`;
-  return [
-    {
-      key: provider,
-      label: `${stage.label} provider`,
-      hint: stage.hint,
-      control: { kind: 'segmented', options: PROVIDER_OPTIONS },
-    },
-    {
-      key: `SEARCH_${stage.key}_MODEL`,
-      label: `${stage.label} model`,
-      hint: 'OpenAI: pick a model. Ollama: type a pulled model.',
-      // A dropdown of the OpenAI models when this sub-step is on OpenAI; a
-      // free-text field for an Ollama model otherwise.
-      control: {
-        kind: 'conditional',
-        on: provider,
-        variants: { openai: { kind: 'select', options: MODEL_OPTIONS } },
-        fallback: { kind: 'text', mono: true, placeholder: stage.ollamaPlaceholder },
-      },
-    },
-    {
-      key: `SEARCH_${stage.key}_REASONING_EFFORT`,
-      label: `${stage.label} reasoning effort`,
-      hint: 'Higher tiers spend more reasoning tokens. OpenAI only.',
-      control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
-      visibleWhen: { key: provider, equals: 'openai' },
-    },
-  ];
-}
 
 // ---------------------------------------------------------------------------
 // SETTINGS_SECTIONS — the ordered declarative model for the Settings screen

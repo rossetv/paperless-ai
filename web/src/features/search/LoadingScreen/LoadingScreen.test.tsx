@@ -4,7 +4,7 @@ import type { PhaseRecord } from '../../../api/types';
 
 // FilterControls drives useFacets; mock it to a static element so the
 // LoadingScreen test stays isolated from the facets API.
-vi.mock('../FilterControls/FilterControls', () => ({
+vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 
@@ -92,8 +92,8 @@ describe('LoadingScreen', () => {
 
   it('renders the live elapsed counter', () => {
     renderLoading();
-    // Starts at 0s and ticks up — assert the seconds-counter format renders.
-    expect(screen.getByText(/^\d+s$/)).toBeInTheDocument();
+    // Starts at 0:00 and ticks up — assert the m:ss counter format renders.
+    expect(screen.getByText(/^\d+:\d{2}$/)).toBeInTheDocument();
   });
 
   it('renders skeleton source placeholders', () => {
