@@ -145,7 +145,7 @@ def _diff_light_page(
 
     if to_fetch:
         skipped = len(page_ids) - len(to_fetch)
-        log.debug(
+        log.info(
             "reconcile.steady_state_skipped",
             skipped=skipped,
             to_fetch=len(to_fetch),
@@ -153,7 +153,7 @@ def _diff_light_page(
         changed_documents = _fetch_full_documents(paperless, to_fetch, outcomes)
         outcomes.update(_index_documents(pool, indexer, changed_documents, index_state))
     else:
-        log.debug("reconcile.steady_state_all_unchanged", skipped=len(page_ids))
+        log.info("reconcile.steady_state_all_unchanged", skipped=len(page_ids))
 
     return outcomes, page_ids, latest_modified
 

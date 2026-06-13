@@ -45,26 +45,6 @@ log = structlog.get_logger(__name__)
 _REBUILD_SENTINEL_NAME = "rebuild.request"
 
 
-@dataclass(frozen=True, slots=True)
-class _IndexerResources:
-    """Per-cycle, config-derived resources held by ``_run_loop``.
-
-    The reconciliation loop owns these as a single bundle so the hot-reload
-    path (web-redesign §5) can replace them atomically when ``config_version``
-    moves: every field is rebuilt from the new ``Settings`` together, and the
-    old paperless client is closed in the same step.
-
-    ``store_writer`` is *not* config-derived — the index database path is a
-    bootstrap-only env-var — but is bundled here so ``_run_loop`` has a single
-    handle for the data the cycle needs.
-    """
-
-    reconciler: Reconciler
-    paperless: PaperlessClient
-    embedding_client: EmbeddingClient
-    store_writer: StoreWriter
-
-
 def _rebuild_reconciler(settings: Settings, old: Reconciler) -> Reconciler:
     """Rebuild the Reconciler and its config-derived clients on a config change.
 

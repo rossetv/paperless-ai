@@ -162,23 +162,44 @@ class DocumentIndexer:
             return IndexOutcome.METADATA_ONLY
 
         # --- Step 4: Chunk + embed + upsert ---
+        return self._index_full(document_id, meta, content, existing)
+
+    def _index_full(
+        self,
+        document_id: int,
+        meta: DocumentMeta,
+        content: str,
+        existing: IndexState | None,
+    ) -> IndexOutcome:
+        """Chunk, embed, and upsert a document whose content hash has changed.
+
+        Step 4 of SPEC §5.3.  Guards against the zero-chunk edge case (content
+        that passes the whitespace gate but the chunker strips to nothing — the
+        most common cause is content consisting solely of OCR page markers such
+        as ``"--- Page 1 ---\\n--- Page 2 ---"``).  When no chunks are produced
+        we must NOT upsert: doing so would write a ``documents`` row with
+        ``chunk_count=0`` and store a ``content_hash``, causing the hash gate on
+        every subsequent cycle to classify the document as ``METADATA_ONLY``,
+        permanently hiding it from search (IDX-M1).
+
+        Args:
+            document_id: The Paperless document id (for logging).
+            meta: The :class:`~store.models.DocumentMeta` already built for
+                this document, including the new ``content_hash``.
+            content: The gated, non-empty OCR text (already confirmed to have
+                passed the whitespace and error-tag gates).
+            existing: The document's current store state, or ``None`` on first
+                index.
+        """
         text_chunks = chunk_text(
             content,
             chunk_size=self._settings.CHUNK_SIZE,
             overlap=self._settings.CHUNK_OVERLAP,
         )
 
-        # Guard: content passed the whitespace gate but the chunker produced
-        # nothing — the most common cause is content consisting solely of OCR
-        # page markers (e.g. "--- Page 1 ---\n--- Page 2 ---") which the
-        # chunker strips before building paragraphs.  We must NOT upsert here:
-        # doing so writes a documents row with chunk_count=0 and stores a
-        # content_hash, causing the hash gate on every subsequent cycle to
-        # classify the document as METADATA_ONLY → it is permanently stuck with
-        # no chunks and never surfaces in search (IDX-M1).  Treat it like the
-        # empty-content gate: prune any existing row and skip this cycle so a
-        # later cycle can re-attempt once Paperless supplies real content.
         if not text_chunks:
+            # Zero-chunk guard (IDX-M1): prune any existing row and skip so a
+            # later cycle can re-attempt once Paperless supplies real content.
             if existing is not None:
                 self._store_writer.delete_documents((document_id,))
                 log.info(

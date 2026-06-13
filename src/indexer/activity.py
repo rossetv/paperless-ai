@@ -32,6 +32,7 @@ from appdb import reconcile_activity
 from common.heartbeat import Heartbeat
 
 if TYPE_CHECKING:
+    from appdb.reconcile_activity import CycleKind
     from indexer.reconciler import SyncReport
     from indexer.reconciler._sweep import SweepReport
 
@@ -170,7 +171,7 @@ class IndexerActivityRecorder:
     def _record(
         self,
         *,
-        kind: str,
+        kind: CycleKind,
         started_at: str,
         finished_at: str,
         ok: bool,
@@ -181,7 +182,7 @@ class IndexerActivityRecorder:
         try:
             reconcile_activity.record_cycle(
                 self._conn,
-                kind=kind,  # type: ignore[arg-type]
+                kind=kind,
                 started_at=started_at,
                 finished_at=finished_at,
                 ok=ok,
