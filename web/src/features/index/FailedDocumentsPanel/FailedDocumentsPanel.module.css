@@ -103,41 +103,6 @@
   flex: 1;
 }
 
-/* A text-style action button — links visually but is a real <button>. */
-.action {
-  appearance: none;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  font-family: var(--font-text);
-  font-size: var(--font-size-micro);
-  font-weight: var(--font-weight-micro);
-  letter-spacing: var(--letter-spacing-micro);
-  color: var(--colour-link);
-}
-
-.action:hover {
-  color: var(--colour-accent);
-}
-
-.action:disabled {
-  cursor: default;
-  opacity: var(--opacity-disabled);
-}
-
-.action:focus-visible {
-  outline: var(--spacing-1) solid var(--colour-focus-ring);
-  outline-offset: var(--spacing-1);
-  border-radius: var(--radius-micro);
-}
-
-/* The "Open" link styled to match the text actions. */
-.open-link {
-  font-size: var(--font-size-micro);
-  letter-spacing: var(--letter-spacing-micro);
-}
-
 /* ── Footer. ── */
 .footer {
   display: flex;

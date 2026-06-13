@@ -28,6 +28,8 @@ export interface ButtonProps {
   children: React.ReactNode;
   /** Additional class names to merge. */
   className?: string;
+  /** Accessible label override for icon-only or contextually unique buttons. */
+  'aria-label'?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export function Button({
   onClick,
   children,
   className,
+  'aria-label': ariaLabel,
 }: ButtonProps): React.ReactElement {
   const variantClass =
     variant === 'primary' ? styles['primary']
@@ -65,6 +68,7 @@ export function Button({
       disabled={disabled}
       onClick={onClick}
       className={classes}
+      aria-label={ariaLabel}
     >
       {children}
     </button>
