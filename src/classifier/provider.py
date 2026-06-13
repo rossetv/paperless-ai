@@ -31,6 +31,8 @@ log = structlog.get_logger(__name__)
 class ClassificationProvider(OpenAIChatMixin):
     """Classifies document text using OpenAI-compatible chat completions."""
 
+    # reasoning_effort strips are intentionally not counted here — the provider
+    # opts into only the three param-retry counters it surfaces to the caller.
     _STAT_KEYS = (
         "attempts",
         "api_errors",
@@ -50,11 +52,6 @@ class ClassificationProvider(OpenAIChatMixin):
         """Route classification's chat calls to the classify step's provider."""
         return self.settings.CLASSIFY_PROVIDER
 
-    def _response_format(self) -> dict | None:
-        if self.settings.CLASSIFY_PROVIDER != "openai":
-            return None
-        return {"type": "json_schema", "json_schema": CLASSIFICATION_JSON_SCHEMA}
-
     def classify_text(
         self,
         text: str,
@@ -68,7 +65,7 @@ class ClassificationProvider(OpenAIChatMixin):
         ``(None, "")`` when all models fail.
         """
         if not text.strip():
-            log.warning("Document content is empty; skipping classification.")
+            log.warning("classification.empty_content")
             return None, ""
 
         user_content = self._build_user_message(text, taxonomy, truncation_note)
@@ -94,14 +91,14 @@ class ClassificationProvider(OpenAIChatMixin):
                 return result, model
             except (json.JSONDecodeError, ValueError) as error:
                 log.warning(
-                    "Classification response invalid",
+                    "classification.response_invalid",
                     model=model,
                     error=str(error),
                 )
                 self._stats.inc("invalid_json")
                 continue
 
-        log.error("All classification models failed")
+        log.error("classification.all_models_failed")
         return None, ""
 
     def _build_user_message(
@@ -176,7 +173,9 @@ class ClassificationProvider(OpenAIChatMixin):
             f"{cap_note}"
         )
 
-    def _build_params(self, model: str, messages: list[dict]) -> dict:
+    def _build_params(
+        self, model: str, messages: list[dict[str, str]]
+    ) -> dict[str, object]:
         """Build the chat-completion params, always requesting temperature.
 
         ``reasoning_effort`` and the ``json_schema`` response format are
@@ -187,7 +186,7 @@ class ClassificationProvider(OpenAIChatMixin):
         rejects one has it stripped/cached by :meth:`_create_with_compat`.
         ``max_tokens`` is requested only when ``CLASSIFY_MAX_TOKENS > 0``.
         """
-        params: dict = {
+        params: dict[str, object] = {
             "model": model,
             "messages": messages,
             "timeout": self.settings.REQUEST_TIMEOUT,
@@ -195,9 +194,10 @@ class ClassificationProvider(OpenAIChatMixin):
         }
         if self.settings.CLASSIFY_PROVIDER == "openai":
             params["reasoning_effort"] = self.settings.CLASSIFY_REASONING_EFFORT
+            params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": CLASSIFICATION_JSON_SCHEMA,
+            }
         if self.settings.CLASSIFY_MAX_TOKENS > 0:
             params["max_tokens"] = self.settings.CLASSIFY_MAX_TOKENS
-        response_format = self._response_format()
-        if response_format is not None:
-            params["response_format"] = response_format
         return params
