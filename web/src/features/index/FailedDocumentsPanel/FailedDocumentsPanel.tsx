@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../../../lib/cn';
+import { Button } from '../../../components/primitives/Button/Button';
 import { StatusBadge } from '../../../components/primitives/StatusBadge/StatusBadge';
 import type { FailedDocument } from '../../../api/types';
 import styles from './FailedDocumentsPanel.module.css';
@@ -63,14 +64,14 @@ export function FailedDocumentsPanel({
                   {doc.failure_count === 1 ? 'time' : 'times'}
                 </span>
                 <span className={styles['actions-spacer']} />
-                <button
-                  type="button"
-                  className={styles['action']}
+                <Button
+                  variant="ghost"
+                  size="small"
                   aria-label={`View document ${doc.document_id}: ${doc.title ?? '(no title)'}`}
                   onClick={() => onOpen(doc.document_id)}
                 >
                   View
-                </button>
+                </Button>
               </div>
             </article>
           ))}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '../../../lib/cn';
+import { Icon } from '../../../components/primitives/Icon/Icon';
 import type { IndexHealthStatus } from '../../../api/types';
 import styles from './IndexHealthHero.module.css';
 
@@ -24,46 +25,6 @@ const HEALTH_PRESENTATION: Record<
     healthy: false,
   },
 };
-
-/** Tick glyph for the healthy state. */
-function TickIcon(): React.ReactElement {
-  return (
-    <svg
-      viewBox="0 0 32 32"
-      width="22"
-      height="22"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="8,16 14,22 24,10" />
-    </svg>
-  );
-}
-
-/** Warning-triangle glyph for the unhealthy state. */
-function WarningIcon(): React.ReactElement {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="20"
-      height="20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.9"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 4l9 16H3z" />
-      <line x1="12" y1="10" x2="12" y2="14" />
-      <circle cx="12" cy="17" r="0.8" fill="currentColor" />
-    </svg>
-  );
-}
 
 export interface IndexHealthHeroProps {
   /** The overall index health verdict, from GET /api/index/status. */
@@ -96,7 +57,7 @@ export function IndexHealthHero({
         )}
         data-testid="health-icon"
       >
-        {healthy ? <TickIcon /> : <WarningIcon />}
+        <Icon name={healthy ? 'check' : 'warning'} size="large" />
       </span>
       <div>
         <div className={styles['eyebrow']}>Status</div>
