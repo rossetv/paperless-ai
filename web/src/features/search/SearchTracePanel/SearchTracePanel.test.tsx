@@ -57,9 +57,11 @@ describe('SearchTracePanel', () => {
     expect(screen.getByText(/how this answer was found/i)).toBeInTheDocument();
   });
 
-  it('shows the whole-query cost chip in the summary', () => {
+  it('shows a tokens-only whole-query chip in the summary', () => {
     render(<SearchTracePanel phases={PHASES} cost={COST} />);
-    expect(screen.getByText('2.1k tok · $0.006')).toBeInTheDocument();
+    // The header aggregate carries only the token count; the per-stage dollar
+    // figures live on the individual rows (UI-16).
+    expect(screen.getByText('2.1k tok')).toBeInTheDocument();
   });
 
   it('lists each phase when opened', async () => {

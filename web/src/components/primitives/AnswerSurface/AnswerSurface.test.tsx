@@ -92,40 +92,14 @@ describe('AnswerSurface', () => {
     expect(screen.queryByText(/tok/)).not.toBeInTheDocument();
   });
 
-  it('shows a "prices as of" provenance note when pricesAsOf and costLabel are both set', () => {
+  it('renders a tokens-only aggregate label without a dollar figure or price note', () => {
     render(
-      <AnswerSurface
-        sourceCount={4}
-        latencyMs={1842}
-        costLabel="3.4k tok · $0.012"
-        pricesAsOf="2026-06-10"
-      >
+      <AnswerSurface sourceCount={4} latencyMs={1842} costLabel="29k tok">
         <span>x</span>
       </AnswerSurface>,
     );
-    expect(screen.getByText(/prices as of 2026-06-10/i)).toBeInTheDocument();
-  });
-
-  it('omits the provenance note when pricesAsOf is null', () => {
-    render(
-      <AnswerSurface
-        sourceCount={4}
-        latencyMs={1842}
-        costLabel="3.4k tok · $0.012"
-        pricesAsOf={null}
-      >
-        <span>x</span>
-      </AnswerSurface>,
-    );
+    expect(screen.getByText('29k tok')).toBeInTheDocument();
     expect(screen.queryByText(/prices as of/i)).not.toBeInTheDocument();
-  });
-
-  it('omits the provenance note when there is no costLabel (no dollar figure to qualify)', () => {
-    render(
-      <AnswerSurface sourceCount={4} latencyMs={1842} pricesAsOf="2026-06-10">
-        <span>x</span>
-      </AnswerSurface>,
-    );
-    expect(screen.queryByText(/prices as of/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 });

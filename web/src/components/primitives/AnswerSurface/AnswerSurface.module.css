@@ -95,9 +95,3 @@
   letter-spacing: normal;
   white-space: nowrap;
 }
-
-/* Subtle price-table provenance note appended after the cost figure. */
-.prices-as-of {
-  opacity: 0.6;
-  font-size: var(--font-size-nano);
-}

@@ -64,10 +64,12 @@ export function formatCostLabel(
 }
 
 /**
- * The whole-query "tokens · cost" label from a `CostSummary` (the answer-card
- * footer and the trace-panel summary). Shows "$0" for an all-local query and
- * "—" when the spend cannot be honestly priced; returns undefined when no LLM
- * call was made (zero tokens AND zero calls — nothing worth showing).
+ * The whole-query aggregate label from a `CostSummary` — token count only
+ * (e.g. "29k tok"). Shown on the answer card and the "How this answer was
+ * found" trace header; the per-stage dollar figures live on the individual
+ * stage rows, so the aggregate no longer repeats a whole-query dollar total
+ * (UI-16). Returns undefined when no LLM call was made (zero tokens AND zero
+ * calls — nothing worth showing).
  */
 export function formatSummaryCostLabel(
   summary: CostSummary,
@@ -75,10 +77,7 @@ export function formatSummaryCostLabel(
   if (summary.tokens.total === 0 && summary.llm_calls === 0) {
     return undefined;
   }
-  return formatCostLabel(summary.tokens, {
-    usd: summary.usd,
-    local: summary.local,
-  });
+  return `${compactTokens(summary.tokens.total)} tok`;
 }
 
 /**
