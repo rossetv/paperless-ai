@@ -90,6 +90,3 @@ def _index_one(
         # map and retried out-of-band next cycle.
         log.exception("reconcile.document_failed", document_id=document_id)
         return document_id, None
-
-
-__all__ = ["IndexOutcome", "_WORKER_THREAD_PREFIX", "_index_documents", "_index_one"]
