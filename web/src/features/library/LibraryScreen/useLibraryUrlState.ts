@@ -27,6 +27,16 @@ const VALID_SORTS: ReadonlySet<DocumentSortField> = new Set([
   'title',
 ]);
 
+/**
+ * Narrow an untrusted URL sort string to a `DocumentSortField`. The widening to
+ * `ReadonlySet<string>` is on the known-finite token set (no information lost),
+ * which keeps the untrusted `value` typed as a plain string until this guard
+ * validates it — rather than casting the URL input straight to the union.
+ */
+function isSortField(value: string): value is DocumentSortField {
+  return (VALID_SORTS as ReadonlySet<string>).has(value);
+}
+
 /** Parse a string into a positive integer, or null if not a positive int. */
 function toPositiveInt(value: string | null): number | null {
   if (value === null) return null;
@@ -36,9 +46,9 @@ function toPositiveInt(value: string | null): number | null {
 
 /** Derive a DocumentsQuery from a URLSearchParams. */
 function paramsToQuery(params: URLSearchParams): DocumentsQuery {
-  const sortRaw = params.get('sort') as DocumentSortField | null;
+  const sortRaw = params.get('sort');
   const sort: DocumentSortField =
-    sortRaw !== null && VALID_SORTS.has(sortRaw) ? sortRaw : 'added';
+    sortRaw !== null && isSortField(sortRaw) ? sortRaw : 'added';
   const page = toPositiveInt(params.get('page')) ?? 1;
   return {
     page,

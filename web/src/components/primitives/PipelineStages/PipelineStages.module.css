@@ -136,16 +136,20 @@
   font-weight: var(--font-weight-micro-bold);
 }
 
-/* Token/cost chip — a compact monospace read-out on an LLM stage. */
+/* Token/cost chip — a compact telemetry read-out on an LLM stage. Carries the
+   micro type token (not the denser nano) and a soft secondary surface so the
+   figure reads as deliberate, legible telemetry rather than a heavy dark pill
+   (UI-16). Mono keeps the digits tabular. */
 .cost-chip {
   flex-shrink: 0;
   align-self: flex-start;
   padding: var(--spacing-2) var(--spacing-6);
   border-radius: var(--radius-micro);
   background-color: var(--colour-bg);
-  color: var(--colour-text-tertiary);
+  color: var(--colour-text-secondary);
   font-family: var(--font-mono);
-  font-size: var(--font-size-nano);
+  font-size: var(--font-size-micro);
+  letter-spacing: var(--letter-spacing-micro);
   white-space: nowrap;
 }
 
@@ -206,6 +210,11 @@
   color: var(--colour-text-tertiary);
 }
 
+/* KEEP/DROP read as semantic status, not the interactive accent (UI-07 / DD-1).
+   The base tag is the DROP tone — a neutral grey pill; the keep override below
+   lifts it onto the ok (green) status tone. Apple-blue is reserved for buttons,
+   links and focus only, so the KEEP tag no longer competes with the adjacent
+   real "View" link. */
 .verdict-tag {
   flex-shrink: 0;
   align-self: flex-start;
@@ -221,8 +230,8 @@
 }
 
 .verdict[data-keep="true"] .verdict-tag {
-  background-color: var(--colour-accent-wash);
-  color: var(--colour-link);
+  background-color: var(--colour-status-ok-bg);
+  color: var(--colour-status-ok-fg);
 }
 
 /* View control on a judged document — opens the in-app viewer for that id. */

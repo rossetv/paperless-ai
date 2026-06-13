@@ -200,10 +200,14 @@ export function PipelineStages({
       <ol ref={olRef} className={cn(styles['stages'], className)}>
         {stages.map((stage, i) => {
           const summaryContent = stage.summary ?? stage.detailNode ?? stage.detail;
-          const hasVerdicts =
-            stage.verdicts !== undefined && stage.verdicts.length > 0;
+          // Narrow once: a non-empty verdict list, or undefined. Carrying the
+          // narrowed value lets the body pass it without an `as` cast (FE-57).
+          const verdicts =
+            stage.verdicts !== undefined && stage.verdicts.length > 0
+              ? stage.verdicts
+              : undefined;
           const expandable =
-            collapsible && (stage.body != null || hasVerdicts);
+            collapsible && (stage.body != null || verdicts !== undefined);
 
           return (
             <li key={i} className={styles['stage']} data-state={stage.state}>
@@ -216,11 +220,6 @@ export function PipelineStages({
                         <span className={styles['label']}>{stage.label}</span>
                         <span className={styles['detail']}>{summaryContent}</span>
                       </span>
-                      {stage.costLabel !== undefined && (
-                        <span className={styles['cost-chip']}>
-                          {stage.costLabel}
-                        </span>
-                      )}
                       <svg
                         className={styles['chevron']}
                         viewBox="0 0 16 16"
@@ -238,10 +237,17 @@ export function PipelineStages({
                     </div>
                   </summary>
                   <div className={styles['stage-body']}>
+                    {/* The per-stage cost chip lives inside the expanded body, not
+                        on the always-visible summary row — the aggregate already
+                        shows once in the header/footer, so the collapsed row no
+                        longer repeats each figure (UI-16). */}
+                    {stage.costLabel !== undefined && (
+                      <span className={styles['cost-chip']}>{stage.costLabel}</span>
+                    )}
                     {stage.body}
-                    {hasVerdicts && (
+                    {verdicts !== undefined && (
                       <VerdictList
-                        verdicts={stage.verdicts as StageVerdict[]}
+                        verdicts={verdicts}
                         {...(onPreviewDocument !== undefined
                           ? { onPreviewDocument }
                           : {})}
