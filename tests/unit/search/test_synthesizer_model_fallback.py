@@ -248,7 +248,7 @@ class TestSynthResponseFormatForwarded:
 
     def test_synth_omits_response_format_for_ollama(self) -> None:
         settings = make_search_settings(
-            LLM_PROVIDER="ollama",
+            SEARCH_ANSWER_PROVIDER="ollama",
             SEARCH_ANSWER_MODEL="gemma3:27b",
             CLASSIFY_MODELS=["gemma3:27b"],
         )

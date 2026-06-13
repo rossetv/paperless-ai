@@ -8,14 +8,14 @@ import {
 } from './fieldModel';
 
 describe('settings field model', () => {
-  it('defines exactly eight sections', () => {
-    expect(SETTINGS_SECTIONS).toHaveLength(8);
+  it('defines exactly seven sections', () => {
+    expect(SETTINGS_SECTIONS).toHaveLength(7);
   });
 
-  it('uses the eight expected section anchor ids in pipeline order', () => {
+  it('uses the seven expected section anchor ids in pipeline order', () => {
+    // The standalone "providers" section is gone — provider lives on each step.
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
       'connections',
-      'providers',
       'ocr',
       'classification',
       'indexing',
@@ -194,14 +194,33 @@ describe('settings field model', () => {
     expect(hasAdvanced).toBe(true);
   });
 
-  it('select controls on search model fields carry reasoningKey', () => {
+  it('co-locates provider, conditional model and gated reasoning per search sub-step', () => {
     const search = SETTINGS_SECTIONS.find((s) => s.id === 'search')!;
     const models = search.groups.find((g) => g.id === 'models')!;
-    for (const field of models.fields) {
-      if (field.control.kind === 'select') {
-        expect(field.control.reasoningKey).toBeDefined();
-        expect(field.control.reasoningOptions).toBeDefined();
+    const keys = models.fields.map((f) => f.key);
+    for (const stage of ['PLANNER', 'JUDGE', 'ANSWER'] as const) {
+      expect(keys).toContain(`SEARCH_${stage}_PROVIDER`);
+      expect(keys).toContain(`SEARCH_${stage}_MODEL`);
+      expect(keys).toContain(`SEARCH_${stage}_REASONING_EFFORT`);
+
+      // The model is an OpenAI dropdown, a free-text Ollama model otherwise,
+      // keyed on this sub-step's own provider.
+      const model = models.fields.find((f) => f.key === `SEARCH_${stage}_MODEL`)!;
+      expect(model.control.kind).toBe('conditional');
+      if (model.control.kind === 'conditional') {
+        expect(model.control.on).toBe(`SEARCH_${stage}_PROVIDER`);
+        expect(model.control.variants['openai']?.kind).toBe('select');
+        expect(model.control.fallback.kind).toBe('text');
       }
+
+      // Reasoning effort is OpenAI-only — its row hides on Ollama.
+      const reasoning = models.fields.find(
+        (f) => f.key === `SEARCH_${stage}_REASONING_EFFORT`,
+      )!;
+      expect(reasoning.visibleWhen).toEqual({
+        key: `SEARCH_${stage}_PROVIDER`,
+        equals: 'openai',
+      });
     }
   });
 
@@ -214,73 +233,54 @@ describe('settings field model', () => {
     expect(advancedKeys).toContain('OCR_REFUSAL_MARKERS');
   });
 
-  // ── AI providers section: independent role selectors ──────────────────────
+  // ── Per-step provider selection (no standalone AI providers section) ───────
 
-  it("the 'providers' section sits immediately after 'connections' and before 'ocr'", () => {
-    const ids = SETTINGS_SECTIONS.map((s) => s.id);
-    expect(ids.indexOf('providers')).toBe(ids.indexOf('connections') + 1);
-    expect(ids.indexOf('providers')).toBe(ids.indexOf('ocr') - 1);
+  it('has no standalone "providers" section and no LLM_PROVIDER field', () => {
+    // Provider lives on each step now; LLM_PROVIDER survives only as a hidden
+    // back-compat seed (no UI control).
+    expect(SETTINGS_SECTIONS.find((s) => s.id === 'providers')).toBeUndefined();
+    expect(allFieldKeys()).not.toContain('LLM_PROVIDER');
   });
 
-  it("the 'providers' section subtitle is correct", () => {
-    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
-    expect(providers.subtitle).toBe(
-      'Which provider serves each role. The two are set independently.',
-    );
-  });
-
-  it("the 'providers' section has exactly two groups: 'chat' and 'embeddings'", () => {
-    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
-    expect(providers.title).toBe('AI providers');
-    expect(providers.groups.map((g) => g.id)).toEqual(['chat', 'embeddings']);
-  });
-
-  it("the 'chat' group has correct title, subtitle, and LLM_PROVIDER as a 'Provider' segmented", () => {
-    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
-    const chat = providers.groups.find((g) => g.id === 'chat')!;
-    expect(chat.title).toBe('Chat & vision');
-    expect(chat.subtitle).toBe(
-      'Runs OCR transcription, classification, and search answers.',
-    );
-    expect(chat.fields).toHaveLength(1);
-    const field = chat.fields[0]!;
-    expect(field.key).toBe('LLM_PROVIDER');
-    expect(field.label).toBe('Provider');
-    expect(field.control.kind).toBe('segmented');
-    if (field.control.kind === 'segmented') {
-      expect(field.control.options.map((o) => o.value)).toEqual(['openai', 'ollama']);
+  it('co-locates a Provider segmented at the top of the OCR and Classification model cards', () => {
+    for (const [section, key] of [
+      ['ocr', 'OCR_PROVIDER'],
+      ['classification', 'CLASSIFY_PROVIDER'],
+    ] as const) {
+      const model = SETTINGS_SECTIONS.find((s) => s.id === section)!.groups.find(
+        (g) => g.id === 'model',
+      )!;
+      const field = model.fields.find((f) => f.key === key)!;
+      expect(field).toBeDefined();
+      expect(field.label).toBe('Provider');
+      expect(field.control.kind).toBe('segmented');
+      if (field.control.kind === 'segmented') {
+        expect(field.control.options.map((o) => o.value)).toEqual(['openai', 'ollama']);
+      }
     }
   });
 
-  it("the 'embeddings' group has correct title, subtitle, and EMBEDDING_PROVIDER as a 'Provider' segmented", () => {
-    const providers = SETTINGS_SECTIONS.find((s) => s.id === 'providers')!;
-    const embeddings = providers.groups.find((g) => g.id === 'embeddings')!;
-    expect(embeddings.title).toBe('Embeddings');
-    expect(embeddings.subtitle).toBe(
-      'Vectorises your library for semantic search. Switching this re-embeds every document.',
-    );
-    expect(embeddings.fields).toHaveLength(1);
-    const field = embeddings.fields[0]!;
-    expect(field.key).toBe('EMBEDDING_PROVIDER');
-    expect(field.label).toBe('Provider');
-    expect(field.control.kind).toBe('segmented');
-    if (field.control.kind === 'segmented') {
-      expect(field.control.options.map((o) => o.value)).toEqual(['openai', 'ollama']);
+  it('locks the Ollama provider option until its connection is configured', () => {
+    const provider = SETTINGS_SECTIONS.find((s) => s.id === 'ocr')!
+      .groups.find((g) => g.id === 'model')!
+      .fields.find((f) => f.key === 'OCR_PROVIDER')!;
+    if (provider.control.kind === 'segmented') {
+      const ollama = provider.control.options.find((o) => o.value === 'ollama')!;
+      expect(ollama.disabledWhenEmpty).toBe('OLLAMA_BASE_URL');
     }
   });
 
-  it("the indexing/embeddings group subtitle cross-references AI providers (regression pin)", () => {
-    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
-    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
-    expect(embeddings.subtitle).toBe(
-      'Changing the model or dimensions triggers a full rebuild. The provider lives under AI providers.',
-    );
+  it('hides a step reasoning-effort row when that step is not on OpenAI', () => {
+    const reasoning = SETTINGS_SECTIONS.find((s) => s.id === 'ocr')!
+      .groups.find((g) => g.id === 'model')!
+      .fields.find((f) => f.key === 'OCR_REASONING_EFFORT')!;
+    expect(reasoning.visibleWhen).toEqual({ key: 'OCR_PROVIDER', equals: 'openai' });
   });
 
-  it('EMBEDDING_PROVIDER no longer lives in the indexing/embeddings group', () => {
-    const indexing = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!;
-    const embeddings = indexing.groups.find((g) => g.id === 'embeddings')!;
-    expect(embeddings.fields.map((f) => f.key)).not.toContain('EMBEDDING_PROVIDER');
+  it('co-locates EMBEDDING_PROVIDER first in the indexing/embeddings group', () => {
+    const embeddings = SETTINGS_SECTIONS.find((s) => s.id === 'indexing')!
+      .groups.find((g) => g.id === 'embeddings')!;
+    expect(embeddings.fields[0]!.key).toBe('EMBEDDING_PROVIDER');
   });
 
   it('the indexing/embeddings group still holds EMBEDDING_MODEL and EMBEDDING_DIMENSIONS', () => {

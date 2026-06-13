@@ -81,15 +81,20 @@ class OcrProvider(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
+    @property
+    def _provider(self) -> str:
+        """Route OCR's chat calls to the OCR step's configured provider."""
+        return self.settings.OCR_PROVIDER
+
     def _reasoning_effort(self) -> str | None:
         """The OpenAI ``reasoning_effort`` for OCR, or ``None`` for non-OpenAI.
 
         ``reasoning_effort`` is an OpenAI-only flat kwarg (SDK 1.109.1). Gating
-        it on the provider — exactly as the classifier gates ``response_format``
-        (``classifier/provider.py``) — keeps Ollama/non-OpenAI requests clean
-        and keeps OCR independent of the shared compat layer.
+        it on the OCR step's *own* provider — exactly as the classifier gates
+        ``response_format`` (``classifier/provider.py``) — keeps Ollama/non-OpenAI
+        requests clean and keeps OCR independent of the shared compat layer.
         """
-        if self.settings.LLM_PROVIDER != "openai":
+        if self.settings.OCR_PROVIDER != "openai":
             return None
         return self.settings.OCR_REASONING_EFFORT
 

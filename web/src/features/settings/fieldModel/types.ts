@@ -44,7 +44,22 @@ export interface ToggleControl {
 /** A Segmented single-choice control over a fixed option set. */
 export interface SegmentedControl {
   kind: 'segmented';
-  options: { value: string; label: string }[];
+  options: SegmentedOptionModel[];
+}
+
+/**
+ * One option in a {@link SegmentedControl}.
+ *
+ * `disabledWhenEmpty` names a config key that must hold a non-empty value for
+ * this option to be selectable — the renderer greys it out otherwise. It is how
+ * the per-step provider controls lock the "Ollama" option until `OLLAMA_BASE_URL`
+ * is configured under Connections (a step may not select a provider whose
+ * connection is missing; the Settings API enforces the same rule on save).
+ */
+export interface SegmentedOptionModel {
+  value: string;
+  label: string;
+  disabledWhenEmpty?: string;
 }
 
 /**
@@ -132,6 +147,13 @@ export interface SettingsField {
    * with `control.kind === 'secret'` is always also `secret: true`.
    */
   secret?: boolean;
+  /**
+   * Render this row only when another field's draft value matches. Used to hide
+   * a step's reasoning-effort row when that step's provider is not OpenAI —
+   * `reasoning_effort` is OpenAI-only, so it is meaningless on Ollama. e.g.
+   * `{ key: 'OCR_PROVIDER', equals: 'openai' }`.
+   */
+  visibleWhen?: { key: string; equals: string };
 }
 
 /**

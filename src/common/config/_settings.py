@@ -46,6 +46,7 @@ from ._parsers import (
     _resolve_search_max_refinements,
     _resolve_search_reasoning_effort,
     _resolve_server_port,
+    _resolve_step_provider,
 )
 
 log = structlog.get_logger(__name__)
@@ -75,13 +76,15 @@ _REFUSAL_MARK = "CHATGPT REFUSED TO TRANSCRIBE"
 
 @dataclass(frozen=True, slots=True)
 class _ProviderDefaults:
-    """The model and base-URL defaults that depend on ``LLM_PROVIDER``.
+    """The per-step model defaults for one provider.
 
-    Resolved once in :func:`_resolve_provider_defaults` so the provider branch
-    lives in one place rather than inline in :func:`_build_settings` (COMMON-15).
+    Resolved per step in :func:`_default_models_for` so each step's model
+    default follows *its own* provider (not one global provider) — the change
+    that makes provider selection independent per step. The Ollama base URL is
+    no longer carried here: it is a single shared connection resolved once in
+    :func:`_build_settings` from the union of the step providers.
     """
 
-    ollama_base_url: str | None
     ocr_models: list[str]
     classify_models: list[str]
     planner_model: str
@@ -89,20 +92,17 @@ class _ProviderDefaults:
     judge_model: str
 
 
-def _resolve_provider_defaults(
-    llm_provider: Literal["openai", "ollama"], source: Mapping[str, str]
-) -> _ProviderDefaults:
-    """Resolve the provider-dependent model and base-URL defaults.
+def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefaults:
+    """Return the model defaults for a step whose provider is *provider*.
 
-    Under ``ollama`` the Ollama base URL is read (defaulting to the local
-    daemon) and the model defaults are the local Gemma set; under ``openai`` the
-    base URL is ``None`` and the defaults are the GPT set. These are only
-    *defaults* — explicit ``OCR_MODELS`` / ``CLASSIFY_MODELS`` / ``SEARCH_*_MODEL``
-    values in *source* still win in :func:`_build_settings`.
+    Under ``ollama`` the defaults are the local Gemma set; under ``openai`` the
+    GPT set. These are only *defaults* — an explicit ``OCR_MODELS`` /
+    ``CLASSIFY_MODELS`` / ``SEARCH_*_MODEL`` value in *source* still wins in
+    :func:`_build_settings`. Fresh lists are built per call so no two
+    ``Settings`` instances share a mutable default list.
     """
-    if llm_provider == "ollama":
+    if provider == "ollama":
         return _ProviderDefaults(
-            ollama_base_url=source.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL),
             ocr_models=["gemma3:27b", "gemma3:12b"],
             classify_models=["gemma3:27b", "gemma3:12b"],
             planner_model="gemma3:12b",
@@ -110,7 +110,6 @@ def _resolve_provider_defaults(
             judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
-        ollama_base_url=None,
         ocr_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
         classify_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
         planner_model="gpt-5.4-mini",
@@ -144,6 +143,16 @@ class Settings:
     # plain ``str`` (never optional) — an unused fully-local deployment carries
     # ``""`` rather than ``None``, so no call site grows a None-guard.
     OPENAI_API_KEY: str
+
+    # Per-step chat/vision provider. Each defaults to LLM_PROVIDER (the judge to
+    # the planner) so a deployment that set only LLM_PROVIDER is unchanged; set
+    # one explicitly to run that step on a different provider. The shared chat
+    # client registry (common.llm) routes each step to its provider's client.
+    OCR_PROVIDER: Literal["openai", "ollama"]
+    CLASSIFY_PROVIDER: Literal["openai", "ollama"]
+    SEARCH_PLANNER_PROVIDER: Literal["openai", "ollama"]
+    SEARCH_JUDGE_PROVIDER: Literal["openai", "ollama"]
+    SEARCH_ANSWER_PROVIDER: Literal["openai", "ollama"]
 
     OCR_MODELS: list[str]
     CLASSIFY_MODELS: list[str]
@@ -513,13 +522,45 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
     )
 
-    provider_defaults = _resolve_provider_defaults(llm_provider, source)
-    ollama_base_url = provider_defaults.ollama_base_url
-    default_ocr_models = provider_defaults.ocr_models
-    default_classify_models = provider_defaults.classify_models
-    default_planner_model = provider_defaults.planner_model
-    default_answer_model = provider_defaults.answer_model
-    default_judge_model = provider_defaults.judge_model
+    # Per-step chat/vision providers. Each seeds from LLM_PROVIDER (the judge
+    # from the planner) so a deployment that set only LLM_PROVIDER is unchanged;
+    # each step's model default then follows its own provider.
+    ocr_provider = _resolve_step_provider(source, "OCR_PROVIDER", llm_provider)
+    classify_provider = _resolve_step_provider(
+        source, "CLASSIFY_PROVIDER", llm_provider
+    )
+    planner_provider = _resolve_step_provider(
+        source, "SEARCH_PLANNER_PROVIDER", llm_provider
+    )
+    judge_provider = _resolve_step_provider(
+        source, "SEARCH_JUDGE_PROVIDER", planner_provider
+    )
+    answer_provider = _resolve_step_provider(
+        source, "SEARCH_ANSWER_PROVIDER", llm_provider
+    )
+
+    # OLLAMA_BASE_URL is one shared connection. Resolve it whenever ANY step
+    # (chat or embedding) uses Ollama: the configured value, else the local
+    # default. An all-OpenAI deployment keeps it None (unchanged behaviour).
+    any_ollama = "ollama" in (
+        ocr_provider,
+        classify_provider,
+        planner_provider,
+        judge_provider,
+        answer_provider,
+        embedding_provider,
+    )
+    ollama_base_url = (
+        (source.get("OLLAMA_BASE_URL") or _DEFAULT_OLLAMA_BASE_URL)
+        if any_ollama
+        else None
+    )
+
+    default_ocr_models = _default_models_for(ocr_provider).ocr_models
+    default_classify_models = _default_models_for(classify_provider).classify_models
+    default_planner_model = _default_models_for(planner_provider).planner_model
+    default_answer_model = _default_models_for(answer_provider).answer_model
+    default_judge_model = _default_models_for(judge_provider).judge_model
 
     # Back-compat shim: AI_MODELS is the legacy key. If neither OCR_MODELS nor
     # CLASSIFY_MODELS is set but AI_MODELS is, use its value as the default for
@@ -572,16 +613,29 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         PAPERLESS_TOKEN=_get_required_env(source, "PAPERLESS_TOKEN"),
         LLM_PROVIDER=llm_provider,
         OLLAMA_BASE_URL=ollama_base_url,
-        # Required whenever OpenAI is actually used — by the LLM provider OR the
-        # embedding provider. A fully-local deployment (both ollama) may omit it,
-        # so it defaults to "" there; every other config (including any prod box
-        # on openai) keeps the unconditional-required behaviour and fails closed
-        # at config-build time if the key is absent (CODE_GUIDELINES §10.8, §1.11).
+        # Required whenever OpenAI is actually used by ANY step — the five
+        # chat/vision steps OR the embedding provider. A fully-local deployment
+        # (every step ollama) may omit it, so it defaults to "" there; every
+        # other config (any step on openai) keeps the required behaviour and
+        # fails closed at config-build time if the key is absent (§10.8, §1.11).
         OPENAI_API_KEY=(
             _get_required_env(source, "OPENAI_API_KEY")
-            if "openai" in (llm_provider, embedding_provider)
+            if "openai"
+            in (
+                ocr_provider,
+                classify_provider,
+                planner_provider,
+                judge_provider,
+                answer_provider,
+                embedding_provider,
+            )
             else source.get("OPENAI_API_KEY", "").strip()
         ),
+        OCR_PROVIDER=ocr_provider,
+        CLASSIFY_PROVIDER=classify_provider,
+        SEARCH_PLANNER_PROVIDER=planner_provider,
+        SEARCH_JUDGE_PROVIDER=judge_provider,
+        SEARCH_ANSWER_PROVIDER=answer_provider,
         OCR_MODELS=_get_csv_env(
             source,
             "OCR_MODELS",

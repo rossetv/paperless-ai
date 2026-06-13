@@ -102,43 +102,71 @@ def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:
     return None
 
 
-class _OpenAIClientHolder:
-    """Thread-safe holder for the shared OpenAI client singleton.
+class _ClientRegistry:
+    """Thread-safe registry of the per-provider OpenAI-compatible chat clients.
 
-    Avoids a bare module-level mutable by encapsulating the state in an
-    instance attribute with explicit init/get methods.
+    Per-step provider selection (e.g. OCR on Ollama while Search Answer is on
+    OpenAI, in one process) needs *both* endpoints reachable at once, so the old
+    single shared client became a two-slot registry keyed by provider.
+    :func:`common.library_setup.setup_libraries` installs whichever slot the
+    configured providers need (and clears one whose connection was removed on a
+    hot-reload); a step selects its client by its own ``*_PROVIDER`` through
+    :attr:`OpenAIChatMixin._provider`.
     """
 
+    _PROVIDERS = ("openai", "ollama")
+
     def __init__(self) -> None:
-        self._client: openai.OpenAI | None = None
+        self._clients: dict[str, openai.OpenAI | None] = {
+            provider: None for provider in self._PROVIDERS
+        }
 
-    def init(self, client: openai.OpenAI) -> None:
-        self._client = client
+    def init(self, provider: str, client: openai.OpenAI | None) -> None:
+        """Install (or clear, with ``None``) the client for *provider*."""
+        if provider not in self._clients:
+            raise ValueError(f"unknown provider: {provider!r}")
+        self._clients[provider] = client
 
-    def is_ready(self) -> bool:
-        return self._client is not None
+    def is_ready(self, provider: str) -> bool:
+        return self._clients.get(provider) is not None
 
-    def get(self) -> openai.OpenAI:
-        if self._client is None:
+    def get(self, provider: str) -> openai.OpenAI:
+        client = self._clients.get(provider)
+        if client is None:
             raise RuntimeError(
-                "OpenAI client not initialised; call setup_libraries() first"
+                f"{provider} chat client not initialised: its connection is not "
+                "configured (OPENAI_API_KEY for openai, OLLAMA_BASE_URL for "
+                "ollama) or setup_libraries() has not run for this provider"
             )
-        return self._client
+        return client
 
 
-_openai_holder = _OpenAIClientHolder()
+_openai_holder = _ClientRegistry()
 
 
 def init_openai_client(client: openai.OpenAI) -> None:
-    _openai_holder.init(client)
+    """Back-compat: install the OpenAI-slot chat client."""
+    _openai_holder.init("openai", client)
 
 
 def get_openai_client() -> openai.OpenAI:
-    return _openai_holder.get()
+    """Back-compat: the OpenAI-slot chat client (preflight, tests)."""
+    return _openai_holder.get("openai")
 
 
 def is_openai_client_ready() -> bool:
-    return _openai_holder.is_ready()
+    """Back-compat: whether the OpenAI-slot chat client is installed."""
+    return _openai_holder.is_ready("openai")
+
+
+def set_chat_client(provider: str, client: openai.OpenAI | None) -> None:
+    """Install (``client``) or clear (``None``) the registry slot for *provider*.
+
+    Used by :func:`common.library_setup.setup_libraries` to install both the
+    OpenAI and Ollama chat clients (or clear one whose connection was removed on
+    a hot-reload).
+    """
+    _openai_holder.init(provider, client)
 
 
 class OpenAIChatMixin:
@@ -192,9 +220,19 @@ class OpenAIChatMixin:
         if stat_key in self._STAT_KEYS:
             self._stats.inc(stat_key)
 
+    @property
+    def _provider(self) -> str:
+        """The provider whose chat client this step routes to.
+
+        Defaults to ``"openai"``; each step provider (OCR, classifier, the three
+        search stages) overrides it to return its own ``settings.*_PROVIDER`` so
+        per-step provider selection picks the right client from the registry.
+        """
+        return "openai"
+
     @retry(retryable_exceptions=RETRYABLE_OPENAI_EXCEPTIONS)
     def _create_completion(self, **kwargs: object) -> ChatCompletion:
-        client = _openai_holder.get()
+        client = _openai_holder.get(self._provider)
         with llm_limiter.acquire():
             # rationale: OpenAI SDK's create() is overloaded on `stream`; **kwargs:object
             # cannot satisfy those overloads. Callers never pass stream=True, so the

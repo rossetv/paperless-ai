@@ -109,6 +109,57 @@ def test_validate_accepts_a_good_change_set() -> None:
     assert changed == {"CHUNK_SIZE"}
 
 
+def test_validate_rejects_selecting_ollama_without_a_base_url() -> None:
+    """A step may not select Ollama unless OLLAMA_BASE_URL is configured — the
+    backstop for the UI's disabled Ollama option (spec §3.3)."""
+    with pytest.raises(ValueError, match="OLLAMA_BASE_URL"):
+        validate_change_set(
+            changes={"OCR_PROVIDER": "ollama"},
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+        )
+
+
+def test_validate_names_the_offending_step_in_the_ollama_message() -> None:
+    with pytest.raises(ValueError, match="SEARCH_JUDGE_PROVIDER"):
+        validate_change_set(
+            changes={"SEARCH_JUDGE_PROVIDER": "ollama"},
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+        )
+
+
+def test_validate_accepts_ollama_when_base_url_is_configured() -> None:
+    changed = validate_change_set(
+        changes={"OCR_PROVIDER": "ollama"},
+        config_table={"OLLAMA_BASE_URL": "http://gpu.lan:11434/v1/"},
+        environ={"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"},
+    )
+    assert "OCR_PROVIDER" in changed
+
+
+def test_validate_rejects_selecting_openai_without_an_api_key() -> None:
+    """The mirror guard fires when a step is actively switched TO OpenAI with no
+    key configured anywhere."""
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        validate_change_set(
+            changes={"OCR_PROVIDER": "openai"},
+            config_table={},
+            environ={"PAPERLESS_TOKEN": "t"},  # no OPENAI_API_KEY in the sources
+        )
+
+
+def test_validate_does_not_require_openai_key_for_an_unrelated_change() -> None:
+    """An ordinary change must not force re-supplying the masked OPENAI_API_KEY
+    secret — the secret-sentinel workflow (regression for the over-eager guard)."""
+    changed = validate_change_set(
+        changes={"OCR_DPI": "175"},
+        config_table={},
+        environ={"PAPERLESS_TOKEN": "t"},  # no OPENAI_API_KEY in the sources
+    )
+    assert changed == {"OCR_DPI"}
+
+
 _SECRETS = {"PAPERLESS_TOKEN": "t", "OPENAI_API_KEY": "k"}
 
 
@@ -191,15 +242,16 @@ def test_validate_rejects_setting_an_openai_model_while_on_ollama() -> None:
 
 
 def test_validate_accepts_ollama_embeddings_with_a_local_model() -> None:
-    """Switching embeddings to Ollama WITH a local model and its dimensions is a
-    coherent, allowed change."""
+    """Switching embeddings to Ollama WITH a local model, its dimensions, and the
+    Ollama connection configured is a coherent, allowed change."""
     changed = validate_change_set(
         changes={
             "EMBEDDING_PROVIDER": "ollama",
             "EMBEDDING_MODEL": "nomic-embed-text",
             "EMBEDDING_DIMENSIONS": "768",
         },
-        config_table={},
+        # Ollama must be configured under Connections before a step may use it.
+        config_table={"OLLAMA_BASE_URL": "http://gpu.lan:11434/v1/"},
         environ=_SECRETS,
     )
     assert changed == {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIMENSIONS"}

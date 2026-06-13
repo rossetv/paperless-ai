@@ -8,6 +8,14 @@ export interface SegmentedOption {
   value: string;
   /** The visible segment label. */
   label: string;
+  /**
+   * Disable just this option (greyed, not selectable) while the rest stay live.
+   * Used to lock the "Ollama" provider choice until its connection is
+   * configured. A whole-control `disabled` still overrides every option.
+   */
+  disabled?: boolean;
+  /** Optional native tooltip, e.g. why a disabled option is unavailable. */
+  title?: string;
 }
 
 export interface SegmentedProps {
@@ -51,21 +59,24 @@ export function Segmented({
     >
       {options.map((option) => {
         const selected = option.value === value;
+        const optionDisabled = disabled || (option.disabled ?? false);
         return (
           <button
             key={option.value}
             type="button"
             role="radio"
             aria-checked={selected}
-            disabled={disabled}
+            disabled={optionDisabled}
+            {...(option.title !== undefined ? { title: option.title } : {})}
             onClick={() => {
-              if (!selected) {
+              if (!selected && !optionDisabled) {
                 onChange(option.value);
               }
             }}
             className={cn(
               styles['segment'],
               selected && styles['segment-selected'],
+              option.disabled && styles['segment-disabled'],
             )}
           >
             {option.label}

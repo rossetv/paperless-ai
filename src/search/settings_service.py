@@ -35,6 +35,19 @@ from common.config import (
 # Where a key's effective value came from, in precedence order.
 ValueSource = Literal["database", "environment", "default"]
 
+# The per-step provider keys whose selected provider must have its connection
+# configured before that step may use it (the five chat/vision steps plus the
+# embedding step). Used by the connection-requirement guard in
+# :func:`validate_change_set`.
+_STEP_PROVIDER_KEYS = (
+    "OCR_PROVIDER",
+    "CLASSIFY_PROVIDER",
+    "SEARCH_PLANNER_PROVIDER",
+    "SEARCH_JUDGE_PROVIDER",
+    "SEARCH_ANSWER_PROVIDER",
+    "EMBEDDING_PROVIDER",
+)
+
 # ---------------------------------------------------------------------------
 # Coded-default map — built once at module load.
 #
@@ -249,6 +262,38 @@ def validate_change_set(
             "rebuilds the whole index, so set EMBEDDING_MODEL to a local "
             "embedding model and EMBEDDING_DIMENSIONS to its width in the same "
             "save."
+        )
+
+    # Connection-requirement guard. A step may only select a provider whose
+    # connection is configured. The builder defaults OLLAMA_BASE_URL to localhost
+    # and the validator injects a sentinel for the OPENAI_API_KEY secret, so the
+    # *raw* merged source (not ``after``) is what tells us the operator actually
+    # configured the connection. The UI mirrors this by disabling the option, but
+    # this guard is the backstop: without it a UI/API change could be accepted,
+    # written to app.db, and then break the daemon's next config build.
+    raw_ollama_url = (merged.get("OLLAMA_BASE_URL") or "").strip()
+    ollama_steps = [k for k in _STEP_PROVIDER_KEYS if getattr(after, k) == "ollama"]
+    if ollama_steps and not raw_ollama_url:
+        raise ValueError(
+            "Configure OLLAMA_BASE_URL under Connections before selecting Ollama "
+            f"for: {', '.join(ollama_steps)}."
+        )
+    # The mirror guard for OpenAI fires only when the change-set *actively*
+    # selects OpenAI for a step (not on the ambient default), so an ordinary
+    # settings change never has to re-supply the masked OPENAI_API_KEY secret —
+    # preserving the secret-sentinel workflow — while switching a step TO OpenAI
+    # with no key configured is still rejected before it can break the next build.
+    raw_openai_key = (
+        changes.get("OPENAI_API_KEY")
+        or config_table.get("OPENAI_API_KEY")
+        or environ.get("OPENAI_API_KEY")
+        or ""
+    ).strip()
+    openai_selected = [k for k in _STEP_PROVIDER_KEYS if changes.get(k) == "openai"]
+    if openai_selected and not raw_openai_key:
+        raise ValueError(
+            "Configure OPENAI_API_KEY under Connections before selecting OpenAI "
+            f"for: {', '.join(openai_selected)}."
         )
 
     # Determine which keys genuinely change. The current effective value is

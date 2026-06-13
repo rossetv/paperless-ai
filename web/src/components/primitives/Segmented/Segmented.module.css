@@ -42,6 +42,12 @@
   cursor: not-allowed;
 }
 
+/* A single locked option (e.g. Ollama before its connection is configured) —
+   greyed but the rest of the control stays live. */
+.segment-disabled {
+  opacity: var(--opacity-disabled);
+}
+
 .segment:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);

@@ -98,6 +98,11 @@ class Synthesizer(OpenAIChatMixin):
         self.settings = settings
         self._init_stats()
 
+    @property
+    def _provider(self) -> str:
+        """Route the synthesiser's chat call to the answer step's provider."""
+        return self.settings.SEARCH_ANSWER_PROVIDER
+
     def synthesise(
         self,
         query: str,
@@ -156,9 +161,22 @@ class Synthesizer(OpenAIChatMixin):
         raw_content = self._complete_with_model_fallback(
             primary_model=self.settings.SEARCH_ANSWER_MODEL,
             messages=messages,
-            fallback_models=self.settings.CLASSIFY_MODELS,
+            # Fall back to CLASSIFY_MODELS only when the answer and classifier
+            # share a provider — otherwise those models belong to a different
+            # endpoint and would 404 on this stage's client (per-step providers).
+            fallback_models=(
+                self.settings.CLASSIFY_MODELS
+                if self.settings.SEARCH_ANSWER_PROVIDER
+                == self.settings.CLASSIFY_PROVIDER
+                else ()
+            ),
             log_event_prefix="synthesiser",
-            reasoning_effort=self.settings.SEARCH_ANSWER_REASONING_EFFORT,
+            # reasoning_effort is OpenAI-only; omit it for a non-OpenAI answer.
+            reasoning_effort=(
+                self.settings.SEARCH_ANSWER_REASONING_EFFORT
+                if self.settings.SEARCH_ANSWER_PROVIDER == "openai"
+                else None
+            ),
             response_format=_synthesiser_response_format(self.settings),
             usage_sink=usage_sink,
         )
