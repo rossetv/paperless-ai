@@ -1,5 +1,5 @@
 /*
- * FilterControls layout — feature-layer stylesheet.
+ * FilterControls layout — pattern-layer stylesheet.
  *
  * Provides layout for the bounded tag picker region: the search input above,
  * the chip cluster below, and a max-height scroll container for the expanded
@@ -39,30 +39,4 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-3);
-}
-
-/* "Show all / Show less" toggle button — styled as a link-like affordance. */
-.tag-toggle-button {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: var(--font-text);
-  font-size: var(--font-size-caption);
-  font-weight: var(--font-weight-caption);
-  line-height: var(--line-height-caption);
-  letter-spacing: var(--letter-spacing-caption);
-  color: var(--colour-link);
-  cursor: pointer;
-  align-self: flex-start;
-  transition: opacity var(--duration-fast) var(--easing-standard);
-}
-
-.tag-toggle-button:hover {
-  opacity: var(--opacity-pressed);
-}
-
-.tag-toggle-button:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus);
-  border-radius: var(--radius-micro);
 }

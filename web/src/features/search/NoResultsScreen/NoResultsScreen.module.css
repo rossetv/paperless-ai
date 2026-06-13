@@ -31,3 +31,10 @@
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
 }
+
+/* Respect reduced-motion — drop the hover background transition (FE-40). */
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-row {
+    transition: none;
+  }
+}
