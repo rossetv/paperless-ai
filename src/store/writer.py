@@ -193,6 +193,11 @@ class StoreWriter:
                             now,
                         ),
                     )
+                    # Accumulate (chunk_id, text) pairs so the FTS inserts can
+                    # be flushed in one executemany, halving the statement count.
+                    # Per-row INSERT into chunks must stay to capture lastrowid
+                    # — that id enforces chunks.id == chunks_fts.rowid (SPEC §4.2).
+                    fts_rows: list[tuple[int, str]] = []
                     for chunk in chunks:
                         cursor = self._conn.execute(
                             """
@@ -207,15 +212,22 @@ class StoreWriter:
                                 sqlite_vec.serialize_float32(list(chunk.embedding)),
                             ),
                         )
-                        # Capture the auto-assigned rowid to use as the FTS rowid.
-                        # This enforces chunks.id == chunks_fts.rowid (SPEC §4.2).
+                        # Capture the auto-assigned rowid so chunks_fts.rowid
+                        # matches exactly (SPEC §4.2); collect for batch insert below.
+                        # A successful INSERT always sets lastrowid; None would mean
+                        # the sqlite3 layer returned success with no rowid — impossible
+                        # on a normal INSERT INTO an autoincrement table.
                         chunk_id = cursor.lastrowid
-                        self._conn.execute(
-                            # Insert into chunks_fts using the explicit rowid so
-                            # that chunks.id == chunks_fts.rowid always holds.
-                            "INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)",
-                            (chunk_id, chunk.text),
-                        )
+                        if chunk_id is None:
+                            raise StoreError(
+                                f"upsert_document: INSERT INTO chunks returned no "
+                                f"lastrowid for document {meta.id}"
+                            )
+                        fts_rows.append((chunk_id, chunk.text))
+                    self._conn.executemany(
+                        "INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)",
+                        fts_rows,
+                    )
         except sqlite3.Error as exc:
             raise StoreError(f"failed to upsert document {meta.id}") from exc
 
@@ -308,13 +320,7 @@ class StoreWriter:
                             document_ids,
                         ).fetchall()
                     ]
-                    if chunk_ids:
-                        # Delete FTS rows explicitly — FK cascade does not cover FTS5
-                        # virtual tables (SPEC §4.5 / CODE_GUIDELINES §9.8).
-                        self._conn.execute(
-                            f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
-                            chunk_ids,
-                        )
+                    self._delete_fts_rows(chunk_ids)
                     self._conn.execute(
                         f"DELETE FROM documents WHERE id IN ({document_marks})",  # nosec B608 - document_marks is `?,?,?` from placeholders(); ids bound via ?
                         document_ids,
@@ -340,11 +346,10 @@ class StoreWriter:
             with self._write_lock:
                 with self._conn:
                     self._conn.execute("DELETE FROM taxonomy")
-                    for entry in rows:
-                        self._conn.execute(
-                            "INSERT INTO taxonomy (kind, id, name) VALUES (?, ?, ?)",
-                            (entry.kind, entry.id, entry.name),
-                        )
+                    self._conn.executemany(
+                        "INSERT INTO taxonomy (kind, id, name) VALUES (?, ?, ?)",
+                        [(e.kind, e.id, e.name) for e in rows],
+                    )
         except sqlite3.Error as exc:
             raise StoreError("failed to refresh taxonomy") from exc
 
@@ -466,17 +471,13 @@ class StoreWriter:
                 self._conn.execute("DELETE FROM documents")
                 self._conn.execute("DELETE FROM taxonomy")
                 self._conn.execute("DELETE FROM meta WHERE key = 'modified_watermark'")
-                self._conn.execute(
+                self._conn.executemany(
                     "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    ("embedding_provider", embedding_provider),
-                )
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    ("embedding_model", embedding_model),
-                )
-                self._conn.execute(
-                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    ("embedding_dimensions", str(embedding_dimensions)),
+                    [
+                        ("embedding_provider", embedding_provider),
+                        ("embedding_model", embedding_model),
+                        ("embedding_dimensions", str(embedding_dimensions)),
+                    ],
                 )
 
     def rebuild_index(
@@ -579,6 +580,22 @@ class StoreWriter:
     # Private helpers
     # ------------------------------------------------------------------
 
+    def _delete_fts_rows(self, chunk_ids: list[int]) -> None:
+        """Delete chunks_fts rows for *chunk_ids* (no lock, no txn).
+
+        Caller must hold the write lock and be inside a transaction.
+
+        chunks_fts is a standalone FTS5 virtual table — it does NOT honour FK
+        cascade and must be cleaned explicitly (SPEC §4.5, CODE_GUIDELINES §9.8).
+        An empty list is a no-op.
+        """
+        if not chunk_ids:
+            return
+        self._conn.execute(
+            f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
+            chunk_ids,
+        )
+
     def _delete_chunks_for_document(self, document_id: int) -> None:
         """Delete chunks and chunks_fts rows for *document_id* (no lock, no txn).
 
@@ -587,18 +604,14 @@ class StoreWriter:
         The FK ON DELETE CASCADE on chunks.document_id would remove chunks rows
         when the documents row is deleted, but we delete chunks first (before
         the documents row) so we can collect the chunk ids to delete from
-        chunks_fts.  chunks_fts is a standalone FTS5 virtual table — it does NOT
-        honour FK cascade and must be cleaned explicitly (SPEC §4.5, §9.8).
+        chunks_fts.  See :meth:`_delete_fts_rows` for the FTS5 rationale.
         """
         rows = self._conn.execute(
             "SELECT id FROM chunks WHERE document_id = ?", (document_id,)
         ).fetchall()
         chunk_ids = [row[0] for row in rows]
+        self._delete_fts_rows(chunk_ids)
         if chunk_ids:
-            self._conn.execute(
-                f"DELETE FROM chunks_fts WHERE rowid IN ({placeholders(len(chunk_ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
-                chunk_ids,
-            )
             self._conn.execute(
                 "DELETE FROM chunks WHERE document_id = ?", (document_id,)
             )
