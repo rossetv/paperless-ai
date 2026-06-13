@@ -9,7 +9,9 @@ import styles from './DaemonCard.module.css';
 /** Maps a daemon run-state to a StatusBadge tone and label. */
 const STATE_PRESENTATION: Record<DaemonState, { tone: StatusTone; label: string }> = {
   running: { tone: 'ok', label: 'Running' },
-  idle: { tone: 'warn', label: 'Idle' },
+  // Idle is a calm resting state, not a caution — a neutral grey badge, never
+  // the amber `warn` tone (which is reserved for genuine caution).
+  idle: { tone: 'neutral', label: 'Idle' },
   stopped: { tone: 'danger', label: 'Stopped' },
 };
 

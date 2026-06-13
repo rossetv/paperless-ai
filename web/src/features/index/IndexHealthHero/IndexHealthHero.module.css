@@ -29,12 +29,18 @@
   flex-shrink: 0;
 }
 
-.healthy {
+.ok {
   background-color: var(--colour-status-ok-bg);
   color: var(--colour-status-ok-fg);
 }
 
-.unhealthy {
+/* Caution — the index is degraded but still serving. Amber, never red. */
+.caution {
+  background-color: var(--colour-status-warn-bg);
+  color: var(--colour-status-warn-fg);
+}
+
+.down {
   background-color: var(--colour-status-danger-bg);
   color: var(--colour-status-danger-fg);
 }

@@ -2,10 +2,14 @@ import { cn } from '../../../lib/cn';
 import styles from './StatusBadge.module.css';
 
 /** The semantic tone of a StatusBadge — drives its colour. */
-export type StatusTone = 'ok' | 'warn' | 'danger' | 'info';
+export type StatusTone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral';
 
 export interface StatusBadgeProps {
-  /** Semantic tone — `ok` green, `warn` amber, `danger` red, `info` blue. */
+  /**
+   * Semantic tone — `ok` green, `warn` amber, `danger` red, `info` blue,
+   * `neutral` grey. Use `neutral` for calm resting states (idle, paused)
+   * that are not a caution, reserving `warn` for genuine caution.
+   */
   tone: StatusTone;
   /** The label — typically a single short word ("Active", "Suspended"). */
   children: React.ReactNode;

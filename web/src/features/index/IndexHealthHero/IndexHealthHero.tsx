@@ -4,25 +4,38 @@ import { Icon } from '../../../components/primitives/Icon/Icon';
 import type { IndexHealthStatus } from '../../../api/types';
 import styles from './IndexHealthHero.module.css';
 
+/**
+ * The icon styling and glyph for each health verdict.
+ *
+ * Three distinct tones: `ok` reads green with a tick, `degraded` reads amber
+ * (a caution — the index is still serving, just not at full strength), and
+ * `down` reads red (a genuine failure). `degraded` is deliberately *not* red:
+ * conflating a missed heartbeat with a total outage overstates the problem.
+ */
+type HealthTone = 'ok' | 'caution' | 'down';
+
 /** Human-readable label and tone for each health verdict. */
 const HEALTH_PRESENTATION: Record<
   IndexHealthStatus,
-  { headline: string; detail: string; healthy: boolean }
+  { headline: string; detail: string; tone: HealthTone; glyph: 'check' | 'warning' }
 > = {
   ok: {
     headline: 'Healthy · ready to serve',
     detail: 'All daemons running and heartbeating within the stale window.',
-    healthy: true,
+    tone: 'ok',
+    glyph: 'check',
   },
   degraded: {
     headline: 'Degraded · some daemons stopped',
     detail: 'One or more daemons have missed their heartbeat window.',
-    healthy: false,
+    tone: 'caution',
+    glyph: 'warning',
   },
   down: {
     headline: 'Down · no daemons running',
     detail: 'All daemons have missed their heartbeat window or the index is unreadable.',
-    healthy: false,
+    tone: 'down',
+    glyph: 'warning',
   },
 };
 
@@ -37,8 +50,9 @@ export interface IndexHealthHeroProps {
  * The Index dashboard health hero.
  *
  * A circular status icon (tick when ok, warning triangle otherwise), a
- * "Status" eyebrow + headline + detail. The icon tint and glyph flip on the
- * `"ok"` verdict; `"degraded"` and `"down"` both use the unhealthy tone.
+ * "Status" eyebrow + headline + detail. Three tones drive the icon tint:
+ * green for `"ok"`, amber for `"degraded"` (caution, still serving) and red
+ * for `"down"` (genuine failure).
  *
  * Tier: features/index (CODE_GUIDELINES §12.3) — takes a domain wire type.
  */
@@ -46,18 +60,15 @@ export function IndexHealthHero({
   health,
   className,
 }: IndexHealthHeroProps): React.ReactElement {
-  const { headline, detail, healthy } = HEALTH_PRESENTATION[health];
+  const { headline, detail, tone, glyph } = HEALTH_PRESENTATION[health];
 
   return (
     <section className={cn(styles['hero'], className)}>
       <span
-        className={cn(
-          styles['icon'],
-          healthy ? styles['healthy'] : styles['unhealthy'],
-        )}
+        className={cn(styles['icon'], styles[tone])}
         data-testid="health-icon"
       >
-        <Icon name={healthy ? 'check' : 'warning'} size="large" />
+        <Icon name={glyph} size="large" />
       </span>
       <div>
         <div className={styles['eyebrow']}>Status</div>

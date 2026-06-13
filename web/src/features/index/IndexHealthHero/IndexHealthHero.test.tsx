@@ -22,22 +22,22 @@ describe('IndexHealthHero', () => {
     expect(screen.getByText(/down/i)).toBeInTheDocument();
   });
 
-  it('applies the healthy tone class for "ok"', () => {
+  it('applies the ok tone class for "ok"', () => {
     const { container } = render(<IndexHealthHero health="ok" />);
     const icon = container.querySelector('[data-testid="health-icon"]');
-    expect(icon?.className).toMatch(/healthy/);
+    expect(icon?.className).toMatch(/ok/);
   });
 
-  it('applies the unhealthy tone class for "degraded"', () => {
+  it('applies the caution tone class for "degraded"', () => {
     const { container } = render(<IndexHealthHero health="degraded" />);
     const icon = container.querySelector('[data-testid="health-icon"]');
-    expect(icon?.className).toMatch(/unhealthy/);
+    expect(icon?.className).toMatch(/caution/);
   });
 
-  it('applies the unhealthy tone class for "down"', () => {
+  it('applies the down tone class for "down"', () => {
     const { container } = render(<IndexHealthHero health="down" />);
     const icon = container.querySelector('[data-testid="health-icon"]');
-    expect(icon?.className).toMatch(/unhealthy/);
+    expect(icon?.className).toMatch(/down/);
   });
 
   it('renders a <section> landmark', () => {

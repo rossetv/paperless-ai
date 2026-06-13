@@ -36,11 +36,9 @@
   flex: 1;
 }
 
-/* ── Role sub-line. ── */
+/* ── Last-seen sub-line. ── */
 .role {
-  flex: 1;
-  margin-top: var(--spacing-2);
-  margin-bottom: var(--spacing-10);
+  margin: var(--spacing-2) 0 0;
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption);
