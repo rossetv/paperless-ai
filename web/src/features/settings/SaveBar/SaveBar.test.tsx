@@ -19,14 +19,14 @@ describe('SaveBar', () => {
     const { container } = renderBar({ dirtyCount: 0 });
     const bar = container.firstElementChild as HTMLElement;
     expect(bar.className).toMatch(/bar-hidden/);
-    expect(bar).toHaveAttribute('aria-hidden', 'true');
+    expect(bar).toHaveAttribute('inert', '');
   });
 
   it('is visible when dirtyCount is greater than zero', () => {
     const { container } = renderBar({ dirtyCount: 1 });
     const bar = container.firstElementChild as HTMLElement;
     expect(bar.className).not.toMatch(/bar-hidden/);
-    expect(bar).toHaveAttribute('aria-hidden', 'false');
+    expect(bar).not.toHaveAttribute('inert');
   });
 
   it('carries aria-live and aria-atomic for screen-reader announcements', () => {

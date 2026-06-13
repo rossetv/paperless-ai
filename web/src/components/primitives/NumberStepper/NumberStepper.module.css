@@ -35,6 +35,7 @@
 
 /* ── A − or + button. ── */
 .button {
+  position: relative;
   padding: var(--spacing-6) var(--spacing-10);
   border: none;
   background-color: transparent;
@@ -44,6 +45,22 @@
   color: var(--colour-text-secondary);
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--easing-standard);
+}
+
+/* Transparent expanded hit-area (DD-4 compact-control exception).
+   Expands the tap zone to ≥44px tall centred on the button without
+   changing the visual footprint. The .stepper overflow:hidden clips
+   anything extending outside the container bounds, so the effective
+   target height is min(44px, container height) — still larger than
+   the text-only button area before this change. */
+.button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: var(--size-touch-target);
+  transform: translateY(-50%);
 }
 
 .button:focus-visible {
