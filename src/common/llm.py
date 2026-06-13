@@ -2,10 +2,12 @@
 
 Module-global singletons
 ~~~~~~~~~~~~~~~~~~~~~~~~
-``_openai_holder`` stores the shared :class:`openai.OpenAI` client.  It is
-initialised by :func:`common.library_setup.setup_libraries` during
-:func:`common.bootstrap.bootstrap_daemon`.  Calling :func:`get_openai_client`
-before initialisation raises ``RuntimeError``.
+``_openai_holder`` is a :class:`_ClientRegistry` holding one
+:class:`openai.OpenAI` client per configured provider (``"openai"``,
+``"ollama"``).  It is populated by
+:func:`common.library_setup.setup_libraries` during
+:func:`common.bootstrap.bootstrap_daemon`.  Calling
+:func:`get_openai_client` before initialisation raises ``RuntimeError``.
 
 Boot order: Settings -> logging -> ``setup_libraries`` (inits ``_openai_holder``)
 -> signal handlers -> ``llm_limiter.init`` (see :mod:`common.concurrency`).
@@ -34,9 +36,18 @@ log = structlog.get_logger(__name__)
 class LlmCallUsage:
     """Token usage for one successful LLM call, naming the model that actually
     served it (post-fallback). Produced by the shared completion helper and
-    consumed by callers that pass a ``usage_sink`` (the search telemetry)."""
+    consumed by callers that pass a ``usage_sink`` (the search telemetry).
+
+    ``provider`` is the registry key (``"openai"`` or ``"ollama"``) for the
+    endpoint that served the call — the same value
+    :attr:`OpenAIChatMixin._provider` returned for this step.  Search telemetry
+    uses it to look up per-provider pricing so that mixed-provider queries cost
+    correctly even when the planner, judge, and answer steps run on different
+    endpoints.
+    """
 
     model: str
+    provider: str
     prompt: int
     completion: int
     reasoning: int
@@ -142,11 +153,6 @@ class _ClientRegistry:
 
 
 _openai_holder = _ClientRegistry()
-
-
-def init_openai_client(client: openai.OpenAI) -> None:
-    """Back-compat: install the OpenAI-slot chat client."""
-    _openai_holder.init("openai", client)
 
 
 def get_openai_client() -> openai.OpenAI:
@@ -415,6 +421,7 @@ class OpenAIChatMixin:
                 usage_sink.append(
                     LlmCallUsage(
                         model=model,
+                        provider=self._provider,
                         prompt=getattr(usage, "prompt_tokens", 0) or 0,
                         completion=getattr(usage, "completion_tokens", 0) or 0,
                         reasoning=getattr(details, "reasoning_tokens", 0) or 0,

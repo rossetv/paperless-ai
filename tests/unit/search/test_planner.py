@@ -857,7 +857,12 @@ class TestPlannerUsageSink:
         planner.plan("a query", usage_sink=sink)
         assert len(sink) == 1
         assert sink[0] == LlmCallUsage(
-            model="gpt-5.4-mini", prompt=0, completion=0, reasoning=0, total=0
+            model="gpt-5.4-mini",
+            provider="openai",
+            prompt=0,
+            completion=0,
+            reasoning=0,
+            total=0,
         )
 
     def test_plan_without_sink_still_works(self) -> None:

@@ -41,7 +41,12 @@ def test_usage_sink_records_served_model_and_reasoning():
     assert out == "ok"
     assert sink == [
         LlmCallUsage(
-            model="gpt-5.4-mini", prompt=11, completion=22, reasoning=7, total=33
+            model="gpt-5.4-mini",
+            provider="openai",
+            prompt=11,
+            completion=22,
+            reasoning=7,
+            total=33,
         )
     ]
 
@@ -70,5 +75,7 @@ def test_absent_usage_records_zeros():
         usage_sink=sink,
     )
     assert sink == [
-        LlmCallUsage(model="m", prompt=0, completion=0, reasoning=0, total=0)
+        LlmCallUsage(
+            model="m", provider="openai", prompt=0, completion=0, reasoning=0, total=0
+        )
     ]
