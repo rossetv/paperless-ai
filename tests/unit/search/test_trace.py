@@ -18,6 +18,7 @@ def test_done_summarises_sink_prices_and_emits():
     sink = [
         LlmCallUsage(
             model="gpt-5.4-mini",
+            provider="openai",
             prompt=1_000_000,
             completion=0,
             reasoning=0,
@@ -48,7 +49,7 @@ def test_cost_summary_totals_and_marks_unpriced():
         "plan",
         "Planning",
         {},
-        usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+        usage_sink=[LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)],
         started=0.0,
         now=lambda: 0.0,
     )
@@ -56,7 +57,7 @@ def test_cost_summary_totals_and_marks_unpriced():
         "synth",
         "Synth",
         {},
-        usage_sink=[LlmCallUsage("unknown", 1_000_000, 0, 0, 1_000_000)],
+        usage_sink=[LlmCallUsage("unknown", "openai", 1_000_000, 0, 0, 1_000_000)],
         started=0.0,
         now=lambda: 0.0,
     )
@@ -112,7 +113,9 @@ def test_telemetry_prices_against_the_live_book_by_default():
             "plan",
             "Planning",
             {},
-            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            usage_sink=[
+                LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)
+            ],
             started=0.0,
             now=lambda: 0.0,
         )
@@ -147,7 +150,9 @@ def test_injected_book_overrides_the_live_book_for_determinism():
             "plan",
             "Planning",
             {},
-            usage_sink=[LlmCallUsage("gpt-5.4-mini", 1_000_000, 0, 0, 1_000_000)],
+            usage_sink=[
+                LlmCallUsage("gpt-5.4-mini", "openai", 1_000_000, 0, 0, 1_000_000)
+            ],
             started=0.0,
             now=lambda: 0.0,
         )

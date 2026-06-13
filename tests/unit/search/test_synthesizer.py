@@ -264,7 +264,12 @@ class TestSynthesiserUsageSink:
         )
         assert len(sink) == 1
         assert sink[0] == LlmCallUsage(
-            model="gpt-5.4", prompt=0, completion=0, reasoning=0, total=0
+            model="gpt-5.4",
+            provider="openai",
+            prompt=0,
+            completion=0,
+            reasoning=0,
+            total=0,
         )
 
 
