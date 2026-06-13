@@ -54,6 +54,13 @@ export interface FilterableListboxProps<T extends string | number = string> {
    * single-select). It is a real focusable-by-activedescendant option.
    */
   clearOption?: { label: string; onClear: () => void } | undefined;
+  /**
+   * Additional names (beyond those in `items`) that suppress the "Create …" row
+   * when the query matches exactly. Use this when the caller pre-filters `items`
+   * (e.g. already-selected tags are excluded) but still wants to prevent creating
+   * a duplicate of an existing name that is absent from the visible list.
+   */
+  existingNames?: ReadonlyArray<string> | undefined;
   /** Additional class names merged onto the root. */
   className?: string | undefined;
 }
@@ -88,6 +95,7 @@ export function FilterableListbox<T extends string | number = string>({
   triggerLabel,
   selectedLabel,
   clearOption,
+  existingNames,
   className,
 }: FilterableListboxProps<T>): React.ReactElement {
   const [open, setOpen] = useState(false);
@@ -116,10 +124,15 @@ export function FilterableListbox<T extends string | number = string>({
     [items, q],
   );
   // Suppress the create row when the query exactly matches an offered item's
-  // label (case-insensitive) — creating a duplicate makes no sense.
+  // label (case-insensitive) OR any name in `existingNames` — creating a
+  // duplicate makes no sense, even if the matching item is absent from `items`
+  // (e.g. because the caller pre-filters out already-selected tags).
   const exactMatch = useMemo(
-    () => items.some((item) => item.label.toLowerCase() === q),
-    [items, q],
+    () =>
+      items.some((item) => item.label.toLowerCase() === q) ||
+      (existingNames !== undefined &&
+        existingNames.some((n) => n.toLowerCase() === q)),
+    [items, q, existingNames],
   );
   const showCreate = onCreate !== undefined && q !== '' && !exactMatch;
 

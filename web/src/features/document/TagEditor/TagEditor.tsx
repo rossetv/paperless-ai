@@ -64,6 +64,11 @@ export function TagEditor({
       meta: `${t.document_count} docs`,
     }));
 
+  // Full set of existing tag names — used by FilterableListbox to suppress the
+  // "Create …" row when the typed query matches an ALREADY-SELECTED tag
+  // (which is absent from selectableItems but must not be duplicated).
+  const allTagNames: string[] = availableTags.map((t) => t.name);
+
   return (
     <div className={styles['wrap']}>
       {selectedRows.map((t) =>
@@ -89,6 +94,7 @@ export function TagEditor({
           onCreate={onCreate}
           multiple
           triggerLabel="+ Add tag"
+          existingNames={allTagNames}
         />
       )}
     </div>
