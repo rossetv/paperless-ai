@@ -12,6 +12,7 @@ import { useUsers } from '../../../api/hooks';
 import { useAuth } from '../../../hooks/useAuth';
 import type { User } from '../../../api/types';
 import { StatTile } from '../../../components/primitives/StatTile/StatTile';
+import { SearchField } from '../../../components/patterns/SearchField/SearchField';
 import { UserEditDrawer } from '../UserEditDrawer/UserEditDrawer';
 import { formatShortDate } from '../../../lib/formatDate';
 import { deriveInitials } from '../../../lib/deriveInitials';
@@ -156,16 +157,13 @@ export function UsersScreen(): React.ReactElement {
             <StatTile value={suspended} label="suspended" />
           </div>
           <div className={styles['toolbar']}>
-            <div className={styles['search']}>
-              <input
-                type="search"
-                className={styles['search-input']}
-                placeholder="Search users…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                aria-label="Search users"
-              />
-            </div>
+            <SearchField
+              id="users-search"
+              placeholder="Search users…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onSubmit={setQuery}
+            />
           </div>
           <Table
             columns={columns}
