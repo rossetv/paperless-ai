@@ -8,9 +8,10 @@ import styles from './SettingsLayout.module.css';
  * The settings nav groups.
  *
  * Three groups:
- *   "Pipeline" — the pipeline config sections (Connections, AI providers, OCR,
- *     Classification, Indexing, Search), each an in-page anchor on the
- *     `/settings` route (links are `/settings#<anchor>`).
+ *   "Pipeline" — the pipeline config sections (Connections, OCR, Classification,
+ *     Indexing, Search), each an in-page anchor on the `/settings` route (links
+ *     are `/settings#<anchor>`). Provider choice now lives on each step's card,
+ *     so there is no standalone "AI providers" section.
  *   "Operations" — automation/daemons and logging, also in-page anchors.
  *   "Access control" — Users and API Keys, each their own routed page.
  *
@@ -22,7 +23,6 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     title: 'Pipeline',
     items: [
       { id: 'connections', label: 'Connections', to: '/settings#connections', icon: 'link' },
-      { id: 'providers', label: 'AI providers', to: '/settings#providers', icon: 'sparkle' },
       { id: 'ocr', label: 'OCR', to: '/settings#ocr', icon: 'eye' },
       { id: 'classification', label: 'Classification', to: '/settings#classification', icon: 'tags' },
       { id: 'indexing', label: 'Indexing', to: '/settings#indexing', icon: 'index' },

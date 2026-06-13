@@ -414,9 +414,9 @@ class TestRetryLimiterIntegration:
 
     @pytest.fixture(autouse=True)
     def _restore_holder(self):
-        orig = _openai_holder._client
+        orig = dict(_openai_holder._clients)
         yield
-        _openai_holder._client = orig
+        _openai_holder._clients = dict(orig)
 
     @pytest.fixture()
     def real_limiter(self):
@@ -431,7 +431,7 @@ class TestRetryLimiterIntegration:
     ):
         """On each retry attempt the limiter semaphore is acquired then released."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         # Fail twice with a retryable error, succeed on the third attempt.
         expected = MagicMock(name="chat_completion_result")
@@ -474,7 +474,7 @@ class TestRetryLimiterIntegration:
     def test_limiter_released_on_final_failure(self, mock_sleep, client, real_limiter):
         """When all retries are exhausted the limiter is still released every time."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         mock_openai.chat.completions.create.side_effect = openai.APIConnectionError(
             request=MagicMock()
@@ -513,7 +513,7 @@ class TestRetryLimiterIntegration:
         mock_openai = MagicMock()
         expected = MagicMock(name="chat_completion_result")
         mock_openai.chat.completions.create.return_value = expected
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         call_log: list[str] = []
 
@@ -550,7 +550,7 @@ class TestRetryLimiterIntegration:
     def test_retry_reacquires_limiter_each_attempt(self, mock_sleep, client):
         """Each retry attempt goes through the full acquire-call-release cycle."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         expected = MagicMock(name="chat_completion_result")
         mock_openai.chat.completions.create.side_effect = [
@@ -603,7 +603,7 @@ class TestRetryLimiterIntegration:
     def test_semaphore_not_leaked_on_exception(self, mock_sleep, client, real_limiter):
         """After all retries fail, the semaphore is fully released (not leaked)."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         mock_openai.chat.completions.create.side_effect = openai.InternalServerError(
             message="server error",

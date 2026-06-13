@@ -102,6 +102,59 @@ class _TestClient(OpenAIChatMixin):
         self.settings = settings
 
 
+class _ProviderAwareClient(OpenAIChatMixin):
+    """A step that routes by its settings provider, like the real step providers."""
+
+    def __init__(self, settings):
+        self.settings = settings
+
+    @property
+    def _provider(self) -> str:
+        return self.settings.OCR_PROVIDER
+
+
+class TestProviderRouting:
+    """A step's chat call routes to ITS provider's client, not a global one."""
+
+    @pytest.fixture(autouse=True)
+    def _restore_holder(self):
+        orig = dict(_openai_holder._clients)
+        yield
+        _openai_holder._clients = dict(orig)
+
+    @patch("common.llm.llm_limiter")
+    def test_routes_to_the_steps_provider_client(self, mock_limiter):
+        openai_client = MagicMock(name="openai_client")
+        ollama_client = MagicMock(name="ollama_client")
+        _openai_holder.init("openai", openai_client)
+        _openai_holder.init("ollama", ollama_client)
+
+        settings = MagicMock()
+        settings.MAX_RETRIES = 3
+        settings.MAX_RETRY_BACKOFF_SECONDS = 30
+        settings.OCR_PROVIDER = "ollama"
+        client = _ProviderAwareClient(settings)
+
+        client._create_completion(model="gemma3:12b", messages=[])
+
+        ollama_client.chat.completions.create.assert_called_once()
+        openai_client.chat.completions.create.assert_not_called()
+
+    @patch("common.llm.llm_limiter")
+    def test_raises_when_the_steps_provider_client_is_absent(self, mock_limiter):
+        _openai_holder.init("openai", MagicMock())
+        _openai_holder.init("ollama", None)
+
+        settings = MagicMock()
+        settings.MAX_RETRIES = 3
+        settings.MAX_RETRY_BACKOFF_SECONDS = 30
+        settings.OCR_PROVIDER = "ollama"
+        client = _ProviderAwareClient(settings)
+
+        with pytest.raises(RuntimeError, match="ollama chat client not initialised"):
+            client._create_completion(model="gemma3:12b", messages=[])
+
+
 class TestCreateCompletion:
     @pytest.fixture()
     def client(self):
@@ -112,10 +165,10 @@ class TestCreateCompletion:
 
     @pytest.fixture(autouse=True)
     def _restore_holder(self):
-        """Save and restore the holder's client after each test."""
-        orig = _openai_holder._client
+        """Save and restore the holder's client registry after each test."""
+        orig = dict(_openai_holder._clients)
         yield
-        _openai_holder._client = orig
+        _openai_holder._clients = dict(orig)
 
     @patch("common.llm.llm_limiter")
     def test_delegates_to_openai(self, mock_limiter, client):
@@ -123,7 +176,7 @@ class TestCreateCompletion:
         mock_openai = MagicMock()
         expected = MagicMock()
         mock_openai.chat.completions.create.return_value = expected
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         result = client._create_completion(
             model="gpt-5.4-mini",
@@ -140,7 +193,7 @@ class TestCreateCompletion:
     def test_uses_llm_limiter(self, mock_limiter, client):
         """_create_completion wraps the call in llm_limiter.acquire()."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
         client._create_completion(model="m")
 
         mock_limiter.acquire.assert_called_once()
@@ -149,7 +202,7 @@ class TestCreateCompletion:
     def test_extra_kwargs_forwarded(self, mock_limiter, client):
         """All keyword arguments are forwarded to the OpenAI API."""
         mock_openai = MagicMock()
-        _openai_holder.init(mock_openai)
+        _openai_holder.init("openai", mock_openai)
 
         client._create_completion(
             model="gpt-5.4-mini",
@@ -168,8 +221,8 @@ class TestCreateCompletion:
     @patch("common.llm.llm_limiter")
     def test_raises_when_client_not_initialized(self, mock_limiter, client):
         """_create_completion raises RuntimeError when client is None."""
-        _openai_holder._client = None
-        with pytest.raises(RuntimeError, match="OpenAI client not initialised"):
+        _openai_holder._clients["openai"] = None
+        with pytest.raises(RuntimeError, match="openai chat client not initialised"):
             client._create_completion(model="m")
 
 

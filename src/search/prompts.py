@@ -182,26 +182,28 @@ def _planner_response_format(settings: Settings) -> dict[str, object] | None:
     """Return the planner ``response_format`` for OpenAI, else ``None``.
 
     Mirrors ``classifier/provider.ClassificationProvider._response_format``: the
-    strict ``json_schema`` is OpenAI-only; for any other provider (Ollama) the
-    planner relies on the prompt instruction plus ``extract_json_object``
-    (RAG-06, spec §4.1).
+    strict ``json_schema`` is OpenAI-only; gated on the planner step's *own*
+    provider so a planner on Ollama relies on the prompt instruction plus
+    ``extract_json_object`` (RAG-06, spec §4.1).
     """
-    if settings.LLM_PROVIDER != "openai":
+    if settings.SEARCH_PLANNER_PROVIDER != "openai":
         return None
     return {"type": "json_schema", "json_schema": PLANNER_JSON_SCHEMA}
 
 
 def _synthesiser_response_format(settings: Settings) -> dict[str, object] | None:
-    """Return the synthesiser ``response_format`` for OpenAI, else ``None``."""
-    if settings.LLM_PROVIDER != "openai":
+    """Return the synthesiser ``response_format`` for OpenAI, else ``None``
+    (gated on the answer step's own provider)."""
+    if settings.SEARCH_ANSWER_PROVIDER != "openai":
         return None
     return {"type": "json_schema", "json_schema": SYNTHESISER_JSON_SCHEMA}
 
 
 def _judge_response_format(settings: Settings) -> dict[str, object] | None:
-    """Return the judge ``response_format`` for OpenAI, else ``None`` (Ollama
-    relies on the prompt instruction plus ``extract_json_object``)."""
-    if settings.LLM_PROVIDER != "openai":
+    """Return the judge ``response_format`` for OpenAI, else ``None`` — gated on
+    the judge step's own provider (Ollama relies on the prompt instruction plus
+    ``extract_json_object``)."""
+    if settings.SEARCH_JUDGE_PROVIDER != "openai":
         return None
     return {"type": "json_schema", "json_schema": JUDGE_JSON_SCHEMA}
 

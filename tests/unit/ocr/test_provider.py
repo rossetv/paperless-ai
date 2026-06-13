@@ -490,7 +490,7 @@ class TestOcrProviderReasoningEffort:
         # The OpenAI-only param must never reach an Ollama-compatible endpoint.
         settings = _make_settings(
             OCR_MODELS=["model-a"],
-            LLM_PROVIDER="ollama",
+            OCR_PROVIDER="ollama",
             OCR_REASONING_EFFORT="minimal",
         )
         provider = OcrProvider(settings)

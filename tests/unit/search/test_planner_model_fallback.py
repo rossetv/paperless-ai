@@ -236,7 +236,7 @@ class TestResponseFormatForwarded:
 
     def test_planner_omits_response_format_for_ollama(self) -> None:
         settings = make_search_settings(
-            LLM_PROVIDER="ollama",
+            SEARCH_PLANNER_PROVIDER="ollama",
             SEARCH_PLANNER_MODEL="gemma3:12b",
             CLASSIFY_MODELS=["gemma3:12b"],
         )
@@ -273,3 +273,33 @@ class TestPlannerReadsClassifyModels:
         assert planner._create_completion.call_count == 2  # type: ignore[attr-defined]
         assert isinstance(plan, RetrievalPlan)
         assert any(s.semantic == "classify-fallback worked" for s in plan.specs)
+
+    def test_no_cross_provider_fallback_when_planner_and_classify_differ(self) -> None:
+        """A planner on Ollama must NOT fall back through an OpenAI CLASSIFY_MODELS
+        list — those models belong to a different endpoint and would 404 on the
+        Ollama client. When the providers differ the planner only tries its own
+        model, then degrades (spec §4.4)."""
+        settings = make_search_settings(
+            SEARCH_PLANNER_PROVIDER="ollama",
+            CLASSIFY_PROVIDER="openai",
+            SEARCH_PLANNER_MODEL="gemma3:12b",
+            CLASSIFY_MODELS=["gpt-5.4-mini", "gpt-5.4"],
+        )
+
+        planner = QueryPlanner(settings)
+        planner._create_completion = MagicMock(  # type: ignore[method-assign]
+            side_effect=make_internal_server_error()
+        )
+
+        plan = planner.plan("query that fails")
+
+        # Only the Ollama primary is attempted — no cross-provider GPT fallback.
+        assert planner._create_completion.call_count == 1  # type: ignore[attr-defined]
+        models_called = [
+            call.kwargs["model"]
+            for call in planner._create_completion.call_args_list  # type: ignore[attr-defined]
+        ]
+        assert models_called == ["gemma3:12b"]
+        assert "gpt-5.4-mini" not in models_called
+        # A degraded plan (no specs) is acceptable; the point is no GPT call.
+        assert isinstance(plan, RetrievalPlan)

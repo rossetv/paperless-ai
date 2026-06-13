@@ -15,7 +15,7 @@
  * Tier: features/ — leaf module, no deps outside the settings feature.
  */
 
-import type { SettingsSection } from './types';
+import type { SettingsField, SettingsSection } from './types';
 
 // ---------------------------------------------------------------------------
 // Shared option lists
@@ -42,6 +42,64 @@ const REASONING_EFFORT_OPTIONS = [
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
 ];
+
+/**
+ * The per-step provider toggle. Reused by every pipeline step so each picks
+ * OpenAI or Ollama independently. The Ollama option is locked until
+ * `OLLAMA_BASE_URL` is configured under Connections (`disabledWhenEmpty`) — a
+ * step may not select a provider whose connection is missing.
+ */
+const PROVIDER_OPTIONS = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'ollama', label: 'Ollama', disabledWhenEmpty: 'OLLAMA_BASE_URL' },
+];
+
+/** The hint shown under every step's Provider row. */
+const PROVIDER_HINT = 'Where this step runs. Ollama needs its URL under Connections.';
+
+/**
+ * The three rows for one Search sub-step (Planner / Judge / Answer): its
+ * provider, its model (an OpenAI dropdown or a free-text Ollama model, keyed on
+ * that sub-step's provider), and its reasoning effort (shown only on OpenAI).
+ * Each sub-step chooses its provider and model independently — mix freely, e.g.
+ * a local judge with a cloud answer.
+ */
+function searchStageFields(stage: {
+  key: 'PLANNER' | 'JUDGE' | 'ANSWER';
+  label: string;
+  hint: string;
+  ollamaPlaceholder: string;
+}): SettingsField[] {
+  const provider = `SEARCH_${stage.key}_PROVIDER`;
+  return [
+    {
+      key: provider,
+      label: `${stage.label} provider`,
+      hint: stage.hint,
+      control: { kind: 'segmented', options: PROVIDER_OPTIONS },
+    },
+    {
+      key: `SEARCH_${stage.key}_MODEL`,
+      label: `${stage.label} model`,
+      hint: 'OpenAI: pick a model. Ollama: type a pulled model.',
+      // A dropdown of the OpenAI models when this sub-step is on OpenAI; a
+      // free-text field for an Ollama model otherwise.
+      control: {
+        kind: 'conditional',
+        on: provider,
+        variants: { openai: { kind: 'select', options: MODEL_OPTIONS } },
+        fallback: { kind: 'text', mono: true, placeholder: stage.ollamaPlaceholder },
+      },
+    },
+    {
+      key: `SEARCH_${stage.key}_REASONING_EFFORT`,
+      label: `${stage.label} reasoning effort`,
+      hint: 'Higher tiers spend more reasoning tokens. OpenAI only.',
+      control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
+      visibleWhen: { key: provider, equals: 'openai' },
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // SETTINGS_SECTIONS — the ordered declarative model for the Settings screen
@@ -117,56 +175,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 2. AI providers ───────────────────────────────────────────────────────
-  // One card per role — each job picks its provider independently. Credentials
-  // for the providers themselves live under Connections.
-  {
-    id: 'providers',
-    title: 'AI providers',
-    subtitle: 'Which provider serves each role. The two are set independently.',
-    groups: [
-      {
-        id: 'chat',
-        title: 'Chat & vision',
-        subtitle: 'Runs OCR transcription, classification, and search answers.',
-        fields: [
-          {
-            key: 'LLM_PROVIDER',
-            label: 'Provider',
-            hint: 'Where chat and vision calls run.',
-            control: {
-              kind: 'segmented',
-              options: [
-                { value: 'openai', label: 'OpenAI' },
-                { value: 'ollama', label: 'Ollama' },
-              ],
-            },
-          },
-        ],
-      },
-      {
-        id: 'embeddings',
-        title: 'Embeddings',
-        subtitle: 'Vectorises your library for semantic search. Switching this re-embeds every document.',
-        fields: [
-          {
-            key: 'EMBEDDING_PROVIDER',
-            label: 'Provider',
-            hint: 'Where document vectors are produced. The model is set under Indexing.',
-            control: {
-              kind: 'segmented',
-              options: [
-                { value: 'openai', label: 'OpenAI' },
-                { value: 'ollama', label: 'Ollama' },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-  },
-
-  // ── 3. OCR ────────────────────────────────────────────────────────────────
+  // ── 2. OCR ────────────────────────────────────────────────────────────────
   {
     id: 'ocr',
     title: 'OCR',
@@ -175,8 +184,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'model',
         title: 'Model',
-        subtitle: 'Tried in order; first success wins. Higher reasoning tiers cost more tokens (OpenAI only).',
+        subtitle: 'Pick the provider, then the models. Tried in order; first success wins.',
         fields: [
+          {
+            key: 'OCR_PROVIDER',
+            label: 'Provider',
+            hint: PROVIDER_HINT,
+            control: { kind: 'segmented', options: PROVIDER_OPTIONS },
+          },
           {
             key: 'OCR_MODELS',
             label: 'Model fallback chain',
@@ -186,8 +201,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             key: 'OCR_REASONING_EFFORT',
             label: 'Reasoning effort',
-            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            hint: 'Higher tiers spend more reasoning tokens. OpenAI only.',
             control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
+            visibleWhen: { key: 'OCR_PROVIDER', equals: 'openai' },
           },
         ],
       },
@@ -233,7 +249,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 4. Classification ─────────────────────────────────────────────────────
+  // ── 3. Classification ─────────────────────────────────────────────────────
   {
     id: 'classification',
     title: 'Classification',
@@ -242,8 +258,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'model',
         title: 'Model',
-        subtitle: 'Tried in order; first success wins. Higher reasoning tiers cost more tokens (OpenAI only).',
+        subtitle: 'Pick the provider, then the models. Tried in order; first success wins.',
         fields: [
+          {
+            key: 'CLASSIFY_PROVIDER',
+            label: 'Provider',
+            hint: PROVIDER_HINT,
+            control: { kind: 'segmented', options: PROVIDER_OPTIONS },
+          },
           {
             key: 'CLASSIFY_MODELS',
             label: 'Model fallback chain',
@@ -253,8 +275,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             key: 'CLASSIFY_REASONING_EFFORT',
             label: 'Reasoning effort',
-            hint: 'minimal / low / medium / high. Ignored for non-OpenAI providers.',
+            hint: 'Higher tiers spend more reasoning tokens. OpenAI only.',
             control: { kind: 'segmented', options: REASONING_EFFORT_OPTIONS },
+            visibleWhen: { key: 'CLASSIFY_PROVIDER', equals: 'openai' },
           },
         ],
       },
@@ -324,7 +347,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 5. Indexing ───────────────────────────────────────────────────────────
+  // ── 4. Indexing ───────────────────────────────────────────────────────────
   {
     id: 'indexing',
     title: 'Indexing',
@@ -333,8 +356,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'embeddings',
         title: 'Embeddings',
-        subtitle: 'Changing the model or dimensions triggers a full rebuild. The provider lives under AI providers.',
+        subtitle: 'Provider and model sit together. Changing either re-embeds the whole library.',
         fields: [
+          {
+            key: 'EMBEDDING_PROVIDER',
+            label: 'Provider',
+            hint: PROVIDER_HINT,
+            control: { kind: 'segmented', options: PROVIDER_OPTIONS },
+          },
           {
             key: 'EMBEDDING_MODEL',
             label: 'Embedding model',
@@ -406,7 +435,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 6. Search ─────────────────────────────────────────────────────────────
+  // ── 5. Search ─────────────────────────────────────────────────────────────
   {
     id: 'search',
     title: 'Search',
@@ -415,41 +444,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       {
         id: 'models',
         title: 'Models',
-        subtitle: 'The planner does structured-query extraction; the answer model writes the prose.',
+        subtitle:
+          'Planner, Judge and Answer each pick their own provider and model. ' +
+          'Mix freely — e.g. a local judge with a cloud answer.',
         fields: [
-          {
-            key: 'SEARCH_PLANNER_MODEL',
-            label: 'Planner model',
-            hint: 'Cheaper model for structured query extraction.',
-            control: {
-              kind: 'select',
-              options: MODEL_OPTIONS,
-              reasoningKey: 'SEARCH_PLANNER_REASONING_EFFORT',
-              reasoningOptions: REASONING_EFFORT_OPTIONS,
-            },
-          },
-          {
-            key: 'SEARCH_ANSWER_MODEL',
-            label: 'Answer model',
-            hint: 'Stronger model for user-facing synthesis.',
-            control: {
-              kind: 'select',
-              options: MODEL_OPTIONS,
-              reasoningKey: 'SEARCH_ANSWER_REASONING_EFFORT',
-              reasoningOptions: REASONING_EFFORT_OPTIONS,
-            },
-          },
-          {
-            key: 'SEARCH_JUDGE_MODEL',
-            label: 'Judge model',
-            hint: 'The model that screens retrieved documents. Defaults to the planner model.',
-            control: {
-              kind: 'select',
-              options: MODEL_OPTIONS,
-              reasoningKey: 'SEARCH_JUDGE_REASONING_EFFORT',
-              reasoningOptions: REASONING_EFFORT_OPTIONS,
-            },
-          },
+          ...searchStageFields({
+            key: 'PLANNER',
+            label: 'Planner',
+            hint: 'Cheap model for structured query extraction.',
+            ollamaPlaceholder: 'gemma3:12b',
+          }),
+          ...searchStageFields({
+            key: 'JUDGE',
+            label: 'Judge',
+            hint: 'Screens retrieved documents. Defaults to the planner.',
+            ollamaPlaceholder: 'gemma3:12b',
+          }),
+          ...searchStageFields({
+            key: 'ANSWER',
+            label: 'Answer',
+            hint: 'Stronger model for the user-facing synthesis.',
+            ollamaPlaceholder: 'gemma3:27b',
+          }),
         ],
       },
       {
@@ -550,7 +566,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 7. Automation & Daemons ───────────────────────────────────────────────
+  // ── 6. Automation & Daemons ───────────────────────────────────────────────
   {
     id: 'automation',
     title: 'Automation & Daemons',
@@ -653,7 +669,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 8. Logging ────────────────────────────────────────────────────────────
+  // ── 7. Logging ────────────────────────────────────────────────────────────
   {
     id: 'logging',
     title: 'Logging',

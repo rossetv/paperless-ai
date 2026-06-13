@@ -94,21 +94,21 @@ class TestResponseFormatGating:
     """response_format is built for OpenAI and None otherwise (mirrors classifier)."""
 
     def test_planner_response_format_for_openai(self) -> None:
-        settings = make_search_settings(LLM_PROVIDER="openai")
+        settings = make_search_settings(SEARCH_PLANNER_PROVIDER="openai")
         rf = _planner_response_format(settings)
         assert rf == {"type": "json_schema", "json_schema": PLANNER_JSON_SCHEMA}
 
     def test_planner_response_format_none_for_ollama(self) -> None:
-        settings = make_search_settings(LLM_PROVIDER="ollama")
+        settings = make_search_settings(SEARCH_PLANNER_PROVIDER="ollama")
         assert _planner_response_format(settings) is None
 
     def test_synthesiser_response_format_for_openai(self) -> None:
-        settings = make_search_settings(LLM_PROVIDER="openai")
+        settings = make_search_settings(SEARCH_ANSWER_PROVIDER="openai")
         rf = _synthesiser_response_format(settings)
         assert rf == {"type": "json_schema", "json_schema": SYNTHESISER_JSON_SCHEMA}
 
     def test_synthesiser_response_format_none_for_ollama(self) -> None:
-        settings = make_search_settings(LLM_PROVIDER="ollama")
+        settings = make_search_settings(SEARCH_ANSWER_PROVIDER="ollama")
         assert _synthesiser_response_format(settings) is None
 
 
