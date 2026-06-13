@@ -20,10 +20,17 @@
   font-weight: var(--font-weight-button);
   line-height: var(--line-height-button);
   letter-spacing: var(--letter-spacing-button);
+
+  /* Micro-interaction transition (DESIGN.md §4 "Interaction motion").
+     Hover/focus colour shifts run at --duration-standard; the tactile
+     press (transform + box-shadow) runs at the quicker --duration-fast so
+     a tap feels immediate. All on the decelerating --easing-out curve. */
   transition:
-    background-color var(--duration-standard) var(--easing-standard),
-    color var(--duration-standard) var(--easing-standard),
-    border-color var(--duration-standard) var(--easing-standard);
+    background-color var(--duration-standard) var(--easing-out),
+    color var(--duration-standard) var(--easing-out),
+    border-color var(--duration-standard) var(--easing-out),
+    box-shadow var(--duration-standard) var(--easing-out),
+    transform var(--duration-fast) var(--easing-out);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -42,13 +49,18 @@
   padding: var(--spacing-6) var(--spacing-11);
 }
 
+/* Filled CTA — hover lifts the button a hair with a soft shadow (§6 depth). */
 .primary:hover:not(:disabled) {
   background-color: var(--colour-link);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
 }
 
 .primary:active:not(:disabled) {
   background-color: var(--colour-button-active-bg);
   color: var(--colour-text-primary);
+  box-shadow: none;
+  transform: scale(0.97); /* override the hover lift — reads as a press */
 }
 
 /* ── Secondary variant ── */
@@ -64,6 +76,11 @@
   border-color: var(--colour-text-tertiary);
 }
 
+.secondary:active:not(:disabled) {
+  background-color: var(--colour-button-active-bg);
+  transform: scale(0.97);
+}
+
 /* ── Destructive variant — danger-red fill for irreversible actions ── */
 .destructive {
   background-color: var(--colour-status-danger-fg);
@@ -72,12 +89,17 @@
   padding: var(--spacing-6) var(--spacing-11);
 }
 
+/* Filled destructive — matches the primary lift on hover. */
 .destructive:hover:not(:disabled) {
   opacity: var(--opacity-subdued);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
 }
 
 .destructive:active:not(:disabled) {
   opacity: var(--opacity-pressed);
+  box-shadow: none;
+  transform: scale(0.97); /* override the hover lift — reads as a press */
 }
 
 /* ── Ghost variant — no border or background, low-prominence action ── */
@@ -91,6 +113,12 @@
 .ghost:hover:not(:disabled) {
   background-color: var(--colour-button-light-bg);
   color: var(--colour-text-primary);
+}
+
+.ghost:active:not(:disabled) {
+  background-color: var(--colour-button-active-bg);
+  color: var(--colour-text-primary);
+  transform: scale(0.97);
 }
 
 /* ── Size modifiers ── */
@@ -107,4 +135,25 @@
 .button:disabled {
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
+}
+
+/* Reduced motion — drop the translate/scale transforms (motion); keep the
+   colour, opacity and shadow shifts, which are motion-safe (DESIGN.md §4). */
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition:
+      background-color var(--duration-standard) var(--easing-out),
+      color var(--duration-standard) var(--easing-out),
+      border-color var(--duration-standard) var(--easing-out),
+      box-shadow var(--duration-standard) var(--easing-out);
+  }
+
+  .primary:hover:not(:disabled),
+  .primary:active:not(:disabled),
+  .secondary:active:not(:disabled),
+  .destructive:hover:not(:disabled),
+  .destructive:active:not(:disabled),
+  .ghost:active:not(:disabled) {
+    transform: none;
+  }
 }

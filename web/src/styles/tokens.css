@@ -254,6 +254,7 @@
 
   /* Easing curves */
   --easing-standard:      ease;            /* default for interaction transitions */
+  --easing-out:           cubic-bezier(0.33, 1, 0.68, 1); /* micro-interactions: swift out, decelerates to rest (Apple feel) */
   --easing-linear:        linear;          /* constant-rate looping animation */
   --easing-emphasis:      ease-in-out;     /* symmetric pulse / chevron motion */
   --easing-decelerate:    cubic-bezier(0.2, 0.8, 0.2, 1); /* large panel slide-in: swift in, eases to rest */
@@ -326,9 +327,6 @@
 
   /* Settings / access-control left rail width */
   --width-settings-nav: 236px;
-
-  /* Settings content column max-width — tighter than --width-app-content. */
-  --width-settings-content-max: 1180px;
 
   /* Settings savebar glass background — light value; dark overridden in themes.css. */
   --colour-savebar-bg: rgb(255 255 255 / 92%);
@@ -559,6 +557,9 @@
 
   /* Uppercase-label letter-spacing — section sub-labels rendered in ALL CAPS */
   --letter-spacing-label:       0.4px;
+
+  /* Table min-width — horizontal scroll threshold for narrow viewports */
+  --width-table-min-scroll:     600px;
 
   /* Table column widths — access screens (UsersScreen, APIKeysScreen) */
   --width-col-actions-narrow:    90px;  /* single-action column (Users) */

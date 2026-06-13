@@ -43,6 +43,26 @@
   cursor: pointer;
   background: none;
   border: var(--spacing-1) solid var(--colour-border);
+  transition:
+    background-color var(--duration-standard) var(--easing-out),
+    border-color var(--duration-standard) var(--easing-out),
+    transform var(--duration-fast) var(--easing-out);
+}
+
+/* Hover — subtle tint (unselected); the selected accent fill brightens. */
+.chip-interactive:hover {
+  background-color: var(--colour-button-light-bg);
+  border-color: var(--colour-text-tertiary);
+}
+
+.chip-interactive.selected:hover {
+  background-color: var(--colour-link);
+  border-color: transparent;
+}
+
+/* Tactile press — a quick scale-down, matching the Button primitive (§4). */
+.chip-interactive:active {
+  transform: scale(0.96);
 }
 
 .chip-interactive:focus-visible {
@@ -79,11 +99,23 @@
   line-height: var(--line-height-caption);
   letter-spacing: var(--letter-spacing-caption);
   color: var(--colour-text-secondary);
+  transition:
+    background-color var(--duration-standard) var(--easing-out),
+    color var(--duration-standard) var(--easing-out);
+}
+
+.chip-inner-toggle:hover {
+  background-color: var(--colour-button-light-bg);
+  color: var(--colour-text-primary);
 }
 
 .chip-inner-toggle.selected {
   background-color: var(--colour-accent);
   color: var(--colour-text-on-dark);
+}
+
+.chip-inner-toggle.selected:hover {
+  background-color: var(--colour-link);
 }
 
 .chip-inner-toggle:focus-visible {
@@ -113,6 +145,18 @@
 
   /* Tighten the touch target; add spacing-1 breathing room */
   margin-inline-start: var(--spacing-1);
+
+  /* The × fades to full strength on hover and dips on press. */
+  opacity: var(--opacity-muted);
+  transition: opacity var(--duration-standard) var(--easing-out);
+}
+
+.chip-remove:hover {
+  opacity: 1;
+}
+
+.chip-remove:active {
+  opacity: var(--opacity-pressed);
 }
 
 /* Focus ring on remove button — accessibility per DESIGN.md §6 */
@@ -120,4 +164,11 @@
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
   border-radius: var(--radius-micro);
+}
+
+/* Reduced motion — keep the colour shifts, drop the press scale (§4). */
+@media (prefers-reduced-motion: reduce) {
+  .chip-interactive:active {
+    transform: none;
+  }
 }

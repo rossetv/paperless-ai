@@ -163,8 +163,9 @@
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--duration-fast) var(--easing-standard),
-              border-color var(--duration-fast) var(--easing-standard);
+  transition: background var(--duration-standard) var(--easing-out),
+              border-color var(--duration-standard) var(--easing-out),
+              transform var(--duration-fast) var(--easing-out);
 }
 
 .btn-test:focus-visible {
@@ -180,6 +181,12 @@
 .btn-test:hover:not(:disabled) {
   background: var(--colour-button-light-bg);
   border-color: var(--colour-text-tertiary);
+}
+
+/* Tactile press — matches the Button primitive's ghost press feel (§4). */
+.btn-test:active:not(:disabled) {
+  background: var(--colour-button-active-bg);
+  transform: scale(0.97);
 }
 
 /* ── Chevron — rotates 180° when expanded ── */
@@ -209,5 +216,15 @@
   .pill,
   .pill-dot {
     transition: none;
+  }
+
+  /* Keep the Test button's colour shift; drop only the press scale (motion). */
+  .btn-test {
+    transition: background var(--duration-standard) var(--easing-out),
+                border-color var(--duration-standard) var(--easing-out);
+  }
+
+  .btn-test:active:not(:disabled) {
+    transform: none;
   }
 }

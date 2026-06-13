@@ -44,7 +44,9 @@
   line-height: var(--line-height-tight);
   color: var(--colour-text-secondary);
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--easing-standard);
+  transition:
+    background-color var(--duration-fast) var(--easing-out),
+    transform var(--duration-fast) var(--easing-out);
 }
 
 /* Transparent expanded hit-area (DD-4 compact-control exception).
@@ -75,6 +77,24 @@
 
 .button:hover:not(:disabled) {
   background-color: var(--colour-button-light-bg);
+}
+
+/* Tactile press — a quick darker fill + scale-down, matching the Button
+   primitive's press feel (DESIGN.md §4). */
+.button:active:not(:disabled) {
+  background-color: var(--colour-button-active-bg);
+  transform: scale(0.92);
+}
+
+/* Reduced motion — keep the colour shift, drop the scale (DESIGN.md §4). */
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: background-color var(--duration-fast) var(--easing-out);
+  }
+
+  .button:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 /* ── Value cell — wraps the numeric input and the optional unit suffix.
