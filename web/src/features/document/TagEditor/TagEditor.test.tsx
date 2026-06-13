@@ -64,7 +64,7 @@ describe('TagEditor', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'urgent' } });
-    fireEvent.click(screen.getByText(/create "urgent"/i));
+    fireEvent.click(screen.getByRole('option', { name: /create/i }));
     expect(onCreate).toHaveBeenCalledWith('urgent');
   });
 
