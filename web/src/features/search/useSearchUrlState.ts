@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { FilterRequest } from '../../api/types';
-import { paramsToFilters } from './parseSearchParams';
+import { paramsToFilters } from '../../lib/parseSearchParams';
 
 /**
  * The empty filter state — no correspondent, no type, no tags, no date range.

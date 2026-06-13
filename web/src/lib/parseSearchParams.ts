@@ -1,12 +1,16 @@
 /**
  * Shared URL-parameter parser for search state.
  *
+ * Promoted to lib/ (from features/search) because both features/document and
+ * features/search depend on it — cross-feature imports are a §12.3 violation;
+ * lib/ is the correct shared location (DD-6).
+ *
  * Extracted so both `useSearchUrlState` (the search page's live binding) and
  * `DocumentScreen` (which reads a frozen `parentSearch` string) derive
  * `{ query, filters }` from the same logic without duplication.
  */
 
-import type { FilterRequest } from '../../api/types';
+import type { FilterRequest } from '../api/types';
 
 /** Parse a string into a positive integer, or null if not a positive int. */
 function toPositiveInt(value: string | null): number | null {

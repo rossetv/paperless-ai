@@ -19,12 +19,6 @@ export interface BottomTabItem {
    * Explicitly typed as `boolean | undefined` to satisfy `exactOptionalPropertyTypes`.
    */
   end?: boolean | undefined;
-  /**
-   * When `true`, this tab should only be shown to admin users.
-   * Filtering is the caller's responsibility — the component renders
-   * whatever items it receives.
-   */
-  adminOnly?: boolean | undefined;
 }
 
 export interface BottomTabBarProps {
@@ -71,20 +65,12 @@ export function BottomTabBar({
         >
           {({ isActive }) => (
             <>
-              {isActive ? (
-                <Icon
-                  name={item.icon}
-                  size="medium"
-                  className={cn(styles['tab-icon'])}
-                  label={`${item.label} (current)`}
-                />
-              ) : (
-                <Icon
-                  name={item.icon}
-                  size="medium"
-                  className={cn(styles['tab-icon'])}
-                />
-              )}
+              <Icon
+                name={item.icon}
+                size="medium"
+                className={cn(styles['tab-icon'])}
+                {...(isActive ? { label: `${item.label} (current)` } : {})}
+              />
               <span className={styles['tab-label']}>{item.label}</span>
             </>
           )}
