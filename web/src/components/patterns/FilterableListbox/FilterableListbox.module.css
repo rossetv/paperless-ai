@@ -1,0 +1,152 @@
+/*
+ * FilterableListbox pattern — CSS Module.
+ *
+ * A filtered single-/multi-select ARIA combobox: a trigger button (closed) and
+ * a search input over a popover listbox (open). Styled in the Apple field idiom
+ * from DESIGN.md §4 — hairline-bordered popover on --colour-surface with
+ * --radius-standard and --shadow-card. All values are design tokens.
+ */
+
+/* Root — positioning context so the absolutely-positioned listbox anchors here. */
+.root {
+  position: relative;
+}
+
+/* ── Trigger button (closed state) ── */
+.trigger {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  border-radius: var(--radius-micro);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-6);
+  width: calc(100% + 2 * var(--spacing-6));
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+.trigger:hover {
+  background-color: var(--colour-button-active-bg);
+}
+
+.trigger:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: var(--spacing-1);
+}
+
+.trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: flex;
+  align-items: center;
+  color: var(--colour-text-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Search input (open state) ── */
+.input {
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  background: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-accent);
+  border-radius: var(--radius-micro);
+  padding: var(--spacing-2) var(--spacing-6);
+  margin: calc(-1 * var(--spacing-2)) calc(-1 * var(--spacing-6));
+  width: calc(100% + 2 * var(--spacing-6));
+  outline: none;
+}
+
+.input:focus {
+  box-shadow: var(--shadow-focus);
+}
+
+/* ── Listbox (popover) ── */
+.listbox {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: var(--spacing-2) 0;
+  list-style: none;
+  background: var(--colour-surface);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  border-radius: var(--radius-standard);
+  box-shadow: var(--shadow-card);
+  max-height: var(--height-listbox);
+  overflow-y: auto;
+  z-index: var(--z-dropdown);
+}
+
+/* ── Option row ── */
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-6) var(--spacing-10);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-primary);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--easing-standard);
+}
+
+/* Highlight is driven by keyboard/hover via the `highlighted` modifier so the
+   active-descendant row matches the visual highlight one-to-one. */
+.option.highlighted {
+  background-color: var(--colour-button-active-bg);
+}
+
+.option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option.selected .option-label {
+  color: var(--colour-accent);
+  font-weight: var(--font-weight-caption-bold);
+}
+
+.option-meta {
+  font-size: var(--font-size-micro);
+  color: var(--colour-text-tertiary);
+  flex-shrink: 0;
+  margin-left: var(--spacing-10);
+}
+
+/* ── Create-new row ── */
+.create {
+  font-weight: var(--font-weight-caption-bold);
+  color: var(--colour-accent);
+  border-top: var(--spacing-1) solid var(--colour-border-button);
+}
+
+.create.highlighted {
+  background-color: var(--colour-accent-wash);
+}
+
+/* ── Clear row (top of the list in single-select) ── */
+.clear {
+  color: var(--colour-text-tertiary);
+  border-bottom: var(--spacing-1) solid var(--colour-border-button);
+}
+
+/* ── No-matches placeholder ── */
+.empty {
+  padding: var(--spacing-6) var(--spacing-10);
+  font-size: var(--font-size-caption);
+  color: var(--colour-text-tertiary);
+}
