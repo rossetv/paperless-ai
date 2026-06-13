@@ -50,6 +50,48 @@
   outline-offset: var(--spacing-1);
 }
 
+/* ── Outer wrapper for the clickable+removable variant (FE-34: avoids
+   button-in-button). The outer span provides the visual frame (border,
+   bg, radius); the inner toggle button is stripped to padding/type only. ── */
+.chip-outer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: var(--radius-micro);
+  border: var(--spacing-1) solid var(--colour-border);
+  background-color: var(--colour-button-light-bg);
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Toggle button inside chip-outer — visual frame comes from the wrapper. */
+.chip-inner-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-2) var(--spacing-6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  letter-spacing: var(--letter-spacing-caption);
+  color: var(--colour-text-secondary);
+}
+
+.chip-inner-toggle.selected {
+  background-color: var(--colour-accent);
+  color: var(--colour-text-on-dark);
+}
+
+.chip-inner-toggle:focus-visible {
+  outline: var(--spacing-1) solid var(--colour-focus-ring);
+  outline-offset: calc(-1 * var(--spacing-1));
+  border-radius: var(--radius-micro);
+}
+
 /* ── Label text within the chip ── */
 .chip-label {
   display: inline;
