@@ -70,9 +70,12 @@
   height: 100%;
 }
 
-/* Real thumbnail image — portrait page sitting at the top of the preview. */
+/* Real thumbnail image — portrait page sitting at the top of the preview.
+ * Width and height both come from tokens (one source of truth); the removed
+ * width/height HTML attributes on <img> previously duplicated these values. */
 .thumb-img {
   width: var(--width-library-thumb);
+  height: var(--height-library-preview);
   max-height: 100%;
   object-fit: cover;
   object-position: top;
@@ -80,10 +83,13 @@
   box-shadow: var(--shadow-card);
 }
 
-/* DocThumb fallback — when the real image fails, scale the placeholder up. */
+/* DocThumb fallback — when the real image fails, render the placeholder at
+ * 1.5× the artboard size so it fills the preview area without letterboxing.
+ * Expressed as explicit width/height from the DocThumb tokens instead of a
+ * magic scale factor (FE-41): calc(1.5 * --size-doc-thumb-{width,height}). */
 .thumb-fallback {
-  transform: scale(1.5);
-  transform-origin: top center;
+  width: calc(1.5 * var(--size-doc-thumb-width));
+  height: calc(1.5 * var(--size-doc-thumb-height));
   margin-block-start: var(--spacing-9);
 }
 

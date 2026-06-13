@@ -8,7 +8,15 @@ import { SnippetText } from '../../../components/primitives/SnippetText/SnippetT
 import { RelevanceMeter } from '../../../components/primitives/RelevanceMeter/RelevanceMeter';
 import { documentThumbUrl } from '../../../api/client';
 import type { SourceDocument } from '../../../api/types';
-import { thumbKindForDocumentType } from '../../document/thumbKind';
+import { thumbKindForDocumentType } from '../../../components/primitives/DocThumb/thumbKind';
+
+/**
+ * Placeholder DocThumb body-row indices (0-based) highlighted when a source
+ * card is in the default or highlighted state (FE-59). These drive the accent
+ * lines inside the fallback SVG thumbnail — not matched content from the wire.
+ */
+const MATCHED_ROWS_HIGHLIGHTED = [3, 4, 7];
+const MATCHED_ROWS_DEFAULT = [5, 6];
 
 export interface SourceCardProps {
   /** The source document to display. */
@@ -61,7 +69,7 @@ function SourceCardInner({
       index={index}
       thumbKind={thumbKindForDocumentType(source.document_type)}
       thumbImageUrl={documentThumbUrl(source.document_id)}
-      matched={highlighted ? [3, 4, 7] : [5, 6]}
+      matched={highlighted ? MATCHED_ROWS_HIGHLIGHTED : MATCHED_ROWS_DEFAULT}
       highlighted={highlighted}
     >
       <Stack direction="vertical" gap={5}>
