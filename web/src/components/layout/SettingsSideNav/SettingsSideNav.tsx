@@ -5,6 +5,12 @@ import { Icon } from '../../primitives/Icon/Icon';
 import type { IconName } from '../../primitives/Icon/Icon';
 import styles from './SettingsSideNav.module.css';
 
+// rationale: ~115 lines — component is data-driven with two distinct render
+// branches (anchor vs NavLink) that each need icon+label markup plus independent
+// active-state derivation. Splitting further would scatter the logic that must
+// stay co-located for readability. Kept below 130 lines with icon+label factored
+// into NavItemContent below.
+
 /** A single navigable item in a {@link SettingsNavGroup}. */
 export interface SettingsNavItem {
   /** Stable identifier — used for React keys, never displayed. */
@@ -43,14 +49,23 @@ export interface SettingsSideNavProps {
   className?: string;
 }
 
+/** Read --height-settings-sticky from CSS custom properties; fall back to 140. */
+function readStickyOffset(): number {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue('--height-settings-sticky')
+    .trim();
+  const parsed = parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 140;
+}
+
 /**
  * Watch the in-page anchor blocks (the ids on the right of every Configuration
  * link's `#…`) and report the one currently in view as the user scrolls.
  *
  * Mirrors mediaman's rail scroll-spy: we pick the block whose top has just
- * passed an offset from the viewport top, so the active item flips as the
- * user reaches each section heading. Falls back to `null` when no anchor
- * blocks are present on the page (e.g. /settings/users routed pages).
+ * passed the sticky-offset line (--height-settings-sticky), so the active item
+ * flips as the user reaches each section heading. Falls back to `null` when no
+ * anchor blocks are present on the page (e.g. /settings/users routed pages).
  */
 function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
   const [active, setActive] = React.useState<string | null>(null);
@@ -61,11 +76,13 @@ function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
       return undefined;
     }
 
+    // Read the token once per effect run, not per scroll event.
+    const stickyOffset = readStickyOffset();
+
     const findActive = (): void => {
-      // Mirror mediaman: y + ~140px finds the block whose heading has
-      // crossed the top of the viewport. Walking the list in document
-      // order lets the last-matched block win.
-      const pos = window.scrollY + 140;
+      // Pick the last block whose top has crossed the sticky-offset line,
+      // so the active item matches what the user is actually reading.
+      const pos = window.scrollY + stickyOffset;
       let current: string | null = null;
       for (const id of anchorIds) {
         const el = document.getElementById(id);
@@ -74,7 +91,7 @@ function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
         }
       }
       // Snap to the last anchor when the page is scrolled to the bottom —
-      // the final block may be too short to ever cross the 140px threshold.
+      // the final block may be too short to ever cross the sticky-offset threshold.
       const atBottom =
         window.innerHeight + window.scrollY >= document.body.scrollHeight - 4;
       if (atBottom) {
@@ -98,6 +115,30 @@ function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
   return active;
 }
 
+/** Shared icon + label content for both anchor and NavLink items. */
+function NavItemContent({
+  icon,
+  label,
+  isActive,
+}: {
+  icon: IconName | undefined;
+  label: string;
+  isActive: boolean;
+}): React.ReactElement {
+  return (
+    <>
+      {icon !== undefined && (
+        <Icon
+          name={icon}
+          size="small"
+          className={cn(styles['link-icon'], isActive && styles['link-icon-active'])}
+        />
+      )}
+      {label}
+    </>
+  );
+}
+
 /**
  * The left navigation rail of the settings / access-control area.
  *
@@ -108,7 +149,8 @@ function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
  *
  * Anchor items participate in a scroll-spy: as the user scrolls the
  * /settings page, the rail flips its active state to mirror whichever block
- * heading has crossed the top of the viewport.
+ * heading has crossed the top of the viewport. Clicking an anchor item scrolls
+ * smoothly to the target section, accounting for the sticky header offset.
  *
  * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/,
  * components/primitives, react-router-dom.
@@ -138,6 +180,19 @@ export function SettingsSideNav({
 
   const scrolledActiveId = useAnchorScrollSpy(anchorIds);
 
+  /** Scroll the target section into view, offset by the sticky header height. */
+  const handleAnchorClick = React.useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, anchorId: string): void => {
+      const el = document.getElementById(anchorId);
+      if (el === null) return;
+      e.preventDefault();
+      const stickyOffset = readStickyOffset();
+      const top = el.getBoundingClientRect().top + window.scrollY - stickyOffset;
+      window.scrollTo({ top, behavior: 'smooth' });
+    },
+    [],
+  );
+
   return (
     <nav className={cn(styles['nav'], className)} aria-label="Settings">
       {eyebrow !== undefined && (
@@ -161,9 +216,10 @@ export function SettingsSideNav({
 
             if (isAnchor) {
               const isOnTargetPath = location.pathname === targetPath;
-              // Scroll-spy takes precedence over the URL hash so the active
-              // state mirrors what the user is actually looking at, not what
-              // they last clicked.
+              // Scroll-spy is the single source of truth for active state when
+              // the user has scrolled (scrolledActiveId !== null). Falls back to
+              // the URL hash when the spy hasn't fired yet (e.g. initial render,
+              // JSDOM in tests) so exactly one item is active at all times.
               const isActive =
                 isOnTargetPath &&
                 (scrolledActiveId !== null
@@ -176,23 +232,17 @@ export function SettingsSideNav({
                 <a
                   key={item.id}
                   href={item.to}
-                  className={cn(
-                    styles['link'],
-                    isActive && styles['link-active'],
-                  )}
+                  className={cn(styles['link'], isActive && styles['link-active'])}
                   aria-current={isActive ? 'page' : undefined}
+                  onClick={(e) => {
+                    handleAnchorClick(e, anchorId);
+                  }}
                 >
-                  {item.icon !== undefined && (
-                    <Icon
-                      name={item.icon}
-                      size="small"
-                      className={cn(
-                        styles['link-icon'],
-                        isActive && styles['link-icon-active'],
-                      )}
-                    />
-                  )}
-                  {item.label}
+                  <NavItemContent
+                    icon={item.icon}
+                    label={item.label}
+                    isActive={isActive}
+                  />
                 </a>
               );
             }
@@ -207,19 +257,11 @@ export function SettingsSideNav({
                 end
               >
                 {({ isActive }) => (
-                  <>
-                    {item.icon !== undefined && (
-                      <Icon
-                        name={item.icon}
-                        size="small"
-                        className={cn(
-                          styles['link-icon'],
-                          isActive && styles['link-icon-active'],
-                        )}
-                      />
-                    )}
-                    {item.label}
-                  </>
+                  <NavItemContent
+                    icon={item.icon}
+                    label={item.label}
+                    isActive={isActive}
+                  />
                 )}
               </NavLink>
             );
