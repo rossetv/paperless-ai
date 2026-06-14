@@ -67,4 +67,12 @@
 
   /* Strong hairline — slightly brighter on dark. */
   --colour-hairline-strong: rgb(255 255 255 / 12%);
+
+  /* Status — neutral resting badge (e.g. a daemon's "Idle"). The light theme's
+     near-black ink (rgb(0 0 0 / 72%)) is illegible on the dark surface, so the
+     neutral tone is the one status tone that needs a dark override: a soft
+     light-grey wash with light-grey ink reads as a calm resting state, never a
+     caution. The coloured tones (ok/warn/danger/info) stay legible on dark. */
+  --colour-status-neutral-bg: rgb(255 255 255 / 10%);
+  --colour-status-neutral-fg: rgb(255 255 255 / 70%);
 }

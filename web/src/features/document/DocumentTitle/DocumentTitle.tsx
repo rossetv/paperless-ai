@@ -23,6 +23,9 @@ export interface DocumentTitleProps {
  * to click / Enter by switching to an `<input>`. Blur or Enter commits the
  * value (only fires `onChange` when it actually changed); Escape reverts.
  */
+/** Smallest font scale before a still-too-long title is left to ellipsise. */
+const MIN_TITLE_SCALE = 0.5;
+
 export function DocumentTitle({
   title,
   canEdit,
@@ -30,6 +33,35 @@ export function DocumentTitle({
 }: DocumentTitleProps): React.ReactElement {
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(title ?? '');
+
+  // Adaptive heading size: shrink the font just enough to keep a long title on
+  // one line (the design preferred over wrapping). Text width is proportional
+  // to font-size, so scaling by clientWidth/scrollWidth fits in a single pass;
+  // a title beyond the floor ellipsises rather than becoming unreadable.
+  const headingRef = React.useRef<HTMLHeadingElement>(null);
+  const [scale, setScale] = React.useState(1);
+
+  React.useLayoutEffect(() => {
+    const el = headingRef.current;
+    if (el === null) return undefined;
+    const fit = (): void => {
+      // Measure at full size, then derive the scale that fits the row width.
+      el.style.setProperty('--title-scale', '1');
+      const { scrollWidth, clientWidth } = el;
+      if (clientWidth === 0 || scrollWidth <= clientWidth) {
+        setScale(1);
+        return;
+      }
+      setScale(Math.max(MIN_TITLE_SCALE, clientWidth / scrollWidth));
+    };
+    fit();
+    // Re-fit on width changes. ResizeObserver is absent in jsdom / SSR; the
+    // one-shot fit above still runs there.
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [title, editing]);
 
   // Keep draft in sync when the parent document is refreshed (e.g. post-save),
   // but never clobber an in-progress edit: a cache refresh while the user is
@@ -63,7 +95,9 @@ export function DocumentTitle({
 
   return (
     <h1
+      ref={headingRef}
       className={styles['title']}
+      style={{ '--title-scale': scale } as React.CSSProperties}
       role={canEdit ? 'button' : undefined}
       tabIndex={canEdit ? 0 : undefined}
       aria-label={canEdit ? `Edit title: ${title ?? 'Untitled document'}` : undefined}

@@ -18,7 +18,7 @@ describe('PdfViewerCard', () => {
     expect(frame.getAttribute('src')).toMatch(/\/api\/documents\/42\/pdf$/);
   });
 
-  it('offers a Download link to the proxy URL', () => {
+  it('shows no action toolbar in the normal state (actions live in the page header)', () => {
     render(
       <PdfViewerCard
         documentId={42}
@@ -27,39 +27,9 @@ describe('PdfViewerCard', () => {
         downloadFilename="An invoice.pdf"
       />,
     );
-    const link = screen.getByRole('link', { name: /download/i });
-    expect(link.getAttribute('href')).toMatch(/\/api\/documents\/42\/pdf$/);
-  });
-
-  it('sets the download attribute to the supplied filename so the browser names the file correctly', () => {
-    render(
-      <PdfViewerCard
-        documentId={42}
-        title="An invoice"
-        paperlessUrl="https://p.example/documents/42/"
-        downloadFilename="An invoice.pdf"
-      />,
-    );
-    const link = screen.getByRole('link', { name: /download/i });
-    expect(link.getAttribute('download')).toBe('An invoice.pdf');
-  });
-
-  it('offers an Open in Paperless link', () => {
-    render(
-      <PdfViewerCard
-        documentId={42}
-        title="An invoice"
-        paperlessUrl="https://p.example/documents/42/"
-        downloadFilename="An invoice.pdf"
-      />,
-    );
-    expect(
-      screen.getByRole('link', { name: /open in paperless/i }),
-    ).toHaveAttribute('href', 'https://p.example/documents/42/');
-  });
-
-  it('omits the Open in Paperless link when paperlessUrl is null', () => {
-    render(<PdfViewerCard documentId={42} title="x" paperlessUrl={null} downloadFilename="x.pdf" />);
+    // Download / Open-in-Paperless were moved out of the card to DocumentActions;
+    // the card only surfaces them in the load-error escape hatch (below).
+    expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /open in paperless/i }),
     ).not.toBeInTheDocument();
@@ -91,11 +61,13 @@ describe('PdfViewerCard', () => {
       });
       const alert = screen.getByRole('alert');
       expect(alert).toHaveTextContent(/couldn't load the preview/i);
-      // Escape hatches are offered inside the error state, alongside the toolbar.
-      expect(screen.getAllByRole('link', { name: /download/i }).length).toBeGreaterThanOrEqual(2);
+      // Escape hatches are offered inside the error state via DocumentActions.
       expect(
-        screen.getAllByRole('link', { name: /open in paperless/i }).length,
-      ).toBeGreaterThanOrEqual(2);
+        screen.getByRole('link', { name: /download/i }).getAttribute('href'),
+      ).toMatch(/\/api\/documents\/42\/pdf$/);
+      expect(
+        screen.getByRole('link', { name: /open in paperless/i }),
+      ).toHaveAttribute('href', 'https://p.example/documents/42/');
     });
   });
 });

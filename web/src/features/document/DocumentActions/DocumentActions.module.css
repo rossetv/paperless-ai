@@ -1,0 +1,56 @@
+/*
+ * DocumentActions — CSS Module.
+ *
+ * A horizontal row of document-level actions: the bordered Download button
+ * (primary, in-app) and the quiet inline "Open in Paperless" external link.
+ * Moved here from PdfViewerCard so the header row and the PDF error fallback
+ * share one definition.
+ *
+ * All values reference design tokens exclusively.
+ */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  flex-wrap: wrap;
+}
+
+/*
+ * Download — the in-app action — keeps the bordered button treatment so it
+ * carries the primary emphasis (UI-24 / DD-3).
+ */
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-10);
+  border-radius: var(--radius-standard);
+  border: var(--spacing-1) solid var(--colour-border-button);
+  font-family: var(--font-text);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-caption);
+  line-height: var(--line-height-caption);
+  color: var(--colour-text-primary);
+  text-decoration: none;
+  background-color: var(--colour-surface);
+  transition: background-color var(--duration-standard) var(--easing-standard);
+}
+
+.action:hover {
+  background-color: var(--colour-button-active-bg);
+}
+
+/*
+ * Open in Paperless — leaving the app — is demoted to a quiet inline external
+ * link (Link primitive) so the in-app Download keeps primary emphasis
+ * (UI-24 / DD-3). Only layout/icon alignment lives here; colour comes from the
+ * Link primitive's own tokens.
+ */
+.external-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  font-size: var(--font-size-caption);
+  line-height: var(--line-height-caption);
+}

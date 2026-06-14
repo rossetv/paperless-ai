@@ -214,7 +214,7 @@ describe('AnswerCard retry states', () => {
     expect(screen.getByRole('button', { name: /view source 1/i })).toBeInTheDocument();
   });
 
-  it('renders a tokens-only aggregate label from the cost summary', () => {
+  it('renders a tokens · cost aggregate label from the cost summary', () => {
     render(
       <AnswerCard
         answer="The boiler was installed in 2021 [1]."
@@ -228,10 +228,8 @@ describe('AnswerCard retry states', () => {
         }}
       />,
     );
-    // The answer-card aggregate shows only the token count — the per-stage
-    // dollar figures live on the trace rows, so no whole-query $ here (UI-16).
-    expect(screen.getByText('3.4k tok')).toBeInTheDocument();
-    expect(screen.queryByText(/\$0\.012/)).not.toBeInTheDocument();
+    // The answer-card aggregate shows the whole-query tokens and dollar cost.
+    expect(screen.getByText('3.4k tok · $0.012')).toBeInTheDocument();
   });
 
   it('omits the cost chip when no cost summary is given', () => {

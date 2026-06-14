@@ -153,6 +153,14 @@
   white-space: nowrap;
 }
 
+/* In the folded trace, a stage with no expandable body (e.g. Synthesising) has
+   no trailing chevron, so its cost chip would sit flush to the row's right edge
+   — further right than the chevroned rows above it. Reserve the chevron's slot
+   (its width + the row gap) so every cost chip's right edge lines up. */
+.cost-chip-aligned {
+  margin-right: calc(var(--spacing-7) + var(--spacing-10));
+}
+
 /* Judge per-document verdict sublist — rendered inside .stage-body which already
    provides the consistent left indent. No extra padding needed here. */
 .verdicts {

@@ -14,12 +14,23 @@
   margin: 0;
   padding: var(--spacing-1) var(--spacing-2);
   font-family: var(--font-display);
-  font-size: var(--font-size-heading);
+
+  /* Scaled down by JS (--title-scale, defaults 1) to keep a long title on one
+     line instead of wrapping. */
+  font-size: calc(var(--font-size-heading) * var(--title-scale, 1));
   font-weight: var(--font-weight-heading);
   line-height: var(--line-height-heading);
   letter-spacing: var(--letter-spacing-heading);
   color: var(--colour-text-primary);
   cursor: default;
+
+  /* Fill the row so the fit measurement has the real available width; keep the
+     title to one line and ellipsise only when it is already at the floor scale. */
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* When canEdit=true the h1 acts as a button — show a pointer and hover affordance. */

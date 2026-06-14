@@ -55,6 +55,11 @@
   color: var(--colour-border-button);
 }
 
+/* ── Document actions row — under the title, above the grid. ── */
+.actions {
+  margin-bottom: var(--spacing-14);
+}
+
 /* ── Two-column grid ── */
 .grid {
   display: grid;
