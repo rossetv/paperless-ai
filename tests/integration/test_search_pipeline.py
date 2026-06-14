@@ -279,10 +279,10 @@ class TestRetrieveOnlyEndToEnd:
             )
             result = core.retrieve("find indexed content")
 
-            assert llm_client.planner_calls == 1
+            assert llm_client.planner_calls == 0
             assert llm_client.synthesiser_calls == 0
             assert result.answer == ""
-            assert result.stats.llm_calls == 1
+            assert result.stats.llm_calls == 0
             assert len(result.sources) == 1
             assert result.sources[0].document_id == 1
         finally:

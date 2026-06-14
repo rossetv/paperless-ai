@@ -17,7 +17,7 @@ export const SCOPES: { id: ApiScope; description: string }[] = [
   },
   {
     id: 'mcp',
-    description: 'The MCP server at /mcp — ask_documents, search_documents.',
+    description: 'The MCP server at /mcp — query_documents, search_documents.',
   },
   {
     id: 'admin',

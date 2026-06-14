@@ -14,8 +14,10 @@ UI shows a "Served from cache" step instead of the usual planning/retrieval
 phases.
 
 The cache lives **inside the search server process**, in memory. It is shared by
-both ways of searching — the web UI (`/api/search`) and the MCP tool
-(`ask_documents`) — because both run through the same `SearchCore.answer`.
+both *answer* paths — the web UI (`/api/search`) and the MCP `search_documents`
+tool — because both run through the same `SearchCore.answer`. The MCP
+`query_documents` tool (pure `SearchCore.retrieve`) is **not** cached: it makes
+no LLM call, so there is no synthesised answer to memoise.
 
 ```mermaid
 flowchart TD

@@ -261,8 +261,9 @@ class Settings:
     query and simultaneous queries; neither bounds *cumulative* spend, so a
     leaked low-privilege API key can run up arbitrary cost with unbounded
     sequential queries. This caps the total LLM tokens one API key may consume
-    on the search endpoints (``/api/search``, ``/api/search/stream``, and the
-    MCP ``ask_documents`` / ``search_documents`` tools) per UTC calendar day.
+    on the LLM search endpoints (``/api/search``, ``/api/search/stream``, and the
+    MCP ``search_documents`` tool) per UTC calendar day. The free MCP
+    ``query_documents`` tool makes no LLM call and records no tokens.
 
     ``0`` (the default) means **unlimited** — the quota is disabled and the
     search path performs zero quota-related database I/O, so a deployment that

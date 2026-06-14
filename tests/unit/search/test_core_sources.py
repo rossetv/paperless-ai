@@ -3,8 +3,8 @@
 The companion to :mod:`test_core`, which covers the ``answer()`` bounded-loop
 contract.  This file covers the rest of ``search.core``:
 
-- ``retrieve()`` — the sources-only mode: only the planner LLM call, no
-  synthesis, an empty answer string, ranked sources.
+- ``retrieve()`` — the pure-RAG sources-only mode: a deterministic hybrid
+  (vector + FTS) plan, NO chat LLM call, an empty answer string, ranked sources.
 - SourceDocument assembly — resolved correspondent/type names, a correct
   Paperless deep-link, a snippet, None taxonomy fields for a bare document.
 - ``ui_filters`` — bypass free-text resolution and reach the retriever.
@@ -69,14 +69,14 @@ def _unreachable_synth_client() -> ScriptedLLMClient:
 
 
 # ---------------------------------------------------------------------------
-# retrieve() — sources-only mode, only the planner call
+# retrieve() — pure-RAG sources-only mode, zero chat LLM calls
 # ---------------------------------------------------------------------------
 
 
 class TestRetrieveOnly:
-    """retrieve() plans and retrieves but never synthesises."""
+    """retrieve() runs deterministic hybrid retrieval and never calls an LLM."""
 
-    def test_retrieve_makes_only_the_planner_call(self) -> None:
+    def test_retrieve_makes_no_llm_call(self) -> None:
         llm_client = _unreachable_synth_client()
         core = build_search_core(
             settings=make_search_settings(),
@@ -86,9 +86,23 @@ class TestRetrieveOnly:
         )
         core.retrieve("a sources-only query")
 
-        assert llm_client.planner_calls == 1
+        assert llm_client.planner_calls == 0
         assert llm_client.synthesiser_calls == 0
-        assert llm_client.total_calls == 1
+        assert llm_client.total_calls == 0
+
+    def test_retrieve_runs_both_vector_and_keyword_passes(self) -> None:
+        """The hybrid plan exercises the retriever's vector AND FTS passes."""
+        store_reader = _store_reader()
+        core = build_search_core(
+            settings=make_search_settings(),
+            llm_client=_unreachable_synth_client(),
+            store_reader=store_reader,
+            embedding_client=_embedding_client(),
+        )
+        core.retrieve("boiler warranty")
+
+        assert store_reader.vector_search.called
+        assert store_reader.keyword_search.called
 
     def test_retrieve_answer_field_is_empty(self) -> None:
         """retrieve() returns ranked sources but an empty answer string."""
@@ -120,7 +134,7 @@ class TestRetrieveOnly:
         source_ids = {source.document_id for source in result.sources}
         assert source_ids == {7, 8}
 
-    def test_retrieve_reports_one_llm_call_in_stats(self) -> None:
+    def test_retrieve_reports_zero_llm_calls_in_stats(self) -> None:
         core = build_search_core(
             settings=make_search_settings(),
             llm_client=_unreachable_synth_client(),
@@ -129,7 +143,7 @@ class TestRetrieveOnly:
         )
         result = core.retrieve("a query")
 
-        assert result.stats.llm_calls == 1
+        assert result.stats.llm_calls == 0
         assert result.stats.refined is False
 
     def test_retrieve_on_empty_returns_no_sources(self) -> None:
@@ -147,7 +161,7 @@ class TestRetrieveOnly:
         result = core.retrieve("nothing matches")
 
         assert result.sources == ()
-        assert result.stats.llm_calls == 1
+        assert result.stats.llm_calls == 0
 
 
 # ---------------------------------------------------------------------------
@@ -425,4 +439,4 @@ class TestEmbeddingFailure:
 
         assert isinstance(result, SearchResult)
         assert result.sources == ()
-        assert result.stats.llm_calls == 1
+        assert result.stats.llm_calls == 0

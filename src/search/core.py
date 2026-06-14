@@ -9,10 +9,11 @@ Two public methods, both pure-library (no FastAPI, no MCP — CODE_GUIDELINES
 
 - ``answer(query, ui_filters)`` — the full pipeline: plan, retrieve, an
   optional single refinement, and synthesis.  Used by the HTTP ``/api/search``
-  endpoint and the MCP ``ask_documents`` tool.
-- ``retrieve(query, ui_filters)`` — plan and retrieve only; ranked sources, no
-  synthesised answer.  Used by the MCP ``search_documents`` tool, where the
-  calling agent does its own synthesis and the saved LLM call matters.
+  endpoint and the MCP ``search_documents`` tool.
+- ``retrieve(query, ui_filters)`` — plan-free hybrid retrieval (vector + FTS on
+  the raw query); ranked sources, no synthesised answer, and **zero chat LLM
+  calls**.  Backs the MCP ``query_documents`` tool, where the calling agent does
+  its own synthesis at no cost to the archive owner.
 
 The per-query LLM-call budget
 -----------------------------
@@ -87,6 +88,7 @@ from search.models import (
 from search.refinement import (
     broaden_plan,
     merge_chunks,
+    raw_rag_plan,
     trivial_plan,
 )
 from search.prompts import build_planner_taxonomy_block
@@ -591,24 +593,28 @@ class SearchCore:
         self,
         query: str,
         ui_filters: SearchFilters | None = None,
-        asker: str | None = None,
         on_event: OnEvent | None = None,
     ) -> SearchResult:
-        """Plan and retrieve only — ranked sources, no synthesised answer.
+        """Plan-free hybrid retrieval — ranked sources, zero chat LLM calls.
 
-        This is the "sources only" mode behind the MCP ``search_documents``
-        tool: the calling agent synthesises its own answer, so the pipeline
-        makes only the single planner LLM call and skips synthesis entirely.
+        The pure-RAG path behind the MCP ``query_documents`` tool. It skips the
+        planner entirely: a deterministic hybrid plan (vector + FTS on the raw
+        query, :func:`~search.refinement.raw_rag_plan`) is resolved against the
+        live taxonomy and any UI filters, retrieved, and assembled into ranked
+        sources with no synthesised answer. No chat LLM call is made — only the
+        retriever's embedding call for the vector pass — so the calling agent
+        does its own synthesis at no cost to the archive owner.
+
+        Layer 0 (degenerate-input) still applies, so a query shorter than
+        ``SEARCH_MIN_QUERY_CHARS`` returns the standard clarify result without
+        touching the retriever. Layer 2 does NOT apply — retrieve() is advisory.
 
         Args:
             query: The raw user search query.
             ui_filters: Explicit user-set filters; authoritative when set.
-            asker: Optional sanitised display name of the requesting user,
-                threaded to the planner so first-person references resolve
-                correctly in the query plan.
-            on_event: Optional per-phase event callback (plan + retrieve only,
-                no synthesis here). ``None`` keeps behaviour unchanged; the
-                trace/cost are assembled onto the result either way.
+            on_event: Optional per-phase event callback (resolve + retrieve
+                only). ``None`` keeps behaviour unchanged; the trace/cost are
+                assembled onto the result either way.
 
         Returns:
             A SearchResult whose ``answer`` is an empty string and whose
@@ -625,15 +631,13 @@ class SearchCore:
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        # Fetch the live taxonomy once, before planning, and reuse it for filter
-        # resolution in the retrieve phase (no second list_facets round-trip).
+        # Fetch the live taxonomy once and reuse it for filter resolution in the
+        # retrieve phase (no second list_facets round-trip). The plan is built
+        # deterministically — no planner LLM call — so retrieve() is free of any
+        # chat call: this is the zero-cost RAG path the host agent synthesises
+        # over itself.
         facets = self._store_reader.list_facets()
-        plan_outcome = self._plan_phase(query, budget, asker, tele, facets)
-        if isinstance(plan_outcome, ClarifyNeeded):
-            return self._clarify_result(plan_outcome.reason, budget, started, tele)
-        plan = plan_outcome
-
-        # Layer 2 does NOT apply here — retrieve() is advisory (spec §7).
+        plan = raw_rag_plan(query)
         retrieved = self._retrieve_phase(
             plan, ui_filters, tele, query=query, facets=facets
         )

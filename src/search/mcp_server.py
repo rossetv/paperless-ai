@@ -5,13 +5,16 @@ and wraps it in a bearer-token authentication middleware.  The returned ASGI
 application is mounted at ``/mcp`` by the HTTP server; this module has no
 dependency on ``search/api.py``.
 
-Two tools are exposed:
+Two tools are exposed, tiered by cost:
 
-- ``search_documents(query, filters?)`` — calls ``core.retrieve()``.  Returns
-  ranked source documents without a synthesised answer; the calling agent
-  synthesises its own answer, saving an LLM call (spec §7.2).
-- ``ask_documents(question, filters?)`` — calls ``core.answer()``.  Returns the
-  full result including the synthesised answer (spec §7.2).
+- ``query_documents(query, filters?)`` — calls ``core.retrieve()``.  Pure
+  hybrid (vector + FTS) retrieval: ranked source documents, no synthesised
+  answer, and **zero chat LLM calls**.  The calling agent does its own
+  synthesis, so the archive owner is never billed for it.  The PREFERRED tool.
+- ``search_documents(question, filters?)`` — calls ``core.answer()``.  Runs the
+  full server-side agentic pipeline (planner + judge + synthesiser) and returns
+  a synthesised answer.  Every call spends the archive owner's LLM API budget,
+  so it is the last-resort tool (spec §7.2).
 
 Both tools share one body helper (:func:`_run_search_tool`): normalise the
 query at the boundary (trim, reject empty/whitespace-only, enforce the maximum
@@ -283,8 +286,8 @@ def _run_search_tool(
         query: The user's query or question.
         filters: The optional raw filters dict from the tool call.
         core_call: The :class:`~search.core.SearchCore` method to invoke —
-            ``retrieve`` for ``search_documents``, ``answer`` for
-            ``ask_documents``.
+            ``retrieve`` for ``query_documents``, ``answer`` for
+            ``search_documents``.
         error_event: The structured-log event name for a failure.
         asker: Optional sanitised display name of the requesting user,
             forwarded to the core so first-person references resolve correctly.
@@ -359,8 +362,8 @@ def _register_search_tools(
     """Register the two search tools on *mcp*, both resolving the live core.
 
     Each tool is a thin closure over :func:`_run_search_tool`:
-    ``search_documents`` calls ``core.retrieve`` (sources only),
-    ``ask_documents`` calls ``core.answer`` (synthesised answer). The core is
+    ``query_documents`` calls ``core.retrieve`` (pure RAG, sources only),
+    ``search_documents`` calls ``core.answer`` (synthesised answer). The core is
     resolved per call through *resolve_core* — mirroring the HTTP
     ``/api/search`` handler — so a saved configuration change (answer model,
     ``SEARCH_MAX_CONCURRENT``, ``OPENAI_API_KEY``, ``SEARCH_IDENTITY_AWARE``,
@@ -453,36 +456,45 @@ def _register_search_tools(
         return output
 
     @mcp.tool(
-        name="search_documents",
+        name="query_documents",
         description=(
-            "Retrieve ranked source documents matching the query.  Returns "
-            "snippets and Paperless deep-links; does not synthesise an answer "
-            "— the calling agent synthesises its own (saving one LLM call)."
+            "PREFERRED, no-cost search — use for almost every query. Returns "
+            "ranked source documents (snippets + Paperless deep-links) matching "
+            "the query; no synthesised answer. Makes zero LLM calls and does "
+            "not bill the archive owner. Read the sources and synthesise the "
+            "answer yourself. Optional 'filters' narrows by correspondent, "
+            "document type, tag, or date."
         ),
     )
-    async def search_documents(
+    async def query_documents(
         query: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
-        """Call core.retrieve and return the SearchResult as JSON."""
+        """Call core.retrieve (pure RAG, zero LLM) and return the result JSON."""
+        # The pure-RAG path makes no LLM call, so the asker (identity for
+        # first-person resolution in the planner/judge/synth) is irrelevant —
+        # the core_call drops it.
         return await _dispatch(
             query=query,
             filters=filters,
             core_call=lambda core, text, ui_filters, asker: core.retrieve(
-                query=text, ui_filters=ui_filters, asker=asker
+                query=text, ui_filters=ui_filters
             ),
-            error_event="mcp.search_documents_error",
+            error_event="mcp.query_documents_error",
         )
 
     @mcp.tool(
-        name="ask_documents",
+        name="search_documents",
         description=(
-            "Ask a question and receive a synthesised answer grounded in the "
-            "document archive.  Returns the answer text, ranked source "
-            "documents, and execution statistics."
+            "COSTLY, last-resort search. Runs the archive's server-side agentic "
+            "pipeline (planner + judge + synthesiser) and returns a written "
+            "answer plus sources. Spends the archive owner's paid LLM API "
+            "budget on every call. Prefer query_documents and synthesise "
+            "yourself; only call this when you truly cannot. Optional 'filters' "
+            "narrows results."
         ),
     )
-    async def ask_documents(
+    async def search_documents(
         question: str,
         filters: dict[str, Any] | None = None,
     ) -> str:
@@ -493,7 +505,7 @@ def _register_search_tools(
             core_call=lambda core, text, ui_filters, asker: core.answer(
                 query=text, ui_filters=ui_filters, asker=asker
             ),
-            error_event="mcp.ask_documents_error",
+            error_event="mcp.search_documents_error",
         )
 
 
@@ -529,9 +541,23 @@ def build_mcp_app(
     mcp = FastMCP(
         name="paperless-search",
         instructions=(
-            "Search and query a personal Paperless-ngx document archive.  "
-            "Use search_documents to retrieve relevant sources for your own "
-            "synthesis, or ask_documents to get a direct synthesised answer."
+            "Search a personal Paperless-ngx document archive. Two tools, "
+            "tiered by cost — STRONGLY PREFER query_documents.\n\n"
+            "- query_documents(query, filters?) — PREFERRED, use for "
+            "essentially every search. Returns ranked source documents "
+            "(snippets + Paperless links) and NO answer. Makes NO LLM calls "
+            "and does NOT bill the archive owner's API budget. You, the calling "
+            "model, read the sources and do your own planning, judging, and "
+            "synthesis.\n"
+            "- search_documents(question, filters?) — LAST RESORT, avoid unless "
+            "absolutely necessary. Runs the archive's own server-side agentic "
+            "pipeline (planner + judge + synthesiser) and returns a written "
+            "answer. EVERY call spends the archive owner's paid LLM API budget. "
+            "Only use it when you genuinely cannot synthesise from "
+            "query_documents results yourself — e.g. the user explicitly asks "
+            "the archive itself to answer.\n\n"
+            "Default to query_documents. Reach for search_documents only with a "
+            "concrete reason the free path cannot serve the request."
         ),
         stateless_http=True,
     )
