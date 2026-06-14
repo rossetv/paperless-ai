@@ -54,7 +54,10 @@
 
 .trailing-button {
   position: absolute;
-  right: var(--spacing-2);
+
+  /* Inset from the field's trailing edge so the submit icon isn't glued to it.
+     Input padding-trailing (52px) still clears the button's inner edge. */
+  right: var(--spacing-8);
   display: flex;
   align-items: center;
 }

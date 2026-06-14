@@ -64,12 +64,12 @@ export function formatCostLabel(
 }
 
 /**
- * The whole-query aggregate label from a `CostSummary` — token count only
- * (e.g. "29k tok"). Shown on the answer card and the "How this answer was
- * found" trace header; the per-stage dollar figures live on the individual
- * stage rows, so the aggregate no longer repeats a whole-query dollar total
- * (UI-16). Returns undefined when no LLM call was made (zero tokens AND zero
- * calls — nothing worth showing).
+ * The whole-query aggregate label from a `CostSummary` — tokens · cost (e.g.
+ * "29k tok · $0.07"). Shown on the answer card footer and the "How this answer
+ * was found" trace header so the user sees the total spend at a glance. The
+ * cost segment mirrors `formatCostLabel`: a local (Ollama) provider reads "$0",
+ * an unpriced total reads "—". Returns undefined when no LLM call was made
+ * (zero tokens AND zero calls — nothing worth showing).
  */
 export function formatSummaryCostLabel(
   summary: CostSummary,
@@ -77,7 +77,16 @@ export function formatSummaryCostLabel(
   if (summary.tokens.total === 0 && summary.llm_calls === 0) {
     return undefined;
   }
-  return `${compactTokens(summary.tokens.total)} tok`;
+  const tokensPart = `${compactTokens(summary.tokens.total)} tok`;
+  let costPart: string;
+  if (summary.local) {
+    costPart = '$0';
+  } else if (summary.usd === null) {
+    costPart = '—';
+  } else {
+    costPart = formatUsd(summary.usd);
+  }
+  return `${tokensPart} · ${costPart}`;
 }
 
 /**

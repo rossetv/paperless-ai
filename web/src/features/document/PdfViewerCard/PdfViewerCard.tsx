@@ -1,10 +1,9 @@
 import React from 'react';
 import { documentPdfUrl } from '../../../api/client';
 import { Card } from '../../../components/primitives/Card/Card';
-import { Icon } from '../../../components/primitives/Icon/Icon';
-import { Link } from '../../../components/primitives/Link/Link';
 import { PdfFrame } from '../../../components/primitives/PdfFrame/PdfFrame';
 import { EmptyState } from '../../../components/patterns/EmptyState/EmptyState';
+import { DocumentActions } from '../DocumentActions/DocumentActions';
 import { cn } from '../../../lib/cn';
 import styles from './PdfViewerCard.module.css';
 
@@ -29,12 +28,11 @@ export interface PdfViewerCardProps {
 /**
  * Self-contained card that embeds the PDF viewer for a single document.
  *
- * Toolbar contains only:
- *   - Download — proxied PDF download via the API. This is the in-app action,
- *     so it keeps the primary action emphasis.
- *   - Open in Paperless — external Link to the source Paperless instance,
- *     deliberately demoted to a secondary/inline link so leaving the app reads
- *     as lower-priority than the in-app action (UI-24, DD-3). Omitted when null.
+ * The document-level actions (Download, Open in Paperless) live in the page's
+ * `DocumentActions` row under the title — not on this card — so the viewer is
+ * just the framed page. When the frame fails to load, the same `DocumentActions`
+ * are offered inside the error state as escape hatches (Download is the in-app
+ * action, Open in Paperless the demoted external link — UI-24 / DD-3).
  *
  * The PDF iframe sits over an app-owned dark backdrop: the viewport fills with
  * --colour-surface-dark so an unloaded iframe never flashes bright white. When
@@ -62,26 +60,8 @@ export function PdfViewerCard({
     setFailed(false);
   }, [documentId]);
 
-  const downloadAction = (
-    <a className={styles['action']} href={pdfUrl} download={downloadFilename}>
-      <Icon name="document" size="small" />
-      Download
-    </a>
-  );
-
-  const openInPaperlessAction = paperlessUrl !== null && (
-    <Link href={paperlessUrl} external className={cn(styles['external-action'])}>
-      <Icon name="external-link" size="small" />
-      Open in Paperless
-    </Link>
-  );
-
   return (
     <Card as="section" className={cn(styles['card'])}>
-      <div className={styles['toolbar']}>
-        {downloadAction}
-        {openInPaperlessAction}
-      </div>
       <div className={styles['viewport']}>
         <PdfFrame
           src={pdfUrl}
@@ -96,10 +76,11 @@ export function PdfViewerCard({
               message="Couldn't load the preview"
               description="Open it in Paperless or download the original."
               action={
-                <div className={styles['fallback-actions']}>
-                  {downloadAction}
-                  {openInPaperlessAction}
-                </div>
+                <DocumentActions
+                  pdfUrl={pdfUrl}
+                  downloadFilename={downloadFilename}
+                  paperlessUrl={paperlessUrl}
+                />
               }
             />
           </div>

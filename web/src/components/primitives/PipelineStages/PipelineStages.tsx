@@ -263,7 +263,16 @@ export function PipelineStages({
                     <span className={styles['detail']}>{summaryContent}</span>
                   </span>
                   {stage.costLabel !== undefined && (
-                    <span className={styles['cost-chip']}>{stage.costLabel}</span>
+                    <span
+                      className={cn(
+                        styles['cost-chip'],
+                        // In the folded trace this row has no chevron; reserve its
+                        // slot so the chip aligns with the chevroned rows above.
+                        collapsible && styles['cost-chip-aligned'],
+                      )}
+                    >
+                      {stage.costLabel}
+                    </span>
                   )}
                   {stage.state === 'active' && (
                     <span className={styles['progress-pill']}>in progress</span>

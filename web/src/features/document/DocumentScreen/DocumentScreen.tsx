@@ -31,8 +31,10 @@ import {
   useRetranscribeDocument,
   useDeleteDocument,
 } from '../../../api/hooks';
+import { documentPdfUrl } from '../../../api/client';
 import { Card } from '../../../components/primitives/Card/Card';
 import { DocumentTitle } from '../DocumentTitle/DocumentTitle';
+import { DocumentActions } from '../DocumentActions/DocumentActions';
 import { PdfViewerCard } from '../PdfViewerCard/PdfViewerCard';
 import { MetadataCard } from '../MetadataCard/MetadataCard';
 import { TagEditor } from '../TagEditor/TagEditor';
@@ -40,6 +42,7 @@ import { SaveStatusPill, type SaveStatus } from '../SaveStatusPill/SaveStatusPil
 import { ActionsCard, type Role } from '../ActionsCard/ActionsCard';
 import { MatchCard } from '../MatchCard/MatchCard';
 import { parseSearchParams } from '../../../lib/parseSearchParams';
+import { cn } from '../../../lib/cn';
 import styles from './DocumentScreen.module.css';
 
 /** Characters that are illegal in filenames across Windows, macOS, and Linux. */
@@ -240,6 +243,13 @@ export function DocumentScreen({
           </>
         )}
       </div>
+
+      <DocumentActions
+        className={cn(styles['actions'])}
+        pdfUrl={documentPdfUrl(document.id)}
+        downloadFilename={toDownloadFilename(document.title, document.id)}
+        paperlessUrl={document.paperless_url}
+      />
 
       <div className={styles['grid']}>
         <PdfViewerCard
