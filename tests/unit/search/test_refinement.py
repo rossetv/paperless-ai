@@ -1,9 +1,10 @@
 """Tests for src/search/refinement.py.
 
-Verifies the contract of the three pure helpers:
+Verifies the contract of the pure helpers:
 - broaden_plan: clears every spec's filter guess, preserves the rest.
 - merge_chunks: unions two retrieved-chunk rounds, de-duplicating by chunk id.
 - trivial_plan: builds the planner-fallback-shaped plan (RAG-08).
+- raw_rag_plan: builds the deterministic two-spec hybrid (vector + FTS) plan.
 All return new objects without mutating their inputs.
 """
 
@@ -17,6 +18,7 @@ from search.models import (
 from search.refinement import (
     broaden_plan,
     merge_chunks,
+    raw_rag_plan,
     trivial_plan,
 )
 from tests.helpers.factories import (
@@ -175,3 +177,32 @@ class TestTrivialPlan:
         plan = trivial_plan("x")
         assert isinstance(plan, RetrievalPlan)
         assert plan.clarify is None
+
+
+class TestRawRagPlan:
+    """raw_rag_plan returns a deterministic hybrid vector+FTS plan, no LLM."""
+
+    def test_emits_a_semantic_and_a_keyword_spec(self) -> None:
+        plan = raw_rag_plan("boiler warranty 2024")
+        assert [spec.mode for spec in plan.specs] == ["semantic", "keyword"]
+        assert plan.clarify is None
+
+    def test_semantic_spec_carries_the_raw_query(self) -> None:
+        semantic = next(
+            s for s in raw_rag_plan("boiler warranty").specs if s.mode == "semantic"
+        )
+        assert semantic.semantic == "boiler warranty"
+        assert semantic.keywords == ()
+        assert semantic.filter_guess == EMPTY_FILTER_CANDIDATES
+
+    def test_keyword_spec_tokenises_the_query(self) -> None:
+        keyword = next(
+            s for s in raw_rag_plan("boiler warranty").specs if s.mode == "keyword"
+        )
+        assert keyword.keywords == ("boiler", "warranty")
+        assert keyword.semantic is None
+        assert keyword.filter_guess == EMPTY_FILTER_CANDIDATES
+
+    def test_returns_a_retrieval_plan(self) -> None:
+        assert isinstance(raw_rag_plan("x").specs, tuple)
+        assert isinstance(raw_rag_plan("x"), RetrievalPlan)

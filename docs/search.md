@@ -113,8 +113,8 @@ Answered, clarify, and no-match results are written to a process-local cache key
 
 The pipeline is a pure library — no FastAPI, no MCP — so it can be tested offline with a mock LLM client. `SearchCore` exposes two methods:
 
-- `answer(query, filters)` — the full pipeline, ending in a synthesised answer. Backs `POST /api/search` and the MCP `ask_documents` tool.
-- `retrieve(query, filters)` — plan and retrieve only, no synthesis. Backs the MCP `search_documents` tool, where the calling agent writes its own answer and the saved LLM call matters.
+- `answer(query, filters)` — the full pipeline, ending in a synthesised answer. Backs `POST /api/search` and the MCP `search_documents` tool.
+- `retrieve(query, filters)` — plan-free hybrid retrieval (vector + FTS on the raw query), no synthesis, **zero chat LLM calls**. Backs the MCP `query_documents` tool, where the calling agent writes its own answer and the saved LLM cost matters.
 
 Every stage takes its LLM client and store reader by injection.
 
@@ -186,12 +186,12 @@ A separate per-username login throttle (`search/login_throttle.py`) limits passw
 
 The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `FastMCP` streamable-HTTP transport — an ASGI app mounted at `/mcp` — and exposes two tools, both backed by the live `SearchCore`:
 
-| Tool | Calls | Returns |
-|:---|:---|:---|
-| `search_documents(query, filters?)` | `core.retrieve()` | Ranked source documents with snippets and Paperless deep-links; no written answer |
-| `ask_documents(question, filters?)` | `core.answer()` | The full result, including a synthesised answer |
+| Tool | Calls | Cost | Returns |
+|:---|:---|:---|:---|
+| `query_documents(query, filters?)` | `core.retrieve()` | **0 chat LLM calls** (1 embedding) | Ranked source documents with snippets and Paperless deep-links; no written answer |
+| `search_documents(question, filters?)` | `core.answer()` | full agentic pipeline | The full result, including a synthesised answer |
 
-`search_documents` saves one LLM call — the calling agent writes its own answer from the sources. `ask_documents` is the right choice when the agent just wants a direct prose answer. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Both tool bodies run off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration.) The query is normalised at the boundary — trimmed, non-empty, length-bounded — and any pipeline failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail.
+`query_documents` is the **preferred** tool: it makes no chat LLM call (only the retriever's embedding), so it never bills the archive owner — the calling agent reads the ranked sources and synthesises its own answer. `search_documents` runs the full server-side pipeline (planner + judge + synthesiser) and spends the archive owner's LLM API budget on every call, so it is the last resort, used only when the agent genuinely cannot synthesise from the sources itself. The server's MCP `instructions` steer a host agent to prefer `query_documents` accordingly. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Both tool bodies run off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration.) The query is normalised at the boundary — trimmed, non-empty, length-bounded — and any pipeline failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail.
 
 **Every MCP request is authenticated.** An ASGI bearer-token middleware wraps the MCP app: a request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential gets HTTP 401 without ever reaching the MCP handler. The middleware opens a fresh `app.db` connection per request (off the loop); a successful cookie auth also refreshes `last_seen_at`. Credentials are never logged — a rejection records only whether a header or cookie was present.
 

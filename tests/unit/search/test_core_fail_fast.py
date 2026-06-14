@@ -626,5 +626,5 @@ class TestLayer2RelevanceGate:
         result = core.retrieve("house deeds in Spain")
         # retrieve() must NOT return no_match due to the relevance signal.
         assert result.outcome_kind != "no_match"
-        # The planner must have been called (retrieve makes exactly 1 LLM call).
-        assert llm_client.planner_calls == 1
+        # retrieve() is plan-free pure RAG — it makes NO chat LLM call.
+        assert llm_client.planner_calls == 0

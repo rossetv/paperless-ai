@@ -1,12 +1,16 @@
-"""Tests that the MCP tools thread the asker from the session/API-key caller.
+"""Tests that the MCP asker threads (or doesn't) from the session/API-key caller.
+
+Only ``search_documents`` (the full ``core.answer`` pipeline) threads an asker;
+``query_documents`` is pure RAG with no LLM stage, so it never forwards one.
 
 Verifies:
 - _run_search_tool forwards the asker argument to the core_call.
 - The _BearerAuthMiddleware sets mcp_asker from the session user's display_name
   and resets it after the request (contextvar leak guard).
-- With SEARCH_IDENTITY_AWARE=False, resolve_asker returns None so the core
+- With SEARCH_IDENTITY_AWARE=False, resolve_asker returns None so core.answer
   receives asker=None regardless of the contextvar value.
-- A dirty display_name is sanitised before reaching the core via resolve_asker.
+- A dirty display_name is sanitised before reaching core.answer via resolve_asker.
+- query_documents never passes an asker to core.retrieve.
 """
 
 from __future__ import annotations
@@ -218,7 +222,7 @@ def test_mcp_middleware_resets_mcp_asker_after_request() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_documents_suppresses_asker_when_identity_aware_off() -> None:
+async def test_search_documents_suppresses_asker_when_identity_aware_off() -> None:
     """With SEARCH_IDENTITY_AWARE=False, _dispatch resolves asker=None.
 
     We test this by setting mcp_asker within the same async context as the
@@ -237,7 +241,7 @@ async def test_ask_documents_suppresses_asker_when_identity_aware_off() -> None:
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("ask_documents", {"question": "my invoices"})
+            await client.call_tool("search_documents", {"question": "my invoices"})
     finally:
         mcp_asker.reset(token)
 
@@ -246,11 +250,16 @@ async def test_ask_documents_suppresses_asker_when_identity_aware_off() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_suppresses_asker_when_identity_aware_off() -> None:
-    """With SEARCH_IDENTITY_AWARE=False, search_documents resolves asker=None."""
+async def test_query_documents_never_threads_asker() -> None:
+    """query_documents is pure RAG (no LLM), so it never forwards an asker.
+
+    Even with an identity on the contextvar and SEARCH_IDENTITY_AWARE on, the
+    free retrieval path passes no asker to core.retrieve — there is no
+    planner/judge/synth stage to resolve a first-person reference.
+    """
     from mcp.shared.memory import create_connected_server_and_client_session
 
-    settings = make_search_settings(SEARCH_IDENTITY_AWARE=False)
+    settings = make_search_settings(SEARCH_IDENTITY_AWARE=True)
     core = _make_core(settings)
     mcp_app = build_mcp_app(core, settings, _app_db_empty())
 
@@ -259,16 +268,16 @@ async def test_search_documents_suppresses_asker_when_identity_aware_off() -> No
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("search_documents", {"query": "my documents"})
+            await client.call_tool("query_documents", {"query": "my documents"})
     finally:
         mcp_asker.reset(token)
 
-    _args, kwargs = core.retrieve.call_args
-    assert kwargs.get("asker") is None
+    core.retrieve.assert_called_once()
+    assert "asker" not in core.retrieve.call_args.kwargs
 
 
 @pytest.mark.anyio
-async def test_ask_documents_forwards_the_sanitised_asker_when_identity_on() -> None:
+async def test_search_documents_forwards_the_sanitised_asker_when_identity_on() -> None:
     """Identity ON: the contextvar name reaches core.answer, SANITISED.
 
     The positive end-to-end of the tool side — the contextvar is read, gated on,
@@ -286,7 +295,7 @@ async def test_ask_documents_forwards_the_sanitised_asker_when_identity_on() -> 
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("ask_documents", {"question": "my invoices"})
+            await client.call_tool("search_documents", {"question": "my invoices"})
     finally:
         mcp_asker.reset(token)
 
@@ -296,25 +305,3 @@ async def test_ask_documents_forwards_the_sanitised_asker_when_identity_on() -> 
     assert "<<<" not in asker and ">>>" not in asker  # fence markers stripped
     assert "\n" not in asker  # collapsed to a single line
     assert asker.startswith("Vilmar Rosset")
-
-
-@pytest.mark.anyio
-async def test_search_documents_forwards_the_asker_when_identity_on() -> None:
-    """Identity ON: the contextvar name reaches core.retrieve."""
-    from mcp.shared.memory import create_connected_server_and_client_session
-
-    settings = make_search_settings(SEARCH_IDENTITY_AWARE=True)
-    core = _make_core(settings)
-    mcp_app = build_mcp_app(core, settings, _app_db_empty())
-
-    token = mcp_asker.set("Vilmar Rosset")
-    try:
-        async with create_connected_server_and_client_session(
-            mcp_app._fastmcp
-        ) as client:
-            await client.call_tool("search_documents", {"query": "my documents"})
-    finally:
-        mcp_asker.reset(token)
-
-    _args, kwargs = core.retrieve.call_args
-    assert kwargs.get("asker") == "Vilmar Rosset"

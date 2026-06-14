@@ -218,8 +218,14 @@ class TestAdequacyGateInCore:
         assert result.outcome_kind == "answered"
         assert llm_client.synthesiser_calls == 1
 
-    def test_retrieve_method_also_returns_clarify_for_vague_query(self) -> None:
-        """The MCP retrieve() path also short-circuits on ClarifyNeeded."""
+    def test_retrieve_method_does_not_apply_the_adequacy_gate(self) -> None:
+        """Pure-RAG retrieve() has no planner, so a vague query is NOT clarified.
+
+        The adequacy gate (Layer 1) lives inside the planner. ``retrieve()`` skips
+        the planner entirely, so even a query the planner would reject as vague is
+        retrieved rather than clarified — the calling agent decides what to do with
+        the ranked sources.
+        """
         reset_search_result_cache()
         llm_client = ScriptedLLMClient(
             planner_response=_clarify_planner_response(),
@@ -229,9 +235,11 @@ class TestAdequacyGateInCore:
         core = _core(llm_client, store_reader, SEARCH_GATE_ADEQUACY=True)
         result = core.retrieve("life")
 
-        assert result.outcome_kind == "clarify"
-        store_reader.vector_search.assert_not_called()
-        store_reader.keyword_search.assert_not_called()
+        assert result.outcome_kind != "clarify"
+        assert llm_client.planner_calls == 0
+        # The deterministic hybrid plan reaches the retriever (vector + FTS).
+        store_reader.vector_search.assert_called()
+        store_reader.keyword_search.assert_called()
 
     def test_clarify_result_stats_reflect_one_planner_call(self) -> None:
         """SearchStats.llm_calls == 1 on the clarify path (planner only)."""

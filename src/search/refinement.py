@@ -4,6 +4,8 @@ These pure functions serve the branches of the refinement loop in core.py:
 
 - ``build_broad_semantic_plan`` — shared builder for the minimal single-spec
   plan used by both the trivial short-circuit and the planner fallback.
+- ``raw_rag_plan`` — deterministic two-spec hybrid (vector + FTS) plan on the
+  raw query, used by ``SearchCore.retrieve`` for the zero-LLM MCP path.
 - ``broaden_plan`` — used when filtered retrieval returns nothing: drop every
   spec's (possibly mis-resolved) filter guess and retry without them.
 - ``merge_chunks`` — used after the refined retrieval round: union the two
@@ -82,6 +84,42 @@ def build_broad_semantic_plan(query: str, rationale: str) -> RetrievalPlan:
                 keywords=(),
                 filter_guess=EMPTY_FILTER_CANDIDATES,
                 rationale=rationale,
+            ),
+        ),
+        clarify=None,
+    )
+
+
+def raw_rag_plan(query: str) -> RetrievalPlan:
+    """Return a deterministic hybrid (vector + FTS) RetrievalPlan — no LLM call.
+
+    Two specs on the raw *query*: one ``semantic`` spec (the retriever's vector
+    pass) and one ``keyword`` spec (its FTS/BM25 pass). The retriever runs the
+    vector pass only for semantic specs and the FTS pass only for keyword specs,
+    so genuine hybrid retrieval needs both spelled out — a single broad-semantic
+    spec (:func:`build_broad_semantic_plan`) would be vector-only. Backs
+    :meth:`~search.core.SearchCore.retrieve`, and thus the MCP ``query_documents``
+    tool, which must cost zero chat LLM calls.
+
+    Keywords are a naive whitespace split of the query.
+    """
+    # ponytail: naive whitespace tokens; FTS5/BM25 already down-weights common
+    # terms, so a stopword strip is deferred until recall measurably suffers.
+    return RetrievalPlan(
+        specs=(
+            PlannedSpec(
+                mode="semantic",
+                semantic=query,
+                keywords=(),
+                filter_guess=EMPTY_FILTER_CANDIDATES,
+                rationale="raw RAG: vector pass on the raw query",
+            ),
+            PlannedSpec(
+                mode="keyword",
+                semantic=None,
+                keywords=tuple(query.split()),
+                filter_guess=EMPTY_FILTER_CANDIDATES,
+                rationale="raw RAG: FTS pass on the raw query",
             ),
         ),
         clarify=None,

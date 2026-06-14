@@ -539,7 +539,7 @@ class TestClarifyAndNoMatchTrace:
 
 
 class TestRetrieveSourcesOnlyTrace:
-    def test_retrieve_method_attaches_plan_and_retrieve_trace(self) -> None:
+    def test_retrieve_method_attaches_resolve_and_retrieve_trace(self) -> None:
         reset_search_result_cache()
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
@@ -553,14 +553,14 @@ class TestRetrieveSourcesOnlyTrace:
         )
         events: list = []
         result = core.retrieve("a query", on_event=events.append)
-        assert _phases(events) == ["plan", "resolve", "retrieve"]
+        # Pure RAG: no planner, so no "plan" phase — just resolve + retrieve.
+        assert _phases(events) == ["resolve", "retrieve"]
         assert tuple(p.phase for p in result.stats.trace.phases) == (
-            "plan",
             "resolve",
             "retrieve",
         )
-        # Only the planner call is priced (no synthesis in sources-only mode).
-        assert result.stats.cost.llm_calls == 1
+        # No planner, no synthesis — zero priced LLM calls.
+        assert result.stats.cost.llm_calls == 0
 
 
 class TestCacheHitPhase:

@@ -2,9 +2,9 @@
 
 Covers the public contract of ``build_mcp_app``:
 
-- ``search_documents`` calls ``core.retrieve`` and returns sources without an
+- ``query_documents`` calls ``core.retrieve`` and returns sources without an
   answer.
-- ``ask_documents`` calls ``core.answer`` and returns the full result (answer +
+- ``search_documents`` calls ``core.answer`` and returns the full result (answer +
   sources).
 - An unauthenticated MCP request is rejected with HTTP 401 before any tool runs.
 - An ``mcp``-scoped API key authenticates; a key without the ``mcp`` scope is
@@ -220,8 +220,8 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
     )
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        await client.call_tool("search_documents", {"query": "first"})
-        await client.call_tool("search_documents", {"query": "second"})
+        await client.call_tool("query_documents", {"query": "first"})
+        await client.call_tool("query_documents", {"query": "second"})
 
     # The first dispatch used core_v1; the second used the rebuilt core_v2.
     core_v1.retrieve.assert_called_once()
@@ -236,8 +236,8 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
-    """search_documents invokes core.retrieve and exposes sources without answer."""
+async def test_query_documents_calls_retrieve_and_returns_sources() -> None:
+    """query_documents invokes core.retrieve and exposes sources without answer."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     retrieve_result = _retrieve_result()
@@ -249,7 +249,7 @@ async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
     async with create_connected_server_and_client_session(
         mcp_app._fastmcp  # access the FastMCP instance for in-memory transport
     ) as client:
-        result = await client.call_tool("search_documents", {"query": "invoice 2024"})
+        result = await client.call_tool("query_documents", {"query": "invoice 2024"})
 
     core.retrieve.assert_called_once()
     call_args = core.retrieve.call_args
@@ -267,8 +267,8 @@ async def test_search_documents_calls_retrieve_and_returns_sources() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
-    """ask_documents invokes core.answer and returns answer + sources."""
+async def test_search_documents_calls_answer_and_returns_full_result() -> None:
+    """search_documents invokes core.answer and returns answer + sources."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     answer_result = _answer_result()
@@ -279,7 +279,7 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
         result = await client.call_tool(
-            "ask_documents", {"question": "What does the invoice cover?"}
+            "search_documents", {"question": "What does the invoice cover?"}
         )
 
     core.answer.assert_called_once()
@@ -303,8 +303,8 @@ async def test_ask_documents_calls_answer_and_returns_full_result() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None:
-    """search_documents with no filters argument passes ui_filters=None."""
+async def test_query_documents_with_no_filters_passes_none_ui_filters() -> None:
+    """query_documents with no filters argument passes ui_filters=None."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -313,7 +313,7 @@ async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        await client.call_tool("search_documents", {"query": "boiler warranty"})
+        await client.call_tool("query_documents", {"query": "boiler warranty"})
 
     core.retrieve.assert_called_once()
     call_kwargs = core.retrieve.call_args
@@ -325,8 +325,8 @@ async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None
 
 
 @pytest.mark.anyio
-async def test_ask_documents_with_no_filters_passes_none_ui_filters() -> None:
-    """ask_documents with no filters argument passes ui_filters=None."""
+async def test_search_documents_with_no_filters_passes_none_ui_filters() -> None:
+    """search_documents with no filters argument passes ui_filters=None."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -335,7 +335,7 @@ async def test_ask_documents_with_no_filters_passes_none_ui_filters() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        await client.call_tool("ask_documents", {"question": "What is my name?"})
+        await client.call_tool("search_documents", {"question": "What is my name?"})
 
     core.answer.assert_called_once()
     call_kwargs = core.answer.call_args
@@ -346,8 +346,8 @@ async def test_ask_documents_with_no_filters_passes_none_ui_filters() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_missing_required_query_is_rejected() -> None:
-    """A call to search_documents without the required 'query' argument is rejected.
+async def test_query_documents_missing_required_query_is_rejected() -> None:
+    """A call to query_documents without the required 'query' argument is rejected.
 
     FastMCP validates required arguments and returns an error result
     (``isError=True``) rather than raising an exception, as per the MCP
@@ -361,7 +361,7 @@ async def test_search_documents_missing_required_query_is_rejected() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("search_documents", {})  # missing 'query'
+        result = await client.call_tool("query_documents", {})  # missing 'query'
 
     assert result.isError is True
     # core.retrieve must not have been called — the error is pre-call.
@@ -369,8 +369,8 @@ async def test_search_documents_missing_required_query_is_rejected() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_documents_missing_required_question_is_rejected() -> None:
-    """A call to ask_documents without the required 'question' argument is rejected.
+async def test_search_documents_missing_required_question_is_rejected() -> None:
+    """A call to search_documents without the required 'question' argument is rejected.
 
     FastMCP validates required arguments and returns an error result
     (``isError=True``) rather than raising an exception.
@@ -383,11 +383,35 @@ async def test_ask_documents_missing_required_question_is_rejected() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("ask_documents", {})  # missing 'question'
+        result = await client.call_tool("search_documents", {})  # missing 'question'
 
     assert result.isError is True
     # core.answer must not have been called — the error is pre-call.
     core.answer.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tool surface — the two-tool contract (query_documents + search_documents)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_tools_list_exposes_the_two_tools_only() -> None:
+    """The MCP advertises query_documents + search_documents and nothing else."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    core = _make_core()
+    settings = _make_settings()
+
+    mcp_app = build_mcp_app(core, settings, _app_db_path())
+
+    async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
+        listed = await client.list_tools()
+
+    names = {tool.name for tool in listed.tools}
+    assert names == {"query_documents", "search_documents"}
+    # The retired tool name must be gone (clean break — no alias).
+    assert "ask_documents" not in names
 
 
 # ---------------------------------------------------------------------------
@@ -580,8 +604,8 @@ def test_cookie_auth_refreshes_last_seen_at() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_core_exception_does_not_leak_path() -> None:
-    """search_documents must not expose filesystem paths in error text (I3).
+async def test_query_documents_core_exception_does_not_leak_path() -> None:
+    """query_documents must not expose filesystem paths in error text (I3).
 
     When ``core.retrieve`` raises an exception whose message contains a
     filesystem path, the tool result must NOT include that path — only a
@@ -601,7 +625,7 @@ async def test_search_documents_core_exception_does_not_leak_path() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("search_documents", {"query": "test"})
+        result = await client.call_tool("query_documents", {"query": "test"})
 
     assert result.isError is True
     # The raw filesystem path must never reach the client.
@@ -616,11 +640,11 @@ async def test_search_documents_core_exception_does_not_leak_path() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_documents_core_exception_does_not_leak_path() -> None:
-    """ask_documents must not expose filesystem paths in error text (I3).
+async def test_search_documents_core_exception_does_not_leak_path() -> None:
+    """search_documents must not expose filesystem paths in error text (I3).
 
-    Mirrors ``test_search_documents_core_exception_does_not_leak_path`` for
-    the ``ask_documents`` tool.
+    Mirrors ``test_query_documents_core_exception_does_not_leak_path`` for
+    the ``search_documents`` tool.
     """
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -635,7 +659,7 @@ async def test_ask_documents_core_exception_does_not_leak_path() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("ask_documents", {"question": "test"})
+        result = await client.call_tool("search_documents", {"question": "test"})
 
     assert result.isError is True
     error_text = " ".join(
@@ -653,8 +677,8 @@ async def test_ask_documents_core_exception_does_not_leak_path() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_rejects_over_length_query() -> None:
-    """search_documents must reject a query exceeding 4000 characters (MINOR 2)."""
+async def test_query_documents_rejects_over_length_query() -> None:
+    """query_documents must reject a query exceeding 4000 characters (MINOR 2)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -665,7 +689,7 @@ async def test_search_documents_rejects_over_length_query() -> None:
     too_long = "x" * 4001
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("search_documents", {"query": too_long})
+        result = await client.call_tool("query_documents", {"query": too_long})
 
     assert result.isError is True
     # core.retrieve must NOT have been called — rejection is at the boundary.
@@ -677,8 +701,8 @@ async def test_search_documents_rejects_over_length_query() -> None:
 
 
 @pytest.mark.anyio
-async def test_ask_documents_rejects_over_length_question() -> None:
-    """ask_documents must reject a question exceeding 4000 characters (MINOR 2)."""
+async def test_search_documents_rejects_over_length_question() -> None:
+    """search_documents must reject a question exceeding 4000 characters (MINOR 2)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -689,7 +713,7 @@ async def test_ask_documents_rejects_over_length_question() -> None:
     too_long = "x" * 4001
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("ask_documents", {"question": too_long})
+        result = await client.call_tool("search_documents", {"question": too_long})
 
     assert result.isError is True
     core.answer.assert_not_called()
@@ -700,7 +724,7 @@ async def test_ask_documents_rejects_over_length_question() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_rejects_empty_query() -> None:
+async def test_query_documents_rejects_empty_query() -> None:
     """An empty query is rejected at the boundary, never reaching the LLM (HTTP-04)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -710,14 +734,14 @@ async def test_search_documents_rejects_empty_query() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("search_documents", {"query": ""})
+        result = await client.call_tool("query_documents", {"query": ""})
 
     assert result.isError is True
     core.retrieve.assert_not_called()
 
 
 @pytest.mark.anyio
-async def test_ask_documents_rejects_whitespace_only_question() -> None:
+async def test_search_documents_rejects_whitespace_only_question() -> None:
     """A whitespace-only question is rejected before any LLM spend (HTTP-04)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -727,14 +751,14 @@ async def test_ask_documents_rejects_whitespace_only_question() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        result = await client.call_tool("ask_documents", {"question": "   \t  "})
+        result = await client.call_tool("search_documents", {"question": "   \t  "})
 
     assert result.isError is True
     core.answer.assert_not_called()
 
 
 @pytest.mark.anyio
-async def test_ask_documents_trims_surrounding_whitespace() -> None:
+async def test_search_documents_trims_surrounding_whitespace() -> None:
     """A valid question is trimmed so the pipeline sees one normalised form (HTTP-07)."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -744,7 +768,7 @@ async def test_ask_documents_trims_surrounding_whitespace() -> None:
     mcp_app = build_mcp_app(core, settings, _app_db_path())
 
     async with create_connected_server_and_client_session(mcp_app._fastmcp) as client:
-        await client.call_tool("ask_documents", {"question": "  what is owed?  "})
+        await client.call_tool("search_documents", {"question": "  what is owed?  "})
 
     core.answer.assert_called_once()
     call_args = core.answer.call_args
