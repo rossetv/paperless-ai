@@ -391,13 +391,13 @@ async def test_deep_search_missing_required_question_is_rejected() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tool surface — the two-tool contract (semantic_search + deep_search)
+# Tool surface — the five-tool contract
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_tools_list_exposes_the_two_tools_only() -> None:
-    """The MCP advertises semantic_search + deep_search and nothing else."""
+async def test_tools_list_exposes_the_expected_tools() -> None:
+    """The MCP advertises exactly the expected tools and nothing retired."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -409,9 +409,15 @@ async def test_tools_list_exposes_the_two_tools_only() -> None:
         listed = await client.list_tools()
 
     names = {tool.name for tool in listed.tools}
-    assert names == {"semantic_search", "deep_search"}
-    # The retired tool name must be gone (clean break — no alias).
-    assert "ask_documents" not in names
+    assert names == {
+        "semantic_search",
+        "keyword_search",
+        "deep_search",
+        "list_filters",
+    }
+    # The retired tool names must be gone (clean break — no aliases).
+    assert "query_documents" not in names
+    assert "search_documents" not in names
 
 
 # ---------------------------------------------------------------------------

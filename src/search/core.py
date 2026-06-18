@@ -102,6 +102,7 @@ from search.text import (
 )
 from search.trace import OnEvent, PhaseRecord, PhaseStart, _Telemetry
 from store import StoreError
+from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFilters
 
 if TYPE_CHECKING:
     from common.config import Settings
@@ -110,8 +111,8 @@ if TYPE_CHECKING:
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
-    from store.models import FacetSet, IndexedDocument
-    from store.reader import SearchFilters, StoreReader
+    from store.models import FacetSet, FilterCatalog, IndexedDocument
+    from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
 
@@ -650,6 +651,69 @@ class SearchCore:
         return self._build_result(
             "", sources, plan, budget, started, tele, refined=False
         )
+
+    def list_filters(self) -> FilterCatalog:
+        """Return every filter value (with doc counts) + the date range. No LLM.
+
+        Backs the MCP ``list_filters`` tool: one local read so a calling model
+        can discover the exact correspondent / document-type / tag ids to filter
+        on. Makes no LLM or HTTP call.
+        """
+        return self._store_reader.list_filters_with_counts()
+
+    def keyword_search(
+        self,
+        query: str | None,
+        ui_filters: SearchFilters | None,
+        limit: int,
+        offset: int,
+    ) -> KeywordPage:
+        """Free keyword/filter document search (spec §4.4). No LLM, no embedding.
+
+        With a non-empty *query*: FTS5 keyword search over chunk content plus the
+        given filters, grouped to ranked documents (best-matching chunk per
+        document). With no *query*: a filter-only browse over the index, sorted
+        most-recently-created first — covering "every document tagged X / from
+        correspondent Y". Filters are the same ID-based shape the search tools
+        accept; discover valid ids via :meth:`list_filters`.
+
+        Args:
+            query: Keyword terms, or None/empty for a filter-only browse.
+            ui_filters: ID-based filters, or None for no restriction.
+            limit: Maximum documents to return.
+            offset: Documents to skip (pagination).
+
+        Returns:
+            A :class:`~store.models.KeywordPage` of ranked document hits.
+        """
+        filters = ui_filters or SearchFilters(
+            date_from=None,
+            date_to=None,
+            correspondent_id=None,
+            document_type_id=None,
+            tag_ids=(),
+        )
+        if query and query.strip():
+            return self._store_reader.keyword_document_search(
+                tuple(query.split()), filters, limit, offset
+            )
+        browse = DocumentBrowseQuery(
+            text=None,
+            date_from=filters.date_from,
+            date_to=filters.date_to,
+            correspondent_id=filters.correspondent_id,
+            document_type_id=filters.document_type_id,
+            tag_ids=tuple(filters.tag_ids),
+            sort="created",
+            descending=True,
+            offset=offset,
+            limit=limit,
+        )
+        page = self._store_reader.list_documents(browse)
+        hits = tuple(
+            KeywordHit(document=doc, snippet=None, rank=0.0) for doc in page.documents
+        )
+        return KeywordPage(hits=hits, total=page.total, offset=offset, limit=limit)
 
     # ------------------------------------------------------------------
     # Pipeline stages
