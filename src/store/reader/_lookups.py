@@ -36,6 +36,8 @@ from store.models import (
     DocumentSummary,
     FailedDocument,
     FacetSet,
+    FilterCatalog,
+    FilterFacet,
     IndexedDocument,
     IndexStats,
     TaxonomyEntry,
@@ -270,6 +272,91 @@ def list_facets(conn: sqlite3.Connection, query_lock: threading.Lock) -> FacetSe
         correspondents=tuple(correspondents),
         document_types=tuple(document_types),
         tags=tuple(tags),
+        earliest=earliest,
+        latest=latest,
+    )
+
+
+def list_filters_with_counts(
+    conn: sqlite3.Connection, query_lock: threading.Lock
+) -> FilterCatalog:
+    """Return every taxonomy entry with its document count, plus the date range.
+
+    Like :func:`list_facets` but attaches a document count to each entry, so an
+    MCP caller can discover which filter ids are worth using. Counts come from
+    three aggregations under one held lock: correspondents and document types
+    via ``GROUP BY`` the foreign-key column; tags via ``json_each`` over the
+    ``documents.tag_ids`` JSON array (SQLite JSON1). A taxonomy entry no indexed
+    document carries reports a count of 0.
+
+    Raises:
+        SchemaNotReadyError: The index schema is not present (mirrors
+            :func:`list_facets` / :func:`get_stats`), so the search server can
+            answer "index not ready" rather than crash.
+        StoreError: On any other SQLite error.
+    """
+    try:
+        with query_lock:
+            tax_rows = conn.execute(
+                "SELECT kind, id, name FROM taxonomy ORDER BY kind, name"
+            ).fetchall()
+            corr_counts = dict(
+                conn.execute(
+                    "SELECT correspondent_id, COUNT(*) FROM documents "
+                    "WHERE correspondent_id IS NOT NULL GROUP BY correspondent_id"
+                ).fetchall()
+            )
+            type_counts = dict(
+                conn.execute(
+                    "SELECT document_type_id, COUNT(*) FROM documents "
+                    "WHERE document_type_id IS NOT NULL GROUP BY document_type_id"
+                ).fetchall()
+            )
+            tag_counts = dict(
+                conn.execute(
+                    "SELECT je.value, COUNT(*) FROM documents d, "
+                    "json_each(d.tag_ids) je GROUP BY je.value"
+                ).fetchall()
+            )
+            date_row = conn.execute(
+                "SELECT MIN(created), MAX(created) FROM documents "
+                "WHERE created IS NOT NULL"
+            ).fetchone()
+    except sqlite3.Error as exc:
+        if _is_missing_table_error(exc):
+            raise SchemaNotReadyError(
+                "list_filters_with_counts query failed: the index schema is not present"
+            ) from exc
+        raise StoreError("list_filters_with_counts query failed") from exc
+
+    counts_by_kind = {
+        "correspondent": corr_counts,
+        "document_type": type_counts,
+        "tag": tag_counts,
+    }
+    buckets: dict[str, list[FilterFacet]] = {
+        "correspondent": [],
+        "document_type": [],
+        "tag": [],
+    }
+    for row in tax_rows:
+        kind = row["kind"]
+        if kind in buckets:
+            buckets[kind].append(
+                FilterFacet(
+                    id=row["id"],
+                    name=row["name"],
+                    count=int(counts_by_kind[kind].get(row["id"], 0)),
+                )
+            )
+
+    earliest: str | None = date_row[0] if date_row and date_row[0] else None
+    latest: str | None = date_row[1] if date_row and date_row[1] else None
+
+    return FilterCatalog(
+        correspondents=tuple(buckets["correspondent"]),
+        document_types=tuple(buckets["document_type"]),
+        tags=tuple(buckets["tag"]),
         earliest=earliest,
         latest=latest,
     )

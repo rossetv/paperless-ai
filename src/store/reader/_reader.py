@@ -26,6 +26,7 @@ from store.models import (
     DocumentSummary,
     FailedDocument,
     FacetSet,
+    FilterCatalog,
     IndexedDocument,
     IndexStats,
     KeywordHit,
@@ -159,6 +160,13 @@ class StoreReader:
         See :func:`store.reader._lookups.list_facets`.
         """
         return _lookups.list_facets(self._conn, self._query_lock)
+
+    def list_filters_with_counts(self) -> FilterCatalog:
+        """Return every taxonomy entry with its document count + date range.
+
+        See :func:`store.reader._lookups.list_filters_with_counts`.
+        """
+        return _lookups.list_filters_with_counts(self._conn, self._query_lock)
 
     def get_stats(self) -> IndexStats:
         """Return summary statistics for the search index.
