@@ -463,3 +463,45 @@ class RetrievalSignal:
 
     best_vector_similarity: float | None
     has_keyword_hit: bool
+
+
+# ---------------------------------------------------------------------------
+# Full-document fetch (MCP fetch_documents tool) — spec §4.3
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class FetchedDocument:
+    """The full OCR text of one document (capped), with wrapper metadata.
+
+    The result shape of the MCP ``fetch_documents`` tool. ``content`` is the
+    canonical full OCR text from Paperless, truncated to the per-document cap;
+    ``truncated`` says whether it was cut, with ``total_chars`` (the full
+    length) and ``returned_chars`` (what ``content`` actually holds) so the
+    caller knows there is more. On a per-id failure ``error`` carries a
+    sanitised message and ``content`` is empty — one bad id never fails the
+    batch.
+
+    Attributes:
+        document_id: The Paperless document id requested.
+        title: Document title (from the local index, else the Paperless
+            response), or None.
+        page_count: Number of pages, or None when unknown.
+        paperless_url: Deep-link to the document in Paperless-ngx.
+        content: The full OCR text, truncated to the cap.
+        truncated: True when ``content`` was cut at the cap.
+        total_chars: Length of the full untruncated content.
+        returned_chars: Length of the returned (possibly truncated) content.
+        error: A sanitised failure message (e.g. "not found"), or None on
+            success.
+    """
+
+    document_id: int
+    title: str | None
+    page_count: int | None
+    paperless_url: str
+    content: str
+    truncated: bool
+    total_chars: int
+    returned_chars: int
+    error: str | None = None

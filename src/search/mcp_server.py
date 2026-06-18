@@ -5,21 +5,31 @@ and wraps it in a bearer-token authentication middleware.  The returned ASGI
 application is mounted at ``/mcp`` by the HTTP server; this module has no
 dependency on ``search/api.py``.
 
-Two tools are exposed, tiered by cost:
+Five tools are exposed; only ``deep_search`` is billed:
 
 - ``semantic_search(query, filters?)`` — calls ``core.retrieve()``.  Pure
   hybrid (vector + FTS) retrieval: ranked source documents, no synthesised
-  answer, and **zero chat LLM calls**.  The calling agent does its own
-  synthesis, so the archive owner is never billed for it.  The PREFERRED tool.
+  answer, and **zero chat LLM calls**.  The PREFERRED tool.
+- ``keyword_search(query?, filters?, limit?, offset?)`` — calls
+  ``core.keyword_search()``.  Exact FTS keyword (or filter-only browse) →
+  ranked document list.  Zero LLM, local index only.
+- ``fetch_documents(document_ids)`` — calls ``core.fetch_documents()``.  Full
+  OCR text (capped) for up to 5 documents, fetched live from Paperless via a
+  per-request client.  Zero LLM.
+- ``list_filters()`` — calls ``core.list_filters()``.  Every correspondent /
+  document type / tag (with counts) + the date range, from the local index.
+  Zero LLM.
 - ``deep_search(question, filters?)`` — calls ``core.answer()``.  Runs the
-  full server-side agentic pipeline (planner + judge + synthesiser) and returns
-  a synthesised answer.  Every call spends the archive owner's LLM API budget,
-  so it is the last-resort tool (spec §7.2).
+  full server-side agentic pipeline and returns a synthesised answer.  Every
+  call spends the archive owner's LLM API budget, so it is the last resort
+  (spec §7.2).
 
-Both tools share one body helper (:func:`_run_search_tool`): normalise the
-query at the boundary (trim, reject empty/whitespace-only, enforce the maximum
-length — §10.4/§10.6), convert the optional filters, invoke the core method,
-serialise the result, and turn any failure into a sanitised tool error.
+The two query-shaped tools share one body helper (:func:`_run_search_tool`):
+normalise the query at the boundary (trim, reject empty/whitespace-only,
+enforce the maximum length — §10.4/§10.6), convert the optional filters, invoke
+the core method, serialise the result, and turn any failure into a sanitised
+tool error.  All five go through :func:`_run_tool`, which exempts the four
+zero-LLM tools from the spend quota (``bills_llm=False``).
 
 Authentication (web-redesign §5):
   Every request must carry either a browser ``search_session`` cookie or an
@@ -29,12 +39,14 @@ Authentication (web-redesign §5):
   reaching the MCP handler if neither credential is valid. The legacy
   ``SEARCH_API_KEY`` was retired in Wave 3. No secret is ever logged.
 
-Allowed deps: search (core, api_keys, auth, sessions, models, wire, identity,
-    offload, spend_quota), store (SearchFilters), appdb (connection), mcp SDK,
-    starlette. The ``app.db`` path is injected by the app factory; this module
-    owns no SQL and opens a fresh connection per request, mirroring
-    ``search.deps.get_app_db``.
-Forbidden: FastAPI (api.py), direct LLM/HTTP calls.
+Allowed deps: search (core, api_keys, auth, sessions, models, sources, wire,
+    identity, offload, spend_quota), store (SearchFilters), common (paperless,
+    config), appdb (connection), mcp SDK, starlette. The ``app.db`` path is
+    injected by the app factory; this module owns no SQL and opens a fresh
+    connection per request, mirroring ``search.deps.get_app_db``.
+Forbidden: FastAPI (api.py), direct LLM calls. ``fetch_documents`` does proxy
+    to Paperless over HTTP, but only through an injected per-request
+    ``PaperlessClient`` run off the loop — mirroring ``search.document_routes``.
 """
 
 from __future__ import annotations
@@ -52,6 +64,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from appdb.connection import connect
+from common.paperless import PaperlessClient
 from search.api_keys import SCOPE_MCP, resolve_api_key
 from search.auth import SESSION_COOKIE_NAME, extract_bearer
 from search.deps import refresh_last_seen
@@ -72,7 +85,20 @@ from store import SearchFilters
 if TYPE_CHECKING:
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
+    from common.config import Settings
     from search.core import SearchCore
+
+
+def _default_paperless_factory(settings: Settings) -> PaperlessClient:
+    """Build a real :class:`~common.paperless.PaperlessClient` from *settings*.
+
+    The production factory for ``fetch_documents``. Mirrors
+    ``search.document_routes._default_paperless_factory`` (kept local so this
+    module does not depend on a sibling route package). Tests pass their own
+    factory returning a stub, so the tool never makes a real Paperless call.
+    """
+    return PaperlessClient(settings)
+
 
 log = structlog.get_logger(__name__)
 
@@ -378,6 +404,7 @@ def _register_search_tools(
     resolve_core: Callable[[str], SearchCore],
     app_db_path: str,
     search_semaphore: LazySemaphore,
+    paperless_factory: Callable[[Settings], PaperlessClient],
 ) -> None:
     """Register the MCP tools on *mcp*, every one resolving the live core.
 
@@ -653,17 +680,58 @@ def _register_search_tools(
 
         return await _run_tool(_build, bills_llm=False)
 
+    @mcp.tool(
+        name="fetch_documents",
+        description=(
+            "Free. Returns the full OCR text of up to 5 documents by id. Each "
+            "result carries the content (truncated past 50000 characters, with a "
+            "'truncated' flag plus 'total_chars'/'returned_chars'), the title, "
+            "page_count, and a Paperless link. Use after a search to read a whole "
+            "document; pass the document_ids from search results. An unknown id "
+            "returns a per-id 'error' rather than failing the batch. Makes no LLM "
+            "call."
+        ),
+    )
+    async def fetch_documents(document_ids: list[int]) -> str:
+        """Call core.fetch_documents (Paperless content, zero LLM) → JSON."""
+        # Boundary validation BEFORE dispatch so a bad request never resolves the
+        # core or opens a Paperless connection. Messages carry no secret, so they
+        # surface to the client verbatim.
+        if not document_ids:
+            raise ValueError("document_ids must contain at least one id")
+        if len(document_ids) > 5:
+            raise ValueError("fetch_documents accepts at most 5 document_ids per call")
+        ids = [int(i) for i in document_ids]
+        if any(i <= 0 for i in ids):
+            raise ValueError("document_ids must be positive integers")
+
+        def _build(core: SearchCore) -> str:
+            # Per-request client (owns an httpx connection); closed in finally,
+            # mirroring search.document_routes. The blocking get_document calls
+            # run here, already off the event loop via _run_tool's run_blocking.
+            client = paperless_factory(core.settings)
+            try:
+                docs = core.fetch_documents(ids, client)
+            finally:
+                client.close()
+            return json.dumps({"documents": [dataclasses.asdict(doc) for doc in docs]})
+
+        return await _run_tool(_build, bills_llm=False)
+
 
 def build_mcp_app(
     resolve_core: Callable[[str], SearchCore],
     app_db_path: str,
     *,
     search_semaphore: LazySemaphore,
+    paperless_factory: Callable[
+        [Settings], PaperlessClient
+    ] = _default_paperless_factory,
 ) -> _McpApp:
     """Build and return the MCP ASGI application (spec §7.2/§7.3).
 
     Constructs a :class:`~mcp.server.fastmcp.FastMCP` server with the
-    streamable-HTTP transport, registers the two search tools via
+    streamable-HTTP transport, registers the five tools via
     :func:`_register_search_tools`, and wraps it in
     :class:`_BearerAuthMiddleware` so every MCP request must carry a valid
     session cookie or ``mcp``-scoped API key.
@@ -679,6 +747,9 @@ def build_mcp_app(
         search_semaphore: The :class:`~search.offload.LazySemaphore` shared with
             the HTTP ``/api/search`` surface, so ``SEARCH_MAX_CONCURRENT`` caps
             both surfaces with one ceiling rather than one per surface (2N).
+        paperless_factory: Builds the per-request :class:`PaperlessClient` for
+            ``fetch_documents``. Defaults to the production factory; tests inject
+            a stub so the tool never makes a real Paperless call.
 
     Returns:
         An ASGI application wrapping the FastMCP server with cookie/API-key auth.
@@ -686,23 +757,34 @@ def build_mcp_app(
     mcp = FastMCP(
         name="paperless-search",
         instructions=(
-            "Search a personal Paperless-ngx document archive. Two tools, "
-            "tiered by cost — STRONGLY PREFER semantic_search.\n\n"
-            "- semantic_search(query, filters?) — PREFERRED, use for "
-            "essentially every search. Returns ranked source documents "
-            "(snippets + Paperless links) and NO answer. Makes NO LLM calls "
-            "and does NOT bill the archive owner's API budget. You, the calling "
-            "model, read the sources and do your own planning, judging, and "
-            "synthesis.\n"
-            "- deep_search(question, filters?) — LAST RESORT, avoid unless "
-            "absolutely necessary. Runs the archive's own server-side agentic "
-            "pipeline (planner + judge + synthesiser) and returns a written "
-            "answer. EVERY call spends the archive owner's paid LLM API budget. "
-            "Only use it when you genuinely cannot synthesise from "
-            "semantic_search results yourself — e.g. the user explicitly asks "
-            "the archive itself to answer.\n\n"
-            "Default to semantic_search. Reach for deep_search only with a "
-            "concrete reason the free path cannot serve the request."
+            "Search and read a personal Paperless-ngx document archive. Five "
+            "tools; only deep_search is billed.\n\n"
+            "- semantic_search(query, filters?) — DEFAULT, free. Hybrid "
+            "vector+keyword retrieval; returns the most relevant passages (with "
+            "Paperless links) for a natural-language question. No LLM billed — "
+            "read the passages and answer yourself. Use for almost every "
+            "question.\n"
+            "- keyword_search(query?, filters?, limit?, offset?) — free. Exact "
+            "full-text search over document content plus title/correspondent/"
+            "type, optionally filtered by correspondent_id, document_type_id, "
+            "tag_ids, date_from/date_to; returns a ranked DOCUMENT list (not "
+            "passages). Use for exact terms, names, reference numbers, or to "
+            "enumerate/filter (e.g. every document tagged X from 2024). Omit "
+            "query to list documents by filter alone.\n"
+            "- fetch_documents(document_ids) — free. Full OCR text of up to 5 "
+            "documents by id (truncated past ~50k characters, flagged). Use "
+            "after a search to read a whole document.\n"
+            "- list_filters() — free. Every correspondent, document type, and "
+            "tag in the archive (with counts) plus the date range. Call first "
+            "to discover exact, valid filter ids before filtering.\n"
+            "- deep_search(question, filters?) — COSTLY, last resort. Runs the "
+            "archive's server-side agentic pipeline and returns a written "
+            "answer; spends the owner's paid LLM budget every call. Prefer "
+            "semantic_search + your own synthesis; use only when explicitly "
+            "asked for the archive to answer itself.\n\n"
+            "Default to semantic_search. Discover filters with list_filters. "
+            "Read whole documents with fetch_documents. Reach for deep_search "
+            "only with a concrete reason the free tools cannot serve."
         ),
         stateless_http=True,
         # streamable_http_path stays at FastMCP's default "/mcp": the app
@@ -724,5 +806,7 @@ def build_mcp_app(
             enable_dns_rebinding_protection=False
         ),
     )
-    _register_search_tools(mcp, resolve_core, app_db_path, search_semaphore)
+    _register_search_tools(
+        mcp, resolve_core, app_db_path, search_semaphore, paperless_factory
+    )
     return _McpApp(mcp, app_db_path)

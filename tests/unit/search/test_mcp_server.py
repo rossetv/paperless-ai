@@ -413,6 +413,7 @@ async def test_tools_list_exposes_the_expected_tools() -> None:
         "semantic_search",
         "keyword_search",
         "deep_search",
+        "fetch_documents",
         "list_filters",
     }
     # The retired tool names must be gone (clean break — no aliases).
