@@ -100,6 +100,7 @@ from search.text import (
     QUERY_LOG_PREFIX_CHARS,
     is_trivial_query,
 )
+from search.fetch import assemble_fetched
 from search.trace import OnEvent, PhaseRecord, PhaseStart, _Telemetry
 from store import StoreError
 from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFilters
@@ -107,7 +108,9 @@ from store.models import DocumentBrowseQuery, KeywordHit, KeywordPage, SearchFil
 if TYPE_CHECKING:
     from common.config import Settings
     from common.llm import LlmCallUsage
+    from common.paperless import PaperlessClient
     from search.cache import _CacheKey
+    from search.models import FetchedDocument
     from search.planner import QueryPlanner
     from search.retriever import Retriever
     from search.synthesizer import Synthesizer
@@ -115,6 +118,13 @@ if TYPE_CHECKING:
     from store.reader import StoreReader
 
 log = structlog.get_logger(__name__)
+
+# Per-document character cap for the MCP fetch_documents tool (~12k tokens).
+# A whole document can be hundreds of pages; the cap bounds the tool payload so
+# one fetch cannot blow the caller's context or the MCP transport. Over the cap,
+# content is truncated and flagged (spec §4.3). A module constant, not a setting:
+# there is exactly one value today (Overengineering smell — no config for it).
+FETCH_MAX_CHARS = 50_000
 
 # The per-query LLM-call budget is NOT a fixed ceiling — it follows
 # SEARCH_MAX_REFINEMENTS and the judge gate (see _max_llm_calls): 1 planner +
@@ -714,6 +724,34 @@ class SearchCore:
             KeywordHit(document=doc, snippet=None, rank=0.0) for doc in page.documents
         )
         return KeywordPage(hits=hits, total=page.total, offset=offset, limit=limit)
+
+    def fetch_documents(
+        self,
+        ids: list[int],
+        paperless_client: PaperlessClient,
+    ) -> list[FetchedDocument]:
+        """Full OCR text (capped) for a handful of documents by id. No LLM.
+
+        Backs the MCP ``fetch_documents`` tool. Delegates to the pure
+        :func:`~search.fetch.assemble_fetched`: canonical full text from
+        Paperless via *paperless_client*, wrapper metadata from the local index,
+        truncated at :data:`FETCH_MAX_CHARS`. The caller owns the per-request
+        client's lifecycle (open/close).
+
+        Args:
+            ids: Document ids to fetch (validated/bounded by the caller).
+            paperless_client: A per-request Paperless client.
+
+        Returns:
+            One :class:`~search.models.FetchedDocument` per id, in order.
+        """
+        return assemble_fetched(
+            ids,
+            paperless_client,
+            self._store_reader,
+            self._settings.PAPERLESS_PUBLIC_URL,
+            FETCH_MAX_CHARS,
+        )
 
     # ------------------------------------------------------------------
     # Pipeline stages
