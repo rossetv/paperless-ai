@@ -40,7 +40,6 @@ Forbidden: FastAPI (api.py), direct LLM/HTTP calls.
 from __future__ import annotations
 
 import dataclasses
-import functools
 import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -60,6 +59,7 @@ from search.identity import mcp_asker, resolve_asker
 from search.models import SearchResult
 from search.offload import LazySemaphore, run_blocking
 from search.sessions import resolve_session
+from search.sources import _paperless_url
 from search.spend_quota import (
     QuotaExceededError,
     check_quota,
@@ -379,15 +379,19 @@ def _register_search_tools(
     app_db_path: str,
     search_semaphore: LazySemaphore,
 ) -> None:
-    """Register the two search tools on *mcp*, both resolving the live core.
+    """Register the MCP tools on *mcp*, every one resolving the live core.
 
-    Each tool is a thin closure over :func:`_run_search_tool`:
+    Each tool is a thin closure over :func:`_run_tool`. The two LLM-path tools
+    go through :func:`_dispatch` and :func:`_run_search_tool`:
     ``semantic_search`` calls ``core.retrieve`` (pure RAG, sources only),
-    ``deep_search`` calls ``core.answer`` (synthesised answer). The core is
-    resolved per call through *resolve_core* — mirroring the HTTP
-    ``/api/search`` handler — so a saved configuration change (answer model,
-    ``SEARCH_MAX_CONCURRENT``, ``OPENAI_API_KEY``, ``SEARCH_IDENTITY_AWARE``,
-    ...) hot-loads for MCP callers on the very next call, with no restart.
+    ``deep_search`` calls ``core.answer`` (synthesised answer — the only billed
+    tool). The three zero-LLM tools (``keyword_search``, ``fetch_documents``,
+    ``list_filters``) call :func:`_run_tool` directly with ``bills_llm=False``,
+    so they skip the spend quota. The core is resolved per call through
+    *resolve_core* — mirroring the HTTP ``/api/search`` handler — so a saved
+    configuration change (answer model, ``SEARCH_MAX_CONCURRENT``,
+    ``OPENAI_API_KEY``, ``SEARCH_IDENTITY_AWARE``, ...) hot-loads for MCP callers
+    on the very next call, with no restart.
 
     Args:
         mcp: The FastMCP server to register the tools on.
@@ -401,6 +405,68 @@ def _register_search_tools(
             across both, not 2N. It binds lazily to the serving event loop.
     """
 
+    async def _run_tool(
+        build_output: Callable[[SearchCore], str],
+        *,
+        bills_llm: bool,
+    ) -> str:
+        """Run any tool body off the loop, under the shared concurrency bound.
+
+        The single dispatch scaffold for every MCP tool. It resolves the live
+        core per call via *resolve_core* (blocking SQLite, so off the loop), so a
+        hot-reloaded answer model / API key / ``SEARCH_MAX_CONCURRENT`` /
+        ``SEARCH_IDENTITY_AWARE`` takes effect without a restart. The per-call
+        ``SEARCH_MAX_CONCURRENT`` is applied to the shared semaphore; a ceiling
+        of 0 (unbounded) makes the acquire a no-op (see :class:`LazySemaphore`).
+
+        *build_output* is a synchronous callable that takes the resolved core and
+        returns the tool's serialised JSON string; it runs off the loop via
+        :func:`~search.offload.run_blocking`. Any contextvar (asker, api-key id)
+        must be read by the caller ON the loop and captured into *build_output* —
+        ``run_blocking`` uses ``run_in_executor``, which does not propagate
+        contextvars to the worker thread.
+
+        When *bills_llm* is True the per-key spend quota is enforced before the
+        body runs (an over-quota key is rejected) and the completed query's
+        tokens are recorded after. The three zero-LLM tools pass
+        ``bills_llm=False`` and skip both — they make no LLM call and record no
+        tokens (spec §5.1). ``semantic_search`` and ``deep_search`` keep
+        ``bills_llm=True``; the api-key id and cap come from
+        :data:`~search.spend_quota.mcp_api_key_id` (set by the auth middleware)
+        and the live ``SEARCH_KEY_DAILY_TOKEN_QUOTA``. Both are no-ops for a
+        disabled quota or a cookie caller.
+        """
+        core = await run_blocking(lambda: resolve_core(app_db_path))
+        api_key_id = mcp_api_key_id.get()
+        quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
+        if bills_llm:
+            # Pre-check BEFORE the body runs so an over-quota key never spends a
+            # token. A QuotaExceededError becomes a clear tool error — the
+            # message carries no secret, so it is surfaced verbatim.
+            try:
+                await check_quota(
+                    api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
+                )
+            except QuotaExceededError as exc:
+                raise ValueError(
+                    "Daily LLM token quota for this API key has been reached; "
+                    "it resets at UTC midnight."
+                ) from exc
+        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
+        async with search_semaphore.acquire():
+            output = await run_blocking(lambda: build_output(core))
+        if bills_llm:
+            # Record the query's tokens against the key's daily bucket
+            # (best-effort; a no-op for a disabled quota / cookie caller). The
+            # token total is read from the serialised result's cost summary.
+            await record_usage(
+                api_key_id=api_key_id,
+                quota=quota,
+                tokens=_total_tokens(output),
+                app_db_path=app_db_path,
+            )
+        return output
+
     async def _dispatch(
         *,
         query: str,
@@ -410,70 +476,31 @@ def _register_search_tools(
         ],
         error_event: str,
     ) -> str:
-        """Run one tool body off the loop, under the shared concurrency bound.
-
-        The live core is resolved per call via *resolve_core* (blocking SQLite,
-        so it runs off the loop), so a hot-reloaded answer model / API key /
-        ``SEARCH_MAX_CONCURRENT`` / ``SEARCH_IDENTITY_AWARE`` takes effect
-        without a restart. The per-call ``SEARCH_MAX_CONCURRENT`` is applied to
-        the shared semaphore; a ceiling of 0 (unbounded) makes the acquire a
-        no-op (see :class:`LazySemaphore`).
+        """Run a query-shaped LLM-billed tool (``semantic_search``/``deep_search``).
 
         The caller's identity is read from :data:`~search.identity.mcp_asker`
-        (set by the auth middleware for this request context) and resolved via
-        :func:`~search.identity.resolve_asker` before being forwarded to the
-        core, so the SEARCH_IDENTITY_AWARE gate is honoured here.
-
-        The per-key spend quota is enforced around the tool body: the API-key id
-        comes from :data:`~search.spend_quota.mcp_api_key_id` (set by the auth
-        middleware) and the cap from the live ``SEARCH_KEY_DAILY_TOKEN_QUOTA``.
-        An over-quota key is rejected before the pipeline runs; the completed
-        query's tokens are recorded after. Both are no-ops for a disabled quota
-        or a cookie caller.
+        (set by the auth middleware) HERE on the loop, then resolved per the live
+        ``SEARCH_IDENTITY_AWARE`` inside the off-loop body via the pure
+        :func:`~search.identity.resolve_asker` — so the contextvar is never read
+        from the worker thread (``run_blocking`` does not propagate it).
         """
-        core = await run_blocking(lambda: resolve_core(app_db_path))
-        asker = resolve_asker(
-            mcp_asker.get(),
-            identity_aware=core.settings.SEARCH_IDENTITY_AWARE,
-        )
-        api_key_id = mcp_api_key_id.get()
-        quota = core.settings.SEARCH_KEY_DAILY_TOKEN_QUOTA
-        # Pre-check BEFORE the pipeline runs so an over-quota key never spends a
-        # token. A QuotaExceededError becomes a clear tool error — the message
-        # carries no secret, so unlike a pipeline fault it is surfaced verbatim.
-        try:
-            await check_quota(
-                api_key_id=api_key_id, quota=quota, app_db_path=app_db_path
+        raw_asker = mcp_asker.get()
+
+        def _build(core: SearchCore) -> str:
+            asker = resolve_asker(
+                raw_asker, identity_aware=core.settings.SEARCH_IDENTITY_AWARE
             )
-        except QuotaExceededError as exc:
-            raise ValueError(
-                "Daily LLM token quota for this API key has been reached; "
-                "it resets at UTC midnight."
-            ) from exc
-        search_semaphore.set_limit(core.settings.SEARCH_MAX_CONCURRENT)
-        async with search_semaphore.acquire():
-            output = await run_blocking(
-                functools.partial(
-                    _run_search_tool,
-                    query=query,
-                    filters=filters,
-                    core_call=lambda text, ui_filters, asker: core_call(
-                        core, text, ui_filters, asker
-                    ),
-                    error_event=error_event,
-                    asker=asker,
-                )
+            return _run_search_tool(
+                query=query,
+                filters=filters,
+                core_call=lambda text, ui_filters, asker_arg: core_call(
+                    core, text, ui_filters, asker_arg
+                ),
+                error_event=error_event,
+                asker=asker,
             )
-        # Record the query's tokens against the key's daily bucket (best-effort;
-        # a no-op for a disabled quota / cookie caller). The token total is read
-        # from the serialised result, which retains the cost summary.
-        await record_usage(
-            api_key_id=api_key_id,
-            quota=quota,
-            tokens=_total_tokens(output),
-            app_db_path=app_db_path,
-        )
-        return output
+
+        return await _run_tool(_build, bills_llm=True)
 
     @mcp.tool(
         name="semantic_search",
@@ -527,6 +554,104 @@ def _register_search_tools(
             ),
             error_event="mcp.deep_search_error",
         )
+
+    @mcp.tool(
+        name="list_filters",
+        description=(
+            "Free. Lists every correspondent, document type, and tag in the "
+            "archive — each with an id, name, and document count — plus the "
+            "archive's date range. Call this first to discover the exact, valid "
+            "filter ids before passing correspondent_id, document_type_id, or "
+            "tag_ids to the search tools. Makes no LLM call."
+        ),
+    )
+    async def list_filters() -> str:
+        """Return the filter catalogue (taxonomy + counts + date range) as JSON."""
+
+        def _build(core: SearchCore) -> str:
+            try:
+                catalog = core.list_filters()
+            except Exception:
+                # Outer-boundary catch (CODE_GUIDELINES §6.4): a store fault may
+                # carry a filesystem path; log the traceback, return a sanitised
+                # error. ``from None`` severs the chain deliberately.
+                log.exception("mcp.list_filters_error")
+                raise ValueError("list_filters failed — see server logs") from None
+            return json.dumps(
+                {
+                    "correspondents": [
+                        dataclasses.asdict(f) for f in catalog.correspondents
+                    ],
+                    "document_types": [
+                        dataclasses.asdict(f) for f in catalog.document_types
+                    ],
+                    "tags": [dataclasses.asdict(f) for f in catalog.tags],
+                    "date_range": {
+                        "earliest": catalog.earliest,
+                        "latest": catalog.latest,
+                    },
+                }
+            )
+
+        return await _run_tool(_build, bills_llm=False)
+
+    @mcp.tool(
+        name="keyword_search",
+        description=(
+            "Free. Exact full-text keyword search over document content plus "
+            "title/correspondent/type, optionally narrowed by correspondent_id, "
+            "document_type_id, tag_ids, date_from/date_to; returns a ranked "
+            "DOCUMENT list (not passages). Use for exact terms, names, or "
+            "reference numbers, or to enumerate/filter (e.g. every document "
+            "tagged X from 2024). Omit 'query' to list documents by filter "
+            "alone. Discover valid filter ids with list_filters. Makes no LLM "
+            "call. 'limit' defaults to 20 (max 50); 'offset' paginates."
+        ),
+    )
+    async def keyword_search(
+        query: str | None = None,
+        filters: dict[str, Any] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> str:
+        """Call core.keyword_search (FTS/browse, zero LLM) and return JSON."""
+        bounded_limit = max(1, min(int(limit), 50))
+        bounded_offset = max(0, int(offset))
+        ui_filters = _to_search_filters(filters)
+
+        def _build(core: SearchCore) -> str:
+            try:
+                page = core.keyword_search(
+                    query, ui_filters, bounded_limit, bounded_offset
+                )
+            except Exception:
+                # Outer-boundary catch (CODE_GUIDELINES §6.4): sanitise any
+                # store fault; the traceback is logged, the client gets a
+                # generic message. ``from None`` severs the chain.
+                log.exception("mcp.keyword_search_error")
+                raise ValueError("keyword search failed — see server logs") from None
+            base = core.settings.PAPERLESS_PUBLIC_URL
+            return json.dumps(
+                {
+                    "documents": [
+                        {
+                            "document_id": hit.document.id,
+                            "title": hit.document.title,
+                            "correspondent": hit.document.correspondent,
+                            "document_type": hit.document.document_type,
+                            "created": hit.document.created,
+                            "snippet": hit.snippet,
+                            "paperless_url": _paperless_url(base, hit.document.id),
+                        }
+                        for hit in page.hits
+                    ],
+                    "total": page.total,
+                    "offset": page.offset,
+                    "limit": page.limit,
+                }
+            )
+
+        return await _run_tool(_build, bills_llm=False)
 
 
 def build_mcp_app(
