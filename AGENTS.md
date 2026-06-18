@@ -213,7 +213,7 @@ The agentic pipeline (`core`, `planner`, `retriever`, `synthesizer`, `refinement
 | `index_routes.py` | The Index operations-dashboard router |
 | `settings_routes.py` | The admin-only Settings router |
 | `document_routes/` (package) | The document router: `_documents.py` (metadata get/update/delete + summary), `_taxonomy.py` (correspondent/type/tag list + create), `_proxy.py` (PDF/thumbnail proxy from Paperless) |
-| `mcp_server.py` | MCP streamable-HTTP ASGI app — two tools over `SearchCore`, behind a bearer-token + session middleware |
+| `mcp_server.py` | MCP streamable-HTTP ASGI app — five tools over `SearchCore`, behind a bearer-token + session middleware |
 | `spa.py` | Serves the built React SPA from `web/dist` with a deep-link catch-all |
 | `wire/` (package) | The Pydantic HTTP boundary — the only place Pydantic lives in `search`. Split per concept: `search.py`, `library.py`, `facets.py`, `accounts.py`, `api_keys.py`, `settings.py`, `index_dashboard.py`. `__init__` re-exports every name |
 | `index_service.py` | Pure shaping logic for the Index dashboard |
