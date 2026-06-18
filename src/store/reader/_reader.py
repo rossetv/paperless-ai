@@ -28,6 +28,8 @@ from store.models import (
     FacetSet,
     IndexedDocument,
     IndexStats,
+    KeywordHit,
+    KeywordPage,
     SearchFilters,
     TaxonomyEntry,
 )
@@ -88,6 +90,36 @@ class StoreReader:
         See :func:`store.reader._ranked.keyword_search`.
         """
         return _ranked.keyword_search(self._conn, self._query_lock, terms, k, filters)
+
+    def keyword_document_search(
+        self,
+        terms: Sequence[str],
+        filters: SearchFilters,
+        limit: int,
+        offset: int,
+    ) -> KeywordPage:
+        """FTS5 keyword search grouped to ranked documents (spec §4.4).
+
+        Wraps :func:`store.reader._ranked.keyword_document_search`, resolving
+        each hit's :class:`~store.models.DocumentSummary` and a collapsed,
+        length-capped snippet from its best-matching chunk.  Returns a
+        :class:`~store.models.KeywordPage`.
+        """
+        rows, total = _ranked.keyword_document_search(
+            self._conn, self._query_lock, terms, filters, limit, offset
+        )
+        hits: list[KeywordHit] = []
+        for doc_id, text, rank in rows:
+            summary = _lookups.get_document_summary(
+                self._conn, self._query_lock, doc_id
+            )
+            if summary is None:
+                # A document indexed at FTS time but pruned before this lookup —
+                # a rare race; skip it rather than return a hit with no metadata.
+                continue
+            snippet = " ".join(text.split())[:280]
+            hits.append(KeywordHit(document=summary, snippet=snippet, rank=rank))
+        return KeywordPage(hits=tuple(hits), total=total, offset=offset, limit=limit)
 
     # ------------------------------------------------------------------
     # Look-ups and introspection

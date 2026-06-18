@@ -322,3 +322,74 @@ class DocumentPage:
     total: int
     offset: int
     limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class KeywordHit:
+    """One document matched by a keyword (FTS) search.
+
+    Attributes:
+        document: The matched document's summary (taxonomy names resolved).
+        snippet: A collapsed, length-capped excerpt from the best-matching
+            chunk, or None for a filter-only browse (no keyword to excerpt).
+        rank: The document's best (lowest) BM25 rank across its matching
+            chunks; closer to zero is a stronger match. 0.0 for a filter-only
+            browse, which does not rank by relevance.
+    """
+
+    document: DocumentSummary
+    snippet: str | None
+    rank: float
+
+
+@dataclass(frozen=True, slots=True)
+class KeywordPage:
+    """One page of keyword-search document hits plus the total match count.
+
+    Attributes:
+        hits: The page's document hits, strongest match first.
+        total: Distinct documents matching the query, ignoring pagination.
+        offset: The offset that produced this page (echoed back).
+        limit: The limit that produced this page (echoed back).
+    """
+
+    hits: tuple[KeywordHit, ...]
+    total: int
+    offset: int
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class FilterFacet:
+    """A taxonomy entry plus the count of documents carrying it.
+
+    Attributes:
+        id: The Paperless id for this correspondent / document type / tag.
+        name: The current display name.
+        count: Number of indexed documents carrying this entry (0 when the
+            entry exists in the taxonomy but no indexed document uses it).
+    """
+
+    id: int
+    name: str
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class FilterCatalog:
+    """Every filterable value in the index, with counts, plus the date range.
+
+    Attributes:
+        correspondents: Correspondent facets, ordered by name.
+        document_types: Document-type facets, ordered by name.
+        tags: Tag facets, ordered by name.
+        earliest: Earliest document creation date in the index (ISO-8601),
+            or None when the index holds no dated documents.
+        latest: Latest document creation date in the index (ISO-8601), or None.
+    """
+
+    correspondents: tuple[FilterFacet, ...]
+    document_types: tuple[FilterFacet, ...]
+    tags: tuple[FilterFacet, ...]
+    earliest: str | None
+    latest: str | None
