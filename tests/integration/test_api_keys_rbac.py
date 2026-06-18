@@ -46,8 +46,14 @@ def env(tmp_path):
     store_reader = StoreReader(settings)
     client = build_account_client(settings, app_db, store_reader)
     ids = {"admin": admin.id, "member": member.id, "readonly": readonly.id}
+    # Enter the client as a context manager so the app's lifespan runs — that is
+    # what starts the MCP streamable-HTTP session manager's task group. Without
+    # it, an authenticated /mcp request reaches the transport and 500s ("Task
+    # group is not initialized"), which would let test_mcp_scoped_key_passes_the
+    # _mcp_auth_gate pass on a 500 instead of a genuine non-401 transport reply.
     try:
-        yield client, app_db, ids
+        with client:
+            yield client, app_db, ids
     finally:
         store_reader.close()
         app_db.close()
@@ -97,21 +103,21 @@ def test_mcp_only_key_cannot_reach_the_data_routes(env) -> None:
 def test_api_only_key_cannot_reach_the_mcp_surface(env) -> None:
     client, app_db, ids = env
     raw = _mint(app_db, owner_user_id=ids["member"], scopes="api")
-    # /mcp/ is gated by the MCP scope; an API-only key is rejected (401 from
-    # the MCP middleware, which does not distinguish 401/403). Note: the mount
-    # matches paths with a trailing slash; /mcp (no slash) falls to the SPA
-    # catch-all which refuses mcp paths with its own 404 guard.
-    response = client.get("/mcp/", headers=_bearer(raw))
+    # The MCP surface is served at the exact path /mcp (an ASGI Route, not a
+    # trailing-slash mount). It is gated by the mcp scope, so an API-only key is
+    # rejected by the auth middleware with 401 (it does not distinguish
+    # 401/403) before the request ever reaches the MCP transport.
+    response = client.get("/mcp", headers=_bearer(raw))
     assert response.status_code == 401
 
 
 def test_mcp_scoped_key_passes_the_mcp_auth_gate(env) -> None:
     client, app_db, ids = env
     raw = _mint(app_db, owner_user_id=ids["member"], scopes="mcp")
-    # A GET to /mcp/ with a valid MCP key passes the auth middleware; the MCP
+    # A GET to /mcp with a valid MCP key passes the auth middleware; the MCP
     # transport itself may then answer non-2xx for a non-MCP-protocol GET,
     # but it must NOT be the 401 the middleware returns on auth failure.
-    response = client.get("/mcp/", headers=_bearer(raw))
+    response = client.get("/mcp", headers=_bearer(raw))
     assert response.status_code != 401
 
 

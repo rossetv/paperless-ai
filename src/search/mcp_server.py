@@ -47,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -69,6 +70,8 @@ from search.wire import FilterRequest, normalise_query, to_search_filters
 from store import SearchFilters
 
 if TYPE_CHECKING:
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
     from search.core import SearchCore
 
 log = structlog.get_logger(__name__)
@@ -349,6 +352,23 @@ class _McpApp:
         starlette_app = fastmcp.streamable_http_app()
         self._asgi_app: ASGIApp = _BearerAuthMiddleware(starlette_app, app_db_path)
 
+    @property
+    def session_manager(self) -> StreamableHTTPSessionManager:
+        """The streamable-HTTP session manager, for the mounting app's lifespan.
+
+        FastMCP wires this manager's task group via the lifespan of the app
+        ``streamable_http_app()`` returns — but an ASGI sub-app attached by a
+        Route (or app.mount) never has its own lifespan run by the parent, so
+        that task group would stay uninitialised and every request would fail
+        with "Task group is not initialized". The app factory
+        (``search.api.create_app``) therefore
+        runs ``session_manager.run()`` from the FastAPI app's own lifespan;
+        this property exposes the manager for it. Available because
+        ``streamable_http_app()`` (which creates it lazily) was called in
+        ``__init__``.
+        """
+        return self._fastmcp.session_manager
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         await self._asgi_app(scope, receive, send)
 
@@ -560,6 +580,24 @@ def build_mcp_app(
             "concrete reason the free path cannot serve the request."
         ),
         stateless_http=True,
+        # streamable_http_path stays at FastMCP's default "/mcp": the app
+        # factory attaches this app as an exact-path Route at "/mcp" (NOT an
+        # app.mount), and a Route forwards the unmodified path, so the inner
+        # route must itself be "/mcp". (Mounting under "/mcp" would instead
+        # double-prefix to "/mcp/mcp" and never serve the bare "/mcp" a client
+        # POSTs to — see search.api.create_app.)
+        #
+        # Disable FastMCP's DNS-rebinding Host/Origin check. It auto-enables for
+        # the default 127.0.0.1 bind with a localhost-only allowlist, which 421s
+        # every real request (Host: search.rosset.ie behind the reverse proxy).
+        # It is redundant here: the bearer-auth middleware (below) rejects any
+        # request without an mcp-scoped key or session cookie BEFORE the
+        # transport runs, the reverse proxy controls the Host, and the SPA's
+        # SameSite=Strict cookie + CSP connect-src 'self' already block
+        # cross-origin browser calls — so the rebinding threat model is covered.
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
     )
     _register_search_tools(mcp, resolve_core, app_db_path, search_semaphore)
     return _McpApp(mcp, app_db_path)
