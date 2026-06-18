@@ -13,7 +13,7 @@ Why a process-global singleton
 A search re-pays a query embedding plus 2–3 LLM calls every time. A
 request-scoped cache would never hit; the saving only exists if a byte-identical
 repeat query, over an unchanged index, reuses a prior answer. The search server
-is one process serving the HTTP ``/api/search`` and the MCP ``search_documents``
+is one process serving the HTTP ``/api/search`` and the MCP ``deep_search``
 paths (both funnel through ``SearchCore.answer``), and ``search/api.py`` already
 keeps the core/planner/synth as process singletons — so a process-wide result
 cache is the right scope and is shared by both paths.

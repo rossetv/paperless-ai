@@ -9,10 +9,10 @@ Two public methods, both pure-library (no FastAPI, no MCP — CODE_GUIDELINES
 
 - ``answer(query, ui_filters)`` — the full pipeline: plan, retrieve, an
   optional single refinement, and synthesis.  Used by the HTTP ``/api/search``
-  endpoint and the MCP ``search_documents`` tool.
+  endpoint and the MCP ``deep_search`` tool.
 - ``retrieve(query, ui_filters)`` — plan-free hybrid retrieval (vector + FTS on
   the raw query); ranked sources, no synthesised answer, and **zero chat LLM
-  calls**.  Backs the MCP ``query_documents`` tool, where the calling agent does
+  calls**.  Backs the MCP ``semantic_search`` tool, where the calling agent does
   its own synthesis at no cost to the archive owner.
 
 The per-query LLM-call budget
@@ -597,7 +597,7 @@ class SearchCore:
     ) -> SearchResult:
         """Plan-free hybrid retrieval — ranked sources, zero chat LLM calls.
 
-        The pure-RAG path behind the MCP ``query_documents`` tool. It skips the
+        The pure-RAG path behind the MCP ``semantic_search`` tool. It skips the
         planner entirely: a deterministic hybrid plan (vector + FTS on the raw
         query, :func:`~search.refinement.raw_rag_plan`) is resolved against the
         live taxonomy and any UI filters, retrieved, and assembled into ranked

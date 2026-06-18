@@ -1,7 +1,7 @@
 """Tests that the MCP asker threads (or doesn't) from the session/API-key caller.
 
-Only ``search_documents`` (the full ``core.answer`` pipeline) threads an asker;
-``query_documents`` is pure RAG with no LLM stage, so it never forwards one.
+Only ``deep_search`` (the full ``core.answer`` pipeline) threads an asker;
+``semantic_search`` is pure RAG with no LLM stage, so it never forwards one.
 
 Verifies:
 - _run_search_tool forwards the asker argument to the core_call.
@@ -10,7 +10,7 @@ Verifies:
 - With SEARCH_IDENTITY_AWARE=False, resolve_asker returns None so core.answer
   receives asker=None regardless of the contextvar value.
 - A dirty display_name is sanitised before reaching core.answer via resolve_asker.
-- query_documents never passes an asker to core.retrieve.
+- semantic_search never passes an asker to core.retrieve.
 """
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ def test_mcp_middleware_resets_mcp_asker_after_request() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_suppresses_asker_when_identity_aware_off() -> None:
+async def test_deep_search_suppresses_asker_when_identity_aware_off() -> None:
     """With SEARCH_IDENTITY_AWARE=False, _dispatch resolves asker=None.
 
     We test this by setting mcp_asker within the same async context as the
@@ -241,7 +241,7 @@ async def test_search_documents_suppresses_asker_when_identity_aware_off() -> No
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("search_documents", {"question": "my invoices"})
+            await client.call_tool("deep_search", {"question": "my invoices"})
     finally:
         mcp_asker.reset(token)
 
@@ -250,8 +250,8 @@ async def test_search_documents_suppresses_asker_when_identity_aware_off() -> No
 
 
 @pytest.mark.anyio
-async def test_query_documents_never_threads_asker() -> None:
-    """query_documents is pure RAG (no LLM), so it never forwards an asker.
+async def test_semantic_search_never_threads_asker() -> None:
+    """semantic_search is pure RAG (no LLM), so it never forwards an asker.
 
     Even with an identity on the contextvar and SEARCH_IDENTITY_AWARE on, the
     free retrieval path passes no asker to core.retrieve — there is no
@@ -268,7 +268,7 @@ async def test_query_documents_never_threads_asker() -> None:
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("query_documents", {"query": "my documents"})
+            await client.call_tool("semantic_search", {"query": "my documents"})
     finally:
         mcp_asker.reset(token)
 
@@ -277,7 +277,7 @@ async def test_query_documents_never_threads_asker() -> None:
 
 
 @pytest.mark.anyio
-async def test_search_documents_forwards_the_sanitised_asker_when_identity_on() -> None:
+async def test_deep_search_forwards_the_sanitised_asker_when_identity_on() -> None:
     """Identity ON: the contextvar name reaches core.answer, SANITISED.
 
     The positive end-to-end of the tool side — the contextvar is read, gated on,
@@ -295,7 +295,7 @@ async def test_search_documents_forwards_the_sanitised_asker_when_identity_on() 
         async with create_connected_server_and_client_session(
             mcp_app._fastmcp
         ) as client:
-            await client.call_tool("search_documents", {"question": "my invoices"})
+            await client.call_tool("deep_search", {"question": "my invoices"})
     finally:
         mcp_asker.reset(token)
 

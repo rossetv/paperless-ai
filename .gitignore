@@ -126,6 +126,9 @@ scorecard.png
 # Local-only plans and specs — never committed
 docs/superpowers/
 
+# Local Claude tooling state — never committed
+.headroom/
+
 # Search index store — runtime data, never committed
 data/
 *.db
