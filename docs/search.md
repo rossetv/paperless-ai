@@ -47,7 +47,7 @@ One uvicorn process serves everything. There is no second process and no extra p
 | `api_key_routes.py` | Mint, list, edit, and revoke API keys |
 | `document_routes/` | One document at a time: summary, metadata edit, delete, re-queue, taxonomy editing, and the PDF / thumbnail proxy |
 | `index_routes.py` | The Index dashboard: daemon status, reconcile activity, failed documents, and the destructive rebuild |
-| `mcp_server.py` | The MCP endpoint, mounted at `/mcp` — two tools |
+| `mcp_server.py` | The MCP endpoint, mounted at `/mcp` — five tools |
 | `spa.py` | The built React app, mounted at `/` |
 
 The MCP endpoint and every `/api` router are mounted **before** the web app's catch-all, so a real API call always wins over static file serving.
@@ -111,10 +111,13 @@ Answered, clarify, and no-match results are written to a process-local cache key
 
 ### The two entry points
 
-The pipeline is a pure library — no FastAPI, no MCP — so it can be tested offline with a mock LLM client. `SearchCore` exposes two methods:
+The pipeline is a pure library — no FastAPI, no MCP — so it can be tested offline with a mock LLM client. `SearchCore` exposes these methods:
 
 - `answer(query, filters)` — the full pipeline, ending in a synthesised answer. Backs `POST /api/search` and the MCP `deep_search` tool.
 - `retrieve(query, filters)` — plan-free hybrid retrieval (vector + FTS on the raw query), no synthesis, **zero chat LLM calls**. Backs the MCP `semantic_search` tool, where the calling agent writes its own answer and the saved LLM cost matters.
+- `keyword_search(query, filters, limit, offset)` — exact FTS keyword search grouped to a ranked document list, or a filter-only browse when `query` is empty. **Zero LLM.** Backs the MCP `keyword_search` tool.
+- `list_filters()` — every correspondent, document type, and tag with document counts, plus the date range. **Zero LLM.** Backs the MCP `list_filters` tool.
+- `fetch_documents(ids, paperless_client)` — full OCR text (capped) for up to a handful of documents, fetched live from Paperless and wrapped with local metadata. **Zero LLM.** Backs the MCP `fetch_documents` tool.
 
 Every stage takes its LLM client and store reader by injection.
 
@@ -184,14 +187,17 @@ A separate per-username login throttle (`search/login_throttle.py`) limits passw
 
 ## MCP endpoint
 
-The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `FastMCP` streamable-HTTP transport — an ASGI app mounted at `/mcp` — and exposes two tools, both backed by the live `SearchCore`:
+The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `FastMCP` streamable-HTTP transport — an ASGI app mounted at `/mcp` — and exposes five tools, all backed by the live `SearchCore`. Only `deep_search` bills the archive owner:
 
 | Tool | Calls | Cost | Returns |
 |:---|:---|:---|:---|
-| `semantic_search(query, filters?)` | `core.retrieve()` | **0 chat LLM calls** (1 embedding) | Ranked source documents with snippets and Paperless deep-links; no written answer |
+| `semantic_search(query, filters?)` | `core.retrieve()` | **0 chat LLM calls** (1 embedding) | Ranked source passages with snippets and Paperless deep-links; no written answer |
+| `keyword_search(query?, filters?, limit?, offset?)` | `core.keyword_search()` | **0 LLM calls** | A ranked **document** list from exact FTS keyword search, or a filter-only browse when `query` is omitted |
+| `fetch_documents(document_ids)` | `core.fetch_documents()` | **0 LLM calls** | Full OCR text (capped at 50k chars, with a `truncated` flag) of up to 5 documents, fetched live from Paperless |
+| `list_filters()` | `core.list_filters()` | **0 LLM calls** | Every correspondent, document type, and tag (with document counts) plus the archive's date range |
 | `deep_search(question, filters?)` | `core.answer()` | full agentic pipeline | The full result, including a synthesised answer |
 
-`semantic_search` is the **preferred** tool: it makes no chat LLM call (only the retriever's embedding), so it never bills the archive owner — the calling agent reads the ranked sources and synthesises its own answer. `deep_search` runs the full server-side pipeline (planner + judge + synthesiser) and spends the archive owner's LLM API budget on every call, so it is the last resort, used only when the agent genuinely cannot synthesise from the sources itself. The server's MCP `instructions` steer a host agent to prefer `semantic_search` accordingly. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Both tool bodies run off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second, LLM-bound duration.) The query is normalised at the boundary — trimmed, non-empty, length-bounded — and any pipeline failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail.
+`semantic_search` is the **default** tool: it makes no chat LLM call (only the retriever's embedding), so it never bills the archive owner — the calling agent reads the ranked passages and synthesises its own answer. `keyword_search`, `fetch_documents`, and `list_filters` are the other free tools: `list_filters` lets the agent discover the exact filter ids, `keyword_search` finds or enumerates documents by exact term and filter, and `fetch_documents` pulls a whole document's text once it has been located. `deep_search` runs the full server-side pipeline (planner + judge + synthesiser) and spends the archive owner's LLM API budget on every call, so it is the last resort, used only when the agent genuinely cannot synthesise from the sources itself. The server's MCP `instructions` steer a host agent accordingly. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Every tool body runs off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound (`_run_tool`); the four zero-LLM tools pass `bills_llm=False` and skip the per-key spend quota. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second duration.) Queries are normalised at the boundary — trimmed, non-empty, length-bounded — and any failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail. `fetch_documents` proxies to Paperless through a per-request `PaperlessClient` (built by an injected factory, closed after use), mirroring the document-viewer routes.
 
 **Every MCP request is authenticated.** An ASGI bearer-token middleware wraps the MCP app: a request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential gets HTTP 401 without ever reaching the MCP handler. The middleware opens a fresh `app.db` connection per request (off the loop); a successful cookie auth also refreshes `last_seen_at`. Credentials are never logged — a rejection records only whether a header or cookie was present.
 
