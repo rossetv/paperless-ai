@@ -199,6 +199,28 @@ The MCP endpoint lets an AI agent treat your archive as a tool. It uses the `Fas
 
 `semantic_search` is the **default** tool: it makes no chat LLM call (only the retriever's embedding), so it never bills the archive owner — the calling agent reads the ranked passages and synthesises its own answer. `keyword_search`, `fetch_documents`, and `list_filters` are the other free tools: `list_filters` lets the agent discover the exact filter ids, `keyword_search` finds or enumerates documents by exact term and filter, and `fetch_documents` pulls a whole document's text once it has been located. `deep_search` runs the full server-side pipeline (planner + judge + synthesiser) and spends the archive owner's LLM API budget on every call, so it is the last resort, used only when the agent genuinely cannot synthesise from the sources itself. The server's MCP `instructions` steer a host agent accordingly. Each tool dispatch resolves the live `SearchCore` per call through the same per-request accessor the HTTP `/api/search` handler uses (`_resolve_search_core`), so a saved configuration change — answer model, `SEARCH_MAX_CONCURRENT`, `OPENAI_API_KEY`, `SEARCH_IDENTITY_AWARE` — hot-loads for MCP callers on the very next call, with no restart. Every tool body runs off the event loop through `run_blocking` under the shared `SEARCH_MAX_CONCURRENT` bound (`_run_tool`); the four zero-LLM tools pass `bills_llm=False` and skip the per-key spend quota. (FastMCP 1.27 would otherwise run a synchronous tool directly on the loop, freezing the co-mounted REST API for the tool's multi-second duration.) Queries are normalised at the boundary — trimmed, non-empty, length-bounded — and any failure is logged server-side with its traceback but returned to the client as a sanitised error carrying no internal detail. `fetch_documents` proxies to Paperless through a per-request `PaperlessClient` (built by an injected factory, closed after use), mirroring the document-viewer routes.
 
+### Tool reference
+
+Recommended flow: call `list_filters` once to learn the valid ids → `semantic_search` for a natural-language question or `keyword_search` for exact terms / enumeration → `fetch_documents` to read a whole document → `deep_search` only when the agent genuinely cannot answer from the sources itself.
+
+**Filters.** Every search tool takes the same optional, **ID-based** `filters` object (discover the ids with `list_filters`; there is no name resolution at this boundary). Unknown keys are ignored:
+
+```json
+{
+  "correspondent_id": 12,
+  "document_type_id": 3,
+  "tag_ids": [4, 9],
+  "date_from": "2024-01-01",
+  "date_to": "2024-12-31"
+}
+```
+
+- **`semantic_search(query, filters?)`** → the standard `SearchResult` with an empty `answer` and ranked `sources` (the verbose per-phase `trace` is stripped; the lightweight `cost` summary is kept). Hybrid vector + FTS retrieval; best for natural-language questions.
+- **`keyword_search(query?, filters?, limit=20, offset=0)`** → `{ documents: [{ document_id, title, correspondent, document_type, created, snippet, paperless_url }], total, offset, limit }`. With `query` it ranks by FTS (BM25) relevance and `snippet` is the best-matching excerpt; omit `query` for a filter-only browse (recency order, `snippet: null`). `limit` is clamped to 1–50, `offset` ≥ 0.
+- **`fetch_documents(document_ids)`** → `{ documents: [{ document_id, title, page_count, paperless_url, content, truncated, total_chars, returned_chars, error }] }`. 1–5 ids per call (empty or > 5 is rejected). `content` is the full OCR text capped at 50000 characters — when cut, `truncated` is `true` with `total_chars`/`returned_chars`. An unknown or deleted id yields `error: "not found"` for that entry without failing the rest of the batch.
+- **`list_filters()`** → `{ correspondents: [{ id, name, count }], document_types: [...], tags: [...], date_range: { earliest, latest } }`. Call it first to discover valid filter ids.
+- **`deep_search(question, filters?)`** → the full `SearchResult` including a synthesised `answer` and its `sources`. **The only billed tool**: every call spends the archive owner's LLM budget and counts against `SEARCH_KEY_DAILY_TOKEN_QUOTA`.
+
 **Every MCP request is authenticated.** An ASGI bearer-token middleware wraps the MCP app: a request must carry either a `search_session` cookie (a signed-in human) or `Authorization: Bearer <api-key>` where the key holds the `mcp` scope. A missing or invalid credential gets HTTP 401 without ever reaching the MCP handler. The middleware opens a fresh `app.db` connection per request (off the loop); a successful cookie auth also refreshes `last_seen_at`. Credentials are never logged — a rejection records only whether a header or cookie was present.
 
 ---
@@ -296,7 +318,7 @@ For the corruption recovery runbook, see [Store — Corruption Recovery](store.m
 | `api_key_routes.py` | Mint / list / edit / revoke API keys |
 | `document_routes/` | `_documents` (summary, edit, delete, re-queue, recent searches), `_taxonomy` (CRUD), `_proxy` (PDF / thumb) |
 | `index_routes.py` · `index_service.py` | The Index dashboard and `rebuild` |
-| `mcp_server.py` | The MCP server — two tools over `SearchCore`, plus the bearer-token middleware |
+| `mcp_server.py` | The MCP server — five tools over `SearchCore`, plus the bearer-token middleware |
 | `spa.py` | The web-app static mount with its deep-link catch-all |
 | `wire/` | Pydantic request / response models and mapping functions (the HTTP boundary only) |
 | `offload.py` | `run_blocking` (event-loop offload) and `LazySemaphore` (the concurrency bound) |
