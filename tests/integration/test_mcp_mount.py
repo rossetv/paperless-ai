@@ -68,7 +68,9 @@ def test_mcp_initialize_succeeds_through_the_real_mount(tmp_path: Path) -> None:
     finally:
         app_db.close()
 
-    app = create_app(settings, core=make_mock_core(), store_reader=StoreReader(settings))
+    app = create_app(
+        settings, core=make_mock_core(), store_reader=StoreReader(settings)
+    )
 
     # The context manager runs the app's lifespan, which starts the MCP session
     # manager's task group — without it the request 500s (bug 2).
