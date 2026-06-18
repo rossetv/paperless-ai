@@ -164,3 +164,89 @@ def keyword_search(
         )
         for row in rows
     ]
+
+
+def keyword_document_search(
+    conn: sqlite3.Connection,
+    query_lock: threading.Lock,
+    terms: Sequence[str],
+    filters: SearchFilters,
+    limit: int,
+    offset: int,
+) -> tuple[list[tuple[int, str, float]], int]:
+    """FTS5 keyword search grouped to documents (spec §4.4).
+
+    Like :func:`keyword_search`, but collapses the chunk-level FTS hits to one
+    row per document — the best (lowest BM25) chunk — so the caller gets a
+    ranked document list rather than passages.  The same ``SearchFilters`` are
+    applied as a WHERE on the documents table *before* ranking, so filtered
+    recall is exact.
+
+    Args:
+        conn: The open index connection.
+        query_lock: The StoreReader's lock, held for the count + page queries.
+        terms: One or more keyword terms, AND-combined via FTS5 MATCH.
+        filters: Pre-ranking filter applied as SQL WHERE on documents.
+        limit: Maximum number of documents to return; ``<= 0`` returns nothing.
+        offset: Number of documents to skip (pagination); must be ``>= 0``.
+
+    Returns:
+        A ``(rows, total)`` pair where each row is
+        ``(document_id, best_chunk_text, best_rank)`` ordered by ascending
+        (best) BM25 rank, and *total* is the count of distinct matching
+        documents ignoring pagination.  ``([], 0)`` when *terms* is empty or
+        *limit* ``<= 0``.
+
+    Raises:
+        StoreError: On SQLite error.
+    """
+    if not terms or limit <= 0:
+        return [], 0
+
+    match_expr = " AND ".join(f'"{escape_fts_term(term)}"' for term in terms)
+    where_clause, params = build_filters(filters)
+    if where_clause:
+        fts_join = where_clause + " AND fts.text MATCH ?"
+    else:
+        fts_join = "WHERE fts.text MATCH ?"
+
+    # rationale: fts_join is build_filters() output (fixed SQL + ? placeholders)
+    # plus the literal MATCH clause — no caller value is spliced in.  Terms and
+    # every filter value bind via parameter substitution (CODE_GUIDELINES §9.5).
+    # Two CTEs: compute bm25 once per matching chunk, then keep each document's
+    # best (lowest-rank) chunk via a window function before paginating.
+    page_sql = (
+        "WITH ranked AS ("
+        "  SELECT c.document_id AS doc_id, c.text AS text, "
+        "         bm25(chunks_fts) AS rank "
+        "  FROM chunks_fts AS fts "
+        "  JOIN chunks c ON c.id = fts.rowid "
+        "  JOIN documents d ON d.id = c.document_id "
+        f"  {fts_join}"  # nosec B608 - fts_join is build_filters()+literal MATCH; values via ?
+        "), best AS ("
+        "  SELECT doc_id, text, rank, "
+        "         ROW_NUMBER() OVER (PARTITION BY doc_id ORDER BY rank) AS rn "
+        "  FROM ranked"
+        ") "
+        "SELECT doc_id, text, rank FROM best WHERE rn = 1 "
+        "ORDER BY rank LIMIT ? OFFSET ?"
+    )
+    count_sql = (
+        "SELECT COUNT(DISTINCT c.document_id) "
+        "FROM chunks_fts AS fts "
+        "JOIN chunks c ON c.id = fts.rowid "
+        "JOIN documents d ON d.id = c.document_id "
+        f"{fts_join}"  # nosec B608 - same provenance as page_sql's fts_join
+    )
+    try:
+        with query_lock:
+            total = conn.execute(count_sql, [*params, match_expr]).fetchone()[0]
+            rows = conn.execute(
+                page_sql, [*params, match_expr, limit, offset]
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise StoreError("keyword_document_search query failed") from exc
+
+    return [(row["doc_id"], row["text"], float(row["rank"])) for row in rows], int(
+        total
+    )
