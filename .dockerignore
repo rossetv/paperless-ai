@@ -90,6 +90,8 @@ celerybeat-schedule
 # Project-local tooling artifacts and one-off review files.
 .desloppify/
 .claude/
+.headroom/
+docs/superpowers/
 review_batch_*.json
 scorecard.png
 

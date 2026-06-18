@@ -98,7 +98,7 @@ def raw_rag_plan(query: str) -> RetrievalPlan:
     vector pass only for semantic specs and the FTS pass only for keyword specs,
     so genuine hybrid retrieval needs both spelled out — a single broad-semantic
     spec (:func:`build_broad_semantic_plan`) would be vector-only. Backs
-    :meth:`~search.core.SearchCore.retrieve`, and thus the MCP ``query_documents``
+    :meth:`~search.core.SearchCore.retrieve`, and thus the MCP ``semantic_search``
     tool, which must cost zero chat LLM calls.
 
     Keywords are a naive whitespace split of the query.
