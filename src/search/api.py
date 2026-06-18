@@ -31,6 +31,8 @@ import sqlite3
 import sys
 import threading
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,6 +42,7 @@ import uvicorn
 from fastapi import FastAPI
 from starlette.requests import Request
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from appdb.connection import connect as connect_app_db
 from appdb.model_pricing import load_cached_prices, save_cached_prices
@@ -361,7 +364,37 @@ def create_app(
     core, store_reader = _resolve_components(settings, core, store_reader)
     app_db_path = settings.APP_DB_PATH if app_db_path is None else app_db_path
 
-    app = FastAPI(title="Paperless Semantic Search", docs_url=None, redoc_url=None)
+    # ONE concurrency bound shared by the HTTP /api/search surface and the MCP
+    # tools, so the SEARCH_MAX_CONCURRENT ceiling is a single shared cap rather
+    # than 2N (one semaphore per surface). It binds lazily to the serving event
+    # loop on first acquire.
+    search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
+
+    # Build the MCP app now so its streamable-HTTP session manager can be
+    # started from the lifespan below. Attaching an ASGI sub-app (whether by
+    # Route or app.mount) does NOT run its own lifespan, so without explicitly
+    # running session_manager.run() the manager's task group is never
+    # initialised and every /mcp request fails with "Task group is not
+    # initialized" (the bug fixed in this wiring).
+    mcp_app = build_mcp_app(
+        _resolve_search_core,
+        app_db_path,
+        search_semaphore=search_semaphore,
+    )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Run the MCP streamable-HTTP session manager for the app's lifetime so
+        # the /mcp endpoint has a live task group to serve requests.
+        async with mcp_app.session_manager.run():
+            yield
+
+    app = FastAPI(
+        title="Paperless Semantic Search",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
 
     # Conservative, SPA-safe security headers on every response (defence in
     # depth). Registered first so it wraps the whole app — the API routers, the
@@ -406,25 +439,17 @@ def create_app(
     # change (web-redesign §5, Wave 4).
     _seed_core_cache(app_db_path, core)
 
-    # ONE concurrency bound shared by the HTTP /api/search surface and the MCP
-    # tools, so the SEARCH_MAX_CONCURRENT ceiling is a single shared cap rather
-    # than 2N (one semaphore per surface). Created here and injected into both
-    # builders; it binds lazily to the serving event loop on first acquire.
-    search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
-
-    # Mount /mcp and the /api routers BEFORE the SPA catch-all so they take
-    # precedence over static serving. The MCP tools resolve the live core per
-    # call through _resolve_search_core (the same per-request hot-reload the
-    # HTTP /api/search handler uses), so a saved config change reaches MCP
-    # callers without a restart.
-    app.mount(
-        "/mcp",
-        build_mcp_app(
-            _resolve_search_core,
-            app_db_path,
-            search_semaphore=search_semaphore,
-        ),
-    )
+    # Attach /mcp as an EXACT-PATH ASGI Route (not app.mount) so the endpoint a
+    # client POSTs to is exactly "/mcp" — no trailing slash, no redirect. A
+    # Mount under "/mcp" can only serve "/mcp/..." and would 405 the bare "/mcp"
+    # once the SPA catch-all is in play (the catch-all's method-mismatch shadows
+    # Starlette's slash-redirect). A Route forwards the unmodified path, so the
+    # FastMCP app's own "/mcp" route matches it directly. Registered BEFORE the
+    # /api routers and the SPA catch-all so it wins. Its session manager is
+    # started by the lifespan above; the tools resolve the live core per call
+    # via _resolve_search_core, so a saved config change reaches MCP callers
+    # without a restart.
+    app.router.routes.append(Route("/mcp", mcp_app))
     app.include_router(build_account_router(settings, store_reader))
     app.include_router(build_settings_router(settings))
     app.include_router(build_api_key_router())
