@@ -393,6 +393,11 @@ def create_app(
         title="Paperless Semantic Search",
         docs_url=None,
         redoc_url=None,
+        # Also disable the machine-readable schema. docs_url/redoc_url=None only
+        # hide the human UIs; /openapi.json stays served by default and would leak
+        # every route, method, and request/response model to anyone past the Access
+        # edge. Nothing first-party consumes it, so turn it off too.
+        openapi_url=None,
         lifespan=lifespan,
     )
 
