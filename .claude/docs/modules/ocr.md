@@ -1,0 +1,85 @@
+<!-- Claude-maintained; humans never edit. Registered in .claude/INDEX.md — an
+unregistered KB file is a defect. Every path, command, and constant below must
+be verified against the code before writing; on contradiction, fix here at
+once. Unknown fact → omit the section, never guess. -->
+↑ [INDEX](../../INDEX.md)
+
+# Module: ocr
+
+## Purpose
+
+Tag-driven daemon that transcribes Paperless-ngx documents with a vision LLM. It polls Paperless for documents carrying `PRE_TAG_ID`, claims each with the optional processing-lock tag, downloads the file, rasterises it into page images, transcribes every page in parallel through an ordered model-fallback chain (`OCR_MODELS`), assembles the pages into one body with `--- Page N ---` headers plus a `Transcribed by model:` footer, and writes the text back — swapping `PRE_TAG_ID` for `POST_TAG_ID` on success, or applying `ERROR_TAG_ID` on failure/refusal.
+
+Stateless: all pipeline state lives in Paperless tags, so multiple instances may run concurrently.
+
+**Entry point:** `src/ocr/daemon.py::main`, exposed as the `paperless-ai` console script (`pyproject.toml`: `paperless-ai = "ocr.daemon:main"`) and the container's default command (`Dockerfile`: `CMD ["paperless-ai"]`). `main()` calls `common.bootstrap.bootstrap_daemon` (settings, logging, OpenAI client, signal handlers, `llm_limiter`, `PaperlessClient`, preflight, stale-lock recovery) and returns early when it yields `None` (config error), then runs `common.daemon_loop.run_polling_threadpool(daemon_name="ocr", …)` — `fetch_work`, `process_item`, `before_each_poll` and `on_cycle` are lambdas closing over `_DaemonState` and delegating to `_iter_docs_to_ocr`, `_process_and_record`, `_reload_if_changed` and the heartbeat; `halt_check` returns `HALTED_DETAIL` while the circuit breaker is tripped. `poll_interval_seconds` / `max_workers` are read once, at loop construction.
+
+## Key files
+
+| File | Role |
+|------|------|
+| `src/ocr/daemon.py` | Entry point and poll loop (203 lines). `_DaemonState` (settings / list_client / app_db_path) is swapped by `_reload_if_changed` on every poll via a `current_settings(app_db_path)` identity check: a config change closes the old `PaperlessClient`, reconfigures logging + libraries + `llm_limiter`, and resets the `WriteBackCircuitBreaker`. `_process_document` wraps `common.per_document.run_per_document` (fresh `PaperlessClient` + `OcrProvider` per document); `_process_and_record` feeds the `WriteBackOutcome` to the breaker. Writes an `ocr` `Heartbeat` row into `app.db` after every cycle (idle / `processing N document(s)` / `HALTED_DETAIL`). |
+| `src/ocr/worker.py` | `OcrProcessor` — per-document orchestration (295 lines). `process()`: re-fetch doc → skip + finalise if `ERROR_TAG_ID` already present → `claim_processing_tag` → `_download_and_convert` → `_ocr_pages_in_parallel` (`ThreadPoolExecutor` of `PAGE_WORKERS`, `thread_name_prefix="ocr-page"`) → `assemble_full_text` → `_update_paperless_document`. Returns `WriteBackOutcome.SAVED` \| `QUARANTINED` \| `None`. The `finally` always releases the processing tag and logs OCR stats + elapsed. |
+| `src/ocr/provider.py` | `OcrProvider(OpenAIChatMixin)` (200 lines). Routes to `settings.OCR_PROVIDER` (`openai`\|`ollama`) via the `_provider` property; `reasoning_effort` is only attached when `OCR_PROVIDER == "openai"`. `transcribe_image` skips blank pages (`is_blank`), base64-PNG-encodes the page (`_encode_page`, resizing only if `max(size) > OCR_MAX_SIDE`, on a private copy), then iterates `unique_models(settings.OCR_MODELS)` calling `_create_with_compat`, advancing on an API error (`None`) or a refusal. Returns `PageResult(text=REFUSAL_MARK, model="")` when every model fails. Stats: `attempts`, `refusals`, `api_errors`, `fallback_successes`. |
+| `src/ocr/image_converter.py` | `open_page_source(content, content_type, *, dpi, max_side, timeout) -> PageSource` and the `ImageConversionError` domain error (349 lines). PDF (`"pdf" in content_type.lower()`) → `_pdf_to_page_source` (pdf2image `convert_from_bytes(paths_only=True, output_folder=…, fmt="png", size=max_side, timeout=…)`); multi-frame images → `_multiframe_to_page_source` (each frame saved to a temp PNG); single images → in-memory `PageSource`. `PageSource` provides `__len__`, `load_page(index)`, an idempotent `close()` (`rmtree(ignore_errors=True)`) and the context-manager protocol. |
+| `src/ocr/text_assembly.py` | `PageResult` (frozen + slots: `text`, `model`), `OCR_ERROR_MARKER = "[OCR ERROR]"`, and `assemble_full_text(page_count, page_results, *, include_page_models=False) -> (full_text, models_used)`. Blank/whitespace pages are skipped; `--- Page N ---` headers only when `page_count > 1`; optional `(model)` suffix under `OCR_INCLUDE_PAGE_MODELS`; `Transcribed by model: <sorted, comma-joined>` footer when any model contributed. |
+| `src/ocr/prompts.py` | `TRANSCRIPTION_PROMPT` (43 lines): OCR-engine framing, an authorisation preamble telling the model not to refuse or redact, tables-as-Markdown rule, a bracketed-marker table (logos, signatures, stamps, barcodes, QR, watermarks, checkboxes), and the failure sentinel `CHATGPT REFUSED TO TRANSCRIBE` — the same string as `_REFUSAL_MARK` in `src/common/config/_settings.py:82`. |
+| `src/ocr/__init__.py` | Package docstring stating the dependency boundary: `common` only; no `store`/`indexer`/`search`/`classifier`, no `sqlite3`, no FastAPI. |
+| `tests/unit/ocr/conftest.py` | Shared builders: `make_processor` (mocked deps + `Settings` overrides), `make_image`, `make_page_source`. Documents the `test_worker` / `test_worker_internals` split (500-line file ceiling, CODE_GUIDELINES §3.1). |
+| `tests/unit/ocr/test_worker.py` | `process()` lifecycle (435 lines): happy path, claim failure, pre-existing error tag, doc-refresh failure, `ImageConversionError`, permanent vs transient write-back failure, lock always released, `PageSource` always closed, no-pages path. |
+| `tests/unit/ocr/test_worker_internals.py` | Per-method tests (262 lines): `_ocr_pages_in_parallel` per-page exception isolation, `_update_paperless_document` happy/error/success-flag paths, `_log_ocr_stats`. |
+| `tests/unit/ocr/test_provider.py` | 601 lines: both refusal tiers, fallback on refusal and on API error, all-models-fail, blank short-circuit, resize, stats, thread safety, duplicate-model dedup, `None` message content, `OCR_IMAGE_DETAIL`, `OCR_REASONING_EFFORT` gating, `OCR_MODELS` (not `AI_MODELS`) as the source list. |
+| `tests/unit/ocr/test_image_converter.py` | 461 lines: PNG/TIFF/PDF conversion, invalid + unknown content types, content-type matching, `PageSource` lifecycle, PDF error wrapping (parametrised over three pdf2image exceptions — `PDFSyntaxError`, `PDFPageCountError`, `PopplerNotInstalledError`; the fourth, `PDFPopplerTimeoutError`, has its own test), PDF timeout, TIFF streaming. |
+| `tests/unit/ocr/test_daemon.py` | 539 lines: `main()` bootstrap (incl. the `None`-on-config-error return), `_iter_docs_to_ocr` filtering (non-int id, post-tagged, already-claimed), `_process_document`, `_process_and_record` breaker bookkeeping, `_reload_if_changed` state swap. |
+| `tests/unit/ocr/test_text_assembly.py` | 326 lines: single/multi-page assembly, blank-page skipping, `include_page_models` headers, model footer, edge cases, `PageResult`. |
+| `tests/integration/test_ocr_pipeline.py` | 355 lines: real conversion + real assembly with a mocked provider, error propagation for corrupt/empty/truncated bytes, `TestContentPrepWithAssembly` (assembled text survives the classifier's `truncate_content_by_pages`, footer intact), and `TestRealPopplerPdfStreaming` — the only tests driving the genuine `pdftoppm` binary (page count/order via pixel centre-of-mass, long-side cap, pages usable after close, temp files deleted as consumed, temp dir removed on close, natural DPI without `max_side`). Guarded by `@pytest.mark.skipif(not _POPPLER_AVAILABLE, …)`, where `_POPPLER_AVAILABLE = shutil.which("pdftoppm") is not None`. |
+| `tests/e2e/test_ocr_workflow.py` | 306 lines: full `OcrProcessor` lifecycle against a stateful Paperless mock (`tests.helpers.mocks.make_stateful_paperless`) — happy path (tag swap, content written, lock released), error path, lock contention. |
+| `docs/ocr-pipeline.md` | Human-facing prose doc (read-only source): selection rules, memory strategy, model fallback, error taxonomy, Mermaid flow. |
+
+## Invariants
+
+| Invariant | Why |
+|-----------|-----|
+| All pipeline state lives in Paperless tags; the daemon holds none. | Multiple instances can run concurrently (`src/ocr/__init__.py`). The processing-lock tag (`OCR_PROCESSING_TAG_ID`) is the only mutual exclusion, and it is a **best-effort** claim (refresh → add tag → re-read and verify, `common/claims.py`), not an atomic lock. |
+| `ocr` imports `common` only. | Layering (`src/ocr/__init__.py`): no `store`/`indexer`/`search`/`classifier`, no `sqlite3`, no FastAPI. `daemon.py` is the sanctioned exception — it imports `appdb.connection` / `appdb.schema` for config hot-load and the dashboard heartbeat. |
+| `PaperlessClient` is not thread-safe: one client per document. | `common.per_document.run_per_document` builds and closes a client per document in a `finally`. The daemon's `list_client` is only used for listing, on the poll thread. |
+| Memory is the binding constraint: PDFs and multi-frame TIFFs are rasterised to per-page temp files and loaded one page at a time. | At most ~`PAGE_WORKERS` page bitmaps are resident. Poppler is asked to scale the long side to `OCR_MAX_SIDE` up front (`size=max_side` → `pdftoppm -scale-to`) rather than rendering at full DPI and shrinking afterwards. |
+| `OcrProcessor.process()` owns the `PageSource`'s whole lifetime and calls `pages.close()` in a `finally` around `_ocr_pages_in_parallel`. | The temp directory is released even if OCR raises. `_ocr_one_page` closes each loaded image in its own `finally`; `PageSource.close()` is idempotent and never raises. |
+| Every image from `PageSource.load_page` is fully decoded and detached from any file handle (`handle.load()`; `handle.copy()`). | It stays valid after the page file and the source are gone. The in-memory backing returns `.copy()` for the same reason — the worker closes what it loads. |
+| Write-back outcome contract (`common.per_document.WriteBackOutcome`). | `SAVED` = transcription written (resets the breaker streak); `QUARANTINED` = Paperless permanently rejected the write and the doc was error-tagged **with the text** so it leaves the queue (extends the streak); `None` = nothing written back (skipped, claimed elsewhere, no pages, bad content) and the breaker is untouched. |
+| A permanent (4xx) Paperless rejection of the write-back never re-queues the document. | The vision tokens are already spent; re-queuing would re-OCR and re-burn them forever. Transient errors (5xx/network) re-raise for the loop to retry (`src/ocr/worker.py:120-144`). |
+| Circuit breaker: 3 consecutive `QUARANTINED` write-backs halt the daemon (`common.circuit_breaker.DEFAULT_FAILURES_BEFORE_HALT`). | Process-lifetime state: it survives a config hot-reload and is cleared **only** by `_reload_if_changed` (a config change is read as the operator having fixed the fault) — never by a late success alone. |
+| Config hot-load: `_reload_if_changed` runs before every poll and compares `current_settings(app_db_path)` by identity. | Every OCR key hot-loads except `POLL_INTERVAL` and `DOCUMENT_WORKERS`, which are fixed at loop construction (cadence and pool size are structural). |
+| A document already carrying `ERROR_TAG_ID` is never OCR'd. | It is finalised (pipeline tags stripped, error tag reapplied) and skipped, so it cannot loop (`src/ocr/worker.py:70-78`). |
+| Model fallback: `unique_models(OCR_MODELS)` is tried in order **per page**. | A refusal or an API error advances to the next model; only the whole chain failing yields `REFUSAL_MARK`. `_create_with_compat` returns `None` (not an exception) for a failed model — a designed per-model signal so the chain can iterate. |
+| All rasterisation failures surface as `ImageConversionError`. | It is the single exception the worker catches to error-tag and de-queue the document. |
+| The assembled output format is a cross-module wire contract, not just cosmetics. | The classifier parses OCR's `--- Page N ---` headers (with the optional `(model)` suffix) and the `Transcribed by model:` footer to truncate long documents — `PAGE_HEADER_RE` / `MODEL_FOOTER_RE` in `src/classifier/constants.py`, consumed by `src/classifier/content_prep.py::truncate_content_by_pages`. Changing `assemble_full_text`'s format silently breaks that truncation. |
+
+## Gotchas
+
+| Gotcha | Detail |
+|--------|--------|
+| `models_used` is dead. | `assemble_full_text` returns it and `process()` passes it to `_update_paperless_document(full_text, models_used)` (`src/ocr/worker.py:108-114`, `:243-245`), but the body never reads it — the model list is already baked into the `Transcribed by model:` footer inside `full_text`. |
+| Refusal detection is asymmetric between the two layers. | The provider's `_is_model_refusal` treats soft `OCR_REFUSAL_MARKERS` phrases as a refusal only when the page text is `< 200` chars (`_REFUSAL_DOMINANCE_THRESHOLD_CHARS`, `src/ocr/provider.py:22,54-56`). The worker's document-level gate uses `common.content_checks.is_error_content`, which has **no length threshold** — an assembled document of any length containing e.g. "i cannot assist" (a denial letter, a legal notice) anywhere is classed as error content, error-tagged, and never gets the POST tag. `is_error_content` also fires on any bracketed `[… redacted …]` marker. The provider guard does not protect the document gate. |
+| `OCR_ERROR_MARKER` is a plain substring test. | `"[OCR ERROR]" in full_text` (`src/ocr/worker.py:254`) — a genuine transcription containing that literal string is error-tagged. |
+| A wholly blank document takes the **error** path. | Every page is skipped → `full_text == ""` → "no text" → `ERROR_TAG_ID`, not the success path. |
+| `is_blank` counts only pixel-perfect 255 white. | `src/ocr/provider.py:59-68`: a page is blank only when the greyscale histogram has fewer than `threshold` (default 5) non-255 pixels. Real scans with off-white backgrounds (250–254) are never skipped and always cost an API call — the short-circuit effectively only fires on synthetic pages. |
+| `--- Page N ---` numbers can be non-contiguous. | `N` is the 1-based position in `page_results` (`enumerate(…, 1)`) and blank pages are skipped, so a document can show Page 1 then Page 3. They are list positions, not "pages that produced text". |
+| `PageSource.load_page` is single-shot per index for the PDF/TIFF backings. | It deletes the temp file in a `finally`, so a second call for the same index raises `FileNotFoundError` (an `OSError`) — **not** wrapped in `ImageConversionError`. Safe today only because `_ocr_pages_in_parallel` submits each index exactly once. |
+| `REQUEST_TIMEOUT` (default 180s) drives two unrelated things. | The poppler `pdftoppm` kill timeout (via `open_page_source(timeout=…)`) *and* the per-LLM-call timeout in the provider's chat params. |
+| Content-type routing is a substring test. | `"pdf" in content_type.lower()` (`src/ocr/image_converter.py:226`); everything else falls through to Pillow. |
+| `OCR_REASONING_EFFORT` is only sent when `OCR_PROVIDER == "openai"`. | Under ollama the kwarg is omitted entirely. If an OpenAI model still rejects it, `common.llm._create_with_compat` strips it and caches the rejection per model rather than failing the fallback chain. |
+| PDF page order relies on poppler's zero-padded filenames sorting lexically. | `src/ocr/image_converter.py:345-348`. `paths_only=True` returns `str` paths although the published pdf2image type says `list[Image]` — hence the `cast`. |
+| Poppler is a hard runtime dependency (`pdftoppm` on `PATH`). | The only tests exercising the real binary (`TestRealPopplerPdfStreaming`) **silently skip** when it is absent — 6 tests skipped on a machine without poppler, while the rest of the OCR suite still passes. |
+
+## Extension points
+
+- **New model / new fallback order** — `OCR_MODELS` (ordered, deduped by `unique_models`); no code change.
+- **New LLM backend** — `OCR_PROVIDER` (`openai` \| `ollama`), routed by `OcrProvider._provider`; the Ollama-compatible endpoint is served through the same OpenAI SDK path.
+- **New input format** — `open_page_source` in `src/ocr/image_converter.py`: PDF is routed by content type, everything else falls through to Pillow. A new backing must satisfy the `PageSource` contract (`__len__`, `load_page`, idempotent `close()`, detached images).
+- **Prompt / marker vocabulary** — `src/ocr/prompts.py`; the failure sentinel must stay in step with `_REFUSAL_MARK` in `src/common/config/_settings.py`.
+
+## Related
+
+- Modules: [common](common.md), [classifier](classifier.md)
+- Human doc (read-only): `docs/ocr-pipeline.md`

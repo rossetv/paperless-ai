@@ -1,0 +1,3 @@
+# The decision log is append-only, so concurrent branches that both add entries
+# can be merged by taking the union of both sides rather than conflicting.
+.claude/DECISIONS.md merge=union
