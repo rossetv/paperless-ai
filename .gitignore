@@ -113,9 +113,14 @@ dmypy.json
 
 # Tooling artifacts
 .desloppify/
-.claude/
 review_batch_*.json
 scorecard.png
+
+# Claude state: the knowledge base, specs, plans, skills and hooks under
+# `.claude/` are committed. Only session worktrees and machine-local settings
+# (which may carry secrets) stay out of git.
+.claude/worktrees/
+.claude/settings.local.json
 
 # Editor and OS artifacts
 .DS_Store
