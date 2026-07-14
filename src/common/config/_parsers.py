@@ -110,9 +110,21 @@ def _get_csv_env(
 
 
 def _get_bool_env(source: Mapping[str, str], var_name: str, default: bool) -> bool:
-    """Parse *var_name* from *source* as a boolean, falling back to *default*."""
+    """Parse *var_name* from *source* as a boolean, falling back to *default*.
+
+    An unset, empty, or whitespace-only value falls back to *default*, matching
+    the numeric parsers (COMMON-20). A blank boolean is reachable and its
+    rejection was unrecoverable: ``STALE_LOCK_RECOVERY=`` in a compose file is
+    copied verbatim into the ``config`` table by ``appdb.config.seed_from_env``,
+    so raising here failed every daemon's boot *and* every Settings save (which
+    rebuilds the whole merged configuration to validate it) — leaving no way to
+    clear the value through the UI that wrote it.
+
+    Raises a ``ValueError`` naming *var_name* when the value is set to a
+    non-blank string that is not a recognised boolean.
+    """
     value = source.get(var_name)
-    if value is None:
+    if value is None or not value.strip():
         return default
     value = value.strip().lower()
     if value in ("1", "true", "yes", "y", "on"):

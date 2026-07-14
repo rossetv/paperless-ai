@@ -585,6 +585,27 @@ class TestBoolEnvParsing:
         with pytest.raises(ValueError, match="must be a boolean value"):
             _build(mocker, {**_MINIMAL_ENV, "OCR_INCLUDE_PAGE_MODELS": "maybe"})
 
+    @pytest.mark.parametrize(
+        "env_key, expected_default",
+        [
+            ("STALE_LOCK_RECOVERY", True),
+            ("SEARCH_GATE_JUDGE", True),
+            ("OCR_INCLUDE_PAGE_MODELS", False),
+        ],
+    )
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_falls_back_to_default(
+        self, mocker, env_key, expected_default, blank
+    ):
+        """A blank boolean means "unset", exactly as it does for the numeric
+        parsers (COMMON-20). ``STALE_LOCK_RECOVERY=`` in a compose file is
+        seeded verbatim into the config table by ``appdb.config.seed_from_env``;
+        raising here would fail every daemon's boot *and* every Settings save
+        (which rebuilds the whole merged Settings to validate), with no way back
+        through the UI."""
+        s = _build(mocker, {**_MINIMAL_ENV, env_key: blank})
+        assert getattr(s, env_key) is expected_default
+
 
 class TestPaperlessUrlTrailingSlash:
     def test_trailing_slash_stripped(self, mocker):

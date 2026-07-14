@@ -89,6 +89,7 @@ Six independent provider settings, each `openai` | `ollama`, resolved in `_build
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Hot-reload hard-fails after blanking `OCR_MODELS`/`CLASSIFY_MODELS` in the UI | `_get_csv_env(..., require_non_empty=True)` raises `ValueError` on blank — unlike the int/float/bool parsers, blank is **not** "use the default" | Never blank the field; set an explicit model list |
+| A blank value for a scalar key (`STALE_LOCK_RECOVERY=` in a compose file) means "use the coded default" | `_get_int_env` / `_get_float_env` / `_get_bool_env` all fall back on blank (COMMON-20). Blank *is* reachable in the config table: `appdb.config.seed_from_env` copies an empty env var in verbatim | Nothing to do — but note a bad *non-blank* value still fails closed at boot |
 | OCR refusal detection silently disabled | Blanking `OCR_REFUSAL_MARKERS` returns `[]` with no error (same CSV asymmetry) | Restore the marker list |
 | A new AI step routes to the wrong provider | `OpenAIChatMixin._provider` defaults to `"openai"`; a step that forgets to override it ignores its own `*_PROVIDER` | Override `_provider` (see the five existing overrides in `ocr/provider.py`, `classifier/provider.py`, `search/planner.py`, `search/judge.py`, `search/synthesizer.py`) |
 | `PUT /api/settings` rejects a secret | The literal mask `********` is rejected at the boundary — the SPA omits an unchanged secret | Send the new value or omit the key |
