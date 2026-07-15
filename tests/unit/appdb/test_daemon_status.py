@@ -117,3 +117,28 @@ def test_custom_staleness_window_is_honoured(conn) -> None:
         stale_after_seconds=3600,
     )
     assert rows[0].state == "running"
+
+
+def test_touch_heartbeat_preserves_the_processed_count(conn) -> None:
+    """touch_heartbeat refreshes detail/freshness but never the counter.
+
+    Regression: the stall ticker's secondary Heartbeat instance holds no
+    real running total — a full record_heartbeat from it overwrote the
+    persisted monotonic count with zero on every stall beat.
+    """
+    daemon_status.record_heartbeat(
+        conn, name="ocr", detail="processing 3 documents", processed_count=12
+    )
+    daemon_status.touch_heartbeat(
+        conn, name="ocr", detail="working — waiting on a slow upstream call"
+    )
+    rows = daemon_status.read_statuses(conn)
+    assert rows[0].processed_count == 12
+    assert rows[0].detail == "working — waiting on a slow upstream call"
+
+
+def test_touch_heartbeat_seeds_a_new_row_at_zero(conn) -> None:
+    daemon_status.touch_heartbeat(conn, name="classifier", detail="working")
+    rows = daemon_status.read_statuses(conn)
+    assert rows[0].name == "classifier"
+    assert rows[0].processed_count == 0

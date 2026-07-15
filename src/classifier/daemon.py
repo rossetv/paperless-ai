@@ -230,7 +230,7 @@ def main() -> None:
                 Heartbeat(name="classifier", conn=conn),
                 in_flight=poll_in_flight,
                 stop=ticker_stop,
-                detail="classifying — waiting on LLM capacity or a slow call",
+                detail="classifying — waiting on a slow upstream call",
             )
         finally:
             conn.close()
