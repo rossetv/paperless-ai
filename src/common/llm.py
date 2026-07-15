@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -28,6 +29,7 @@ from openai.types.chat import ChatCompletion
 from .concurrency import llm_limiter
 from .model_compat import model_compat_cache
 from .retry import retry
+from .shutdown import is_shutdown_requested
 
 log = structlog.get_logger(__name__)
 
@@ -74,10 +76,11 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
 # Ordering matters: ``max_completion_tokens`` precedes ``max_tokens`` so the
 # longer, more specific message wins before the shorter substring can match it.
 #
-# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the matchers for
-# ``reasoning_effort``, ``verbosity``, and ``max_completion_tokens`` are
-# best-effort and MUST be verified against a real openai~=1.35 400 response
-# before relying on them in production (see the plan's Task 9).
+# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the ``reasoning_effort`` and
+# ``temperature`` matchers were verified against live gpt-5.6 400 responses on
+# 2026-07-15 — both error messages name the param verbatim. ``verbosity`` and
+# ``max_completion_tokens`` remain best-effort and unverified; confirm them
+# against a real 400 response before relying on them in production.
 _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("temperature", "temperature", "temperature_retries"),
     ("response_format", "response_format", "response_format_retries"),
@@ -87,6 +90,7 @@ _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("max_tokens", "max tokens", "max_tokens_retries"),
     ("reasoning_effort", "reasoning_effort", "reasoning_effort_retries"),
     ("verbosity", "verbosity", "verbosity_retries"),
+    ("service_tier", "service_tier", "service_tier_retries"),
 )
 
 # Param → stat-key lookup built once from the registry. Multiple rows may share
@@ -96,6 +100,52 @@ _PARAM_TO_STAT: dict[str, str] = {}
 for _param, _matcher, _stat in _STRIPPABLE_PARAMS:
     _PARAM_TO_STAT.setdefault(_param, _stat)
 del _param, _matcher, _stat  # clean up loop variables from module namespace
+
+# Flex requests routinely run longer than standard-tier ones — OpenAI's own
+# default timeout for them is 10 minutes — so flex calls floor their per-call
+# timeout here instead of raising the global REQUEST_TIMEOUT (which would drag
+# interactive search calls with it).
+FLEX_MIN_TIMEOUT_SECONDS = 600
+
+# Capacity-429 backoff for flex calls: exponential from 1s, capped here. The
+# cap keeps the daemon responsive to recovered capacity without hammering the
+# API during an outage.
+_FLEX_BACKOFF_CAP_SECONDS = 60.0
+
+
+def _wait_for_flex_capacity(wait_seconds: float) -> bool:
+    """Sleep *wait_seconds* in ≤1s slices; ``False`` if shutdown interrupts.
+
+    Chunked so a SIGTERM lands within ~1s instead of a full backoff interval —
+    a hung shutdown would end in SIGKILL, and a SIGKILL mid-claim leaves the
+    document skipped as "already claimed" on every later poll.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        if is_shutdown_requested():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(1.0, remaining))
+
+
+def service_tier_params(
+    *, flex_enabled: bool, request_timeout: int
+) -> dict[str, object]:
+    """``service_tier`` + ``timeout`` params for an OpenAI background-daemon call.
+
+    Always names a tier explicitly — even ``"default"``. Verified live
+    (2026-07-15): a 5.6 request with ``reasoning_effort: "none"`` and *no*
+    ``service_tier`` was rejected 401 by the API while the identical request
+    with an explicit tier succeeded; explicit is also deterministic and free.
+    """
+    if flex_enabled:
+        return {
+            "service_tier": "flex",
+            "timeout": max(request_timeout, FLEX_MIN_TIMEOUT_SECONDS),
+        }
+    return {"service_tier": "default", "timeout": request_timeout}
 
 
 def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:
@@ -264,10 +314,36 @@ class OpenAIChatMixin:
            matcher cannot loop forever. A 400 bills no tokens, so the only cost
            of a first-time discovery is one extra round-trip.
 
-        Any other ``openai.BadRequestError`` (a malformed request) or any other
-        ``openai.APIError`` (rate limit, 5xx, timeout after the ``@retry`` on
-        :meth:`_create_completion` is exhausted) is terminal: it is logged and
-        ``None`` is returned so the caller can advance to the next model.
+        Any other ``openai.BadRequestError`` (a malformed request) is terminal,
+        logged, and returns ``None`` so the caller can advance to the next
+        model. So is any other ``openai.APIError`` (5xx, timeout after the
+        ``@retry`` on :meth:`_create_completion` is exhausted, or a
+        non-flex-tier ``RateLimitError``) — *except* the **flex patience**
+        case below.
+
+        **Flex patience** (spec D5): when ``params["service_tier"] ==
+        "flex"``, an ``openai.RateLimitError`` is a capacity signal, not a
+        model failure — flex requests queue for spare capacity and 429 means
+        "none free right now," not "this model is broken." Advancing the
+        fallback chain or tagging the document as errored would be wrong, so
+        the call instead waits (:func:`_wait_for_flex_capacity`, exponential
+        backoff from 1s capped at :data:`_FLEX_BACKOFF_CAP_SECONDS`) and
+        retries the *same* model indefinitely. The wait only ends early on
+        daemon shutdown, in which case this returns ``None`` like any other
+        terminal failure. The strip-attempt budget above still bounds
+        ``BadRequestError`` handling; only the flex-429 wait is unbounded.
+        Non-flex calls are unaffected: a ``RateLimitError`` without
+        ``service_tier == "flex"`` is terminal on the first 429, same as
+        before this behaviour existed. A 429 whose ``code`` is
+        ``insufficient_quota`` (billing exhausted, not a capacity dip) is
+        terminal even on flex — no amount of waiting fixes an empty account,
+        and the patient loop would otherwise freeze the worker invisibly.
+
+        Note: the ``@retry`` decorator on :meth:`_create_completion` still
+        burns its own ``MAX_RETRIES`` budget inside *every* patient iteration
+        here — that's harmless (a few extra unbilled requests within one
+        flex-wait cycle) and keeps the two retry layers decoupled rather than
+        threading flex-awareness into the generic retry helper.
 
         rationale (§5.4 carve-out, COMMON-12/13): the ``None`` here is a
         *designed* per-model signal — "this model failed, try the next" — not a
@@ -281,24 +357,59 @@ class OpenAIChatMixin:
         chain, so they raise) is deliberate, not an oversight.
         """
         params = self._pre_strip_known_rejected(params, model)
-        for _attempt in range(len(_STRIPPABLE_PARAMS) + 1):
+        strip_attempts = 0
+        flex_wait = 1.0
+        while True:
             try:
                 self._record_attempt()
                 return self._create_completion(**params)
             except openai.BadRequestError as error:
+                strip_attempts += 1
+                if strip_attempts > len(_STRIPPABLE_PARAMS):
+                    log.warning("llm.request_rejected_after_strips", model=model)
+                    self._record_api_error()
+                    return None
                 stripped_params = self._strip_rejected_param(error, params, model)
                 if stripped_params is None:
                     log.warning("llm.request_rejected", model=model, error=str(error))
                     self._record_api_error()
                     return None
                 params = stripped_params
+            # RateLimitError must be caught before the generic APIError below
+            # (it subclasses APIError) and after BadRequestError (siblings —
+            # order between those two is immaterial, but BadRequest stays
+            # first to match the phase description above).
+            except openai.RateLimitError as error:
+                if error.code == "insufficient_quota":
+                    # Also a 429, but one no amount of waiting fixes — the
+                    # account is out of credit. Waiting would freeze the
+                    # worker invisibly until billing is topped up; terminal
+                    # like any other model failure instead.
+                    log.warning("llm.quota_exhausted", model=model, error=str(error))
+                    self._record_api_error()
+                    return None
+                if params.get("service_tier") != "flex":
+                    log.warning("llm.model_failed", model=model, error=str(error))
+                    self._record_api_error()
+                    return None
+                # Flex capacity shortage: unbilled, transient, and not a model
+                # failure — advancing the fallback chain or error-tagging the
+                # document would be wrong. Wait it out (spec D5).
+                log.warning(
+                    "llm.flex_capacity_wait",
+                    model=model,
+                    wait_seconds=flex_wait,
+                    error=str(error),
+                )
+                if not _wait_for_flex_capacity(flex_wait):
+                    log.warning("llm.flex_wait_aborted_by_shutdown", model=model)
+                    self._record_api_error()
+                    return None
+                flex_wait = min(flex_wait * 2, _FLEX_BACKOFF_CAP_SECONDS)
             except openai.APIError as error:
                 log.warning("llm.model_failed", model=model, error=str(error))
                 self._record_api_error()
                 return None
-        log.warning("llm.request_rejected_after_strips", model=model)
-        self._record_api_error()
-        return None
 
     def _pre_strip_known_rejected(
         self, params: dict[str, object], model: str
@@ -342,6 +453,7 @@ class OpenAIChatMixin:
         reasoning_effort: str | None = None,
         response_format: dict[str, object] | None = None,
         timeout: float | None = None,
+        service_tier: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
     ) -> str | None:
         """Run one chat completion, falling back through a chain of models.
@@ -357,13 +469,19 @@ class OpenAIChatMixin:
         shared ``@retry`` exponential backoff, the ``llm_limiter`` global
         concurrency limiter, and the per-model parameter-compatibility cache.
 
-        ``reasoning_effort``, ``response_format``, and ``timeout`` are optional
-        and additive: each is forwarded to the model only when non-``None``.
-        Every attempt is routed through :meth:`_create_with_compat`, so a model
-        that rejects any of these parameters has it stripped-and-cached rather
-        than failing the whole call. With none supplied the outgoing request is
-        exactly ``{model, messages}`` and the behaviour is identical to the
+        ``reasoning_effort``, ``response_format``, ``timeout``, and
+        ``service_tier`` are optional and additive: each is forwarded to the
+        model only when non-``None``. Every attempt is routed through
+        :meth:`_create_with_compat`, so a model that rejects any of these
+        parameters has it stripped-and-cached rather than failing the whole
+        call. With none supplied the outgoing request is exactly
+        ``{model, messages}`` and the behaviour is identical to the
         pre-extension direct path (pinned by the no-arg characterisation test).
+        The three search stages always pass ``service_tier="default"`` when
+        their provider is OpenAI — never ``"flex"`` there, since a human is
+        waiting on the response (spec D3/D4) — and omit it otherwise; an
+        explicit tier also dodges a live-verified 401 on tierless requests
+        (2026-07-15).
 
         A model that still fails after retries surfaces an ``openai.APIError``
         subclass — this covers *both* a retry-exhausted retryable error and a
@@ -386,6 +504,11 @@ class OpenAIChatMixin:
                 ``json_schema`` block); omitted when ``None``.
             timeout: Optional per-call timeout in seconds; omitted when ``None``
                 so the SDK/client default applies (CODE_GUIDELINES §8.7).
+            service_tier: Optional OpenAI service tier (e.g. ``"default"``,
+                ``"flex"``); omitted when ``None``. The search stages always
+                pass ``"default"`` explicitly when their provider is OpenAI —
+                never ``"flex"``, since a human is waiting — and omit it for
+                non-OpenAI providers.
             usage_sink: Optional list to which a :class:`LlmCallUsage` record is
                 appended on each successful call. Absent usage fields default to
                 zero (guarding Ollama/older providers that omit them). When
@@ -400,6 +523,7 @@ class OpenAIChatMixin:
             reasoning_effort=reasoning_effort,
             response_format=response_format,
             timeout=timeout,
+            service_tier=service_tier,
         )
         for model in models:
             params: dict[str, object] = {
@@ -438,12 +562,14 @@ class OpenAIChatMixin:
         reasoning_effort: str | None,
         response_format: dict[str, object] | None,
         timeout: float | None,
+        service_tier: str | None = None,
     ) -> dict[str, object]:
         """Build the dict of optional completion params, dropping every ``None``."""
         candidates: dict[str, object | None] = {
             "reasoning_effort": reasoning_effort,
             "response_format": response_format,
             "timeout": timeout,
+            "service_tier": service_tier,
         }
         return {key: value for key, value in candidates.items() if value is not None}
 

@@ -169,8 +169,8 @@ def test_openai_defaults_produce_ocr_and_classify_model_lists() -> None:
     with patch.dict(os.environ, _MINIMAL_ENV, clear=True):
         s = Settings.from_environment()
 
-    assert s.OCR_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
-    assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+    assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+    assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
     assert not hasattr(s, "AI_MODELS")
 
 
@@ -228,7 +228,7 @@ def test_empty_ai_models_falls_to_provider_default() -> None:
         s = Settings.from_environment()
 
     # Empty AI_MODELS is falsy — both lists fall to the OpenAI provider defaults.
-    openai_defaults = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+    openai_defaults = ["gpt-5.6-luna", "gpt-5.6-terra"]
     assert s.OCR_MODELS == openai_defaults
     assert s.CLASSIFY_MODELS == openai_defaults
 

@@ -10,7 +10,7 @@ import structlog
 from PIL import Image
 
 from common.config import Settings
-from common.llm import OpenAIChatMixin, unique_models
+from common.llm import OpenAIChatMixin, service_tier_params, unique_models
 from .prompts import TRANSCRIPTION_PROMPT
 from .text_assembly import PageResult
 
@@ -148,6 +148,13 @@ class OcrProvider(OpenAIChatMixin):
             reasoning_effort = self._reasoning_effort()
             if reasoning_effort is not None:
                 params["reasoning_effort"] = reasoning_effort
+            if self.settings.OCR_PROVIDER == "openai":
+                params.update(
+                    service_tier_params(
+                        flex_enabled=self.settings.OPENAI_FLEX_TIER,
+                        request_timeout=self.settings.REQUEST_TIMEOUT,
+                    )
+                )
 
             response = self._create_with_compat(params, model)
             if response is None:

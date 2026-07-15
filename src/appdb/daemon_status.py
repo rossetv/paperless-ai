@@ -109,6 +109,40 @@ def record_heartbeat(
         )
 
 
+def touch_heartbeat(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    detail: str,
+) -> None:
+    """Refresh a daemon's detail and freshness WITHOUT touching its count.
+
+    For a secondary heartbeat writer — the tag daemons' stall ticker — whose
+    :class:`~common.heartbeat.Heartbeat` instance does not hold the daemon's
+    real running total: :func:`record_heartbeat` from that instance would
+    overwrite the persisted monotonic ``processed_count`` with its own zero.
+    The upsert here leaves ``processed_count`` alone on conflict; the INSERT
+    arm seeds it to 0 only for a daemon that has never beaten at all.
+
+    Args:
+        conn: An open, migrated ``app.db`` connection.
+        name: The daemon name (ocr / classifier / indexer / search).
+        detail: A short human string describing the current activity.
+    """
+    now = utc_now_iso()
+    with conn:
+        conn.execute(
+            "INSERT INTO daemon_status "
+            "(name, detail, processed_count, last_heartbeat, updated_at) "
+            "VALUES (?, ?, 0, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET "
+            "detail = excluded.detail, "
+            "last_heartbeat = excluded.last_heartbeat, "
+            "updated_at = excluded.updated_at",
+            (name, detail, now, now),
+        )
+
+
 def _derive_state(
     *, last_heartbeat: str, detail: str, now: datetime, stale_after_seconds: int
 ) -> DaemonState:

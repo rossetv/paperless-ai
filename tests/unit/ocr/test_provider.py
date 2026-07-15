@@ -498,6 +498,52 @@ class TestOcrProviderReasoningEffort:
         assert "reasoning_effort" not in self._capture_kwargs(provider)
 
 
+class TestOcrProviderServiceTier:
+    def _capture_kwargs(self, provider) -> dict:
+        """Run a transcription and return the kwargs the completion saw."""
+        provider._create_completion = MagicMock(return_value=_make_response("ok"))
+        provider.transcribe_image(_make_test_image())
+        return provider._create_completion.call_args.kwargs
+
+    def test_flex_on_openai_floors_timeout(self):
+        settings = _make_settings(
+            OCR_MODELS=["model-a"],
+            OCR_PROVIDER="openai",
+            OPENAI_FLEX_TIER=True,
+            REQUEST_TIMEOUT=180,
+        )
+        provider = OcrProvider(settings)
+
+        kwargs = self._capture_kwargs(provider)
+
+        assert kwargs["service_tier"] == "flex"
+        assert kwargs["timeout"] == 600
+
+    def test_flex_off_openai_is_default_tier(self):
+        settings = _make_settings(
+            OCR_MODELS=["model-a"],
+            OCR_PROVIDER="openai",
+            OPENAI_FLEX_TIER=False,
+            REQUEST_TIMEOUT=180,
+        )
+        provider = OcrProvider(settings)
+
+        kwargs = self._capture_kwargs(provider)
+
+        assert kwargs["service_tier"] == "default"
+        assert kwargs["timeout"] == 180
+
+    def test_omitted_for_non_openai(self):
+        settings = _make_settings(
+            OCR_MODELS=["model-a"],
+            OCR_PROVIDER="ollama",
+            OPENAI_FLEX_TIER=True,
+        )
+        provider = OcrProvider(settings)
+
+        assert "service_tier" not in self._capture_kwargs(provider)
+
+
 class TestOcrProviderReadsOcrModels:
     """OCR provider must read OCR_MODELS, not AI_MODELS."""
 

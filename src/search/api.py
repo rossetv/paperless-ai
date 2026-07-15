@@ -31,7 +31,7 @@ import sqlite3
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -97,20 +97,31 @@ else:
 _SEARCH_HEARTBEAT_INTERVAL_SECONDS = 30
 
 
-def _start_search_heartbeat(settings: Settings) -> None:
-    """Start the background thread that writes the search server's heartbeat.
+def _start_search_heartbeat(settings: Settings) -> Callable[[], None]:
+    """Start the search server's heartbeat thread; return its stop callable.
 
     The search server has no polling loop, so it heartbeats from a daemon
     thread: it beats every ``_SEARCH_HEARTBEAT_INTERVAL_SECONDS`` until the
-    shared shutdown flag is set. The thread is a ``daemon=True`` thread, so
-    it never blocks process exit. A failure opening ``app.db`` is logged and
-    the heartbeat is simply skipped — the search server still serves
-    requests; only the dashboard's "search" tile goes stale (web-redesign
-    spec §5, Wave 6: heartbeats are best-effort).
+    returned stop callable is invoked (the app's lifespan exit) or the shared
+    shutdown flag is set. The per-app stop event is what lets each app
+    instance own its thread's lifetime — with only the process-global flag,
+    every ``create_app()`` in a test process leaked a ticker thread that ran
+    for the rest of the suite. The stop-aware sleep (``Event.wait``) makes
+    the exit prompt rather than up to one full interval late. A failure
+    opening ``app.db`` is logged and the heartbeat is simply skipped — the
+    search server still serves requests; only the dashboard's "search" tile
+    goes stale (web-redesign spec §5, Wave 6: heartbeats are best-effort).
 
     Args:
         settings: Application settings — only ``APP_DB_PATH`` is read here.
+
+    Returns:
+        A callable that stops the ticker and joins the thread briefly.
     """
+    stop_event = threading.Event()
+
+    def _stop_aware_sleep(seconds: float) -> None:
+        stop_event.wait(seconds)
 
     def _run() -> None:
         try:
@@ -127,7 +138,8 @@ def _start_search_heartbeat(settings: Settings) -> None:
                 heartbeat,
                 detail_fn=lambda: "serving search requests",
                 interval_seconds=_SEARCH_HEARTBEAT_INTERVAL_SECONDS,
-                should_stop=is_shutdown_requested,
+                should_stop=lambda: stop_event.is_set() or is_shutdown_requested(),
+                sleep=_stop_aware_sleep,
             )
         finally:
             conn.close()
@@ -135,6 +147,12 @@ def _start_search_heartbeat(settings: Settings) -> None:
     thread = threading.Thread(target=_run, name="search-heartbeat", daemon=True)
     thread.start()
     log.info("api.heartbeat_started")
+
+    def _stop() -> None:
+        stop_event.set()
+        thread.join(timeout=5)
+
+    return _stop
 
 
 # Seconds the background price-refresh loop sleeps between its wake-checks of the
@@ -385,9 +403,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # Run the MCP streamable-HTTP session manager for the app's lifetime so
-        # the /mcp endpoint has a live task group to serve requests.
-        async with mcp_app.session_manager.run():
-            yield
+        # the /mcp endpoint has a live task group to serve requests. The
+        # heartbeat thread is lifespan-owned too: started here, stopped on
+        # exit via its per-app event, so an app instance never leaks its
+        # ticker thread (create_app() alone starts no thread at all).
+        stop_heartbeat = _start_search_heartbeat(settings)
+        try:
+            async with mcp_app.session_manager.run():
+                yield
+        finally:
+            stop_heartbeat()
 
     app = FastAPI(
         title="Paperless Semantic Search",
@@ -473,7 +498,6 @@ def create_app(
     )
 
     register_spa(app, _FRONTEND_DIST)
-    _start_search_heartbeat(settings)
     # Start the background price refresh ONLY when a URL is configured; with the
     # prod default (unset) no thread starts and no network call is made.
     _start_price_refresh(settings, app_db_path)

@@ -118,11 +118,11 @@ def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefau
             judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
-        ocr_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        classify_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        planner_model="gpt-5.4-mini",
-        answer_model="gpt-5.5",
-        judge_model="gpt-5.4-mini",
+        ocr_models=["gpt-5.6-luna", "gpt-5.6-terra"],
+        classify_models=["gpt-5.6-luna", "gpt-5.6-terra"],
+        planner_model="gpt-5.6-terra",
+        answer_model="gpt-5.6-terra",
+        judge_model="gpt-5.6-luna",
     )
 
 
@@ -182,6 +182,16 @@ class Settings:
     REQUEST_TIMEOUT: int
     LLM_MAX_CONCURRENT: int
 
+    OPENAI_FLEX_TIER: bool
+    """Run OCR and classifier OpenAI calls on the Flex service tier.
+
+    Flex bills at ~50% of standard rates in exchange for slower responses and
+    occasional capacity 429s (which the compat layer waits out — see
+    ``common.llm``). Applies only to the two background daemons and only when
+    that step's provider is ``openai``; the interactive search stages always
+    use the standard tier. Default on — the discount is the point.
+    """
+
     STALE_LOCK_RECOVERY: bool
     """Run the startup stale-lock sweep that re-queues orphaned documents.
 
@@ -198,7 +208,7 @@ class Settings:
     OCR_DPI: int
     OCR_MAX_SIDE: int
     OCR_IMAGE_DETAIL: Literal["low", "high", "auto"]
-    OCR_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"]
+    OCR_REASONING_EFFORT: Literal["none", "low", "medium", "high", "xhigh"]
     PAGE_WORKERS: int
     DOCUMENT_WORKERS: int
 
@@ -305,12 +315,14 @@ class Settings:
     those tokens.
     """
     SEARCH_JUDGE_MODEL: str
-    """The model for the relevance judge. Defaults to the planner model for the
-    provider (``gpt-5.4-mini`` / ``gemma3:12b``); set independently to run the
-    judge on a cheaper or sharper model than the planner."""
+    """The model for the relevance judge. On ``openai`` defaults to
+    ``gpt-5.6-luna`` (independent of the planner's ``gpt-5.6-terra``); on
+    ``ollama`` it still follows the planner default (``gemma3:12b``). Set
+    independently to run the judge on a cheaper or sharper model than the
+    planner."""
     SEARCH_JUDGE_REASONING_EFFORT: str
-    """Reasoning effort for the judge (``minimal``/``low``/``medium``/``high``).
-    Defaults to ``low`` — a coarse on-topic classification that does not need
+    """Reasoning effort for the judge (``none``/``low``/``medium``/``high``/``xhigh``).
+    Defaults to ``none`` — a coarse on-topic classification that does not need
     deep reasoning; raise it if the judge bails or filters too aggressively."""
     # Fail-fast gate knobs (search fail-fast spec §3)
     SEARCH_GATE_ADEQUACY: bool
@@ -696,6 +708,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "REQUEST_TIMEOUT", _get_int_env(source, "REQUEST_TIMEOUT", 180)
         ),
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
+        OPENAI_FLEX_TIER=_get_bool_env(source, "OPENAI_FLEX_TIER", True),
         # Default True: a single-instance deployment keeps its crash-recovery
         # sweep. A multi-replica deployment sets this False so a restarting
         # replica does not steal a peer's live processing lock (see the field
@@ -796,7 +809,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_JUDGE_RATIONALES=_get_bool_env(source, "SEARCH_JUDGE_RATIONALES", True),
         SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
         SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
-            source, "SEARCH_JUDGE_REASONING_EFFORT", default="low"
+            source, "SEARCH_JUDGE_REASONING_EFFORT", default="none"
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
