@@ -182,6 +182,16 @@ class Settings:
     REQUEST_TIMEOUT: int
     LLM_MAX_CONCURRENT: int
 
+    OPENAI_FLEX_TIER: bool
+    """Run OCR and classifier OpenAI calls on the Flex service tier.
+
+    Flex bills at ~50% of standard rates in exchange for slower responses and
+    occasional capacity 429s (which the compat layer waits out — see
+    ``common.llm``). Applies only to the two background daemons and only when
+    that step's provider is ``openai``; the interactive search stages always
+    use the standard tier. Default on — the discount is the point.
+    """
+
     STALE_LOCK_RECOVERY: bool
     """Run the startup stale-lock sweep that re-queues orphaned documents.
 
@@ -698,6 +708,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             "REQUEST_TIMEOUT", _get_int_env(source, "REQUEST_TIMEOUT", 180)
         ),
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
+        OPENAI_FLEX_TIER=_get_bool_env(source, "OPENAI_FLEX_TIER", True),
         # Default True: a single-instance deployment keeps its crash-recovery
         # sweep. A multi-replica deployment sets this False so a restarting
         # replica does not steal a peer's live processing lock (see the field

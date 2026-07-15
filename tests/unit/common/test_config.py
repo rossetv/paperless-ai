@@ -707,6 +707,21 @@ class TestLlmMaxConcurrent:
         assert s.LLM_MAX_CONCURRENT == 0
 
 
+class TestOpenAiFlexTier:
+    def test_defaults_to_true(self, mocker):
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.OPENAI_FLEX_TIER is True
+
+    def test_can_be_disabled(self, mocker):
+        settings = _build(mocker, {**_MINIMAL_ENV, "OPENAI_FLEX_TIER": "false"})
+        assert settings.OPENAI_FLEX_TIER is False
+
+    def test_is_a_config_table_key(self):
+        from common.config._catalogue import CONFIG_KEYS
+
+        assert "OPENAI_FLEX_TIER" in CONFIG_KEYS
+
+
 class TestAppDbPath:
     """The APP_DB_PATH bootstrap setting (web-redesign spec §4.1)."""
 
@@ -773,8 +788,8 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_eighty_six_entries() -> None:
-    """CONFIG_KEYS is the 86-key universe.
+def test_config_keys_has_eighty_seven_entries() -> None:
+    """CONFIG_KEYS is the 87-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
@@ -788,11 +803,14 @@ def test_config_keys_has_eighty_six_entries() -> None:
     The five per-step provider keys (OCR_PROVIDER, CLASSIFY_PROVIDER,
     SEARCH_PLANNER_PROVIDER, SEARCH_JUDGE_PROVIDER, SEARCH_ANSWER_PROVIDER) were
     added so each AI step picks OpenAI/Ollama independently (default seeds from
-    LLM_PROVIDER), bringing the count from 81 to 86.
+    LLM_PROVIDER), bringing the count from 81 to 86. OPENAI_FLEX_TIER was added
+    to toggle the OpenAI Flex service tier for the two background daemons,
+    bringing the count to 87.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 86
+    assert len(CONFIG_KEYS) == 87
+    assert "OPENAI_FLEX_TIER" in CONFIG_KEYS
     assert "PRICING_REFRESH_URL" in CONFIG_KEYS
     assert "PRICING_REFRESH_INTERVAL_HOURS" in CONFIG_KEYS
     assert "SEARCH_KEY_DAILY_TOKEN_QUOTA" in CONFIG_KEYS
