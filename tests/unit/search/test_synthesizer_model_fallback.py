@@ -263,6 +263,42 @@ class TestSynthResponseFormatForwarded:
         assert "response_format" not in call.kwargs
 
 
+class TestSynthServiceTierForwarded:
+    """The synthesiser pins the standard service tier on OpenAI, omits it elsewhere."""
+
+    def test_synth_forwards_default_service_tier_for_openai(self) -> None:
+        settings = make_search_settings(
+            SEARCH_ANSWER_PROVIDER="openai",
+            SEARCH_ANSWER_MODEL="gpt-5.4",
+            CLASSIFY_MODELS=["gpt-5.4"],
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["service_tier"] == "default"
+
+    def test_synth_omits_service_tier_for_ollama(self) -> None:
+        settings = make_search_settings(
+            SEARCH_ANSWER_PROVIDER="ollama",
+            SEARCH_ANSWER_MODEL="gemma3:27b",
+            CLASSIFY_MODELS=["gemma3:27b"],
+        )
+        synthesiser = build_synthesizer(
+            settings, answered_response_json("ok [1].", citations=[1])
+        )
+        synthesiser.synthesise(
+            "q", [make_retrieved_chunk(chunk_id=1, document_id=1)], mode="exploratory"
+        )
+
+        call = synthesiser._create_completion.call_args  # type: ignore[attr-defined]
+        assert "service_tier" not in call.kwargs
+
+
 class TestSynthesizerReadsClassifyModels:
     """Search synthesizer fallback chain must use CLASSIFY_MODELS, not AI_MODELS."""
 

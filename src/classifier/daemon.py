@@ -12,6 +12,7 @@ configuration hot-load and heartbeat bootstrap but remains barred from
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -24,7 +25,7 @@ from common.circuit_breaker import HALTED_DETAIL, WriteBackCircuitBreaker
 from common.concurrency import llm_limiter
 from common.config import Settings, current_settings
 from common.daemon_loop import CycleOutcome, run_polling_threadpool
-from common.heartbeat import Heartbeat
+from common.heartbeat import Heartbeat, run_stall_ticker
 from common.document_iter import iter_documents_by_pipeline_tag
 from common.library_setup import setup_libraries
 from common.logging_config import configure_logging
@@ -198,6 +199,7 @@ def main() -> None:
 
     def _on_cycle(outcome: CycleOutcome) -> None:
         """Write the classifier daemon's heartbeat after every poll cycle."""
+        poll_in_flight.clear()
         if outcome.halted:
             heartbeat.beat(detail=HALTED_DETAIL)
         elif outcome.idle:
@@ -208,6 +210,36 @@ def main() -> None:
                 processed_delta=outcome.processed,
             )
 
+    def _before_poll() -> None:
+        _reload_if_changed(state, circuit_breaker)
+        poll_in_flight.set()
+
+    # A poll cycle can legitimately block far past the heartbeat staleness
+    # window — the flex capacity-429 wait parks every worker until OpenAI has
+    # capacity — and _on_cycle only beats AFTER the poll returns. The stall
+    # ticker beats while a cycle is in flight so the dashboard shows a long
+    # wait as working, not "stopped". Its thread owns its own app.db
+    # connection (sqlite connections must not cross threads).
+    poll_in_flight = threading.Event()
+    ticker_stop = threading.Event()
+
+    def _run_stall_ticker() -> None:
+        conn = connect_app_db(app_db_path)
+        try:
+            run_stall_ticker(
+                Heartbeat(name="classifier", conn=conn),
+                in_flight=poll_in_flight,
+                stop=ticker_stop,
+                detail="classifying — waiting on a slow upstream call",
+            )
+        finally:
+            conn.close()
+
+    ticker_thread = threading.Thread(
+        target=_run_stall_ticker, name="classifier-stall-ticker", daemon=True
+    )
+    ticker_thread.start()
+
     try:
         run_polling_threadpool(
             daemon_name="classifier",
@@ -216,13 +248,15 @@ def main() -> None:
             ),
             process_item=lambda doc: _process_and_record(doc, state, circuit_breaker),
             before_each_batch=lambda _: state.taxonomy_cache.refresh(),
-            before_each_poll=lambda: _reload_if_changed(state, circuit_breaker),
+            before_each_poll=_before_poll,
             poll_interval_seconds=state.settings.POLL_INTERVAL,
             max_workers=state.settings.DOCUMENT_WORKERS,
             on_cycle=_on_cycle,
             halt_check=lambda: HALTED_DETAIL if circuit_breaker.is_tripped() else None,
         )
     finally:
+        ticker_stop.set()
+        ticker_thread.join(timeout=5)
         state.list_client.close()
         state.taxonomy_client.close()
         app_db.close()

@@ -247,6 +247,34 @@ class TestResponseFormatForwarded:
         assert "response_format" not in call.kwargs
 
 
+class TestServiceTierForwarded:
+    """The planner pins the standard service tier on OpenAI, omits it elsewhere."""
+
+    def test_planner_forwards_default_service_tier_for_openai(self) -> None:
+        settings = make_search_settings(
+            SEARCH_PLANNER_PROVIDER="openai",
+            SEARCH_PLANNER_MODEL="gpt-5.4-mini",
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["service_tier"] == "default"
+
+    def test_planner_omits_service_tier_for_ollama(self) -> None:
+        settings = make_search_settings(
+            SEARCH_PLANNER_PROVIDER="ollama",
+            SEARCH_PLANNER_MODEL="gemma3:12b",
+            CLASSIFY_MODELS=["gemma3:12b"],
+        )
+        planner = build_planner(settings, planner_response_json())
+        planner.plan("any query")
+
+        call = planner._create_completion.call_args  # type: ignore[attr-defined]
+        assert "service_tier" not in call.kwargs
+
+
 class TestPlannerReadsClassifyModels:
     """Search planner fallback chain must use CLASSIFY_MODELS, not AI_MODELS."""
 

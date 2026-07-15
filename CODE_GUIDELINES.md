@@ -936,8 +936,8 @@ misuse. This is a structural control, not a convention.
 A search costs real LLM money. The search server enforces a bounded global
 concurrency limit on `/api/search` (reusing the `common/concurrency` semaphore
 pattern) so an exposed endpoint cannot be turned into a billing-denial attack. The
-hard ceiling of three LLM calls per query ([§14.3](#143-the-search-pipeline-has-a-hard-llm-budget))
-bounds the per-request cost.
+hard per-query LLM-call ceiling ([§14.3](#143-the-search-pipeline-has-a-hard-llm-budget) —
+six calls at shipped defaults) bounds the per-request cost.
 
 ### 10.7 No `eval`, no `exec`, no unsafe deserialisation
 
@@ -1298,11 +1298,14 @@ shows brute-force has become the bottleneck — not before.
 
 ### 14.3 The search pipeline has a hard LLM budget
 
-The agentic pipeline plans once, retrieves, and refines **at most once**:
-`SEARCH_MAX_REFINEMENTS` defaults to 1. The guaranteed ceiling is **three LLM calls
-per query**. This bound is a correctness and cost property, not a tuning knob —
-raising it past a small constant requires a written justification and is a security
-review point ([§10.6](#106-abuse-protection-on-exposed-endpoints)).
+The agentic pipeline plans once, retrieves, judges (when `SEARCH_GATE_JUDGE` is on,
+the default), synthesises, and refines **at most `SEARCH_MAX_REFINEMENTS` times**
+(default 1). The guaranteed ceiling is **`(2 + j) × (1 + SEARCH_MAX_REFINEMENTS)`
+LLM calls per query**, where `j` is 1 with the judge gate on — **six calls at
+shipped defaults** — enforced by `search/core._max_llm_calls`. This bound is a
+correctness and cost property, not a tuning knob — raising it past a small constant
+requires a written justification and is a security review point
+([§10.6](#106-abuse-protection-on-exposed-endpoints)).
 
 ### 14.4 Re-index only what changed
 

@@ -97,6 +97,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "MAX_RETRY_BACKOFF_SECONDS": 30,
         "REQUEST_TIMEOUT": 180,
         "LLM_MAX_CONCURRENT": 0,
+        "OPENAI_FLEX_TIER": True,
         "OCR_DPI": 300,
         "OCR_MAX_SIDE": 1600,
         "OCR_IMAGE_DETAIL": "high",

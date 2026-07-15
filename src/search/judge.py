@@ -148,6 +148,12 @@ class RelevanceJudge(OpenAIChatMixin):
                 else None
             ),
             response_format=_judge_response_format(self.settings),
+            # Explicit standard tier on OpenAI — never flex here (a human is
+            # waiting), and an explicit tier dodges the live-verified 401 on
+            # tierless requests (spec D4). Omitted for non-OpenAI providers.
+            service_tier=(
+                "default" if self.settings.SEARCH_JUDGE_PROVIDER == "openai" else None
+            ),
             usage_sink=usage_sink,
         )
         if raw_content is None:

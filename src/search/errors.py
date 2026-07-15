@@ -49,10 +49,12 @@ class RowVanishedError(SearchError):
 class LlmBudgetExceededError(SearchError):
     """The pipeline attempted more LLM chat calls than the per-query budget allows.
 
-    The per-query budget is ``2 + SEARCH_MAX_REFINEMENTS`` (spec §6.3,
-    ``CODE_GUIDELINES.md`` §14.3): one planner call, one exploratory
-    synthesise, and one synthesise per refinement pass.  ``SearchCore``'s own
-    loop logic cannot breach that bound; this error is the defensive guard
+    The per-query budget is ``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` (spec
+    §6.3, ``CODE_GUIDELINES.md`` §14.3), where ``j`` is 1 when
+    ``SEARCH_GATE_JUDGE`` is on: one planner call, one optional judge call,
+    and one synthesise per pass — the base pass plus each refinement pass
+    (see :func:`search.core._max_llm_calls`).  ``SearchCore``'s own loop
+    logic cannot breach that bound; this error is the defensive guard
     (``CODE_GUIDELINES.md`` §1.11) — it is raised only if a future regression
     introduces an extra call, so the cost overrun fails loud rather than
     silently billing the operator.

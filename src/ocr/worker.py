@@ -15,6 +15,7 @@ from common.paperless import (
     is_permanent_paperless_error,
 )
 from common.per_document import WriteBackOutcome
+from common.shutdown import is_shutdown_requested
 from common.tags import (
     clean_pipeline_tags,
     extract_tags,
@@ -254,6 +255,17 @@ class OcrProcessor:
             or OCR_ERROR_MARKER in full_text
             or is_error_content(full_text, self.settings.OCR_REFUSAL_MARKERS)
         ):
+            if is_shutdown_requested():
+                # A shutdown-aborted flex-capacity wait poisons page results
+                # with the refusal sentinel; error-tagging now would
+                # quarantine a healthy document on a routine deploy. Leave
+                # the PRE tag so the next boot re-attempts it instead
+                # (spec D5). A genuinely bad document re-tags on that run.
+                log.warning(
+                    "OCR error content during shutdown; leaving document queued",
+                    doc_id=self.doc_id,
+                )
+                return None
             reason = (
                 "no text" if not full_text.strip() else "error/refusal/redacted markers"
             )

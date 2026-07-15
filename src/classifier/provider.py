@@ -14,7 +14,7 @@ import json
 import structlog
 
 from common.config import Settings
-from common.llm import OpenAIChatMixin, unique_models
+from common.llm import OpenAIChatMixin, service_tier_params, unique_models
 from common.prompt_fences import build_data_fence
 from .prompts import (
     CLASSIFICATION_JSON_SCHEMA,
@@ -185,6 +185,8 @@ class ClassificationProvider(OpenAIChatMixin):
         otherwise need to discover the rejection). On OpenAI a model that still
         rejects one has it stripped/cached by :meth:`_create_with_compat`.
         ``max_tokens`` is requested only when ``CLASSIFY_MAX_TOKENS > 0``.
+        ``service_tier`` is likewise provider-gated like ``reasoning_effort``;
+        flex floors the per-call timeout (see :func:`common.llm.service_tier_params`).
         """
         params: dict[str, object] = {
             "model": model,
@@ -198,6 +200,12 @@ class ClassificationProvider(OpenAIChatMixin):
                 "type": "json_schema",
                 "json_schema": CLASSIFICATION_JSON_SCHEMA,
             }
+            params.update(
+                service_tier_params(
+                    flex_enabled=self.settings.OPENAI_FLEX_TIER,
+                    request_timeout=self.settings.REQUEST_TIMEOUT,
+                )
+            )
         if self.settings.CLASSIFY_MAX_TOKENS > 0:
             params["max_tokens"] = self.settings.CLASSIFY_MAX_TOKENS
         return params

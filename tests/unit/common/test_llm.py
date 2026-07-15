@@ -6,6 +6,7 @@ test_llm_fallback.py (§3.1 500-line ceiling split).
 
 from __future__ import annotations
 
+import itertools
 import json
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +17,9 @@ from common.llm import (
     OpenAIChatMixin,
     _STRIPPABLE_PARAMS,
     _strippable_param_for_error,
+    _wait_for_flex_capacity,
     extract_json_object,
+    service_tier_params,
     unique_models,
     _openai_holder,
 )
@@ -278,7 +281,7 @@ class TestStrippableParamForError:
         error = _bad_request("messages: array too long")
         assert _strippable_param_for_error(error) is None
 
-    def test_registry_param_keys_are_the_six_documented(self):
+    def test_registry_param_keys_are_the_seven_documented(self):
         keys = {param_key for param_key, _, _ in _STRIPPABLE_PARAMS}
         assert keys == {
             "temperature",
@@ -287,6 +290,27 @@ class TestStrippableParamForError:
             "max_completion_tokens",
             "reasoning_effort",
             "verbosity",
+            "service_tier",
+        }
+
+
+class TestServiceTierParams:
+    def test_flex_enabled_floors_timeout(self):
+        assert service_tier_params(flex_enabled=True, request_timeout=180) == {
+            "service_tier": "flex",
+            "timeout": 600,
+        }
+
+    def test_flex_enabled_keeps_larger_operator_timeout(self):
+        assert service_tier_params(flex_enabled=True, request_timeout=900) == {
+            "service_tier": "flex",
+            "timeout": 900,
+        }
+
+    def test_flex_disabled_is_standard_tier(self):
+        assert service_tier_params(flex_enabled=False, request_timeout=180) == {
+            "service_tier": "default",
+            "timeout": 180,
         }
 
 
@@ -358,13 +382,31 @@ class _CompatClient(OpenAIChatMixin):
         self._init_stats()
 
 
-def _ok_completion() -> MagicMock:
-    """A successful OpenAI-shaped completion."""
+def _fake_completion(content: str) -> MagicMock:
+    """An OpenAI-shaped completion carrying *content* as its message text."""
     choice = MagicMock()
-    choice.message.content = "ok"
+    choice.message.content = content
     completion = MagicMock()
     completion.choices = [choice]
     return completion
+
+
+def _ok_completion() -> MagicMock:
+    """A successful OpenAI-shaped completion."""
+    return _fake_completion("ok")
+
+
+def _rate_limit_error(message: str = "rate limit reached") -> openai.RateLimitError:
+    """Build an openai.RateLimitError carrying *message* (no token spent)."""
+    response = MagicMock()
+    response.status_code = 429
+    response.headers = {}
+    response.json.return_value = {"error": {"message": message}}
+    return openai.RateLimitError(
+        message=message,
+        response=response,
+        body={"error": {"message": message}},
+    )
 
 
 class TestCreateWithCompat:
@@ -499,3 +541,85 @@ class TestCreateWithCompat:
         assert stats["response_format_retries"] == 1
         assert stats["max_tokens_retries"] == 1
         assert stats["attempts"] == 4
+
+
+class TestFlexCapacityPatience:
+    """_create_with_compat waits out RateLimitError on flex calls (spec D5)."""
+
+    @pytest.fixture()
+    def provider(self):
+        model_compat_cache.reset()
+        yield _CompatClient()
+        model_compat_cache.reset()
+
+    def test_flex_429_retries_until_success(self, provider, mocker):
+        mocker.patch("common.llm._wait_for_flex_capacity", return_value=True)
+        completion = _fake_completion("ok")
+        provider._create_completion = mocker.Mock(
+            side_effect=[_rate_limit_error(), _rate_limit_error(), completion]
+        )
+        result = provider._create_with_compat(
+            {"model": "m", "messages": [], "service_tier": "flex"}, "m"
+        )
+        assert result is completion
+        assert provider._create_completion.call_count == 3
+
+    def test_flex_429_backoff_doubles_and_caps(self, provider, mocker):
+        waits = mocker.patch("common.llm._wait_for_flex_capacity", return_value=True)
+        provider._create_completion = mocker.Mock(
+            side_effect=[_rate_limit_error()] * 8 + [_fake_completion("ok")]
+        )
+        provider._create_with_compat(
+            {"model": "m", "messages": [], "service_tier": "flex"}, "m"
+        )
+        waited = [call.args[0] for call in waits.call_args_list]
+        assert waited == [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 60.0, 60.0]
+
+    def test_flex_429_aborts_on_shutdown(self, provider, mocker):
+        mocker.patch("common.llm._wait_for_flex_capacity", return_value=False)
+        provider._create_completion = mocker.Mock(side_effect=_rate_limit_error())
+        result = provider._create_with_compat(
+            {"model": "m", "messages": [], "service_tier": "flex"}, "m"
+        )
+        assert result is None
+
+    def test_non_flex_429_stays_terminal(self, provider, mocker):
+        wait = mocker.patch("common.llm._wait_for_flex_capacity")
+        provider._create_completion = mocker.Mock(side_effect=_rate_limit_error())
+        result = provider._create_with_compat({"model": "m", "messages": []}, "m")
+        assert result is None
+        wait.assert_not_called()
+
+    def test_flex_quota_exhaustion_is_terminal_not_patient(self, provider, mocker):
+        # insufficient_quota is also a 429, but no amount of waiting fixes an
+        # empty account — the patient loop must not freeze the worker on it.
+        wait = mocker.patch("common.llm._wait_for_flex_capacity")
+        quota_error = openai.RateLimitError(
+            message="You exceeded your current quota",
+            response=MagicMock(status_code=429, headers={}),
+            body={"code": "insufficient_quota"},
+        )
+        provider._create_completion = mocker.Mock(side_effect=quota_error)
+        result = provider._create_with_compat(
+            {"model": "m", "messages": [], "service_tier": "flex"}, "m"
+        )
+        assert result is None
+        wait.assert_not_called()
+
+
+class TestWaitForFlexCapacity:
+    """_wait_for_flex_capacity — chunked sleep, shutdown-interruptible."""
+
+    def test_returns_true_when_no_shutdown(self, mocker):
+        mocker.patch("common.llm.is_shutdown_requested", return_value=False)
+        sleep = mocker.patch("common.llm.time.sleep")
+        counter = itertools.count()
+        mocker.patch("common.llm.time.monotonic", side_effect=lambda: next(counter))
+        assert _wait_for_flex_capacity(3.0) is True
+        assert sleep.called
+
+    def test_returns_false_immediately_on_shutdown(self, mocker):
+        mocker.patch("common.llm.is_shutdown_requested", return_value=True)
+        sleep = mocker.patch("common.llm.time.sleep")
+        assert _wait_for_flex_capacity(3.0) is False
+        sleep.assert_not_called()
