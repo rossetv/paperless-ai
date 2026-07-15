@@ -342,10 +342,16 @@ class TestJudgeSettings:
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "lots"})
 
     def test_minimal_coerces_to_none_with_warning(self, mocker) -> None:
+        warn = mocker.patch("common.config._parsers.log.warning")
         settings = _build(
             mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "minimal"}
         )
         assert settings.SEARCH_JUDGE_REASONING_EFFORT == "none"
+        warn.assert_any_call(
+            "config.reasoning_effort_minimal_coerced",
+            var_name="SEARCH_JUDGE_REASONING_EFFORT",
+            coerced_to="none",
+        )
 
 
 class TestRelevanceTierThresholds:
