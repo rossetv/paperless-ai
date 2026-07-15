@@ -277,5 +277,7 @@ OpenAI dashboard against pre-change (the app cannot measure it — non-goal 1).
    ever surfaces as anything else, the loop must key on status 429, not the class name alone.
 2. The 401 quirk may be specific to the verification key's scoping; prod's key may never hit
    it. Explicit `service_tier` is correct regardless.
-3. A long OpenAI capacity outage stalls OCR/classifier worker threads (accepted in D5); the
-   daemons' existing heartbeat/health surfaces would show the stall.
+3. A long OpenAI capacity outage stalls OCR/classifier worker threads (accepted in D5).
+   The daemons' cycle-driven heartbeat could NOT show this originally (the beat fires only
+   after a poll returns — final-review finding M-2); a per-daemon stall ticker added at the
+   review gate now beats "waiting on LLM capacity" while a cycle is in flight.
