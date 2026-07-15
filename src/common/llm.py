@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -28,6 +29,7 @@ from openai.types.chat import ChatCompletion
 from .concurrency import llm_limiter
 from .model_compat import model_compat_cache
 from .retry import retry
+from .shutdown import is_shutdown_requested
 
 log = structlog.get_logger(__name__)
 
@@ -103,6 +105,28 @@ del _param, _matcher, _stat  # clean up loop variables from module namespace
 # timeout here instead of raising the global REQUEST_TIMEOUT (which would drag
 # interactive search calls with it).
 FLEX_MIN_TIMEOUT_SECONDS = 600
+
+# Capacity-429 backoff for flex calls: exponential from 1s, capped here. The
+# cap keeps the daemon responsive to recovered capacity without hammering the
+# API during an outage.
+_FLEX_BACKOFF_CAP_SECONDS = 60.0
+
+
+def _wait_for_flex_capacity(wait_seconds: float) -> bool:
+    """Sleep *wait_seconds* in ≤1s slices; ``False`` if shutdown interrupts.
+
+    Chunked so a SIGTERM lands within ~1s instead of a full backoff interval —
+    a hung shutdown would end in SIGKILL, and a SIGKILL mid-claim leaves the
+    document skipped as "already claimed" on every later poll.
+    """
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        if is_shutdown_requested():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(1.0, remaining))
 
 
 def service_tier_params(
@@ -289,10 +313,33 @@ class OpenAIChatMixin:
            matcher cannot loop forever. A 400 bills no tokens, so the only cost
            of a first-time discovery is one extra round-trip.
 
-        Any other ``openai.BadRequestError`` (a malformed request) or any other
-        ``openai.APIError`` (rate limit, 5xx, timeout after the ``@retry`` on
-        :meth:`_create_completion` is exhausted) is terminal: it is logged and
-        ``None`` is returned so the caller can advance to the next model.
+        Any other ``openai.BadRequestError`` (a malformed request) is terminal,
+        logged, and returns ``None`` so the caller can advance to the next
+        model. So is any other ``openai.APIError`` (5xx, timeout after the
+        ``@retry`` on :meth:`_create_completion` is exhausted, or a
+        non-flex-tier ``RateLimitError``) — *except* the **flex patience**
+        case below.
+
+        **Flex patience** (spec D5): when ``params["service_tier"] ==
+        "flex"``, an ``openai.RateLimitError`` is a capacity signal, not a
+        model failure — flex requests queue for spare capacity and 429 means
+        "none free right now," not "this model is broken." Advancing the
+        fallback chain or tagging the document as errored would be wrong, so
+        the call instead waits (:func:`_wait_for_flex_capacity`, exponential
+        backoff from 1s capped at :data:`_FLEX_BACKOFF_CAP_SECONDS`) and
+        retries the *same* model indefinitely. The wait only ends early on
+        daemon shutdown, in which case this returns ``None`` like any other
+        terminal failure. The strip-attempt budget above still bounds
+        ``BadRequestError`` handling; only the flex-429 wait is unbounded.
+        Non-flex calls are unaffected: a ``RateLimitError`` without
+        ``service_tier == "flex"`` is terminal on the first 429, same as
+        before this behaviour existed.
+
+        Note: the ``@retry`` decorator on :meth:`_create_completion` still
+        burns its own ``MAX_RETRIES`` budget inside *every* patient iteration
+        here — that's harmless (a few extra unbilled requests within one
+        flex-wait cycle) and keeps the two retry layers decoupled rather than
+        threading flex-awareness into the generic retry helper.
 
         rationale (§5.4 carve-out, COMMON-12/13): the ``None`` here is a
         *designed* per-model signal — "this model failed, try the next" — not a
@@ -306,24 +353,51 @@ class OpenAIChatMixin:
         chain, so they raise) is deliberate, not an oversight.
         """
         params = self._pre_strip_known_rejected(params, model)
-        for _attempt in range(len(_STRIPPABLE_PARAMS) + 1):
+        strip_attempts = 0
+        flex_wait = 1.0
+        while True:
             try:
                 self._record_attempt()
                 return self._create_completion(**params)
             except openai.BadRequestError as error:
+                strip_attempts += 1
+                if strip_attempts > len(_STRIPPABLE_PARAMS):
+                    log.warning("llm.request_rejected_after_strips", model=model)
+                    self._record_api_error()
+                    return None
                 stripped_params = self._strip_rejected_param(error, params, model)
                 if stripped_params is None:
                     log.warning("llm.request_rejected", model=model, error=str(error))
                     self._record_api_error()
                     return None
                 params = stripped_params
+            # RateLimitError must be caught before the generic APIError below
+            # (it subclasses APIError) and after BadRequestError (siblings —
+            # order between those two is immaterial, but BadRequest stays
+            # first to match the phase description above).
+            except openai.RateLimitError as error:
+                if params.get("service_tier") != "flex":
+                    log.warning("llm.model_failed", model=model, error=str(error))
+                    self._record_api_error()
+                    return None
+                # Flex capacity shortage: unbilled, transient, and not a model
+                # failure — advancing the fallback chain or error-tagging the
+                # document would be wrong. Wait it out (spec D5).
+                log.warning(
+                    "llm.flex_capacity_wait",
+                    model=model,
+                    wait_seconds=flex_wait,
+                    error=str(error),
+                )
+                if not _wait_for_flex_capacity(flex_wait):
+                    log.warning("llm.flex_wait_aborted_by_shutdown", model=model)
+                    self._record_api_error()
+                    return None
+                flex_wait = min(flex_wait * 2, _FLEX_BACKOFF_CAP_SECONDS)
             except openai.APIError as error:
                 log.warning("llm.model_failed", model=model, error=str(error))
                 self._record_api_error()
                 return None
-        log.warning("llm.request_rejected_after_strips", model=model)
-        self._record_api_error()
-        return None
 
     def _pre_strip_known_rejected(
         self, params: dict[str, object], model: str
