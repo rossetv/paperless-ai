@@ -87,6 +87,7 @@ _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("max_tokens", "max tokens", "max_tokens_retries"),
     ("reasoning_effort", "reasoning_effort", "reasoning_effort_retries"),
     ("verbosity", "verbosity", "verbosity_retries"),
+    ("service_tier", "service_tier", "service_tier_retries"),
 )
 
 # Param → stat-key lookup built once from the registry. Multiple rows may share
@@ -96,6 +97,30 @@ _PARAM_TO_STAT: dict[str, str] = {}
 for _param, _matcher, _stat in _STRIPPABLE_PARAMS:
     _PARAM_TO_STAT.setdefault(_param, _stat)
 del _param, _matcher, _stat  # clean up loop variables from module namespace
+
+# Flex requests routinely run longer than standard-tier ones — OpenAI's own
+# default timeout for them is 10 minutes — so flex calls floor their per-call
+# timeout here instead of raising the global REQUEST_TIMEOUT (which would drag
+# interactive search calls with it).
+FLEX_MIN_TIMEOUT_SECONDS = 600
+
+
+def service_tier_params(
+    *, flex_enabled: bool, request_timeout: int
+) -> dict[str, object]:
+    """``service_tier`` + ``timeout`` params for an OpenAI background-daemon call.
+
+    Always names a tier explicitly — even ``"default"``. Verified live
+    (2026-07-15): a 5.6 request with ``reasoning_effort: "none"`` and *no*
+    ``service_tier`` was rejected 401 by the API while the identical request
+    with an explicit tier succeeded; explicit is also deterministic and free.
+    """
+    if flex_enabled:
+        return {
+            "service_tier": "flex",
+            "timeout": max(request_timeout, FLEX_MIN_TIMEOUT_SECONDS),
+        }
+    return {"service_tier": "default", "timeout": request_timeout}
 
 
 def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:

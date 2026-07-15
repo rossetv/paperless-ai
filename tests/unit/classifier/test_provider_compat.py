@@ -422,3 +422,44 @@ class TestReasoningEffort:
         assert result is not None
         assert "reasoning_effort" in calls[0]
         assert "reasoning_effort" not in calls[1]
+
+
+class TestServiceTier:
+    """service_tier is provider-gated like reasoning_effort; flex floors timeout."""
+
+    def test_flex_on_openai_floors_timeout(self):
+        provider = make_provider(
+            CLASSIFY_PROVIDER="openai",
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
+            OPENAI_FLEX_TIER=True,
+            REQUEST_TIMEOUT=180,
+        )
+
+        params = provider._build_params("gpt-5.4-mini", [])
+
+        assert params["service_tier"] == "flex"
+        assert params["timeout"] == 600
+
+    def test_flex_off_openai_is_default_tier(self):
+        provider = make_provider(
+            CLASSIFY_PROVIDER="openai",
+            CLASSIFY_MODELS=["gpt-5.4-mini"],
+            OPENAI_FLEX_TIER=False,
+            REQUEST_TIMEOUT=180,
+        )
+
+        params = provider._build_params("gpt-5.4-mini", [])
+
+        assert params["service_tier"] == "default"
+        assert params["timeout"] == 180
+
+    def test_omitted_for_non_openai(self):
+        provider = make_provider(
+            CLASSIFY_PROVIDER="ollama",
+            CLASSIFY_MODELS=["llama3"],
+            OPENAI_FLEX_TIER=True,
+        )
+
+        params = provider._build_params("llama3", [])
+
+        assert "service_tier" not in params
