@@ -346,10 +346,16 @@ class TestValidation:
             _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_REASONING_EFFORT": value})
 
     def test_minimal_coerces_for_classify_too(self, mocker):
+        warn = mocker.patch("common.config._parsers.log.warning")
         settings = _build(
             mocker, {**_MINIMAL_ENV, "CLASSIFY_REASONING_EFFORT": "minimal"}
         )
         assert settings.CLASSIFY_REASONING_EFFORT == "none"
+        warn.assert_any_call(
+            "config.reasoning_effort_minimal_coerced",
+            var_name="CLASSIFY_REASONING_EFFORT",
+            coerced_to="none",
+        )
 
     @pytest.mark.parametrize("value", ["0", "-1"])
     def test_max_retries_invalid_raises(self, mocker, value):
@@ -445,8 +451,14 @@ class TestOcrReasoningEffort:
             _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": "ludicrous"})
 
     def test_minimal_coerces_to_none_with_warning(self, mocker):
+        warn = mocker.patch("common.config._parsers.log.warning")
         settings = _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": "minimal"})
         assert settings.OCR_REASONING_EFFORT == "none"
+        warn.assert_any_call(
+            "config.reasoning_effort_minimal_coerced",
+            var_name="OCR_REASONING_EFFORT",
+            coerced_to="none",
+        )
 
 
 _CLAMPED_TO_ONE = [
