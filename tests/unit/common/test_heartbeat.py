@@ -134,3 +134,71 @@ def test_run_heartbeat_ticker_survives_a_failing_detail_fn(conn) -> None:
         should_stop=stop,
         sleep=lambda _s: None,
     )
+
+
+def test_run_stall_ticker_beats_only_while_in_flight(conn) -> None:
+    """The stall ticker beats when in_flight is set and stays silent when
+    it is clear — idle/halted beats remain the poll loop's alone."""
+    import threading
+
+    from common.heartbeat import Heartbeat, run_stall_ticker
+
+    hb = Heartbeat(name="ocr", conn=conn)
+    in_flight = threading.Event()
+    stop = threading.Event()
+
+    ticker = threading.Thread(
+        target=lambda: run_stall_ticker(
+            hb,
+            in_flight=in_flight,
+            stop=stop,
+            interval_seconds=1,
+            detail="processing — waiting on LLM capacity",
+        ),
+        daemon=True,
+    )
+    ticker.start()
+    try:
+        # Not in flight: a full interval passes with no beat written.
+        ticker.join(timeout=1.3)
+        assert daemon_status.read_statuses(conn) == []
+
+        # In flight: the next tick writes the stalled-but-alive beat.
+        in_flight.set()
+        for _ in range(40):  # up to ~4s for one ≥1s tick, no flaky sleep maths
+            rows = daemon_status.read_statuses(conn)
+            if rows:
+                break
+            ticker.join(timeout=0.1)
+        assert rows[0].name == "ocr"
+        assert rows[0].detail == "processing — waiting on LLM capacity"
+    finally:
+        stop.set()
+        ticker.join(timeout=5)
+    assert not ticker.is_alive()
+
+
+def test_run_stall_ticker_exits_promptly_on_stop(conn) -> None:
+    """Setting stop ends the ticker without waiting out a full interval."""
+    import threading
+    import time
+
+    from common.heartbeat import Heartbeat, run_stall_ticker
+
+    hb = Heartbeat(name="classifier", conn=conn)
+    in_flight = threading.Event()
+    stop = threading.Event()
+
+    ticker = threading.Thread(
+        target=lambda: run_stall_ticker(
+            hb, in_flight=in_flight, stop=stop, interval_seconds=60
+        ),
+        daemon=True,
+    )
+    ticker.start()
+    start = time.monotonic()
+    stop.set()
+    ticker.join(timeout=5)
+    assert not ticker.is_alive()
+    # Event.wait returns early on set — nowhere near the 60s interval.
+    assert time.monotonic() - start < 5

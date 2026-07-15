@@ -25,6 +25,7 @@ this module and :mod:`common.config` are its only two importers.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 
@@ -163,3 +164,47 @@ def run_heartbeat_ticker(
         if should_stop():
             return
         sleep(interval)
+
+
+# Seconds between stall-ticker beats. Comfortably inside
+# appdb.daemon_status.DEFAULT_STALE_AFTER_SECONDS (90) so a long in-cycle
+# wait never flickers the daemon to "stopped" between beats.
+DEFAULT_STALL_BEAT_INTERVAL_SECONDS: int = 30
+
+
+def run_stall_ticker(
+    heartbeat: Heartbeat,
+    *,
+    in_flight: threading.Event,
+    stop: threading.Event,
+    interval_seconds: int = DEFAULT_STALL_BEAT_INTERVAL_SECONDS,
+    detail: str = "processing — waiting on a slow LLM call",
+) -> None:
+    """Beat while a work cycle is stuck in flight; stay silent otherwise.
+
+    The tag daemons beat from ``on_cycle`` — AFTER a poll returns. A poll
+    that legitimately blocks for a long time (the flex capacity-429 wait can
+    park every worker for hours) therefore starves the heartbeat and the
+    dashboard reads a live daemon as "stopped". This ticker is the
+    complement: it beats only when *in_flight* has stayed set for a full
+    interval, so the idle/halted/processed beats remain exclusively the poll
+    loop's, and a daemon whose process died still goes honestly stale — the
+    ticker dies with the process.
+
+    Exits promptly when *stop* is set (``Event.wait`` returns early), so the
+    owning daemon can join the ticker thread on shutdown without waiting out
+    an interval.
+
+    Args:
+        heartbeat: The :class:`Heartbeat` to beat through — it must be
+            constructed over a connection owned by the ticker's own thread
+            (sqlite connections are not shared across threads).
+        in_flight: Set while a poll cycle is running, cleared when it ends.
+        stop: Ends the ticker.
+        interval_seconds: Seconds between beats while in flight.
+        detail: The detail string written for a stalled-but-alive beat.
+    """
+    interval = max(1, int(interval_seconds))
+    while not stop.wait(interval):
+        if in_flight.is_set():
+            heartbeat.beat(detail=detail)
