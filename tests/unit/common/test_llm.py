@@ -17,6 +17,7 @@ from common.llm import (
     _STRIPPABLE_PARAMS,
     _strippable_param_for_error,
     extract_json_object,
+    service_tier_params,
     unique_models,
     _openai_holder,
 )
@@ -278,7 +279,7 @@ class TestStrippableParamForError:
         error = _bad_request("messages: array too long")
         assert _strippable_param_for_error(error) is None
 
-    def test_registry_param_keys_are_the_six_documented(self):
+    def test_registry_param_keys_are_the_seven_documented(self):
         keys = {param_key for param_key, _, _ in _STRIPPABLE_PARAMS}
         assert keys == {
             "temperature",
@@ -287,6 +288,27 @@ class TestStrippableParamForError:
             "max_completion_tokens",
             "reasoning_effort",
             "verbosity",
+            "service_tier",
+        }
+
+
+class TestServiceTierParams:
+    def test_flex_enabled_floors_timeout(self):
+        assert service_tier_params(flex_enabled=True, request_timeout=180) == {
+            "service_tier": "flex",
+            "timeout": 600,
+        }
+
+    def test_flex_enabled_keeps_larger_operator_timeout(self):
+        assert service_tier_params(flex_enabled=True, request_timeout=900) == {
+            "service_tier": "flex",
+            "timeout": 900,
+        }
+
+    def test_flex_disabled_is_standard_tier(self):
+        assert service_tier_params(flex_enabled=False, request_timeout=180) == {
+            "service_tier": "default",
+            "timeout": 180,
         }
 
 
