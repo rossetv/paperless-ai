@@ -334,7 +334,10 @@ class OpenAIChatMixin:
         ``BadRequestError`` handling; only the flex-429 wait is unbounded.
         Non-flex calls are unaffected: a ``RateLimitError`` without
         ``service_tier == "flex"`` is terminal on the first 429, same as
-        before this behaviour existed.
+        before this behaviour existed. A 429 whose ``code`` is
+        ``insufficient_quota`` (billing exhausted, not a capacity dip) is
+        terminal even on flex — no amount of waiting fixes an empty account,
+        and the patient loop would otherwise freeze the worker invisibly.
 
         Note: the ``@retry`` decorator on :meth:`_create_completion` still
         burns its own ``MAX_RETRIES`` budget inside *every* patient iteration
@@ -377,6 +380,14 @@ class OpenAIChatMixin:
             # order between those two is immaterial, but BadRequest stays
             # first to match the phase description above).
             except openai.RateLimitError as error:
+                if error.code == "insufficient_quota":
+                    # Also a 429, but one no amount of waiting fixes — the
+                    # account is out of credit. Waiting would freeze the
+                    # worker invisibly until billing is topped up; terminal
+                    # like any other model failure instead.
+                    log.warning("llm.quota_exhausted", model=model, error=str(error))
+                    self._record_api_error()
+                    return None
                 if params.get("service_tier") != "flex":
                     log.warning("llm.model_failed", model=model, error=str(error))
                     self._record_api_error()

@@ -590,6 +590,22 @@ class TestFlexCapacityPatience:
         assert result is None
         wait.assert_not_called()
 
+    def test_flex_quota_exhaustion_is_terminal_not_patient(self, provider, mocker):
+        # insufficient_quota is also a 429, but no amount of waiting fixes an
+        # empty account — the patient loop must not freeze the worker on it.
+        wait = mocker.patch("common.llm._wait_for_flex_capacity")
+        quota_error = openai.RateLimitError(
+            message="You exceeded your current quota",
+            response=MagicMock(status_code=429, headers={}),
+            body={"code": "insufficient_quota"},
+        )
+        provider._create_completion = mocker.Mock(side_effect=quota_error)
+        result = provider._create_with_compat(
+            {"model": "m", "messages": [], "service_tier": "flex"}, "m"
+        )
+        assert result is None
+        wait.assert_not_called()
+
 
 class TestWaitForFlexCapacity:
     """_wait_for_flex_capacity — chunked sleep, shutdown-interruptible."""
