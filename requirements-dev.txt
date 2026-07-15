@@ -6,3 +6,5 @@ pytest-xdist==3.8.0
 respx==0.23.1
 mypy==2.1.0
 ruff==0.15.16
+bandit[toml]==1.9.4
+pip-audit==2.10.1
