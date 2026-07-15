@@ -16,3 +16,5 @@ internal-only endpoints are fine); personal working-style preferences
 (DECISIONS.md). -->
 
 # paperless-ai — Memory
+
+- [Public repository — no infra or personal details](memory/20260715-public-repository.md) — public GitHub repo; never commit hosting/topology/secrets/personal details, keep code deployment-agnostic
