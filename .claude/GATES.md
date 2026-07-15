@@ -18,6 +18,8 @@ Run from the repo root unless stated. All must pass.
 | 6 | Web lint | `cd web && npm run lint` |
 | 7 | Web tests + coverage floor | `cd web && npm run test:coverage` |
 | 8 | Web build | `cd web && npm run build` |
+| 9 | Python dependency audit | `pip-audit` |
+| 10 | Web dependency audit | `cd web && npm audit --omit=dev --audit-level=high` |
 
 Coverage as CI enforces it (gate 1 alternative when touching coverage-gated
 packages): `python -m pytest -q -n auto --cov=common --cov=ocr --cov=classifier
@@ -26,3 +28,6 @@ packages): `python -m pytest -q -n auto --cov=common --cov=ocr --cov=classifier
 
 Known skip: 6 poppler-dependent OCR integration tests skip silently without
 `pdftoppm` on PATH (`brew install poppler`).
+
+Gates 9 and 10 are not yet documented in `.claude/docs/TESTING.md` —
+kb-updater will reconcile that doc on the next push.
