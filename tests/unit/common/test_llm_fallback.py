@@ -342,6 +342,25 @@ class TestCompleteWithModelFallbackOptionalKwargs:
 
         assert captured[0]["timeout"] == 12.5
 
+    def test_service_tier_is_forwarded(self, client):
+        captured: list[dict] = []
+
+        def capture(**kwargs):
+            captured.append(dict(kwargs))
+            return _completion("a")
+
+        client._create_completion = capture
+
+        client._complete_with_model_fallback(
+            primary_model="m1",
+            messages=[],
+            fallback_models=[],
+            log_event_prefix="planner",
+            service_tier="default",
+        )
+
+        assert captured[0]["service_tier"] == "default"
+
     def test_none_kwargs_are_omitted(self, client):
         captured: list[dict] = []
 
@@ -359,6 +378,7 @@ class TestCompleteWithModelFallbackOptionalKwargs:
             reasoning_effort=None,
             response_format=None,
             timeout=None,
+            service_tier=None,
         )
 
         assert set(captured[0].keys()) == {"model", "messages"}
