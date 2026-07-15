@@ -336,6 +336,12 @@ class TestJudgeSettings:
         with pytest.raises(ValueError, match="SEARCH_JUDGE_REASONING_EFFORT"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "lots"})
 
+    def test_minimal_coerces_to_none_with_warning(self, mocker) -> None:
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "SEARCH_JUDGE_REASONING_EFFORT": "minimal"}
+        )
+        assert settings.SEARCH_JUDGE_REASONING_EFFORT == "none"
+
 
 class TestRelevanceTierThresholds:
     """The three relevance-badge cut-points parse, default, and validate."""
