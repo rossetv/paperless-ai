@@ -35,8 +35,8 @@ def _build(mocker, env: dict[str, str]) -> Settings:
 _SEARCH_DEFAULTS_OPENAI = [
     ("SEARCH_TOP_K", 10),
     ("SEARCH_MAX_REFINEMENTS", 1),
-    ("SEARCH_PLANNER_MODEL", "gpt-5.4-mini"),
-    ("SEARCH_ANSWER_MODEL", "gpt-5.5"),
+    ("SEARCH_PLANNER_MODEL", "gpt-5.6-terra"),
+    ("SEARCH_ANSWER_MODEL", "gpt-5.6-terra"),
     ("SEARCH_SERVER_HOST", "0.0.0.0"),
     ("SEARCH_SERVER_PORT", 8080),
     ("SEARCH_FORWARDED_ALLOW_IPS", "*"),
@@ -207,10 +207,10 @@ class TestSearchRagCostSettings:
 class TestSearchFailFastGateDefaults:
     """The four fail-fast gate knobs have the correct coded defaults."""
 
-    def test_planner_model_defaults_to_gpt_5_4_mini_for_openai(self, mocker) -> None:
-        """OpenAI provider: SEARCH_PLANNER_MODEL defaults to gpt-5.4-mini."""
+    def test_planner_model_defaults_to_gpt_5_6_terra_for_openai(self, mocker) -> None:
+        """OpenAI provider: SEARCH_PLANNER_MODEL defaults to gpt-5.6-terra."""
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.4-mini"
+        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
 
     def test_gate_adequacy_defaults_true(self, mocker) -> None:
         """SEARCH_GATE_ADEQUACY defaults to True — the gate is on by default."""
@@ -308,9 +308,14 @@ class TestJudgeSettings:
         settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_JUDGE": "false"})
         assert settings.SEARCH_GATE_JUDGE is False
 
-    def test_judge_model_defaults_to_planner_model_openai(self, mocker) -> None:
+    def test_judge_and_planner_openai_defaults(self, mocker) -> None:
+        """OpenAI provider: judge defaults to gpt-5.6-luna, planner to
+        gpt-5.6-terra — the judge no longer mirrors the planner default on
+        openai (contrast test_judge_model_defaults_to_planner_model_ollama,
+        below, where it still does)."""
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_JUDGE_MODEL == "gpt-5.4-mini"
+        assert settings.SEARCH_JUDGE_MODEL == "gpt-5.6-luna"
+        assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
 
     def test_judge_model_defaults_to_planner_model_ollama(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_OLLAMA_ENV)
@@ -322,9 +327,9 @@ class TestJudgeSettings:
         )
         assert settings.SEARCH_JUDGE_MODEL == "gpt-5.4-nano"
 
-    def test_reasoning_effort_defaults_to_low(self, mocker) -> None:
+    def test_reasoning_effort_defaults_to_none(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
-        assert settings.SEARCH_JUDGE_REASONING_EFFORT == "low"
+        assert settings.SEARCH_JUDGE_REASONING_EFFORT == "none"
 
     def test_reasoning_effort_overridable(self, mocker) -> None:
         settings = _build(

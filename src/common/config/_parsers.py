@@ -266,11 +266,14 @@ def _resolve_reasoning_effort(
 ) -> str:
     """Resolve and validate a reasoning-effort knob, returning a normalised string.
 
-    Shared by OCR, classify, and search-stage resolvers. ``medium`` is the
-    models' own default effort, so the default is a deliberate zero-cost no-op:
-    the operator tunes *down* (to ``"none"`` / ``"low"``) per stage to capture
-    the saving. A model that does not accept the parameter has it stripped and
-    cached by the shared adaptive-compat layer rather than failing the call
+    Shared by OCR, classify, and search-stage resolvers, each passing its own
+    step-specific *default*: OCR ``"none"`` and classify ``"low"`` spend the
+    minimum reasoning tier on their high-volume, low-deliberation calls, while
+    the search planner/answer stages keep ``"medium"`` — the models' own
+    default effort, a deliberate zero-cost no-op. The operator tunes the knob
+    up or down from the step's default to trade cost against reasoning depth.
+    A model that does not accept the parameter has it stripped and cached by
+    the shared adaptive-compat layer rather than failing the call
     (foundation-llm-plumbing-design §4.1, spec §4.8).
 
     Raises ``ValueError`` naming *var_name* on an unrecognised value so that
@@ -280,7 +283,8 @@ def _resolve_reasoning_effort(
     Args:
         source: The environment mapping.
         var_name: The setting key — named in the error message on a bad value.
-        default: The coded default effort (``"medium"`` unless specified).
+        default: The coded default effort for this step (``"medium"`` unless
+            the caller passes its own step-specific default).
     """
     effort = source.get(var_name, default).strip().lower()
     if effort == "minimal":
@@ -306,20 +310,25 @@ def _resolve_reasoning_effort(
 def _resolve_ocr_reasoning_effort(
     source: Mapping[str, str],
 ) -> Literal["none", "low", "medium", "high", "xhigh"]:
-    """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``medium``).
+    """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``none``).
 
-    ``medium`` is the models' own default effort, keeping the OCR request
-    behaviourally identical to before this setting existed. An operator opts
-    into the cheaper ``none`` / ``low`` tiers explicitly to cut the
-    reasoning-token premium on the highest-volume call.
+    Transcription is perception, not reasoning, and OCR is the highest-volume
+    call in the system (one per page), so the default spends zero reasoning
+    tokens. An operator opts *up* to ``low``+ if transcription quality on
+    complex layouts ever warrants it.
     """
     # rationale: validated by shared helper; mypy cannot narrow `str` → `Literal[...]`.
-    return _resolve_reasoning_effort(source, "OCR_REASONING_EFFORT")  # type: ignore[return-value]
+    return _resolve_reasoning_effort(source, "OCR_REASONING_EFFORT", default="none")  # type: ignore[return-value]
 
 
 def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
-    """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``medium``)."""
-    return _resolve_reasoning_effort(source, "CLASSIFY_REASONING_EFFORT")
+    """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``low``).
+
+    Schema-constrained extraction needs little deliberation, so the default
+    spends only the minimum reasoning tier rather than the model's own
+    ``medium`` default.
+    """
+    return _resolve_reasoning_effort(source, "CLASSIFY_REASONING_EFFORT", default="low")
 
 
 def _resolve_search_reasoning_effort(

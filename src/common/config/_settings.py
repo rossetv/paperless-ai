@@ -118,11 +118,11 @@ def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefau
             judge_model="gemma3:12b",
         )
     return _ProviderDefaults(
-        ocr_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        classify_models=["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"],
-        planner_model="gpt-5.4-mini",
-        answer_model="gpt-5.5",
-        judge_model="gpt-5.4-mini",
+        ocr_models=["gpt-5.6-luna", "gpt-5.6-terra"],
+        classify_models=["gpt-5.6-luna", "gpt-5.6-terra"],
+        planner_model="gpt-5.6-terra",
+        answer_model="gpt-5.6-terra",
+        judge_model="gpt-5.6-luna",
     )
 
 
@@ -305,12 +305,14 @@ class Settings:
     those tokens.
     """
     SEARCH_JUDGE_MODEL: str
-    """The model for the relevance judge. Defaults to the planner model for the
-    provider (``gpt-5.4-mini`` / ``gemma3:12b``); set independently to run the
-    judge on a cheaper or sharper model than the planner."""
+    """The model for the relevance judge. On ``openai`` defaults to
+    ``gpt-5.6-luna`` (independent of the planner's ``gpt-5.6-terra``); on
+    ``ollama`` it still follows the planner default (``gemma3:12b``). Set
+    independently to run the judge on a cheaper or sharper model than the
+    planner."""
     SEARCH_JUDGE_REASONING_EFFORT: str
     """Reasoning effort for the judge (``none``/``low``/``medium``/``high``/``xhigh``).
-    Defaults to ``low`` — a coarse on-topic classification that does not need
+    Defaults to ``none`` — a coarse on-topic classification that does not need
     deep reasoning; raise it if the judge bails or filters too aggressively."""
     # Fail-fast gate knobs (search fail-fast spec §3)
     SEARCH_GATE_ADEQUACY: bool
@@ -796,7 +798,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_JUDGE_RATIONALES=_get_bool_env(source, "SEARCH_JUDGE_RATIONALES", True),
         SEARCH_JUDGE_MODEL=source.get("SEARCH_JUDGE_MODEL", default_judge_model),
         SEARCH_JUDGE_REASONING_EFFORT=_resolve_search_reasoning_effort(
-            source, "SEARCH_JUDGE_REASONING_EFFORT", default="low"
+            source, "SEARCH_JUDGE_REASONING_EFFORT", default="none"
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
