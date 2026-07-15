@@ -31,10 +31,11 @@ class ModelPrice:
 
 # OpenAI list prices, USD per 1M tokens — Standard tier, short context
 # (https://openai.com/api/pricing). THE single edit point when rates change.
-# Confirmed against the operator's account on 2026-06-10; covers every model in
-# the prod search chain (planner/judge gpt-5.4-nano, answer gpt-5.4-mini, and the
-# gpt-5.4-mini/gpt-5.4/gpt-5.5/o4-mini fallback). Ollama/local models are
-# intentionally absent (priced as free via the provider check, not this table).
+# 5.4-era rows confirmed against the operator's account on 2026-06-10; covers
+# the prod search chain (planner/judge gpt-5.4-nano, answer gpt-5.4-mini, and
+# the gpt-5.4-mini/gpt-5.4/gpt-5.5/o4-mini fallback). 5.6 rows taken from the
+# live pricing docs on 2026-07-14. Ollama/local models are intentionally absent
+# (priced as free via the provider check, not this table).
 #
 # Cached-input discounts are NOT modelled: every prompt token is priced at the
 # full (uncached) input rate. OpenAI bills cache-hit prompt tokens at a lower
@@ -42,7 +43,13 @@ class ModelPrice:
 # under-count. The cache-optimised system prompts make some hits likely, but the
 # synthesiser's input is dominated by the (uncacheable) retrieved chunks, so the
 # overshoot is minor.
+#
+# Flex halves the actual OCR/classifier spend, but this table prices only the
+# search path, which never uses Flex — no Flex modelling needed.
 MODEL_PRICES: dict[str, ModelPrice] = {
+    "gpt-5.6-sol": ModelPrice(input_per_mtok=5.0, output_per_mtok=30.0),
+    "gpt-5.6-terra": ModelPrice(input_per_mtok=2.5, output_per_mtok=15.0),
+    "gpt-5.6-luna": ModelPrice(input_per_mtok=1.0, output_per_mtok=6.0),
     "gpt-5.5": ModelPrice(input_per_mtok=5.0, output_per_mtok=30.0),
     "gpt-5.4": ModelPrice(input_per_mtok=2.5, output_per_mtok=15.0),
     "gpt-5.4-mini": ModelPrice(input_per_mtok=0.75, output_per_mtok=4.5),
@@ -55,7 +62,7 @@ MODEL_PRICES: dict[str, ModelPrice] = {
 # book (:mod:`search.pricing_book`) can stamp the bundled-seed book's ``as_of``
 # from the single source of truth here rather than re-typing the date — when
 # the seed table is updated, this date moves with it in the same edit.
-SEED_PRICES_AS_OF: str = "2026-06-10"
+SEED_PRICES_AS_OF: str = "2026-07-14"
 
 
 def price_call(

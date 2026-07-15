@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from search.models import Cost, TokenUsage
 from search.pricing import (
     MODEL_PRICES,
@@ -41,3 +43,17 @@ def test_seed_prices_as_of_is_an_iso_date():
     """The seed as-of date is a YYYY-MM-DD string the price book can stamp."""
     assert isinstance(SEED_PRICES_AS_OF, str)
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", SEED_PRICES_AS_OF)
+
+
+@pytest.mark.parametrize(
+    ("model", "input_rate", "output_rate"),
+    [
+        ("gpt-5.6-sol", 5.0, 30.0),
+        ("gpt-5.6-terra", 2.5, 15.0),
+        ("gpt-5.6-luna", 1.0, 6.0),
+    ],
+)
+def test_gpt56_family_is_priced(model, input_rate, output_rate):
+    price = MODEL_PRICES[model]
+    assert price.input_per_mtok == input_rate
+    assert price.output_per_mtok == output_rate
