@@ -436,27 +436,47 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
 
     # Force the env default to a different, wrong path: if the closure still
     # read the environment, the assertion below would catch it pointing here.
-    threads_before = set(threading.enumerate())
     with (
         patch("search.api.connect_app_db", side_effect=_record_connect),
         patch("search.api.ensure_app_db_schema"),
         # No-op the ticker so the daemon thread returns immediately after the
-        # connect under test, rather than looping until the shutdown flag.
+        # connect under test, rather than looping until stopped.
         patch("search.api.run_heartbeat_ticker"),
         patch.dict("os.environ", {"APP_DB_PATH": "/data/wrong.db"}),
     ):
-        _start_search_heartbeat(settings)
-        # The heartbeat runs on a daemon thread; join only the worker this
-        # call just started (bounded — the patched ticker returns at once).
-        # Other tests/processes leak their own "search-heartbeat" threads
-        # (search.api._start_search_heartbeat is never stopped by any
-        # teardown path) that live for the rest of the process and never
-        # satisfy should_stop(); matching on thread.name alone would join
-        # every one of those too, burning the full 5s timeout on each.
-        new_threads = set(threading.enumerate()) - threads_before
-        for thread in new_threads:
-            if thread.name == "search-heartbeat":
-                thread.join(timeout=5)
+        stop_heartbeat = _start_search_heartbeat(settings)
+        # The heartbeat runs on a daemon thread the starter now owns: the
+        # returned stop callable sets the per-app event and joins only this
+        # call's thread — never the same-named threads other tests started.
+        stop_heartbeat()
 
     assert opened_paths == [app_db_path]
     assert "/data/wrong.db" not in opened_paths
+
+
+def test_search_heartbeat_stop_terminates_the_thread(tmp_path: Path) -> None:
+    """The stop callable returned by ``_start_search_heartbeat`` ends the thread.
+
+    Regression: the ticker previously ran until the process-global shutdown
+    flag — which no test or lifespan exit ever set — so every app instance
+    leaked a live "search-heartbeat" thread for the rest of the process.
+    This drives the REAL ticker (no patch) and proves the per-app stop event
+    terminates it promptly.
+    """
+    from search.api import _start_search_heartbeat
+
+    settings = _settings(APP_DB_PATH=str(tmp_path / "app.db"))
+    threads_before = set(threading.enumerate())
+    with (
+        patch("search.api.connect_app_db", return_value=MagicMock()),
+        patch("search.api.ensure_app_db_schema"),
+    ):
+        stop_heartbeat = _start_search_heartbeat(settings)
+        stop_heartbeat()
+
+    leaked = {
+        thread
+        for thread in set(threading.enumerate()) - threads_before
+        if thread.name == "search-heartbeat" and thread.is_alive()
+    }
+    assert leaked == set()
