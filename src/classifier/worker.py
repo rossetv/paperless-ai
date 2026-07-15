@@ -14,6 +14,7 @@ from common.paperless import (
     is_permanent_paperless_error,
 )
 from common.per_document import WriteBackOutcome
+from common.shutdown import is_shutdown_requested
 from common.tags import (
     clean_pipeline_tags,
     extract_tags,
@@ -270,6 +271,16 @@ class ClassificationProcessor:
         the error has already been recorded — not a swallowed failure.
         """
         if not result or is_empty_classification(result):
+            if is_shutdown_requested():
+                # A shutdown-aborted flex-capacity wait yields the same empty
+                # result as a genuine model failure; error-tagging now would
+                # quarantine a healthy document on a routine deploy. Leave
+                # the queue tag so the next boot re-attempts it (spec D5).
+                log.warning(
+                    "Empty classification during shutdown; leaving document queued",
+                    doc_id=self.document_id,
+                )
+                return None
             log.warning("Classification returned empty result", doc_id=self.document_id)
             finalise_document_with_error(
                 self.paperless_client, self.document_id, current_tags, self.settings
