@@ -4,8 +4,9 @@ The companion to :mod:`test_search_pipeline`.  These exercise the real
 :class:`~search.core.SearchCore` refinement branch end to end against a real
 ``tmp_path`` store: an exploratory ``NeedsMore`` triggers a refined retrieval
 round, the loop runs exactly ``SEARCH_MAX_REFINEMENTS`` passes (bounded by the
-``2 + SEARCH_MAX_REFINEMENTS`` per-query budget), and the refined round's chunks
-merge with the first round's.
+``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` per-query budget, where ``j`` is 1
+when ``SEARCH_GATE_JUDGE`` is on), and the refined round's chunks merge with
+the first round's.
 
 Split from :mod:`test_search_pipeline` for the 500-line ceiling
 (CODE_GUIDELINES §3.1).  Shared store-seeding helpers and the embedding
