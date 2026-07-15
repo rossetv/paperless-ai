@@ -117,10 +117,12 @@ jobs:
       - name: Install project + pip-audit
         # No lockfile in this repo, so audit the actual installed environment
         # (resolved from pyproject) rather than a hashed requirements file.
-        # Upgrade pip first — pip itself ships in the env pip-audit scans and
-        # the GHA-bundled pip has known CVEs the latest release has fixed.
+        # Upgrade pip AND setuptools first — both ship pre-installed in the
+        # GHA Python env pip-audit scans, and the bundled copies routinely
+        # carry known CVEs the latest releases have fixed (pip historically;
+        # setuptools 79.0.1 / PYSEC-2026-3447 red-flagged main on 2026-07-15).
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools
           pip install .
           pip install pip-audit==2.10.1
 
