@@ -112,6 +112,25 @@ class Heartbeat:
                 error_type=type(exc).__name__,
             )
 
+    def touch(self, *, detail: str) -> None:
+        """Refresh detail and freshness without touching the processed count.
+
+        For a secondary writer — the stall ticker — whose ``Heartbeat``
+        instance does not hold the daemon's real running total: ``beat``
+        from it would overwrite the persisted monotonic counter with this
+        instance's own (zero) count. Best-effort, exactly like :meth:`beat`.
+        """
+        try:
+            daemon_status.touch_heartbeat(self._conn, name=self._name, detail=detail)
+        except _HEARTBEAT_WRITE_EXCEPTIONS as exc:
+            # rationale: same best-effort observability boundary as beat().
+            log.warning(
+                "heartbeat.write_failed",
+                daemon=self._name,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
     def beat_idle(self) -> None:
         """Record an idle heartbeat — the daemon has no work this cycle.
 
@@ -178,7 +197,7 @@ def run_stall_ticker(
     in_flight: threading.Event,
     stop: threading.Event,
     interval_seconds: int = DEFAULT_STALL_BEAT_INTERVAL_SECONDS,
-    detail: str = "processing — waiting on a slow LLM call",
+    detail: str = "working — waiting on a slow upstream call",
 ) -> None:
     """Beat while a work cycle is stuck in flight; stay silent otherwise.
 
@@ -207,4 +226,7 @@ def run_stall_ticker(
     interval = max(1, int(interval_seconds))
     while not stop.wait(interval):
         if in_flight.is_set():
-            heartbeat.beat(detail=detail)
+            # touch, never beat: this thread's Heartbeat instance holds no
+            # real running total, and a beat would overwrite the persisted
+            # monotonic processed_count with zero mid-stall.
+            heartbeat.touch(detail=detail)

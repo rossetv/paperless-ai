@@ -88,14 +88,13 @@ def test_status_reports_degraded_when_only_the_search_server_is_alive(
 ) -> None:
     """Worker daemons stopped but the search server alive → 'degraded'.
 
-    The search server heartbeats itself from ``create_app`` (it is, after all,
-    the process serving this request), so the moment the app is built the
-    ``search`` daemon is ``running`` while the three worker daemons that have
-    never beaten remain ``stopped``. The rolled-up verdict is therefore
-    ``degraded``, not ``down`` — ``down`` would require *every* daemon stopped,
-    which can never be observed through a live search server. We record the
-    ``search`` beat explicitly so the assertion does not race the heartbeat
-    thread's first tick.
+    The search server's heartbeat thread is lifespan-owned; this test never
+    enters a lifespan, so no heartbeat thread exists here and the manual
+    ``record_heartbeat`` below is load-bearing — it is the sole reason the
+    ``search`` daemon reads ``running`` while the three worker daemons that
+    have never beaten remain ``stopped``. The rolled-up verdict is therefore
+    ``degraded``, not ``down`` — ``down`` would require *every* daemon
+    stopped, which can never be observed through a live search server.
     """
     _settings, app_db, _reader = index_env
     daemon_status.record_heartbeat(

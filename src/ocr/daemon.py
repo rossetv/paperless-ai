@@ -201,7 +201,7 @@ def main() -> None:
                 Heartbeat(name="ocr", conn=conn),
                 in_flight=poll_in_flight,
                 stop=ticker_stop,
-                detail="processing — waiting on LLM capacity or a slow call",
+                detail="processing — waiting on a slow upstream call",
             )
         finally:
             conn.close()

@@ -202,3 +202,44 @@ def test_run_stall_ticker_exits_promptly_on_stop(conn) -> None:
     assert not ticker.is_alive()
     # Event.wait returns early on set — nowhere near the 60s interval.
     assert time.monotonic() - start < 5
+
+
+def test_run_stall_ticker_never_clobbers_the_processed_count(conn) -> None:
+    """A stall beat leaves the poll loop's monotonic counter untouched.
+
+    Regression: the ticker's own Heartbeat starts at zero; beating through
+    it wrote processed_count=0 over the real total during every stall.
+    """
+    import threading
+
+    from common.heartbeat import Heartbeat, run_stall_ticker
+
+    # The poll loop's heartbeat has processed real work.
+    main_hb = Heartbeat(name="ocr", conn=conn)
+    main_hb.beat(detail="processing 5 document(s)", processed_delta=5)
+
+    ticker_hb = Heartbeat(name="ocr", conn=conn)
+    in_flight = threading.Event()
+    in_flight.set()
+    stop = threading.Event()
+
+    ticker = threading.Thread(
+        target=lambda: run_stall_ticker(
+            ticker_hb, in_flight=in_flight, stop=stop, interval_seconds=1
+        ),
+        daemon=True,
+    )
+    ticker.start()
+    try:
+        for _ in range(40):
+            rows = daemon_status.read_statuses(conn)
+            if rows and rows[0].detail != "processing 5 document(s)":
+                break
+            ticker.join(timeout=0.1)
+    finally:
+        stop.set()
+        ticker.join(timeout=5)
+
+    rows = daemon_status.read_statuses(conn)
+    assert rows[0].detail == "working — waiting on a slow upstream call"
+    assert rows[0].processed_count == 5
