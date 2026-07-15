@@ -44,6 +44,7 @@ CONFIG_KEYS: frozenset[str] = frozenset(
         "SEARCH_ANSWER_PROVIDER",
         "OLLAMA_BASE_URL",
         "OPENAI_API_KEY",
+        "OPENAI_FLEX_TIER",
         "OCR_MODELS",
         "CLASSIFY_MODELS",
         "OCR_REFUSAL_MARKERS",
