@@ -246,13 +246,15 @@ def validate_change_set(
     )
     after = build_settings(merged)  # raises ValueError on a bad value
 
-    # Embedding-coherence guard. EMBEDDING_PROVIDER follows LLM_PROVIDER unless
-    # set explicitly, so flipping the provider silently moves embeddings onto it
-    # and stales every vector. The bundled EMBEDDING_MODEL default is an OpenAI
-    # model name, which an Ollama embedding endpoint cannot serve — saving that
-    # combination would wipe the index (a re-index key changed) and then fail to
-    # re-embed, leaving search permanently broken. Refuse it here so a one-click
-    # provider flip can never destroy the index into a dead state.
+    # Embedding-coherence guard. EMBEDDING_PROVIDER does not follow
+    # LLM_PROVIDER: _resolve_embedding_provider hard-defaults it to "openai"
+    # regardless of the chat provider, so the operator must set it explicitly
+    # to reach "ollama" here. The bundled EMBEDDING_MODEL default is an
+    # OpenAI model name, which an Ollama embedding endpoint cannot serve —
+    # saving EMBEDDING_PROVIDER=ollama without also updating EMBEDDING_MODEL
+    # would wipe the index (a re-index key changed) and then fail to
+    # re-embed, leaving search permanently broken. Refuse it here so that
+    # flip can never destroy the index into a dead state.
     if after.EMBEDDING_PROVIDER == "ollama" and _is_openai_embedding_model(
         after.EMBEDDING_MODEL
     ):
