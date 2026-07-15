@@ -137,16 +137,17 @@ client-level default and every non-flex call keep `REQUEST_TIMEOUT`.
 search, to 10 min); a new `FLEX_TIMEOUT` config knob (a config option for a value with
 exactly one sensible setting today — overengineering smell).
 
-### D7 — Search-stage model dropdown: the 5.6 trio only
+### D7 — Search-stage model dropdown: the 5.6 trio plus the 5.4-era escape hatches
 
-`MODEL_OPTIONS` (used only by the planner/judge/answer selects) becomes
-`gpt-5.6-luna / gpt-5.6-terra / gpt-5.6-sol`. Operator's literal ask; minimal dropdown rot.
-Prod's currently-stored `gpt-5.4-nano`/`-mini` values still render — `SettingsSelectField`
-injects an out-of-list stored value as an extra option — but once changed away, 5.4 models
-can't be re-picked from the UI. Operator accepts.
-**Rejected:** trio + 5.4 escape hatches; trio + all five current options (clutter, keeps
-models nobody recommends). OCR_MODELS / CLASSIFY_MODELS are free-text list controls — no
-dropdown exists there; only their defaults change.
+**Amended 2026-07-15 (operator, post-PR):** originally the trio only ("minimal dropdown
+rot"), with the escape-hatch option explicitly rejected. The operator reversed this with
+new information — 5.6 is markedly more expensive, and they want cheap downgrades pickable
+from the UI. `MODEL_OPTIONS` (used only by the planner/judge/answer selects) is now
+`gpt-5.6-luna / gpt-5.6-terra / gpt-5.6-sol / gpt-5.4-nano / gpt-5.4-mini / gpt-5.4 /
+gpt-5.5`. All seven carry `MODEL_PRICES` rows. `o4-mini` stays out (priced but obsolete;
+nobody recommends it).
+**Still true:** OCR_MODELS / CLASSIFY_MODELS are free-text list controls — no dropdown
+exists there; only their defaults change.
 
 ### D8 — Defaults (the operator's approved configuration)
 
