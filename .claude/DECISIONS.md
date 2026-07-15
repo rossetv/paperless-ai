@@ -42,3 +42,15 @@ documented in `TESTING.md` — the same commit documents them there, fulfilling 
 No gate row was removed or edited — the 10-gate table is untouched. Approved by: human
 (operator, 2026-07-15), per the gate's removal-needs-a-record rule.
 **Affects:** `.claude/GATES.md`, `.claude/docs/TESTING.md`
+
+## 2026-07-15 — Migrate GATES.md to the canonical stanza grammar
+
+**Decision:** Rewrite `GATES.md` from the ad-hoc table format (authored earlier today)
+into the canonical stanza grammar from the config repo's `templates/kb/GATES.md` —
+`### gate: <id>` stanzas with kind/why/added/mandated-by-human fields and fenced
+commands, plus the template's standard anti-cheat and change-control sections.
+**Why:** The kb-gate's push-time validator parses only the canonical grammar; the table
+format read as "no gates declared" and blocked every push. All ten commands are
+unchanged — this is a format migration, not a gate change. Approved by: human
+(operator, 2026-07-15 — "approved", in response to the explicit rewrite proposal).
+**Affects:** `.claude/GATES.md`
