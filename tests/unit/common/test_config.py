@@ -65,7 +65,7 @@ _SIMPLE_DEFAULTS = [
     ("CLASSIFY_MAX_PAGES", 3),
     ("CLASSIFY_TAIL_PAGES", 2),
     ("CLASSIFY_HEADERLESS_CHAR_LIMIT", 15000),
-    ("CLASSIFY_REASONING_EFFORT", "medium"),
+    ("CLASSIFY_REASONING_EFFORT", "low"),
 ]
 
 
@@ -81,8 +81,8 @@ class TestDefaults:
 
     def test_ocr_and_classify_models_default_openai(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
-        assert s.OCR_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
-        assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        assert s.OCR_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
+        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_ocr_refusal_markers_default(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -92,6 +92,10 @@ class TestDefaults:
     def test_classify_pre_tag_id_defaults_to_post_tag_id(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         assert s.CLASSIFY_PRE_TAG_ID == s.POST_TAG_ID
+
+    def test_classify_reasoning_effort_defaults_to_low(self, mocker):
+        settings = _build(mocker, _MINIMAL_ENV)
+        assert settings.CLASSIFY_REASONING_EFFORT == "low"
 
 
 _CUSTOM_ENV_VARS = [
@@ -424,11 +428,12 @@ class TestOcrImageDetail:
 
 class TestOcrReasoningEffort:
     """OCR_REASONING_EFFORT is a validated {none, low, medium, high, xhigh} enum,
-    default medium (the OpenAI model default, so the default is a no-op)."""
+    default none — OCR is perception, not reasoning, and the highest-volume
+    call in the system, so the default spends zero reasoning tokens."""
 
-    def test_defaults_to_medium(self, mocker):
+    def test_defaults_to_none(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
-        assert s.OCR_REASONING_EFFORT == "medium"
+        assert s.OCR_REASONING_EFFORT == "none"
 
     @pytest.mark.parametrize("value", ["none", "low", "medium", "high", "xhigh"])
     def test_accepts_each_allowed_value(self, mocker, value):
@@ -997,7 +1002,7 @@ class TestPerStepProviders:
             {**_MINIMAL_ENV, "OCR_PROVIDER": "ollama", "OLLAMA_BASE_URL": _OLLAMA_URL},
         )
         assert s.OCR_MODELS == ["gemma3:27b", "gemma3:12b"]
-        assert s.CLASSIFY_MODELS == ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+        assert s.CLASSIFY_MODELS == ["gpt-5.6-luna", "gpt-5.6-terra"]
 
     def test_search_model_default_follows_step_provider(self, mocker):
         s = _build(
@@ -1009,7 +1014,7 @@ class TestPerStepProviders:
             },
         )
         assert s.SEARCH_ANSWER_MODEL == "gemma3:27b"
-        assert s.SEARCH_PLANNER_MODEL == "gpt-5.4-mini"
+        assert s.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
 
     def test_invalid_value_rejected_naming_the_key(self, mocker):
         with pytest.raises(ValueError, match="OCR_PROVIDER"):
