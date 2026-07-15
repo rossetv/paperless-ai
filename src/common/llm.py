@@ -441,6 +441,7 @@ class OpenAIChatMixin:
         reasoning_effort: str | None = None,
         response_format: dict[str, object] | None = None,
         timeout: float | None = None,
+        service_tier: str | None = None,
         usage_sink: list[LlmCallUsage] | None = None,
     ) -> str | None:
         """Run one chat completion, falling back through a chain of models.
@@ -456,13 +457,19 @@ class OpenAIChatMixin:
         shared ``@retry`` exponential backoff, the ``llm_limiter`` global
         concurrency limiter, and the per-model parameter-compatibility cache.
 
-        ``reasoning_effort``, ``response_format``, and ``timeout`` are optional
-        and additive: each is forwarded to the model only when non-``None``.
-        Every attempt is routed through :meth:`_create_with_compat`, so a model
-        that rejects any of these parameters has it stripped-and-cached rather
-        than failing the whole call. With none supplied the outgoing request is
-        exactly ``{model, messages}`` and the behaviour is identical to the
+        ``reasoning_effort``, ``response_format``, ``timeout``, and
+        ``service_tier`` are optional and additive: each is forwarded to the
+        model only when non-``None``. Every attempt is routed through
+        :meth:`_create_with_compat`, so a model that rejects any of these
+        parameters has it stripped-and-cached rather than failing the whole
+        call. With none supplied the outgoing request is exactly
+        ``{model, messages}`` and the behaviour is identical to the
         pre-extension direct path (pinned by the no-arg characterisation test).
+        The three search stages always pass ``service_tier="default"`` when
+        their provider is OpenAI — never ``"flex"`` there, since a human is
+        waiting on the response (spec D3/D4) — and omit it otherwise; an
+        explicit tier also dodges a live-verified 401 on tierless requests
+        (2026-07-15).
 
         A model that still fails after retries surfaces an ``openai.APIError``
         subclass — this covers *both* a retry-exhausted retryable error and a
@@ -485,6 +492,11 @@ class OpenAIChatMixin:
                 ``json_schema`` block); omitted when ``None``.
             timeout: Optional per-call timeout in seconds; omitted when ``None``
                 so the SDK/client default applies (CODE_GUIDELINES §8.7).
+            service_tier: Optional OpenAI service tier (e.g. ``"default"``,
+                ``"flex"``); omitted when ``None``. The search stages always
+                pass ``"default"`` explicitly when their provider is OpenAI —
+                never ``"flex"``, since a human is waiting — and omit it for
+                non-OpenAI providers.
             usage_sink: Optional list to which a :class:`LlmCallUsage` record is
                 appended on each successful call. Absent usage fields default to
                 zero (guarding Ollama/older providers that omit them). When
@@ -499,6 +511,7 @@ class OpenAIChatMixin:
             reasoning_effort=reasoning_effort,
             response_format=response_format,
             timeout=timeout,
+            service_tier=service_tier,
         )
         for model in models:
             params: dict[str, object] = {
@@ -537,12 +550,14 @@ class OpenAIChatMixin:
         reasoning_effort: str | None,
         response_format: dict[str, object] | None,
         timeout: float | None,
+        service_tier: str | None = None,
     ) -> dict[str, object]:
         """Build the dict of optional completion params, dropping every ``None``."""
         candidates: dict[str, object | None] = {
             "reasoning_effort": reasoning_effort,
             "response_format": response_format,
             "timeout": timeout,
+            "service_tier": service_tier,
         }
         return {key: value for key, value in candidates.items() if value is not None}
 

@@ -313,6 +313,41 @@ def test_judge_usage_sink_receives_token_record(judge_with_response) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Service-tier forwarding tests
+# ---------------------------------------------------------------------------
+
+
+class TestJudgeServiceTierForwarded:
+    """The judge pins the standard service tier on OpenAI, omits it elsewhere."""
+
+    def test_judge_forwards_default_service_tier_for_openai(self) -> None:
+        settings = make_search_settings(SEARCH_JUDGE_PROVIDER="openai")
+        judge = RelevanceJudge(settings)
+        judge._create_completion = MagicMock(  # type: ignore[method-assign]
+            return_value=make_chat_completion(
+                '{"verdicts": [{"document_id": 1, "keep": true, "reason": ""}]}'
+            )
+        )
+        judge.judge("warranty?", [JudgeCandidate(1, "boiler warranty")])
+
+        call = judge._create_completion.call_args  # type: ignore[attr-defined]
+        assert call.kwargs["service_tier"] == "default"
+
+    def test_judge_omits_service_tier_for_ollama(self) -> None:
+        settings = make_search_settings(SEARCH_JUDGE_PROVIDER="ollama")
+        judge = RelevanceJudge(settings)
+        judge._create_completion = MagicMock(  # type: ignore[method-assign]
+            return_value=make_chat_completion(
+                '{"verdicts": [{"document_id": 1, "keep": true, "reason": ""}]}'
+            )
+        )
+        judge.judge("warranty?", [JudgeCandidate(1, "boiler warranty")])
+
+        call = judge._create_completion.call_args  # type: ignore[attr-defined]
+        assert "service_tier" not in call.kwargs
+
+
+# ---------------------------------------------------------------------------
 # Identity and date forwarding tests
 # ---------------------------------------------------------------------------
 
