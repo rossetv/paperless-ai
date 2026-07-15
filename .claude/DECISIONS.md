@@ -33,3 +33,12 @@ but the live API rejects it. Batch/Responses/embedding changes were weighed
 and rejected — see spec sections D3/D10 for the trade-offs considered.
 **Spec:** `.claude/specs/20260715-flex-and-56-models.md`
 **Affects:** common/config, common/llm, ocr, classifier, search, web settings
+
+## 2026-07-15 — Remove GATES.md's fulfilled reconciliation note
+
+**Decision:** Delete the three-line note in `GATES.md` stating gates 9/10 were not yet
+documented in `TESTING.md` — the same commit documents them there, fulfilling the note.
+**Why:** The note was a self-scheduled reminder, not a gate; once fulfilled it would lie.
+No gate row was removed or edited — the 10-gate table is untouched. Approved by: human
+(operator, 2026-07-15), per the gate's removal-needs-a-record rule.
+**Affects:** `.claude/GATES.md`, `.claude/docs/TESTING.md`

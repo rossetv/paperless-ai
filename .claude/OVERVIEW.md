@@ -67,19 +67,20 @@ docs/            # human-audience prose docs (read-only for Claude)
 
 | Constant | Default | Source |
 |----------|---------|--------|
-| `APP_DB_PATH` | `/data/app.db` (env-only) | `src/common/config/_settings.py:75` |
-| `INDEX_DB_PATH` | `/data/index.db` (env-only) | `src/common/config/_settings.py:71` |
-| `PAPERLESS_URL` | `http://paperless:8000` | `src/common/config/_settings.py:78` |
-| `PRE_TAG_ID` / `POST_TAG_ID` / `ERROR_TAG_ID` | 443 / 444 / 552 | `src/common/config/_settings.py:672,528,684` |
-| `POLL_INTERVAL` | 15 s | `src/common/config/_settings.py:686` |
-| `RECONCILE_INTERVAL` / `DELETION_SWEEP_INTERVAL` | 300 s / 3600 s | `src/common/config/_settings.py:748,751` |
-| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 2000 / 256 chars | `src/common/config/_settings.py:530`, `_parsers.py:312` |
-| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `text-embedding-3-small` / 1536 | `src/common/config/_settings.py:738,741` |
-| `DOCUMENT_WORKERS` / `PAGE_WORKERS` | 4 / 8 | `src/common/config/_settings.py:711,710` |
-| `LLM_MAX_CONCURRENT` / `SEARCH_MAX_CONCURRENT` | 4 / 4 (0 = unbounded) | `src/common/config/_settings.py:698,775` |
-| `SEARCH_SERVER_HOST` / `SEARCH_SERVER_PORT` | `0.0.0.0` / 8080 | `src/common/config/_settings.py:763`, `_parsers.py:392` |
-| `SEARCH_TOP_K` / `SEARCH_MAX_REFINEMENTS` | 10 / 1 | `src/common/config/_settings.py:534`, `_parsers.py:329` |
-| `REQUEST_TIMEOUT` / `MAX_RETRIES` | 180 s / 3 | `src/common/config/_settings.py:696,689` |
-| `REFUSAL_MARK` | `CHATGPT REFUSED TO TRANSCRIBE` (fixed, not configurable) | `src/common/config/_settings.py:82` |
-| `SCHEMA_VERSION` (`index.db`) | 2 | `src/store/schema.py:23` |
-| `SCHEMA_VERSION` (`app.db`) | 8 | `src/appdb/schema.py:25` |
+| `APP_DB_PATH` | `/data/app.db` (env-only) | `src/common/config/_settings.py` (`_DEFAULT_APP_DB_PATH`) |
+| `INDEX_DB_PATH` | `/data/index.db` (env-only) | `src/common/config/_settings.py` (`_DEFAULT_INDEX_DB_PATH`) |
+| `PAPERLESS_URL` | `http://paperless:8000` | `src/common/config/_settings.py` (`_DEFAULT_PAPERLESS_URL`) |
+| `PRE_TAG_ID` / `POST_TAG_ID` / `ERROR_TAG_ID` | 443 / 444 / 552 | `src/common/config/_settings.py` (`_build_settings`) |
+| `POLL_INTERVAL` | 15 s | `src/common/config/_settings.py` (`_build_settings`, `POLL_INTERVAL` field) |
+| `RECONCILE_INTERVAL` / `DELETION_SWEEP_INTERVAL` | 300 s / 3600 s | `src/common/config/_settings.py` (`_build_settings`) |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 2000 / 256 chars | `src/common/config/_settings.py` (`_build_settings`), `_parsers.py` (`_resolve_chunk_overlap`) |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `text-embedding-3-small` / 1536 | `src/common/config/_settings.py` (`_build_settings`) |
+| `DOCUMENT_WORKERS` / `PAGE_WORKERS` | 4 / 8 | `src/common/config/_settings.py` (`_build_settings`) |
+| `LLM_MAX_CONCURRENT` / `SEARCH_MAX_CONCURRENT` | 4 / 4 (0 = unbounded) | `src/common/config/_settings.py` (`_build_settings`) |
+| `SEARCH_SERVER_HOST` / `SEARCH_SERVER_PORT` | `0.0.0.0` / 8080 | `src/common/config/_settings.py` (`_build_settings`), `_parsers.py` (`_resolve_server_port`) |
+| `SEARCH_TOP_K` / `SEARCH_MAX_REFINEMENTS` | 10 / 1 | `src/common/config/_settings.py` (`_build_settings`), `_parsers.py` (`_resolve_search_max_refinements`) |
+| `REQUEST_TIMEOUT` / `MAX_RETRIES` | 180 s / 3 | `src/common/config/_settings.py` (`_build_settings`) |
+| `REFUSAL_MARK` | `CHATGPT REFUSED TO TRANSCRIBE` (fixed, not configurable) | `src/common/config/_settings.py` (`_REFUSAL_MARK`) |
+| `OPENAI_FLEX_TIER` | `true` — OpenAI Flex service tier for OCR/classifier | `src/common/config/_settings.py` (`OPENAI_FLEX_TIER` field) |
+| `SCHEMA_VERSION` (`index.db`) | 2 | `src/store/schema.py` (`SCHEMA_VERSION`) |
+| `SCHEMA_VERSION` (`app.db`) | 8 | `src/appdb/schema.py` (`SCHEMA_VERSION`) |

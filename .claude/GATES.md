@@ -28,6 +28,3 @@ packages): `python -m pytest -q -n auto --cov=common --cov=ocr --cov=classifier
 
 Known skip: 6 poppler-dependent OCR integration tests skip silently without
 `pdftoppm` on PATH (`brew install poppler`).
-
-Gates 9 and 10 are not yet documented in `.claude/docs/TESTING.md` —
-kb-updater will reconcile that doc on the next push.

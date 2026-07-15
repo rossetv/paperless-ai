@@ -17,9 +17,9 @@ The four document/query pipelines, their stages, and where each one gives up.
 | Select | `common.document_iter.iter_documents_by_pipeline_tag` over `PRE_TAG_ID`; skips non-int ids, already-done docs (stripping their stale queue tag) and docs already claimed |
 | Claim | `common.claims.claim_processing_tag` (`OCR_PROCESSING_TAG_ID`) — refresh → add → re-read and verify. Best-effort, not atomic |
 | Rasterise | `ocr.image_converter.open_page_source`: PDF (substring test `"pdf" in content_type.lower()`) → pdf2image/poppler `paths_only=True` into a temp dir at `size=OCR_MAX_SIDE` (fmt PNG, `dpi=OCR_DPI`, `timeout=REQUEST_TIMEOUT`); multi-frame TIFF → per-frame temp PNGs; single images in memory. Any poppler failure or undecodable bytes → `ImageConversionError` → error tag |
-| Transcribe | `ThreadPoolExecutor(PAGE_WORKERS)`; per page, `unique_models(OCR_MODELS)` in order — an API error *or* a refusal advances to the next model; the whole chain failing yields `REFUSAL_MARK` |
+| Transcribe | `ThreadPoolExecutor(PAGE_WORKERS)`; per page, `unique_models(OCR_MODELS)` in order — an API error *or* a refusal advances to the next model; the whole chain failing yields `REFUSAL_MARK`. On the OpenAI Flex tier (`OPENAI_FLEX_TIER`, default on), a capacity `RateLimitError` does **not** advance the chain — it retries the same model indefinitely (backoff capped at 60s) instead, since a 429 there means "no spare capacity", not "broken model" |
 | Assemble | `ocr.text_assembly.assemble_full_text` — blank pages skipped, `--- Page N ---` headers when >1 page, `Transcribed by model:` footer |
-| Write back | `update_document` + tag swap `PRE_TAG_ID` → `POST_TAG_ID`; error/refusal → `ERROR_TAG_ID` |
+| Write back | `update_document` + tag swap `PRE_TAG_ID` → `POST_TAG_ID`; error/refusal → `ERROR_TAG_ID` — **unless** a shutdown is in progress, in which case the document keeps its queue tag and is re-attempted next boot instead of being quarantined (a shutdown-aborted flex wait looks identical to a genuine refusal) |
 | Memory bound | At most ~`PAGE_WORKERS` page bitmaps resident; pages are loaded one at a time from temp files and the temp file is deleted as it is consumed |
 
 ### 2. Classification (`src/classifier/`)
@@ -31,7 +31,7 @@ The four document/query pipelines, their stages, and where each one gives up.
 | Truncate | `content_prep`: page-header slicing (head `CLASSIFY_MAX_PAGES` + `CLASSIFY_TAIL_PAGES`; no `--- Page N ---` headers ⇒ falls back to `CLASSIFY_HEADERLESS_CHAR_LIMIT`), then a hard `CLASSIFY_MAX_CHARS` ceiling — always preserving the `Transcribed by model:` footer |
 | Prompt | Stable prefix (tag-limit guidance + the three taxonomy lists) then the variable suffix (truncation note + nonce-fenced document text). The prefix is byte-identical across a batch (it interpolates only `CLASSIFY_TAG_LIMIT` and the taxonomy snapshot), for OpenAI prompt caching |
 | Parse | `result.parse_classification_response` — coerces string `tags`, nulls and non-string scalars to safe values |
-| Gate | `is_empty_classification` or a generic/empty `document_type` ⇒ error-tag (returns `None`, so the circuit breaker is untouched) |
+| Gate | `is_empty_classification` or a generic/empty `document_type` ⇒ error-tag (returns `None`, so the circuit breaker is untouched) — **unless** a shutdown is in progress, in which case the document keeps its queue tag for the next boot instead (same shutdown carve-out as OCR; also runs on Flex by default with the same patient capacity-429 retry) |
 | Tags | dedupe → blacklist (`{ai, error, indexed, new}`) → drop tags equal to correspondent/type/person → **required** tags (OCR model tags, year tag, `CLASSIFY_DEFAULT_COUNTRY_TAG`) always added and never counted against `CLASSIFY_TAG_LIMIT`; optional LLM tags trimmed. Everything lowercased |
 | Resolve | `TaxonomyCache` (RLock) — normalised lookup, POST-create on miss, post-create re-check. Correspondents match by substring; types and tags exactly |
 | Write back | `update_document_metadata` + tag swap |
@@ -78,7 +78,7 @@ The four document/query pipelines, their stages, and where each one gives up.
 | Real scans never hit the blank-page short-circuit | `is_blank` counts only pixel-perfect 255 white; a 250–254 background is not blank | Expected — only synthetic pages skip |
 | A document with a genuine `[OCR ERROR]` string in its text is error-tagged | The marker is matched as a plain substring of the assembled text | Known trap |
 | The classifier error-tags everything and nothing halts | Result-quality rejections return `None`, so the circuit breaker never sees them — only Paperless write failures can halt a daemon | Check the model/prompt, not the breaker |
-| A "manual reconcile" did not force a deletion sweep | A sentinel that lands during the inter-cycle *wait* is consumed by the wait and its return value discarded; the next cycle sees no sentinel. The sync still runs | Known gap (`src/indexer/daemon/_loop.py:170-174`) — the periodic sweep still fires on `DELETION_SWEEP_INTERVAL` |
+| A "manual reconcile" did not force a deletion sweep | A sentinel that lands during the inter-cycle *wait* is consumed by the wait and its return value discarded; the next cycle sees no sentinel. The sync still runs | Known gap (`src/indexer/daemon/_loop.py::_run_loop`) — the periodic sweep still fires on `DELETION_SWEEP_INTERVAL` |
 | A cache hit still debits an API key's quota | The cached result carries the *original* token totals, and `/api/search` records `result.cost.tokens.total` unconditionally — no cache-hit flag exists on the result to check | Known — see [modules/search-pipeline](modules/search-pipeline.md) |
 | Search misses a document that exists in Paperless | It was skipped (empty content / error tag), dead-lettered after 5 failures, or the index has not reconciled since it changed | `GET /api/index/failed`, `GET /api/stats` |
 
