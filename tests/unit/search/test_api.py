@@ -436,6 +436,7 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
 
     # Force the env default to a different, wrong path: if the closure still
     # read the environment, the assertion below would catch it pointing here.
+    threads_before = set(threading.enumerate())
     with (
         patch("search.api.connect_app_db", side_effect=_record_connect),
         patch("search.api.ensure_app_db_schema"),
@@ -445,10 +446,15 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
         patch.dict("os.environ", {"APP_DB_PATH": "/data/wrong.db"}),
     ):
         _start_search_heartbeat(settings)
-        # The heartbeat runs on a daemon thread; join the named worker so the
-        # connect has happened before we assert (bounded — the patched ticker
-        # returns at once).
-        for thread in threading.enumerate():
+        # The heartbeat runs on a daemon thread; join only the worker this
+        # call just started (bounded — the patched ticker returns at once).
+        # Other tests/processes leak their own "search-heartbeat" threads
+        # (search.api._start_search_heartbeat is never stopped by any
+        # teardown path) that live for the rest of the process and never
+        # satisfy should_stop(); matching on thread.name alone would join
+        # every one of those too, burning the full 5s timeout on each.
+        new_threads = set(threading.enumerate()) - threads_before
+        for thread in new_threads:
             if thread.name == "search-heartbeat":
                 thread.join(timeout=5)
 
