@@ -31,24 +31,24 @@ import { searchStageFields } from './helpers';
 
 /** A small fixed model-identifier list, reused by the planner/answer/judge selects. */
 export const MODEL_OPTIONS = [
-  { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
-  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-  { value: 'gpt-5.4', label: 'gpt-5.4' },
-  { value: 'gpt-5.5', label: 'gpt-5.5' },
-  { value: 'o4-mini', label: 'o4-mini' },
+  { value: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
+  { value: 'gpt-5.6-terra', label: 'gpt-5.6-terra' },
+  { value: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
 ];
 
 /**
- * OpenAI reasoning-effort tiers (the SDK's `ReasoningEffort` literal). Higher
- * tiers spend more reasoning tokens for better quality; OpenAI-only — the value
- * is ignored when the provider is Ollama. Reused by the OCR, classifier, and
- * search planner/answer/judge reasoning selects.
+ * OpenAI reasoning-effort tiers, matching the live API's supported set
+ * (verified 2026-07-15; the SDK's `ReasoningEffort` literal lags it). Higher
+ * tiers spend more reasoning tokens for better quality; OpenAI-only — the
+ * value is ignored when the provider is Ollama. Reused by the OCR,
+ * classifier, and search planner/answer/judge reasoning selects.
  */
 export const REASONING_EFFORT_OPTIONS = [
-  { value: 'minimal', label: 'Minimal' },
+  { value: 'none', label: 'None' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'XHigh' },
 ];
 
 /**
@@ -120,6 +120,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             hint: 'Required whenever OpenAI handles chat or embeddings.',
             control: { kind: 'secret' },
             secret: true,
+          },
+          {
+            key: 'OPENAI_FLEX_TIER',
+            label: 'Flex processing',
+            hint: 'Run OCR and classification on the ~50%-cheaper Flex tier. Slower; waits out capacity shortages. Search always uses the standard tier.',
+            control: { kind: 'toggle' },
           },
         ],
       },

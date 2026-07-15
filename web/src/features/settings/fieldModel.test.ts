@@ -1,6 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, test, expect } from 'vitest';
 import {
   SETTINGS_SECTIONS,
+  MODEL_OPTIONS,
+  REASONING_EFFORT_OPTIONS,
   allFieldKeys,
   fieldByKey,
   parseValue,
@@ -325,5 +327,30 @@ describe('settings field model', () => {
 
   it('allFieldKeys includes EMBEDDING_PROVIDER', () => {
     expect(allFieldKeys()).toContain('EMBEDDING_PROVIDER');
+  });
+
+  // ── GPT-5.6 / live reasoning-effort set / flex tier toggle ────────────────
+
+  test('MODEL_OPTIONS is exactly the gpt-5.6 family', () => {
+    expect(MODEL_OPTIONS.map((o) => o.value)).toEqual([
+      'gpt-5.6-luna',
+      'gpt-5.6-terra',
+      'gpt-5.6-sol',
+    ]);
+  });
+
+  test('REASONING_EFFORT_OPTIONS matches the live OpenAI effort set', () => {
+    expect(REASONING_EFFORT_OPTIONS.map((o) => o.value)).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+  });
+
+  test('OPENAI_FLEX_TIER renders as a toggle in the OpenAI connections group', () => {
+    const field = fieldByKey('OPENAI_FLEX_TIER');
+    expect(field?.control.kind).toBe('toggle');
   });
 });
