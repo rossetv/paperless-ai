@@ -115,7 +115,14 @@ New semantics, scoped to **flex-tier calls only**: on `openai.RateLimitError`, r
 model indefinitely with exponential backoff capped at 60s, honouring daemon shutdown so the
 process can still stop promptly. No model fallback on 429 (capacity shortage ≠ broken model),
 no error tag, per-page work preserved. Every other error class keeps today's behaviour
-(retry budget → fallback chain → error tag). A worker thread staying occupied during a
+(retry budget → fallback chain → error tag). Two carve-outs, added at the final review gate:
+a 429 whose code is `insufficient_quota` (billing exhausted, not capacity) is terminal even
+on flex — waiting cannot fix an empty account and would freeze the worker invisibly; and a
+shutdown-aborted wait must **not** error-tag the in-flight document — the workers skip
+`finalise_document_with_error` while shutdown is in progress, so the document keeps its
+queue tag and the next boot re-attempts it. Without that guard, every deploy coinciding
+with a capacity dip would quietly quarantine whatever was in flight — the exact failure
+this decision exists to prevent. A worker thread staying occupied during a
 capacity outage is accepted — these are background daemons; the queue would stall either way.
 **Rejected:** bounded retry (~15 min) then requeue-untagged (frees threads but re-OCRs — and
 re-bills — the document's already-completed pages on every cycle); requeue-only (same

@@ -223,6 +223,24 @@ class TestProcessErrorPaths:
         )
         assert 552 in tags  # ERROR_TAG_ID
 
+    @patch("classifier.worker.is_shutdown_requested", return_value=True)
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_none_result_during_shutdown_leaves_document_queued(
+        self, mock_release, mock_claim, mock_shutdown
+    ):
+        doc = make_doc_with_content("valid content")
+        proc = make_processor(doc=doc)
+        proc.paperless_client.get_document.return_value = doc
+        proc.classifier.classify_text.return_value = (None, "")
+
+        proc.process()
+
+        # A shutdown-aborted flex-capacity wait yields the same empty result
+        # as a genuine failure; the document must NOT be error-tagged — it
+        # keeps its queue tag and the next boot re-attempts it (spec D5).
+        proc.paperless_client.update_document_metadata.assert_not_called()
+
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_empty_fields_result_finalises_with_error(self, mock_release, mock_claim):

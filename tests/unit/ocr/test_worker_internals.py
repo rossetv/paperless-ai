@@ -145,6 +145,24 @@ class TestUpdatePaperlessDocumentErrors:
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
 
+    @patch("ocr.worker.is_shutdown_requested", return_value=True)
+    @patch("ocr.worker.get_latest_tags", return_value={443})
+    @patch("common.tags.clean_pipeline_tags", return_value=set())
+    def test_error_content_during_shutdown_leaves_document_queued(
+        self, mock_clean, mock_get_tags, mock_shutdown
+    ):
+        settings = make_settings_obj(ERROR_TAG_ID=552)
+        paperless = make_mock_paperless()
+        proc = make_processor(paperless=paperless, settings=settings)
+
+        outcome = proc._update_paperless_document("   ", set())
+
+        # A shutdown-aborted flex-capacity wait poisons page results with the
+        # refusal sentinel; the document must NOT be error-tagged — it keeps
+        # its queue tag and the next boot re-attempts it (spec D5).
+        assert outcome is None
+        paperless.update_document.assert_not_called()
+
     @patch("ocr.worker.get_latest_tags", return_value={443})
     @patch("common.tags.clean_pipeline_tags", return_value=set())
     def test_redacted_marker_in_text_marks_error(self, mock_clean, mock_get_tags):
