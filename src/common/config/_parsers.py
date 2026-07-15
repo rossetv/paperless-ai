@@ -15,6 +15,10 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlparse
 
+import structlog
+
+log = structlog.get_logger(__name__)
+
 # Default Ollama base URL, used when LLM_PROVIDER=ollama and OLLAMA_BASE_URL is
 # unset. Lives here because the provider-default resolver in _settings imports
 # it; kept beside the parsers that share the "coded default" role.
@@ -242,12 +246,18 @@ def _resolve_ocr_image_detail(
     return detail  # type: ignore[return-value]
 
 
-# Allowed reasoning-effort values. Matches the installed OpenAI SDK's
-# ``ReasoningEffort`` literal (openai 1.109.1,
-# openai/types/shared/reasoning_effort.py): all four of minimal/low/medium/high.
-# "none" is intentionally excluded — it is not in that literal.
+# Allowed reasoning-effort values. Matches the live OpenAI API (verified
+# 2026-07-15 with one test call per value against gpt-5.6-sol/-terra/-luna and
+# gpt-5.4-mini): every current model reports supported values
+# none/low/medium/high/xhigh. "minimal" is gone from every current model and
+# is coerced to "none" below for configs saved before this change. "max" is
+# deliberately absent: the docs' model-index chips list it but the live API
+# rejects it on every 5.6 model, and a rejected effort gets stripped by the
+# compat layer so the model silently runs at its own default ("medium") —
+# more expensive than the operator asked for. Do not add values from docs
+# alone; verify against the live API first.
 _REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(
-    {"minimal", "low", "medium", "high"}
+    {"none", "low", "medium", "high", "xhigh"}
 )
 
 
@@ -258,7 +268,7 @@ def _resolve_reasoning_effort(
 
     Shared by OCR, classify, and search-stage resolvers. ``medium`` is the
     models' own default effort, so the default is a deliberate zero-cost no-op:
-    the operator tunes *down* (to ``low`` / ``minimal``) per stage to capture
+    the operator tunes *down* (to ``"none"`` / ``"low"``) per stage to capture
     the saving. A model that does not accept the parameter has it stripped and
     cached by the shared adaptive-compat layer rather than failing the call
     (foundation-llm-plumbing-design §4.1, spec §4.8).
@@ -273,6 +283,18 @@ def _resolve_reasoning_effort(
         default: The coded default effort (``"medium"`` unless specified).
     """
     effort = source.get(var_name, default).strip().lower()
+    if effort == "minimal":
+        # Legacy tier removed by OpenAI (verified 2026-07-15). Validation
+        # fails closed at daemon startup AND on every Settings save, so
+        # raising here would brick a stored config the UI could no longer
+        # edit. "none" is the nearest current tier — minimal sat below "low"
+        # on the old scale.
+        log.warning(
+            "config.reasoning_effort_minimal_coerced",
+            var_name=var_name,
+            coerced_to="none",
+        )
+        effort = "none"
     if effort not in _REASONING_EFFORT_CHOICES:
         raise ValueError(
             f"{var_name} must be one of "
@@ -283,12 +305,12 @@ def _resolve_reasoning_effort(
 
 def _resolve_ocr_reasoning_effort(
     source: Mapping[str, str],
-) -> Literal["minimal", "low", "medium", "high"]:
+) -> Literal["none", "low", "medium", "high", "xhigh"]:
     """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``medium``).
 
     ``medium`` is the models' own default effort, keeping the OCR request
     behaviourally identical to before this setting existed. An operator opts
-    into the cheaper ``minimal`` / ``low`` tiers explicitly to cut the
+    into the cheaper ``none`` / ``low`` tiers explicitly to cut the
     reasoning-token premium on the highest-volume call.
     """
     # rationale: validated by shared helper; mypy cannot narrow `str` → `Literal[...]`.

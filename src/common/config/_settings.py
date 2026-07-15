@@ -198,7 +198,7 @@ class Settings:
     OCR_DPI: int
     OCR_MAX_SIDE: int
     OCR_IMAGE_DETAIL: Literal["low", "high", "auto"]
-    OCR_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"]
+    OCR_REASONING_EFFORT: Literal["none", "low", "medium", "high", "xhigh"]
     PAGE_WORKERS: int
     DOCUMENT_WORKERS: int
 
@@ -309,7 +309,7 @@ class Settings:
     provider (``gpt-5.4-mini`` / ``gemma3:12b``); set independently to run the
     judge on a cheaper or sharper model than the planner."""
     SEARCH_JUDGE_REASONING_EFFORT: str
-    """Reasoning effort for the judge (``minimal``/``low``/``medium``/``high``).
+    """Reasoning effort for the judge (``none``/``low``/``medium``/``high``/``xhigh``).
     Defaults to ``low`` — a coarse on-topic classification that does not need
     deep reasoning; raise it if the judge bails or filters too aggressively."""
     # Fail-fast gate knobs (search fail-fast spec §3)

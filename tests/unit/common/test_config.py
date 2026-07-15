@@ -118,9 +118,9 @@ _CUSTOM_ENV_VARS = [
     ("CLASSIFY_HEADERLESS_CHAR_LIMIT", "8000", "CLASSIFY_HEADERLESS_CHAR_LIMIT", 8000),
     ("CLASSIFY_REASONING_EFFORT", "high", "CLASSIFY_REASONING_EFFORT", "high"),
     ("CLASSIFY_REASONING_EFFORT", "low", "CLASSIFY_REASONING_EFFORT", "low"),
-    ("CLASSIFY_REASONING_EFFORT", "minimal", "CLASSIFY_REASONING_EFFORT", "minimal"),
+    ("CLASSIFY_REASONING_EFFORT", "minimal", "CLASSIFY_REASONING_EFFORT", "none"),
     ("CLASSIFY_REASONING_EFFORT", "MEDIUM", "CLASSIFY_REASONING_EFFORT", "medium"),
-    ("CLASSIFY_REASONING_EFFORT", " minimal ", "CLASSIFY_REASONING_EFFORT", "minimal"),
+    ("CLASSIFY_REASONING_EFFORT", " minimal ", "CLASSIFY_REASONING_EFFORT", "none"),
     ("ERROR_TAG_ID", "999", "ERROR_TAG_ID", 999),
     ("OCR_PROCESSING_TAG_ID", "77", "OCR_PROCESSING_TAG_ID", 77),
     ("CLASSIFY_PRE_TAG_ID", "555", "CLASSIFY_PRE_TAG_ID", 555),
@@ -334,12 +334,18 @@ class TestValidation:
         with pytest.raises(ValueError, match="LOG_FORMAT must be"):
             _build(mocker, {**_MINIMAL_ENV, "LOG_FORMAT": "xml"})
 
-    @pytest.mark.parametrize("value", ["none", "xhigh", ""])
+    @pytest.mark.parametrize("value", ["max", "medium-rare", ""])
     def test_invalid_reasoning_effort_raises(self, mocker, value):
         with pytest.raises(
             ValueError, match="CLASSIFY_REASONING_EFFORT must be one of"
         ):
             _build(mocker, {**_MINIMAL_ENV, "CLASSIFY_REASONING_EFFORT": value})
+
+    def test_minimal_coerces_for_classify_too(self, mocker):
+        settings = _build(
+            mocker, {**_MINIMAL_ENV, "CLASSIFY_REASONING_EFFORT": "minimal"}
+        )
+        assert settings.CLASSIFY_REASONING_EFFORT == "none"
 
     @pytest.mark.parametrize("value", ["0", "-1"])
     def test_max_retries_invalid_raises(self, mocker, value):
@@ -417,14 +423,14 @@ class TestOcrImageDetail:
 
 
 class TestOcrReasoningEffort:
-    """OCR_REASONING_EFFORT is a validated {minimal, low, medium, high} enum,
+    """OCR_REASONING_EFFORT is a validated {none, low, medium, high, xhigh} enum,
     default medium (the OpenAI model default, so the default is a no-op)."""
 
     def test_defaults_to_medium(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         assert s.OCR_REASONING_EFFORT == "medium"
 
-    @pytest.mark.parametrize("value", ["minimal", "low", "medium", "high"])
+    @pytest.mark.parametrize("value", ["none", "low", "medium", "high", "xhigh"])
     def test_accepts_each_allowed_value(self, mocker, value):
         s = _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": value})
         assert s.OCR_REASONING_EFFORT == value
@@ -432,6 +438,10 @@ class TestOcrReasoningEffort:
     def test_rejects_unknown_value(self, mocker):
         with pytest.raises(ValueError, match="OCR_REASONING_EFFORT must be"):
             _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": "ludicrous"})
+
+    def test_minimal_coerces_to_none_with_warning(self, mocker):
+        settings = _build(mocker, {**_MINIMAL_ENV, "OCR_REASONING_EFFORT": "minimal"})
+        assert settings.OCR_REASONING_EFFORT == "none"
 
 
 _CLAMPED_TO_ONE = [
