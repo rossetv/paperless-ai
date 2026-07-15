@@ -331,11 +331,15 @@ describe('settings field model', () => {
 
   // ── GPT-5.6 / live reasoning-effort set / flex tier toggle ────────────────
 
-  test('MODEL_OPTIONS is exactly the gpt-5.6 family', () => {
+  test('MODEL_OPTIONS is the gpt-5.6 family plus the 5.4-era escape hatches', () => {
     expect(MODEL_OPTIONS.map((o) => o.value)).toEqual([
       'gpt-5.6-luna',
       'gpt-5.6-terra',
       'gpt-5.6-sol',
+      'gpt-5.4-nano',
+      'gpt-5.4-mini',
+      'gpt-5.4',
+      'gpt-5.5',
     ]);
   });
 

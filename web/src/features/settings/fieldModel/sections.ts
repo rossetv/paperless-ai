@@ -29,11 +29,19 @@ import { searchStageFields } from './helpers';
 // Shared option lists
 // ---------------------------------------------------------------------------
 
-/** A small fixed model-identifier list, reused by the planner/answer/judge selects. */
+/**
+ * A small fixed model-identifier list, reused by the planner/answer/judge
+ * selects. The 5.6 family leads (current defaults); the cheaper 5.4-era
+ * models stay selectable as cost escape hatches — 5.6 is markedly dearer.
+ */
 export const MODEL_OPTIONS = [
   { value: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
   { value: 'gpt-5.6-terra', label: 'gpt-5.6-terra' },
   { value: 'gpt-5.6-sol', label: 'gpt-5.6-sol' },
+  { value: 'gpt-5.4-nano', label: 'gpt-5.4-nano' },
+  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+  { value: 'gpt-5.4', label: 'gpt-5.4' },
+  { value: 'gpt-5.5', label: 'gpt-5.5' },
 ];
 
 /**
