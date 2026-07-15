@@ -23,7 +23,7 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | one image, four processes; CI → Docker Hub | 2026-07-14 @ 74d8577 |
 | [CONFIGURATION](docs/CONFIGURATION.md) | config-in-DB, precedence, hot-load, defaults | 2026-07-15 @ 538cb86 |
 | [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-07-15 @ 538cb86 |
-| [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-07-14 @ 74d8577 |
+| [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-07-15 @ dc66057 |
 | [API](docs/API.md) | REST + MCP + NDJSON surface and status mapping | 2026-07-14 @ 74d8577 |
 | [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-07-15 @ 538cb86 |
 | [GLOSSARY](docs/GLOSSARY.md) | project vocabulary | 2026-07-14 @ 74d8577 |

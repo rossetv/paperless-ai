@@ -62,10 +62,10 @@ CSRF defence is the `SameSite=Strict` cookie — there is no CSRF token (`src/se
 
 | Gate | Command / fact | Source |
 |------|----------------|--------|
-| Static analysis | `bandit -r src/ -ll -f txt` (MEDIUM+) | `.github/workflows/ci.yml:99` |
-| Python deps | `pip-audit` | `.github/workflows/ci.yml:128` |
-| JS deps | `npm audit --omit=dev --audit-level=high` | `.github/workflows/ci.yml:158` |
-| Image build | gated on every check job, not just tests | `.github/workflows/ci.yml:174-175` |
+| Static analysis | `bandit -r src/ -ll -f txt` (MEDIUM+) | `.github/workflows/ci.yml` (`security-scan`) |
+| Python deps | `pip-audit` | `.github/workflows/ci.yml` (`dependency-audit`) |
+| JS deps | `npm audit --omit=dev --audit-level=high` | `.github/workflows/ci.yml` (`frontend`) |
+| Image build | gated on every check job, not just tests | `.github/workflows/ci.yml` (`docker` `needs:`) |
 | Transitive pins | `overrides`: `handlebars`, `uuid`, `esbuild`, `js-yaml` | `web/package.json:16-21` |
 | Runtime container | non-root `appuser`; wheels installed offline (`pip install --no-index --find-links=/app/wheels`), so the runtime has no PyPI access and no compiler (`build-essential` is builder-stage only) | `Dockerfile:102,124,138` |
 
