@@ -54,3 +54,14 @@ format read as "no gates declared" and blocked every push. All ten commands are
 unchanged — this is a format migration, not a gate change. Approved by: human
 (operator, 2026-07-15 — "approved", in response to the explicit rewrite proposal).
 **Affects:** `.claude/GATES.md`
+
+## 2026-07-15 — Correct the LLM-budget claim in CODE_GUIDELINES.md
+
+**Decision:** Amend §14.3 and §10.6 — the "three LLM calls per query" ceiling becomes the
+real formula `(2 + j) × (1 + SEARCH_MAX_REFINEMENTS)`, six at shipped defaults, citing
+`search/core._max_llm_calls`.
+**Why:** The judge gate plus the refinement loop made "three" false long before this
+branch; the corrected code docstrings cross-referenced §14.3 and sent readers to the lie.
+Human-owned law, edited only on explicit operator instruction: "You are allowed to edit
+the CODE_GUIDELINES.md to fix this" (2026-07-15).
+**Affects:** `CODE_GUIDELINES.md` §14.3, §10.6
