@@ -365,9 +365,11 @@ def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` — any non-negative count.
 
     There is no hard cap: the operator sets the number of agentic refinement
-    passes from the UI. Each pass adds one LLM call (the per-query budget is
-    ``2 + SEARCH_MAX_REFINEMENTS``), so cost and latency scale linearly — that
-    is the operator's call. Only a negative value is rejected.
+    passes from the UI. Each pass costs one planner (re-)call, one optional
+    judge call, and one synthesiser call, so the chat-call ceiling is
+    ``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` where ``j`` is 1 when
+    ``SEARCH_GATE_JUDGE`` is on — 6 calls at shipped defaults, not 3 — and
+    cost/latency scale with it. Only a negative value is rejected.
     """
     value = _get_int_env(source, "SEARCH_MAX_REFINEMENTS", 1)
     if value < 0:

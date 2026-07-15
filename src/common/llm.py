@@ -76,10 +76,11 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
 # Ordering matters: ``max_completion_tokens`` precedes ``max_tokens`` so the
 # longer, more specific message wins before the shorter substring can match it.
 #
-# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the matchers for
-# ``reasoning_effort``, ``verbosity``, and ``max_completion_tokens`` are
-# best-effort and MUST be verified against a real openai~=1.35 400 response
-# before relying on them in production (see the plan's Task 9).
+# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the ``reasoning_effort`` and
+# ``temperature`` matchers were verified against live gpt-5.6 400 responses on
+# 2026-07-15 — both error messages name the param verbatim. ``verbosity`` and
+# ``max_completion_tokens`` remain best-effort and unverified; confirm them
+# against a real 400 response before relying on them in production.
 _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("temperature", "temperature", "temperature_retries"),
     ("response_format", "response_format", "response_format_retries"),
