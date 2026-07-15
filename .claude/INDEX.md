@@ -17,6 +17,7 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 | [OVERVIEW](OVERVIEW.md) | system summary — always injected | 2026-07-14 @ 74d8577 |
 | [DECISIONS](DECISIONS.md) | append-only decision log | 2026-07-14 @ 74d8577 |
 | [MEMORY](MEMORY.md) | project memory index — always injected | 2026-07-14 @ 74d8577 |
+| [GATES](GATES.md) | gate runbook — the definition of "done" | 2026-07-15 @ cb0730f |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | module map, flows, state, boundaries | 2026-07-14 @ 74d8577 |
 | [OPERATIONS](docs/OPERATIONS.md) | heartbeats, health, halts, runbook | 2026-07-14 @ 74d8577 |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | one image, four processes; CI → Docker Hub | 2026-07-14 @ 74d8577 |
