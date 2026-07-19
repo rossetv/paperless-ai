@@ -66,7 +66,7 @@ NDJSON, one JSON object per line, built by `search/wire/stream.py`: `phase_start
 | 403 | Insufficient role, or an API key missing the route's scope (`deps.py::_enforce`); suspended account and bad setup token (login/setup) |
 | 404 | Unknown document/user/key — and, deliberately, a key the caller does not own (`api_key_routes.py` (`_update_api_key`, `_delete_api_key`)) |
 | 409 | Setup already done, username taken, user-guard rejection (`account_routes.py`) — and a Paperless conflict |
-| 422 | Wire-model validation (query ≤ `MAX_QUERY_LENGTH`, username 3–64, password ≥ 12 — `search/validation.py`) |
+| 422 | Wire-model validation: query ≤ `MAX_QUERY_LENGTH` (`search/wire/search.py`); username 3–64, password ≥ 12 (`search/validation.py`) |
 | 429 | Login lockout, or the per-key daily token quota (`Retry-After` = UTC midnight) |
 | 502 | Paperless upstream 5xx or unreachable (`src/search/api.py::register_paperless_exception_handlers`) |
 | 503 | Index not ready / corrupt (healthz, search), unwritable data dir on rebuild |
