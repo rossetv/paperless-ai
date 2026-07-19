@@ -15,7 +15,7 @@ once. Unknown fact → omit the section, never guess. -->
 | Runner | pytest; `pythonpath = ["src"]`, `testpaths = ["tests"]`, `addopts = "-q --tb=short"` | `pyproject.toml` |
 | Markers | `unit`, `integration`, `e2e`, `anyio`; the tier markers are applied by path in `pytest_collection_modifyitems` — never hand-marked | `pyproject.toml`, `tests/conftest.py` |
 | Layout | `tests/unit/<package>/`, `tests/integration/`, `tests/e2e/`, `tests/helpers/` (`factories/`, `mocks.py`, `llm.py`, `search.py`, `store.py`) | repo tree |
-| Size | 201 `test_*.py` files, 3342 tests collected | `pytest --collect-only` |
+| Size | 201 `test_*.py` files, 3348 tests collected | `pytest --collect-only` |
 | Dev env | `pip install -r requirements-dev.txt && pip install .` — pins pytest 9.0.3, pytest-xdist 3.8.0, pytest-cov 7.1.0, pytest-mock 3.15.1, pytest-asyncio 1.4.0, respx 0.23.1, mypy 2.1.0, ruff 0.15.16, bandit[toml] 1.9.4, pip-audit 2.10.1 | `requirements-dev.txt`, `.github/workflows/ci.yml` |
 | Coverage gate (CI) | `--cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-fail-under=70` — `appdb` is **not** in the gate | `.github/workflows/ci.yml` |
 | Type check | `mypy src` (whole tree) in CI. Note `docs/development.md` still says only `store`/`indexer`/`search` — the workflow is authoritative | `.github/workflows/ci.yml`, `docs/development.md` |

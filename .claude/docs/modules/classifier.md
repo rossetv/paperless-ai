@@ -12,7 +12,7 @@ Tag-driven, stateless daemon that enriches Paperless-ngx document metadata with 
 
 All pipeline state lives in Paperless tags, so N instances can run concurrently.
 
-**Entrypoint:** `src/classifier/daemon.py::main` — console script `paperless-classifier-daemon` (`pyproject.toml:24`) or `python3 -m classifier.daemon` (`Dockerfile:160-161`). Library surface re-exported from `src/classifier/__init__.py`: `ClassificationProcessor`, `ClassificationProvider`, `ClassificationResult`, `TaxonomyCache`, `parse_classification_response`.
+**Entrypoint:** `src/classifier/daemon.py::main` — console script `paperless-classifier-daemon` (the `[project.scripts]` entry in `pyproject.toml`) or `python3 -m classifier.daemon` (the `paperless-classifier-daemon` / `classifier.daemon` run-note comment in `Dockerfile`, whose own `CMD` is `["paperless-ai"]`). Library surface re-exported from `src/classifier/__init__.py`: `ClassificationProcessor`, `ClassificationProvider`, `ClassificationResult`, `TaxonomyCache`, `parse_classification_response`.
 
 ## Key files
 
@@ -61,9 +61,9 @@ Run: `.venv/bin/python -m pytest tests/unit/classifier tests/integration/test_cl
 
 ## Invariants
 
-- **Import contract.** `classifier` may import `common` (and `appdb`, for config hot-load + heartbeat only). Never `store`, `indexer`, `search`, `ocr`, `sqlite3`, or FastAPI (`src/classifier/__init__.py` docstring; `docs/architecture.md:104`).
+- **Import contract.** `classifier` may import `common` (and `appdb`, for config hot-load + heartbeat only). Never `store`, `indexer`, `search`, `ocr`, `sqlite3`, or FastAPI (`src/classifier/__init__.py` docstring; the `classifier/` row of the import-rule table in `docs/architecture.md`).
 - **Stateless.** Every bit of pipeline state is a Paperless tag, so N instances run safely; the optional `CLASSIFY_PROCESSING_TAG_ID` is the claim lock (`common.claims.claim_processing_tag`).
-- **One `PaperlessClient` per worker thread** (`common.per_document.run_per_document`) — the client is explicitly not thread-safe (`src/common/paperless.py:131`). The long-lived taxonomy client shared through `TaxonomyCache` is the single documented exception (but see Gotchas).
+- **One `PaperlessClient` per worker thread** (`common.per_document.run_per_document`) — the client is explicitly not thread-safe (the "not thread-safe" note in `PaperlessClient`'s docstring, `src/common/paperless.py`). The long-lived taxonomy client shared through `TaxonomyCache` is the single documented exception (but see Gotchas).
 - **`process()` return contract.** `SAVED` (metadata written), `QUARANTINED` (permanent 4xx → error-tagged so it leaves the queue), or `None` (skipped / requeued / already-errored). Only `SAVED` and `QUARANTINED` reach the `WriteBackCircuitBreaker` (`daemon.py::_process_and_record`); the breaker exists solely to stop a systemic Paperless write failure burning one LLM call per document per poll.
 - **Error exits go through `common.tags.finalise_document_with_error`**, never a bare tag strip — `clean_pipeline_tags()` unconditionally removes `ERROR_TAG_ID` too (`worker.py::ClassificationProcessor._prepare_or_divert`).
 - **Prompt-cache layout is load-bearing.** `_build_user_message` emits a byte-identical stable prefix (tag-limit guidance + the three taxonomy lists) then the per-document variable suffix (truncation note + document text). Anything per-document added above the fence breaks OpenAI prompt caching.
