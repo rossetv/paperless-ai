@@ -85,9 +85,9 @@ Its stated non-negotiable goal (CODE_GUIDELINES §12) is zero design drift: one 
 - **Known cross-feature imports.** `eslint-plugin-boundaries` only checks LAYER types, so it does not catch feature→sibling-feature imports and CI stays green. Live violations of the §12.3 sibling rule:
   | Importer | Imports |
   |----------|---------|
-  | `features/index/IndexScreen/IndexScreen.tsx:20` | `DocumentPreviewScreen` from `features/search` — named in CODE_GUIDELINES §12.3 as "a live violation to fix on next touch" |
-  | `features/search/SourceCard/SourceCard.tsx:6` | `DocumentMeta` from `features/document` |
-  | `features/search/DocumentPreviewScreen/DocumentPreviewScreen.tsx:12` | `DocumentMeta` from `features/document` |
+  | `features/index/IndexScreen/IndexScreen.tsx` | imports `DocumentPreviewScreen` from `features/search` — named in CODE_GUIDELINES §12.3 as "a live violation to fix on next touch" |
+  | `features/search/SourceCard/SourceCard.tsx` | imports `DocumentMeta` from `features/document` |
+  | `features/search/DocumentPreviewScreen/DocumentPreviewScreen.tsx` | imports `DocumentMeta` from `features/document` |
 
   The prescribed fix is promotion to `components/`, not a wider allow-list.
 - **Do NOT add `isolate: false` to `vitest.config.ts`.** The comment there records that per-file isolation is load-bearing: without it the suite fails on cross-file global/DOM pollution. `pool: 'threads'` is the sanctioned speed-up.
