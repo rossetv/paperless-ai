@@ -354,8 +354,14 @@ def _build_app_with_paperless_url(
     paperless_client,
     paperless_url: str,
     store_reader=None,
+    paperless_public_url: str | None = None,
 ) -> FastAPI:
-    """A FastAPI app mounting the document router with a configured PAPERLESS_URL."""
+    """A FastAPI app mounting the document router with a configured PAPERLESS_URL.
+
+    ``paperless_public_url`` sets the browser-facing ``PAPERLESS_PUBLIC_URL`` the
+    document deep-links are built from; it defaults to ``paperless_url`` to
+    mirror the production fallback when no distinct public URL is configured.
+    """
     app = FastAPI()
     register_paperless_exception_handlers(app)
     attach_app_state(
@@ -367,6 +373,9 @@ def _build_app_with_paperless_url(
     )
     settings = MagicMock()
     settings.PAPERLESS_URL = paperless_url
+    settings.PAPERLESS_PUBLIC_URL = (
+        paperless_public_url if paperless_public_url is not None else paperless_url
+    )
     app.include_router(
         build_document_router(
             settings,
@@ -421,6 +430,33 @@ def test_get_document_includes_paperless_url(app_db_path, conn) -> None:
     paperless_url = response.json()["paperless_url"]
     assert paperless_url  # non-empty
     assert paperless_url.endswith("/documents/42/")
+
+
+def test_get_document_deeplink_uses_public_url(app_db_path, conn) -> None:
+    """The deep-link is built from PAPERLESS_PUBLIC_URL, not the internal URL.
+
+    Regression: the button linked to the container-internal PAPERLESS_URL
+    (e.g. http://paperless:8000), unreachable from a browser. It must use the
+    browser-facing PAPERLESS_PUBLIC_URL.
+    """
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _DOCUMENT_SUMMARY
+    app = _build_app_with_paperless_url(
+        app_db_path,
+        MagicMock(),
+        "http://paperless:8000",
+        store_reader=store_reader,
+        paperless_public_url="https://docs.example.com",
+    )
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn))
+
+    response = client.get("/api/documents/42")
+
+    assert response.status_code == 200
+    assert response.json()["paperless_url"] == "https://docs.example.com/documents/42/"
 
 
 def test_get_document_404_for_missing_id(app_db_path, conn) -> None:
@@ -638,6 +674,33 @@ def test_patch_document_with_notes_field(app_db_path, conn) -> None:
 
     assert response.status_code == 200
     paperless.assert_update_document_metadata_called_with(42, notes="hello")
+
+
+def test_patch_document_deeplink_uses_public_url(app_db_path, conn) -> None:
+    """The PATCH response deep-link is built from PAPERLESS_PUBLIC_URL.
+
+    Regression companion to the GET-summary case: the post-update summary must
+    also carry a browser-facing deep-link, not the container-internal one.
+    """
+    paperless = PaperlessStub()
+    store_reader = MagicMock()
+    store_reader.get_document_summary.return_value = _min_summary(42)
+    app = _build_app_with_paperless_url(
+        app_db_path,
+        paperless,
+        "http://paperless:8000",
+        store_reader=store_reader,
+        paperless_public_url="https://docs.example.com",
+    )
+    client = TestClient(
+        app, raise_server_exceptions=False, base_url="https://testserver"
+    )
+    client.cookies.set(SESSION_COOKIE_NAME, _login(conn, role="member"))
+
+    response = client.patch("/api/documents/42", json={"notes": "hello"})
+
+    assert response.status_code == 200
+    assert response.json()["paperless_url"] == "https://docs.example.com/documents/42/"
 
 
 def test_patch_document_readonly_forbidden(app_db_path, conn) -> None:

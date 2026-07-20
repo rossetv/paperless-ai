@@ -93,7 +93,9 @@ def register_document_routes(
         )
         if summary is None:
             raise HTTPException(status_code=404, detail="document not found")
-        paperless_url = f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/"
+        paperless_url = (
+            f"{settings.PAPERLESS_PUBLIC_URL.rstrip('/')}/documents/{document_id}/"
+        )
         return to_document_summary_response(summary, paperless_url=paperless_url)
 
     @router.get("/api/recent-searches")
@@ -260,7 +262,7 @@ async def _patch_document(
         raise HTTPException(status_code=404, detail="document not found")
     return to_document_summary_response(
         summary,
-        paperless_url=f"{settings.PAPERLESS_URL.rstrip('/')}/documents/{document_id}/",
+        paperless_url=f"{settings.PAPERLESS_PUBLIC_URL.rstrip('/')}/documents/{document_id}/",
     )
 
 
