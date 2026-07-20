@@ -1253,16 +1253,16 @@ startup belongs in `common/bootstrap.py`.
 ### 13.3 Comments answer "why"
 
 A comment names the invariant, the upstream quirk, or the constraint — never
-paraphrases the next line. The existing `AGENTS.md` and `docs/` describe the OCR and
+paraphrases the next line. The existing `docs/` pages describe the OCR and
 classification pipelines; the indexer, store, and search subsystems get equivalent
 `docs/` pages in the PRs that build them.
 
 ### 13.4 The canonical documents
 
 `README.md` — running the project. `DESIGN.md` — the visual design system and the
-architecture rationale. `AGENTS.md` — the codebase guide for AI agents.
-`CODE_GUIDELINES.md` (this file) — how we agree to write code. `docs/` — per-pipeline
-deep dives. A new top-level markdown file needs a written justification.
+architecture rationale. `CODE_GUIDELINES.md` (this file) — how we agree to write
+code. `docs/` — per-pipeline deep dives. A new top-level markdown file needs a
+written justification.
 
 ### 13.5 `TODO` / `FIXME` / `HACK`
 

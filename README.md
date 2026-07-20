@@ -340,6 +340,5 @@ Start with the README you're reading; reach for these when you want the detail b
 
 **Contributing & internals:**
 
-- [AGENTS.md](AGENTS.md) — a structured codebase guide with a file index and common-task lookup (written for AI agents, useful to humans too).
 - [DESIGN.md](DESIGN.md) — the frontend design system: tokens, the component library, and screen patterns.
 - [CODE_GUIDELINES.md](CODE_GUIDELINES.md) — the house coding rules, cited by section number throughout the source.
