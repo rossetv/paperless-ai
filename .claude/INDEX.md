@@ -74,7 +74,6 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 |-----|--------|
 | `CODE_GUIDELINES.md` | the law — reviewer enforces every section (§3.1 file ceiling, §9.1 SQL ownership, §10 security, §12 frontend) |
 | `DESIGN.md` | visual language — reviewer enforces on UI diffs |
-| `AGENTS.md` | agent-facing contribution rules |
 | `README.md` | product intro and setup |
 | `docs/` | human-audience prose: `architecture`, `configuration`, `deployment`, `development`, `resilience`, `cache`, `store`, `indexer`, `search`, `search-pipeline`, `ocr-pipeline`, `classification-pipeline` |
 
