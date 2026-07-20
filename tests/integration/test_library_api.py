@@ -475,8 +475,39 @@ class TestLibraryDocumentPayload:
             assert doc["created"] == "2024-03-15T00:00:00Z"
             assert doc["page_count"] == 1
             assert set(doc["tags"]) == {"utilities", "2024"}
-            # Deep-link to Paperless-ngx is server-built from settings.PAPERLESS_URL.
+            # Deep-link is server-built from settings.PAPERLESS_PUBLIC_URL.
             assert doc["paperless_url"].endswith("/documents/2/")
+        finally:
+            store_reader.close()
+            app_db.close()
+
+    def test_document_deeplink_uses_public_url(self, tmp_path: Path) -> None:
+        """The browse list builds paperless_url from PAPERLESS_PUBLIC_URL.
+
+        Regression: GET /api/documents must emit the browser-facing public
+        deep-link, not the container-internal PAPERLESS_URL, and must agree
+        with GET /api/documents/{id} in a split-URL deployment.
+        """
+        settings = make_settings(
+            tmp_path,
+            PAPERLESS_URL="http://paperless:8000",
+            PAPERLESS_PUBLIC_URL="https://docs.example.com",
+        )
+        seed_library_store(settings)
+        app_db = open_app_db(tmp_path)
+        store_reader = StoreReader(settings)
+        try:
+            seed_admin(app_db, username="boss", password="boss-pw-12345")
+            client = build_account_client(settings, app_db, store_reader)
+            raw_key = mint_bearer(app_db)
+            response = client.get(
+                "/api/documents",
+                params={"query": "boiler"},
+                headers=_bearer(raw_key),
+            )
+            assert response.status_code == 200
+            doc = response.json()["documents"][0]
+            assert doc["paperless_url"] == "https://docs.example.com/documents/2/"
         finally:
             store_reader.close()
             app_db.close()
