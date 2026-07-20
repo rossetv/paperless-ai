@@ -117,8 +117,9 @@ def to_document_summary_response(
 
     The explicit, tested boundary conversion (``CODE_GUIDELINES.md`` §5.6).
     *paperless_url* is the fully-qualified deep-link into Paperless for this
-    document; callers construct it from ``settings.PAPERLESS_URL`` so this
-    function remains free of I/O and configuration knowledge.
+    document; callers construct it from ``settings.PAPERLESS_PUBLIC_URL`` (the
+    browser-facing base) so this function remains free of I/O and configuration
+    knowledge.
 
     Args:
         summary: The store dataclass to convert.
