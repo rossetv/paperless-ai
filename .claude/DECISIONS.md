@@ -65,3 +65,20 @@ branch; the corrected code docstrings cross-referenced §14.3 and sent readers t
 Human-owned law, edited only on explicit operator instruction: "You are allowed to edit
 the CODE_GUIDELINES.md to fix this" (2026-07-15).
 **Affects:** `CODE_GUIDELINES.md` §14.3, §10.6
+
+## 2026-07-21 — Skip AI OCR on born-digital PDFs
+**Decision:** A deterministic poppler gate in the OCR worker skips vision-OCR for PDFs that
+are already born-digital — detected on the *original* file (`pdftotext` per-page text yield +
+`pdfimages` largest-image page-coverage + `pdffonts` `GlyphLessFont`) — while AI-OCRing scans,
+images and scanner-produced searchable scans. Default on, whole-document, three settings-UI
+config keys (`OCR_SKIP_BORN_DIGITAL`, `OCR_BORN_DIGITAL_MIN_CHARS`, `OCR_BORN_DIGITAL_TAG_ID`),
+fail-safe to OCR on any doubt. A skip is a tags-only `PRE→POST` PATCH (content untouched),
+breaker-neutral; a permanent write failure quarantines.
+**Why:** The daemon re-OCR'd every tagged document, burning vision tokens on born-digital PDFs
+that already carry a perfect text layer. Coverage uses the largest image (not the sum) because
+a clipped-sum variant flips an operator-confirmed born-digital doc (image-heavy page) to OCR;
+`GlyphLessFont` closes the Tesseract-family searchable-scan subclass. Every failure mode is
+quality-only (falls through to OCR), never data loss — which is what makes default-on safe.
+Empirically validated 9/9 against real documents on the operator's instance.
+**Spec:** .claude/specs/20260721-born-digital-ocr-skip.md
+**Affects:** `docs/PIPELINES.md`, `docs/modules/ocr.md`, `docs/CONFIGURATION.md`
