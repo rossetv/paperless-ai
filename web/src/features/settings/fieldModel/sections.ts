@@ -224,6 +224,25 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           },
         ],
       },
+      {
+        id: 'born-digital',
+        title: 'Born-digital skip',
+        subtitle: 'Skip AI OCR on PDFs that already have a real text layer.',
+        fields: [
+          {
+            key: 'OCR_SKIP_BORN_DIGITAL',
+            label: 'Skip AI OCR on born-digital PDFs',
+            hint: 'Detect PDFs with a genuine text layer and skip the vision model. Scans, images and searchable scans still get AI OCR.',
+            control: { kind: 'toggle' },
+          },
+          {
+            key: 'OCR_BORN_DIGITAL_MIN_CHARS',
+            label: 'Born-digital min characters/page',
+            hint: 'A page needs at least this many characters of real text to count as born-digital.',
+            control: { kind: 'number', min: 1 },
+          },
+        ],
+      },
     ],
   },
 
@@ -571,6 +590,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             key: 'ERROR_TAG_ID',
             label: 'Error tag',
             hint: 'Applied when OCR or classification fails. Pipeline tags are removed.',
+            control: { kind: 'number', min: 0 },
+          },
+          {
+            key: 'OCR_BORN_DIGITAL_TAG_ID',
+            label: 'Born-digital marker',
+            hint: 'Optional. Tag applied to documents skipped as born-digital, so you can audit and force a re-OCR. 0 to disable.',
             control: { kind: 'number', min: 0 },
           },
         ],

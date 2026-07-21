@@ -166,6 +166,9 @@ class Settings:
     CLASSIFY_MODELS: list[str]
     OCR_REFUSAL_MARKERS: list[str]
     OCR_INCLUDE_PAGE_MODELS: bool
+    OCR_SKIP_BORN_DIGITAL: bool
+    OCR_BORN_DIGITAL_MIN_CHARS: int
+    OCR_BORN_DIGITAL_TAG_ID: int | None
 
     PRE_TAG_ID: int
     POST_TAG_ID: int
@@ -681,6 +684,14 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
             )
         ],
         OCR_INCLUDE_PAGE_MODELS=_get_bool_env(source, "OCR_INCLUDE_PAGE_MODELS", False),
+        OCR_SKIP_BORN_DIGITAL=_get_bool_env(source, "OCR_SKIP_BORN_DIGITAL", True),
+        OCR_BORN_DIGITAL_MIN_CHARS=_require_at_least_one(
+            "OCR_BORN_DIGITAL_MIN_CHARS",
+            _get_int_env(source, "OCR_BORN_DIGITAL_MIN_CHARS", 50),
+        ),
+        OCR_BORN_DIGITAL_TAG_ID=_get_optional_positive_int_env(
+            source, "OCR_BORN_DIGITAL_TAG_ID"
+        ),
         PRE_TAG_ID=_get_int_env(source, "PRE_TAG_ID", 443),
         POST_TAG_ID=post_tag_id,
         OCR_PROCESSING_TAG_ID=_get_optional_positive_int_env(
