@@ -9,12 +9,21 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
+from common.paperless import PAPERLESS_CALL_EXCEPTIONS
 from common.per_document import WriteBackOutcome
+from ocr.born_digital import BornDigitalDecision
 from ocr.image_converter import PageSource
 from ocr.text_assembly import OCR_ERROR_MARKER, PageResult
-from tests.helpers.factories import make_settings_obj
+from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
-from tests.unit.ocr.conftest import make_image, make_page_source, make_processor
+from tests.unit.ocr.conftest import (
+    _http_status_error,
+    make_image,
+    make_page_source,
+    make_processor,
+)
 
 
 class TestOcrPagesInParallel:
@@ -278,3 +287,149 @@ class TestUpdatePaperlessDocumentSuccessFlag:
         )
 
         assert outcome is None
+
+
+def _skip(dec: bool = True) -> BornDigitalDecision:
+    return BornDigitalDecision(dec, "born-digital" if dec else "full-page-image", {})
+
+
+class TestTrySkipBornDigital:
+    """The born-digital gate (spec D1–D6): the tags-only skip branch that runs
+    before the OCR path in ``process()``.  Every fail-safe returns
+    ``(False, None)`` (fall through to OCR); a clean skip returns ``(True,
+    None)``; a permanent skip-write rejection returns ``(True,
+    WriteBackOutcome.QUARANTINED)``; a transient one re-raises."""
+
+    def test_gate_off_returns_proceed(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=False)
+        assert proc._try_skip_born_digital(make_document()) == (False, None)
+        proc.paperless_client.download_original.assert_not_called()
+
+    def test_non_pdf_mime_returns_proceed_without_fetch(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="image/jpeg")
+        assert proc._try_skip_born_digital(doc) == (False, None)
+        proc.paperless_client.download_original.assert_not_called()
+
+    def test_empty_content_returns_proceed_without_fetch(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="   ")
+        assert proc._try_skip_born_digital(doc) == (False, None)
+        proc.paperless_client.download_original.assert_not_called()
+
+    def test_mime_absent_fetches_original_and_uses_content_type(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(content="real text " * 50)  # make_document has NO mime_type
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        with patch("ocr.worker.classify_original", return_value=_skip(True)):
+            assert proc._try_skip_born_digital(doc) == (True, None)
+        proc.paperless_client.download_original.assert_called_once()
+
+    def test_original_non_pdf_content_type_proceeds(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(content="x " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"\xff\xd8",
+            "image/jpeg",
+        )
+        assert proc._try_skip_born_digital(doc) == (False, None)
+
+    def test_original_fetch_failure_proceeds(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="x " * 50)
+        proc.paperless_client.download_original.side_effect = _http_status_error(503)
+        assert proc._try_skip_born_digital(doc) == (False, None)
+
+    def test_born_digital_skips_tags_only_no_content_rewrite(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="real text " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        with (
+            patch("ocr.worker.classify_original", return_value=_skip(True)),
+            patch(
+                "ocr.worker.get_latest_tags",
+                return_value={proc.settings.PRE_TAG_ID},
+            ),
+        ):
+            assert proc._try_skip_born_digital(doc) == (True, None)
+        proc.paperless_client.update_document_metadata.assert_called_once()
+        proc.paperless_client.update_document.assert_not_called()  # no content write
+        _, kwargs = proc.paperless_client.update_document_metadata.call_args
+        assert proc.settings.POST_TAG_ID in kwargs["tags"]
+        assert proc.settings.PRE_TAG_ID not in kwargs["tags"]
+
+    def test_marker_tag_applied_when_configured(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True, OCR_BORN_DIGITAL_TAG_ID=77)
+        doc = make_document(mime_type="application/pdf", content="real text " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        with (
+            patch("ocr.worker.classify_original", return_value=_skip(True)),
+            patch(
+                "ocr.worker.get_latest_tags",
+                return_value={proc.settings.PRE_TAG_ID},
+            ),
+        ):
+            proc._try_skip_born_digital(doc)
+        _, kwargs = proc.paperless_client.update_document_metadata.call_args
+        assert 77 in kwargs["tags"]
+
+    def test_not_born_digital_proceeds(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="x " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        with patch("ocr.worker.classify_original", return_value=_skip(False)):
+            assert proc._try_skip_born_digital(doc) == (False, None)
+
+    def test_permanent_skip_write_quarantines(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="x " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        proc.paperless_client.update_document_metadata.side_effect = _http_status_error(
+            400
+        )
+        with (
+            patch("ocr.worker.classify_original", return_value=_skip(True)),
+            patch(
+                "ocr.worker.get_latest_tags",
+                return_value={proc.settings.PRE_TAG_ID},
+            ),
+        ):
+            assert proc._try_skip_born_digital(doc) == (
+                True,
+                WriteBackOutcome.QUARANTINED,
+            )
+
+    def test_transient_skip_write_reraises(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True)
+        doc = make_document(mime_type="application/pdf", content="x " * 50)
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        proc.paperless_client.update_document_metadata.side_effect = _http_status_error(
+            503
+        )
+        with (
+            patch("ocr.worker.classify_original", return_value=_skip(True)),
+            patch(
+                "ocr.worker.get_latest_tags",
+                return_value={proc.settings.PRE_TAG_ID},
+            ),
+        ):
+            with pytest.raises(PAPERLESS_CALL_EXCEPTIONS):
+                proc._try_skip_born_digital(doc)

@@ -11,12 +11,20 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 from PIL import Image
 
 from ocr.image_converter import PageSource
 from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    """Build an ``httpx.HTTPStatusError`` carrying *status*."""
+    request = httpx.Request("PATCH", "http://paperless:8000/api/documents/1/")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
 
 
 def make_processor(

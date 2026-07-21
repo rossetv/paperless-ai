@@ -14,19 +14,18 @@ import pytest
 from PIL import Image
 
 from common.per_document import WriteBackOutcome
+from ocr.born_digital import BornDigitalDecision
 from ocr.image_converter import ImageConversionError, PageSource
 from ocr.text_assembly import PageResult
 from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_settings_obj
 from tests.helpers.mocks import make_mock_ocr_provider, make_mock_paperless
-from tests.unit.ocr.conftest import make_image, make_page_source, make_processor
-
-
-def _http_status_error(status: int) -> httpx.HTTPStatusError:
-    """Build an ``httpx.HTTPStatusError`` carrying *status*."""
-    request = httpx.Request("PATCH", "http://paperless:8000/api/documents/1/")
-    response = httpx.Response(status, request=request)
-    return httpx.HTTPStatusError(f"{status}", request=request, response=response)
+from tests.unit.ocr.conftest import (
+    _http_status_error,
+    make_image,
+    make_page_source,
+    make_processor,
+)
 
 
 class TestProcessHappyPath:
@@ -433,3 +432,33 @@ class TestProcessNoPages:
         ocr_provider.transcribe_image.assert_not_called()
         # Lock still released
         mock_release.assert_called_once()
+
+
+class TestProcessSkipsBornDigital:
+    def test_process_skips_born_digital_end_to_end(self):
+        proc = make_processor(OCR_SKIP_BORN_DIGITAL=True, OCR_PROCESSING_TAG_ID=999)
+        proc.paperless_client.get_document.return_value = make_document(
+            mime_type="application/pdf",
+            content="real text " * 50,
+            tags=[proc.settings.PRE_TAG_ID],
+        )
+        proc.paperless_client.download_original.return_value = (
+            b"%PDF",
+            "application/pdf",
+        )
+        with (
+            patch(
+                "ocr.worker.classify_original",
+                return_value=BornDigitalDecision(True, "born-digital", {}),
+            ),
+            patch(
+                "ocr.worker.get_latest_tags",
+                return_value={proc.settings.PRE_TAG_ID},
+            ),
+            patch("ocr.worker.claim_processing_tag", return_value=True),
+            patch("ocr.worker.release_processing_tag") as release,
+        ):
+            outcome = proc.process()
+        assert outcome is None  # breaker-neutral
+        assert proc.ocr_provider.transcribe_image.call_count == 0
+        release.assert_called_once()  # processing tag released
