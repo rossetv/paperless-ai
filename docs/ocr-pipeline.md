@@ -10,6 +10,8 @@ Paperless-ngx stores scans as images. This daemon turns those images into text. 
 2. Sends each page to a vision model and collects the text it reads back.
 3. Stitches the pages into a single document, checks the result is sane, and saves it back to Paperless — swapping the "needs OCR" tag for the "done" tag.
 
+One shortcut comes first: if the document is a **true born-digital PDF** — built digitally, with a perfect text layer already in it — the daemon skips the vision model entirely, keeps the text Paperless already has, and just swaps the tag. Scans, photos, and scanner-made "searchable" PDFs still get the full treatment above. This is on by default and fail-safe: any doubt falls through to OCR.
+
 The single most important thing to understand: **the daemon keeps no state of its own.** Everything it needs to know — what to work on, what is finished, what failed — is recorded in Paperless tags. That makes it safe to run several copies at once, and means a saved configuration change takes effect on the next poll with no restart.
 
 ```mermaid
@@ -56,6 +58,22 @@ Once a document is selected, the daemon claims it (by adding `OCR_PROCESSING_TAG
 An undecodable or corrupt download raises `ImageConversionError`; the worker catches it and routes the document to the error path rather than crashing. How this conversion stays within a tight memory budget is covered under [Image conversion](#image-conversion-memory-bounded-by-design) below.
 
 **Source:** `src/ocr/image_converter.py`
+
+### Skipping born-digital PDFs
+
+Not every tagged document needs AI OCR. A **true born-digital PDF** — one produced digitally rather than scanned — already carries a perfect embedded text layer, so rasterising it and re-reading it with a vision model would burn tokens to reproduce text the document already contains. When `OCR_SKIP_BORN_DIGITAL` is on (the default), the daemon detects these before any vision call and skips the model entirely: it keeps the text Paperless already holds and just swaps `PRE_TAG_ID` for `POST_TAG_ID`, exactly as a successful OCR would.
+
+The check runs on the document's **pristine original** (fetched with `?original=true`, so a scan's Paperless-added OCR layer cannot disguise it as born-digital) and reads three signals, all from Poppler binaries already in the image — no new dependencies:
+
+- **Text yield** (`pdftotext`) — every page must carry at least `OCR_BORN_DIGITAL_MIN_CHARS` characters of real text (default 50).
+- **Image coverage** (`pdfimages` + `pdfinfo`) — no page may be dominated by a single full-page raster (the largest image on a page covering ≥ 85% of it), which is what a scan looks like.
+- **Glyphless font** (`pdffonts`) — no `GlyphLessFont`, the invisible OCR-layer font that scanners and Tesseract emit. This is what separates a true born-digital PDF from a scanner's "searchable scan" — the latter still gets AI OCR.
+
+**A document is skipped only if all three signals agree it is born-digital; every doubt falls through to OCR.** A non-PDF, any probe failure or timeout, empty content, a corrupt file, or a missing binary all route the document to the normal vision pipeline. The feature can only ever *reduce* work — it can never break a document that OCR handles today.
+
+Skipping is a **tags-only** change; the document's content is never rewritten. If `OCR_BORN_DIGITAL_TAG_ID` is set, that marker tag is added too, so skipped documents are easy to find. All three settings are configurable in the Settings UI, and the feature is **on by default**.
+
+**Source:** `src/ocr/born_digital.py`, `src/ocr/worker.py`
 
 ### Reading the pages
 
@@ -238,7 +256,9 @@ flowchart TD
     D --> E["Process batch in parallel\n(up to DOCUMENT_WORKERS threads)"]
 
     E --> F[Claim the processing-lock tag\nif OCR_PROCESSING_TAG_ID is set]
-    F --> G[Download document from Paperless]
+    F --> BD{Born-digital PDF?\n(OCR_SKIP_BORN_DIGITAL)}
+    BD -- Yes --> BS["Skip AI OCR: keep the text,\nswap PRE_TAG_ID → POST_TAG_ID"]
+    BD -- No --> G[Download document from Paperless]
     G --> H{PDF or\nimage?}
     H -- PDF --> I["Rasterise pages to temp files,\nlong side scaled to OCR_MAX_SIDE"]
     H -- Image --> J[Decode with Pillow;\nexpand multi-frame TIFF]
@@ -265,6 +285,7 @@ flowchart TD
 
     style V fill:#d4edda,stroke:#28a745
     style W fill:#f8d7da,stroke:#dc3545
+    style BS fill:#d4edda,stroke:#28a745
 ```
 
 ---
@@ -276,6 +297,7 @@ flowchart TD
 | `daemon.py` | Entry point — polling loop, config hot-reload, heartbeat, circuit breaker |
 | `worker.py` | `OcrProcessor` — per-document orchestration: claim, download, OCR, assemble, write back |
 | `image_converter.py` | `open_page_source` / `PageSource` — streamable, memory-bounded page conversion |
+| `born_digital.py` | `classify_original` — deterministic born-digital detection (Poppler probes) that skips AI OCR |
 | `provider.py` | `OcrProvider` — model fallback, image encoding, blank-page and refusal detection |
 | `text_assembly.py` | `assemble_full_text` / `PageResult` — page headers and the model footer |
 | `prompts.py` | The vision transcription system prompt |
