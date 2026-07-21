@@ -265,6 +265,23 @@ class TestDownloadContent:
         client.close()
 
 
+class TestDownloadOriginal:
+    def test_download_original_uses_original_true(self):
+        url = f"{BASE}/api/documents/5/download/?original=true"
+        with respx.mock:
+            respx.get(url__eq=url).mock(
+                return_value=httpx.Response(
+                    200,
+                    content=b"%PDF-1.4 orig",
+                    headers={"Content-Type": "application/pdf"},
+                )
+            )
+            client = _make_client()
+            data, ct = client.download_original(5)
+        assert data == b"%PDF-1.4 orig" and ct == "application/pdf"
+        client.close()
+
+
 class TestUpdateDocument:
     def test_sends_patch_with_content_and_tags(self):
         with respx.mock:

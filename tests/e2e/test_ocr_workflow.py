@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+from unittest.mock import patch
 
 from PIL import Image
 
+from ocr.born_digital import BornDigitalDecision
 from ocr.text_assembly import OCR_ERROR_MARKER, PageResult
 from ocr.worker import OcrProcessor
 from tests.helpers.factories import make_document, make_png_bytes, make_settings_obj
@@ -304,3 +306,50 @@ class TestOcrLockContention:
         provider.transcribe_image.assert_not_called()
         # No content update
         client.update_document.assert_not_called()
+
+
+class TestOcrBornDigitalSkip:
+    """Deterministic poppler gate (spec D1-D6): a born-digital PDF is skipped
+    before any vision-OCR is attempted."""
+
+    def test_e2e_born_digital_skips_and_advances_tag(self):
+        """
+        Full skip lifecycle:
+        1. Document is a PDF with real embedded text and the PRE tag
+        2. The poppler gate (mocked at the classify_original seam) says skip
+        3. process() returns None -- no OCR, no content write
+        4. PRE tag is swapped for POST, and the marker tag is applied
+        """
+        doc = make_document(
+            mime_type="application/pdf",
+            content="real born-digital text " * 40,
+            tags=[443],
+        )
+        client, state = make_stateful_paperless(doc)
+        client.download_original.return_value = (b"%PDF", "application/pdf")
+
+        settings = make_settings_obj(
+            OCR_SKIP_BORN_DIGITAL=True,
+            PRE_TAG_ID=443,
+            POST_TAG_ID=444,
+            OCR_BORN_DIGITAL_TAG_ID=555,
+        )
+        provider = make_mock_ocr_provider()
+
+        processor = OcrProcessor(
+            doc=doc,
+            paperless_client=client,
+            ocr_provider=provider,
+            settings=settings,
+        )
+        with patch(
+            "ocr.worker.classify_original",
+            return_value=BornDigitalDecision(True, "born-digital", {}),
+        ):
+            outcome = processor.process()
+
+        assert outcome is None
+        assert 444 in state["tags"] and 443 not in state["tags"]  # PRE -> POST
+        assert 555 in state["tags"]  # marker tag applied
+        client.update_document.assert_not_called()  # content untouched
+        provider.transcribe_image.assert_not_called()  # no vision-OCR attempted

@@ -24,6 +24,7 @@ from common.tags import (
     release_processing_tag,
 )
 from common.content_checks import is_error_content
+from .born_digital import classify_original
 from .image_converter import ImageConversionError, PageSource, open_page_source
 from .provider import OcrProvider
 from .text_assembly import OCR_ERROR_MARKER, PageResult, assemble_full_text
@@ -86,6 +87,12 @@ class OcrProcessor:
             )
             if not claimed:
                 return None
+
+            stop, outcome = self._try_skip_born_digital(document)
+            if stop:
+                # A clean skip is a success; a quarantine is not.
+                success = outcome is None
+                return outcome  # None (skipped) or WriteBackOutcome.QUARANTINED
 
             pages = self._download_and_convert(current_tags)
             if pages is None:
@@ -159,6 +166,71 @@ class OcrProcessor:
                 elapsed_time=f"{elapsed:.2f}s",
                 success=success,
             )
+
+    def _try_skip_born_digital(
+        self, document: dict
+    ) -> tuple[bool, WriteBackOutcome | None]:
+        """Born-digital gate (spec D1–D6).
+
+        Returns ``(True, None)`` on a clean skip, ``(True,
+        WriteBackOutcome.QUARANTINED)`` on a permanent skip-write failure, or
+        ``(False, None)`` to fall through to the OCR path. Transient write
+        errors re-raise for the daemon loop to retry.
+        """
+        if not self.settings.OCR_SKIP_BORN_DIGITAL:
+            return (False, None)
+        mime = document.get("mime_type") or ""
+        if mime and "pdf" not in mime.lower():
+            return (False, None)  # image upload -> scan -> OCR
+        if not (document.get("content") or "").strip():
+            return (False, None)  # empty ngx content guard (D5)
+        try:
+            data, content_type = self.paperless_client.download_original(self.doc_id)
+        except PAPERLESS_CALL_EXCEPTIONS:
+            log.warning("born_digital.original_fetch_failed", doc_id=self.doc_id)
+            return (False, None)  # fail-safe -> OCR
+        if "pdf" not in (content_type or "").lower():
+            return (False, None)
+        decision = classify_original(
+            data, min_chars=self.settings.OCR_BORN_DIGITAL_MIN_CHARS
+        )
+        log.info(
+            "born_digital.decision",
+            doc_id=self.doc_id,
+            skip=decision.skip,
+            reason=decision.reason,
+            **decision.signals,
+        )
+        if not decision.skip:
+            return (False, None)
+        tags = clean_pipeline_tags(
+            get_latest_tags(self.paperless_client, self.doc_id, fallback_doc=self.doc),
+            self.settings,
+        )
+        tags.add(self.settings.POST_TAG_ID)
+        if self.settings.OCR_BORN_DIGITAL_TAG_ID is not None:
+            tags.add(self.settings.OCR_BORN_DIGITAL_TAG_ID)
+        try:
+            self.paperless_client.update_document_metadata(self.doc_id, tags=tags)
+        except PAPERLESS_CALL_EXCEPTIONS as exc:
+            if not is_permanent_paperless_error(exc):
+                raise  # transient -> loop retries
+            log.exception("born_digital.skip_write_rejected", doc_id=self.doc_id)
+            finalise_document_with_error(
+                self.paperless_client,
+                self.doc_id,
+                get_latest_tags(
+                    self.paperless_client, self.doc_id, fallback_doc=self.doc
+                ),
+                self.settings,
+            )
+            return (True, WriteBackOutcome.QUARANTINED)
+        log.info(
+            "born_digital.skipped",
+            doc_id=self.doc_id,
+            added_tag=self.settings.POST_TAG_ID,
+        )
+        return (True, None)
 
     def _download_and_convert(self, current_tags: set[int]) -> PageSource | None:
         """Download and open the document as a streamable :class:`PageSource`.

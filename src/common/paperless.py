@@ -342,6 +342,19 @@ class PaperlessClient:
         content_type = response.headers.get("Content-Type", "application/pdf")
         return response.content, content_type
 
+    def download_original(self, doc_id: int) -> tuple[bytes, str]:
+        """Download the pristine ORIGINAL file (pre-archive/pre-OCR) bytes + content type.
+
+        Unlike :meth:`download_content` (which serves the archive when one exists), this
+        appends ``?original=true`` so a scan's original has no Tesseract text layer — the
+        mode-independent signal the born-digital gate needs (spec D2).
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/{doc_id}/download/?original=true"
+        response = self._get(url)
+        response.raise_for_status()
+        content_type = response.headers.get("Content-Type", "application/pdf")
+        return response.content, content_type
+
     def download_stream(self, doc_id: int) -> tuple[str, Iterator[bytes]]:
         """Stream a document's original file straight from Paperless-ngx.
 

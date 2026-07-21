@@ -11,6 +11,7 @@ import os
 import pytest
 
 from common.config import Settings
+from tests.helpers.factories import make_settings
 
 _MINIMAL_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
@@ -800,8 +801,8 @@ def test_identity_aware_is_config_only() -> None:
     assert "SEARCH_IDENTITY_AWARE" not in REINDEX_KEYS
 
 
-def test_config_keys_has_eighty_seven_entries() -> None:
-    """CONFIG_KEYS is the 87-key universe.
+def test_config_keys_has_ninety_entries() -> None:
+    """CONFIG_KEYS is the 90-key universe.
 
     SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
     the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
@@ -817,11 +818,13 @@ def test_config_keys_has_eighty_seven_entries() -> None:
     added so each AI step picks OpenAI/Ollama independently (default seeds from
     LLM_PROVIDER), bringing the count from 81 to 86. OPENAI_FLEX_TIER was added
     to toggle the OpenAI Flex service tier for the two background daemons,
-    bringing the count to 87.
+    bringing the count to 87. OCR_SKIP_BORN_DIGITAL, OCR_BORN_DIGITAL_MIN_CHARS,
+    and OCR_BORN_DIGITAL_TAG_ID were added so a born-digital PDF's embedded text
+    layer can skip the OCR round-trip, bringing the count to 90.
     """
     from common.config import CONFIG_KEYS
 
-    assert len(CONFIG_KEYS) == 87
+    assert len(CONFIG_KEYS) == 90
     assert "OPENAI_FLEX_TIER" in CONFIG_KEYS
     assert "PRICING_REFRESH_URL" in CONFIG_KEYS
     assert "PRICING_REFRESH_INTERVAL_HOURS" in CONFIG_KEYS
@@ -850,6 +853,11 @@ def test_config_keys_has_eighty_seven_entries() -> None:
     assert "SEARCH_JUDGE_MODEL" in CONFIG_KEYS
     assert "SEARCH_JUDGE_REASONING_EFFORT" in CONFIG_KEYS
     assert "SEARCH_JUDGE_RATIONALES" in CONFIG_KEYS
+    assert {
+        "OCR_SKIP_BORN_DIGITAL",
+        "OCR_BORN_DIGITAL_MIN_CHARS",
+        "OCR_BORN_DIGITAL_TAG_ID",
+    } <= CONFIG_KEYS
 
 
 def test_judge_keys_are_config_only() -> None:
@@ -1085,3 +1093,23 @@ def test_per_step_provider_keys_are_config_only() -> None:
         assert key in CONFIG_KEYS
         assert key not in SECRET_KEYS
         assert key not in REINDEX_KEYS
+
+
+def test_born_digital_defaults() -> None:
+    """OCR_SKIP_BORN_DIGITAL defaults on, with a 50-char threshold and no tag."""
+    s = make_settings()
+    assert s.OCR_SKIP_BORN_DIGITAL is True
+    assert s.OCR_BORN_DIGITAL_MIN_CHARS == 50
+    assert s.OCR_BORN_DIGITAL_TAG_ID is None
+
+
+def test_min_chars_rejects_zero() -> None:
+    """OCR_BORN_DIGITAL_MIN_CHARS must be at least 1 — zero would treat every
+    page as born-digital regardless of extracted text."""
+    with pytest.raises(ValueError):
+        make_settings(OCR_BORN_DIGITAL_MIN_CHARS="0")
+
+
+def test_tag_id_parses_positive_int() -> None:
+    """OCR_BORN_DIGITAL_TAG_ID parses a positive integer from the environment."""
+    assert make_settings(OCR_BORN_DIGITAL_TAG_ID="17").OCR_BORN_DIGITAL_TAG_ID == 17
