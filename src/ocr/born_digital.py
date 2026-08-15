@@ -237,10 +237,10 @@ def classify_original(
         if glyphless:
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
         # The text floor only bites on a page that also carries a raster: a
-        # textless, imageless page is a blank verso/divider with nothing for a
-        # vision model to read, not a scan (spec D3, blank-page clause). The
-        # offending page is named because min_page_chars may belong to an
-        # exempted blank page instead.
+        # textless, imageless page is a blank verso, a divider or (rarely) a
+        # vector-outline page -- not a scan (spec D3, blank-page clause; the
+        # outline case is an accepted residual, spec risk 4b). The offending
+        # page is named because min_page_chars may belong to an exempted page.
         low_text_page = next(
             (
                 page

@@ -86,7 +86,7 @@ Empirically validated 9/9 against real documents on the operator's instance.
 ## 2026-08-15 — Born-digital gate: text floor default 1, blank pages exempt
 **Decision:** `OCR_BORN_DIGITAL_MIN_CHARS` default 50 → 1, and the per-page text floor now applies
 only to a page that also carries a raster (`pdfimages` row, ppi 0 included) — a textless, imageless
-page is a blank verso/divider, not a scan. Whole-document rule, `COVERAGE`, tags-only skip and the
+page is a blank verso, a divider or (rarely) a vector-outline page — not a scan. Whole-document rule, `COVERAGE`, tags-only skip and the
 exposed key are unchanged.
 **Why:** The first real booklet (prod doc 1525, 59 pages) went through 59 vision calls because its
 cover page held 44 chars + a logo — one under the shipped floor. The 9-doc calibration set had no

@@ -28,7 +28,7 @@ text). Fail-safe: any doubt → OCR. Forward-looking only (new ingestions); no r
 
 ### Paperless-ngx behaviour (verified live against docs.paperless-ngx.com, 2026-07-21)
 
-- `PAPERLESS_OCR_MODE=skip` (the operator's setting) does **not** mean "no OCR": OCRmyPDF still
+- `PAPERLESS_OCR_MODE=skip` (the stock 2.20.x default; unset in the deployment inspected) does **not** mean "no OCR": OCRmyPDF still
   Tesseract-OCRs pages that have **no** text layer (scans), and leaves already-textual pages
   (born-digital) untouched. So a scan's `content` is Tesseract output.
 - **The original uploaded file is always preserved, separate from the archive, in every OCR
@@ -433,12 +433,15 @@ while sum flips Doc A — the recorded reason for D3's max choice.
    ≥ `MIN_CHARS` chars + raster. (b) **a vector-only page** (fonts outlined to paths, no raster)
    in an otherwise-text document is skipped rather than OCR'd, so that page's text reaches the
    index only if ngx itself OCR'd it — which is **version-dependent**: on ngx ≤ 2.20.x stock
-   defaults (`PAPERLESS_OCR_MODE=skip`, `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=never`; the operator's
-   prod, 2.20.15, verified 2026-08-15 against `paperless_tesseract/parsers.py` at that tag)
+   defaults (`PAPERLESS_OCR_MODE=skip`, `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=never`; verified
+   2026-08-15 against `paperless_tesseract/parsers.py` at tag v2.20.15)
    OCRmyPDF always runs with `skip_text`, which OCRs the textless pages, so ngx content covers it;
-   on ngx `main` (new defaults `PAPERLESS_OCR_MODE=auto` + `PAPERLESS_ARCHIVE_FILE_GENERATION=auto`,
+   on ngx **v3.0.x** (released — v3.0.5 current on 2026-08-15 — and `main`; defaults
+   `PAPERLESS_OCR_MODE=auto` + `PAPERLESS_ARCHIVE_FILE_GENERATION=auto`,
    `paperless/parsers/tesseract.py`) OCRmyPDF is bypassed entirely for a document that already
-   carries text, so there is **no** fallback and (b) has the same status as (a). Both accepted on
+   carries text, so there is **no** fallback and (b) has the same status as (a) — and 3.0 remaps
+   an explicit `PAPERLESS_OCR_MODE=skip` to `auto` (`paperless/settings/__init__.py`), so pinning
+   the old mode is not a post-upgrade mitigation. Both accepted on
    the census (0 mixed docs in 14; the class is a vector-only page inside a text document);
    consequence is missing index text for that page, never a pipeline break.
 
