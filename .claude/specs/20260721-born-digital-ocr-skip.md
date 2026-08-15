@@ -431,9 +431,16 @@ while sum flips Doc A — the recorded reason for D3's max choice.
    on the census (every scan page measured ≥ 0.99 coverage; a full-page scan with a stamp is
    still caught by the ceiling); the operator's lever is raising `MIN_CHARS`, which shrinks it to
    ≥ `MIN_CHARS` chars + raster. (b) **a vector-only page** (fonts outlined to paths, no raster)
-   in an otherwise-text document is skipped rather than OCR'd; here ngx's own OCR does stand
-   (`PAPERLESS_OCR_MODE` default `auto` → OCRmyPDF `--skip-text`, which OCRs the pages that have
-   no text; not under `off`; docs.paperless-ngx.com/configuration, verified 2026-08-15).
+   in an otherwise-text document is skipped rather than OCR'd, so that page's text reaches the
+   index only if ngx itself OCR'd it — which is **version-dependent**: on ngx ≤ 2.20.x stock
+   defaults (`PAPERLESS_OCR_MODE=skip`, `PAPERLESS_OCR_SKIP_ARCHIVE_FILE=never`; the operator's
+   prod, 2.20.15, verified 2026-08-15 against `paperless_tesseract/parsers.py` at that tag)
+   OCRmyPDF always runs with `skip_text`, which OCRs the textless pages, so ngx content covers it;
+   on ngx `main` (new defaults `PAPERLESS_OCR_MODE=auto` + `PAPERLESS_ARCHIVE_FILE_GENERATION=auto`,
+   `paperless/parsers/tesseract.py`) OCRmyPDF is bypassed entirely for a document that already
+   carries text, so there is **no** fallback and (b) has the same status as (a). Both accepted on
+   the census (0 mixed docs in 14; the class is a vector-only page inside a text document);
+   consequence is missing index text for that page, never a pipeline break.
 
 ## Amendments
 
@@ -467,8 +474,9 @@ mixed docs but a spec of its own; census shows 0 mixed docs so far).
 the blank-page clause `min_page_chars` may belong to an *exempted* page, so the verdict names the
 page that actually tripped the floor. (4) The Settings-UI hint for the key states the raster
 condition. (5) `_parse_max_coverage` reads the ppi columns from the **right** (`f[-4]`, `f[-3]`):
-poppler prints an inline image (`BI…EI`) with `[inline]` as one token where an XObject has two
-(`10  0`), so the old fixed left index landed on the size column and every inline-image PDF fell
+poppler prints an inline image (`BI…EI`) as `[inline]` — and a non-`Ref` image object as
+`[none]` — one token where an XObject has two (`10  0`), so the old fixed left index landed on
+the size column and every such PDF fell
 to `probe-failed` → vision OCR (fail-closed, so never a scan-skip hole; measured on poppler
 26.03, surfaced by the 2026-08-15 review, fixed on operator instruction). (6) `docs/ocr-pipeline.md`
 (human doc) corrected on the operator's explicit instruction ("fix the human doc", 2026-08-15):
@@ -483,7 +491,7 @@ whole-document rule.
 `test_pure_scan_still_ocrs_at_the_shipped_default`,
 `test_blank_page_without_raster_is_exempt_from_text_floor`,
 `test_textless_page_with_inset_raster_still_ocrs` — incl. the ppi-0 seam and the `low_text_page` signal,
-`test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged`),
+`test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged`,
 `test_parse_max_coverage_inline_image_row_parses`),
 `tests/integration/test_born_digital_poppler.py` (`test_real_born_digital_with_blank_page_skips`,
 `test_real_born_digital_with_inline_logo_skips`, `test_real_inline_image_only_page_still_ocrs` —

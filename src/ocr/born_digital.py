@@ -139,9 +139,9 @@ def _parse_max_coverage(
             continue
         f = line.split()
         # Columns from the LEFT are stable up to height; the "object ID" column
-        # is two tokens ("10  0") for an XObject but ONE ("[inline]") for an
-        # inline image, so the ppi columns are addressed from the RIGHT:
-        # ... x-ppi y-ppi size ratio.
+        # is two tokens ("10  0") for an XObject but ONE for an inline image
+        # ("[inline]") or a non-Ref image object ("[none]"), so the ppi columns
+        # are addressed from the RIGHT: ... x-ppi y-ppi size ratio.
         try:
             page, w, h = int(f[0]), int(f[3]), int(f[4])
             xppi, yppi = float(f[-4]), float(f[-3])

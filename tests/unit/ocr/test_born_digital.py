@@ -112,18 +112,24 @@ def test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged():
 
 
 def test_parse_max_coverage_inline_image_row_parses():
-    # poppler prints an inline image (BI...EI) with `[inline]` as ONE token in
-    # the two-token "object ID" column, so the row has 15 fields, not 16. The
-    # ppi columns must therefore be read from the right; a fixed left index
-    # lands on the size column ("16B") and turned every inline-image PDF into a
-    # fail-closed OCR (measured with poppler 26.03: 4x4 image at 0.484x0.342 ppi
-    # -> ~28% of A4).
+    # poppler prints an inline image (BI...EI) as `[inline]` -- and a non-Ref
+    # image object as `[none]` -- ONE token in the two-token "object ID" column,
+    # so the row has 15 fields, not 16. The ppi columns must therefore be read
+    # from the right; a fixed left index lands on the size column ("16B") and
+    # turned every such PDF into a fail-closed OCR. Row measured with poppler
+    # 26.03: a 4x4 inline logo drawn at 40x40 pt reports 7x7 ppi -> ~0.3% of A4,
+    # well below the 1.0 clamp so the assertion is sensitive to the parsed value.
     header = PDFIMAGES.split("\n", 2)[0] + "\n" + "-" * 40 + "\n"
-    inline = header + (
-        "   1     0 image       4     4  gray    1   8  image  no   [inline]   0.484 0.342   16B 100%\n"
+    rows = header + (
+        "   1     0 image       4     4  gray    1   8  image  no   [inline]       7     7   16B 100%\n"
+        "   2     1 image       4     4  gray    1   8  image  no   [none]         7     7   16B 100%\n"
     )
-    cov = _parse_max_coverage(inline, _A4_AREA_SQ_IN)
-    assert cov[1] == pytest.approx((4 / 0.484) * (4 / 0.342) / _A4_AREA_SQ_IN, rel=1e-3)
+    cov = _parse_max_coverage(rows, _A4_AREA_SQ_IN)
+    expected = (4 / 7) * (4 / 7) / _A4_AREA_SQ_IN  # ~0.0034
+    assert cov == {
+        1: pytest.approx(expected, rel=1e-3),
+        2: pytest.approx(expected, rel=1e-3),
+    }
 
 
 def test_parse_max_coverage_garbled_row_raises():

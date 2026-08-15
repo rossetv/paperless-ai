@@ -85,10 +85,11 @@ def test_real_born_digital_with_blank_page_skips():
 
 
 def test_real_born_digital_with_inline_logo_skips():
-    # Regression: pdfimages prints an inline image with `[inline]` as one token,
-    # which the fixed-index ppi parse read as the size column -> ProbeError ->
-    # every inline-image PDF fell to vision OCR. A text page with a small inline
-    # logo is born-digital and must skip.
+    # Regression: pdfimages prints an inline image as `[inline]` (and a non-Ref
+    # image object as `[none]`) -- one token where an XObject has two -- which
+    # the fixed-index ppi parse read as the size column -> ProbeError -> every
+    # such PDF fell to vision OCR. A text page with a small inline logo is
+    # born-digital and must skip.
     d = classify_original(_build_pdf([_TEXT + b" " + _INLINE_LOGO]), min_chars=1)
     assert d.skip is True and d.reason == "born-digital", d
     assert 0.0 < d.signals["max_coverage"] < 0.05
