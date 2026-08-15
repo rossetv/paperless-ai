@@ -223,8 +223,22 @@ def test_blank_page_without_raster_is_exempt_from_text_floor():
 
 def test_textless_page_with_inset_raster_still_ocrs():
     # The exemption is for imageless pages only: 0 chars + any raster (even a
-    # sub-COVERAGE inset one) is scan-like and keeps the text floor.
+    # sub-COVERAGE inset one) is scan-like and keeps the text floor -- and the
+    # decision names the offending page, since min_page_chars may now come
+    # from an exempted blank page instead.
     d = _decide([1443, 0], {1: 0.02, 2: 0.3}, False)
+    assert d.skip is False and d.reason == "low-text-page"
+    assert d.signals["low_text_page"] == 2
+    # A ppi-0 raster (recorded at coverage 0.0) still counts as "carries a
+    # raster": the seam between _parse_max_coverage and the exemption.
+    assert _decide([1443, 0], {1: 0.02, 2: 0.0}, False).reason == "low-text-page"
+
+
+def test_pure_scan_still_ocrs_at_the_shipped_default():
+    # Lowering the floor to 1 must not weaken scan detection: 0 chars + a
+    # full-page raster fails at the shipped default too.
+    default = make_settings().OCR_BORN_DIGITAL_MIN_CHARS
+    d = _decide([0, 0], {1: 1.0, 2: 1.0}, False, min_chars=default)
     assert d.skip is False and d.reason == "low-text-page"
 
 

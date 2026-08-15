@@ -1,6 +1,6 @@
 # Spec — skip AI OCR on born-digital PDFs
 
-**Date:** 2026-07-21 · **Session slug:** born-digital-ocr-skip · **Status:** draft (awaiting operator approval) · **Amended:** 2026-08-15 (see *Amendments*)
+**Date:** 2026-07-21 · **Session slug:** born-digital-ocr-skip · **Status:** approved (shipped `ee3b9b9`, 2026-07-21) · **Amended:** 2026-08-15 (see *Amendments*)
 
 ## Goal
 
@@ -233,12 +233,12 @@ decompression-bomb defence.
 | Key | Type / control | Default | Settings section |
 |---|---|---|---|
 | `OCR_SKIP_BORN_DIGITAL` | `bool` / toggle | **ON** (`True`) | OCR |
-| `OCR_BORN_DIGITAL_MIN_CHARS` | `int` (≥1) / number | **50** | OCR |
+| `OCR_BORN_DIGITAL_MIN_CHARS` | `int` (≥1) / number | **1** (was 50 — see *Amendments*) | OCR |
 | `OCR_BORN_DIGITAL_TAG_ID` | `int \| None` / number | **unset** (`None`) | Tags |
 
 Backend: add all three to `CONFIG_KEYS`; add `Settings` fields with parsing —
 `_get_bool_env(..., default=True)`, `_require_at_least_one("OCR_BORN_DIGITAL_MIN_CHARS",
-_get_int_env(..., 50))`, and `_get_optional_positive_int_env(..., "OCR_BORN_DIGITAL_TAG_ID")`
+_get_int_env(..., 1))` (was 50 — see *Amendments*), and `_get_optional_positive_int_env(..., "OCR_BORN_DIGITAL_TAG_ID")`
 (mirrors `OCR_PROCESSING_TAG_ID`). Frontend: add two `SettingsField` rows to the OCR section
 and one to the Tags section of `sections.ts` (toggle + two numbers; existing control kinds).
 Default **ON** is the operator's explicit choice for the public code default; a behaviour
@@ -365,13 +365,14 @@ A fix/feature without a failing-first test is an assertion. Regression tests shi
   failure/timeout/garbage → OCR (each probe, **including `pdffonts`**); a probe emitting >
   `PROBE_MAX_OUTPUT_BYTES` → OCR; encrypted/corrupt PDF → OCR; missing poppler binary → OCR + one
   warning; empty ngx content on an otherwise-born-digital PDF → OCR (D5 guard).
-- **Thresholds** — a page at `MIN_CHARS-1` fails, at `MIN_CHARS` passes; per-page **largest-image**
+- **Thresholds** — a page at `MIN_CHARS-1` fails **when it also carries a raster** and passes when
+  it carries none (amended 2026-08-15 — see *Amendments*), at `MIN_CHARS` passes; per-page **largest-image**
   coverage at 0.86 fails, 0.84 passes; whole-document rule (one failing page, or a `GlyphLessFont`
   anywhere → OCR).
 - **Skip action (`worker.py`)** — SKIP does a tags-only PATCH (PRE→POST, no content rewrite),
   adds the marker tag only when configured, releases the processing tag, records the right
   write-back outcome; a permanent 4xx on the skip PATCH quarantines; a transient error re-raises.
-- **Config** — `OCR_SKIP_BORN_DIGITAL` default `True`; `OCR_BORN_DIGITAL_MIN_CHARS` default 50
+- **Config** — `OCR_SKIP_BORN_DIGITAL` default `True`; `OCR_BORN_DIGITAL_MIN_CHARS` default 1 (was 50 — see *Amendments*)
   and rejects 0 (`_require_at_least_one`); `OCR_BORN_DIGITAL_TAG_ID` default `None` and parses a
   positive int; all three in `CONFIG_KEYS`. **The key-universe count IS pinned** —
   `tests/unit/common/test_config.py` asserts `len(CONFIG_KEYS) == 87`; update it to **90** (and
@@ -423,9 +424,14 @@ while sum flips Doc A — the recorded reason for D3's max choice.
 4. **Sparse born-digital pages** — *narrowed 2026-08-15*: this risk fired on the first real
    booklet (a 59-page motor-insurance policy whose cover page held 44 chars + a 26% logo raster
    → 59 pages of vision OCR under `MIN_CHARS=50`). Closed by the default → 1 and the D3
-   blank-page clause. The residual is a page with 1–`MIN_CHARS-1` chars **and** a raster at a
-   raised `MIN_CHARS`, and a vector-only page (fonts outlined to paths, no raster) that is now
-   skipped rather than OCR'd — quality-only, ngx Tesseract content stands.
+   blank-page clause. The live residual at the default: a page with ≥ 1 char **and** a raster
+   below `COVERAGE` (an inset/partial scan carrying a stamped glyph) now skips where it OCR'd —
+   accepted on the census (every scan page measured ≥ 0.99 coverage; a full-page scan with a
+   stamp is still caught by the ceiling); at a raised floor the residual widens to 1–`MIN_CHARS-1`
+   chars + raster. Also new: a vector-only page (fonts outlined to paths, no raster) in an
+   otherwise-text document is skipped rather than OCR'd. Both quality-only — ngx's own OCR
+   stands (`PAPERLESS_OCR_MODE` default `auto` → OCRmyPDF `--skip-text`, which OCRs the pages
+   that have no text; not under `off`, per docs.paperless-ngx.com/configuration, 2026-08-15).
 
 ## Amendments
 
@@ -455,13 +461,19 @@ lowering the default (does not fix the reported cover — it has a logo); any ne
 threshold for sparse pages (no data → the same smell D4 flags); per-page routing (D8 v2 — real for
 mixed docs but a spec of its own; census shows 0 mixed docs so far).
 
-**Not changed:** the exposed key, its `≥ 1` validation, the Settings-UI wiring, `COVERAGE`, D5's
-tags-only skip, D8's whole-document rule.
+(3) The `low-text-page` decision now also carries `low_text_page=<page>` in its signals — under
+the blank-page clause `min_page_chars` may belong to an *exempted* page, so the verdict names the
+page that actually tripped the floor. (4) The Settings-UI hint for the key states the raster
+condition.
+
+**Not changed:** the exposed key, its `≥ 1` validation, `COVERAGE`, D5's tags-only skip, D8's
+whole-document rule.
 
 **Regression tests:** `tests/unit/ocr/test_born_digital.py`
 (`test_sparse_cover_page_with_logo_skips_at_the_shipped_default`,
+`test_pure_scan_still_ocrs_at_the_shipped_default`,
 `test_blank_page_without_raster_is_exempt_from_text_floor`,
-`test_textless_page_with_inset_raster_still_ocrs`,
+`test_textless_page_with_inset_raster_still_ocrs` — incl. the ppi-0 seam and the `low_text_page` signal,
 `test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged`),
 `tests/integration/test_born_digital_poppler.py` (`test_real_born_digital_with_blank_page_skips`,
 a hand-built Helvetica-text + blank-page PDF against real poppler),

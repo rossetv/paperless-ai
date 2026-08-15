@@ -97,5 +97,5 @@ data), per-page routing (D8 v2 — its own spec; 0 mixed docs in the census). Op
 we do your initial recommendation 1 and 2?" → "do it. commit directly to main, small change, then
 push." (2026-08-15).
 **Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-15)
-**Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`
+**Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`, `web/src/features/settings/fieldModel/sections.ts` (hint copy)
 

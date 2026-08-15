@@ -234,12 +234,21 @@ def classify_original(
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
         # The text floor only bites on a page that also carries a raster: a
         # textless, imageless page is a blank verso/divider with nothing for a
-        # vision model to read, not a scan (spec D3, blank-page clause).
-        if any(
-            chars < min_chars and page in coverage
-            for page, chars in enumerate(char_counts, 1)
-        ):
-            return BornDigitalDecision(False, "low-text-page", signals)
+        # vision model to read, not a scan (spec D3, blank-page clause). The
+        # offending page is named because min_page_chars may belong to an
+        # exempted blank page instead.
+        low_text_page = next(
+            (
+                page
+                for page, chars in enumerate(char_counts, 1)
+                if chars < min_chars and page in coverage
+            ),
+            None,
+        )
+        if low_text_page is not None:
+            return BornDigitalDecision(
+                False, "low-text-page", {**signals, "low_text_page": low_text_page}
+            )
         if any(c >= coverage_threshold for c in coverage.values()):
             return BornDigitalDecision(False, "full-page-image", signals)
         return BornDigitalDecision(True, "born-digital", signals)

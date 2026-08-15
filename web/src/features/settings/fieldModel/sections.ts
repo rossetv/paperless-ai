@@ -238,7 +238,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
           {
             key: 'OCR_BORN_DIGITAL_MIN_CHARS',
             label: 'Born-digital min characters/page',
-            hint: 'A page needs at least this many characters of real text to count as born-digital.',
+            hint: 'A page that carries an image needs at least this many characters of real text to count as born-digital; imageless pages are exempt.',
             control: { kind: 'number', min: 1 },
           },
         ],
