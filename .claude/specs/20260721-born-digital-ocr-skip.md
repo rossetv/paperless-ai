@@ -441,7 +441,9 @@ while sum flips Doc A — the recorded reason for D3's max choice.
    `paperless/parsers/tesseract.py`) OCRmyPDF is bypassed entirely for a document that already
    carries text, so there is **no** fallback and (b) has the same status as (a) — and 3.0 remaps
    an explicit `PAPERLESS_OCR_MODE=skip` to `auto` (`paperless/settings/__init__.py`), so pinning
-   the old mode is not a post-upgrade mitigation. Both accepted on
+   the old mode is not a post-upgrade mitigation — `PAPERLESS_ARCHIVE_FILE_GENERATION=always` is
+   (the bypass requires `not produce_archive`; with an archive forced, OCRmyPDF runs with
+   `skip_text` and OCRs the textless page). Both accepted on
    the census (0 mixed docs in 14; the class is a vector-only page inside a text document);
    consequence is missing index text for that page, never a pipeline break.
 
