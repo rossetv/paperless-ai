@@ -466,7 +466,14 @@ mixed docs but a spec of its own; census shows 0 mixed docs so far).
 (3) The `low-text-page` decision now also carries `low_text_page=<page>` in its signals — under
 the blank-page clause `min_page_chars` may belong to an *exempted* page, so the verdict names the
 page that actually tripped the floor. (4) The Settings-UI hint for the key states the raster
-condition.
+condition. (5) `_parse_max_coverage` reads the ppi columns from the **right** (`f[-4]`, `f[-3]`):
+poppler prints an inline image (`BI…EI`) with `[inline]` as one token where an XObject has two
+(`10  0`), so the old fixed left index landed on the size column and every inline-image PDF fell
+to `probe-failed` → vision OCR (fail-closed, so never a scan-skip hole; measured on poppler
+26.03, surfaced by the 2026-08-15 review, fixed on operator instruction). (6) `docs/ocr-pipeline.md`
+(human doc) corrected on the operator's explicit instruction ("fix the human doc", 2026-08-15):
+default 1, the raster condition, and the honest residual in place of the "can never break"
+guarantee.
 
 **Not changed:** the exposed key, its `≥ 1` validation, `COVERAGE`, D5's tags-only skip, D8's
 whole-document rule.
@@ -477,7 +484,9 @@ whole-document rule.
 `test_blank_page_without_raster_is_exempt_from_text_floor`,
 `test_textless_page_with_inset_raster_still_ocrs` — incl. the ppi-0 seam and the `low_text_page` signal,
 `test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged`),
+`test_parse_max_coverage_inline_image_row_parses`),
 `tests/integration/test_born_digital_poppler.py` (`test_real_born_digital_with_blank_page_skips`,
-a hand-built Helvetica-text + blank-page PDF against real poppler),
+`test_real_born_digital_with_inline_logo_skips`, `test_real_inline_image_only_page_still_ocrs` —
+hand-built Helvetica-text / blank / inline-image PDFs against real poppler),
 `tests/unit/common/test_config.py` (`test_born_digital_defaults`).
 

@@ -96,6 +96,11 @@ intermediate defaults (arbitrary, fail folio-only versos), a new sparse-page ima
 data), per-page routing (D8 v2 — its own spec; 0 mixed docs in the census). Operator: "so should
 we do your initial recommendation 1 and 2?" → "do it. commit directly to main, small change, then
 push." (2026-08-15).
+Follow-ups landed in the same push on explicit operator instruction ("fix the human doc. also fix
+the follow-up defect found", 2026-08-15): the human doc `docs/ocr-pipeline.md` corrected (default,
+raster condition, honest residual — human-owned prose, edited only on that instruction), and
+`_parse_max_coverage` now reads the ppi columns from the right so inline images (`[inline]`, one
+token) no longer fail the whole gate closed.
 **Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-15)
-**Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`, `web/src/features/settings/fieldModel/sections.ts` (hint copy)
+**Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`, `web/src/features/settings/fieldModel/sections.ts` (hint copy), `docs/ocr-pipeline.md`
 

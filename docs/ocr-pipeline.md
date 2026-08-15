@@ -65,11 +65,11 @@ Not every tagged document needs AI OCR. A **true born-digital PDF** — one prod
 
 The check runs on the document's **pristine original** (fetched with `?original=true`, so a scan's Paperless-added OCR layer cannot disguise it as born-digital) and reads three signals, all from Poppler binaries already in the image — no new dependencies:
 
-- **Text yield** (`pdftotext`) — every page must carry at least `OCR_BORN_DIGITAL_MIN_CHARS` characters of real text (default 50).
+- **Text yield** (`pdftotext`) — every page that carries an image must also carry at least `OCR_BORN_DIGITAL_MIN_CHARS` characters of real text (default 1 — any text layer at all). A page with no text *and* no image is a blank verso or section divider, not a scan, and is left alone.
 - **Image coverage** (`pdfimages` + `pdfinfo`) — no page may be dominated by a single full-page raster (the largest image on a page covering ≥ 85% of it), which is what a scan looks like.
 - **Glyphless font** (`pdffonts`) — no `GlyphLessFont`, the invisible OCR-layer font that scanners and Tesseract emit. This is what separates a true born-digital PDF from a scanner's "searchable scan" — the latter still gets AI OCR.
 
-**A document is skipped only if all three signals agree it is born-digital; every doubt falls through to OCR.** A non-PDF, any probe failure or timeout, empty content, a corrupt file, or a missing binary all route the document to the normal vision pipeline. The feature can only ever *reduce* work — it can never break a document that OCR handles today.
+**A document is skipped only if all three signals agree it is born-digital; every doubt falls through to OCR.** A non-PDF, any probe failure or timeout, empty content, a corrupt file, or a missing binary all route the document to the normal vision pipeline. The feature only ever *reduces* work, with one accepted trade-off: a scanned page whose image sits inset (under 85% of the page) *and* which carries a stray character or two of real text is now skipped rather than OCR'd. Every scan seen so far fills its page, so the coverage check catches it; if your scanner stamps text onto its pages, raise `OCR_BORN_DIGITAL_MIN_CHARS`.
 
 Skipping is a **tags-only** change; the document's content is never rewritten. If `OCR_BORN_DIGITAL_TAG_ID` is set, that marker tag is added too, so skipped documents are easy to find. All three settings are configurable in the Settings UI, and the feature is **on by default**.
 

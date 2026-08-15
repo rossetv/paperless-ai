@@ -111,6 +111,21 @@ def test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged():
     assert _parse_max_coverage(zero_ppi, _A4_AREA_SQ_IN) == {2: 0.0}
 
 
+def test_parse_max_coverage_inline_image_row_parses():
+    # poppler prints an inline image (BI...EI) with `[inline]` as ONE token in
+    # the two-token "object ID" column, so the row has 15 fields, not 16. The
+    # ppi columns must therefore be read from the right; a fixed left index
+    # lands on the size column ("16B") and turned every inline-image PDF into a
+    # fail-closed OCR (measured with poppler 26.03: 4x4 image at 0.484x0.342 ppi
+    # -> ~28% of A4).
+    header = PDFIMAGES.split("\n", 2)[0] + "\n" + "-" * 40 + "\n"
+    inline = header + (
+        "   1     0 image       4     4  gray    1   8  image  no   [inline]   0.484 0.342   16B 100%\n"
+    )
+    cov = _parse_max_coverage(inline, _A4_AREA_SQ_IN)
+    assert cov[1] == pytest.approx((4 / 0.484) * (4 / 0.342) / _A4_AREA_SQ_IN, rel=1e-3)
+
+
 def test_parse_max_coverage_garbled_row_raises():
     bad = PDFIMAGES.rsplit("\n", 2)[0] + "\n   1  x  image  NOTANUMBER  2339 ...\n"
     with pytest.raises(ProbeError):

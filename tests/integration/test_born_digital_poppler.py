@@ -21,23 +21,45 @@ def _scan_pdf(pages: int = 1) -> bytes:
     return buf.getvalue()
 
 
-def _text_plus_blank_pdf() -> bytes:
-    """A hand-built born-digital PDF: page 1 Helvetica text, page 2 blank.
+_TEXT = b"BT /F1 12 Tf 72 770 Td (Your Motor Insurance Policy, born-digital text page) Tj ET"
+# A 4x4 8-bit grey inline image (BI...EI) drawn at 40x40 pt -- a small logo.
+_INLINE_LOGO = (
+    b"q 40 0 0 40 72 700 cm BI /W 4 /H 4 /CS /G /BPC 8 ID "
+    + bytes([0x00, 0xFF] * 8)
+    + b" EI Q"
+)
 
-    Base-14 Helvetica needs no embedding, so pdftotext yields real text and
-    pdffonts lists a real font; page 2 has no content stream at all -- 0 chars,
-    0 rasters -- the blank verso a duplex booklet carries.
+
+def _build_pdf(pages: list[bytes | None]) -> bytes:
+    """Hand-build a born-digital PDF, one content stream per page (None = no
+    /Contents at all: a truly blank page). Base-14 Helvetica needs no
+    embedding, so pdftotext yields real text and pdffonts lists a real font.
     """
-    text = b"BT /F1 12 Tf 72 770 Td (Your Motor Insurance Policy, born-digital text page) Tj ET"
-    objs = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 6 0 R >>",
+    font_obj = 3
+    objs: list[bytes] = [
+        b"",  # 1: catalogue (filled below)
+        b"",  # 2: pages (filled below)
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>",
-        b"<< /Length %d >>\nstream\n" % len(text) + text + b"\nendstream",
     ]
+    kids: list[bytes] = []
+    for content in pages:
+        page_num = len(objs) + 1
+        kids.append(b"%d 0 R" % page_num)
+        page = (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            b"/Resources << /Font << /F1 %d 0 R >> >>" % font_obj
+        )
+        if content is None:
+            objs.append(page + b" >>")
+        else:
+            objs.append(page + b" /Contents %d 0 R >>" % (page_num + 1))
+            objs.append(
+                b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream"
+            )
+    objs[0] = b"<< /Type /Catalog /Pages 2 0 R >>"
+    objs[1] = (
+        b"<< /Type /Pages /Kids [" + b" ".join(kids) + b"] /Count %d >>" % len(pages)
+    )
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for i, body in enumerate(objs, 1):
@@ -57,9 +79,26 @@ def _text_plus_blank_pdf() -> bytes:
 def test_real_born_digital_with_blank_page_skips():
     # Regression: under the pre-2026-08-15 rule the blank page (0 chars) tripped
     # the text floor and sent the whole document to vision OCR.
-    d = classify_original(_text_plus_blank_pdf(), min_chars=1)
+    d = classify_original(_build_pdf([_TEXT, None]), min_chars=1)
     assert d.skip is True and d.reason == "born-digital", d
     assert d.signals["pages"] == 2 and d.signals["min_page_chars"] == 0
+
+
+def test_real_born_digital_with_inline_logo_skips():
+    # Regression: pdfimages prints an inline image with `[inline]` as one token,
+    # which the fixed-index ppi parse read as the size column -> ProbeError ->
+    # every inline-image PDF fell to vision OCR. A text page with a small inline
+    # logo is born-digital and must skip.
+    d = classify_original(_build_pdf([_TEXT + b" " + _INLINE_LOGO]), min_chars=1)
+    assert d.skip is True and d.reason == "born-digital", d
+    assert 0.0 < d.signals["max_coverage"] < 0.05
+
+
+def test_real_inline_image_only_page_still_ocrs():
+    # ...while an inline raster with no text is scan-like and still OCRs.
+    d = classify_original(_build_pdf([_TEXT, _INLINE_LOGO]), min_chars=1)
+    assert d.skip is False and d.reason == "low-text-page", d
+    assert d.signals["low_text_page"] == 2
 
 
 def test_real_pure_image_scan_ocrs():
