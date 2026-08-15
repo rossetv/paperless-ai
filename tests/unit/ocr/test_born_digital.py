@@ -164,7 +164,7 @@ def test_run_probe_output_cap_trips_on_a_flood():
         _run_probe(["yes"], timeout=60)
 
 
-def _decide(page_chars, page_cov, glyphless, min_chars=50):
+def _decide(page_chars, page_cov, glyphless, min_chars=1):  # 1 = the shipped default
     with patch(
         "ocr.born_digital._probe_signals",
         return_value=_ProbeSignals(page_chars, page_cov, glyphless),
@@ -204,8 +204,12 @@ def test_mixed_textless_last_page_ocrs():
 
 
 def test_min_chars_boundary():
-    assert _decide([50], {1: 0.0}, False).skip is True
-    assert _decide([49], {1: 0.0}, False).skip is False
+    # {1: 0.0} = page 1 carries a raster, so the floor applies; at a raised
+    # floor of 50 the boundary sits at 50/49, at the shipped default at 1/0.
+    assert _decide([50], {1: 0.0}, False, min_chars=50).skip is True
+    assert _decide([49], {1: 0.0}, False, min_chars=50).skip is False
+    assert _decide([1], {1: 0.0}, False).skip is True
+    assert _decide([0], {1: 0.0}, False).skip is False
 
 
 def test_coverage_boundary():

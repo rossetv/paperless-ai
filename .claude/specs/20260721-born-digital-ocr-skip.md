@@ -424,14 +424,16 @@ while sum flips Doc A — the recorded reason for D3's max choice.
 4. **Sparse born-digital pages** — *narrowed 2026-08-15*: this risk fired on the first real
    booklet (a 59-page motor-insurance policy whose cover page held 44 chars + a 26% logo raster
    → 59 pages of vision OCR under `MIN_CHARS=50`). Closed by the default → 1 and the D3
-   blank-page clause. The live residual at the default: a page with ≥ 1 char **and** a raster
-   below `COVERAGE` (an inset/partial scan carrying a stamped glyph) now skips where it OCR'd —
-   accepted on the census (every scan page measured ≥ 0.99 coverage; a full-page scan with a
-   stamp is still caught by the ceiling); at a raised floor the residual widens to 1–`MIN_CHARS-1`
-   chars + raster. Also new: a vector-only page (fonts outlined to paths, no raster) in an
-   otherwise-text document is skipped rather than OCR'd. Both quality-only — ngx's own OCR
-   stands (`PAPERLESS_OCR_MODE` default `auto` → OCRmyPDF `--skip-text`, which OCRs the pages
-   that have no text; not under `off`, per docs.paperless-ngx.com/configuration, 2026-08-15).
+   blank-page clause. Two residuals remain, both quality-only, never breakage:
+   (a) **a page with ≥ 1 char and a raster below `COVERAGE`** — an inset/partial scan carrying a
+   stamped glyph — now skips where it OCR'd, and ngx offers **no** fallback for it (OCRmyPDF
+   `--skip-text` copies pages that already contain text; docs.ocrmypdf.readthedocs.io). Accepted
+   on the census (every scan page measured ≥ 0.99 coverage; a full-page scan with a stamp is
+   still caught by the ceiling); the operator's lever is raising `MIN_CHARS`, which shrinks it to
+   ≥ `MIN_CHARS` chars + raster. (b) **a vector-only page** (fonts outlined to paths, no raster)
+   in an otherwise-text document is skipped rather than OCR'd; here ngx's own OCR does stand
+   (`PAPERLESS_OCR_MODE` default `auto` → OCRmyPDF `--skip-text`, which OCRs the pages that have
+   no text; not under `off`; docs.paperless-ngx.com/configuration, verified 2026-08-15).
 
 ## Amendments
 
