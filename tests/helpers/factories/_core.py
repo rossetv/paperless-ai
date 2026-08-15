@@ -103,7 +103,7 @@ def make_settings_obj(**overrides: Any) -> MagicMock:
         "OCR_IMAGE_DETAIL": "high",
         "OCR_REASONING_EFFORT": "medium",
         "OCR_SKIP_BORN_DIGITAL": False,
-        "OCR_BORN_DIGITAL_MIN_CHARS": 50,
+        "OCR_BORN_DIGITAL_MIN_CHARS": 1,
         "OCR_BORN_DIGITAL_TAG_ID": None,
         "PAGE_WORKERS": 2,
         "DOCUMENT_WORKERS": 2,

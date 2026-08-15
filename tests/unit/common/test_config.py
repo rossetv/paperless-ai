@@ -1096,10 +1096,15 @@ def test_per_step_provider_keys_are_config_only() -> None:
 
 
 def test_born_digital_defaults() -> None:
-    """OCR_SKIP_BORN_DIGITAL defaults on, with a 50-char threshold and no tag."""
+    """OCR_SKIP_BORN_DIGITAL defaults on, with a 1-char text floor and no tag.
+
+    The floor separates "has a text layer" from "none" (spec D4); 1 is that
+    boundary. The original 50 sent a 59-page booklet to vision OCR over a
+    44-char cover page (2026-08-15).
+    """
     s = make_settings()
     assert s.OCR_SKIP_BORN_DIGITAL is True
-    assert s.OCR_BORN_DIGITAL_MIN_CHARS == 50
+    assert s.OCR_BORN_DIGITAL_MIN_CHARS == 1
     assert s.OCR_BORN_DIGITAL_TAG_ID is None
 
 

@@ -1,6 +1,6 @@
 # Spec — skip AI OCR on born-digital PDFs
 
-**Date:** 2026-07-21 · **Session slug:** born-digital-ocr-skip · **Status:** draft (awaiting operator approval)
+**Date:** 2026-07-21 · **Session slug:** born-digital-ocr-skip · **Status:** draft (awaiting operator approval) · **Amended:** 2026-08-15 (see *Amendments*)
 
 ## Goal
 
@@ -137,8 +137,12 @@ From the original PDF:
   ceiling (near-always full-page for a scan) or the reserved `Tr 3` check.
 
 Rule (whole-document): **SKIP ⟺ the document has no `GlyphLessFont` AND every page has
-`chars ≥ MIN_CHARS` AND `coverage < COVERAGE`; otherwise OCR.** Three signals because each
-catches a distinct class:
+`coverage < COVERAGE` AND (`chars ≥ MIN_CHARS` OR the page carries no raster at all); otherwise
+OCR.** *(Amended 2026-08-15 — the blank-page clause: a page below the text floor is scan-like
+only if it also carries at least one `pdfimages` row; a textless, imageless page is a blank
+verso/divider with nothing for a vision model to read. A degenerate-CTM raster — `pdfimages`
+ppi 0 — still counts as "carries a raster".)* Three signals because each catches a distinct
+class:
 - the **text floor** catches pure-image scans (0 chars) and the scanned pages of a mixed
   document (Doc F/Doc G, and the scan pages of Doc H/Doc I);
 - the **coverage ceiling** catches *searchable scans* whose scanned image fills the page (text
@@ -161,11 +165,11 @@ content-stream parsing. It is the general form that would also catch **real-font
 (ABBYY/Acrobat/Apple), the class the glyphless check does *not* close. Kept as the escalation
 path if an inset real-font searchable scan ever appears.
 
-### D4 — Thresholds: `MIN_CHARS` configurable (default 50), `COVERAGE` hardcoded (0.85)
+### D4 — Thresholds: `MIN_CHARS` configurable (default 1, was 50), `COVERAGE` hardcoded (0.85)
 
-`OCR_BORN_DIGITAL_MIN_CHARS` is a config key (default **50**), because "how much extractable
-text counts as a real text layer" is the more deployment-variable knob and the operator asked
-to expose it. It is validated `≥ 1` (via `_require_at_least_one`, which **raises** on `< 1`) so
+`OCR_BORN_DIGITAL_MIN_CHARS` is a config key (default **1** since 2026-08-15; shipped as 50 —
+see *Amendments*), because "how much extractable text counts as a real text layer" is the more
+deployment-variable knob and the operator asked to expose it. It is validated `≥ 1` (via `_require_at_least_one`, which **raises** on `< 1`) so
 it cannot be set to 0. (0 would disable only the text floor — the coverage ceiling still gates —
 not literally skip everything; the validation is belt-and-braces.) `COVERAGE` is a **hardcoded
 constant = 0.85** in the detection
@@ -416,6 +420,50 @@ while sum flips Doc A — the recorded reason for D3's max choice.
    never hit by the operator's own (pure-image) scanner; consequence is quality-only, never
    breakage. The reserved invisible-text-render-mode (`Tr 3`) check (D3) is the general-form
    escalation that would close both real-font slices if they ever appear.
-4. **`MIN_CHARS=50` and sparse born-digital pages** — a legitimate near-blank born-digital page
-   (e.g. a section divider with < 50 chars) sends its whole document to OCR (safe over-OCR).
-   Tunable via the exposed key.
+4. **Sparse born-digital pages** — *narrowed 2026-08-15*: this risk fired on the first real
+   booklet (a 59-page motor-insurance policy whose cover page held 44 chars + a 26% logo raster
+   → 59 pages of vision OCR under `MIN_CHARS=50`). Closed by the default → 1 and the D3
+   blank-page clause. The residual is a page with 1–`MIN_CHARS-1` chars **and** a raster at a
+   raised `MIN_CHARS`, and a vector-only page (fonts outlined to paths, no raster) that is now
+   skipped rather than OCR'd — quality-only, ngx Tesseract content stands.
+
+## Amendments
+
+### 2026-08-15 — text floor default 1, blank pages exempt (operator-approved, direct on `main`)
+
+**Trigger:** prod doc 1525 (2026-08-15) — a 59-page born-digital policy booklet — went through 59
+gpt-5.4-mini vision calls (207 s) because its cover page measured 44 non-whitespace chars
+(`Your Motor Insurance Policy Direct / MOTOR INSURANCE` + logo raster at 0.263 coverage), one page
+under the 50-char floor. Log: `born_digital.decision … min_page_chars=44 pages=59
+reason=low-text-page skip=False`. Reproduced locally on the pristine original (poppler 26.03 vs
+prod's 25.03: identical signals). Census since the 2026-07-22 deploy: 14 decisions → 12 skips,
+1 true scan (0 chars, 0.996 coverage), 1 false negative — which was 59 of the 100 pages OCR'd.
+
+**Why the shipped rule was wrong:** the 9-doc calibration set (born-digital pages 389–2052 chars,
+scans exactly 0) contained no sparse born-digital page — no cover, divider or folio-only verso —
+so 50 was picked inside a wide gap with no data on the low side, and it contradicts D4's own
+stated semantics ("has a text layer vs none"). A blank page (0 chars, no raster) is unfixable by
+tuning alone at any floor ≥ 1.
+
+**Change (both parts approved together):** (1) `OCR_BORN_DIGITAL_MIN_CHARS` default 50 → **1** —
+D4's boundary; scans measured *exactly* 0 chars, and a scan carrying a stamped glyph or two is
+still caught by the 0.85 coverage ceiling (every scan page seen ≥ 0.99). Rejected: 10 or 20 —
+arbitrary again, and fails folio-only versos ("12", "— 3 —") that 1 passes. (2) **Blank-page
+clause** in D3 — the text floor applies only to a page that also carries a raster (any
+`pdfimages` row for that page, ppi 0 included). Rejected: exempting only imageless pages *without*
+lowering the default (does not fix the reported cover — it has a logo); any new "small image"
+threshold for sparse pages (no data → the same smell D4 flags); per-page routing (D8 v2 — real for
+mixed docs but a spec of its own; census shows 0 mixed docs so far).
+
+**Not changed:** the exposed key, its `≥ 1` validation, the Settings-UI wiring, `COVERAGE`, D5's
+tags-only skip, D8's whole-document rule.
+
+**Regression tests:** `tests/unit/ocr/test_born_digital.py`
+(`test_sparse_cover_page_with_logo_skips_at_the_shipped_default`,
+`test_blank_page_without_raster_is_exempt_from_text_floor`,
+`test_textless_page_with_inset_raster_still_ocrs`,
+`test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged`),
+`tests/integration/test_born_digital_poppler.py` (`test_real_born_digital_with_blank_page_skips`,
+a hand-built Helvetica-text + blank-page PDF against real poppler),
+`tests/unit/common/test_config.py` (`test_born_digital_defaults`).
+

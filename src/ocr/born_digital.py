@@ -145,9 +145,12 @@ def _parse_max_coverage(
             raise ProbeError(
                 f"pdfimages: unparseable row: {line!r}"
             ) from exc  # fail CLOSED
-        if xppi <= 0 or yppi <= 0:
-            continue
-        cov = min(1.0, (w / xppi) * (h / yppi) / page_area)
+        # A degenerate-CTM raster (ppi 0) has no measurable coverage but the
+        # page still carries an image -- keep it in the map at 0.0 so
+        # classify_original's blank-page exemption cannot mistake it for blank.
+        cov = 0.0
+        if xppi > 0 and yppi > 0:
+            cov = min(1.0, (w / xppi) * (h / yppi) / page_area)
         per_page[page] = max(
             per_page.get(page, 0.0), cov
         )  # LARGEST image per page (spec D3)
@@ -229,7 +232,13 @@ def classify_original(
         }
         if glyphless:
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
-        if min_page_chars < min_chars:
+        # The text floor only bites on a page that also carries a raster: a
+        # textless, imageless page is a blank verso/divider with nothing for a
+        # vision model to read, not a scan (spec D3, blank-page clause).
+        if any(
+            chars < min_chars and page in coverage
+            for page, chars in enumerate(char_counts, 1)
+        ):
             return BornDigitalDecision(False, "low-text-page", signals)
         if any(c >= coverage_threshold for c in coverage.values()):
             return BornDigitalDecision(False, "full-page-image", signals)

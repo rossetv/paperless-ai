@@ -13,6 +13,7 @@ from ocr.born_digital import (
     _run_probe,
     classify_original,
 )
+from tests.helpers.factories import make_settings
 
 # A4 page area in square inches (595.32 x 841.92 pts / 72), the fixture PDFs' size.
 _A4_AREA_SQ_IN = (595.32 / 72) * (841.92 / 72)
@@ -95,6 +96,19 @@ def test_parse_max_coverage_is_max_not_sum():
 def test_parse_max_coverage_no_images_is_empty():
     header = PDFIMAGES.split("\n", 2)[0] + "\n" + "-" * 40 + "\n"
     assert _parse_max_coverage(header, page_area=96.0) == {}
+
+
+def test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged():
+    # A raster drawn with a degenerate CTM reports x/y-ppi 0: no measurable
+    # coverage, but the page still CARRIES a raster. It must appear in the map
+    # (at 0.0) because classify_original's blank-page exemption keys off "page
+    # has any image row" -- dropping it would let a textless page with such an
+    # image read as blank and skip.
+    header = PDFIMAGES.split("\n", 2)[0] + "\n" + "-" * 40 + "\n"
+    zero_ppi = header + (
+        "   2     0 image     100   100  rgb     3   8  image  no        12  0     0     0  1K  5%\n"
+    )
+    assert _parse_max_coverage(zero_ppi, _A4_AREA_SQ_IN) == {2: 0.0}
 
 
 def test_parse_max_coverage_garbled_row_raises():
@@ -197,6 +211,33 @@ def test_min_chars_boundary():
 def test_coverage_boundary():
     assert _decide([500], {1: 0.84}, False).skip is True
     assert _decide([500], {1: 0.86}, False).skip is False
+
+
+def test_blank_page_without_raster_is_exempt_from_text_floor():
+    # A page with no text AND no raster is a blank verso/divider: nothing for a
+    # vision model to read, so it must not send the document to OCR (spec D3,
+    # blank-page clause).
+    d = _decide([1443, 0], {1: 0.02}, False)
+    assert d.skip is True and d.reason == "born-digital"
+
+
+def test_textless_page_with_inset_raster_still_ocrs():
+    # The exemption is for imageless pages only: 0 chars + any raster (even a
+    # sub-COVERAGE inset one) is scan-like and keeps the text floor.
+    d = _decide([1443, 0], {1: 0.02, 2: 0.3}, False)
+    assert d.skip is False and d.reason == "low-text-page"
+
+
+def test_sparse_cover_page_with_logo_skips_at_the_shipped_default():
+    # Regression (prod, 2026-08-15): a 59-page born-digital policy booklet whose
+    # cover carried 44 chars + a 26% logo raster went to full vision OCR under
+    # the old MIN_CHARS default of 50. At the shipped default a page with real
+    # text and a small raster must pass the floor.
+    default = make_settings().OCR_BORN_DIGITAL_MIN_CHARS
+    d = _decide([2138, 44, 1633], {2: 0.263}, False, min_chars=default)
+    assert d.skip is True and d.reason == "born-digital"
+    # With a raster present the floor still applies when it is not met.
+    assert _decide([2138, 44], {2: 0.263}, False, min_chars=50).skip is False
 
 
 def test_probe_failure_fails_safe_to_ocr():

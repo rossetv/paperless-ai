@@ -687,7 +687,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         OCR_SKIP_BORN_DIGITAL=_get_bool_env(source, "OCR_SKIP_BORN_DIGITAL", True),
         OCR_BORN_DIGITAL_MIN_CHARS=_require_at_least_one(
             "OCR_BORN_DIGITAL_MIN_CHARS",
-            _get_int_env(source, "OCR_BORN_DIGITAL_MIN_CHARS", 50),
+            _get_int_env(source, "OCR_BORN_DIGITAL_MIN_CHARS", 1),
         ),
         OCR_BORN_DIGITAL_TAG_ID=_get_optional_positive_int_env(
             source, "OCR_BORN_DIGITAL_TAG_ID"

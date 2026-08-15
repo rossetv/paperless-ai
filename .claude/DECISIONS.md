@@ -82,3 +82,20 @@ quality-only (falls through to OCR), never data loss — which is what makes def
 Empirically validated 9/9 against real documents on the operator's instance.
 **Spec:** .claude/specs/20260721-born-digital-ocr-skip.md
 **Affects:** `docs/PIPELINES.md`, `docs/modules/ocr.md`, `docs/CONFIGURATION.md`
+
+## 2026-08-15 — Born-digital gate: text floor default 1, blank pages exempt
+**Decision:** `OCR_BORN_DIGITAL_MIN_CHARS` default 50 → 1, and the per-page text floor now applies
+only to a page that also carries a raster (`pdfimages` row, ppi 0 included) — a textless, imageless
+page is a blank verso/divider, not a scan. Whole-document rule, `COVERAGE`, tags-only skip and the
+exposed key are unchanged.
+**Why:** The first real booklet (prod doc 1525, 59 pages) went through 59 vision calls because its
+cover page held 44 chars + a logo — one under the shipped floor. The 9-doc calibration set had no
+sparse born-digital page, so 50 sat in a gap with no low-side data and contradicted D4's own "has a
+text layer vs none" semantics; a blank page is unfixable by tuning at any floor ≥ 1. Rejected:
+intermediate defaults (arbitrary, fail folio-only versos), a new sparse-page image threshold (no
+data), per-page routing (D8 v2 — its own spec; 0 mixed docs in the census). Operator: "so should
+we do your initial recommendation 1 and 2?" → "do it. commit directly to main, small change, then
+push." (2026-08-15).
+**Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-15)
+**Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`
+
