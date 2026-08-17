@@ -118,8 +118,8 @@ path rasterised and was immune. Rejected: a `Producer` sniff (over-broad, produc
 `ToUnicode` collision parser (a CMap parser for one observed producer), a `5`-in-word second tell
 (hex/serial false positives, no measured recall gain on n = 1), an LLM judge (D1). Known residuals
 recorded in the spec: `tt`/`ft`/`ffi`-only or word-initial-`ti` mangling still skips, and the
-documented `ti`→`Ɵ` (U+019F) variant is missed by the `;` tell — detectable, left unaddressed on
-n = 0; semicolon-delimited data,
+documented `ti`→U+10019F (PUA; shown as `Ɵ` U+019F once truncated) variant is missed by the `;`
+tell — detectable via a PUA-class tell, left unaddressed on n = 0; semicolon-delimited data,
 minified CSS/JS and `;`-joined URLs over-OCR. The tell is checked last so scans keep their scan
 reason. Count uses `finditer` (a `findall` list on the 32 MiB probe cap peaks ~500 MB RSS vs ~46 MB
 — the D6 bomb budget). Census: 1 of 16 skips affected; verified on all 16 real originals after the
@@ -135,7 +135,9 @@ reverted, reported instead) — plus minors (reason precedence, a false "upperca
 inconsistent RSS multipliers, "one vision pass" understated on long documents); R3 NO-SHIP on one
 major of the reviewer's own making — its R2 "`ti`→`O`, undetectable" residual was a us-ascii
 archive flattening of `Ɵ` (U+019F), which is detectable — corrected to the real character and its
-true status; all resolved before push.
+true status; R4 SHIP with two minors (the residual's font attribution and its extraction target
+— U+10019F verbatim from `pdftotext`, not the truncated `Ɵ`; two KB row imprecisions), fixed
+before push.
 **Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-17)
 **Affects:** `src/ocr/born_digital.py` (`docs/ocr-pipeline.md` stale pending operator instruction)
 
