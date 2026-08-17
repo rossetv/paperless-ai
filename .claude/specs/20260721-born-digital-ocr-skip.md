@@ -549,12 +549,16 @@ a letter on both sides: a document mangled solely in `tt`/`ft`/`ffi` (a short le
 find a5ached the le5er" — has no intra-word "ti"), one whose "ti" ligatures are all word-initial
 (";me", ";metable"), and non-ASCII neighbours (`[A-Za-z]` is ASCII, so "situa;ón" misses; the
 Quartz bug is Latin-ligature-specific so non-Latin scripts are not affected either) all still
-skip with their garbage layer kept. The mangle *target* is not stable either: the same
-macOS/Calibri print-to-PDF path is documented mapping `ti` to `O` (Unicode list, 2016-05, "Joined
-'ti' coded as 'O' in PDF"), which no `;` tell — and no character tell at all — can catch, since
-an `O` between letters is ordinary prose. Recall evidence is n = 1; `ti` is the commonest of the
-four ligatures by a wide margin (reviewer-measured intra-word counts, repo prose 362 kB: ti 81 %,
-tt 15 %, ft 3 %, ffi 1 %; `/usr/share/dict/words`: 88 / 9 / 2 / 1 %). (2) *False positives.* Semicolon-
+skip with their garbage layer kept. The mangle *target* is not stable either: a Calibri "ti"
+ligature is documented extracting as **Ɵ** (U+019F LATIN CAPITAL LETTER O WITH MIDDLE TILDE —
+a Plane-16 PUA code point U+10019F truncated to 16 bits; Unicode list 2016-03, "internaƟonal"),
+and a separate 2016-05 report ties the same symptom to the macOS Calibri Print → "Open PDF in
+Preview" path without naming the character. That variant is *missed* by the `;` tell but is
+just as detectable (`[A-Za-z][;Ɵ][A-Za-z]` would catch it) — deliberately not added on n = 0
+local evidence and an unverified producer attribution. Recall evidence is n = 1; `ti` is the
+commonest of the four ligatures by a wide margin (reviewer-measured intra-word
+`[A-Za-z]xx[A-Za-z]` counts over `/usr/share/dict/words`: ti 30189 / tt 3182 / ft 546 / ffi 423 —
+88 / 9 / 2 / 1 %). (2) *False positives.* Semicolon-
 delimited data (`name;street;city`), minified CSS/JS, `;jsessionid` URLs, `&entity;` followed by
 a letter and `;`-joined path lists trip the tell and are re-OCR'd — the pre-feature baseline for
 that document, never a loss. (3) *Unchanged in kind:* the archive PDF's text layer stays broken —
