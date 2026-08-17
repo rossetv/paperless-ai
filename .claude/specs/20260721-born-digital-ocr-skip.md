@@ -530,9 +530,13 @@ which is by far the commonest of the four in Latin-script prose, and it is produ
 Any hit → `mangled-text-layer`, skip=False, after the glyphless check and before the text floor;
 the count is logged in `signals` on every decision (0 on skips) and is counted with `finditer`,
 never `findall` — the input can be the full `PROBE_MAX_OUTPUT_BYTES` and a semicolon flood
-materialised as a list is ~11× its size in RSS (measured: 522 MB vs 48 MB on 32 MiB of `a;`),
-which would re-open the D6 decompression-bomb budget. Threshold is 1: over-OCR on doubt is D6's
-direction, and the false-positive cost is one vision pass. Rejected: a `Producer` sniff (`Quartz
+materialised as a list peaks ~500 MB RSS against ~46 MB for the iterator (measured on 32 MiB of
+`a;`: 522 vs 48 MB; reviewer re-measured 498 vs 46), which would re-open the D6 decompression-bomb
+budget. The tell is evaluated **last** — after the text floor and the coverage ceiling — so a scan
+that also carries a stray `;` keeps its scan reason and the census is not inflated. Threshold is
+1: over-OCR on doubt is D6's direction, and the false-positive cost is the vision pass every
+non-skipped document already gets (page-count × model — 59 calls on a 59-page booklet, not "one").
+Rejected: a `Producer` sniff (`Quartz
 PDFContext` → OCR — over-OCRs every Mac-made PDF whose text is fine, misses the same bug from any
 other producer); a `ToUnicode` collision parser (principled but a CMap parser for one observed
 producer); `[a-z]5[a-z]` as a second tell (hex strings and serials in printed emails are a real
@@ -543,18 +547,26 @@ presence signals, `COVERAGE`, `MIN_CHARS`, D5's tags-only skip, D8's whole-docum
 **Known residuals:** (1) *False negatives.* Only the `ti`→`;` mapping is detected, and only with
 a letter on both sides: a document mangled solely in `tt`/`ft`/`ffi` (a short letter — "please
 find a5ached the le5er" — has no intra-word "ti"), one whose "ti" ligatures are all word-initial
-(";me", ";metable"), uppercase-only text, and non-ASCII neighbours (`[A-Za-z]` is ASCII; the
+(";me", ";metable"), and non-ASCII neighbours (`[A-Za-z]` is ASCII, so "situa;ón" misses; the
 Quartz bug is Latin-ligature-specific so non-Latin scripts are not affected either) all still
-skip with their garbage layer kept. Recall evidence is n = 1. (2) *False positives.* Semicolon-
+skip with their garbage layer kept. The mangle *target* is not stable either: the same
+macOS/Calibri print-to-PDF path is documented mapping `ti` to `O` (Unicode list, 2016-05, "Joined
+'ti' coded as 'O' in PDF"), which no `;` tell — and no character tell at all — can catch, since
+an `O` between letters is ordinary prose. Recall evidence is n = 1; `ti` is the commonest of the
+four ligatures by a wide margin (reviewer-measured intra-word counts, repo prose 362 kB: ti 81 %,
+tt 15 %, ft 3 %, ffi 1 %; `/usr/share/dict/words`: 88 / 9 / 2 / 1 %). (2) *False positives.* Semicolon-
 delimited data (`name;street;city`), minified CSS/JS, `;jsessionid` URLs, `&entity;` followed by
 a letter and `;`-joined path lists trip the tell and are re-OCR'd — the pre-feature baseline for
 that document, never a loss. (3) *Unchanged in kind:* the archive PDF's text layer stays broken —
 paperless-ai rewrites `content`, never the archive — so viewer copy-paste and search-highlight on
 such a document remain mangled. Fixing that is a Paperless-ngx OCR-mode decision, out of scope.
 
-**Human doc:** `docs/ocr-pipeline.md` (human-owned prose) edited under the 2026-08-15 precedent
-("fix the human doc") — the signal list would otherwise lie about the code; minimal: the fourth
-signal, and "perfect text layer" softened. Flagged to the operator in the delivery.
+**Human doc:** `docs/ocr-pipeline.md` (human-owned prose) is **not** edited in this change — the
+2026-08-15 edit was made "only on that instruction" and is no standing licence, and the operator's
+approval here ("Let's go with A. commit directly to main and push.") enumerated the spec, the KB
+and the decision record, not the human doc. It is now stale — it says "three signals" and
+"perfect text layer" while the code has four signals; the stale hunk (fourth-signal bullet, honest
+limits, "three"→"four") is reported to the operator and lands only on their instruction.
 
 **Regression tests:** `tests/unit/ocr/test_born_digital.py`
 (`test_count_mangled_ligatures_counts_intraword_semicolons`,

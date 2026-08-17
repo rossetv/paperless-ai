@@ -138,7 +138,8 @@ def _parse_char_counts(pdftotext_out: str, page_count: int) -> list[int]:
 
 def _count_mangled_ligatures(pdftotext_out: str) -> int:
     # finditer, not findall: the input can be the full PROBE_MAX_OUTPUT_BYTES
-    # and a semicolon flood materialised as a list is ~15x its size in RSS.
+    # and a semicolon flood materialised as a list peaks ~500 MB RSS against
+    # ~46 MB for the iterator (measured on 32 MiB of "a;").
     return sum(1 for _ in _MANGLED_LIGATURE_RE.finditer(pdftotext_out))
 
 
@@ -253,12 +254,6 @@ def classify_original(
         }
         if glyphless:
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
-        # Presence is not enough when the text layer itself is garbage: a
-        # broken ligature ToUnicode passes every presence signal yet leaves
-        # ngx with "mee;ng" for "meeting". One hit routes to OCR -- over-OCR
-        # on doubt is the safe direction (spec D6).
-        if probe.mangled_hits:
-            return BornDigitalDecision(False, "mangled-text-layer", signals)
         # The text floor only bites on a page that also carries a raster: a
         # textless, imageless page is a blank verso, a divider or (rarely) a
         # vector-outline page -- not a scan (spec D3, blank-page clause; the
@@ -278,6 +273,13 @@ def classify_original(
             )
         if any(c >= coverage_threshold for c in coverage.values()):
             return BornDigitalDecision(False, "full-page-image", signals)
+        # Presence is not enough when the text layer itself is garbage: a
+        # broken ligature ToUnicode passes every presence signal yet leaves
+        # ngx with "mee;ng" for "meeting". One hit routes to OCR -- over-OCR
+        # on doubt is the safe direction (spec D6). Last, so a scan that also
+        # happens to carry a stray ";" keeps its scan reason in the census.
+        if probe.mangled_hits:
+            return BornDigitalDecision(False, "mangled-text-layer", signals)
         return BornDigitalDecision(True, "born-digital", signals)
     finally:
         try:

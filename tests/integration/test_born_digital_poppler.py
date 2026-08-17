@@ -132,7 +132,8 @@ def test_real_mangled_ligature_text_layer_ocrs():
     d = classify_original(_build_pdf([text], tounicode=_BROKEN_TOUNICODE), min_chars=1)
     assert d.skip is False and d.reason == "mangled-text-layer", d
     assert d.signals["mangled_hits"] == 1
-    # The same page with an honest map is still born-digital.
+    # The same page with no /ToUnicode at all (base encoding) is still
+    # born-digital -- the broken CMap is the sole cause.
     d = classify_original(_build_pdf([text]), min_chars=1)
     assert d.skip is True and d.reason == "born-digital", d
 

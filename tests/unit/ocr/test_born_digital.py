@@ -254,6 +254,13 @@ def test_mangled_text_layer_ocrs_even_when_otherwise_born_digital():
     # ...and the signal is logged on the skip path too, at zero.
     d = _decide([1443], {}, False, mangled=0)
     assert d.skip is True and d.signals["mangled_hits"] == 0
+    # The tell is checked LAST: a scan that also carries a stray ";" (an OCR
+    # misread in a non-glyphless searchable scan) keeps its scan reason, so
+    # the census does not inflate mangled-text-layer with scans.
+    d = _decide([0, 0], {1: 1.0, 2: 1.0}, False, mangled=3)
+    assert d.skip is False and d.reason == "low-text-page"
+    d = _decide([800], {1: 0.99}, False, mangled=3)
+    assert d.skip is False and d.reason == "full-page-image"
 
 
 def test_mixed_textless_last_page_ocrs():
