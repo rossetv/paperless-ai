@@ -41,7 +41,7 @@ Everything is **one Docker image running up to four processes**. The two tag dae
 
 ## Process model
 
-1. **OCR daemon** — `ocr.daemon:main` (`paperless-ai`, the image's default CMD). Polls `PRE_TAG_ID`, rasterises, transcribes pages in parallel, writes content back.
+1. **OCR daemon** — `ocr.daemon:main` (`paperless-ai`, the image's default CMD). Polls `PRE_TAG_ID`; first tries a tags-only born-digital skip (`ocr.born_digital.classify_original` on the original PDF, `OCR_SKIP_BORN_DIGITAL`, default on) before falling through to rasterise + transcribe pages in parallel + write content back.
 2. **Classifier daemon** — `classifier.daemon:main` (`paperless-classifier-daemon`). Polls `CLASSIFY_PRE_TAG_ID` (defaults to `POST_TAG_ID`), writes title/correspondent/type/date/tags.
 3. **Indexer daemon** — `indexer.daemon:main` (`paperless-indexer-daemon`). Single writer of `index.db`, enforced by an `fcntl.flock`; reconcile loop + periodic deletion sweep.
 4. **Search server** — `search.api:main` (`paperless-search-server`). One uvicorn process: REST + NDJSON stream + `/mcp` + the built SPA.

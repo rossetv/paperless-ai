@@ -14,23 +14,23 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 
 | Doc | Purpose | Verified |
 |-----|---------|----------|
-| [OVERVIEW](OVERVIEW.md) | system summary — always injected | 2026-07-19 @ beac32d |
+| [OVERVIEW](OVERVIEW.md) | system summary — always injected | 2026-08-17 @ 7fa2824 |
 | [DECISIONS](DECISIONS.md) | append-only decision log | 2026-07-14 @ 74d8577 |
 | [MEMORY](MEMORY.md) | project memory index — always injected | 2026-07-19 @ beac32d |
 | [GATES](GATES.md) | gate runbook — the definition of "done" | 2026-07-19 @ beac32d |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | module map, flows, state, boundaries | 2026-07-19 @ beac32d |
 | [OPERATIONS](docs/OPERATIONS.md) | heartbeats, health, halts, runbook | 2026-07-19 @ beac32d |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | one image, four processes; CI → Docker Hub | 2026-07-19 @ beac32d |
-| [CONFIGURATION](docs/CONFIGURATION.md) | config-in-DB, precedence, hot-load, defaults | 2026-07-19 @ beac32d |
-| [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-07-19 @ beac32d |
+| [CONFIGURATION](docs/CONFIGURATION.md) | config-in-DB, precedence, hot-load, defaults | 2026-08-17 @ 7fa2824 |
+| [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-08-17 @ 7fa2824 |
 | [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-07-19 @ beac32d |
 | [API](docs/API.md) | REST + MCP + NDJSON surface and status mapping | 2026-07-19 @ beac32d |
-| [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-07-19 @ beac32d |
-| [GLOSSARY](docs/GLOSSARY.md) | project vocabulary | 2026-07-19 @ beac32d |
+| [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-08-17 @ 7fa2824 |
+| [GLOSSARY](docs/GLOSSARY.md) | project vocabulary | 2026-08-17 @ 7fa2824 |
 | [modules/common](docs/modules/common.md) | shared infrastructure (leaf package) | 2026-07-19 @ beac32d |
 | [modules/appdb](docs/modules/appdb.md) | `app.db` — accounts, config, heartbeats | 2026-07-19 @ beac32d |
 | [modules/store](docs/modules/store.md) | `index.db` — schema, writer, reader | 2026-07-19 @ beac32d |
-| [modules/ocr](docs/modules/ocr.md) | vision-LLM transcription daemon | 2026-07-19 @ beac32d |
+| [modules/ocr](docs/modules/ocr.md) | vision-LLM transcription daemon | 2026-08-17 @ 7fa2824 |
 | [modules/classifier](docs/modules/classifier.md) | metadata-enrichment daemon | 2026-07-19 @ beac32d |
 | [modules/indexer](docs/modules/indexer.md) | reconciler daemon — sole index writer | 2026-07-19 @ beac32d |
 | [modules/search-pipeline](docs/modules/search-pipeline.md) | agentic search: plan → retrieve → judge → synthesise | 2026-07-19 @ beac32d |

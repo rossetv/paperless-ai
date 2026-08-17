@@ -68,6 +68,9 @@ Six independent provider settings, each `openai` | `ollama`, resolved in `_build
 | Reasoning-effort choice set | `{none, low, medium, high, xhigh}` — matches the live OpenAI API (verified 2026-07-15), not the installed SDK's `ReasoningEffort` literal, which still lists the retired `minimal`/lacks `xhigh`. A stored `minimal` is coerced to `none` with a `config.reasoning_effort_minimal_coerced` warning rather than rejected, so a pre-existing config never bricks a deploy | `_parsers.py` (`_REASONING_EFFORT_CHOICES`, `_resolve_reasoning_effort`) |
 | `LLM_MAX_CONCURRENT` | 4 (0 = unbounded) | `_settings.py` (`_build_settings`) |
 | `OCR_DPI` / `OCR_MAX_SIDE` | 300 / 1600 px | `_settings.py` (`_build_settings`) |
+| `OCR_SKIP_BORN_DIGITAL` | `true` — skip AI OCR on a confidently born-digital original PDF, tags-only write-back (spec `.claude/specs/20260721-born-digital-ocr-skip.md`) | `_settings.py` (`_build_settings`) |
+| `OCR_BORN_DIGITAL_MIN_CHARS` | 1 (must be `>= 1`, `_require_at_least_one`) — per-page text floor only checked on a page that also carries a raster image | `_settings.py` (`_build_settings`) |
+| `OCR_BORN_DIGITAL_TAG_ID` | `None` — optional marker tag added (alongside `POST_TAG_ID`) on a born-digital skip | `_settings.py` (`_build_settings`, `_get_optional_positive_int_env`) |
 | `PAGE_WORKERS` / `DOCUMENT_WORKERS` | 8 / 4 | `_settings.py` (`_build_settings`) |
 | `PRE_TAG_ID` / `POST_TAG_ID` / `ERROR_TAG_ID` | 443 / 444 / 552 | `_settings.py` (`_build_settings`) |
 | `CLASSIFY_PRE_TAG_ID` | `POST_TAG_ID` — OCR-done documents flow into the classifier with no extra wiring | `_settings.py` (`_build_settings`) |

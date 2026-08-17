@@ -38,7 +38,7 @@ once. Unknown fact → omit the section, never guess. -->
 
 ### Known skips
 
-`TestRealPopplerPdfStreaming` in `tests/integration/test_ocr_pipeline.py` (6 tests) is the only skip in the suite and the only place the real `pdftoppm` is driven; it is `@pytest.mark.skipif(shutil.which("pdftoppm") is None)` and silently skips on a machine without poppler.
+Two poppler-gated skip groups, both silent on a machine without poppler: `TestRealPopplerPdfStreaming` in `tests/integration/test_ocr_pipeline.py` (6 tests, `@pytest.mark.skipif(shutil.which("pdftoppm") is None)`) — the only place the real `pdftoppm` is driven — and `tests/integration/test_born_digital_poppler.py` (6 tests, module-level `pytestmark`, gated on `pdftotext`/`pdfimages`/`pdfinfo`/`pdffonts` all being on `PATH`).
 
 ## Procedures
 
@@ -55,7 +55,7 @@ once. Unknown fact → omit the section, never guess. -->
 |---------|-------|-----|
 | `error: unrecognized arguments: -n` | The interpreter's env has no `pytest-xdist` | `pip install -r requirements-dev.txt` (pins `pytest-xdist==3.8.0`); or drop `-n auto` |
 | `ModuleNotFoundError: openai` (or any `src/` package) under pytest | Interpreter without the project + dev deps installed | `pip install -r requirements-dev.txt && pip install .` into the venv, then run `python -m pytest` |
-| 6 OCR integration tests skipped | `pdftoppm` not on PATH | Install poppler (`brew install poppler`) — the rest of the suite still passes |
+| 12 OCR integration tests skipped (6 + 6, two files) | poppler-utils not on PATH (`pdftoppm`, or `pdftotext`/`pdfimages`/`pdfinfo`/`pdffonts`) | Install poppler (`brew install poppler`) — the rest of the suite still passes |
 | A test sees another test's config or `SearchCore` | `_SETTINGS_CACHE` (`src/common/config/_loader.py`) and `_CORE_CACHE` (`src/search/api.py`) are process-global and are **not** auto-reset | Pop your `app_db` key from `_SETTINGS_CACHE`; call `search.api._reset_core_cache_for_test()`. The login throttle, search-result cache and price book are already reset per-test by the autouse fixtures in `tests/conftest.py` |
 | Frontend suite fails only when run together | Cross-file DOM/global pollution | Do **not** add `isolate: false` to `web/vitest.config.ts` — per-file isolation is load-bearing |
 | "Where is the test for X?" comes up empty | Test files are split purely for the 500-line ceiling (CODE_GUIDELINES §3.1): `ocr/test_worker` + `test_worker_internals`; `classifier/test_worker` + `test_worker_metadata`; `classifier/test_provider` + `test_provider_compat`; `classifier/test_taxonomy` + `test_taxonomy_helpers`; `integration/test_search_pipeline` + `…_refinement`; `integration/test_indexer_pipeline` + `…_sweep` | Look in both halves before concluding it is untested |
