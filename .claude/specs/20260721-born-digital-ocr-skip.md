@@ -297,7 +297,9 @@ saving. A non-PDF discovered at that point still falls to OCR via D6.
 3. **Quality-judging an existing text layer** — a born-digital PDF with genuinely bad
    embedded text (mangled CID fonts, scrambled reading order) is skipped (philosophy A skips on
    presence, not quality). Over-OCR on genuine doubt (full-page-background born-digital PDFs,
-   un-extractable fonts) is accepted as the safe direction.
+   un-extractable fonts) is accepted as the safe direction. **Narrowed 2026-08-17** (see
+   *Amendments*): one structural tell — a broken ligature `ToUnicode` — is now detected and
+   routed to OCR; coherence/quality judging in general stays out of scope.
 4. **Dashboard metric of skips saved** — per-document decision logging only; an aggregate
    heartbeat counter is a fast-follow.
 5. **Rescuing `.txt`/`.docx`** that currently fail image conversion — out of scope; PDF only.
@@ -502,4 +504,64 @@ whole-document rule.
 `test_real_born_digital_with_inline_logo_skips`, `test_real_inline_image_only_page_still_ocrs` —
 hand-built Helvetica-text / blank / inline-image PDFs against real poppler),
 `tests/unit/common/test_config.py` (`test_born_digital_defaults`).
+
+### 2026-08-17 — mangled text layer routes to OCR (operator-approved, direct on `main`)
+
+**Trigger:** prod doc 1523 (added 2026-08-07) — an Outlook-for-Mac email printed to PDF
+(`Producer: macOS Version 26.5.1 Quartz PDFContext`, `Creator: Outlook`, fonts Calibri + Aptos,
+WinAnsi, subset, with `ToUnicode`). Every presence signal said born-digital (3 pages, ≥ 900
+chars each, no raster above 0.02, no glyphless font) → skipped, tags-only, ngx content kept.
+That content had `;`/`5`/`C`/`m` substituted for every `ti`/`tt`/`ft`/`ffi` ligature — the shape
+of `mee;ng`, `le5er`, `draC`, `omcer` for meeting, letter, draft, officer (the document's own
+words are private and are not reproduced here). Reproduced on the pristine original with poppler
+26.03 (archive text byte-identical); the CMap dump names the cause: Quartz maps the ligature
+glyph codes to single wrong characters — Calibri obj 62 `<59>→U+003B ";"` (ti),
+`<5c>→U+0035 "5"` (tt), `<46>→U+0043 "C"` (ft); Aptos obj 56 `<3d>→U+006D "m"` (ffi). `fi`/`fl`
+map correctly (U+FB01/FB02). Known class: Calibri's `ti`/`tt` ligatures have no Unicode
+codepoint and Mac Quartz emits garbage for them. Pre-gate this document would have been
+rasterised and read cleanly; non-goal 3 accepted exactly this residual and it bit. Census
+(run in-session, 2026-08-17, over the pristine originals): 16 `born-digital` skips since the
+2026-07-22 deploy, 1 mangled (1523, the only Quartz-produced original of the 16).
+
+**Change:** a fourth probe-derived signal from the `pdftotext` output the gate already has —
+`mangled_hits = count of [A-Za-z];[A-Za-z]` (a semicolon glued between two letters never occurs
+in prose; it is the `ti`→`;` mapping seen intra-word — "…tion", "…ties", "until", "notice" —
+which is by far the commonest of the four in Latin-script prose, and it is producer-agnostic).
+Any hit → `mangled-text-layer`, skip=False, after the glyphless check and before the text floor;
+the count is logged in `signals` on every decision (0 on skips) and is counted with `finditer`,
+never `findall` — the input can be the full `PROBE_MAX_OUTPUT_BYTES` and a semicolon flood
+materialised as a list is ~11× its size in RSS (measured: 522 MB vs 48 MB on 32 MiB of `a;`),
+which would re-open the D6 decompression-bomb budget. Threshold is 1: over-OCR on doubt is D6's
+direction, and the false-positive cost is one vision pass. Rejected: a `Producer` sniff (`Quartz
+PDFContext` → OCR — over-OCRs every Mac-made PDF whose text is fine, misses the same bug from any
+other producer); a `ToUnicode` collision parser (principled but a CMap parser for one observed
+producer); `[a-z]5[a-z]` as a second tell (hex strings and serials in printed emails are a real
+false-positive source, and it adds no measured recall on the one observed case — see the residual
+below for what it *would* buy); an LLM quality judge (D1, still rejected). **Not changed:** the
+presence signals, `COVERAGE`, `MIN_CHARS`, D5's tags-only skip, D8's whole-document rule.
+
+**Known residuals:** (1) *False negatives.* Only the `ti`→`;` mapping is detected, and only with
+a letter on both sides: a document mangled solely in `tt`/`ft`/`ffi` (a short letter — "please
+find a5ached the le5er" — has no intra-word "ti"), one whose "ti" ligatures are all word-initial
+(";me", ";metable"), uppercase-only text, and non-ASCII neighbours (`[A-Za-z]` is ASCII; the
+Quartz bug is Latin-ligature-specific so non-Latin scripts are not affected either) all still
+skip with their garbage layer kept. Recall evidence is n = 1. (2) *False positives.* Semicolon-
+delimited data (`name;street;city`), minified CSS/JS, `;jsessionid` URLs, `&entity;` followed by
+a letter and `;`-joined path lists trip the tell and are re-OCR'd — the pre-feature baseline for
+that document, never a loss. (3) *Unchanged in kind:* the archive PDF's text layer stays broken —
+paperless-ai rewrites `content`, never the archive — so viewer copy-paste and search-highlight on
+such a document remain mangled. Fixing that is a Paperless-ngx OCR-mode decision, out of scope.
+
+**Human doc:** `docs/ocr-pipeline.md` (human-owned prose) edited under the 2026-08-15 precedent
+("fix the human doc") — the signal list would otherwise lie about the code; minimal: the fourth
+signal, and "perfect text layer" softened. Flagged to the operator in the delivery.
+
+**Regression tests:** `tests/unit/ocr/test_born_digital.py`
+(`test_count_mangled_ligatures_counts_intraword_semicolons`,
+`test_count_mangled_ligatures_ignores_legitimate_semicolons`,
+`test_mangled_text_layer_ocrs_even_when_otherwise_born_digital`),
+`tests/integration/test_born_digital_poppler.py` (`test_real_mangled_ligature_text_layer_ocrs` —
+a hand-built PDF whose `ToUnicode` maps code `Y` to `;`, the real mechanism, through real poppler;
+the honest-map twin still skips). Verified in-session against the 16 real prod originals: 1523 →
+`mangled-text-layer` (7 hits), the other 15 unchanged `born-digital` (0 hits).
 

@@ -27,6 +27,15 @@ PROBE_TIMEOUT: int = 30
 PROBE_MAX_OUTPUT_BYTES: int = 32 * 1024 * 1024
 _GLYPHLESS_NAME: str = "glyphlessfont"
 _SUBSET_PREFIX_RE = re.compile(r"^[A-Z]{6}\+")
+# A semicolon glued between two letters never occurs in prose; it is the
+# fingerprint of a text layer whose ToUnicode maps the "ti" ligature glyph to
+# ";" ("mee;ng", "informa;on") -- macOS Quartz PDFContext does this on
+# Calibri/Aptos, alongside "tt" -> "5", "ft" -> "C", "ffi" -> "m". Only the
+# "ti" mapping is detected, and only intra-word: a document mangled solely
+# in the other ligatures, or with word-initial "ti" only, passes. Semicolon-
+# delimited data, minified CSS/JS and ";"-joined URLs trip it (over-OCR, the
+# safe direction). Such a text layer is not worth keeping.
+_MANGLED_LIGATURE_RE = re.compile(r"[A-Za-z];[A-Za-z]")
 _warned_missing: set[str] = set()  # binaries warned about, once per process
 
 
@@ -127,6 +136,12 @@ def _parse_char_counts(pdftotext_out: str, page_count: int) -> list[int]:
     return [len(re.sub(r"\s", "", seg)) for seg in segments[:page_count]]
 
 
+def _count_mangled_ligatures(pdftotext_out: str) -> int:
+    # finditer, not findall: the input can be the full PROBE_MAX_OUTPUT_BYTES
+    # and a semicolon flood materialised as a list is ~15x its size in RSS.
+    return sum(1 for _ in _MANGLED_LIGATURE_RE.finditer(pdftotext_out))
+
+
 def _parse_max_coverage(
     pdfimages_list_out: str, page_area: float | None
 ) -> dict[int, float]:
@@ -187,6 +202,7 @@ class _ProbeSignals:
     char_counts: list[int]
     coverage: dict[int, float]
     glyphless: bool
+    mangled_hits: int
 
 
 def _probe_signals(path: str, timeout: float) -> _ProbeSignals:
@@ -197,14 +213,14 @@ def _probe_signals(path: str, timeout: float) -> _ProbeSignals:
     pages, area = _parse_pdfinfo(_run_probe(["pdfinfo", path], timeout))
     if pages <= 0:
         raise ProbeError("pdfinfo: non-positive page count")
-    char_counts = _parse_char_counts(
-        _run_probe(["pdftotext", "-q", path, "-"], timeout), pages
-    )
+    text = _run_probe(["pdftotext", "-q", path, "-"], timeout)
+    char_counts = _parse_char_counts(text, pages)
+    mangled_hits = _count_mangled_ligatures(text)
     coverage = _parse_max_coverage(
         _run_probe(["pdfimages", "-list", path], timeout), area
     )
     glyphless = _has_glyphless(_run_probe(["pdffonts", path], timeout))
-    return _ProbeSignals(char_counts, coverage, glyphless)
+    return _ProbeSignals(char_counts, coverage, glyphless, mangled_hits)
 
 
 def classify_original(
@@ -233,9 +249,16 @@ def classify_original(
             "min_page_chars": min_page_chars,
             "max_coverage": round(max_cov, 3),
             "glyphless": glyphless,
+            "mangled_hits": probe.mangled_hits,
         }
         if glyphless:
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
+        # Presence is not enough when the text layer itself is garbage: a
+        # broken ligature ToUnicode passes every presence signal yet leaves
+        # ngx with "mee;ng" for "meeting". One hit routes to OCR -- over-OCR
+        # on doubt is the safe direction (spec D6).
+        if probe.mangled_hits:
+            return BornDigitalDecision(False, "mangled-text-layer", signals)
         # The text floor only bites on a page that also carries a raster: a
         # textless, imageless page is a blank verso, a divider or (rarely) a
         # vector-outline page -- not a scan (spec D3, blank-page clause; the

@@ -30,17 +30,37 @@ _INLINE_LOGO = (
 )
 
 
-def _build_pdf(pages: list[bytes | None]) -> bytes:
+# A ToUnicode CMap that maps code 0x59 ("Y") to U+003B (";") -- the shape of
+# the macOS Quartz PDFContext bug on Calibri/Aptos, where the "ti" ligature
+# glyph's code is mapped to a semicolon. pdftotext honours ToUnicode over the
+# base encoding, so "meeYng" in the content stream extracts as "mee;ng".
+_BROKEN_TOUNICODE = (
+    b"/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
+    b"/CMapName /Adobe-Identity-UCS def /CMapType 2 def\n"
+    b"1 begincodespacerange <00> <FF> endcodespacerange\n"
+    b"1 beginbfrange <59> <59> <003B> endbfrange\n"
+    b"endcmap CMapName currentdict /CMap defineresource pop end end"
+)
+
+
+def _build_pdf(pages: list[bytes | None], *, tounicode: bytes | None = None) -> bytes:
     """Hand-build a born-digital PDF, one content stream per page (None = no
     /Contents at all: a truly blank page). Base-14 Helvetica needs no
     embedding, so pdftotext yields real text and pdffonts lists a real font.
+    ``tounicode`` attaches a CMap stream to the font (object 4), so a
+    deliberately wrong map can be exercised end to end through poppler.
     """
     font_obj = 3
+    font = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
     objs: list[bytes] = [
         b"",  # 1: catalogue (filled below)
         b"",  # 2: pages (filled below)
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        font + (b" /ToUnicode 4 0 R >>" if tounicode is not None else b" >>"),
     ]
+    if tounicode is not None:
+        objs.append(
+            b"<< /Length %d >>\nstream\n" % len(tounicode) + tounicode + b"\nendstream"
+        )
     kids: list[bytes] = []
     for content in pages:
         page_num = len(objs) + 1
@@ -100,6 +120,21 @@ def test_real_inline_image_only_page_still_ocrs():
     d = classify_original(_build_pdf([_TEXT, _INLINE_LOGO]), min_chars=1)
     assert d.skip is False and d.reason == "low-text-page", d
     assert d.signals["low_text_page"] == 2
+
+
+def test_real_mangled_ligature_text_layer_ocrs():
+    # Regression (prod, 2026-08-07): an Outlook-for-Mac print-to-PDF carried
+    # a Quartz-written ToUnicode that mapped the Calibri "ti" ligature to ";"
+    # -- pdftotext read "mee;ng" for "meeting", every presence signal said
+    # born-digital, and the garbage text layer was kept. Through real poppler:
+    # a broken CMap must send the document to vision OCR.
+    text = b"BT /F1 12 Tf 72 770 Td (Minutes of the meeYng held on Monday) Tj ET"
+    d = classify_original(_build_pdf([text], tounicode=_BROKEN_TOUNICODE), min_chars=1)
+    assert d.skip is False and d.reason == "mangled-text-layer", d
+    assert d.signals["mangled_hits"] == 1
+    # The same page with an honest map is still born-digital.
+    d = classify_original(_build_pdf([text]), min_chars=1)
+    assert d.skip is True and d.reason == "born-digital", d
 
 
 def test_real_pure_image_scan_ocrs():

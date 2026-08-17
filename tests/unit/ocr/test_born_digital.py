@@ -6,6 +6,7 @@ import structlog.testing
 from ocr.born_digital import (
     ProbeError,
     _ProbeSignals,
+    _count_mangled_ligatures,
     _has_glyphless,
     _parse_char_counts,
     _parse_max_coverage,
@@ -149,6 +150,22 @@ def test_has_glyphless_real_font_false():
     )
 
 
+def test_count_mangled_ligatures_counts_intraword_semicolons():
+    # The macOS Quartz + Calibri/Aptos ToUnicode bug (prod, 2026-08-07): the
+    # "ti" ligature glyph is mapped to ";" so pdftotext yields "mee;ng",
+    # "informa;on", "no;ce" -- a semicolon glued between two letters, which
+    # real prose never contains. Count them; each is a hit.
+    text = "The mee;ng notes and the informa;on in this no;ce\fSec;on 2\f"
+    assert _count_mangled_ligatures(text) == 4
+
+
+def test_count_mangled_ligatures_ignores_legitimate_semicolons():
+    # Clause separators, list separators and code-ish tokens with a space,
+    # digit or symbol on either side are not the tell.
+    assert _count_mangled_ligatures("one; two; three\na=1;b=2\nfoo(); bar\f") == 0
+    assert _count_mangled_ligatures("") == 0
+
+
 # --- _run_probe hardening (real subprocesses via coreutils; POSIX) ---
 def test_run_probe_nonzero_exit_raises():
     with pytest.raises(ProbeError):
@@ -185,10 +202,12 @@ def test_run_probe_output_cap_trips_on_a_flood():
         _run_probe(["yes"], timeout=60)
 
 
-def _decide(page_chars, page_cov, glyphless, min_chars=1):  # 1 = the shipped default
+def _decide(
+    page_chars, page_cov, glyphless, min_chars=1, mangled=0
+):  # 1 = the shipped default
     with patch(
         "ocr.born_digital._probe_signals",
-        return_value=_ProbeSignals(page_chars, page_cov, glyphless),
+        return_value=_ProbeSignals(page_chars, page_cov, glyphless, mangled),
     ):
         return classify_original(b"%PDF-1.4 fake", min_chars=min_chars)
 
@@ -218,6 +237,23 @@ def test_full_page_searchable_scan_ocrs_via_coverage():
 
 def test_inset_glyphless_scan_ocrs_via_glyphless():
     assert _decide([800, 800], {1: 0.4, 2: 0.4}, True).skip is False
+
+
+def test_mangled_text_layer_ocrs_even_when_otherwise_born_digital():
+    # Regression (prod, 2026-08-07): an Outlook-for-Mac "print to PDF"
+    # passed every presence signal (text on every page, no raster, no
+    # glyphless font) and was skipped -- but its text layer was garbage
+    # ("mee;ng", "le5er", "omce") because Quartz wrote a broken ToUnicode
+    # for the Calibri/Aptos ligatures. A text layer that mangled is not one
+    # worth keeping: route to vision OCR and name the reason and the count.
+    d = _decide([1443, 1200, 900], {1: 0.02}, False, mangled=7)
+    assert d.skip is False and d.reason == "mangled-text-layer"
+    assert d.signals["mangled_hits"] == 7
+    # A single hit is enough: over-OCR on doubt is the safe direction.
+    assert _decide([1443], {}, False, mangled=1).reason == "mangled-text-layer"
+    # ...and the signal is logged on the skip path too, at zero.
+    d = _decide([1443], {}, False, mangled=0)
+    assert d.skip is True and d.signals["mangled_hits"] == 0
 
 
 def test_mixed_textless_last_page_ocrs():

@@ -104,3 +104,29 @@ token) no longer fail the whole gate closed.
 **Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-15)
 **Affects:** `src/ocr/born_digital.py`, `src/common/config/_settings.py`, `web/src/features/settings/fieldModel/sections.ts` (hint copy), `docs/ocr-pipeline.md`
 
+## 2026-08-17 — Born-digital gate: a mangled text layer routes to OCR
+**Decision:** the gate gains a fourth signal from the `pdftotext` output it already holds — a count of
+`[A-Za-z];[A-Za-z]` (a semicolon glued between two letters); any hit → `mangled-text-layer`,
+skip=False, logged as `mangled_hits` on every decision. Presence signals, thresholds and the
+tags-only skip are unchanged; spec non-goal 3 is narrowed by exactly this one structural tell.
+**Why:** prod doc 1523 (an Outlook-for-Mac print-to-PDF, macOS Quartz PDFContext, Calibri/Aptos)
+passed every presence signal and was skipped, keeping ngx content in which every `ti`/`tt`/`ft`/`ffi`
+ligature had become `;`/`5`/`C`/`m` (`mee;ng`, `le5er`, `draC`, `omcer` in shape; the document's
+words are private) — Quartz writes a `ToUnicode` that maps those ligature glyphs to single wrong
+characters (CMap dump on the pristine original; poppler 26.03 reproduces it). Pre-gate the vision
+path rasterised and was immune. Rejected: a `Producer` sniff (over-broad, producer-bound), a
+`ToUnicode` collision parser (a CMap parser for one observed producer), a `5`-in-word second tell
+(hex/serial false positives, no measured recall gain on n = 1), an LLM judge (D1). Known residuals
+recorded in the spec: `tt`/`ft`/`ffi`-only or word-initial-`ti` mangling still skips; semicolon-
+delimited data, minified CSS/JS and `;`-joined URLs over-OCR. Count uses `finditer` (a `findall`
+list on the 32 MiB probe cap measured 522 MB RSS vs 48 MB — the D6 bomb budget). Census: 1 of 16
+skips affected; verified on all 16 real originals after the change (1523 → OCR, 15 unchanged).
+Operator: "Let's go with A. commit directly to main and push." (2026-08-17). `docs/ocr-pipeline.md`
+(human doc) edited minimally under the 2026-08-15 precedent so its signal list does not lie about
+the code. Adversarial review R1 (Opus): NO-SHIP on three majors — a verbatim line of the operator's
+private document in the test fixture/spec/decision (redacted to synthetic examples before any
+push), the `findall` amplification, and an overstated "full recall" claim — all resolved in the
+same commit.
+**Spec:** .claude/specs/20260721-born-digital-ocr-skip.md (*Amendments*, 2026-08-17)
+**Affects:** `src/ocr/born_digital.py`, `docs/ocr-pipeline.md`
+
