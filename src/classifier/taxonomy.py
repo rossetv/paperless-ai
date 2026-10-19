@@ -368,6 +368,14 @@ class TaxonomyCache:
                 ids.append(tag_id)
         return ids
 
+    def tag_name(self, tag_id: int) -> str | None:
+        """Return the cached name of tag *tag_id*, or ``None`` if it is not cached."""
+        with self._lock:
+            for tag in self._tags:
+                if self._extract_id(tag) == tag_id:
+                    return str(tag.get("name", "")).strip() or None
+        return None
+
     def _infer_matching_algorithm(self) -> int | str:
         """
         Inspect existing tags to decide whether ``matching_algorithm`` should
