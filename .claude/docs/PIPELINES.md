@@ -33,7 +33,7 @@ The four document/query pipelines, their stages, and where each one gives up.
 | Prompt | Stable prefix (tag-limit guidance + the three taxonomy lists) then the variable suffix (truncation note + nonce-fenced document text). The prefix is byte-identical across a batch (it interpolates only `CLASSIFY_TAG_LIMIT` and the taxonomy snapshot), for OpenAI prompt caching |
 | Parse | `result.parse_classification_response` — coerces string `tags`, nulls and non-string scalars to safe values |
 | Gate | `is_empty_classification` or a generic/empty `document_type` ⇒ error-tag (returns `None`, so the circuit breaker is untouched) — **unless** a shutdown is in progress, in which case the document keeps its queue tag for the next boot instead (same shutdown carve-out as OCR; also runs on Flex by default with the same patient capacity-429 retry) |
-| Tags | dedupe → blacklist (`{ai, error, indexed, new}`) → drop tags equal to correspondent/type/person → **required** tags (OCR model tags, year tag, `CLASSIFY_DEFAULT_COUNTRY_TAG`) always added and never counted against `CLASSIFY_TAG_LIMIT`; optional LLM tags trimmed. Everything lowercased |
+| Tags | dedupe → blacklist (`{ai, error, indexed, new}`) → drop the born-digital tag (`OCR_BORN_DIGITAL_TAG_ID`; only the OCR gate may set it; an existing doc tag is kept) → drop tags equal to correspondent/type/person → **required** tags (OCR model tags, year tag, `CLASSIFY_DEFAULT_COUNTRY_TAG`) always added and never counted against `CLASSIFY_TAG_LIMIT`; optional LLM tags trimmed. Everything lowercased |
 | Resolve | `TaxonomyCache` (RLock) — normalised lookup, POST-create on miss, post-create re-check. Correspondents match by substring; types and tags exactly |
 | Write back | `update_document_metadata` + tag swap |
 
