@@ -1,7 +1,7 @@
 """Tests for classifier.taxonomy — the module-level helper functions.
 
 Covers ``_index_items``, ``_match_item``, ``_get_usage_count``, and
-``_top_names``.  Split from ``test_taxonomy`` (the ``TaxonomyCache`` behaviour)
+``_top_names``, plus the small ``TaxonomyCache.tag_name`` lookup.  Split from ``test_taxonomy`` (the ``TaxonomyCache`` behaviour)
 for the 500-line ceiling (CODE_GUIDELINES §3.1).
 """
 
@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from classifier.normalisers import normalise_name, normalise_simple
 from classifier.taxonomy import (
+    TaxonomyCache,
     _get_usage_count,
     _index_items,
     _match_item,
     _top_names,
 )
+from tests.helpers.mocks import make_mock_paperless
 
 
 class TestIndexItems:
@@ -210,3 +212,23 @@ class TestTopNames:
         ]
         result = _top_names(items, limit=10)
         assert result == ["Alpha", "Zeta"]
+
+
+class TestTagName:
+    """TaxonomyCache.tag_name maps a cached tag id back to its name."""
+
+    def test_returns_name_for_cached_id(self):
+        client = make_mock_paperless()
+        client.list_tags.return_value = [{"id": 1080, "name": " born-digital "}]
+        cache = TaxonomyCache(client, 100)
+        cache.refresh()
+
+        assert cache.tag_name(1080) == "born-digital"
+
+    def test_unknown_id_returns_none(self):
+        client = make_mock_paperless()
+        client.list_tags.return_value = [{"id": 1, "name": "2025"}]
+        cache = TaxonomyCache(client, 100)
+        cache.refresh()
+
+        assert cache.tag_name(1080) is None

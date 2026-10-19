@@ -33,6 +33,7 @@ from .metadata import (
     resolve_date_for_tags,
     update_custom_fields,
 )
+from .normalisers import normalise_simple
 from .provider import ClassificationProvider
 from .result import ClassificationResult
 from .quality_gates import is_generic_document_type, needs_error_tag
@@ -372,7 +373,7 @@ class ClassificationProcessor:
         date_for_tags: str,
     ) -> list[str]:
         """Build the filtered and enriched tag name list from classification output."""
-        base_tags = filter_blacklisted_tags(result.tags)
+        base_tags = self._drop_born_digital_tag(filter_blacklisted_tags(result.tags))
         base_tags = filter_redundant_tags(
             base_tags,
             result.correspondent,
@@ -386,6 +387,23 @@ class ClassificationProcessor:
             self.settings.CLASSIFY_DEFAULT_COUNTRY_TAG,
             self.settings.CLASSIFY_TAG_LIMIT,
         )
+
+    def _drop_born_digital_tag(self, tags: list[str]) -> list[str]:
+        """Remove the born-digital tag from the LLM's suggestions.
+
+        why: that tag records the OCR gate's verdict that no transcription ran.
+        The LLM sees it in the tag vocabulary and picks it for scans the OCR
+        daemon did transcribe, so only the gate may set it. Matched by the
+        configured id (the name is operator-chosen) and dropped before the tag
+        limit is applied, so a rejected suggestion does not use up a slot. A
+        tag already on the document is kept by ``_apply_classification``.
+        """
+        tag_id = self.settings.OCR_BORN_DIGITAL_TAG_ID
+        name = self.taxonomy_cache.tag_name(tag_id) if tag_id is not None else None
+        if name is None:
+            return tags
+        key = normalise_simple(name)
+        return [tag for tag in tags if normalise_simple(tag) != key]
 
     def _resolve_taxonomy_ids(
         self, result: ClassificationResult, tag_names: list[str]

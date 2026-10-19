@@ -172,3 +172,45 @@ class TestStatsLogging:
         proc.process()
 
         assert proc.paperless_client.update_document_metadata.called
+
+
+class TestBornDigitalTag:
+    """Only the OCR gate sets the born-digital tag; the LLM's pick is dropped."""
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_llm_suggestion_dropped_before_tag_limit(self, mock_release, mock_claim):
+        doc = make_doc_with_content("text")
+        result = make_classification_result(tags=("Born-Digital", "legal"))
+        proc = make_processor(
+            doc=doc,
+            settings_overrides={
+                "OCR_BORN_DIGITAL_TAG_ID": 1080,
+                "CLASSIFY_TAG_LIMIT": 1,
+            },
+        )
+        proc.paperless_client.get_document.return_value = doc
+        proc.classifier.classify_text.return_value = (result, "gpt-5.4-mini")
+        proc.taxonomy_cache.tag_name.return_value = "born-digital"
+
+        proc.process()
+
+        proc.taxonomy_cache.tag_name.assert_called_once_with(1080)
+        tag_names = proc.taxonomy_cache.get_or_create_tag_ids.call_args[0][0]
+        assert "legal" in tag_names
+        assert "born-digital" not in tag_names
+
+    @patch("classifier.worker.claim_processing_tag", return_value=True)
+    @patch("classifier.worker.release_processing_tag")
+    def test_existing_tag_kept(self, mock_release, mock_claim):
+        doc = make_doc_with_content("text", tags=[443, 1080])
+        proc = make_processor(
+            doc=doc, settings_overrides={"OCR_BORN_DIGITAL_TAG_ID": 1080}
+        )
+        proc.paperless_client.get_document.return_value = doc
+        proc.taxonomy_cache.tag_name.return_value = "born-digital"
+
+        proc.process()
+
+        update_call = proc.paperless_client.update_document_metadata.call_args
+        assert 1080 in update_call.kwargs["tags"]
