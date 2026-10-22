@@ -67,6 +67,7 @@ CSRF defence is the `SameSite=Strict` cookie — there is no CSRF token (`src/se
 | JS deps | `npm audit --omit=dev --audit-level=high` | `.github/workflows/ci.yml` (`frontend`) |
 | Image build | gated on every check job, not just tests | `.github/workflows/ci.yml` (`docker` `needs:`) |
 | Transitive pins | `overrides`: `handlebars`, `uuid`, `esbuild`, `js-yaml` | `web/package.json` (`overrides`) |
+| Image decompression bomb | Pillow cap `_MAX_IMAGE_PIXELS` = 250 MP (warn above, refuse above 2x); `DecompressionBombError` is in `_UNDECODABLE` so the doc is quarantined via `ImageConversionError`, not retried | `src/common/library_setup.py` (`_MAX_IMAGE_PIXELS`), `src/ocr/image_converter.py` (`_UNDECODABLE`) |
 | Runtime container | non-root `appuser`; wheels installed offline (`pip install --no-index --find-links=/app/wheels`), so the runtime has no PyPI access and no compiler (`build-essential` is builder-stage only) | `Dockerfile` (`adduser --system --ingroup appgroup appuser`, `USER appuser`, `pip install --no-cache-dir --no-index --find-links=/app/wheels`) |
 
 ## Procedures

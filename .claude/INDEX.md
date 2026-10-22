@@ -23,19 +23,19 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | one image, four processes; CI → Docker Hub | 2026-07-19 @ beac32d |
 | [CONFIGURATION](docs/CONFIGURATION.md) | config-in-DB, precedence, hot-load, defaults | 2026-08-17 @ 7fa2824 |
 | [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-10-22 @ 2d2ce9e |
-| [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-07-19 @ beac32d |
+| [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-10-22 @ d1fab50 |
 | [API](docs/API.md) | REST + MCP + NDJSON surface and status mapping | 2026-07-19 @ beac32d |
-| [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-10-19 @ 5366d12 |
+| [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-10-22 @ d1fab50 |
 | [GLOSSARY](docs/GLOSSARY.md) | project vocabulary | 2026-08-17 @ 7fa2824 |
-| [modules/common](docs/modules/common.md) | shared infrastructure (leaf package) | 2026-07-19 @ beac32d |
+| [modules/common](docs/modules/common.md) | shared infrastructure (leaf package) | 2026-10-22 @ d1fab50 |
 | [modules/appdb](docs/modules/appdb.md) | `app.db` — accounts, config, heartbeats | 2026-07-19 @ beac32d |
 | [modules/store](docs/modules/store.md) | `index.db` — schema, writer, reader | 2026-07-19 @ beac32d |
-| [modules/ocr](docs/modules/ocr.md) | vision-LLM transcription daemon | 2026-08-17 @ 7fa2824 |
+| [modules/ocr](docs/modules/ocr.md) | vision-LLM transcription daemon | 2026-10-22 @ d1fab50 |
 | [modules/classifier](docs/modules/classifier.md) | metadata-enrichment daemon | 2026-10-19 @ 5366d12 |
 | [modules/indexer](docs/modules/indexer.md) | reconciler daemon — sole index writer | 2026-07-19 @ beac32d |
 | [modules/search-pipeline](docs/modules/search-pipeline.md) | agentic search: plan → retrieve → judge → synthesise | 2026-07-19 @ beac32d |
 | [modules/search-api](docs/modules/search-api.md) | FastAPI + MCP + SPA surface, auth, RBAC | 2026-07-19 @ beac32d |
-| [modules/web](docs/modules/web.md) | React/Vite SPA | 2026-10-22 @ 2d2ce9e |
+| [modules/web](docs/modules/web.md) | React/Vite SPA | 2026-10-22 @ d1fab50 |
 
 ## Modules
 
