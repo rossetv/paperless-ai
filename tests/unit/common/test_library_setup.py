@@ -59,7 +59,7 @@ class TestPillowConfig:
         try:
             Image.MAX_IMAGE_PIXELS = None  # the old, guard-disabling value
             setup_libraries(settings)
-            assert Image.MAX_IMAGE_PIXELS == 250_000_000
+            assert Image.MAX_IMAGE_PIXELS == library_setup._MAX_IMAGE_PIXELS
         finally:
             Image.MAX_IMAGE_PIXELS = original
 
