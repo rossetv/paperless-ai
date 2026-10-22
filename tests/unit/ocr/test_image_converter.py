@@ -459,3 +459,94 @@ class TestTiffStreaming:
         with open_page_source(png_bytes, "image/png") as source:
             assert len(source._images) == 1
             assert source._paths == []
+
+
+def _encode(images: list[Image.Image], fmt: str) -> bytes:
+    buf = BytesIO()
+    images[0].save(buf, format=fmt, save_all=len(images) > 1, append_images=images[1:])
+    return buf.getvalue()
+
+
+def _sixteen_bit(width: int, height: int, ink: int, paper: int) -> Image.Image:
+    """A 16-bit greyscale page: an ink stripe on the left, paper elsewhere."""
+    img = Image.new("I;16", (width, height), paper)
+    # Paste an I;16 tile: an int fill into I;16 writes the low byte twice.
+    img.paste(Image.new("I;16", (width // 2, height), ink), (0, 0))
+    return img
+
+
+class TestPageModeNormalisation:
+    """Every page leaves the converter in a mode the provider can resize and PNG-encode.
+
+    Pillow cannot thumbnail large I;16 images or write I/CMYK/YCbCr/... as PNG,
+    so a 16-bit greyscale or CMYK scan used to fail OCR at the provider.
+    """
+
+    def test_sixteen_bit_single_image_is_scaled_to_8bit_not_clipped(self):
+        content = _encode([_sixteen_bit(4, 2, ink=2000, paper=60000)], "TIFF")
+
+        with open_page_source(content, "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.mode == "L"
+        # 2000/257 ≈ 8 and 60000/257 ≈ 233 — a clip to 8 bits would give 255 for both.
+        assert page.getpixel((0, 0)) == pytest.approx(8, abs=1)
+        assert page.getpixel((3, 0)) == pytest.approx(233, abs=1)
+
+    def test_sixteen_bit_large_scan_survives_provider_resize_and_encode(self):
+        # I;16 thumbnail raises "image has wrong mode" once the reduce path kicks in.
+        content = _encode([_sixteen_bit(5000, 7000, ink=2000, paper=60000)], "TIFF")
+
+        with open_page_source(content, "image/tiff") as source:
+            page = source.load_page(0)
+
+        page.thumbnail((1600, 1600))
+        page.save(BytesIO(), format="PNG")
+
+    def test_sixteen_bit_multiframe_tiff_is_scaled_to_8bit(self):
+        frames = [_sixteen_bit(4, 2, ink=2000, paper=60000) for _ in range(2)]
+        content = _encode(frames, "TIFF")
+
+        with open_page_source(content, "image/tiff") as source:
+            pages = _load_all(source)
+
+        assert [p.mode for p in pages] == ["L", "L"]
+        assert pages[1].getpixel((3, 0)) == pytest.approx(233, abs=1)
+
+    def test_32bit_greyscale_is_scaled_to_8bit(self):
+        img = Image.new("I", (2, 1), 60000)
+        img.putpixel((0, 0), 0)
+        content = _encode([img], "TIFF")
+
+        with open_page_source(content, "image/tiff") as source:
+            page = source.load_page(0)
+
+        assert page.mode == "L"
+        assert page.getpixel((0, 0)) == 0
+        assert page.getpixel((1, 0)) == pytest.approx(233, abs=1)
+
+    @pytest.mark.parametrize(
+        ("mode", "fmt", "expected"),
+        [("CMYK", "JPEG", "RGB"), ("CMYK", "TIFF", "RGB"), ("LAB", "TIFF", "RGB")],
+    )
+    def test_colour_spaces_png_cannot_hold_become_rgb(self, mode, fmt, expected):
+        content = _encode([Image.new(mode, (4, 4))], fmt)
+
+        with open_page_source(content, "image/" + fmt.lower()) as source:
+            page = source.load_page(0)
+
+        assert page.mode == expected
+        page.save(BytesIO(), format="PNG")
+
+    def test_cmyk_multiframe_tiff_frames_become_rgb(self):
+        content = _encode([Image.new("CMYK", (4, 4)) for _ in range(2)], "TIFF")
+
+        with open_page_source(content, "image/tiff") as source:
+            assert [p.mode for p in _load_all(source)] == ["RGB", "RGB"]
+
+    @pytest.mark.parametrize("mode", ["1", "L", "LA", "P", "RGB", "RGBA"])
+    def test_png_safe_modes_pass_through(self, mode):
+        content = _encode([Image.new(mode, (4, 4))], "PNG")
+
+        with open_page_source(content, "image/png") as source:
+            assert source.load_page(0).mode == mode

@@ -51,6 +51,23 @@ from pdf2image.exceptions import (
 # their turn.
 _PDF_PAGE_FORMAT = "png"
 
+# Modes the provider can thumbnail and PNG-encode as-is.
+_PAGE_SAFE_MODES = frozenset({"1", "L", "LA", "P", "RGB", "RGBA"})
+
+# Target mode for the 8-bit modes PNG cannot hold. Deeper greyscale
+# (I, I;16*, F) is rescaled separately in _to_page_mode: a plain convert("L")
+# clips every value above 255 to white.
+_PAGE_MODE_TARGETS = {
+    "CMYK": "RGB",
+    "YCbCr": "RGB",
+    "LAB": "RGB",
+    "HSV": "RGB",
+    "PA": "RGBA",
+    "RGBa": "RGBA",
+    "La": "LA",
+    "F": "L",
+}
+
 
 class ImageConversionError(Exception):
     """Raised when raw document bytes cannot be decoded into images.
@@ -90,7 +107,8 @@ class PageSource:
 
     Every image returned by :meth:`load_page` is fully loaded into memory and
     depends on no open file handle, so it stays valid after the source — or the
-    individual page file — is gone.
+    individual page file — is gone. Every page is 8-bit in one of the modes
+    1/L/LA/P/RGB/RGBA, so the provider can resize and PNG-encode it.
     """
 
     def __init__(
@@ -238,13 +256,31 @@ def open_page_source(
             img.close()
             return _multiframe_to_page_source(content)
         # Copy the frame so the backing BytesIO can be released immediately.
-        single = img.copy()
+        single = _to_page_mode(img.copy())
         img.close()
         return PageSource(images=[single])
     except (UnidentifiedImageError, OSError) as e:
         # OSError covers a truncated or otherwise corrupt image — Pillow
         # identifies the format but fails partway through Image.load().
         raise ImageConversionError(f"Unable to open image: {e}") from e
+
+
+def _to_page_mode(image: Image.Image) -> Image.Image:
+    """Return *image* in a page-safe mode, closing *image* if it was converted.
+
+    16- and 32-bit greyscale is rescaled to 8 bits (65535 → 255) rather than
+    clipped; colour spaces PNG cannot hold become RGB/RGBA/LA. Already-safe
+    images are returned as-is without a copy.
+    """
+    mode = image.mode
+    if mode in _PAGE_SAFE_MODES:
+        return image
+    if mode == "I" or mode.startswith("I;16"):
+        converted = image.point(lambda v: v / 257).convert("L")
+    else:
+        converted = image.convert(_PAGE_MODE_TARGETS.get(mode, "RGB"))
+    image.close()
+    return converted
 
 
 def _multiframe_to_page_source(content: bytes) -> PageSource:
@@ -269,7 +305,7 @@ def _multiframe_to_page_source(content: bytes) -> PageSource:
             for frame_index, frame in enumerate(ImageSequence.Iterator(img)):
                 # copy() materialises the frame pixels independently of the
                 # ImageSequence iterator so saving does not re-seek the source.
-                frame_copy = frame.copy()
+                frame_copy = _to_page_mode(frame.copy())
                 path = os.path.join(temp_dir, f"frame-{frame_index:04d}.png")
                 frame_copy.save(path, format="PNG")
                 frame_copy.close()
