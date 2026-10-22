@@ -16,7 +16,7 @@ once. Unknown fact → omit the section, never guess. -->
 | Markers | `unit`, `integration`, `e2e`, `anyio`; the tier markers are applied by path in `pytest_collection_modifyitems` — never hand-marked | `pyproject.toml`, `tests/conftest.py` |
 | Layout | `tests/unit/<package>/`, `tests/integration/`, `tests/e2e/`, `tests/helpers/` (`factories/`, `mocks.py`, `llm.py`, `search.py`, `store.py`) | repo tree |
 | Size | 201 `test_*.py` files, 3348 tests collected | `pytest --collect-only` |
-| Dev env | `pip install -r requirements-dev.txt && pip install .` — pins pytest 9.0.3, pytest-xdist 3.8.0, pytest-cov 7.1.0, pytest-mock 3.15.1, pytest-asyncio 1.4.0, respx 0.23.1, mypy 2.1.0, ruff 0.15.16, bandit[toml] 1.9.4, pip-audit 2.10.1 | `requirements-dev.txt`, `.github/workflows/ci.yml` |
+| Dev env | `pip install -r requirements-dev.txt && pip install .` — pins pytest 9.1.1, pytest-xdist 3.8.0, pytest-cov 7.1.0, pytest-mock 3.17.0, pytest-asyncio 1.4.0, respx 0.23.1, mypy 2.4.0, ruff 0.15.16, bandit[toml] 1.9.4, pip-audit 2.10.1 | `requirements-dev.txt`, `.github/workflows/ci.yml` |
 | Coverage gate (CI) | `--cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-fail-under=70` — `appdb` is **not** in the gate | `.github/workflows/ci.yml` |
 | Type check | `mypy src` (whole tree) in CI. Note `docs/development.md` still says only `store`/`indexer`/`search` — the workflow is authoritative | `.github/workflows/ci.yml`, `docs/development.md` |
 | Lint | `ruff check src tests` + `ruff format --check src tests` (ruff pinned 0.15.16 in both CI and dev deps) | `.github/workflows/ci.yml`, `requirements-dev.txt` |
@@ -29,7 +29,7 @@ once. Unknown fact → omit the section, never guess. -->
 
 | Item | Value | Source |
 |------|-------|--------|
-| Runner | vitest 4 + jsdom, `pool: 'threads'`, `include: ['src/**/*.test.{ts,tsx}']` | `web/vitest.config.ts`, `web/package.json` |
+| Runner | vitest 5 + jsdom, `pool: 'threads'`, `include: ['src/**/*.test.{ts,tsx}']` | `web/vitest.config.ts`, `web/package.json` |
 | Coverage floor | statements 91 / branches 83 / functions 91 / lines 91 (v8 provider) — only enforced under `npm run test:coverage`, which is what CI runs; plain `npm run test` measures nothing | `web/vitest.config.ts`, `web/package.json`, `.github/workflows/ci.yml` |
 | Lint | `npm run lint` = `eslint . && stylelint "src/**/*.css" --allow-empty-input`. eslint enforces the layer stack via `eslint-plugin-boundaries`; stylelint bans literal colours/sizes outside `src/styles/{tokens,themes,global}.css` | `web/package.json`, `web/eslint.config.js`, `web/.stylelintrc.json` |
 | Dependency audit | `npm audit --omit=dev --audit-level=high` — production deps only; high/critical fails the CI `frontend` job (moderate and below are noise in a vite/react dev toolchain) | `.github/workflows/ci.yml` (`frontend` job) |

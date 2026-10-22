@@ -22,7 +22,7 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 | [OPERATIONS](docs/OPERATIONS.md) | heartbeats, health, halts, runbook | 2026-07-19 @ beac32d |
 | [DEPLOYMENT](docs/DEPLOYMENT.md) | one image, four processes; CI → Docker Hub | 2026-07-19 @ beac32d |
 | [CONFIGURATION](docs/CONFIGURATION.md) | config-in-DB, precedence, hot-load, defaults | 2026-08-17 @ 7fa2824 |
-| [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-08-17 @ 7fa2824 |
+| [TESTING](docs/TESTING.md) | suites, commands, gates, known skips | 2026-10-22 @ 2d2ce9e |
 | [SECURITY](docs/SECURITY.md) | auth, RBAC, quotas, injection defences, headers | 2026-07-19 @ beac32d |
 | [API](docs/API.md) | REST + MCP + NDJSON surface and status mapping | 2026-07-19 @ beac32d |
 | [PIPELINES](docs/PIPELINES.md) | OCR, classification, indexing, search — stage by stage | 2026-10-19 @ 5366d12 |
@@ -35,7 +35,7 @@ size — compress elsewhere first. Repos outgrowing a single-level index
 | [modules/indexer](docs/modules/indexer.md) | reconciler daemon — sole index writer | 2026-07-19 @ beac32d |
 | [modules/search-pipeline](docs/modules/search-pipeline.md) | agentic search: plan → retrieve → judge → synthesise | 2026-07-19 @ beac32d |
 | [modules/search-api](docs/modules/search-api.md) | FastAPI + MCP + SPA surface, auth, RBAC | 2026-07-19 @ beac32d |
-| [modules/web](docs/modules/web.md) | React/Vite SPA | 2026-07-19 @ beac32d |
+| [modules/web](docs/modules/web.md) | React/Vite SPA | 2026-10-22 @ 2d2ce9e |
 
 ## Modules
 
