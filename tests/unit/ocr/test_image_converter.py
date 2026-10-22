@@ -469,12 +469,22 @@ def _encode(images: list[Image.Image], fmt: str) -> bytes:
     return buf.getvalue()
 
 
-def _sixteen_bit(width: int, height: int, ink: int, paper: int) -> Image.Image:
-    """A 16-bit greyscale page: an ink stripe on the left, paper elsewhere."""
-    img = Image.new("I;16", (width, height), paper)
-    # Paste an I;16 tile: an int fill into I;16 writes the low byte twice.
-    img.paste(Image.new("I;16", (width // 2, height), ink), (0, 0))
+def _sixteen_bit(
+    width: int, height: int, ink: int, paper: int, mode: str = "I;16"
+) -> Image.Image:
+    """A 16-bit greyscale page: an ink stripe on the left, paper elsewhere.
+
+    *mode* "I;16B" saves as a big-endian ("MM") TIFF, which reopens as I;16B.
+    """
+    img = Image.new(mode, (width, height), paper)
+    # Paste a 16-bit tile: an int fill into I;16 writes the low byte twice.
+    img.paste(Image.new(mode, (width // 2, height), ink), (0, 0))
     return img
+
+
+# Little- and big-endian 16-bit TIFFs reopen as different Pillow modes, and only
+# I;16 supports point(); the converter must handle both.
+_SIXTEEN_BIT_MODES = pytest.mark.parametrize("mode", ["I;16", "I;16B"])
 
 
 class TestPageModeNormalisation:
@@ -484,8 +494,11 @@ class TestPageModeNormalisation:
     so a 16-bit greyscale or CMYK scan used to fail OCR at the provider.
     """
 
-    def test_sixteen_bit_single_image_is_scaled_to_8bit_not_clipped(self):
-        content = _encode([_sixteen_bit(4, 2, ink=2000, paper=60000)], "TIFF")
+    @_SIXTEEN_BIT_MODES
+    def test_sixteen_bit_single_image_is_scaled_to_8bit_not_clipped(self, mode):
+        content = _encode(
+            [_sixteen_bit(4, 2, ink=2000, paper=60000, mode=mode)], "TIFF"
+        )
 
         with open_page_source(content, "image/tiff") as source:
             page = source.load_page(0)
@@ -505,14 +518,18 @@ class TestPageModeNormalisation:
         page.thumbnail((1600, 1600))
         page.save(BytesIO(), format="PNG")
 
-    def test_sixteen_bit_multiframe_tiff_is_scaled_to_8bit(self):
-        frames = [_sixteen_bit(4, 2, ink=2000, paper=60000) for _ in range(2)]
+    @_SIXTEEN_BIT_MODES
+    def test_sixteen_bit_multiframe_tiff_is_scaled_to_8bit(self, mode):
+        frames = [
+            _sixteen_bit(4, 2, ink=2000, paper=60000, mode=mode) for _ in range(2)
+        ]
         content = _encode(frames, "TIFF")
 
         with open_page_source(content, "image/tiff") as source:
             pages = _load_all(source)
 
         assert [p.mode for p in pages] == ["L", "L"]
+        assert pages[1].getpixel((0, 0)) == pytest.approx(8, abs=1)
         assert pages[1].getpixel((3, 0)) == pytest.approx(233, abs=1)
 
     def test_32bit_greyscale_is_scaled_to_8bit(self):

@@ -54,9 +54,9 @@ _PDF_PAGE_FORMAT = "png"
 # Modes the provider can thumbnail and PNG-encode as-is.
 _PAGE_SAFE_MODES = frozenset({"1", "L", "LA", "P", "RGB", "RGBA"})
 
-# Target mode for the 8-bit modes PNG cannot hold. Deeper greyscale
-# (I, I;16*, F) is rescaled separately in _to_page_mode: a plain convert("L")
-# clips every value above 255 to white.
+# Target mode for the modes PNG cannot hold. Integer greyscale (I, I;16*) is
+# rescaled separately in _to_page_mode: a plain convert("L") clips every value
+# above 255 to white. F is a best-effort clip; no document scanner emits it.
 _PAGE_MODE_TARGETS = {
     "CMYK": "RGB",
     "YCbCr": "RGB",
@@ -260,8 +260,8 @@ def open_page_source(
             # like the PDF path (M6 fix).
             img.close()
             return _multiframe_to_page_source(content)
-        # Copy the frame so the backing BytesIO can be released immediately.
-        single = _to_page_mode(img.copy())
+        # Detach the page so the backing BytesIO can be released immediately.
+        single = _to_page_mode(img)
         img.close()
         return PageSource(images=[single])
     except _UNDECODABLE as e:
@@ -271,21 +271,19 @@ def open_page_source(
 
 
 def _to_page_mode(image: Image.Image) -> Image.Image:
-    """Return *image* in a page-safe mode, closing *image* if it was converted.
+    """Return a new image, independent of *image*, in a page-safe mode.
 
     16- and 32-bit greyscale is rescaled to 8 bits (65535 → 255) rather than
-    clipped; colour spaces PNG cannot hold become RGB/RGBA/LA. Already-safe
-    images are returned as-is without a copy.
+    clipped; colour spaces PNG cannot hold become RGB/RGBA/LA. Safe images are
+    copied, so every caller gets exactly one new bitmap and still owns *image*.
     """
     mode = image.mode
     if mode in _PAGE_SAFE_MODES:
-        return image
+        return image.copy()
     if mode == "I" or mode.startswith("I;16"):
-        converted = image.point(lambda v: v / 257).convert("L")
-    else:
-        converted = image.convert(_PAGE_MODE_TARGETS.get(mode, "RGB"))
-    image.close()
-    return converted
+        # point() only accepts I and native I;16 — widen I;16B/L/N first.
+        return image.convert("I").point(lambda v: v / 257).convert("L")
+    return image.convert(_PAGE_MODE_TARGETS.get(mode, "RGB"))
 
 
 def _multiframe_to_page_source(content: bytes) -> PageSource:
@@ -308,9 +306,9 @@ def _multiframe_to_page_source(content: bytes) -> PageSource:
     try:
         with Image.open(BytesIO(content)) as img:
             for frame_index, frame in enumerate(ImageSequence.Iterator(img)):
-                # copy() materialises the frame pixels independently of the
-                # ImageSequence iterator so saving does not re-seek the source.
-                frame_copy = _to_page_mode(frame.copy())
+                # _to_page_mode materialises the frame pixels independently of
+                # the ImageSequence iterator so saving does not re-seek the source.
+                frame_copy = _to_page_mode(frame)
                 path = os.path.join(temp_dir, f"frame-{frame_index:04d}.png")
                 frame_copy.save(path, format="PNG")
                 frame_copy.close()
