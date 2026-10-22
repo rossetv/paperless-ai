@@ -53,13 +53,13 @@ def _reset_library_setup_module_state():
 
 
 class TestPillowConfig:
-    def test_max_image_pixels_set_to_none(self):
+    def test_max_image_pixels_keeps_bomb_guard_with_generous_cap(self):
         settings = _make_settings()
         original = Image.MAX_IMAGE_PIXELS
         try:
-            Image.MAX_IMAGE_PIXELS = 12345  # non-None sentinel
+            Image.MAX_IMAGE_PIXELS = None  # the old, guard-disabling value
             setup_libraries(settings)
-            assert Image.MAX_IMAGE_PIXELS is None
+            assert Image.MAX_IMAGE_PIXELS == 250_000_000
         finally:
             Image.MAX_IMAGE_PIXELS = original
 

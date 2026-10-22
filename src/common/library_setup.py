@@ -31,6 +31,12 @@ from .llm import set_chat_client
 if TYPE_CHECKING:
     from .config import Settings
 
+# Pillow's decompression-bomb cap: it warns above this many pixels and refuses
+# to decode above twice it. 250 MP clears every real document (A0 at 400 DPI
+# is ~248 MP, large phone photos ~200 MP) while keeping Pillow's bomb checks —
+# several of its CVE fixes rely on them — live for untrusted uploads.
+_MAX_IMAGE_PIXELS = 250_000_000
+
 
 # Module-level holder for the *currently active* httpx clients — one per built
 # provider slot. Re-running setup_libraries closes the previous clients and
@@ -101,8 +107,7 @@ def setup_libraries(settings: Settings) -> None:
     config changes therefore stays at one httpx client per live provider and one
     ``atexit`` entry, regardless of how many times this is called.
     """
-    # Allow arbitrarily large images (high-DPI document scans).
-    Image.MAX_IMAGE_PIXELS = None
+    Image.MAX_IMAGE_PIXELS = _MAX_IMAGE_PIXELS
 
     global _active_http_clients, _atexit_registered
     with _setup_lock:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from io import BytesIO
 from unittest.mock import patch
 
@@ -550,3 +552,33 @@ class TestPageModeNormalisation:
 
         with open_page_source(content, "image/png") as source:
             assert source.load_page(0).mode == mode
+
+
+class TestDecompressionBomb:
+    """An image past Pillow's pixel cap is quarantined, not retried every poll."""
+
+    def test_oversized_single_image_raises_conversion_error(self, monkeypatch):
+        content = _make_png_bytes(width=100, height=100)
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)  # error above 2000 px
+
+        with pytest.raises(ImageConversionError, match="Unable to open image"):
+            open_page_source(content, "image/png")
+
+    def test_oversized_later_tiff_frame_raises_and_cleans_temp_dir(self, monkeypatch):
+        # Pillow checks each frame on seek(), so the bomb surfaces mid-iteration.
+        content = _encode(
+            [Image.new("RGB", (10, 10)), Image.new("RGB", (100, 100))], "TIFF"
+        )
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
+        created: list[str] = []
+        real_mkdtemp = tempfile.mkdtemp
+        monkeypatch.setattr(
+            tempfile,
+            "mkdtemp",
+            lambda **kw: created.append(real_mkdtemp(**kw)) or created[-1],
+        )
+
+        with pytest.raises(ImageConversionError, match="Unable to open image"):
+            open_page_source(content, "image/tiff")
+
+        assert created and not os.path.exists(created[0])

@@ -68,6 +68,11 @@ _PAGE_MODE_TARGETS = {
     "F": "L",
 }
 
+# Errors that mean Pillow cannot (or must not) decode the bytes. The bomb
+# error is not an OSError; uncaught it escapes the worker, the pre-tag stays,
+# and the document is re-downloaded and re-decoded every poll.
+_UNDECODABLE = (UnidentifiedImageError, OSError, Image.DecompressionBombError)
+
 
 class ImageConversionError(Exception):
     """Raised when raw document bytes cannot be decoded into images.
@@ -259,7 +264,7 @@ def open_page_source(
         single = _to_page_mode(img.copy())
         img.close()
         return PageSource(images=[single])
-    except (UnidentifiedImageError, OSError) as e:
+    except _UNDECODABLE as e:
         # OSError covers a truncated or otherwise corrupt image — Pillow
         # identifies the format but fails partway through Image.load().
         raise ImageConversionError(f"Unable to open image: {e}") from e
@@ -310,7 +315,7 @@ def _multiframe_to_page_source(content: bytes) -> PageSource:
                 frame_copy.save(path, format="PNG")
                 frame_copy.close()
                 paths.append(path)
-    except (UnidentifiedImageError, OSError) as exc:
+    except _UNDECODABLE as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise ImageConversionError(f"Unable to open image: {exc}") from exc
     except Exception:
