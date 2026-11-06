@@ -46,6 +46,8 @@ class TestTextChunkShape:
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
         with pytest.raises((TypeError, AttributeError)):
             chunk.nonexistent = "value"  # type: ignore[attr-defined]
+        # frozen alone also rejects the assignment, so pin slots directly.
+        assert not hasattr(chunk, "__dict__")
 
 
 class TestChunkTextEmptyInput:
