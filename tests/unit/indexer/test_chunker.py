@@ -36,12 +36,15 @@ class TestTextChunkShape:
     def test_slots_prevent_arbitrary_attributes(self) -> None:
         """slots=True rejects assignment to an undeclared attribute.
 
-        On a frozen slots dataclass the frozen ``__setattr__`` runs first and
-        raises ``TypeError`` for any name — declared or not — so an undeclared
-        attribute is rejected with ``TypeError`` rather than ``AttributeError``.
+        The exception type depends on the interpreter.  Python 3.11 has a
+        CPython bug in the frozen ``__setattr__`` of a slots dataclass: it
+        fails with ``TypeError`` ("super(type, obj): obj must be an instance
+        or subtype of type").  Python 3.13.18 raises ``FrozenInstanceError``,
+        a subclass of ``AttributeError``.  Either one is a rejection, so the
+        test accepts both rather than pinning one interpreter's bug.
         """
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
-        with pytest.raises(TypeError):
+        with pytest.raises((TypeError, AttributeError)):
             chunk.nonexistent = "value"  # type: ignore[attr-defined]
 
 
