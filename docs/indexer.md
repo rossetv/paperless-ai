@@ -91,7 +91,7 @@ Once running, the daemon settles into a sequential loop — cycles never overlap
 
 Steps 4–7 run inside a single cycle-level `except Exception` (the documented outer-boundary catch). If anything in the cycle throws — a network blip refreshing the taxonomy, a dropped page mid-sync, a malformed document, a `StoreError` — the traceback is logged with `log.exception(...)` and the loop falls through to the wait. **A failed cycle never crashes the daemon**, and it never advances the deletion-sweep clock (`last_sweep_at` is set only after a sweep actually completes, so a missed sweep is simply retried next cycle).
 
-State between iterations is carried as an immutable `_LoopState` — the current reconciler, the current settings, and the monotonic time of the last completed sweep. Each cycle returns a fresh `_LoopState` rather than mutating in place, which makes the hot-reload swap and the sweep-clock advance explicit.
+State between iterations is carried as an immutable `_LoopState`. It holds the current reconciler, the current settings, the monotonic time of the last completed sweep, and `sweep_pending`: whether a manual reconcile is still waiting for its deletion sweep. A cycle that fails keeps `sweep_pending` set, so the request is not lost. Each cycle returns a fresh `_LoopState` rather than mutating in place, which makes the hot-reload swap and the sweep-clock advance explicit.
 
 **Source:** `indexer/daemon/_loop.py`
 
