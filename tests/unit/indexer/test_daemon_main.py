@@ -12,7 +12,7 @@ Behavioural promises tested:
 - A manual trigger the wait consumes still forces a deletion sweep on the next
   _run_loop cycle (the real wait, not a patched one).
 
-The _run_loop behaviours live in test_daemon.py — the daemon's tests are split
+The remaining _run_loop behaviours live in test_daemon.py — the daemon's tests are split
 across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
 ``_reset_shutdown`` autouse fixture comes from tests/unit/indexer/conftest.py.
 """
@@ -237,7 +237,7 @@ def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
 # ---------------------------------------------------------------------------
 
 
-def test_manual_trigger_woken_mid_wait_forces_the_next_cycle_sweep(
+def test_manual_trigger_consumed_by_the_wait_forces_the_next_cycle_sweep(
     tmp_path: Path,
 ) -> None:
     """A reconcile.request landing mid-cycle forces a sweep on the next cycle.
