@@ -8,7 +8,8 @@ Behavioural promises tested:
 3. A present reconcile.request sentinel forces the next cycle to include a
    deletion_sweep.
 4. A cycle-level failure is isolated; the loop survives and the next cycle
-   retries, and a failed cycle never advances the deletion-sweep clock.
+   retries, and a failed cycle never advances the deletion-sweep clock nor
+   drops a pending manual trigger.
 5. The deletion sweep runs only when DELETION_SWEEP_INTERVAL has elapsed since
    the last sweep — or a manual trigger forced a full cycle.
 

@@ -127,7 +127,8 @@ def _run_loop(
     failure anywhere in the cycle is logged with its traceback and the loop
     falls through to the wait, so the next cycle retries.  A cycle failure
     never crashes the daemon, never advances the deletion-sweep clock, and
-    never drops a manual trigger: it stays pending until a sweep completes.
+    never drops a manual trigger: it stays pending until ``deletion_sweep()``
+    returns (an aborted sweep included).
 
     The loop is sequential; cycles never overlap.
 
@@ -197,14 +198,16 @@ class _LoopState:
         reconciler: The current Reconciler — replaced by a fresh one when the
             config hot-reloads.
         settings: The current Settings snapshot — replaced on a config change.
-        last_sweep_at: Monotonic seconds of the last completed deletion sweep;
-            advanced only after a successful sweep so a failed cycle never moves
-            the sweep clock.
+        last_sweep_at: Monotonic seconds of the last deletion sweep to return;
+            advanced only once ``deletion_sweep()`` returns (an aborted sweep
+            included) so a cycle that raises never moves the sweep clock.
         sweep_pending: A consumed manual trigger whose deletion sweep has not
-            yet completed.  Set when the inter-cycle wait consumes the
-            sentinel, kept across a failed cycle, and cleared only once
-            ``deletion_sweep()`` returns — so a reconcile request is never
-            dropped by a transient failure.
+            yet run.  Set when a manual-trigger sentinel is consumed — by the
+            inter-cycle wait or at cycle entry — kept across a failed cycle,
+            and cleared once ``deletion_sweep()`` returns, so a cycle that
+            raises never drops a reconcile request.  An *aborted* sweep
+            (Paperless enumeration failed) returns normally and clears it;
+            the abort is recorded ``ok=False`` for the operator to re-trigger.
     """
 
     reconciler: Reconciler
@@ -316,9 +319,10 @@ def _run_one_cycle(
         # malformed Paperless document, a StoreError) must not crash the daemon.
         # The traceback is logged and the loop falls through to the wait so the
         # next cycle retries — mirroring common/daemon_loop.run_polling_threadpool.
-        # last_sweep_at and sweep_pending are updated only after a successful
-        # sweep, so a failed cycle moves neither: a missed sweep is retried
-        # next cycle, and a pending manual trigger still forces it.
+        # last_sweep_at and sweep_pending are updated only once
+        # deletion_sweep() returns (an aborted sweep included), so a cycle that
+        # raises moves neither: a missed sweep is retried next cycle, and a
+        # pending manual trigger still forces it.
         log.exception("indexer.cycle_failed")
 
     return _LoopState(
