@@ -9,6 +9,8 @@ Behavioural promises tested:
   present.
 - _interruptible_wait calls beat_idle on the cycle_recorder at _IDLE_BEAT_INTERVAL
   intervals so the daemon heartbeat stays fresh during a 300 s reconcile wait.
+- A manual trigger the wait consumes still forces a deletion sweep on the next
+  _run_loop cycle (the real wait, not a patched one).
 
 The _run_loop behaviours live in test_daemon.py — the daemon's tests are split
 across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
@@ -27,6 +29,7 @@ from indexer.daemon import (
     _IDLE_BEAT_INTERVAL,
     _WAKE_CHECK_INTERVAL,
     _interruptible_wait,
+    _run_loop,
 )
 from tests.helpers.factories import make_settings_obj
 
@@ -227,3 +230,50 @@ def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
         f"got {recorder.beat_idle.call_count}"
     )
     assert recorder.beat_idle.call_count > 0, "beat_idle was never called"
+
+
+# ---------------------------------------------------------------------------
+# The wait's manual trigger reaches the next cycle
+# ---------------------------------------------------------------------------
+
+
+def test_manual_trigger_woken_mid_wait_forces_the_next_cycle_sweep(
+    tmp_path: Path,
+) -> None:
+    """A reconcile.request landing mid-cycle forces a sweep on the next cycle.
+
+    Regression: the real _interruptible_wait consumes the sentinel when it
+    wakes, so the next cycle's own sentinel check finds nothing — the loop must
+    carry the wait's True result into that cycle or the forced sweep is lost.
+    The wait is deliberately NOT patched, and the clock stays at 1.0 so the
+    sweep interval never elapses: only the manual trigger can cause a sweep.
+    """
+    sentinel_path = tmp_path / "reconcile.request"
+    reconciler = _make_reconciler()
+    sync_report = reconciler.incremental_sync.return_value
+    syncs = 0
+
+    def sync() -> MagicMock:
+        nonlocal syncs
+        syncs += 1
+        if syncs == 1:
+            sentinel_path.touch()  # POST /api/reconcile lands mid-cycle
+        else:
+            shutdown_mod.request_shutdown()
+        return sync_report
+
+    reconciler.incremental_sync.side_effect = sync
+    settings = MagicMock(RECONCILE_INTERVAL=60, DELETION_SWEEP_INTERVAL=3600)
+
+    with patch("indexer.daemon._loop.current_settings", return_value=settings):
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=MagicMock(),
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
+            sentinel_path=sentinel_path,
+            clock=lambda: 1.0,
+        )
+
+    assert syncs == 2
+    reconciler.deletion_sweep.assert_called_once()

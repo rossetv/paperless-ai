@@ -113,10 +113,13 @@ def _run_loop(
     1. Check for a manual-trigger sentinel file — consume it if present.
     2. Run ``reconciler.incremental_sync()``.
     3. Run ``reconciler.deletion_sweep()`` if the sweep interval has elapsed
-       OR a manual trigger was pending at cycle start.
+       OR a manual trigger was pending at cycle start — a sentinel consumed
+       at entry, or one the previous wait consumed when it woke.
     4. ``store_writer.checkpoint()``.
     5. ``_interruptible_wait(settings.RECONCILE_INTERVAL)`` — returns early on
-       shutdown or if a new sentinel appears.
+       shutdown or if a new sentinel appears.  The wait consumes that
+       sentinel, so its ``True`` result is carried into the next cycle as the
+       manual trigger.
 
     Steps 2–4 run inside a cycle-level ``try/except Exception``: a transient
     failure anywhere in the cycle is logged with its traceback and the loop
@@ -150,6 +153,7 @@ def _run_loop(
     # sweep.  ``last_sweep_at`` starts at 0 so the first cycle is always far
     # enough past it to run a deletion sweep.
     state = _LoopState(reconciler=reconciler, settings=settings, last_sweep_at=0.0)
+    woken_by_trigger = False
 
     while not is_shutdown_requested():
         state = _run_one_cycle(
@@ -159,6 +163,7 @@ def _run_loop(
             sentinel_path=sentinel_path,
             clock=clock,
             cycle_recorder=cycle_recorder,
+            woken_by_trigger=woken_by_trigger,
         )
 
         # Wait for the next cycle, waking early on shutdown or a new sentinel.
@@ -166,8 +171,10 @@ def _run_loop(
         # RECONCILE_INTERVAL takes effect from this wait onwards.  The
         # cycle_recorder is passed so the wait can beat idle periodically and
         # prevent the dashboard from reporting the indexer as "stopped" while
-        # it is simply sleeping between cycles.
-        _interruptible_wait(
+        # it is simply sleeping between cycles.  A True result means the wait
+        # consumed a manual-trigger sentinel; it is handed to the next cycle,
+        # whose own sentinel check would otherwise find nothing.
+        woken_by_trigger = _interruptible_wait(
             seconds=float(state.settings.RECONCILE_INTERVAL),
             sentinel_path=sentinel_path,
             cycle_recorder=cycle_recorder,
@@ -205,6 +212,7 @@ def _run_one_cycle(
     sentinel_path: Path,
     clock: Callable[[], float],
     cycle_recorder: IndexerActivityRecorder | None,
+    woken_by_trigger: bool = False,
 ) -> _LoopState:
     """Run a single reconciliation cycle and return the next loop state.
 
@@ -214,6 +222,10 @@ def _run_one_cycle(
     fault-isolation boundary.  It is a standalone function (not inlined in the
     loop) so tests drive the *real* cycle directly rather than a hand-copied
     parallel implementation (CODE_GUIDELINES §1.3, §11.4).
+
+    *woken_by_trigger* is ``True`` when the preceding inter-cycle wait woke on
+    (and consumed) a manual-trigger sentinel; it forces this cycle's deletion
+    sweep exactly as a sentinel found at cycle entry does.
 
     Returns:
         A new :class:`_LoopState`: the reconciler and settings (replaced when
@@ -235,8 +247,11 @@ def _run_one_cycle(
         settings = latest
 
     # Consume a manual trigger at cycle entry — it forces a deletion sweep
-    # regardless of the interval (SPEC §5.8).
-    manual_trigger = _consume_sentinel(sentinel_path)
+    # regardless of the interval (SPEC §5.8). The sentinel is consumed
+    # unconditionally (not short-circuited by woken_by_trigger) so one written
+    # since the wait woke does not linger and cause a spurious extra wake.
+    consumed_at_entry = _consume_sentinel(sentinel_path)
+    manual_trigger = consumed_at_entry or woken_by_trigger
     if manual_trigger:
         log.info("indexer.manual_trigger_consumed")
 
