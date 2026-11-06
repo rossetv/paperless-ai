@@ -53,7 +53,7 @@ once. Unknown fact → omit the section, never guess. -->
 ## Procedures
 
 1. **Check what is running** — `GET /api/index/status` returns all four daemons (absentees synthesised as `stopped`) plus overall health `ok`/`degraded`/`down` (`src/search/index_service.py`).
-2. **Force a reconcile** — `POST /api/reconcile` (member+) touches `reconcile.request` beside `index.db`; the indexer wakes from its wait and syncs on the next cycle.
+2. **Force a reconcile** — `POST /api/reconcile` (member+) touches `reconcile.request` beside `index.db`; the indexer wakes from its wait and syncs on the next cycle, forcing a deletion sweep.
 3. **Rebuild the index** — `POST /api/index/rebuild` (admin) touches `rebuild.request` + `reconcile.request`; the indexer wipes `index.db` and re-indexes everything. Returns 503 if the data directory is unwritable. `app.db` (accounts, keys, config, activity) is untouched.
 4. **Change configuration without a restart** — `PUT /api/settings` (admin). Every process picks it up at its next safe boundary; a `REINDEX_KEYS` change schedules the rebuild sentinel *before* the config write commits.
 5. **Clear a halted daemon** — save any configuration change (the daemons call `WriteBackCircuitBreaker.reset()` on hot-reload) or restart the container. A late success alone does **not** lift the halt.
