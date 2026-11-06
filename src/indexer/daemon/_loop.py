@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import structlog
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from indexer.activity import IndexerActivityRecorder
+    from indexer.reconciler import SweepReport
 
 log = structlog.get_logger(__name__)
 
@@ -113,18 +114,20 @@ def _run_loop(
     1. Check for a manual-trigger sentinel file — consume it if present.
     2. Run ``reconciler.incremental_sync()``.
     3. Run ``reconciler.deletion_sweep()`` if the sweep interval has elapsed
-       OR a manual trigger was pending at cycle start — a sentinel consumed
-       at entry, or one the previous wait consumed when it woke.
+       OR a manual trigger is pending — a sentinel consumed at entry, one the
+       previous wait consumed when it woke, or one a failed cycle left
+       unhonoured.
     4. ``store_writer.checkpoint()``.
     5. ``_interruptible_wait(settings.RECONCILE_INTERVAL)`` — returns early on
        shutdown or if a new sentinel appears.  The wait consumes that
-       sentinel, so its ``True`` result is carried into the next cycle as the
-       manual trigger.
+       sentinel, so its ``True`` result marks the manual trigger pending in
+       the state handed to the next cycle.
 
     Steps 2–4 run inside a cycle-level ``try/except Exception``: a transient
     failure anywhere in the cycle is logged with its traceback and the loop
     falls through to the wait, so the next cycle retries.  A cycle failure
-    never crashes the daemon and never advances the deletion-sweep clock.
+    never crashes the daemon, never advances the deletion-sweep clock, and
+    never drops a manual trigger: it stays pending until a sweep completes.
 
     The loop is sequential; cycles never overlap.
 
@@ -153,7 +156,6 @@ def _run_loop(
     # sweep.  ``last_sweep_at`` starts at 0 so the first cycle is always far
     # enough past it to run a deletion sweep.
     state = _LoopState(reconciler=reconciler, settings=settings, last_sweep_at=0.0)
-    woken_by_trigger = False
 
     while not is_shutdown_requested():
         state = _run_one_cycle(
@@ -163,7 +165,6 @@ def _run_loop(
             sentinel_path=sentinel_path,
             clock=clock,
             cycle_recorder=cycle_recorder,
-            woken_by_trigger=woken_by_trigger,
         )
 
         # Wait for the next cycle, waking early on shutdown or a new sentinel.
@@ -172,13 +173,15 @@ def _run_loop(
         # cycle_recorder is passed so the wait can beat idle periodically and
         # prevent the dashboard from reporting the indexer as "stopped" while
         # it is simply sleeping between cycles.  A True result means the wait
-        # consumed a manual-trigger sentinel; it is handed to the next cycle,
-        # whose own sentinel check would otherwise find nothing.
-        woken_by_trigger = _interruptible_wait(
+        # consumed a manual-trigger sentinel; it is marked pending in the state
+        # the next cycle reads, whose own sentinel check would find nothing.
+        if _interruptible_wait(
             seconds=float(state.settings.RECONCILE_INTERVAL),
             sentinel_path=sentinel_path,
             cycle_recorder=cycle_recorder,
-        )
+        ):
+            log.info("indexer.manual_trigger_consumed")
+            state = replace(state, sweep_pending=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,11 +200,17 @@ class _LoopState:
         last_sweep_at: Monotonic seconds of the last completed deletion sweep;
             advanced only after a successful sweep so a failed cycle never moves
             the sweep clock.
+        sweep_pending: A consumed manual trigger whose deletion sweep has not
+            yet completed.  Set when the inter-cycle wait consumes the
+            sentinel, kept across a failed cycle, and cleared only once
+            ``deletion_sweep()`` returns — so a reconcile request is never
+            dropped by a transient failure.
     """
 
     reconciler: Reconciler
     settings: Settings
     last_sweep_at: float
+    sweep_pending: bool = False
 
 
 def _run_one_cycle(
@@ -212,7 +221,6 @@ def _run_one_cycle(
     sentinel_path: Path,
     clock: Callable[[], float],
     cycle_recorder: IndexerActivityRecorder | None,
-    woken_by_trigger: bool = False,
 ) -> _LoopState:
     """Run a single reconciliation cycle and return the next loop state.
 
@@ -223,14 +231,14 @@ def _run_one_cycle(
     loop) so tests drive the *real* cycle directly rather than a hand-copied
     parallel implementation (CODE_GUIDELINES §1.3, §11.4).
 
-    *woken_by_trigger* is ``True`` when the preceding inter-cycle wait woke on
-    (and consumed) a manual-trigger sentinel; it forces this cycle's deletion
-    sweep exactly as a sentinel found at cycle entry does.
+    A manual trigger — a sentinel found at cycle entry, or ``state.sweep_pending``
+    — forces this cycle's deletion sweep regardless of the interval.
 
     Returns:
         A new :class:`_LoopState`: the reconciler and settings (replaced when
-        the config hot-reloaded this cycle) and ``last_sweep_at`` (advanced only
-        if a sweep completed).
+        the config hot-reloaded this cycle), ``last_sweep_at`` (advanced only
+        if a sweep completed) and ``sweep_pending`` (cleared only if a sweep
+        completed).
     """
     reconciler = state.reconciler
     settings = state.settings
@@ -248,12 +256,14 @@ def _run_one_cycle(
 
     # Consume a manual trigger at cycle entry — it forces a deletion sweep
     # regardless of the interval (SPEC §5.8). The sentinel is consumed
-    # unconditionally (not short-circuited by woken_by_trigger) so one written
-    # since the wait woke does not linger and cause a spurious extra wake.
-    consumed_at_entry = _consume_sentinel(sentinel_path)
-    manual_trigger = consumed_at_entry or woken_by_trigger
-    if manual_trigger:
+    # unconditionally (before the pending check, never short-circuited by it)
+    # so one written since the wait woke does not linger and cause a spurious
+    # extra wake.
+    if _consume_sentinel(sentinel_path):
         log.info("indexer.manual_trigger_consumed")
+        sweep_pending = True
+    else:
+        sweep_pending = state.sweep_pending
 
     # Consume a rebuild trigger at cycle entry — wipe the index before this
     # cycle's sync so the sync re-indexes the whole archive (web-redesign spec
@@ -265,7 +275,7 @@ def _run_one_cycle(
     # Determine whether a deletion sweep is due this cycle. The interval is read
     # live from settings so a hot-loaded change takes effect now.
     elapsed = clock() - last_sweep_at
-    run_sweep = manual_trigger or elapsed >= settings.DELETION_SWEEP_INTERVAL
+    run_sweep = sweep_pending or elapsed >= settings.DELETION_SWEEP_INTERVAL
 
     try:
         if needs_rebuild:
@@ -288,23 +298,15 @@ def _run_one_cycle(
                 finished_at=utc_now_iso(),
             )
 
-        # Run deletion sweep when due.
+        # Run deletion sweep when due. Its clock and any pending manual trigger
+        # move only once deletion_sweep() returns, so a sweep that raises is
+        # retried — and still forced — next cycle.
         if run_sweep:
             sweep_started = utc_now_iso()
             sweep_report = reconciler.deletion_sweep()
             last_sweep_at = clock()
-            log.info(
-                "indexer.cycle_sweep",
-                pruned=sweep_report.pruned,
-                candidates=sweep_report.candidates,
-                aborted=sweep_report.aborted,
-            )
-            if cycle_recorder is not None:
-                cycle_recorder.record_sweep(
-                    sweep_report,
-                    started_at=sweep_started,
-                    finished_at=utc_now_iso(),
-                )
+            sweep_pending = False
+            _report_sweep(sweep_report, cycle_recorder, started_at=sweep_started)
 
         store_writer.checkpoint()
     except Exception:
@@ -314,13 +316,36 @@ def _run_one_cycle(
         # malformed Paperless document, a StoreError) must not crash the daemon.
         # The traceback is logged and the loop falls through to the wait so the
         # next cycle retries — mirroring common/daemon_loop.run_polling_threadpool.
-        # last_sweep_at is assigned only after a successful sweep, so a failed
-        # cycle never advances it: a missed sweep is retried next cycle.
+        # last_sweep_at and sweep_pending are updated only after a successful
+        # sweep, so a failed cycle moves neither: a missed sweep is retried
+        # next cycle, and a pending manual trigger still forces it.
         log.exception("indexer.cycle_failed")
 
     return _LoopState(
-        reconciler=reconciler, settings=settings, last_sweep_at=last_sweep_at
+        reconciler=reconciler,
+        settings=settings,
+        last_sweep_at=last_sweep_at,
+        sweep_pending=sweep_pending,
     )
+
+
+def _report_sweep(
+    sweep_report: SweepReport,
+    cycle_recorder: IndexerActivityRecorder | None,
+    *,
+    started_at: str,
+) -> None:
+    """Log a completed deletion sweep and record it in the activity log."""
+    log.info(
+        "indexer.cycle_sweep",
+        pruned=sweep_report.pruned,
+        candidates=sweep_report.candidates,
+        aborted=sweep_report.aborted,
+    )
+    if cycle_recorder is not None:
+        cycle_recorder.record_sweep(
+            sweep_report, started_at=started_at, finished_at=utc_now_iso()
+        )
 
 
 def _run_rebuild(

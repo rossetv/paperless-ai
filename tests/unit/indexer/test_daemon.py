@@ -26,6 +26,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import common.shutdown as shutdown_mod
 from indexer.daemon import _run_loop
 from tests.unit.indexer.conftest import make_daemon_reconciler, make_daemon_settings
@@ -252,6 +254,52 @@ def test_deletion_sweep_failure_does_not_crash_loop(tmp_path: Path) -> None:
     assert reconciler.deletion_sweep.call_count == 1
     # The loop still reached the wait despite the sweep blowing up.
     assert wait_count == 1
+
+
+@pytest.mark.parametrize(
+    ("failing_step", "expected_sweeps"),
+    [("incremental_sync", 1), ("deletion_sweep", 2)],
+)
+def test_manual_trigger_stays_pending_until_its_sweep_completes(
+    tmp_path: Path, failing_step: str, expected_sweeps: int
+) -> None:
+    """A manual trigger survives a failed cycle and is cleared once honoured.
+
+    The sentinel is consumed at cycle 1's entry, then cycle 1 fails — before
+    the sweep, or in it.  The clock is fixed at 1.0, far short of the 3600 s
+    interval, so only the still-pending trigger can make cycle 2 sweep; cycle 3
+    must not sweep, which proves the trigger is cleared once its sweep returns.
+    """
+    reconciler = make_daemon_reconciler()
+    step = getattr(reconciler, failing_step)
+    step.side_effect = [RuntimeError("cycle 1 failed"), *[step.return_value] * 2]
+    settings = make_daemon_settings()
+    sentinel_path = tmp_path / "reconcile.request"
+    sentinel_path.touch()
+    waits = 0
+
+    def fake_wait(seconds: float, sentinel_path: Path, **_kwargs: object) -> bool:
+        nonlocal waits
+        waits += 1
+        if waits == 3:
+            shutdown_mod.request_shutdown()
+        return False
+
+    with (
+        patch("indexer.daemon._loop._interruptible_wait", side_effect=fake_wait),
+        patch("indexer.daemon._loop.current_settings", return_value=settings),
+    ):
+        _run_loop(
+            reconciler=reconciler,
+            store_writer=MagicMock(),
+            settings=settings,
+            app_db_path=str(tmp_path / "app.db"),
+            sentinel_path=sentinel_path,
+            clock=lambda: 1.0,
+        )
+
+    assert reconciler.incremental_sync.call_count == 3
+    assert reconciler.deletion_sweep.call_count == expected_sweeps
 
 
 # ---------------------------------------------------------------------------
