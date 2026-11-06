@@ -6,7 +6,9 @@ builder, the construct-and-run helper, and the common ``index_document`` stub
 they all share live here so each test file imports one definition rather than
 redeclaring it.  The Paperless mock builder lives in :mod:`tests.helpers.mocks`
 (the reconciler integration tests share it too) and is re-exported here so the
-reconciler unit test files import everything from one place.
+reconciler unit test files import everything from one place.  The daemon's
+tests (``test_daemon*.py``) share the mock Reconciler and loop-settings
+builders at the end of this module for the same reason.
 """
 
 from __future__ import annotations
@@ -25,6 +27,8 @@ from tests.helpers.mocks import make_mock_embedding_client, make_reconciler_pape
 
 __all__ = [
     "always_indexed",
+    "make_daemon_reconciler",
+    "make_daemon_settings",
     "make_reconciler_paperless",
     "make_reconciler_store_writer",
     "run_incremental_sync",
@@ -95,3 +99,25 @@ def run_incremental_sync(paperless: MagicMock, store_writer: MagicMock) -> SyncR
     return Reconciler(
         make_settings_obj(), paperless, store_writer, make_mock_embedding_client()
     ).incremental_sync()
+
+
+def make_daemon_reconciler() -> MagicMock:
+    """Return a mock Reconciler whose two operations report empty outcomes."""
+    reconciler = MagicMock()
+    reconciler.incremental_sync.return_value = MagicMock(
+        indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0
+    )
+    reconciler.deletion_sweep.return_value = MagicMock(
+        pruned=0, aborted=False, candidates=0
+    )
+    return reconciler
+
+
+def make_daemon_settings(
+    reconcile_interval: int = 300, deletion_sweep_interval: int = 3600
+) -> MagicMock:
+    """Return a MagicMock standing in for Settings with the loop intervals."""
+    settings = MagicMock()
+    settings.RECONCILE_INTERVAL = reconcile_interval
+    settings.DELETION_SWEEP_INTERVAL = deletion_sweep_interval
+    return settings

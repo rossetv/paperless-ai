@@ -12,9 +12,10 @@ Behavioural promises tested:
 - A manual trigger the wait consumes still forces a deletion sweep on the next
   _run_loop cycle (the real wait, not a patched one).
 
-The remaining _run_loop behaviours live in test_daemon.py — the daemon's tests are split
-across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  The
-``_reset_shutdown`` autouse fixture comes from tests/unit/indexer/conftest.py.
+The remaining _run_loop behaviours live in test_daemon.py and
+test_daemon_reload.py — the daemon's tests are split across three files for
+the 500-line ceiling (CODE_GUIDELINES §3.1).  The shared mock builders and the
+``_reset_shutdown`` autouse fixture come from tests/unit/indexer/conftest.py.
 """
 
 from __future__ import annotations
@@ -32,18 +33,7 @@ from indexer.daemon import (
     _run_loop,
 )
 from tests.helpers.factories import make_settings_obj
-
-
-def _make_reconciler() -> MagicMock:
-    """Return a mock Reconciler whose two operations report empty outcomes."""
-    reconciler = MagicMock()
-    reconciler.incremental_sync.return_value = MagicMock(
-        indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0
-    )
-    reconciler.deletion_sweep.return_value = MagicMock(
-        pruned=0, aborted=False, candidates=0
-    )
-    return reconciler
+from tests.unit.indexer.conftest import make_daemon_reconciler
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +110,7 @@ def test_main_proceeds_when_lock_acquired(
         store_writer.checkpoint.return_value = None
         monkeypatch.setattr("indexer.daemon._boot.StoreWriter", lambda s: store_writer)
         monkeypatch.setattr(
-            "indexer.daemon._boot.Reconciler", lambda **kwargs: _make_reconciler()
+            "indexer.daemon._boot.Reconciler", lambda **kwargs: make_daemon_reconciler()
         )
         # Force the loop to exit immediately on entry.
         shutdown_mod.request_shutdown()
@@ -249,7 +239,7 @@ def test_manual_trigger_consumed_by_the_wait_forces_the_next_cycle_sweep(
     sweep interval never elapses: only the manual trigger can cause a sweep.
     """
     sentinel_path = tmp_path / "reconcile.request"
-    reconciler = _make_reconciler()
+    reconciler = make_daemon_reconciler()
     sync_report = reconciler.incremental_sync.return_value
     syncs = 0
 
