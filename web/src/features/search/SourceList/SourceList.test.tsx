@@ -49,11 +49,12 @@ describe('SourceList', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('calls onCitationActivate on the correct source when a card is highlighted', () => {
+  it('highlights only the source at highlightedIndex', () => {
     const sources = [makeSource(1, 'First'), makeSource(2, 'Second')];
-    render(<SourceList sources={sources} highlightedIndex={1} onPreview={() => {}} />);
-    expect(screen.getByText('First')).toBeInTheDocument();
-    expect(screen.getByText('Second')).toBeInTheDocument();
+    render(<SourceList sources={sources} highlightedIndex={2} onPreview={() => {}} />);
+    const [first, second] = screen.getAllByRole('listitem');
+    expect((first!.firstElementChild as Element).className).not.toMatch(/highlighted/);
+    expect((second!.firstElementChild as Element).className).toMatch(/highlighted/);
   });
 
   it('passes onPreview through to each source card', async () => {

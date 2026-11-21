@@ -58,7 +58,12 @@ def test_suspending_a_user_kills_their_live_session(tmp_path: Path) -> None:
 
         # The victim's previously valid cookie is now dead.
         assert victim_client.get("/api/auth/me").status_code == 401
-        assert admin.id != victim.id
+        sessions_left = app_db.execute(
+            "SELECT user_id FROM sessions WHERE user_id IN (?, ?)",
+            (admin.id, victim.id),
+        ).fetchall()
+        assert [row[0] for row in sessions_left] == [admin.id]
+        assert admin_client.get("/api/auth/me").status_code == 200
     finally:
         store_reader.close()
         app_db.close()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from appdb import daemon_status
@@ -52,10 +54,23 @@ def test_beat_against_a_closed_connection_is_swallowed(conn) -> None:
     hb.beat(detail="reconciling", processed_delta=1)
 
 
-def test_beat_against_a_closed_connection_does_not_lose_the_count(conn) -> None:
+def test_a_failed_write_does_not_lose_the_count(conn, monkeypatch) -> None:
+    """The next successful beat reports work counted during a failed write."""
     hb = Heartbeat(name="indexer", conn=conn)
     hb.beat(detail="batch 1", processed_delta=5)
-    assert hb.processed_count == 5
+
+    real_record = daemon_status.record_heartbeat
+
+    def unavailable(*_args, **_kwargs) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(daemon_status, "record_heartbeat", unavailable)
+    hb.beat(detail="batch 2", processed_delta=3)
+    assert daemon_status.read_statuses(conn)[0].processed_count == 5
+
+    monkeypatch.setattr(daemon_status, "record_heartbeat", real_record)
+    hb.beat(detail="batch 3", processed_delta=2)
+    assert daemon_status.read_statuses(conn)[0].processed_count == 10
 
 
 def test_run_heartbeat_ticker_beats_until_stopped(conn) -> None:

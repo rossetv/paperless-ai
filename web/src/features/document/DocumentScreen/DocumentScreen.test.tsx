@@ -165,7 +165,9 @@ function makeQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 }
 
-function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } = {}) {
+function renderScreen(
+  opts: { role?: Role; mutate?: ReturnType<typeof vi.fn>; queryClient?: QueryClient } = {},
+) {
   const mutate = opts.mutate ?? vi.fn();
   // vitest types vi.fn() as a generic Mock that does not assign to
   // react-query's narrowly typed mutate; cast to the expected signature.
@@ -182,7 +184,7 @@ function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } =
   return {
     mutate,
     ...render(
-      <QueryClientProvider client={makeQueryClient()}>
+      <QueryClientProvider client={opts.queryClient ?? makeQueryClient()}>
         <MemoryRouter>
           <DocumentScreen
             document={DOC}
@@ -493,34 +495,28 @@ describe('DocumentScreen', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } });
   });
 
-  it('createTagThenAdd uses the latest document from the cache to avoid clobbering concurrent creates', async () => {
+  it('createTagThenAdd keeps a tag added since render by reading the cached document', () => {
     const updateMutate = vi.fn();
-    // Resolves synchronously: tag 200 on the first call, 201 after.
-    const tagMutate = vi.fn((
-      _name: string,
-      opts?: { onSuccess?: (data: TaxonomyItem) => void },
-    ) => {
-      const callCount = (tagMutate as ReturnType<typeof vi.fn>).mock.calls.length;
-      opts?.onSuccess?.({ id: callCount === 1 ? 200 : 201, name: _name, document_count: 0 });
-    });
-
-    mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate: updateMutate }));
+    const tagMutate = vi.fn(
+      (name: string, opts?: { onSuccess?: (data: TaxonomyItem) => void }) => {
+        opts?.onSuccess?.({ id: 200, name, document_count: 0 });
+      },
+    );
     mockUseCreateTag.mockReturnValue(
       createMutationStub({ mutate: tagMutate as unknown as UseMutateFunction<TaxonomyItem, Error, string> }),
     );
+    // An earlier create already landed: the cache is newer than the rendered prop.
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(['document', DOC.id], { ...DOC, tags: [...DOC.tags, 'new-tag'] });
 
-    renderScreen({ role: 'member', mutate: updateMutate });
-
-    const addButton = screen.getByRole('button', { name: /add tag/i });
-    fireEvent.click(addButton);
-    const input = screen.getByRole('combobox');
-    fireEvent.change(input, { target: { value: 'alpha-tag' } });
+    renderScreen({ role: 'member', mutate: updateMutate, queryClient });
+    fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'alpha-tag' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
-    expect(tagMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledTimes(1);
-    const firstCall = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
-    expect(firstCall.patch.tags).toContain(200);
+    const call = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
+    expect(call.patch.tags).toEqual([100, 101, 102, 103, 200]);
   });
 
   it('discards a second mutate call while a save is already in flight', async () => {
