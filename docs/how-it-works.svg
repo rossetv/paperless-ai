@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="830" height="372" viewBox="0 0 830 372" role="img" aria-labelledby="t d">
+  <title id="t">How Paperless-ngx AI works</title>
+  <desc id="d">A blurry scan with no title or tags is read and filed with a title, sender, type and tags, then you ask a question and get the answer with a link to the document.</desc>
+  <style>
+    :root {
+      --bg: #f6f8fa; --card: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #59636e;
+      --faint: #c4ccd5; --accent: #0969da; --accent-soft: #ddf4ff; --ask: #eef1f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161b22; --card: #0d1117; --line: #30363d; --text: #e6edf3; --muted: #9198a1;
+        --faint: #3d444d; --accent: #4493f8; --accent-soft: #12263f; --ask: #21262d;
+      }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .muted { fill: var(--muted); }
+    .accent { fill: var(--accent); }
+    .h { font-size: 15px; font-weight: 600; }
+    .s { font-size: 12px; }
+    .b { font-size: 13px; }
+    .card { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+    .bar { fill: var(--faint); }
+    .num { fill: none; stroke: var(--accent); stroke-width: 1.25; }
+    .arrow { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .pill { fill: none; stroke: var(--accent); stroke-width: 1; }
+    .chip { fill: none; stroke: var(--line); stroke-width: 1; }
+    .q { fill: var(--accent-soft); }
+    .a { fill: var(--ask); }
+    .icon { fill: none; stroke: var(--muted); stroke-width: 1.25; stroke-linejoin: round; }
+  </style>
+  <defs>
+    <filter id="blur" x="-5%" y="-50%" width="110%" height="200%"><feGaussianBlur stdDeviation="1.1"/></filter>
+    <g id="file">
+      <path class="icon" d="M0.5 0.5h6.5l3.5 3.5v9.5h-10z M7 0.5v3.5h3.5"/>
+    </g>
+  </defs>
+
+  <rect width="830" height="372" rx="12" fill="var(--bg)"/>
+
+  <!-- 1 · A scan arrives -->
+  <circle class="num" cx="36" cy="36" r="11"/>
+  <text class="s accent" x="36" y="40" text-anchor="middle" font-weight="600">1</text>
+  <text class="h" x="56" y="41">A scan arrives</text>
+  <text class="s muted" x="24" y="64">You tag it in Paperless-ngx</text>
+
+  <rect class="card" x="24" y="78" width="230" height="270" rx="10"/>
+  <use href="#file" x="40" y="94"/>
+  <text class="s mono muted" x="58" y="105" textLength="91" lengthAdjust="spacingAndGlyphs">scan_0042.pdf</text>
+  <g filter="url(#blur)" transform="rotate(-1.2 139 165)">
+    <rect class="bar" x="40" y="124" width="84" height="7" rx="2"/>
+    <rect class="bar" x="40" y="142" width="118" height="6" rx="2"/>
+    <rect class="bar" x="40" y="160" width="140" height="6" rx="2"/>
+    <rect class="bar" x="40" y="178" width="124" height="6" rx="2"/>
+    <rect class="bar" x="40" y="196" width="132" height="6" rx="2"/>
+  </g>
+  <line x1="40" y1="228" x2="238" y2="228" stroke="var(--line)"/>
+  <text class="s muted" x="40" y="258">Title</text><text class="b muted" x="86" y="258">—</text>
+  <text class="s muted" x="40" y="282">From</text><text class="b muted" x="86" y="282">—</text>
+  <text class="s muted" x="40" y="306">Type</text><text class="b muted" x="86" y="306">—</text>
+  <text class="s muted" x="40" y="330">Tags</text><text class="b muted" x="86" y="330">—</text>
+
+  <path class="arrow" d="M262 213h30 M286 207l6 6-6 6"/>
+
+  <!-- 2 · Read and filed -->
+  <circle class="num" cx="312" cy="36" r="11"/>
+  <text class="s accent" x="312" y="40" text-anchor="middle" font-weight="600">2</text>
+  <text class="h" x="332" y="41">It's read and filed</text>
+  <text class="s muted" x="300" y="64">AI reads every page and fills it in</text>
+
+  <rect class="card" x="300" y="78" width="230" height="270" rx="10"/>
+  <use href="#file" x="316" y="94"/>
+  <text class="s mono muted" x="334" y="105" textLength="91" lengthAdjust="spacingAndGlyphs">scan_0042.pdf</text>
+  <text class="s" x="316" y="131" font-weight="600" letter-spacing="0.5">CITY POWER</text>
+  <text class="s muted" x="316" y="148">Invoice 2026-0311</text>
+  <text class="s muted" x="316" y="166">Period: 1–28 Feb 2026</text>
+  <text class="s muted" x="316" y="184">Amount due: €84.20</text>
+  <text class="s muted" x="316" y="202">Pay by: 24 Mar 2026</text>
+  <line x1="316" y1="228" x2="514" y2="228" stroke="var(--line)"/>
+  <text class="s muted" x="316" y="258">Title</text><text class="b" x="362" y="258">March electricity bill</text>
+  <text class="s muted" x="316" y="282">From</text><text class="b" x="362" y="282">City Power</text>
+  <text class="s muted" x="316" y="306">Type</text><text class="b" x="362" y="306">Invoice</text>
+  <text class="s muted" x="316" y="330">Tags</text>
+  <rect class="pill" x="362" y="317" width="62" height="19" rx="9.5"/>
+  <text class="s accent" x="393" y="330" text-anchor="middle">utilities</text>
+  <rect class="pill" x="430" y="317" width="44" height="19" rx="9.5"/>
+  <text class="s accent" x="452" y="330" text-anchor="middle">2026</text>
+
+  <path class="arrow" d="M538 213h30 M562 207l6 6-6 6"/>
+
+  <!-- 3 · Ask -->
+  <circle class="num" cx="588" cy="36" r="11"/>
+  <text class="s accent" x="588" y="40" text-anchor="middle" font-weight="600">3</text>
+  <text class="h" x="608" y="41">You ask, it answers</text>
+  <text class="s muted" x="576" y="64">In plain words, across every document</text>
+
+  <rect class="card" x="576" y="78" width="230" height="270" rx="10"/>
+  <rect class="q" x="624" y="96" width="166" height="48" rx="12"/>
+  <text class="b" x="638" y="116">How much was my last</text>
+  <text class="b" x="638" y="134">electricity bill?</text>
+
+  <rect class="a" x="592" y="158" width="198" height="48" rx="12"/>
+  <text class="b" x="606" y="178">Your last bill was €84.20,</text>
+  <text class="b" x="606" y="196">due by 24 March 2026. <tspan class="accent" font-weight="600">[1]</tspan></text>
+
+  <rect class="chip" x="592" y="220" width="198" height="48" rx="8"/>
+  <use href="#file" x="604" y="232"/>
+  <text class="s" x="622" y="242"><tspan class="accent" font-weight="600">[1]</tspan> March electricity bill</text>
+  <text class="s muted" x="622" y="259">City Power · Invoice</text>
+
+  <text class="s muted" x="592" y="306">Ask from</text>
+  <rect class="chip" x="592" y="317" width="58" height="19" rx="9.5"/>
+  <text class="s muted" x="621" y="330" text-anchor="middle">Web UI</text>
+  <rect class="chip" x="656" y="317" width="38" height="19" rx="9.5"/>
+  <text class="s muted" x="675" y="330" text-anchor="middle">API</text>
+  <rect class="chip" x="700" y="317" width="84" height="19" rx="9.5"/>
+  <text class="s muted" x="742" y="330" text-anchor="middle">AI assistant</text>
+</svg>

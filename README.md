@@ -1,40 +1,38 @@
+<div align="center">
+
 # Paperless-ngx AI
 
-AI for your [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) archive. It reads the text off your scans, files each document with a title, correspondent, type and tags, and answers questions about the whole archive: ask *"when does my passport expire?"* and get the answer, with links to the documents it came from.
-
-It runs as containers beside your Paperless, with OpenAI or a local Ollama.
+**Reads your scans, files them for you, and answers questions about them.**
 
 [![Docker Hub](https://img.shields.io/docker/pulls/rossetv/paperless-ai?label=Docker%20Hub)](https://hub.docker.com/r/rossetv/paperless-ai)
 [![CI](https://img.shields.io/github/actions/workflow/status/rossetv/paperless-ai/ci.yml?branch=main&label=CI)](https://github.com/rossetv/paperless-ai/actions)
 
-## How it works
+<img src="docs/how-it-works.svg" width="830" alt="A blurry scan with no title or tags is read and filed as 'March electricity bill' from City Power, then the question 'How much was my last electricity bill?' is answered with a link to that document.">
 
-One image, four services. Run only the ones you want.
+</div>
 
-```mermaid
-flowchart LR
-    T["You tag a document<br/>in Paperless"] --> O["<b>OCR</b><br/>a vision model<br/>reads each page"]
-    O --> C["<b>Classify</b><br/>title, correspondent,<br/>type, tags, date"]
-    C --> I["<b>Index</b><br/>chunks and embeds<br/>the text"]
-    I --> S["<b>Search</b><br/>web UI, API<br/>and MCP"]
-```
+An add-on for [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx). It runs as containers beside your Paperless and writes everything it learns back into it. It works with OpenAI, or entirely on your own machine with Ollama.
 
-| Service | Command | What it does |
+## What's inside
+
+One Docker image that runs as four services. Start the ones you want.
+
+| Service | Command | It… |
 |:---|:---|:---|
-| OCR | `paperless-ai` (default) | Transcribes documents tagged for OCR and writes the text back to Paperless. PDFs that already contain text are passed straight on. |
-| Classifier | `paperless-classifier-daemon` | Fills in title, correspondent, document type, tags, date, language and person. |
-| Indexer | `paperless-indexer-daemon` | Keeps a local search index in step with Paperless. |
-| Search | `paperless-search-server` | Serves the web UI, a JSON API and an MCP endpoint on port 8080. |
+| **OCR** | *(default)* | reads the text off every page of a scan |
+| **Classifier** | `paperless-classifier-daemon` | gives it a title, sender, type, tags and date |
+| **Indexer** | `paperless-indexer-daemon` | makes your documents searchable by meaning |
+| **Search** | `paperless-search-server` | answers questions, in the web UI, over an API, or to an AI assistant |
 
-OCR and classification hand documents to each other through Paperless tags, so a document's tags always show where it is. The indexer and search server add search on top.
+OCR and the classifier on their own already file your documents in Paperless. Add the indexer and search to ask questions.
 
-## Quick start
+## Get started
 
-You need a running Paperless-ngx, its API token (*Settings → Users & Groups → API Token*), and an OpenAI API key.
+You need Paperless-ngx, its API token (*Settings → Users & Groups → API Token*) and an OpenAI API key.
 
-**1. Create three tags in Paperless:** one for documents to OCR, one for OCR done, one for errors. Note their numeric IDs, listed at `http://your-paperless:8000/api/tags/`.
+**1. Create three tags in Paperless**: *needs OCR*, *OCR done* and *failed*. Their numeric IDs are listed at `http://your-paperless:8000/api/tags/`.
 
-**2. Save this as `docker-compose.yml`**, with your Paperless address and tag IDs filled in:
+**2. Save this as `docker-compose.yml`**, with your Paperless address and tag IDs:
 
 ```yaml
 x-paperless-ai: &paperless-ai
@@ -46,22 +44,19 @@ x-paperless-ai: &paperless-ai
     PAPERLESS_URL: http://paperless:8000
     PAPERLESS_TOKEN: ${PAPERLESS_TOKEN}
     OPENAI_API_KEY: ${OPENAI_API_KEY}
-    PRE_TAG_ID: "443"      # documents to OCR
-    POST_TAG_ID: "444"     # OCR done; the classifier picks these up
-    ERROR_TAG_ID: "552"    # something went wrong
+    PRE_TAG_ID: "443"      # needs OCR
+    POST_TAG_ID: "444"     # OCR done
+    ERROR_TAG_ID: "552"    # failed
 
 services:
   ocr:
     <<: *paperless-ai
-
   classifier:
     <<: *paperless-ai
     command: paperless-classifier-daemon
-
   indexer:
     <<: *paperless-ai
     command: paperless-indexer-daemon
-
   search:
     <<: *paperless-ai
     command: paperless-search-server
@@ -72,34 +67,28 @@ volumes:
   paperless-ai-data:
 ```
 
-**3. Start it**, with your secrets in a `.env` file beside it:
+**3. Start it**, with your secrets beside it in `.env`:
 
 ```bash
 printf 'PAPERLESS_TOKEN=...\nOPENAI_API_KEY=sk-...\n' > .env
 docker compose up -d
 ```
 
-**4. Create your admin account.** On first start the search server prints a one-time setup token:
+**4. Create your account.** Copy the one-time setup token from the logs, open `http://localhost:8080/setup` and paste it:
 
 ```bash
 docker compose logs search | grep "SETUP TOKEN"
 ```
 
-Open `http://localhost:8080/setup`, paste the token and choose a username and password.
-
-**5. Try it.** Tag a document with your OCR tag. Within a minute its text appears in Paperless, then its title and tags, then it becomes searchable in the web UI.
-
-Every service must share the same `/data` volume: it holds the settings, user accounts and search index.
+**5. Try it.** Tag a document *needs OCR*. Within a minute it has text, then a title and tags, then you can ask about it.
 
 ## Settings
 
-After the first start, change settings in the web UI under **Settings**. A change reaches every service within seconds, with no restart. The environment variables in `docker-compose.yml` only seed the first start.
+Everything is set in the web UI under **Settings**, and takes effect within seconds, without a restart. The values in `docker-compose.yml` only fill in the first start. Every setting is listed in [docs/configuration.md](docs/configuration.md).
 
-Every setting and its default is listed in [docs/configuration.md](docs/configuration.md).
+## Run it locally with Ollama
 
-## Running locally with Ollama
-
-Point every step at Ollama, embeddings included, and no OpenAI key is needed:
+Point everything at Ollama, embeddings included, and no OpenAI key is needed:
 
 ```yaml
     LLM_PROVIDER: ollama
@@ -109,33 +98,17 @@ Point every step at Ollama, embeddings included, and no OpenAI key is needed:
     EMBEDDING_DIMENSIONS: "768"
 ```
 
-The default models are `gemma3:27b` and `gemma3:12b`; pull them in Ollama first. Changing the embedding provider or model later needs a full re-index from the **Index** page.
+Pull `gemma3:27b` and `gemma3:12b` into Ollama first; they are the default models.
 
-## Connecting an AI assistant
+## Connect an AI assistant
 
-The search server is also an [MCP](https://modelcontextprotocol.io) server at `http://your-host:8080/mcp`. Create a key under **Settings → API Keys** with the `mcp` scope, and send it as `Authorization: Bearer sk-pls-…`.
+The search server is an [MCP](https://modelcontextprotocol.io) server at `http://your-host:8080/mcp`. Create a key under **Settings → API Keys** with the `mcp` scope and send it as `Authorization: Bearer sk-pls-…`. Your assistant can then search, read and filter your documents for free, or call `deep_search` to have the server write the answer.
 
-| Tool | Cost | |
-|:---|:---|:---|
-| `semantic_search` | free | The passages most relevant to a question. |
-| `keyword_search` | free | Documents matching exact words or filters. |
-| `fetch_documents` | free | The full text of documents by ID. |
-| `list_filters` | free | Correspondents, document types and tags to filter on. |
-| `deep_search` | LLM calls | The server plans, searches and writes the answer itself. |
+## If something goes wrong
 
-The same key, with the `api` scope, works for the JSON API under `/api/`.
+`GET /api/healthz` returns `ok` when search is ready, `index-not-ready` while the first index is still being built, and `index-corrupt` if the index file is damaged.
 
-## Troubleshooting
-
-`GET /api/healthz` reports the search index's state:
-
-| `status` | Meaning |
-|:---|:---|
-| `ok` | Ready. |
-| `index-not-ready` | The indexer hasn't finished its first pass yet. |
-| `index-corrupt` | The index file is damaged. |
-
-The index holds nothing that can't be rebuilt from Paperless. If it is corrupt, stop the indexer, delete `index.db` and `index.db.lock` from the `/data` volume, and start the indexer again. It re-indexes everything; at 10,000 documents that takes a few hours. Accounts and settings live in `app.db` and are untouched.
+The index can always be rebuilt from Paperless. Stop the indexer, delete `index.db` and `index.db.lock` from the `/data` volume, and start it again. Your accounts and settings, kept in `app.db`, are not touched.
 
 ## Development
 
