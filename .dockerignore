@@ -87,13 +87,8 @@ celerybeat-schedule
 *.swp
 .DS_Store
 
-# Project-local tooling artifacts and one-off review files.
-.desloppify/
+# Local AI tooling.
 .claude/
-.headroom/
-docs/superpowers/
-review_batch_*.json
-scorecard.png
 
 # Frontend: built inside the image from the Node stage; never copied from the host.
 web/node_modules/

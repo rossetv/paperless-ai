@@ -111,28 +111,14 @@ dmypy.json
 .pyre/
 .ruff_cache/
 
-# Tooling artifacts
-.desloppify/
-review_batch_*.json
-scorecard.png
-
-# Claude state: the knowledge base, specs, plans, skills and hooks under
-# `.claude/` are committed. Only session worktrees and machine-local settings
-# (which may carry secrets) stay out of git.
-.claude/worktrees/
-.claude/settings.local.json
+# Local AI tooling
+.claude/
 
 # Editor and OS artifacts
 .DS_Store
 .idea/
 .vscode/
 *.swp
-
-# Local-only plans and specs — never committed
-docs/superpowers/
-
-# Local Claude tooling state — never committed
-.headroom/
 
 # Search index store — runtime data, never committed
 data/
