@@ -60,7 +60,9 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
     Taking the write lock up front makes a read-then-write check (e.g. "count
     the admins, then demote one") atomic against a racing request. Commits on a
     clean exit and rolls back on any exception, ``KeyboardInterrupt`` included.
-    If a helper inside the block already committed, the final commit is skipped.
+    A helper that commits inside the block (``with conn:``) ends the transaction
+    there: keep the guarded read and its write before that commit, because
+    anything after it runs outside the lock. The final commit is then skipped.
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
