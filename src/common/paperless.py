@@ -507,6 +507,32 @@ class PaperlessClient:
         response = self._client.get(url, timeout=timeout)
         response.raise_for_status()
 
+    def modify_tags(
+        self,
+        doc_id: int,
+        *,
+        add: Iterable[int] = (),
+        remove: Iterable[int] = (),
+    ) -> None:
+        """Add and remove tags on a document without rewriting its tag list.
+
+        Paperless applies the change server-side, so a tag another writer adds
+        meanwhile is kept, unlike a read-modify-write of ``tags``.
+
+        Raises:
+            httpx.HTTPStatusError: On a non-2xx response.
+        """
+        url = f"{self.settings.PAPERLESS_URL}/api/documents/bulk_edit/"
+        payload = {
+            "documents": [doc_id],
+            "method": "modify_tags",
+            "parameters": {"add_tags": sorted(add), "remove_tags": sorted(remove)},
+        }
+        response = self._post(url, json=payload)
+        self._raise_for_status_logging_body(
+            response, doc_id=doc_id, payload_keys=["add_tags", "remove_tags"]
+        )
+
     def delete_document(self, doc_id: int) -> None:
         """Delete a document from Paperless-ngx.
 

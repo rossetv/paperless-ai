@@ -489,6 +489,7 @@ class PaperlessStub:
         self._create_calls: list[tuple[str, str]] = []
         self._get_document_return: dict[str, object] | None = None
         self._delete_calls: list[int] = []
+        self._modify_tags_calls: list[tuple[int, list[int], list[int]]] = []
         # Needed by the router; handlers call close() in a finally.
         self.close = MagicMock()
         # When set, the corresponding method raises instead of returning a value.
@@ -561,6 +562,18 @@ class PaperlessStub:
         if self._get_document_return is None:
             return {"id": doc_id, "tags": []}
         return self._get_document_return
+
+    def modify_tags(self, doc_id: int, *, add=(), remove=()) -> None:
+        self._modify_tags_calls.append((doc_id, sorted(add), sorted(remove)))
+
+    def assert_modify_tags_called_with(
+        self, doc_id: int, *, add: list[int], remove: list[int]
+    ) -> None:
+        """Assert exactly one modify_tags call, and that no full tag list was written."""
+        assert self._modify_tags_calls == [(doc_id, add, remove)], (
+            f"modify_tags calls were {self._modify_tags_calls}"
+        )
+        assert not self._update_calls, "the tag list must not be rewritten"
 
     def delete_document(self, doc_id: int) -> None:
         self._delete_calls.append(doc_id)
@@ -867,7 +880,7 @@ def test_reclassify_swaps_post_tag_for_pre_tag(
     settings.CLASSIFY_POST_TAG_ID = 444
     r = api_client.post("/api/documents/42/reclassify")
     assert r.status_code == 202
-    paperless_stub.assert_update_document_metadata_called_with(42, tags={333, 555})
+    paperless_stub.assert_modify_tags_called_with(42, add=[333], remove=[444])
 
 
 def test_retranscribe_swaps_post_tag_for_pre_tag(
@@ -879,19 +892,18 @@ def test_retranscribe_swaps_post_tag_for_pre_tag(
     settings.POST_TAG_ID = 444
     r = api_client.post("/api/documents/42/retranscribe")
     assert r.status_code == 202
-    paperless_stub.assert_update_document_metadata_called_with(42, tags={222})
+    paperless_stub.assert_modify_tags_called_with(42, add=[222], remove=[444])
 
 
-def test_reclassify_handles_missing_post_tag(
+def test_reclassify_without_a_classify_post_tag_only_adds(
     api_client, paperless_stub, settings
 ) -> None:
-    """If the document does not carry the post-tag, just add the pre-tag."""
-    paperless_stub.set_get_document_return({"id": 42, "tags": [777]})
+    """With CLASSIFY_POST_TAG_ID unset there is nothing to remove."""
     settings.CLASSIFY_PRE_TAG_ID = 333
-    settings.CLASSIFY_POST_TAG_ID = 444  # not present in tags
+    settings.CLASSIFY_POST_TAG_ID = None
     r = api_client.post("/api/documents/42/reclassify")
     assert r.status_code == 202
-    paperless_stub.assert_update_document_metadata_called_with(42, tags={333, 777})
+    paperless_stub.assert_modify_tags_called_with(42, add=[333], remove=[])
 
 
 def test_reclassify_member_only(

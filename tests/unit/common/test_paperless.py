@@ -813,6 +813,30 @@ class TestClose:
 
 
 class TestDeleteDocument:
+    def test_modify_tags_posts_a_bulk_edit(self):
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/documents/bulk_edit/").mock(
+                return_value=httpx.Response(200, json={"result": "OK"})
+            )
+            client = _make_client()
+            client.modify_tags(42, add=[7], remove=[9, 3])
+        assert json_mod.loads(route.calls.last.request.content) == {
+            "documents": [42],
+            "method": "modify_tags",
+            "parameters": {"add_tags": [7], "remove_tags": [3, 9]},
+        }
+        client.close()
+
+    def test_modify_tags_raises_on_rejection(self):
+        with respx.mock:
+            respx.post(f"{BASE}/api/documents/bulk_edit/").mock(
+                return_value=httpx.Response(400, json={"documents": ["bad"]})
+            )
+            client = _make_client()
+            with pytest.raises(httpx.HTTPStatusError):
+                client.modify_tags(42, add=[7])
+        client.close()
+
     def test_delete_document_sends_delete_request(self):
         with respx.mock:
             route = respx.delete(f"{BASE}/api/documents/42/").mock(

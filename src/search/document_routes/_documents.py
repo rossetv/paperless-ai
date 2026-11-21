@@ -213,13 +213,14 @@ async def _swap_pipeline_tag(
     """Remove *remove_tag* (when set) and add *add_tag* on the document."""
     paperless = paperless_factory(settings)
     try:
-        doc = await run_blocking(lambda: paperless.get_document(document_id))
-        current: set[int] = set(doc.get("tags") or [])
-        if remove_tag is not None:
-            current.discard(remove_tag)
-        current.add(add_tag)
+        # bulk_edit answers an unknown id with a 400; the lookup keeps it a 404.
+        await run_blocking(lambda: paperless.get_document(document_id))
         await run_blocking(
-            lambda: paperless.update_document_metadata(document_id, tags=current)
+            lambda: paperless.modify_tags(
+                document_id,
+                add=[add_tag],
+                remove=[] if remove_tag is None else [remove_tag],
+            )
         )
     finally:
         paperless.close()
