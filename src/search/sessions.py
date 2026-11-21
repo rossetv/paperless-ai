@@ -159,6 +159,9 @@ def _parse_iso(value: str, *, default: datetime | None) -> datetime | None:
     non-``None`` result.
     """
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except (ValueError, TypeError):
         return default
+    # A tz-naive value (e.g. a hand-edited row) is read as UTC, so comparing it
+    # with an aware "now" cannot raise.
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)

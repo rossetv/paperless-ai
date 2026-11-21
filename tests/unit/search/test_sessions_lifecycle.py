@@ -124,6 +124,34 @@ def test_resolve_session_prunes_the_expired_row(conn, user) -> None:
     assert get_by_token_hash(conn, hash_token(issued.token)) is None
 
 
+def _naive_utc(delta: timedelta) -> str:
+    return (datetime.now(timezone.utc) + delta).replace(tzinfo=None).isoformat()
+
+
+def test_resolve_session_reads_a_naive_expiry_as_utc(conn, user) -> None:
+    create_session(
+        conn,
+        token_hash=hash_token("live"),
+        user_id=user.id,
+        expires_at=_naive_utc(timedelta(hours=1)),
+        user_agent=None,
+        ip=None,
+    )
+    create_session(
+        conn,
+        token_hash=hash_token("dead"),
+        user_id=user.id,
+        expires_at=_naive_utc(-timedelta(hours=1)),
+        user_agent=None,
+        ip=None,
+    )
+    resolved = resolve_session(conn, "live")
+    assert resolved is not None
+    assert resolved.id == user.id
+    assert resolve_session(conn, "dead") is None
+    assert get_by_token_hash(conn, hash_token("dead")) is None
+
+
 def test_resolve_session_returns_none_for_a_suspended_user(conn, user) -> None:
     issued = begin_session(conn, user_id=user.id, ttl_seconds=3600)
     update_user(conn, user.id, status="suspended")
@@ -150,6 +178,11 @@ def test_should_touch_last_seen_false_when_recent() -> None:
     """last_seen inside the throttle window does not ask for a write."""
     recent = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
     assert should_touch_last_seen(recent) is False
+
+
+def test_should_touch_last_seen_reads_a_naive_value_as_utc() -> None:
+    assert should_touch_last_seen(_naive_utc(-timedelta(minutes=1))) is False
+    assert should_touch_last_seen(_naive_utc(-timedelta(minutes=10))) is True
 
 
 def test_should_touch_last_seen_true_for_an_unparseable_value() -> None:
