@@ -10,7 +10,6 @@ import type {
   RebuildResponse,
 } from '../../../api/types';
 
-// --- Mocks ---------------------------------------------------------------
 vi.mock('../../../api/hooks', () => ({
   useIndexStatus: vi.fn(),
   useIndexActivity: vi.fn(),
@@ -41,13 +40,6 @@ const mockReconcile = useReconcile as ReturnType<typeof vi.fn>;
 const mockRebuild = useRebuildIndex as ReturnType<typeof vi.fn>;
 const mockAuth = useAuth as ReturnType<typeof vi.fn>;
 
-// --- Fixtures — match wire.py exactly ------------------------------------
-
-/**
- * Matches `IndexStatusResponse` from `wire.py`:
- *   health: str ("ok" | "degraded" | "down")
- *   daemons: list[DaemonStatusResponse]  (name, state, detail, processed_count, last_heartbeat)
- */
 const STATUS: IndexStatusResponse = {
   health: 'ok',
   daemons: [
@@ -58,10 +50,6 @@ const STATUS: IndexStatusResponse = {
   ],
 };
 
-/**
- * Matches `IndexActivityResponse` from `wire.py`:
- *   cycles: list[ReconcileCycleResponse]  (id, kind, started_at, finished_at, ok, summary, detail)
- */
 const ACTIVITY: IndexActivityResponse = {
   cycles: [
     {
@@ -76,10 +64,6 @@ const ACTIVITY: IndexActivityResponse = {
   ],
 };
 
-/**
- * Matches `IndexFailedResponse` from `wire.py`:
- *   documents: list[FailedDocumentResponse]  (document_id, title: str|None, failure_count)
- */
 const FAILED: IndexFailedResponse = {
   documents: [
     {
@@ -90,7 +74,7 @@ const FAILED: IndexFailedResponse = {
   ],
 };
 
-/** Matches `StatsResponse` — from GET /api/stats, not GET /api/index/status. */
+/** From GET /api/stats, not GET /api/index/status. */
 const STATS: StatsResponse = {
   document_count: 14238,
   chunk_count: 187612,
@@ -249,9 +233,7 @@ describe('IndexScreen', () => {
   });
 
   it('shows the embedding model name without a fabricated dimensions sub-line', () => {
-    // GET /api/stats does not expose the embedding dimension count, so the
-    // tile must render only the model name — never a hard-coded figure that is
-    // wrong for any non-default model (e.g. text-embedding-3-large = 3072).
+    // GET /api/stats has no dimension count; a hard-coded one would be wrong for other models.
     primeAll();
     render(<IndexScreen />);
     expect(screen.getByText('text-embedding-3-small')).toBeInTheDocument();
@@ -259,7 +241,7 @@ describe('IndexScreen', () => {
   });
 
   it('does not show "View full log ›" when cycles fit within the limit', () => {
-    // ACTIVITY fixture has 1 cycle — well under ACTIVITY_ROW_LIMIT (5)
+    // One cycle, under ACTIVITY_ROW_LIMIT (5).
     primeAll();
     render(<IndexScreen />);
     expect(screen.queryByRole('link', { name: /view full log/i })).not.toBeInTheDocument();
@@ -267,7 +249,7 @@ describe('IndexScreen', () => {
 
   it('shows "View full log ›" and expands all rows when cycles exceed the limit', async () => {
     primeAll();
-    // Override activity with 6 cycles (> ACTIVITY_ROW_LIMIT = 5)
+    // Six cycles, over ACTIVITY_ROW_LIMIT (5).
     const manyCycles = Array.from({ length: 6 }, (_, i) => ({
       id: i + 1,
       kind: 'sync' as const,
@@ -283,7 +265,6 @@ describe('IndexScreen', () => {
     render(<IndexScreen />);
     const link = screen.getByRole('link', { name: /view full log/i });
     expect(link).toBeInTheDocument();
-    // Clicking toggles to "Show less" and expands all rows
     await userEvent.click(link);
     expect(screen.getByRole('link', { name: /show less/i })).toBeInTheDocument();
     // ActivityRow renders detail inline with summary — use partial match

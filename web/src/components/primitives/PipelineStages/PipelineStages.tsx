@@ -30,10 +30,7 @@ export interface StageVerdict {
 export interface PipelineStage {
   /** Short stage name, e.g. "Planning the query". */
   label: string;
-  /**
-   * A one-line description of what the stage does. Used when no richer
-   * `detailNode` is supplied — kept for back-compat with the static rail.
-   */
+  /** One-line description, used when no richer `detailNode` is supplied. */
   detail: string;
   /** Lifecycle state — drives the dot styling and the "in progress" pill. */
   state: PipelineStageState;
@@ -67,9 +64,8 @@ export interface PipelineStage {
 }
 
 /**
- * Format a 0–1 judge relevance score as a two-decimal string (e.g. 0.87 →
- * "0.87"). A score outside the expected range is still rendered as-is — the
- * judge owns the scale; this is a display helper, not a validator.
+ * Two-decimal display of a judge score. Out-of-range values are shown as-is;
+ * the judge owns the scale.
  */
 function formatScore(score: number): string {
   return score.toFixed(2);
@@ -78,22 +74,16 @@ function formatScore(score: number): string {
 export interface PipelineStagesProps {
   /** The pipeline stages, in execution order. */
   stages: PipelineStage[];
-  /** Additional class names to merge. */
   className?: string;
   /**
-   * Whether the rail is the folded final trace (true) or the lean live rail
-   * (false / omitted). When collapsible, a stage that has a `body` or verdicts
-   * renders as a `<details>` disclosure whose summary line is always shown and
-   * whose rich body expands on click. When NOT collapsible, every stage renders
-   * a single plain row showing only its summary — no body, no verdicts — so the
-   * live rail stays lean while a search is running.
+   * Folded final trace (true) or lean live rail (false). When collapsible, a
+   * stage with a `body` or verdicts renders as a `<details>` disclosure; otherwise
+   * every stage is a single row showing only its summary.
    */
   collapsible?: boolean;
   /**
-   * Called with a document id when a judged document's "View" control is
-   * activated. When supplied, each verdict row renders a View button that
-   * opens the in-app document viewer for that id; when omitted (e.g. a context
-   * with no document-open handler) the rows render without the control.
+   * Called with a document id from a verdict row's "View" control. When omitted,
+   * the rows render without the control.
    */
   onPreviewDocument?: (documentId: number) => void;
 }
@@ -162,28 +152,12 @@ function StageDot({ state }: { state: PipelineStageState }): React.ReactElement 
 }
 
 /**
- * The agentic-search progress rail.
+ * Agentic-search progress rail: an ordered list of stages, each with a status
+ * dot, label, detail, optional cost chip and, for the judge stage, a keep/drop
+ * verdict sublist.
  *
- * An ordered list of pipeline stages: each row shows a status dot (a tick
- * when done, a pulsing core when active, a muted disc when pending), the
- * stage label and detail, an optional "tokens · cost" chip, an "in progress"
- * pill on the active stage, and — for the judge stage — a keep/drop
- * per-document verdict sublist (score · title · reason, with an optional
- * View control when `onPreviewDocument` is supplied). The pulse respects
- * `prefers-reduced-motion`.
- *
- * In `collapsible` mode each stage with a rich `body` (or verdicts) becomes a
- * native `<details>` disclosure: the summary line is always visible and the
- * body expands on click. Without `collapsible` (the live rail) only the
- * summary line is shown — no body, no verdicts — keeping the in-flight rail
- * lean.
- *
- * App-agnostic — it renders whatever stages it is given. `LoadingScreen` maps
- * the live streamed phases onto it; `SearchTracePanel` renders the final trace.
- * Both thread the page's document-open handler in as `onPreviewDocument`.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
- * primitives (Icon, Button), lib/.
+ * `LoadingScreen` maps the live streamed phases onto it; `SearchTracePanel`
+ * renders the final trace with `collapsible`.
  */
 export function PipelineStages({
   stages,
@@ -200,8 +174,7 @@ export function PipelineStages({
       <ol ref={olRef} className={cn(styles['stages'], className)}>
         {stages.map((stage, i) => {
           const summaryContent = stage.summary ?? stage.detailNode ?? stage.detail;
-          // Narrow once: a non-empty verdict list, or undefined. Carrying the
-          // narrowed value lets the body pass it without an `as` cast (FE-57).
+          // Narrow once so the body can take the verdicts without an `as` cast.
           const verdicts =
             stage.verdicts !== undefined && stage.verdicts.length > 0
               ? stage.verdicts
@@ -220,10 +193,8 @@ export function PipelineStages({
                         <span className={styles['label']}>{stage.label}</span>
                         <span className={styles['detail']}>{summaryContent}</span>
                       </span>
-                      {/* The per-stage cost chip sits on the always-visible
-                          summary row, right-aligned, so every stage shows its
-                          per-step tokens · cost without being expanded — the
-                          collapsed row is the read-out (UI-16). */}
+                      {/* On the always-visible summary row, so the collapsed row
+                          shows each stage's tokens · cost. */}
                       {stage.costLabel !== undefined && (
                         <span className={styles['cost-chip']}>{stage.costLabel}</span>
                       )}

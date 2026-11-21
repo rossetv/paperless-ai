@@ -17,21 +17,13 @@ export interface NumberStepperProps {
   step?: number;
   /** Optional unit shown after the field — "s", "px", "chars". */
   suffix?: string;
-  /** Whether the control is non-interactive. */
   disabled?: boolean;
-  /** Additional class names to merge onto the control. */
   className?: string;
 }
 
 /**
- * A numeric input with − / + stepper buttons and an optional unit suffix.
- *
- * A controlled primitive. The value is clamped to `[min, max]` on every
- * change — whether from a button or a keystroke — so a consumer never
- * receives an out-of-range number. A blank field is treated as `min`
- * (clearing then retyping is a normal editing gesture).
- *
- * Tier: components/primitives. Allowed deps: lib/, styles/.
+ * Controlled numeric input with − / + buttons and an optional unit suffix. Values
+ * are clamped to `[min, max]` on every change; a blank field counts as `min`.
  */
 export function NumberStepper({
   value,
@@ -55,12 +47,9 @@ export function NumberStepper({
 
   const clamp = (n: number): number => Math.min(max, Math.max(min, n));
 
-  // Snap to the step's decimal precision so repeated − / + on a fractional step
-  // (e.g. 0.01) cannot accumulate IEEE-754 dust like 0.7000000000000001 — which
-  // would display as 0.70 yet fail an exact downstream comparison. A no-op for
-  // integer steps (the default), so the existing whole-number fields are
-  // unaffected. Applied only to the button arithmetic; a typed value keeps the
-  // user's exact input.
+  // Snap button arithmetic to the step's decimal precision so repeated 0.01 steps
+  // cannot accumulate IEEE-754 dust (0.7000000000000001) that displays as 0.70
+  // but fails exact comparisons. Typed values are kept as entered.
   const snapToStep = (n: number): number => {
     const decimals = (String(step).split('.')[1] ?? '').length;
     return decimals > 0 ? Number(n.toFixed(decimals)) : n;
@@ -100,11 +89,6 @@ export function NumberStepper({
       >
         −
       </button>
-      {/*
-       * Value cell: wraps the numeric input and the optional unit suffix
-       * together so they share the same bordered region between the − and +
-       * buttons. The data-testid allows targeted assertions in tests.
-       */}
       <div data-testid="numberstepper-value" className={styles['value-cell']}>
         <input
           type="number"

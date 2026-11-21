@@ -1,16 +1,8 @@
 """Tests for the streaming search body ``search.routes._search_stream``.
 
-Drives the body function directly (it returns a :class:`StreamingResponse`),
-iterating ``resp.body_iterator`` and parsing each non-blank line as JSON. Two
-contracts are pinned:
-
-1. A pipeline that emits a ``PhaseStart`` then returns a ``SearchResult`` yields
-   ordered ``phase_start`` … ``result`` frames with strictly increasing ``seq``.
-2. A pipeline that raises yields a terminal ``error`` frame and the stream still
-   closes (the sentinel always fires).
-
-Both use ``@pytest.mark.anyio`` so the body runs on a real event loop (the queue
-bridge depends on ``loop.call_soon_threadsafe`` from the worker thread).
+Drives the body directly and parses each non-blank line of ``body_iterator`` as
+JSON. Tests run under ``anyio`` because the queue bridge relies on
+``loop.call_soon_threadsafe`` from the worker thread.
 """
 
 from __future__ import annotations

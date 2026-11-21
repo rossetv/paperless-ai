@@ -1,9 +1,4 @@
-"""Tests for classifier.worker — content, tag, and metadata application.
-
-Covers content truncation, tag enrichment, the person custom field, and stats
-logging.  Split from ``test_worker`` (the ``process()`` lifecycle) for the
-500-line ceiling (CODE_GUIDELINES §3.1).
-"""
+"""Tests for classifier.worker content truncation, tags and metadata fields."""
 
 from __future__ import annotations
 

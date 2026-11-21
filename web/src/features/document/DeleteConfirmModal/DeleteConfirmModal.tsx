@@ -1,32 +1,19 @@
-/**
- * DeleteConfirmModal — accessible confirmation dialog for document deletion.
- *
- * Rendered via `ActionsCard` when the admin clicks "Delete document". The
- * modal presents the document title and two outcomes: cancel (no-op) or
- * confirm (fires `onConfirm`). The caller is responsible for triggering the
- * actual DELETE mutation after `onConfirm` fires.
- *
- * Tier: features/document — composes the Modal pattern and Button primitives.
- */
 import React from 'react';
 import { Modal } from '../../../components/patterns/Modal/Modal';
 import { Button } from '../../../components/primitives/Button/Button';
 import styles from './DeleteConfirmModal.module.css';
 
 export interface DeleteConfirmModalProps {
-  /** Title of the document being deleted — shown in the confirmation copy. */
+  /** Title of the document being deleted. */
   title: string;
-  /** Called when the user dismisses the modal without confirming. */
   onCancel: () => void;
-  /** Called when the user confirms the deletion. */
+  /** The caller runs the actual DELETE mutation. */
   onConfirm: () => void;
 }
 
 /**
- * Asks the user to confirm an irreversible document deletion.
- *
- * Always rendered open (the parent mounts/unmounts rather than toggling
- * `isOpen`) so the prop wires directly to `isOpen={true}`.
+ * Asks the user to confirm an irreversible document deletion. Always open: the
+ * parent mounts and unmounts it instead of toggling `isOpen`.
  */
 export function DeleteConfirmModal({
   title,

@@ -1,9 +1,6 @@
-"""Tests for search.api_keys.resolve_api_key — the bearer-auth lookup.
+"""Tests for search.api_keys.resolve_api_key, the bearer-auth lookup.
 
-Covers: a live key resolves to a ResolvedKey carrying the owner, the owner's
-role and the parsed scopes; an unknown key, a revoked key, an expired key
-and a suspended owner's key all resolve to None (fail closed); a None
-bearer resolves to None; an unexpired explicit expiry resolves fine.
+Unknown, revoked, expired and suspended-owner keys all resolve to None.
 """
 
 from __future__ import annotations
@@ -101,24 +98,19 @@ def test_resolve_an_unexpired_key_resolves(conn) -> None:
 
 
 def test_resolve_a_naive_future_expiry_does_not_raise_and_is_live(conn) -> None:
-    """A tz-naive future expiry is coerced to UTC, not crashed on (H1).
-
-    A key minted (or hand-edited) with a naive ISO timestamp must never raise
-    ``TypeError`` out of the fail-closed lookup; a future naive expiry reads as
-    a live key.
-    """
+    """A tz-naive future expiry is coerced to UTC and reads as live, never raising."""
     raw = _mint(conn, expires_at="2099-01-01T00:00:00")
     assert resolve_api_key(conn, raw) is not None
 
 
 def test_resolve_a_naive_past_expiry_returns_none_without_raising(conn) -> None:
-    """A tz-naive *past* expiry resolves to None (expired), never raising (H1)."""
+    """A tz-naive *past* expiry resolves to None (expired), never raising."""
     raw = _mint(conn, expires_at="2000-01-01T00:00:00")
     assert resolve_api_key(conn, raw) is None
 
 
 def test_resolve_a_garbage_expiry_fails_closed(conn) -> None:
-    """An unparseable stored expiry is treated as expired, not a 500 (H1)."""
+    """An unparseable stored expiry is treated as expired, not a 500."""
     raw = _mint(conn, expires_at="not-a-date")
     assert resolve_api_key(conn, raw) is None
 

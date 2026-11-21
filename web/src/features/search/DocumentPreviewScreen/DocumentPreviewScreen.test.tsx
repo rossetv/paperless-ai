@@ -16,10 +16,7 @@ const SOURCE: SourceDocument = {
   tags: ['Utilities', 'Energy'],
 };
 
-/**
- * Render with a real search context — the default for most tests below.
- * Standalone-mode tests render directly without `searchContext`.
- */
+/** Renders with a search context; standalone tests render without one. */
 function renderPreview(
   overrides: Partial<SourceDocument> = {},
   opts: { sourceIndex?: number; sourceCount?: number } = {},
@@ -75,7 +72,6 @@ describe('DocumentPreviewScreen', () => {
 
   it('shows the relevance badge', () => {
     renderPreview();
-    // SOURCE has relevance_tier: 'strong' → RelevanceMeter renders "Strong match"
     expect(screen.getByText('Strong match')).toBeInTheDocument();
   });
 
@@ -102,7 +98,6 @@ describe('DocumentPreviewScreen', () => {
 
   it('shows the citation badge with the correct source index', () => {
     renderPreview({}, { sourceIndex: 2, sourceCount: 5 });
-    // CitationMark renders the numeral in an aria-hidden span
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
@@ -124,8 +119,7 @@ describe('DocumentPreviewScreen', () => {
   });
 
   it('renders no TAGS section when tags is absent', () => {
-    // Cast to PreviewableDocument (no tags field) to simulate a fabricated source
-    // from Library/Index that does not carry the tags property.
+    // A locally built source (library, index preview) carries no tags field.
     const noTags: Parameters<typeof DocumentPreviewScreen>[0]['source'] = {
       document_id: SOURCE.document_id,
       title: SOURCE.title,
@@ -140,7 +134,7 @@ describe('DocumentPreviewScreen', () => {
     expect(screen.queryByText('TAGS')).not.toBeInTheDocument();
   });
 
-  // ── Standalone mode — no search context. ──
+  // Standalone mode: no search context.
   it('omits the "Source N of M" caption when there is no search context', () => {
     render(
       <DocumentPreviewScreen

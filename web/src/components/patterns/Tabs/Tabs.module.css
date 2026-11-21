@@ -1,13 +1,3 @@
-/*
- * Tabs pattern — CSS Module.
- *
- * Styled after the Apple link/navigation style from DESIGN.md: tabs are
- * rendered as pill-shaped buttons using --radius-pill for the active tab
- * indicator, with the accent colour reserved for the selected state only.
- *
- * All values come exclusively from design tokens.
- */
-
 .tabs {
   display: flex;
   flex-direction: column;
@@ -50,7 +40,6 @@
   outline-offset: var(--spacing-1);
 }
 
-/* Active tab: accent colour text, pill background */
 .tab.active {
   color: var(--colour-accent);
   font-weight: var(--font-weight-body-emphasis);

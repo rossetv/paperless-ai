@@ -18,14 +18,8 @@ export interface ExpiryChipsProps {
 }
 
 /**
- * Renders the expiry quick-pick chip row shared by APIKeyCreatePanel and
+ * The expiry quick-pick chip row shared by APIKeyCreatePanel and
  * APIKeyEditPanel. Stateless — the parent owns `selectedDays` and `touched`.
- *
- * The `touched` flag exists because the edit panel intentionally shows no chip
- * as selected on first render (the key's existing expiry is left unchanged
- * unless the user explicitly picks a new value).
- *
- * Tier: features/access. Allowed deps: api/types (via apiKeyFormData), lib/.
  */
 export function ExpiryChips({
   selectedDays,

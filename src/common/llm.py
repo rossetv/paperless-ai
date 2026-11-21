@@ -1,17 +1,8 @@
 """Shared LLM helpers: retried chat completion, model dedup, thread-safe stats.
 
-Module-global singletons
-~~~~~~~~~~~~~~~~~~~~~~~~
-``_openai_holder`` is a :class:`_ClientRegistry` holding one
-:class:`openai.OpenAI` client per configured provider (``"openai"``,
-``"ollama"``).  It is populated by
-:func:`common.library_setup.setup_libraries` during
-:func:`common.bootstrap.bootstrap_daemon`.  Calling
-:func:`get_openai_client` before initialisation raises ``RuntimeError``.
-
-Boot order: Settings -> logging -> ``setup_libraries`` (inits ``_openai_holder``)
--> signal handlers -> ``llm_limiter.init`` (see :mod:`common.concurrency`).
-See :func:`common.bootstrap.bootstrap_daemon` for the canonical sequence.
+``_openai_holder`` holds one chat client per provider; it is filled by
+:func:`common.library_setup.setup_libraries` during daemon bootstrap, and using
+a slot before then raises ``RuntimeError``.
 """
 
 from __future__ import annotations
@@ -36,16 +27,10 @@ log = structlog.get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class LlmCallUsage:
-    """Token usage for one successful LLM call, naming the model that actually
-    served it (post-fallback). Produced by the shared completion helper and
-    consumed by callers that pass a ``usage_sink`` (the search telemetry).
+    """Token usage for one successful LLM call and the model that served it.
 
-    ``provider`` is the registry key (``"openai"`` or ``"ollama"``) for the
-    endpoint that served the call — the same value
-    :attr:`OpenAIChatMixin._provider` returned for this step.  Search telemetry
-    uses it to look up per-provider pricing so that mixed-provider queries cost
-    correctly even when the planner, judge, and answer steps run on different
-    endpoints.
+    ``provider`` is the registry key of the endpoint that served the call, so
+    search telemetry can price each step even when steps use different providers.
     """
 
     model: str
@@ -63,24 +48,14 @@ RETRYABLE_OPENAI_EXCEPTIONS = (
     openai.InternalServerError,
 )
 
-# Strippable-parameter registry: ``(param_key, error_message_substring, stat_key)``.
-#
-# When a model returns a 400 whose (lower-cased) message contains the substring,
-# the matching parameter is stripped and retried. The substring matchers are
-# deliberately broad and migrated from the prod-proven classifier detectors;
-# the registry's fixed length bounds the strip loop so a misfiring matcher can
-# never loop forever. ``stat_key`` is the optional per-strip counter a provider
-# *may* declare in its ``_STAT_KEYS``; the shared layer increments it only when
-# the provider declared it (see ``_record_strip``).
-#
-# Ordering matters: ``max_completion_tokens`` precedes ``max_tokens`` so the
-# longer, more specific message wins before the shorter substring can match it.
-#
-# rationale (CODE_GUIDELINES §10.2 / spec §4.1): the ``reasoning_effort`` and
-# ``temperature`` matchers were verified against live gpt-5.6 400 responses on
-# 2026-07-15 — both error messages name the param verbatim. ``verbosity`` and
-# ``max_completion_tokens`` remain best-effort and unverified; confirm them
-# against a real 400 response before relying on them in production.
+# ``(param_key, error_message_substring, stat_key)``: a 400 whose lower-cased
+# message contains the substring gets that parameter stripped and the call
+# retried. The registry's length bounds the strip loop, so a misfiring matcher
+# cannot loop forever. ``stat_key`` is counted only if the provider declares it.
+# Order matters: ``max_completion_tokens`` must precede ``max_tokens`` so the
+# more specific message matches first. The ``reasoning_effort`` and
+# ``temperature`` matchers were verified against live gpt-5.6 400 responses
+# (2026-07-15); ``verbosity`` and ``max_completion_tokens`` are unverified.
 _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("temperature", "temperature", "temperature_retries"),
     ("response_format", "response_format", "response_format_retries"),
@@ -93,13 +68,11 @@ _STRIPPABLE_PARAMS: tuple[tuple[str, str, str], ...] = (
     ("service_tier", "service_tier", "service_tier_retries"),
 )
 
-# Param → stat-key lookup built once from the registry. Multiple rows may share
-# the same param_key (e.g. response_format); the first entry wins, which is
-# consistent with the linear scan it replaces (registry ordering is stable).
+# Param -> stat key. Several rows may share a param_key; the first one wins.
 _PARAM_TO_STAT: dict[str, str] = {}
 for _param, _matcher, _stat in _STRIPPABLE_PARAMS:
     _PARAM_TO_STAT.setdefault(_param, _stat)
-del _param, _matcher, _stat  # clean up loop variables from module namespace
+del _param, _matcher, _stat
 
 # Flex requests routinely run longer than standard-tier ones — OpenAI's own
 # default timeout for them is 10 minutes — so flex calls floor their per-call
@@ -164,15 +137,10 @@ def _strippable_param_for_error(error: openai.BadRequestError) -> str | None:
 
 
 class _ClientRegistry:
-    """Thread-safe registry of the per-provider OpenAI-compatible chat clients.
+    """Thread-safe registry of OpenAI-compatible chat clients, one per provider.
 
-    Per-step provider selection (e.g. OCR on Ollama while Search Answer is on
-    OpenAI, in one process) needs *both* endpoints reachable at once, so the old
-    single shared client became a two-slot registry keyed by provider.
-    :func:`common.library_setup.setup_libraries` installs whichever slot the
-    configured providers need (and clears one whose connection was removed on a
-    hot-reload); a step selects its client by its own ``*_PROVIDER`` through
-    :attr:`OpenAIChatMixin._provider`.
+    Each step picks its client by its own ``*_PROVIDER``, so one process can
+    run, say, OCR on Ollama and search on OpenAI at the same time.
     """
 
     _PROVIDERS = ("openai", "ollama")
@@ -206,35 +174,25 @@ _openai_holder = _ClientRegistry()
 
 
 def get_openai_client() -> openai.OpenAI:
-    """Back-compat: the OpenAI-slot chat client (preflight, tests)."""
+    """Return the OpenAI chat client."""
     return _openai_holder.get("openai")
 
 
 def is_openai_client_ready() -> bool:
-    """Back-compat: whether the OpenAI-slot chat client is installed."""
+    """Whether the OpenAI chat client is installed."""
     return _openai_holder.is_ready("openai")
 
 
 def set_chat_client(provider: str, client: openai.OpenAI | None) -> None:
-    """Install (``client``) or clear (``None``) the registry slot for *provider*.
-
-    Used by :func:`common.library_setup.setup_libraries` to install both the
-    OpenAI and Ollama chat clients (or clear one whose connection was removed on
-    a hot-reload).
-    """
+    """Install (``client``) or clear (``None``) the registry slot for *provider*."""
     _openai_holder.init(provider, client)
 
 
 class OpenAIChatMixin:
-    """
-    Mixin providing a retried OpenAI-compatible chat completion call and
-    thread-safe stats helpers.
+    """Retried OpenAI-compatible chat completion plus thread-safe stats.
 
-    Subclasses define a ``_STAT_KEYS`` class attribute and call
-    ``_init_stats()`` in their ``__init__``.  The mixin then provides
-    ``reset_stats()`` and ``get_stats()``.
-
-    The mixin expects ``self.settings`` to expose ``MAX_RETRIES`` and
+    Subclasses define ``_STAT_KEYS``, call ``_init_stats()`` in ``__init__``,
+    and expose ``self.settings`` with ``MAX_RETRIES`` and
     ``MAX_RETRY_BACKOFF_SECONDS`` for the retry decorator.
     """
 
@@ -258,15 +216,7 @@ class OpenAIChatMixin:
         self._increment_stat_if_declared("api_errors")
 
     def _record_strip(self, param_key: str) -> None:
-        """Count one parameter strip under its registry stat key, if the provider
-        declared that key.
-
-        A provider opts in to per-parameter strip counters by listing the
-        registry ``stat_key`` (e.g. ``"temperature_retries"``) in its
-        ``_STAT_KEYS``. Providers that do not — OCR, the planner, the
-        synthesiser — silently skip the count, so the shared layer stays
-        agnostic of any provider's stat schema (spec §4.1).
-        """
+        """Count one parameter strip, if the provider declared its stat key."""
         stat_key = _PARAM_TO_STAT.get(param_key)
         if stat_key is not None:
             self._increment_stat_if_declared(stat_key)
@@ -278,22 +228,15 @@ class OpenAIChatMixin:
 
     @property
     def _provider(self) -> str:
-        """The provider whose chat client this step routes to.
-
-        Defaults to ``"openai"``; each step provider (OCR, classifier, the three
-        search stages) overrides it to return its own ``settings.*_PROVIDER`` so
-        per-step provider selection picks the right client from the registry.
-        """
+        """The provider whose chat client this step uses; steps override it."""
         return "openai"
 
     @retry(retryable_exceptions=RETRYABLE_OPENAI_EXCEPTIONS)
     def _create_completion(self, **kwargs: object) -> ChatCompletion:
         client = _openai_holder.get(self._provider)
         with llm_limiter.acquire():
-            # rationale: OpenAI SDK's create() is overloaded on `stream`; **kwargs:object
-            # cannot satisfy those overloads. Callers never pass stream=True, so the
-            # runtime return is always ChatCompletion; a tighter call-site type is impossible
-            # without replacing **kwargs with an explicit typed signature.
+            # create() is overloaded on `stream`, which **kwargs cannot satisfy.
+            # Callers never pass stream=True, so the result is a ChatCompletion.
             return client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
 
     def _create_with_compat(
@@ -301,60 +244,19 @@ class OpenAIChatMixin:
     ) -> ChatCompletion | None:
         """Send a chat completion, adapting to parameters *model* rejects.
 
-        Three phases:
+        Parameters already cached as rejected for *model* are stripped up front.
+        A 400 naming a strippable parameter strips it, caches it and retries the
+        same model; a 400 bills no tokens, so discovery costs one round-trip.
 
-        1. **Pre-strip** every parameter already recorded as rejected for
-           *model* in :data:`~common.model_compat.model_compat_cache`, so a
-           model whose incompatibility was discovered earlier in this process
-           never pays a wasted 400 round-trip again.
-        2. **Send.** On success, return the completion.
-        3. **Adapt.** On an ``openai.BadRequestError`` that names a strippable
-           parameter present in *params*, strip it, record it in the cache, and
-           retry the same model. Bounded by the registry length so a misfiring
-           matcher cannot loop forever. A 400 bills no tokens, so the only cost
-           of a first-time discovery is one extra round-trip.
+        Any other 400 or API error returns ``None``, meaning "this model failed,
+        try the next": the fallback chain and its callers' degradation paths rely
+        on a non-raising failure here (unlike embeddings, which have no chain).
 
-        Any other ``openai.BadRequestError`` (a malformed request) is terminal,
-        logged, and returns ``None`` so the caller can advance to the next
-        model. So is any other ``openai.APIError`` (5xx, timeout after the
-        ``@retry`` on :meth:`_create_completion` is exhausted, or a
-        non-flex-tier ``RateLimitError``) — *except* the **flex patience**
-        case below.
-
-        **Flex patience** (spec D5): when ``params["service_tier"] ==
-        "flex"``, an ``openai.RateLimitError`` is a capacity signal, not a
-        model failure — flex requests queue for spare capacity and 429 means
-        "none free right now," not "this model is broken." Advancing the
-        fallback chain or tagging the document as errored would be wrong, so
-        the call instead waits (:func:`_wait_for_flex_capacity`, exponential
-        backoff from 1s capped at :data:`_FLEX_BACKOFF_CAP_SECONDS`) and
-        retries the *same* model indefinitely. The wait only ends early on
-        daemon shutdown, in which case this returns ``None`` like any other
-        terminal failure. The strip-attempt budget above still bounds
-        ``BadRequestError`` handling; only the flex-429 wait is unbounded.
-        Non-flex calls are unaffected: a ``RateLimitError`` without
-        ``service_tier == "flex"`` is terminal on the first 429, same as
-        before this behaviour existed. A 429 whose ``code`` is
-        ``insufficient_quota`` (billing exhausted, not a capacity dip) is
-        terminal even on flex — no amount of waiting fixes an empty account,
-        and the patient loop would otherwise freeze the worker invisibly.
-
-        Note: the ``@retry`` decorator on :meth:`_create_completion` still
-        burns its own ``MAX_RETRIES`` budget inside *every* patient iteration
-        here — that's harmless (a few extra unbilled requests within one
-        flex-wait cycle) and keeps the two retry layers decoupled rather than
-        threading flex-awareness into the generic retry helper.
-
-        rationale (§5.4 carve-out, COMMON-12/13): the ``None`` here is a
-        *designed* per-model signal — "this model failed, try the next" — not a
-        half-baked exception. The model-fallback chain in
-        :meth:`_complete_with_model_fallback` needs a non-throwing failure to
-        iterate its candidate models, and its callers (the planner and the
-        synthesiser) have explicit graceful-degradation paths keyed on the
-        terminal ``None``. Raising a domain ``LLMError`` instead would break
-        those degradation contracts, so the asymmetry with
-        :class:`~common.embeddings.EmbeddingError` (embeddings have no fallback
-        chain, so they raise) is deliberate, not an oversight.
+        On the flex tier a 429 means "no spare capacity right now", not a broken
+        model, so the call backs off and retries the same model until capacity
+        returns or shutdown is requested. An ``insufficient_quota`` 429 is
+        terminal even on flex: waiting cannot fix an empty account and would
+        freeze the worker silently.
         """
         params = self._pre_strip_known_rejected(params, model)
         strip_attempts = 0
@@ -375,16 +277,11 @@ class OpenAIChatMixin:
                     self._record_api_error()
                     return None
                 params = stripped_params
-            # RateLimitError must be caught before the generic APIError below
-            # (it subclasses APIError) and after BadRequestError (siblings —
-            # order between those two is immaterial, but BadRequest stays
-            # first to match the phase description above).
+            # RateLimitError subclasses APIError, so it must be caught first.
             except openai.RateLimitError as error:
                 if error.code == "insufficient_quota":
-                    # Also a 429, but one no amount of waiting fixes — the
-                    # account is out of credit. Waiting would freeze the
-                    # worker invisibly until billing is topped up; terminal
-                    # like any other model failure instead.
+                    # Out of credit: waiting would freeze the worker until
+                    # billing is topped up.
                     log.warning("llm.quota_exhausted", model=model, error=str(error))
                     self._record_api_error()
                     return None
@@ -392,9 +289,8 @@ class OpenAIChatMixin:
                     log.warning("llm.model_failed", model=model, error=str(error))
                     self._record_api_error()
                     return None
-                # Flex capacity shortage: unbilled, transient, and not a model
-                # failure — advancing the fallback chain or error-tagging the
-                # document would be wrong. Wait it out (spec D5).
+                # Flex capacity shortage: unbilled and transient, so wait it out
+                # rather than fail the model or error-tag the document.
                 log.warning(
                     "llm.flex_capacity_wait",
                     model=model,
@@ -414,24 +310,16 @@ class OpenAIChatMixin:
     def _pre_strip_known_rejected(
         self, params: dict[str, object], model: str
     ) -> dict[str, object]:
-        """Return a copy of *params* without every parameter the cache says
-        *model* rejects.
-
-        Pure: it does not mutate the *params* it is handed, so the function both
-        returning a value and leaving its argument untouched read consistently
-        (§1.1/§4.1, COMMON-23).
-        """
+        """Return a copy of *params* without the parameters cached as rejected."""
         rejected = model_compat_cache.rejected_params_for(model)
         return {key: value for key, value in params.items() if key not in rejected}
 
     def _strip_rejected_param(
         self, error: openai.BadRequestError, params: dict[str, object], model: str
     ) -> dict[str, object] | None:
-        """Strip the parameter *error* names if it is present, else return ``None``.
+        """Return *params* without the parameter *error* names, caching the rejection.
 
-        Returns a new params dict with the offending parameter removed (and the
-        rejection cached + counted), or ``None`` when the 400 is not about a
-        strippable parameter that is actually present — the signal to give up.
+        ``None`` when the 400 names no strippable parameter present in *params*.
         """
         param_key = _strippable_param_for_error(error)
         if param_key is None or param_key not in params:
@@ -458,65 +346,16 @@ class OpenAIChatMixin:
     ) -> str | None:
         """Run one chat completion, falling back through a chain of models.
 
-        The model-fallback chain belongs in the shared LLM wrapper
-        (CODE_GUIDELINES.md §8.1): the planner and the synthesiser both need
-        exactly this loop, so it lives here once rather than in each stage.
+        Tries *primary_model* then each of *fallback_models* (deduplicated) and
+        returns the first successful reply's text, or ``None`` if every model
+        failed. The optional parameters are sent only when not ``None``.
+        *log_event_prefix* names the stage in the per-model failure log.
 
-        The chain is ``primary_model`` followed by every model in
-        *fallback_models*, deduplicated by :func:`unique_models` so the primary
-        is never tried twice when it also appears in the fallback list.  Each
-        attempt goes through :meth:`_create_with_compat`, so it inherits the
-        shared ``@retry`` exponential backoff, the ``llm_limiter`` global
-        concurrency limiter, and the per-model parameter-compatibility cache.
+        Search stages pass ``service_tier="default"`` on OpenAI, never
+        ``"flex"``, because a person is waiting for the answer.
 
-        ``reasoning_effort``, ``response_format``, ``timeout``, and
-        ``service_tier`` are optional and additive: each is forwarded to the
-        model only when non-``None``. Every attempt is routed through
-        :meth:`_create_with_compat`, so a model that rejects any of these
-        parameters has it stripped-and-cached rather than failing the whole
-        call. With none supplied the outgoing request is exactly
-        ``{model, messages}`` and the behaviour is identical to the
-        pre-extension direct path (pinned by the no-arg characterisation test).
-        The three search stages always pass ``service_tier="default"`` when
-        their provider is OpenAI — never ``"flex"`` there, since a human is
-        waiting on the response (spec D3/D4) — and omit it otherwise; an
-        explicit tier also dodges a live-verified 401 on tierless requests
-        (2026-07-15).
-
-        A model that still fails after retries surfaces an ``openai.APIError``
-        subclass — this covers *both* a retry-exhausted retryable error and a
-        non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
-        ``NotFoundError``, ``BadRequestError``, …).  :meth:`_create_with_compat`
-        turns every such terminal failure into ``None``; the next model is
-        tried.
-
-        Args:
-            primary_model: The model to try first.
-            messages: The chat messages to send (the ``messages`` kwarg of the
-                OpenAI chat-completions call).
-            fallback_models: Models to try, in order, after *primary_model*.
-            log_event_prefix: The dotted event-name prefix for the
-                per-model-failure warning, e.g. ``"planner"`` →
-                ``"planner.model_failed"``.
-            reasoning_effort: Optional OpenAI reasoning-effort hint (e.g.
-                ``"low"``); omitted from the request when ``None``.
-            response_format: Optional response-format object (e.g. a
-                ``json_schema`` block); omitted when ``None``.
-            timeout: Optional per-call timeout in seconds; omitted when ``None``
-                so the SDK/client default applies (CODE_GUIDELINES §8.7).
-            service_tier: Optional OpenAI service tier (e.g. ``"default"``,
-                ``"flex"``); omitted when ``None``. The search stages always
-                pass ``"default"`` explicitly when their provider is OpenAI —
-                never ``"flex"``, since a human is waiting — and omit it for
-                non-OpenAI providers.
-            usage_sink: Optional list to which a :class:`LlmCallUsage` record is
-                appended on each successful call. Absent usage fields default to
-                zero (guarding Ollama/older providers that omit them). When
-                ``None`` (the default), no capture occurs.
-
-        Returns:
-            The raw text content of the first successful completion, or
-            ``None`` when every model in the chain failed.
+        Each successful call appends a :class:`LlmCallUsage` to *usage_sink*
+        when given; usage fields the provider omits (e.g. Ollama) count as zero.
         """
         models = unique_models([primary_model, *fallback_models])
         optional_params = self._optional_completion_params(
@@ -533,8 +372,6 @@ class OpenAIChatMixin:
             }
             completion = self._create_with_compat(params, model)
             if completion is None:
-                # Stable event name; the per-stage prefix is structured context,
-                # not interpolated into the event string (§7.2, COMMON-22).
                 log.warning(
                     "llm.fallback_model_failed", stage=log_event_prefix, model=model
                 )
@@ -580,27 +417,11 @@ def unique_models(models: list[str]) -> list[str]:
 
 
 def extract_json_object(text: str) -> object:
-    """Parse JSON from raw model output, tolerating fences and preamble.
+    """Parse JSON from raw model output, tolerating code fences and preamble.
 
-    LLMs frequently wrap a JSON response in markdown code fences
-    (```` ``` ```` or ```` ```json ````) or prepend a sentence of preamble.
-    This helper first attempts a strict :func:`json.loads`; on failure it
-    falls back to the substring from the first ``{`` to the last ``}`` and
-    re-parses that.  It is the single shared JSON extractor for every place
-    that parses an LLM response — the planner, the synthesiser, and the
-    classifier all route through it.
-
-    Args:
-        text: Raw model-output string.
-
-    Returns:
-        The parsed Python object.  Callers must check its concrete type (a
-        well-behaved LLM returns an object, but the strict parse also accepts
-        a bare array, string, or number) before using it.
-
-    Raises:
-        json.JSONDecodeError: When no valid JSON can be found — neither a
-            strict parse nor the ``{…}`` substring fallback succeeded.
+    Tries a strict parse, then the text from the first ``{`` to the last ``}``.
+    The result may be any JSON value, so callers must check its type. Raises
+    :class:`json.JSONDecodeError` when neither parse succeeds.
     """
     try:
         return json.loads(text)

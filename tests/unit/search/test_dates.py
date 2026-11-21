@@ -1,8 +1,4 @@
-"""Tests for search.dates — the deterministic date-range extractor.
-
-Each test exercises one parsing rule in isolation.  The module must be a pure
-function with no I/O: it is safe to test without any mocking.
-"""
+"""Tests for search.dates, the deterministic date-range extractor."""
 
 from __future__ import annotations
 
@@ -51,19 +47,9 @@ def test_normalise_iso() -> None:
     assert normalise_iso_date("2025-04-25") == "2025-04-25"
 
 
-# ---------------------------------------------------------------------------
-# M1: "sept" abbreviation
-# ---------------------------------------------------------------------------
-
-
 def test_sept_abbreviation() -> None:
     """'sept' (4-letter informal abbreviation) resolves to September."""
     assert extract_date_range("sept 2025", T) == ("2025-09-01", "2025-09-30")
-
-
-# ---------------------------------------------------------------------------
-# M2: malformed ISO must not widen to a year
-# ---------------------------------------------------------------------------
 
 
 def test_malformed_iso_returns_none_none() -> None:
@@ -71,7 +57,7 @@ def test_malformed_iso_returns_none_none() -> None:
     assert extract_date_range("2025-13-99", T) == (None, None)
 
 
-def test_bare_year_still_works_after_m2_fix() -> None:
+def test_bare_year_resolves_to_the_full_year() -> None:
     """A bare 4-digit year with no following hyphen still resolves to the full year."""
     assert extract_date_range("documents from 2024", T) == ("2024-01-01", "2024-12-31")
 

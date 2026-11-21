@@ -1,12 +1,4 @@
-/*
- * Brand logo mark — CSS Module.
- *
- * The SVG is purely geometric; this module only provides a flex reset so
- * that when Brand is placed inline with text it aligns to the baseline.
- * No design values are needed — colours come from currentColor (inherited).
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Flex reset so the mark aligns when placed inline with text. */
 
 .brand {
   display: inline-block;

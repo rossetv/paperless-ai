@@ -1,19 +1,8 @@
-/*
- * UserMenu pattern — CSS Module.
- *
- * An Avatar trigger button plus an anchored dropdown. The dropdown uses the
- * standard light surface, the card shadow, and the dropdown z-index rung so
- * it floats above page content but below tooltips and modals.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .root {
   position: relative;
   display: inline-flex;
 }
 
-/* ── Trigger — a bare button wrapping the Avatar. ── */
 .trigger {
   display: inline-flex;
   align-items: center;
@@ -29,7 +18,6 @@
   outline-offset: var(--spacing-1);
 }
 
-/* ── Dropdown — anchored to the trigger's trailing edge. ── */
 .dropdown {
   position: absolute;
   top: calc(100% + var(--spacing-6));
@@ -44,7 +32,6 @@
   overflow: hidden;
 }
 
-/* ── Header — name + email block. ── */
 .header {
   display: flex;
   flex-direction: column;
@@ -68,7 +55,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Divider between header and items. ── */
 .divider {
   height: var(--spacing-1);
   margin: var(--spacing-4) 0;
@@ -76,7 +62,6 @@
   border: none;
 }
 
-/* ── Menu item — full-width, left-aligned. ── */
 .item {
   display: flex;
   align-items: center;

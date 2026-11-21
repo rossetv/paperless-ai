@@ -15,8 +15,6 @@ from classifier.constants import PAGE_HEADER_RE
 
 
 class TestSplitFooter:
-    """Tests for _split_footer(content)."""
-
     def test_content_with_footer(self):
         content = "Body text here\n\nTranscribed by model: gpt-5.4-mini"
         body, footer = _split_footer(content)
@@ -35,7 +33,6 @@ class TestSplitFooter:
             "\nMore text\n\nTranscribed by model: o4-mini"
         )
         body, footer = _split_footer(content)
-        # Should split on the LAST occurrence
         assert footer == "\n\nTranscribed by model: o4-mini"
         assert "Body" in body
         assert "gpt-5.4-mini" in body
@@ -46,7 +43,6 @@ class TestSplitFooter:
         assert footer == ""
 
     def test_footer_must_have_double_newline(self):
-        # Single newline before "Transcribed" should not split
         content = "Body\nTranscribed by model: gpt-5.4-mini"
         body, footer = _split_footer(content)
         assert body == content
@@ -54,8 +50,6 @@ class TestSplitFooter:
 
 
 class TestExtractPageNumbers:
-    """Tests for _extract_page_numbers(matches)."""
-
     def test_normal_matches(self):
         text = "--- Page 1 ---\ntext\n--- Page 2 ---\ntext\n--- Page 3 ---"
         matches = list(PAGE_HEADER_RE.finditer(text))
@@ -75,8 +69,7 @@ class TestExtractPageNumbers:
         assert numbers == [1, 2]
 
     def test_defensive_fallback_no_digits(self):
-        """When a match somehow has no digits, falls back to 1-based index."""
-        # Create a fake match object with no digits
+        """A match with no digits falls back to its 1-based index."""
         fake_pattern = re.compile(r"--- Page [A-Z]+ ---")
         text = "--- Page ABC ---"
         matches = list(fake_pattern.finditer(text))
@@ -85,8 +78,6 @@ class TestExtractPageNumbers:
 
 
 class TestFormatPageRanges:
-    """Tests for _format_page_ranges(page_numbers)."""
-
     def test_consecutive_and_gaps(self):
         assert _format_page_ranges([1, 2, 3, 5, 7, 8]) == "1-3, 5, 7-8"
 
@@ -113,8 +104,6 @@ class TestFormatPageRanges:
 
 
 class TestTruncateContentByChars:
-    """Tests for truncate_content_by_chars(content, max_chars)."""
-
     def test_within_limit_unchanged(self):
         content = "Short content."
         assert truncate_content_by_chars(content, 1000) == content
@@ -127,7 +116,6 @@ class TestTruncateContentByChars:
 
         result = truncate_content_by_chars(content, max_chars)
 
-        # Total must not exceed max_chars; footer is always preserved intact.
         assert len(result) <= max_chars
         assert result.endswith(footer)
         assert len(result) < len(content)
@@ -145,7 +133,7 @@ class TestTruncateContentByChars:
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
         max_chars = 60
-        # Total (50 + 37 = 87) exceeds max_chars (60) so truncation must occur.
+        # Body plus footer (87 chars) exceeds max_chars.
         result = truncate_content_by_chars(content, max_chars)
         assert len(result) <= max_chars
         assert result.endswith(footer)
@@ -160,7 +148,6 @@ class TestTruncateContentByChars:
         assert truncate_content_by_chars(content, 50) == content
 
     def test_total_never_exceeds_max_chars(self):
-        """Result length must not exceed max_chars even when a footer is present."""
         body = "A" * 100
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         content = body + footer
@@ -174,7 +161,6 @@ class TestTruncateContentByChars:
         assert result.endswith(footer)
 
     def test_body_budget_is_max_chars_minus_footer(self):
-        """The body slice should be exactly max_chars - len(footer) chars."""
         body = "B" * 200
         footer = "\n\nTranscribed by model: x"
         content = body + footer
@@ -187,7 +173,6 @@ class TestTruncateContentByChars:
         assert len(result) == max_chars
 
     def test_footer_larger_than_max_chars_yields_empty_body(self):
-        """When the footer is longer than max_chars the body is dropped."""
         footer = "\n\nTranscribed by model: " + "X" * 100
         body = "Content here"
         content = body + footer
@@ -195,15 +180,11 @@ class TestTruncateContentByChars:
 
         result = truncate_content_by_chars(content, max_chars)
 
-        # Body must be empty; only the footer is returned.
         assert result == footer
 
 
 class TestTruncateContentByPages:
-    """Tests for truncate_content_by_pages(content, max_pages, tail_pages, headerless_char_limit)."""
-
     def _make_paged_content(self, num_pages, footer=True):
-        """Build content with page headers."""
         parts = []
         for i in range(1, num_pages + 1):
             parts.append(f"--- Page {i} ---\nContent of page {i}.\n")
@@ -233,7 +214,6 @@ class TestTruncateContentByPages:
         assert "Page 9" in result
         assert "Page 10" in result
         assert "Page 5" not in result
-        # Footer preserved
         assert "Transcribed by model" in result
 
     def test_no_page_headers_falls_back_to_char_truncation(self):
@@ -271,7 +251,7 @@ class TestTruncateContentByPages:
 
     def test_overlapping_head_tail_all_pages_kept(self):
         content = self._make_paged_content(5)
-        # max_pages=3 head + tail_pages=3 tail = covers all 5 pages
+        # 3 head pages + 3 tail pages cover all 5 pages.
         result, note = truncate_content_by_pages(
             content, max_pages=3, tail_pages=3, headerless_char_limit=10000
         )

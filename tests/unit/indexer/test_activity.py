@@ -1,11 +1,4 @@
-"""Tests for indexer.activity — the reconcile-activity + heartbeat recorder.
-
-Covers: record_sync writes a 'sync' reconcile_activity row carrying the
-SyncReport counts and beats the heartbeat; record_sweep writes a 'sweep' row;
-a failed (failed>0) sync is still ok=True at the row level — 'ok' means the
-cycle completed, not that every document succeeded; an aborted sweep is
-ok=False; an app.db write failure is swallowed (never raises).
-"""
+"""Tests for indexer.activity, the reconcile-activity and heartbeat recorder."""
 
 from __future__ import annotations
 
@@ -62,8 +55,7 @@ def test_record_sync_beats_the_heartbeat(conn) -> None:
 
 
 def test_record_sync_with_failures_is_still_ok_at_the_row_level(conn) -> None:
-    """A sync that had per-document failures still COMPLETED — ok is True;
-    the failure count lives in the summary, not the ok flag."""
+    """``ok`` means the cycle completed; failure counts live in the summary."""
     recorder = IndexerActivityRecorder(conn)
     recorder.record_sync(
         SyncReport(indexed=1, metadata_only=0, skipped=0, failed=3, given_up=1),
@@ -89,7 +81,6 @@ def test_record_sweep_writes_a_sweep_row(conn) -> None:
 
 
 def test_record_sweep_marks_an_aborted_sweep_not_ok(conn) -> None:
-    """An aborted sweep — the enumeration failed — is ok=False."""
     recorder = IndexerActivityRecorder(conn)
     recorder.record_sweep(
         SweepReport(pruned=0, aborted=True, candidates=0),
@@ -103,7 +94,6 @@ def test_record_against_a_closed_connection_is_swallowed(conn) -> None:
     """An activity-recording failure must never crash the indexer."""
     recorder = IndexerActivityRecorder(conn)
     conn.close()
-    # Must not raise.
     recorder.record_sync(
         SyncReport(indexed=0, metadata_only=0, skipped=0, failed=0, given_up=0),
         started_at="2026-05-22T12:00:00+00:00",
@@ -121,8 +111,7 @@ def test_beat_idle_writes_an_idle_indexer_heartbeat(conn) -> None:
 
 
 def test_record_rebuild_writes_a_sync_kind_row(conn) -> None:
-    """A recorded rebuild is a 'sync'-kind reconcile_activity row (the
-    rebuild is followed by a full re-index), flagged in its detail."""
+    """A rebuild is followed by a full re-index, so it records as a 'sync' row."""
     recorder = IndexerActivityRecorder(conn)
     recorder.record_rebuild(
         started_at="2026-05-22T12:00:00+00:00",
@@ -136,10 +125,8 @@ def test_record_rebuild_writes_a_sync_kind_row(conn) -> None:
 
 
 def test_record_rebuild_against_a_closed_connection_is_swallowed(conn) -> None:
-    """Recording a rebuild must never crash the indexer."""
     recorder = IndexerActivityRecorder(conn)
     conn.close()
-    # Must not raise.
     recorder.record_rebuild(
         started_at="2026-05-22T12:00:00+00:00",
         finished_at="2026-05-22T12:00:02+00:00",

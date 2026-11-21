@@ -105,8 +105,7 @@ describe('APIKeyEditPanel', () => {
   });
 
   it('preserves an existing expiry when the user renames without touching the chip', async () => {
-    // MAJOR-2 regression: saving a rename must not silently clear an existing
-    // expires_at because the form initialises expiryDays to null.
+    // The form initialises expiryDays to null; a rename must not send that as "Never".
     const mutateAsync = vi.fn().mockResolvedValue({ api_key: KEY_WITH_EXPIRY });
     mockUpdate.mockReturnValue(stub(mutateAsync));
     render(<APIKeyEditPanel apiKey={KEY_WITH_EXPIRY} onClose={vi.fn()} />);
@@ -116,7 +115,6 @@ describe('APIKeyEditPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
     const body = mutateAsync.mock.calls[0]?.[0]?.body as Record<string, unknown>;
-    // expires_at must be absent — leaving the server-side value unchanged.
     expect(body).not.toHaveProperty('expires_at');
   });
 
@@ -125,7 +123,7 @@ describe('APIKeyEditPanel', () => {
     mockUpdate.mockReturnValue(stub(mutateAsync));
     render(<APIKeyEditPanel apiKey={KEY_WITH_EXPIRY} onClose={vi.fn()} />);
     await waitFor(() => expect(document.activeElement).not.toBe(document.body));
-    // Explicitly select "Never" — should now include expires_at: null.
+    // Picking "Never" explicitly sends expires_at: null.
     await userEvent.click(screen.getByRole('button', { name: /never/i }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));

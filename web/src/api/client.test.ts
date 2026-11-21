@@ -1,9 +1,3 @@
-/**
- * Tests for the typed fetch wrapper (client.ts).
- *
- * All tests mock global `fetch`; no real network calls are made.
- */
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   Unauthenticated,
@@ -50,10 +44,6 @@ import type {
 } from './types';
 import { EMPTY_TELEMETRY } from './types/__fixtures__/searchResponse';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function mockFetch(status: number, body: unknown): void {
   const serialised = body !== null ? JSON.stringify(body) : '';
   vi.stubGlobal(
@@ -72,10 +62,6 @@ function capturedFetch(): ReturnType<typeof vi.fn> {
   return vi.mocked(globalThis.fetch);
 }
 
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
 });
@@ -83,10 +69,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
-// ---------------------------------------------------------------------------
-// Shared fixtures
-// ---------------------------------------------------------------------------
 
 const SAMPLE_USER = {
   id: 1,
@@ -98,10 +80,6 @@ const SAMPLE_USER = {
   created_at: '2026-05-01T00:00:00Z',
   last_login_at: null,
 };
-
-// ---------------------------------------------------------------------------
-// credentials: 'include' — every request carries the session cookie
-// ---------------------------------------------------------------------------
 
 describe('every request sends credentials: include', () => {
   it('login sends credentials include', async () => {
@@ -169,10 +147,6 @@ describe('every request sends credentials: include', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// 401 → Unauthenticated (distinct error class)
-// ---------------------------------------------------------------------------
-
 describe('401 response surfaces as Unauthenticated', () => {
   it('search throws Unauthenticated on 401', async () => {
     mockFetch(401, { detail: 'Unauthorised' });
@@ -207,10 +181,6 @@ describe('401 response surfaces as Unauthenticated', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Non-401 non-2xx → ApiError
-// ---------------------------------------------------------------------------
-
 describe('non-2xx non-401 responses throw ApiError', () => {
   it('500 response throws ApiError', async () => {
     mockFetch(500, { detail: 'Internal Server Error' });
@@ -229,10 +199,6 @@ describe('non-2xx non-401 responses throw ApiError', () => {
     expect((caught as ApiError).status).toBe(503);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Successful responses parse into the correct typed shapes
-// ---------------------------------------------------------------------------
 
 describe('successful responses parse into typed shapes', () => {
   it('login resolves with the user object', async () => {
@@ -327,10 +293,6 @@ describe('successful responses parse into typed shapes', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Empty-body guard — a 200 with empty content must not throw a SyntaxError
-// ---------------------------------------------------------------------------
-
 describe('empty-body guard', () => {
   it('resolves to undefined when the response body is empty (content-length 0)', async () => {
     vi.stubGlobal(
@@ -367,9 +329,8 @@ describe('empty-body guard', () => {
   });
 
   it('throws ApiError when a 2xx response body is non-JSON (proxy error page)', async () => {
-    // A reverse proxy may return an HTML error page with a 200 status.
-    // Before the fix this surfaced as a raw SyntaxError; now it must be an
-    // ApiError so the app's error-handling path handles it uniformly.
+    // A reverse proxy may return an HTML error page with a 200 status; it must
+    // surface as an ApiError, not a raw SyntaxError.
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -404,10 +365,6 @@ describe('empty-body guard', () => {
     expect((caught as ApiError).status).toBe(200);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Correct HTTP methods and URLs
-// ---------------------------------------------------------------------------
 
 describe('correct HTTP methods and endpoint paths', () => {
   it('login POSTs to /api/auth/login', async () => {
@@ -476,11 +433,7 @@ describe('correct HTTP methods and endpoint paths', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 1 — accounts endpoints
-// ---------------------------------------------------------------------------
-
-describe('Wave 1 accounts endpoints', () => {
+describe('accounts endpoints', () => {
   it('setupStatus GETs /api/setup/status and returns { needed }', async () => {
     mockFetch(200, { needed: true });
     const result = await setupStatus();
@@ -550,11 +503,7 @@ describe('Wave 1 accounts endpoints', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 2 — search-redesign endpoints
-// ---------------------------------------------------------------------------
-
-describe('Wave 2 search endpoints', () => {
+describe('search endpoints', () => {
   it('getRecentSearches GETs /api/recent-searches', async () => {
     mockFetch(200, {
       searches: [{ query: 'npower 2024', created_at: '2026-05-22T10:00:00Z' }],
@@ -576,10 +525,6 @@ describe('Wave 2 search endpoints', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 3 — user-management & API-key endpoints
-// ---------------------------------------------------------------------------
-
 const SAMPLE_KEY = {
   id: 1,
   name: 'Claude · MCP integration',
@@ -594,7 +539,7 @@ const SAMPLE_KEY = {
   request_count: 184602,
 };
 
-describe('Wave 3 user-management endpoints', () => {
+describe('user-management endpoints', () => {
   it('getUsers GETs /api/users and returns the user list', async () => {
     mockFetch(200, { users: [SAMPLE_USER] });
     const result = await getUsers();
@@ -638,7 +583,7 @@ describe('Wave 3 user-management endpoints', () => {
   });
 });
 
-describe('Wave 3 API-key endpoints', () => {
+describe('API-key endpoints', () => {
   it('getApiKeys GETs /api/api-keys and returns the key list', async () => {
     mockFetch(200, { keys: [SAMPLE_KEY] });
     const result = await getApiKeys();
@@ -680,10 +625,6 @@ describe('Wave 3 API-key endpoints', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 4 — settings endpoints
-// ---------------------------------------------------------------------------
-
 const SAMPLE_SETTINGS_RESPONSE = {
   settings: [
     {
@@ -717,7 +658,7 @@ const SAMPLE_SETTINGS_RESPONSE = {
   ],
 };
 
-describe('Wave 4 settings endpoints', () => {
+describe('settings endpoints', () => {
   it('getSettings GETs /api/settings and returns the item list', async () => {
     mockFetch(200, SAMPLE_SETTINGS_RESPONSE);
     const result = await getSettings();
@@ -782,11 +723,8 @@ describe('Wave 4 settings endpoints', () => {
 
 describe('getDocuments', () => {
   it('GETs /api/documents with the encoded query string', async () => {
-    // This test is the contract guard: it asserts the URL shape that the
-    // FastAPI backend ACTUALLY accepts.  The backend expects `descending=true`
-    // (a boolean query param) and sort values in `created|title|added` — NOT
-    // `order=asc` and NOT `sort=correspondent`.  If either side drifts, this
-    // test is the first thing that should turn red.
+    // Contract guard for the URL shape the backend accepts: a boolean
+    // `descending` param and sort in `created|title|added` (not `order=asc`).
     const body = { documents: [], total: 0, page: 1, page_size: 24 };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(body), { status: 200 }),
@@ -811,7 +749,6 @@ describe('getDocuments', () => {
     expect(url).toContain('page=2');
     expect(url).toContain('page_size=24');
     expect(url).toContain('sort=title');
-    // The backend parameter is `descending` (boolean), not `order` (string).
     expect(url).toContain('descending=false');
     expect(url).not.toContain('order=');
     expect(url).toContain('query=energy');
@@ -819,15 +756,13 @@ describe('getDocuments', () => {
     expect(url).toContain('tag_ids=3');
     expect(url).toContain('tag_ids=5');
     expect(url).toContain('date_from=2024-01-01');
-    // Nullish fields are omitted entirely.
     expect(url).not.toContain('document_type_id');
     expect(url).not.toContain('date_to');
   });
 
   it('sends descending=true when descending is true', async () => {
-    // Regression guard: ensures the direction toggle reaches the backend.
-    // Before the fix, the `order` param was silently ignored by FastAPI and
-    // the list always used the backend default (descending=true).
+    // FastAPI silently ignores an unknown `order` param, so the direction must
+    // travel as `descending`.
     const body = { documents: [], total: 0, page: 1, page_size: 24 };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(body), { status: 200 }),
@@ -891,16 +826,8 @@ describe('getDocuments', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 6 — index-operations endpoints
-// ---------------------------------------------------------------------------
-
 describe('index-operations endpoints', () => {
-  /**
-   * STATUS_BODY mirrors `IndexStatusResponse` from `wire.py` exactly.
-   * health: "ok" | "degraded" | "down"  (NOT an object)
-   * daemons[].fields: name, state, detail, processed_count, last_heartbeat
-   */
+  /** Mirrors the backend `IndexStatusResponse`; `health` is a string verdict. */
   const STATUS_BODY: IndexStatusResponse = {
     health: 'ok',
     daemons: [
@@ -921,9 +848,7 @@ describe('index-operations endpoints', () => {
     expect(url).toMatch(/\/api\/index\/status$/);
     expect(init.method).toBe('GET');
     expect(init.credentials).toBe('include');
-    // health is a string verdict, not an object
     expect(result.health).toBe('ok');
-    // daemon shape: name, state, detail, processed_count, last_heartbeat
     expect(result.daemons[0]?.name).toBe('ocr');
     expect(result.daemons[0]?.processed_count).toBe(412);
   });
@@ -934,11 +859,6 @@ describe('index-operations endpoints', () => {
   });
 
   it('getIndexActivity GETs /api/index/activity — cycles not entries', async () => {
-    /**
-     * Body mirrors `IndexActivityResponse` from `wire.py`:
-     *   cycles: list[ReconcileCycleResponse]
-     *   (id, kind, started_at, finished_at, ok, summary, detail)
-     */
     const body: IndexActivityResponse = {
       cycles: [
         {
@@ -957,18 +877,12 @@ describe('index-operations endpoints', () => {
     const [url, init] = capturedFetch().mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/index\/activity$/);
     expect(init.method).toBe('GET');
-    // The field is "cycles" not "entries"
     expect(result.cycles[0]?.id).toBe(1);
     expect(result.cycles[0]?.ok).toBe(true);
     expect(result.cycles[0]?.summary).toEqual({ indexed: 12, failed: 0 });
   });
 
   it('getFailedDocuments GETs /api/index/failed — title nullable, failure_count present', async () => {
-    /**
-     * Body mirrors `IndexFailedResponse` from `wire.py`:
-     *   documents: list[FailedDocumentResponse]
-     *   (document_id, title: str|None, failure_count)
-     */
     const body: IndexFailedResponse = {
       documents: [
         {
@@ -990,16 +904,10 @@ describe('index-operations endpoints', () => {
     expect(init.method).toBe('GET');
     expect(result.documents[0]?.document_id).toBe(8421);
     expect(result.documents[0]?.failure_count).toBe(3);
-    // title may be null
     expect(result.documents[1]?.title).toBeNull();
   });
 
   it('rebuildIndex POSTs to /api/index/rebuild and resolves with RebuildResponse', async () => {
-    /**
-     * Body mirrors `RebuildResponse` from `wire.py`:
-     *   accepted: bool
-     *   detail: str
-     */
     const body: RebuildResponse = {
       accepted: true,
       detail: 'Index rebuild triggered. The indexer will wipe and re-index the whole archive on its next cycle.',
@@ -1010,7 +918,6 @@ describe('index-operations endpoints', () => {
     expect(url).toMatch(/\/api\/index\/rebuild$/);
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('include');
-    // result is NOT void — it carries accepted + detail
     expect(result.accepted).toBe(true);
     expect(typeof result.detail).toBe('string');
   });

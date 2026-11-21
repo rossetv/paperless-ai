@@ -2,9 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { IdleScreen } from './IdleScreen';
 
 /**
- * IdleScreen drives `useRecentSearches` / `useStats`. Storybook does not wire
- * TanStack Query, so this story is a structural reference; behavioural
- * coverage lives in the test suite.
+ * Storybook does not wire TanStack Query, so this story is a structural
+ * reference only; behaviour is covered by the tests.
  */
 const meta = {
   title: 'Features/Search/IdleScreen',

@@ -9,23 +9,16 @@ export interface IndexStatusFooterProps {
   chunkCount: number;
   /** The embedding model name, or null when unknown. */
   embeddingModel: string | null;
-  /** Additional class names to merge. */
   className?: string;
 }
 
-/** Group digits with thousands separators for readability. */
 function groupDigits(value: number): string {
   return value.toLocaleString('en-GB');
 }
 
 /**
- * The index-status summary line for the search idle screen.
- *
- * A ready dot plus "Index ready", the document and chunk counts, and the
- * embedding model (omitted when unknown). Presentational — it formats the
- * figures it is given and knows nothing about the stats API.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Index-status line for the search idle screen: a ready dot, the document and
+ * chunk counts, and the embedding model when known.
  */
 export function IndexStatusFooter({
   documentCount,

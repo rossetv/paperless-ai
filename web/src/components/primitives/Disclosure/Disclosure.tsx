@@ -10,22 +10,12 @@ export interface DisclosureProps {
   children: React.ReactNode;
   /** Whether the panel starts open. Defaults to false (collapsed). */
   defaultOpen?: boolean;
-  /** Additional class names to merge onto the <details> element. */
   className?: string;
 }
 
 /**
- * A collapsible disclosure panel built on native `<details>`/`<summary>`.
- *
- * The summary row carries a chevron that rotates a quarter-turn when open
- * (respecting `prefers-reduced-motion`). Using the native element means
- * keyboard operation and the open/closed state come for free.
- *
- * App-agnostic — knows nothing about the search trace. `SearchTracePanel`
- * composes it.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
- * primitives (Icon), lib/.
+ * Collapsible panel on native `<details>`/`<summary>`, so keyboard operation and
+ * the open state come for free.
  */
 export function Disclosure({
   summary,

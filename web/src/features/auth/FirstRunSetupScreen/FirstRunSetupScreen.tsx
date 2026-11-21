@@ -7,12 +7,7 @@ import { ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../../../lib/credentials';
 import styles from './FirstRunSetupScreen.module.css';
 
-/**
- * Map a setup error to user-friendly copy.
- *
- * 403 → bad token; 409 → already set up; anything else → generic.
- * The raw Error.message is never shown — it is internal (e.g. "API error 403").
- */
+/** User-facing copy for a setup error; the raw message is internal and never shown. */
 function setupErrorMessage(e: Error): string {
   if (e instanceof ApiError && e.status === 403) return 'Invalid setup token.';
   if (e instanceof ApiError && e.status === 409) return 'Paperless AI is already set up.';
@@ -20,19 +15,11 @@ function setupErrorMessage(e: Error): string {
 }
 
 /**
- * The dark first-run setup screen.
+ * First-run setup screen, shown while no users exist: takes the setup token
+ * from the container logs and creates the first admin. Dark in both themes.
  *
- * Shown only while no users exist (the bootstrap gate routes here). Collects
- * the setup token printed to the container logs plus the first admin's
- * username, password and a confirmation. Dark-surfaced in BOTH themes via the
- * forced-dark tokens. Username / password rules are the shared `credentials`
- * validators; the confirmation must match.
- *
- * On success the `useSetup` mutation invalidates the setup-status and `me`
- * queries — the bootstrap gate then routes the freshly signed-in admin into
- * the app.
- *
- * Tier: features/auth (CODE_GUIDELINES §12.3) — composes primitives + api.
+ * On success `useSetup` invalidates the setup-status and `me` queries, and the
+ * bootstrap gate routes the new admin into the app.
  */
 export function FirstRunSetupScreen(): React.ReactElement {
   const [token, setToken] = React.useState('');
@@ -62,8 +49,6 @@ export function FirstRunSetupScreen(): React.ReactElement {
     if (tErr !== undefined || uErr !== undefined || pErr !== undefined || cErr !== undefined) {
       return;
     }
-    // The second argument is an options object for per-call callbacks;
-    // mutation-level handlers live in useSetup itself.
     setup.mutate({ token, username, password }, {});
   }
 

@@ -1,13 +1,3 @@
-/*
- * PipelineStages primitive — CSS Module.
- *
- * The agentic-search progress rail: an ordered list of stages, each with a
- * status dot (done / active / pending), a label, a detail line, and an
- * "in progress" pill on the active stage.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .stages {
   list-style: none;
   margin: 0;
@@ -33,12 +23,10 @@
   gap: var(--spacing-10);
 }
 
-/* A pending stage is dimmed. */
 .stage[data-state="pending"] {
   opacity: var(--opacity-disabled);
 }
 
-/* Status dot. */
 .dot {
   display: flex;
   align-items: center;
@@ -124,7 +112,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* "In progress" pill on the active stage. */
 .progress-pill {
   flex-shrink: 0;
   padding: var(--spacing-3) var(--spacing-7);
@@ -136,10 +123,8 @@
   font-weight: var(--font-weight-micro-bold);
 }
 
-/* Token/cost chip — a compact telemetry read-out on an LLM stage. Carries the
-   micro type token (not the denser nano) and a soft secondary surface so the
-   figure reads as deliberate, legible telemetry rather than a heavy dark pill
-   (UI-16). Mono keeps the digits tabular. */
+/* Compact telemetry read-out on an LLM stage, on a soft secondary surface rather
+   than a heavy dark pill. Mono keeps the digits tabular. */
 .cost-chip {
   flex-shrink: 0;
   align-self: flex-start;
@@ -161,8 +146,7 @@
   margin-right: calc(var(--spacing-7) + var(--spacing-10));
 }
 
-/* Judge per-document verdict sublist — rendered inside .stage-body which already
-   provides the consistent left indent. No extra padding needed here. */
+/* .stage-body already provides the left indent. */
 .verdicts {
   list-style: none;
   margin: var(--spacing-6) 0 0;
@@ -218,11 +202,9 @@
   color: var(--colour-text-tertiary);
 }
 
-/* KEEP/DROP read as semantic status, not the interactive accent (UI-07 / DD-1).
-   The base tag is the DROP tone — a neutral grey pill; the keep override below
-   lifts it onto the ok (green) status tone. Apple-blue is reserved for buttons,
-   links and focus only, so the KEEP tag no longer competes with the adjacent
-   real "View" link. */
+/* KEEP/DROP read as status, not the interactive accent, so KEEP does not compete
+   with the adjacent "View" link. The base tag is the neutral DROP tone; the keep
+   override below lifts it onto the ok tone. */
 .verdict-tag {
   flex-shrink: 0;
   align-self: flex-start;
@@ -248,7 +230,6 @@
   align-self: flex-start;
 }
 
-/* Collapsible stage — the native <details> disclosure. */
 .stage-disclosure {
   /* Reset browser default details margin. */
   margin: 0;
@@ -265,11 +246,9 @@
   display: none;
 }
 
-/* Expand the detail area after the summary row. Carry the caption font-size and
-   tertiary colour the old `.detail` slot supplied, so body text (planner specs,
-   resolved-filter lines, chunk titles) renders at one consistent caption size —
-   NOT the inherited 17px body default — matching the summary line above it.
-   Right padding prevents content from hugging the card edge. */
+/* Body text renders at the caption size and tertiary colour, matching the summary
+   line rather than the inherited body size. Right padding keeps content off the
+   card edge. */
 .stage-body {
   padding: var(--spacing-2) var(--spacing-9) var(--spacing-7)
     calc(var(--size-stage-dot) + var(--spacing-10));
@@ -287,7 +266,6 @@
   transition: transform var(--duration-fast) ease;
 }
 
-/* Rotate chevron to indicate open state. */
 .stage-disclosure[open] .chevron {
   transform: rotate(90deg);
 }

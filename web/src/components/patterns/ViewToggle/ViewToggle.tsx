@@ -6,18 +6,15 @@ import styles from './ViewToggle.module.css';
 export type LibraryView = 'grid' | 'list';
 
 export interface ViewToggleProps {
-  /** The currently selected view. */
   value: LibraryView;
   /**
    * Called with the newly selected view. Not called when the user clicks the
    * already-active segment.
    */
   onChange: (view: LibraryView) => void;
-  /** Additional class names to merge onto the root group. */
   className?: string;
 }
 
-/** A single segment definition: the view it selects, its label, its glyph. */
 interface Segment {
   view: LibraryView;
   label: string;
@@ -26,9 +23,8 @@ interface Segment {
 }
 
 /*
- * The two segments. Glyphs are inline 12×12 SVGs — a 2×2 cell grid for the
- * grid view, three stacked rules for the list view — kept inline because they
- * are tiny and one-off (no Icon-set entry is warranted).
+ * Inline 12×12 glyphs (a 2×2 grid, three stacked rules): too small and one-off
+ * for an Icon-set entry.
  */
 const SEGMENTS: readonly Segment[] = [
   {
@@ -57,18 +53,8 @@ const SEGMENTS: readonly Segment[] = [
 ];
 
 /**
- * Grid / list segmented switch.
- *
- * A controlled two-option switch styled as the Apple segmented control: a
- * rounded track with the active segment lifted onto the surface. Each segment
- * is a real `<button>` with `aria-pressed`, and the pair is wrapped in a
- * `role="group"` so assistive technology announces them as one control.
- *
- * Clicking the already-active segment is a no-op — `onChange` only fires on a
- * genuine change.
- *
- * Domain-free: it knows nothing about documents. Tier: components/patterns
- * (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Controlled grid/list segmented switch: two `aria-pressed` buttons in a
+ * `role="group"`. Clicking the active segment does not call `onChange`.
  */
 export function ViewToggle({
   value,

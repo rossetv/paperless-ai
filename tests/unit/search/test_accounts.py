@@ -1,16 +1,4 @@
-"""Tests for search.accounts — account operations and guards.
-
-Covers the guard predicates the PATCH/DELETE handlers rely on:
-- a user cannot delete or suspend or demote themselves;
-- the last remaining admin cannot be deleted, suspended, or demoted;
-- a non-self, non-last-admin change is permitted.
-And the GuardError they raise.
-
-Also covers the atomic guarded mutators (``apply_guarded_update`` /
-``apply_guarded_delete``): the guard read and the write share one
-``BEGIN IMMEDIATE`` transaction, so two concurrent demotes cannot both pass
-the last-admin check and leave the deployment with zero admins.
-"""
+"""Tests for search.accounts: account guards and the atomic guarded mutators."""
 
 from __future__ import annotations
 
@@ -172,11 +160,6 @@ def test_guard_update_treats_a_suspended_admin_as_not_counting(conn) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# MAJOR-2 — the atomic guarded mutators cannot empty the admin set
-# ---------------------------------------------------------------------------
-
-
 def test_apply_guarded_update_demotes_a_non_last_admin(conn) -> None:
     """apply_guarded_update applies a permitted demotion and returns the row."""
     actor = create_user(conn, username="a", password_hash="h", role="admin")
@@ -191,12 +174,7 @@ def test_apply_guarded_update_demotes_a_non_last_admin(conn) -> None:
 def test_apply_guarded_update_rejects_demoting_the_sequential_last_admin(
     conn,
 ) -> None:
-    """A sequential last-admin demote is rejected and writes nothing.
-
-    With one admin left, ``apply_guarded_update`` must raise ``GuardError`` and
-    leave the row untouched — the guard read and the UPDATE are one atomic
-    transaction, so a rejected guard rolls back cleanly.
-    """
+    """A sequential last-admin demote is rejected and writes nothing."""
     only_admin = create_user(conn, username="a", password_hash="h", role="admin")
     member = create_user(conn, username="b", password_hash="h", role="member")
     with pytest.raises(GuardError, match="last"):
@@ -222,15 +200,10 @@ def test_apply_guarded_delete_rejects_deleting_the_last_admin(conn) -> None:
 def test_concurrent_guarded_demotes_cannot_reach_zero_admins(tmp_path) -> None:
     """Two concurrent guarded demotes of the two remaining admins keep one.
 
-    This is the MAJOR-2 regression. The last-admin guard was a read-then-write
-    TOCTOU: with two admins, two concurrent demotes both read ``count_admins``
-    as 2, both passed ``> 1``, and both demoted — leaving **zero** admins, an
-    unrecoverable lockout. ``apply_guarded_update`` now runs the guard read and
-    the UPDATE inside one ``BEGIN IMMEDIATE`` transaction, so the second writer
-    blocks on SQLite's write lock until the first commits and then sees one
-    admin left — its guard rejects the demotion. Each thread uses its own
-    connection, exactly the per-request model. Run with the old separate-
-    statement guard this leaves zero admins and fails.
+    The guard read and the UPDATE share one ``BEGIN IMMEDIATE`` transaction, so the
+    second writer blocks on SQLite's write lock until the first commits, then sees
+    one admin left and is rejected. Each thread uses its own connection, as a
+    request would.
     """
     db_path = str(tmp_path / "app.db")
     setup_conn = connect(db_path)
@@ -273,9 +246,8 @@ def test_concurrent_guarded_demotes_cannot_reach_zero_admins(tmp_path) -> None:
     for thread in threads:
         thread.join()
 
-    # Exactly one demote succeeded and one was rejected by the guard.
     assert sorted(outcomes) == ["demoted", "rejected"], outcomes
-    # The invariant held: at least one active admin always remains.
+    # At least one active admin always remains.
     verifier = connect(db_path)
     try:
         assert count_admins(verifier) == 1

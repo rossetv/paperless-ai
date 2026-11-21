@@ -10,54 +10,26 @@ import { documentThumbUrl } from '../../../api/client';
 import styles from './LibraryCard.module.css';
 
 export interface LibraryCardProps {
-  /** The document to display. */
   document: LibraryDocument;
-  /** Called with the document id when the card is clicked — triggers the
-   *  in-app DocumentPreviewScreen overlay in LibraryScreen. */
   onOpen: (id: number) => void;
-  /** Layout mode — 'grid' (default) stacks thumbnail above metadata;
-   *  'list' places the thumbnail as a fixed-width left column. */
+  /** 'grid' stacks the thumbnail above the metadata; 'list' puts it in a left column. */
   view?: 'grid' | 'list';
-  /** Additional class names to merge onto the button root. */
   className?: string;
 }
 
 /**
- * Tags whose names match this pattern are pipeline-internal metadata injected
- * by the AI classification step (e.g. "gpt-5.4-mini", "gpt-5.5"). They carry
- * no meaning to a reader browsing the library and are excluded from the card
- * chip display (UI-08).
+ * Model-name tags (e.g. "gpt-5.4-mini") added by the AI classification step;
+ * they mean nothing to a reader, so the card hides them.
  */
 const PIPELINE_TAG_PATTERN = /^gpt-|^claude-|^gemini-|^llama-|^mistral-|^ollama-/i;
 
-/** Maximum number of user-facing tag chips to show on a card before "+N" overflow. */
+/** Tag chips shown before the "+N" overflow chip. */
 const MAX_VISIBLE_TAGS = 3;
 
 /**
- * A single document card for the Library grid/list.
- *
- * The whole card is a button that calls onOpen(document.id); the parent
- * LibraryScreen routes that to `/library/document/:id`, where the
- * LibraryDocumentPage renders the DocumentPreviewScreen as a full-bleed
- * overlay — making the open preview a shareable URL. Shows a soft preview
- * area carrying the real first-page thumbnail (proxied from Paperless-ngx),
- * falling back to a stylised DocThumb on error or while loading. Below the
- * preview: a meta block with correspondent · date, a two-line-clamped
- * title, and a row of the document type plus tag chips.
- *
- * In `view="grid"` (default) the card stacks thumbnail above metadata.
- * In `view="list"` the thumbnail becomes a fixed-width left column so the
- * row reads as: thumbnail | correspondent · date · title · chips.
- *
- * Wave 5 is a plain browse — no search-match highlighting.
- *
- * Wrapped in `React.memo` so re-renders of the parent grid (e.g. query
- * refetch when no data changed) do not re-render all 24 visible cards.
- * Props are a cache-stable document object + a stable `useCallback` from
- * LibraryScreen + optional className — all shallow-comparable.
- *
- * Tier: features/library (CODE_GUIDELINES 12.3) — composes the DocThumb and
- * Chip primitives, the api types, and lib/.
+ * A document card for the Library grid or list: the real first-page thumbnail
+ * (DocThumb while it loads or if it fails), then correspondent, date, title
+ * and chips. The whole card is one button that calls `onOpen`.
  */
 function LibraryCardInner({
   document,
@@ -70,7 +42,6 @@ function LibraryCardInner({
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  // Filter pipeline-metadata tags; cap to MAX_VISIBLE_TAGS with overflow count.
   const userTags = document.tags.filter((t) => !PIPELINE_TAG_PATTERN.test(t));
   const visibleTags = userTags.slice(0, MAX_VISIBLE_TAGS);
   const overflowCount = userTags.length - visibleTags.length;
@@ -84,9 +55,8 @@ function LibraryCardInner({
     >
       <div className={styles['preview']}>
         <div className={styles['thumb']}>
-          {/* Always render the DocThumb placeholder; the real image is layered
-           *  on top and revealed once it has loaded (or hidden if it errors).
-           *  This prevents an empty dark box during the lazy-load window. */}
+          {/* The DocThumb stays underneath so the lazy-load window is never an
+           *  empty box; the real image is revealed on load. */}
           <DocThumb
             kind={thumbKindForDocumentType(document.document_type)}
             className={cn(styles['thumb-fallback'] ?? '', !imageFailed && imageLoaded ? styles['thumb-fallback-hidden'] ?? '' : '')}
@@ -96,9 +66,7 @@ function LibraryCardInner({
               src={documentThumbUrl(document.id)}
               alt=""
               className={cn(styles['thumb-img'], !imageLoaded && (styles['thumb-img-loading'] ?? ''))}
-              // Intrinsic size is driven by CSS tokens (--width-library-thumb,
-              // --height-library-preview) in LibraryCard.module.css — one
-              // source of truth. No raw px attributes here (FE-07).
+              // Sized by CSS tokens in LibraryCard.module.css, not attributes.
               loading="lazy"
               decoding="async"
               onLoad={() => setImageLoaded(true)}
@@ -140,7 +108,7 @@ function LibraryCardInner({
 }
 
 /**
- * Memoised export — the component is `React.memo`'d so the parent grid can
- * re-render (e.g. on query polling) without touching every visible card.
+ * Memoised so a grid re-render (e.g. a refetch with no changes) skips every
+ * card; LibraryScreen passes a stable `onOpen`.
  */
 export const LibraryCard = React.memo(LibraryCardInner);

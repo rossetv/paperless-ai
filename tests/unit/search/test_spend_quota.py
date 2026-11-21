@@ -1,23 +1,7 @@
-"""Unit tests for search.spend_quota — per-API-key daily LLM-token quota logic.
+"""Unit tests for search.spend_quota, the per-API-key daily LLM-token quota.
 
-Tests the pure predicate and the async check_quota / record_usage / record_usage_blocking
-functions directly, without routing or a real HTTP server. A real migrated app.db is used
-so the actual SQLite read/write paths are exercised, but no LLM calls are made.
-
-Coverage:
-- _is_quota_active is False when quota=0 (disabled) or api_key_id=None (cookie caller).
-- _is_quota_active is True only when both are set.
-- check_quota does no I/O when quota is disabled (0).
-- check_quota does no I/O when the caller is a cookie caller (api_key_id=None).
-- check_quota passes when tokens_used < quota.
-- check_quota raises QuotaExceededError when tokens_used >= quota.
-- QuotaExceededError carries the correct quota and tokens_used attributes.
-- record_usage does no I/O when quota is disabled.
-- record_usage does no I/O for a cookie caller (api_key_id=None).
-- record_usage writes to the daily bucket for a real API key under a positive quota.
-- record_usage_blocking mirrors record_usage (same no-op gates, same write path).
-- mcp_api_key_id ContextVar defaults to None and is readable/settable.
-- UTC-day bucket isolation: tokens from yesterday are separate from today's bucket.
+Runs against a real migrated app.db so the SQLite paths are exercised; no LLM
+calls are made.
 """
 
 from __future__ import annotations
@@ -37,18 +21,12 @@ from search.spend_quota import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def app_db_path(tmp_path) -> str:
     """A migrated app.db with one user and two API keys (ids 7 and 8).
 
-    The foreign key is enforced, so usage rows must reference an existing api_keys row.
-    Returns the path so the spend_quota functions can open their own connections,
-    mirroring the production pattern (never sharing a connection across callers).
+    The foreign key is enforced, so usage rows must reference a real key. Returns
+    the path so the quota functions open their own connections, as in production.
     """
     path = str(tmp_path / "app.db")
     conn = connect(path)
@@ -98,11 +76,6 @@ def _seed_usage(
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# _is_quota_active — pure predicate
-# ---------------------------------------------------------------------------
-
-
 class TestIsQuotaActive:
     """The predicate that gates all I/O in both steps."""
 
@@ -125,11 +98,6 @@ class TestIsQuotaActive:
     def test_quota_of_one_is_active_with_a_key(self) -> None:
         """Even a quota of 1 enables the cap for an API-key caller."""
         assert _is_quota_active(1, api_key_id=7) is True
-
-
-# ---------------------------------------------------------------------------
-# check_quota — pre-pipeline gate
-# ---------------------------------------------------------------------------
 
 
 class TestCheckQuota:
@@ -215,11 +183,6 @@ class TestCheckQuota:
         await check_quota(api_key_id=7, quota=100, app_db_path=app_db_path)
 
 
-# ---------------------------------------------------------------------------
-# record_usage — post-pipeline write
-# ---------------------------------------------------------------------------
-
-
 class TestRecordUsage:
     """record_usage must write only when quota is active, and must swallow errors."""
 
@@ -287,11 +250,6 @@ class TestRecordUsage:
         )
 
 
-# ---------------------------------------------------------------------------
-# record_usage_blocking — sync variant used by the streaming worker
-# ---------------------------------------------------------------------------
-
-
 class TestRecordUsageBlocking:
     """Mirrors the async variant; same no-op gates and best-effort write."""
 
@@ -331,11 +289,6 @@ class TestRecordUsageBlocking:
         )
 
 
-# ---------------------------------------------------------------------------
-# mcp_api_key_id ContextVar
-# ---------------------------------------------------------------------------
-
-
 class TestMcpApiKeyIdContextVar:
     """The ContextVar that carries the key id from MCP auth middleware to tool handlers."""
 
@@ -349,11 +302,6 @@ class TestMcpApiKeyIdContextVar:
         assert mcp_api_key_id.get() == 42
         mcp_api_key_id.reset(token)
         assert mcp_api_key_id.get() is None
-
-
-# ---------------------------------------------------------------------------
-# UTC-day isolation — bucket keyed on the calendar date
-# ---------------------------------------------------------------------------
 
 
 class TestUtcDayIsolation:

@@ -1,13 +1,4 @@
-"""Pydantic wire models for the search HTTP API (spec §7.1).
-
-The request/response shapes for ``POST /api/search`` and the converters between
-them and the internal :mod:`search.models` dataclasses. This is one of the
-boundary modules of the :mod:`search.wire` package — Pydantic lives here and at
-the other wire modules, never in the pipeline (``CODE_GUIDELINES.md`` §5.6).
-
-Allowed deps: pydantic, search.models, store (SearchFilters).
-Forbidden: FastAPI, sqlite3, any I/O.
-"""
+"""Wire models for ``POST /api/search`` and their converters."""
 
 from __future__ import annotations
 
@@ -21,63 +12,31 @@ from store import SearchFilters
 if TYPE_CHECKING:
     from search.models import Cost, PhaseRecord, SearchResult, TokenUsage
 
-# The documented maximum length of a search query / question (§10.4).  Long
-# enough for any reasonable natural-language question; short enough to bound
-# the token cost of an injected mega-prompt.  Applied identically at the HTTP
-# boundary (``SearchRequest.query``) and the MCP boundary (``mcp_server``) so
-# both surfaces enforce one limit (CODE_GUIDELINES §3.5).
+# Long enough for any real question; short enough to bound the token cost of
+# an injected mega-prompt. Shared by REST and MCP.
 MAX_QUERY_LENGTH = 4000
 
-# The minimum length of a search query *after trimming* surrounding whitespace
-# (§10.4/§10.6).  An empty or whitespace-only query carries no intent yet would
-# still be dispatched into the bounded LLM pipeline — up to three chat calls —
-# burning budget for nothing.  Rejecting it at the boundary (a 422 over REST, a
-# structured error over MCP) is the cheap abuse defence.  Enforced identically
-# at both surfaces via :func:`normalise_query`.
+# Measured after trimming: a blank query would still spend LLM calls.
 MIN_QUERY_LENGTH = 1
 
 
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
-
-
 class FilterRequest(BaseModel):
-    """Optional filters supplied in a search request (spec §7.1).
-
-    Every field defaults to absent; only the fields present in the request body
-    are forwarded to the pipeline.  Extra keys are ignored — both the HTTP and
-    the MCP boundary are lenient on unrecognised fields.
-    """
+    """Optional filters supplied in a search request; unknown keys are ignored."""
 
     date_from: str | None = None
     date_to: str | None = None
     correspondent_id: int | None = None
     document_type_id: int | None = None
-    # Bounded to 64 to match the GET ``/api/documents`` counterpart
-    # (``routes.py``); a filter naming more tags than any real instance holds
-    # is malformed, and an unbounded list is a cheap payload-bloat vector.
+    # Same bound as GET /api/documents: an unbounded list is cheap payload bloat.
     tag_ids: list[int] = Field(default_factory=list, max_length=64)
 
 
 def normalise_query(query: str) -> str:
-    """Trim a query and reject it when nothing meaningful remains (§10.4).
-
-    The single normalisation point for a search query, shared by the HTTP
-    boundary (:class:`SearchRequest`) and the MCP boundary
-    (``search.mcp_server``) so both surfaces apply one rule (§1.3): strip the
-    surrounding whitespace, then reject an empty result. Returning the trimmed
-    value means the pipeline only ever sees a normalised query.
-
-    Args:
-        query: The raw query string from the request body or tool call.
-
-    Returns:
-        The trimmed query.
+    """Return the trimmed query, shared by the REST and MCP boundaries.
 
     Raises:
-        ValueError: When *query* is empty or whitespace-only after trimming,
-            or longer than :data:`MAX_QUERY_LENGTH`.
+        ValueError: When *query* is blank or longer than
+            :data:`MAX_QUERY_LENGTH`.
     """
     if len(query) > MAX_QUERY_LENGTH:
         raise ValueError(
@@ -92,32 +51,23 @@ def normalise_query(query: str) -> str:
 class SearchRequest(BaseModel):
     """Body for POST /api/search."""
 
-    # max_length bounds the *raw* payload before trimming so an enormous
-    # all-whitespace body is rejected by the cheap Pydantic constraint without
-    # building the trimmed copy; normalise_query then trims and rejects an
-    # empty result (§10.4/§10.6, HTTP-04/HTTP-07).
+    # Bounds the raw payload, so a huge all-whitespace body is rejected before
+    # a trimmed copy is built.
     query: str = Field(max_length=MAX_QUERY_LENGTH)
     filters: FilterRequest | None = None
 
     @field_validator("query")
     @classmethod
     def _normalise_query(cls, query: str) -> str:
-        """Trim the query and reject an empty/whitespace-only one (§10.4)."""
+        """Trim the query and reject a blank one."""
         return normalise_query(query)
-
-
-# ---------------------------------------------------------------------------
-# Response sub-models
-# ---------------------------------------------------------------------------
 
 
 class SourceDocumentResponse(BaseModel):
     """One ranked source document in the search response.
 
-    ``score`` is the rank-based RRF score, kept for ranking/MCP consumers but
-    not shown in the web UI (it reads as a misleadingly tiny number);
-    ``relevance_tier`` is the qualitative match strength the UI renders as a
-    badge.
+    ``score`` is the rank-based RRF score, not shown in the web UI because it
+    reads as a misleadingly tiny number; the UI shows ``relevance_tier``.
     """
 
     document_id: int
@@ -132,12 +82,9 @@ class SourceDocumentResponse(BaseModel):
 
 
 class SpecResponse(BaseModel):
-    """One planned search in the multi-spec plan, for UI transparency (spec §7.1).
+    """One planned search in the query plan, shown to the user.
 
-    Mirrors a :class:`~search.models.PlannedSpec`: the planner's free-text filter
-    *guesses* (correspondent / document_type / tags / date bounds), not the
-    resolved taxonomy ids — resolution happens later in the pipeline. The SPA
-    renders one row per spec in the "How this answer was found" disclosure.
+    Carries the planner's free-text filter guesses, not resolved taxonomy ids.
     """
 
     mode: str
@@ -152,7 +99,7 @@ class SpecResponse(BaseModel):
 
 
 class QueryPlanResponse(BaseModel):
-    """The multi-spec query plan for UI transparency (spec §7.1)."""
+    """The multi-spec query plan, shown to the user."""
 
     specs: list[SpecResponse]
 
@@ -166,11 +113,10 @@ class SearchStatsResponse(BaseModel):
 
 
 class TokenUsageResponse(BaseModel):
-    """Token counts for one or more LLM calls (spec §Telemetry).
+    """Token counts for one or more LLM calls.
 
-    Mirrors :class:`~search.models.TokenUsage`: ``reasoning`` is a subset of
-    ``completion`` (reasoning tokens bill as output) and must never be added to
-    the cost separately; ``total`` is the API's ``total_tokens``.
+    ``reasoning`` is a subset of ``completion`` (reasoning bills as output), so
+    it must never be added to the cost separately.
     """
 
     prompt: int
@@ -180,11 +126,10 @@ class TokenUsageResponse(BaseModel):
 
 
 class CostResponse(BaseModel):
-    """A priced cost for a phase (spec §Telemetry).
+    """A priced cost for a phase.
 
-    ``usd`` is ``None`` for an unknown/unpriced model (the UI shows "—") and
-    ``local`` is ``True`` for a local (Ollama) provider, where the cost is
-    genuinely zero. Mirrors :class:`~search.models.Cost`.
+    ``usd`` is ``None`` for an unpriced model; ``local`` is ``True`` for a
+    local (Ollama) provider, where the cost is genuinely zero.
     """
 
     usd: float | None
@@ -192,12 +137,10 @@ class CostResponse(BaseModel):
 
 
 class PhaseRecordResponse(BaseModel):
-    """One completed pipeline phase, for the live trace (spec §Telemetry).
+    """One completed pipeline phase, for the live trace.
 
-    ``tokens``/``cost`` are ``None`` for the non-LLM phases (retrieve, gate,
-    cache). ``detail`` is a per-phase free-form map the SPA renders (the
-    planner's rewritten query, the judge's per-document verdicts, …). Mirrors
-    :class:`~search.models.PhaseRecord`.
+    ``tokens``/``cost`` are ``None`` for non-LLM phases. ``detail`` is a
+    free-form per-phase map, such as the judge's per-document verdicts.
     """
 
     phase: str
@@ -209,26 +152,17 @@ class PhaseRecordResponse(BaseModel):
 
 
 class SearchTraceResponse(BaseModel):
-    """The ordered per-phase trace assembled during a search (spec §Telemetry).
-
-    Mirrors :class:`~search.models.SearchTrace`.
-    """
+    """The ordered per-phase trace assembled during a search."""
 
     phases: list[PhaseRecordResponse]
 
 
 class CostSummaryResponse(BaseModel):
-    """Whole-query token + dollar-cost totals (spec §Telemetry).
+    """Whole-query token and dollar-cost totals.
 
-    ``usd`` is ``None`` when any LLM call was unpriced-and-not-local (there is
-    no honest total to show); ``local`` is ``True`` when every billed call was
-    local. Mirrors :class:`~search.models.CostSummary`.
-
-    ``prices_as_of`` / ``prices_source`` carry the provenance of the price table
-    the dollars were computed against — the as-of date and source (``"bundled"``
-    for the seed, or the refresh URL) of the live price book — so a client could
-    render "prices as of <date>". Optional with backwards-compatible defaults so
-    an older client that ignores them is unaffected.
+    ``usd`` is ``None`` when any call was unpriced and not local, since there
+    is no honest total. ``prices_as_of`` / ``prices_source`` say which price
+    table was used (``"bundled"`` or the refresh URL).
     """
 
     tokens: TokenUsageResponse
@@ -247,28 +181,15 @@ class SearchResponse(BaseModel):
     plan: QueryPlanResponse
     stats: SearchStatsResponse
     trace: SearchTraceResponse
-    """The ordered per-phase reasoning trace (spec §Telemetry).
-
-    Always produced now — the core assembles it on every result (empty for a
-    Layer-1 clarify short-circuit). The SPA folds it into the "How this answer
-    was found" disclosure; MCP/REST consumers may ignore it.
-    """
+    """The ordered per-phase reasoning trace; empty for a clarify result."""
     cost: CostSummaryResponse
-    """Whole-query token + dollar-cost totals (spec §Telemetry).
+    """Whole-query token and dollar totals.
 
-    Always produced now. ``usd`` is ``None`` when the spend cannot be honestly
-    priced (an unknown, non-local model); zero tokens price to ``$0.0``.
+    ``usd`` is ``None`` when an unknown, non-local model makes the spend
+    unpriceable.
     """
     outcome_kind: Literal["answered", "clarify", "no_match"] = "answered"
-    """Discriminator for the result type (spec §7.1).
-
-    ``"answered"`` — the synthesiser produced a full answer with sources.
-    ``"clarify"``  — the query was too vague; the answer carries a nudge
-                     message and sources is empty (Layer 1 fail-fast).
-    ``"no_match"`` — retrieval was too weak to synthesise from; the answer
-                     carries a nudge message and sources is empty (Layer 2
-                     fail-fast).
-    """
+    """``"clarify"`` and ``"no_match"`` carry a nudge message and no sources."""
     no_match_reason: NoMatchReason | None = None
     """Why the result is a no-match — ``None`` for ``"answered"`` and ``"clarify"`` results.
 
@@ -286,27 +207,8 @@ class SearchResponse(BaseModel):
     """
 
 
-# ---------------------------------------------------------------------------
-# Mapping functions (wire model ⇄ dataclass)
-# ---------------------------------------------------------------------------
-
-
 def to_search_filters(filters: FilterRequest | None) -> SearchFilters | None:
-    """Convert a validated :class:`FilterRequest` to the store input shape.
-
-    The single converter from the wire filter shape to
-    :class:`~store.models.SearchFilters`, reused by the HTTP ``/api/search``
-    handler and the MCP server so both surfaces translate filters identically
-    (``CODE_GUIDELINES.md`` §1.3).
-
-    Args:
-        filters: The validated filter model from a search request, or ``None``
-            when the request carried no filters.
-
-    Returns:
-        A :class:`~store.models.SearchFilters` instance, or ``None`` when
-        *filters* is ``None`` — meaning no filters are applied.
-    """
+    """Convert a :class:`FilterRequest` to store filters; shared by REST and MCP."""
     if filters is None:
         return None
     return SearchFilters(
@@ -319,10 +221,7 @@ def to_search_filters(filters: FilterRequest | None) -> SearchFilters | None:
 
 
 def _to_token_usage(usage: TokenUsage | None) -> TokenUsageResponse | None:
-    """Map a pipeline :class:`~search.models.TokenUsage` to the wire shape.
-
-    ``None`` passes straight through — a non-LLM phase carries no token usage.
-    """
+    """Map a :class:`~search.models.TokenUsage` to the wire shape."""
     if usage is None:
         return None
     return TokenUsageResponse(
@@ -334,10 +233,7 @@ def _to_token_usage(usage: TokenUsage | None) -> TokenUsageResponse | None:
 
 
 def _to_cost(cost: Cost | None) -> CostResponse | None:
-    """Map a pipeline :class:`~search.models.Cost` to the wire shape.
-
-    ``None`` passes straight through — a non-LLM phase carries no cost.
-    """
+    """Map a :class:`~search.models.Cost` to the wire shape."""
     if cost is None:
         return None
     return CostResponse(usd=cost.usd, local=cost.local)
@@ -356,18 +252,7 @@ def _to_phase_record(record: PhaseRecord) -> PhaseRecordResponse:
 
 
 def to_search_response(result: SearchResult) -> SearchResponse:
-    """Convert a :class:`~search.models.SearchResult` to the wire model.
-
-    This is the explicit, tested boundary conversion (``CODE_GUIDELINES.md``
-    §5.6).  No Pydantic model leaks into the pipeline; no raw pipeline type
-    leaks into the HTTP response.
-
-    Args:
-        result: The frozen dataclass produced by :meth:`~search.core.SearchCore.answer`.
-
-    Returns:
-        A :class:`SearchResponse` ready to serialise as JSON.
-    """
+    """Convert a :class:`~search.models.SearchResult` to the wire model."""
     sources = [
         SourceDocumentResponse(
             document_id=src.document_id,

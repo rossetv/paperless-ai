@@ -1,14 +1,6 @@
 /*
- * Skeleton primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- *
- * The shimmer is a CSS gradient animation that sweeps left-to-right over the
- * placeholder. prefers-reduced-motion disables the animation and leaves a
- * static placeholder — the shape is still meaningful without motion.
- *
- * Colour: uses --colour-button-active-bg as the base — the lightest neutral in
- * the token set that reads as "empty content" on both light and dark surfaces.
+ * prefers-reduced-motion leaves a static placeholder. The base colour
+ * (--colour-button-active-bg) reads as empty content on light and dark surfaces.
  */
 
 @keyframes shimmer {
@@ -21,7 +13,6 @@
   }
 }
 
-/* ── Base ── */
 .skeleton {
   display: block;
   background-color: var(--colour-button-active-bg);
@@ -42,30 +33,23 @@
   }
 }
 
-/* ── Variant modifiers ── */
-
-/* Text: rounded pill, default height matches caption line height */
 .text {
   border-radius: var(--radius-pill);
   height: var(--spacing-9);  /* 11 px — approximates a single caption text line */
   width: 100%;
 }
 
-/* Rectangular: standard card radius, fills container by default */
 .rectangular {
   border-radius: var(--radius-standard);
   width: 100%;
   height: var(--spacing-14);  /* 24 px default — override via height prop */
 }
 
-/* Circular: perfect circle; sizing comes from props or defaults to medium icon */
 .circular {
   border-radius: var(--radius-circle);
   width: var(--spacing-13);  /* 20 px default */
   height: var(--spacing-13);
 }
-
-/* ── Multi-line text container ── */
 
 /* Stacks several text bars with a consistent gap (the 'text' variant, lines>1) */
 .lines {
@@ -75,13 +59,11 @@
   width: 100%;
 }
 
-/* ── Closed width set — named fractions of the container ── */
 .width-full   { width: 100%; }
 .width-wide   { width: 75%;  }
 .width-half   { width: 50%;  }
 .width-narrow { width: 33%;  }
 
-/* ── Closed height set — each backed by a dedicated token ── */
 .height-line    { height: var(--height-skeleton-line);    }
 .height-control { height: var(--height-skeleton-control); }
 .height-block   { height: var(--height-skeleton-block);   }

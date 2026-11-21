@@ -1,10 +1,4 @@
-"""Tests for common.config — indexer/index settings.
-
-Split from test_config.py to stay within the §3.1 500-line ceiling.
-Covers: INDEX_DB_PATH, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS,
-EMBEDDING_MAX_CONCURRENT, RECONCILE_INTERVAL, DELETION_SWEEP_INTERVAL,
-CHUNK_SIZE, CHUNK_OVERLAP.
-"""
+"""Tests for common.config indexer settings."""
 
 from __future__ import annotations
 
@@ -39,8 +33,6 @@ _INDEX_DEFAULTS = [
 
 
 class TestIndexSettingsDefaults:
-    """Indexer settings load correct defaults when env vars are absent."""
-
     @pytest.mark.parametrize(
         "attr, expected",
         _INDEX_DEFAULTS,
@@ -69,8 +61,6 @@ _INDEX_CUSTOM = [
 
 
 class TestIndexSettingsCustom:
-    """Indexer settings parse set values correctly."""
-
     @pytest.mark.parametrize(
         "env_key, env_val, attr, expected",
         _INDEX_CUSTOM,
@@ -82,8 +72,6 @@ class TestIndexSettingsCustom:
 
 
 class TestIndexSettingsInvalidInts:
-    """Non-integer values for integer indexer settings raise a contextful ValueError."""
-
     @pytest.mark.parametrize(
         "env_key",
         [
@@ -96,15 +84,12 @@ class TestIndexSettingsInvalidInts:
         ],
     )
     def test_non_integer_raises(self, mocker, env_key):
-        # The message must name the offending variable, not the opaque stdlib
-        # 'invalid literal for int()' text (CODE_GUIDELINES §6.6).
+        # The message names the variable, not the stdlib 'invalid literal for int()'.
         with pytest.raises(ValueError, match=f"{env_key} must be an integer"):
             _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
 
 
 class TestIndexSettingsBounds:
-    """Out-of-range integer indexer settings raise a contextful ValueError."""
-
     @pytest.mark.parametrize("value", ["0", "-1"])
     def test_embedding_dimensions_must_be_positive(self, mocker, value):
         with pytest.raises(ValueError, match="EMBEDDING_DIMENSIONS must be >= 1"):
@@ -130,7 +115,6 @@ class TestIndexSettingsBounds:
             _build(mocker, {**_MINIMAL_ENV, "CHUNK_OVERLAP": "-1"})
 
     def test_chunk_overlap_equal_to_chunk_size_raises(self, mocker):
-        # Overlap must be strictly less than the chunk size.
         with pytest.raises(ValueError, match="CHUNK_OVERLAP must be"):
             _build(
                 mocker,

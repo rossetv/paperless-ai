@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { AppNavBar } from './AppNavBar';
 
-// --- Mock auth + logout + stats ------------------------------------------
 vi.mock('../../../hooks/useAuth', () => ({
   useAuth: vi.fn(),
 }));
@@ -19,7 +18,6 @@ const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 const mockUseLogout = useLogout as ReturnType<typeof vi.fn>;
 const mockUseStats = useStats as ReturnType<typeof vi.fn>;
 
-/** Default stats — resolved with a small document set. */
 function makeStats(overrides: Record<string, unknown> = {}) {
   return {
     isSuccess: true,
@@ -103,16 +101,8 @@ function renderNavBarAt(path: string) {
 }
 
 /**
- * Return the desktop NavBar `<nav>` element (the first `nav` in the DOM).
- *
- * `AppNavBar` renders three navigation elements:
- *   1. The desktop NavBar glass bar (`<nav aria-label="Main navigation">`)
- *   2. The MobileTopBar (`<div role="banner">`)
- *   3. The BottomTabBar (`<nav aria-label="Mobile navigation">`)
- *
- * Tests that query by link name must scope to one surface to avoid
- * `getMultipleElementsFoundError`. `desktopNav` scopes to the first nav
- * (the desktop bar) — every link appears there at least once.
+ * The desktop `<nav>`. Links appear in both the desktop and mobile surfaces,
+ * so queries by link name must be scoped to one.
  */
 function desktopNav(container: HTMLElement): HTMLElement {
   const nav = container.querySelector('nav[aria-label="Main navigation"]');
@@ -128,13 +118,11 @@ describe('AppNavBar', () => {
 
   it('renders the Paperless AI wordmark', () => {
     renderNavBar();
-    // Wordmark appears in both desktop and mobile — first match is fine.
     expect(screen.getAllByText(/paperless/i)[0]).toBeInTheDocument();
   });
 
   it('renders the Search nav link', () => {
     const { container } = renderNavBar();
-    // Both desktop and mobile surfaces render a Search link — scope to desktop.
     expect(
       within(desktopNav(container)).getByRole('link', { name: /search/i }),
     ).toBeInTheDocument();
@@ -142,14 +130,11 @@ describe('AppNavBar', () => {
 
   it('renders the user-menu trigger with the user initials', () => {
     renderNavBar();
-    // "Alex Morgan" → initials "AM". Appears in both surfaces; first match suffices.
     expect(screen.getAllByText('AM')[0]).toBeInTheDocument();
   });
 
   it('opens the user menu and shows the display name', async () => {
     renderNavBar();
-    // First account-menu button is in the desktop bar.
-    // getAllByRole always returns at least one element (throws if empty).
     const firstMenuBtn = screen.getAllByRole('button', { name: /account menu/i }).at(0) as HTMLElement;
     await userEvent.click(firstMenuBtn);
     expect(screen.getByText('Alex Morgan')).toBeInTheDocument();
@@ -158,7 +143,6 @@ describe('AppNavBar', () => {
   it('runs the logout mutation when Sign out is chosen', async () => {
     const mutateAsync = vi.fn().mockResolvedValue(undefined);
     renderNavBar(makeLogout({ mutateAsync }));
-    // getAllByRole always returns at least one element (throws if empty).
     const firstMenuBtn = screen.getAllByRole('button', { name: /account menu/i }).at(0) as HTMLElement;
     await userEvent.click(firstMenuBtn);
     await userEvent.click(screen.getByRole('menuitem', { name: /sign out/i }));
@@ -268,28 +252,21 @@ describe('AppNavBar', () => {
     const nav = desktopNav(container);
     const searchLink = within(nav).getByRole('link', { name: /^search$/i });
     const indexLink = within(nav).getByRole('link', { name: /^index$/i });
-    // On '/', Search is the active route — Index must not have aria-current.
     expect(searchLink).toHaveAttribute('aria-current', 'page');
     expect(indexLink).not.toHaveAttribute('aria-current');
   });
-
-  // ── MAJOR 1: active link underline ────────────────────────────────────────
 
   it('applies the link-active CSS class to the active nav link', () => {
     const { container } = renderNavBarAt('/library');
     const nav = desktopNav(container);
     const libraryLink = within(nav).getByRole('link', { name: 'Library' });
     const searchLink = within(nav).getByRole('link', { name: /^search$/i });
-    // CSS Modules transform class names; check that the active class differs
-    // from the base class — the active link gets an extra class.
+    // CSS Modules hash class names, so compare against an inactive link.
     expect(libraryLink.className).not.toEqual(searchLink.className);
   });
 
-  // ── MAJOR 2: IndexStatusPill ──────────────────────────────────────────────
-
   it('shows the index-status pill when stats are available', () => {
     renderNavBar();
-    // Pill is rendered in both desktop and mobile surfaces — first match suffices.
     expect(screen.getAllByLabelText(/index ready, 42 documents/i)[0]).toBeInTheDocument();
   });
 
@@ -326,8 +303,6 @@ describe('AppNavBar', () => {
     );
     expect(screen.getAllByLabelText(/index ready, 1,234 documents/i)[0]).toBeInTheDocument();
   });
-
-  // ── MAJOR 3: Mobile surfaces ──────────────────────────────────────────────
 
   it('renders the mobile navigation landmark', () => {
     const { container } = renderNavBar();

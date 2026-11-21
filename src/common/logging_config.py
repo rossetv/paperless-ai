@@ -11,14 +11,9 @@ from .config import Settings
 
 
 def configure_logging(settings: Settings) -> None:
-    """
-    Set up structured logging for both structlog and stdlib loggers.
+    """Route structlog and stdlib logging through one formatter on stdout.
 
-    Must be called once at daemon startup, before any log output.
-
-    - Adds ISO timestamps, log level, and logger name to every event.
-    - Routes stdlib ``logging`` records through the structlog formatter.
-    - Suppresses noisy third-party loggers.
+    Call once at daemon startup, before any log output.
     """
     shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
@@ -26,11 +21,10 @@ def configure_logging(settings: Settings) -> None:
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
-        # This must be the last processor in the chain
+        # Must be the last processor in the chain.
         structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
     ]
 
-    # Configure structlog
     structlog.configure(
         processors=shared_processors,
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -38,10 +32,8 @@ def configure_logging(settings: Settings) -> None:
         cache_logger_on_first_use=True,
     )
 
-    # Configure the chosen formatter
     if settings.LOG_FORMAT == "json":
         formatter = structlog.stdlib.ProcessorFormatter(
-            # These run after the processors defined above
             processor=structlog.processors.JSONRenderer(),
         )
     else:  # console
@@ -49,9 +41,7 @@ def configure_logging(settings: Settings) -> None:
             processor=structlog.dev.ConsoleRenderer(colors=True),
         )
 
-    # Configure the root logger — clear any existing handlers first so
-    # repeated calls (e.g. a test calling configure_logging twice) do not
-    # accumulate duplicate handlers and emit every log line N times.
+    # Clear existing handlers so a repeated call does not duplicate every line.
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     handler = logging.StreamHandler(sys.stdout)
@@ -59,7 +49,6 @@ def configure_logging(settings: Settings) -> None:
     root_logger.addHandler(handler)
     root_logger.setLevel(settings.LOG_LEVEL)
 
-    # Suppress noisy logs from third-party libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)
     for logger_name in ("openai", "openai._base_client"):
         logger = logging.getLogger(logger_name)

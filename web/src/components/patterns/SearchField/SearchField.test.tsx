@@ -51,7 +51,6 @@ describe('SearchField', () => {
 
   it('renders with a visible label when label prop is provided', () => {
     render(<SearchField id="q" onSubmit={vi.fn()} label="Document search" />);
-    // getByLabelText returns the input element the label points to
     expect(screen.getByLabelText('Document search')).toBeInTheDocument();
   });
 

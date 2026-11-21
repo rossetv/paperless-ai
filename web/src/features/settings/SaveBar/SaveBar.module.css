@@ -1,12 +1,6 @@
 /*
- * SaveBar feature — CSS Module.
- *
- * Fixed-bottom glass bar. Slides up via `.bar-hidden` when dirty count is zero;
- * the base `.bar` sits at translateY(0) so the transition fires on both
- * entry and exit. Backdrop blur gives the frosted-glass effect matching the
- * mock savebar.
- *
- * All values come exclusively from design tokens (var(--…)).
+ * Fixed-bottom glass bar. `.bar-hidden` slides it down; the base `.bar` sits at
+ * translateY(0) so the transition fires on both entry and exit.
  */
 
 .bar {
@@ -46,7 +40,6 @@
   }
 }
 
-/* ── Inner — max-width centred row. ── */
 .inner {
   max-width: var(--width-app-content);
   margin: 0 auto;
@@ -55,7 +48,6 @@
   gap: var(--spacing-10);
 }
 
-/* ── Warning dot — yellow pulsing indicator. ── */
 .dot {
   flex-shrink: 0;
   width: var(--size-conn-dot);
@@ -65,7 +57,6 @@
   box-shadow: var(--shadow-savebar-dot);
 }
 
-/* ── Message — unsaved count. ── */
 .message {
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
@@ -74,7 +65,6 @@
   color: var(--colour-text-primary);
 }
 
-/* ── Caption — pushed to the right via margin-left: auto. ── */
 .caption {
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
@@ -86,7 +76,7 @@
   margin-right: var(--spacing-6);
 }
 
-/* ── Amber override — rebuild warning when a reindex key is dirty. ── */
+/* Rebuild warning when a reindex key is dirty. */
 .caption-reindex {
   color: var(--colour-status-warn-fg);
   font-weight: var(--font-weight-caption-bold);

@@ -1,28 +1,11 @@
-"""Daemon heartbeat state in the application database — ``daemon_status``.
+"""Daemon heartbeats in the ``daemon_status`` table.
 
-Each of the four daemons (ocr, classifier, indexer, search) upserts a
-heartbeat row into the ``daemon_status`` table on every work cycle via
-:func:`record_heartbeat`. The search server reads every row via
-:func:`read_statuses` to render the Index dashboard (web-redesign spec §5,
-Wave 6).
+The running/idle/stopped state is derived at read time, not stored, because a
+crashed daemon cannot write ``stopped``:
 
-The dashboard's running/idle/stopped *state* is **not stored** — it is
-derived here, at read time, from how recently the daemon last wrote:
-
-- **stopped** — the last heartbeat is older than the staleness window. The
-  process is gone; whatever it last claimed to be doing is irrelevant. This
-  is the whole point of deriving rather than storing: a crashed daemon
-  cannot write ``stopped``, so a stored state would lie forever.
-- **idle** — a fresh heartbeat whose ``detail`` is the literal ``"idle"``.
-- **running** — a fresh heartbeat with any other ``detail``.
-
-The activity signal therefore travels inside the ``detail`` string the
-daemon writes: a daemon with no work writes ``detail="idle"``; a working
-daemon writes a real one-liner.
-
-Allowed deps: sqlite3, structlog, datetime. Forbidden: store, search, daemon
-packages, FastAPI, common (this module sits below common in the import
-graph).
+- **stopped**: the last heartbeat is older than the staleness window.
+- **idle**: a fresh heartbeat whose ``detail`` is exactly ``"idle"``.
+- **running**: a fresh heartbeat with any other ``detail``.
 """
 
 from __future__ import annotations
@@ -38,18 +21,14 @@ from appdb.connection import utc_now_iso
 
 log = structlog.get_logger(__name__)
 
-# The default heartbeat-staleness window, in seconds. A daemon whose last
-# heartbeat is older than this is reported "stopped". It is generously larger
-# than any daemon's poll/cycle interval so a merely-busy daemon between
-# heartbeats is never mistaken for a dead one; the daemons heartbeat at least
-# this often even when idle (see common.heartbeat / the daemon wiring).
+# A daemon whose last heartbeat is older than this is "stopped". Well above any
+# poll interval so a busy daemon between heartbeats is not mistaken for a dead
+# one; daemons heartbeat at least this often even when idle.
 DEFAULT_STALE_AFTER_SECONDS: int = 90
 
-# The detail string a daemon writes when it has no work. read_statuses maps a
-# fresh heartbeat carrying exactly this string to the "idle" state.
+# The detail a daemon writes when it has no work.
 IDLE_DETAIL: str = "idle"
 
-#: The three derived dashboard states.
 DaemonState = Literal["running", "idle", "stopped"]
 
 
@@ -57,13 +36,7 @@ DaemonState = Literal["running", "idle", "stopped"]
 class DaemonStatus:
     """One daemon's heartbeat row plus its derived dashboard state.
 
-    Attributes:
-        name: The daemon name — ocr / classifier / indexer / search.
-        state: The derived state — running / idle / stopped (see the module
-            docstring). Not a stored column; computed by :func:`read_statuses`.
-        detail: The short human string the daemon last wrote.
-        processed_count: The daemon's monotonic throughput counter.
-        last_heartbeat: ISO-8601 UTC timestamp of the daemon's last write.
+    ``state`` is derived by :func:`read_statuses`, not a stored column.
     """
 
     name: str
@@ -80,19 +53,10 @@ def record_heartbeat(
     detail: str,
     processed_count: int,
 ) -> None:
-    """Insert or update one daemon's heartbeat row, then commit.
+    """Upsert one daemon's heartbeat row, stamped with the current time.
 
-    Upserts on the ``name`` primary key — calling it again for the same
-    daemon overwrites the row rather than failing. ``last_heartbeat`` and
-    ``updated_at`` are both stamped with the current UTC time; the freshness
-    of ``last_heartbeat`` is what :func:`read_statuses` derives state from.
-
-    Args:
-        conn: An open, migrated ``app.db`` connection.
-        name: The daemon name (ocr / classifier / indexer / search).
-        detail: A short human string — ``"idle"`` when the daemon has no
-            work, otherwise a one-liner describing the current activity.
-        processed_count: The daemon's monotonic throughput counter.
+    *detail* is ``"idle"`` when the daemon has no work, otherwise a one-liner
+    describing the current activity.
     """
     now = utc_now_iso()
     with conn:
@@ -115,19 +79,11 @@ def touch_heartbeat(
     name: str,
     detail: str,
 ) -> None:
-    """Refresh a daemon's detail and freshness WITHOUT touching its count.
+    """Refresh a daemon's detail and freshness without touching its count.
 
-    For a secondary heartbeat writer — the tag daemons' stall ticker — whose
-    :class:`~common.heartbeat.Heartbeat` instance does not hold the daemon's
-    real running total: :func:`record_heartbeat` from that instance would
-    overwrite the persisted monotonic ``processed_count`` with its own zero.
-    The upsert here leaves ``processed_count`` alone on conflict; the INSERT
-    arm seeds it to 0 only for a daemon that has never beaten at all.
-
-    Args:
-        conn: An open, migrated ``app.db`` connection.
-        name: The daemon name (ocr / classifier / indexer / search).
-        detail: A short human string describing the current activity.
+    For a secondary writer (the tag daemons' stall ticker) whose
+    :class:`~common.heartbeat.Heartbeat` does not hold the real running total;
+    :func:`record_heartbeat` from it would reset ``processed_count`` to zero.
     """
     now = utc_now_iso()
     with conn:
@@ -148,8 +104,8 @@ def _derive_state(
 ) -> DaemonState:
     """Derive the dashboard state from a row's heartbeat recency and detail.
 
-    An unparseable ``last_heartbeat`` is treated as stale → ``stopped``: a
-    row we cannot date is one we cannot trust is fresh.
+    An unparseable ``last_heartbeat`` counts as stale: a row we cannot date
+    cannot be trusted as fresh.
     """
     try:
         beat = datetime.fromisoformat(last_heartbeat)
@@ -171,20 +127,10 @@ def read_statuses(
     now: datetime | None = None,
     stale_after_seconds: int = DEFAULT_STALE_AFTER_SECONDS,
 ) -> list[DaemonStatus]:
-    """Return every daemon's heartbeat row with its derived state.
+    """Return every daemon's heartbeat row with its derived state, by name.
 
-    Args:
-        conn: An open ``app.db`` connection.
-        now: The reference time for the staleness check. Defaults to the
-            current UTC time; tests inject a fixed value.
-        stale_after_seconds: A heartbeat older than this many seconds makes
-            the daemon ``stopped``.
-
-    Returns:
-        A list of :class:`DaemonStatus`, one per row present in the table,
-        ordered by daemon name. A daemon that has never written a row simply
-        does not appear — the caller (the Index service) fills missing
-        daemons in as ``stopped``.
+    A daemon that has never written a row does not appear; the caller fills it
+    in as ``stopped``.
     """
     reference = now if now is not None else datetime.now(timezone.utc)
     rows = conn.execute(

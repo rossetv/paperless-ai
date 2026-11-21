@@ -1,11 +1,6 @@
 /**
- * User-management and API-key mutation and query hooks — Wave 3 (Access Control).
- *
- * The mutations invalidate the relevant list query so the table re-fetches
- * after every create / edit / delete / revoke.
- *
- * Allowed deps: @tanstack/react-query, client, types, hooks/keys
- * (leaf module — CODE_GUIDELINES §12.3).
+ * User-management and API-key hooks. Every mutation invalidates its list query
+ * so the table re-fetches.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -33,10 +28,6 @@ import type {
 } from '../types';
 import { queryKeys } from './keys';
 
-// ---------------------------------------------------------------------------
-// User-management hooks
-// ---------------------------------------------------------------------------
-
 /** Fetch every user account — GET /api/users. */
 export function useUsers(): UseQueryResult<UsersResponse, Error> {
   return useQuery({
@@ -60,12 +51,7 @@ export function useCreateUser(): UseMutationResult<
   });
 }
 
-/**
- * Update-user mutation — PATCH /api/users/{id}.
- *
- * Takes `{ id, body }` so a single hook covers role changes, suspension and
- * password resets. Invalidates the users list on success.
- */
+/** Update-user mutation — PATCH /api/users/{id}; covers role, suspension and password reset. */
 export function useUpdateUser(): UseMutationResult<
   UserResponse,
   Error,
@@ -91,10 +77,6 @@ export function useDeleteUser(): UseMutationResult<void, Error, number> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// API-key hooks
-// ---------------------------------------------------------------------------
-
 /** Fetch the API keys visible to the caller — GET /api/api-keys. */
 export function useApiKeys(): UseQueryResult<ApiKeysResponse, Error> {
   return useQuery({
@@ -106,8 +88,7 @@ export function useApiKeys(): UseQueryResult<ApiKeysResponse, Error> {
 /**
  * Create-API-key mutation — POST /api/api-keys.
  *
- * The success payload carries the full one-time `secret`. The caller shows
- * it once and discards it. Invalidates the keys list so the new key appears.
+ * The payload carries the one-time `secret`; the caller shows it once and discards it.
  */
 export function useCreateApiKey(): UseMutationResult<
   CreateApiKeyResponse,
@@ -123,12 +104,7 @@ export function useCreateApiKey(): UseMutationResult<
   });
 }
 
-/**
- * Edit-API-key mutation — PATCH /api/api-keys/{id}.
- *
- * Editing is owner-only on the server. Invalidates the keys list so the
- * edited key's new name / scopes / expiry show in the table.
- */
+/** Edit-API-key mutation — PATCH /api/api-keys/{id} (owner-only on the server). */
 export function useUpdateApiKey(): UseMutationResult<
   ApiKeyEnvelope,
   Error,

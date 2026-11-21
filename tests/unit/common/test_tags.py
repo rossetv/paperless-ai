@@ -25,8 +25,6 @@ def _http_status_error(status: int) -> httpx.HTTPStatusError:
 
 
 class TestExtractTags:
-    """Tests for extract_tags()."""
-
     def test_returns_set_of_ints_from_doc_tags(self):
         doc = {"tags": [1, 2, 3]}
 
@@ -71,8 +69,6 @@ class TestExtractTags:
 
 
 class TestGetLatestTags:
-    """Tests for get_latest_tags()."""
-
     def test_fetches_fresh_document_and_extracts_tags(self):
         client = MagicMock()
         client.get_document.return_value = {"tags": [10, 20]}
@@ -109,8 +105,6 @@ class TestGetLatestTags:
 
 
 class TestRemoveStaleQueueTag:
-    """Tests for remove_stale_queue_tag()."""
-
     def test_removes_pre_tag_id_from_tags_and_updates(self):
         client = MagicMock()
         tags = {10, 20, 30}
@@ -159,8 +153,6 @@ class TestRemoveStaleQueueTag:
 
 
 class TestReleaseProcessingTag:
-    """Tests for release_processing_tag()."""
-
     def test_does_nothing_when_tag_id_is_none(self):
         client = MagicMock()
 
@@ -209,8 +201,6 @@ class TestReleaseProcessingTag:
 
 
 class TestCleanPipelineTags:
-    """Tests for clean_pipeline_tags()."""
-
     def test_removes_pre_post_and_classify_pre_tag_ids(self):
         settings = make_settings_obj(
             PRE_TAG_ID=1,
@@ -295,7 +285,7 @@ class TestCleanPipelineTags:
         assert result is not original
 
     def test_skips_optional_tags_when_zero(self):
-        # Arrange — 0 is falsy, same as None for the `if optional_tag:` check
+        # 0 is falsy, so it is treated like None.
         settings = make_settings_obj(
             PRE_TAG_ID=1,
             POST_TAG_ID=2,
@@ -315,11 +305,9 @@ class TestCleanPipelineTags:
 class TestFinaliseDocumentWithError:
     """finalise_document_with_error must always de-queue the document.
 
-    The error tag is how a permanently-failed document leaves the queue. If
-    applying the error tag itself fails (a stale/deleted ERROR_TAG_ID is a
-    permanent 4xx), the document would otherwise keep its queue tag and be
-    reprocessed forever — re-spending LLM tokens. The fallback strips the
-    pipeline tags without the error tag so the loop still stops.
+    If applying the error tag fails (a deleted ERROR_TAG_ID is a permanent 4xx),
+    the fallback strips the pipeline tags without it; otherwise the document
+    would be reprocessed forever, re-spending LLM tokens.
     """
 
     def _settings(self, **overrides):

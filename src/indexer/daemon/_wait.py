@@ -1,11 +1,4 @@
-"""The inter-cycle wait and the manual-trigger sentinel — pure, self-contained.
-
-The two helpers the reconciliation loop uses to sleep between cycles and to
-consume the manual-trigger sentinel file.  They are pure over their arguments
-(``seconds``, ``sentinel_path``, ``cycle_recorder``) with no coupling to the
-store writer or settings, so they live in their own leaf module of the
-``indexer.daemon`` package (CODE_GUIDELINES §3.3).
-"""
+"""The indexer's inter-cycle wait and manual-trigger sentinel helpers."""
 
 from __future__ import annotations
 
@@ -23,13 +16,11 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# Duration of each sleep slice in _interruptible_wait.  Short enough to react
-# to shutdown and manual triggers promptly; long enough to avoid busy-looping.
+# Sleep slice: short enough to react to shutdown and triggers promptly.
 _WAKE_CHECK_INTERVAL: float = 5.0
 
-# How often to beat the idle heartbeat during the inter-cycle wait.  Must be
-# well below the stale-after threshold (90 s by default) so the dashboard
-# never reads the indexer as "stopped" while it is simply waiting.
+# Must be well below the heartbeat stale-after threshold (90 s by default) so
+# the dashboard never reads a waiting indexer as stopped.
 _IDLE_BEAT_INTERVAL: float = 30.0
 
 
@@ -40,35 +31,14 @@ def _interruptible_wait(
 ) -> bool:
     """Sleep for *seconds*, waking early on shutdown or a sentinel file.
 
-    Sleeps in slices of ``_WAKE_CHECK_INTERVAL`` seconds.  On each slice:
-
-    - If ``is_shutdown_requested()`` → return ``False`` (no manual trigger).
-    - If *sentinel_path* exists → delete it and return ``True`` (manual trigger
-      detected; the next cycle should include a deletion sweep).
-
-    When *cycle_recorder* is provided the function beats an idle heartbeat
-    every ``_IDLE_BEAT_INTERVAL`` seconds so the Index dashboard does not
-    report the indexer as ``stopped`` during long inter-cycle waits.  The
-    default reconcile interval (300 s) exceeds the stale-after threshold (90 s)
-    by more than three times, so without this beat the dashboard routinely
-    shows the indexer as stopped while it is healthy.
-
-    Args:
-        seconds: How long to wait in total.
-        sentinel_path: Path to the manual-trigger sentinel file.
-        cycle_recorder: Optional activity recorder — ``beat_idle`` is called
-            periodically when provided.  ``None`` in tests that do not need
-            heartbeat coverage.
-
-    Returns:
-        ``True`` if a manual-trigger sentinel was detected and consumed;
-        ``False`` if the full duration elapsed or shutdown was requested.
+    Returns ``True`` if the sentinel was found and consumed, ``False`` if the
+    wait elapsed or shutdown was requested. With a *cycle_recorder* it beats
+    idle every ``_IDLE_BEAT_INTERVAL``: the default 300 s reconcile interval is
+    far past the 90 s stale-after threshold.
     """
     deadline = time.monotonic() + seconds
     last_beat_at = time.monotonic()
 
-    # Check sentinel immediately at entry — a sentinel written just before the
-    # wait begins is detected without sleeping first.
     if _consume_sentinel(sentinel_path):
         log.debug("indexer.sentinel_consumed_at_wait_entry")
         return True
@@ -77,7 +47,6 @@ def _interruptible_wait(
         if is_shutdown_requested():
             return False
 
-        # Beat idle if enough time has elapsed since the last beat.
         if cycle_recorder is not None:
             now = time.monotonic()
             if now - last_beat_at >= _IDLE_BEAT_INTERVAL:
@@ -98,17 +67,7 @@ def _interruptible_wait(
 
 
 def _consume_sentinel(sentinel_path: Path) -> bool:
-    """Delete *sentinel_path* and return True if it exists; else False.
-
-    Used at cycle entry to consume a manual-trigger sentinel that may have been
-    written while the previous cycle was running (SPEC §5.8).
-
-    Args:
-        sentinel_path: The sentinel file path.
-
-    Returns:
-        True if the sentinel was present and deleted; False otherwise.
-    """
+    """Delete *sentinel_path* and return True if it existed."""
     if sentinel_path.exists():
         sentinel_path.unlink(missing_ok=True)
         return True

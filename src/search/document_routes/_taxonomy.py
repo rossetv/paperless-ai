@@ -7,12 +7,8 @@ proxying to the per-request :class:`~common.paperless.PaperlessClient`:
 - ``GET  /api/document-types``  · ``POST /api/document-types``
 - ``GET  /api/tags``            · ``POST /api/tags``
 
-Listing is Read-only-or-above; creating is Member-or-above. A fresh Paperless
-client is built per request (it is not thread-safe — §8.3) and closed in a
-``finally``.
-
-Allowed deps: fastapi, structlog, common (paperless, config), search (deps,
-    wire).
+Listing needs Read-only or above; creating needs Member or above. Each request
+builds its own Paperless client, because it is not thread-safe.
 """
 
 from __future__ import annotations
@@ -44,24 +40,14 @@ def register_taxonomy_routes(
     *,
     paperless_factory: Callable[[Settings], PaperlessClient],
 ) -> None:
-    """Register the six taxonomy list/create routes on *router*.
-
-    Args:
-        router: The shared document router to add the routes to.
-        settings: Application settings, forwarded to the Paperless client
-            factory.
-        paperless_factory: Builds the per-request :class:`PaperlessClient`.
-    """
+    """Register the six taxonomy list/create routes on *router*."""
 
     @router.get(
         "/api/correspondents",
         dependencies=[Depends(require_api_scope)],
     )
     async def list_correspondents() -> list[TaxonomyItemResponse]:
-        """Return all Paperless correspondents with their document counts.
-
-        Auth: Read-only or above.
-        """
+        """Return all Paperless correspondents with their document counts."""
         paperless = paperless_factory(settings)
         try:
             items = await run_blocking(paperless.list_correspondents)
@@ -75,10 +61,7 @@ def register_taxonomy_routes(
         dependencies=[Depends(require_api_scope_member)],
     )
     async def create_correspondent(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
-        """Create a new Paperless correspondent and return it.
-
-        Auth: Member or above.
-        """
+        """Create a new Paperless correspondent and return it."""
         paperless = paperless_factory(settings)
         try:
             created = await run_blocking(
@@ -93,10 +76,7 @@ def register_taxonomy_routes(
         dependencies=[Depends(require_api_scope)],
     )
     async def list_document_types() -> list[TaxonomyItemResponse]:
-        """Return all Paperless document types with their document counts.
-
-        Auth: Read-only or above.
-        """
+        """Return all Paperless document types with their document counts."""
         paperless = paperless_factory(settings)
         try:
             items = await run_blocking(paperless.list_document_types)
@@ -110,10 +90,7 @@ def register_taxonomy_routes(
         dependencies=[Depends(require_api_scope_member)],
     )
     async def create_document_type(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
-        """Create a new Paperless document type and return it.
-
-        Auth: Member or above.
-        """
+        """Create a new Paperless document type and return it."""
         paperless = paperless_factory(settings)
         try:
             created = await run_blocking(
@@ -128,10 +105,7 @@ def register_taxonomy_routes(
         dependencies=[Depends(require_api_scope)],
     )
     async def list_tags() -> list[TaxonomyItemResponse]:
-        """Return all Paperless tags with their document counts.
-
-        Auth: Read-only or above.
-        """
+        """Return all Paperless tags with their document counts."""
         paperless = paperless_factory(settings)
         try:
             items = await run_blocking(paperless.list_tags)
@@ -145,10 +119,7 @@ def register_taxonomy_routes(
         dependencies=[Depends(require_api_scope_member)],
     )
     async def create_tag(body: TaxonomyCreateRequest) -> TaxonomyItemResponse:
-        """Create a new Paperless tag and return it.
-
-        Auth: Member or above.
-        """
+        """Create a new Paperless tag and return it."""
         paperless = paperless_factory(settings)
         try:
             created = await run_blocking(lambda: paperless.create_tag(body.name))

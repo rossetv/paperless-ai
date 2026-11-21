@@ -1,9 +1,4 @@
-"""Tests for the Settings wire models in search.wire.
-
-Covers: the SettingItemResponse shape including requires_reindex; SettingsResponse
-wraps the item list (and is the PUT response too); UpdateSettingsRequest accepts
-a changes mapping and rejects a non-string value; the test-connection models.
-"""
+"""Tests for the Settings wire models in search.wire."""
 
 from __future__ import annotations
 

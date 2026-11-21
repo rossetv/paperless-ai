@@ -48,7 +48,6 @@ describe('SettingsLayout', () => {
   it('renders the Pipeline nav group with the five pipeline section links', () => {
     renderLayout();
     expect(screen.getByText('Pipeline')).toBeInTheDocument();
-    // No "AI providers" item — provider choice lives on each step's card now.
     const pipelineItems = ['Connections', 'OCR', 'Classification', 'Indexing', 'Search'];
     for (const name of pipelineItems) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();

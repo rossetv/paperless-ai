@@ -5,31 +5,15 @@ import { SourceCard } from '../SourceCard/SourceCard';
 import styles from './SourceList.module.css';
 
 export interface SourceListProps {
-  /** Ordered list of source documents from the search response. */
   sources: SourceDocument[];
-  /**
-   * 1-based index of the source to highlight (matches a CitationMark index).
-   * When undefined, no source is highlighted.
-   */
+  /** 1-based index of the source to highlight, matching a CitationMark. */
   highlightedIndex?: number;
-  /**
-   * Called with a document id when a source card's "View" action
-   * is activated. Threaded straight through to every `SourceCard`.
-   */
   onPreview: (documentId: number) => void;
 }
 
 /**
- * Ordered list of SourceCards.
- *
- * Renders each source with its 1-based citation index so users can
- * cross-reference the [n] markers in the AnswerCard.
- *
- * Shows an EmptyState when there are no sources to display.
- *
- * Composed from: EmptyState, SourceCard.
- * Own CSS module resets browser list defaults (so global.css list styles do not
- * bleed in) and owns the inter-card spacing via a flex-column gap.
+ * Ordered SourceCards, each numbered with its 1-based citation index so it
+ * lines up with the [n] markers in the AnswerCard.
  */
 export function SourceList({
   sources,

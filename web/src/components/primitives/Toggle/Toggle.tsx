@@ -9,22 +9,11 @@ export interface ToggleProps {
   onChange: (checked: boolean) => void;
   /** Accessible label — there is no visible text inside the switch itself. */
   label: string;
-  /** Whether the switch is non-interactive. */
   disabled?: boolean;
-  /** Additional class names to merge onto the switch. */
   className?: string;
 }
 
-/**
- * An iOS-style on/off switch.
- *
- * A controlled primitive: the parent owns `checked` and updates it from
- * `onChange`. Rendered as a `<button role="switch">` so it is reachable by
- * keyboard and announced correctly by screen readers — Space/Enter activate
- * it natively because it is a real button.
- *
- * Tier: components/primitives. Allowed deps: lib/, styles/.
- */
+/** Controlled on/off switch rendered as a `<button role="switch">`. */
 export function Toggle({
   checked,
   onChange,

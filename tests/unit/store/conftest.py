@@ -1,14 +1,4 @@
-"""Shared fixtures for the store unit tests.
-
-Provides:
-
-- ``db_path`` — a fresh ``tmp_path`` SQLite path every store test uses.
-- ``populated_db`` — a store seeded with two documents, their chunks, and a
-  taxonomy, shared by the reader test files (split for the 500-line ceiling).
-- :func:`unit_vec` — an axis-aligned unit vector, the deterministic embedding
-  the ranking tests need (distinct from the all-equal vector the generic
-  factories produce).
-"""
+"""Shared fixtures for the store unit tests."""
 
 from __future__ import annotations
 
@@ -29,11 +19,8 @@ def db_path(tmp_path: Any) -> str:
 def unit_vec(dimensions: int, axis: int) -> tuple[float, ...]:
     """Return a unit vector with ``1.0`` on *axis* and ``0.0`` elsewhere.
 
-    The ranking tests need embeddings whose pairwise cosine distances are known
-    exactly: two identical axis vectors have distance ``0.0``, orthogonal ones
-    distance ``1.0``.  This is distinct from
-    :func:`tests.helpers.factories.make_embedding`, whose all-equal vector
-    cannot distinguish chunks for a ranking assertion.
+    Ranking tests need exact cosine distances (``0.0`` identical, ``1.0``
+    orthogonal), which the all-equal ``make_embedding`` vector cannot give.
     """
     vec = [0.0] * dimensions
     vec[axis] = 1.0
@@ -55,9 +42,6 @@ def populated_db(db_path: str) -> str:
 
     Tag 101 belongs only to document 1, so a ``tag_ids=(101,)`` filter isolates
     it; the axis-aligned chunk embeddings make every ranking outcome exact.
-
-    Returns:
-        The database path, ready to open with a StoreReader.
     """
     writer = open_writer(db_path)
 

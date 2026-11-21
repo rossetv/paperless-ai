@@ -59,7 +59,6 @@ class TestResetShutdown:
         assert is_shutdown_requested() is False
 
     def test_reset_when_already_clear(self):
-        """Resetting an already-clear flag is a no-op."""
         reset_shutdown()
         assert is_shutdown_requested() is False
 
@@ -84,7 +83,6 @@ class TestSignalHandlerBehavior:
     def test_sigterm_handler_triggers_shutdown(self):
         register_signal_handlers()
         handler = signal.getsignal(signal.SIGTERM)
-        # Simulate calling the handler directly
         handler(signal.SIGTERM, None)
         assert is_shutdown_requested() is True
 

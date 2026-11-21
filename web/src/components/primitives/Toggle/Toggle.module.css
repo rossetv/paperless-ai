@@ -1,13 +1,3 @@
-/*
- * Toggle primitive — CSS Module.
- *
- * An iOS-style switch: a pill track with a sliding circular knob. The track
- * is green when on, neutral grey when off; the knob slides between the two
- * ends. Rendered as a <button role="switch"> for full keyboard support.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .toggle {
   position: relative;
   width: var(--size-toggle-width);
@@ -21,9 +11,8 @@
   transition: background-color var(--duration-standard) var(--easing-out);
 }
 
-/* Transparent expanded hit-area (DD-4 compact-control exception).
-   The toggle is intentionally below 44px visually; this ::before pseudo-
-   element expands the tap zone to ≥44px without affecting visual size. */
+/* Transparent hit area: the toggle is deliberately under 44 px visually, so this
+   expands the tap zone to at least 44 px. */
 .toggle::before {
   content: '';
   position: absolute;
@@ -44,7 +33,6 @@
   opacity: var(--opacity-disabled);
 }
 
-/* ── The sliding knob. ── */
 .knob {
   position: absolute;
   top: var(--spacing-1);
@@ -64,10 +52,7 @@
   ));
 }
 
-/* Reduced motion — the knob slide is motion; drop its transition so it
-   snaps to position. The track colour swap stays (motion-safe). The
-   --easing-out track transition above is colour-only, so it is left intact;
-   only the knob transform is removed here. */
+/* Reduced motion: the knob snaps instead of sliding; the track colour swap stays. */
 @media (prefers-reduced-motion: reduce) {
   .knob {
     transition: none;

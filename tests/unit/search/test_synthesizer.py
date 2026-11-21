@@ -1,21 +1,9 @@
-"""Tests for search.synthesizer — answer synthesis behaviour.
+"""Tests for search.synthesizer: answer synthesis behaviour.
 
-Verifies the Synthesizer contract (spec §6.3, §6.5):
-- An exploratory call with sufficient context returns Answered with citations.
-- An exploratory call with thin context returns NeedsMore.
-- A final-mode call always returns Answered, even when the mock says nothing
-  was found.
-- Malformed responses degrade gracefully (never raise).
-- The assembled prompt places chunk text BELOW the data delimiter — the
-  injection-safe structure required by CODE_GUIDELINES.md §10.2.
-
-Model selection, the AI_MODELS fallback chain, and the "every API error
-degrades, synthesise() never raises" contract are in
-:mod:`test_synthesizer_model_fallback` (split for the 500-line ceiling, §3.1).
-
-LLM mocking: Synthesizer subclasses OpenAIChatMixin; ``build_synthesizer`` (see
-conftest.py) patches the instance's ``_create_completion`` with a fake —
-mirroring ``tests/unit/classifier`` — never via constructor injection.
+Model selection and the fallback chain are in
+:mod:`test_synthesizer_model_fallback`. ``build_synthesizer`` patches the
+instance's ``_create_completion``; the synthesiser has no constructor injection
+for its LLM transport.
 """
 
 from __future__ import annotations
@@ -32,11 +20,6 @@ def _chunk(document_id: int, text: str) -> RetrievedChunk:
     return make_retrieved_chunk(
         chunk_id=document_id * 10, document_id=document_id, text=text
     )
-
-
-# ---------------------------------------------------------------------------
-# Exploratory mode: sufficient context → Answered with citations
-# ---------------------------------------------------------------------------
 
 
 class TestExploratorySufficientContext:
@@ -106,11 +89,6 @@ class TestExploratorySufficientContext:
         assert 42 in outcome.citations
 
 
-# ---------------------------------------------------------------------------
-# Exploratory mode: thin context → NeedsMore
-# ---------------------------------------------------------------------------
-
-
 class TestExploratoryThinContext:
     """Exploratory call where the model signals insufficient context."""
 
@@ -143,11 +121,6 @@ class TestExploratoryThinContext:
 
         assert isinstance(outcome, NeedsMore)
         assert outcome.adjustment == expected_adjustment
-
-
-# ---------------------------------------------------------------------------
-# Final mode: always returns Answered
-# ---------------------------------------------------------------------------
 
 
 class TestFinalMode:
@@ -200,11 +173,6 @@ class TestFinalMode:
         assert isinstance(outcome, Answered)
 
 
-# ---------------------------------------------------------------------------
-# Malformed responses in exploratory mode degrade gracefully
-# ---------------------------------------------------------------------------
-
-
 class TestMalformedResponseExploratory:
     """Bad LLM responses in exploratory mode degrade safely; never raise."""
 
@@ -225,11 +193,6 @@ class TestMalformedResponseExploratory:
         outcome = synthesiser.synthesise("Any question?", chunks, mode="exploratory")
 
         assert isinstance(outcome, (Answered, NeedsMore))
-
-
-# ---------------------------------------------------------------------------
-# Prompt structure: injection-safe delimiter (CODE_GUIDELINES.md §10.2)
-# ---------------------------------------------------------------------------
 
 
 class TestSynthesiserUsageSink:
@@ -275,10 +238,8 @@ class TestSynthesiserUsageSink:
 
 class TestPromptInjectionSafety:
     """Chunk text is fenced inside a nonce-delimited data block, after the
-    question — the control-plane-first structure of CODE_GUIDELINES.md §10.2
-    (SRCH-01).  The pure-builder layout is unit-tested in test_prompts.py; here
-    we assert the synthesiser actually wires the chunk text and question into the
-    message it sends the LLM.
+    question. The pure-builder layout is tested in test_prompts.py; here we assert
+    the synthesiser wires the chunk text and question into the message it sends.
     """
 
     def _user_message(self, synthesiser: Synthesizer) -> str:
@@ -307,7 +268,7 @@ class TestPromptInjectionSafety:
         assert chunk_text_pos != -1, "Chunk text not found in user message"
         assert query_pos < chunk_text_pos, (
             "The question must lead the untrusted chunk text — control plane "
-            "first.  This is the prompt-injection-safe structure of §10.2."
+            "first, so injected text cannot pose as instructions."
         )
 
     def test_chunks_are_fenced_inside_a_data_block(self) -> None:
@@ -362,7 +323,7 @@ class TestPromptInjectionSafety:
         assert "[750] April Payslip (2025-04-25)" in user_content
 
     def test_bare_label_when_no_metadata_supplied(self) -> None:
-        """Without documents_by_id the header is the bare [id] (unchanged)."""
+        """Without documents_by_id the header is the bare [id]."""
         chunks = [_chunk(750, "Reg Salary 1923.08")]
         synthesiser = build_synthesizer(
             make_search_settings(),

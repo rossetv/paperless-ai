@@ -3,10 +3,7 @@ import { cn } from '../../../lib/cn';
 import styles from './Brand.module.css';
 
 export interface BrandProps {
-  /**
-   * Icon size in pixels. Controls both `width` and `height` of the SVG.
-   * Defaults to 22 (the handoff artboard size).
-   */
+  /** Width and height in pixels. Defaults to 22. */
   size?: number;
   /**
    * Fill colour for the document sheets.
@@ -19,27 +16,16 @@ export interface BrandProps {
    * the SVG will be `aria-hidden`.
    */
   'aria-label'?: string;
-  /** Test hook. */
   'data-testid'?: string;
-  /** Additional class names to merge onto the SVG element. */
   className?: string;
 }
 
 /**
- * Paperless AI brand mark.
+ * Paperless AI brand mark: two stacked document sheets with an accent spark.
  *
- * Two stacked document sheets with a small blue spark circle on the front
- * sheet's top-right corner — the geometric logo from the handoff artboard.
- *
- * The spark circle is always #0071e3 (--colour-accent); the sheets use the
- * `colour` prop (defaults to `currentColor`) so the mark works on both light
- * and dark backgrounds without a `colour` prop.
- *
- * Placement: render `Brand` inside a flex row alongside the wordmark span.
- * The `Brand` component renders the SVG only.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3).
- * Allowed deps: lib/ only.
+ * The sheets use `colour` (default `currentColor`) so the mark works on light
+ * and dark backgrounds; the spark is always the accent colour. Renders the SVG
+ * only; place the wordmark beside it.
  */
 export function Brand({
   size = 22,

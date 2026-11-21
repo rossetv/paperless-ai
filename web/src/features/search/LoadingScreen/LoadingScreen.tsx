@@ -13,46 +13,23 @@ import type { FilterRequest, PhaseRecord, SearchPhase } from '../../../api/types
 import styles from './LoadingScreen.module.css';
 
 export interface LoadingScreenProps {
-  /** The in-flight query — recapped in the inline search field. */
   query: string;
-  /** The active filters — passed to the filter rail. */
   filters: FilterRequest;
-  /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
-  /**
-   * The phases the stream has completed so far, in order. Each becomes a
-   * `done` rail row with its rewritten query / counts / verdicts and a cost
-   * chip. Empty until the first `phase_done` lands.
-   */
+  /** Completed phases in order; empty until the first `phase_done`. */
   phaseRecords: PhaseRecord[];
-  /** The phase currently running — shown as the "in progress" rail row. */
+  /** The running phase, shown as the "in progress" row. */
   activePhase: SearchPhase | null;
   /**
-   * Called with a document id when a judged document's "View" control is
-   * activated. The page supplies the same `onPreview` handler the source cards
-   * use, so it opens the in-app document viewer. The lean live rail no longer
-   * shows verdict rows, so this is currently unused there, but is threaded for
-   * parity with the folded trace.
+   * Opens a judged document in the viewer. The live rail shows no verdict
+   * rows, so it is only passed through for parity with the folded trace.
    */
   onPreview?: (documentId: number) => void;
 }
 
 /**
- * The search loading screen — a LIVE pipeline rail.
- *
- * The rail+content layout: the filter rail, then a recap of the query, a card
- * carrying the spinner, a real elapsed counter and the `PipelineStages` rail,
- * and two skeleton source placeholders. The rail now renders the REAL phases
- * streamed from `POST /api/search/stream` (planner rewrite, retrieval counts,
- * vector-gate outcome, per-document judge verdicts, synthesis), each with a
- * token/cost chip — not a time-based estimate. The elapsed counter is computed
- * from a real wall-clock start timestamp (`now - startedAt`) on every render,
- * formatted mm:ss, so it tracks true elapsed time rather than ticking ahead.
- *
- * Composed from: SearchScreenLayout, Stack, SearchField, Card, Spinner, Text,
- * Skeleton, PipelineStages, FilterControls; the phase→stage mapping lives in
- * `trace/phaseStages` (shared with `SearchTracePanel`).
- * Own CSS module provides the spacer class used in the spinner row.
+ * The search loading screen: a live rail of the phases streamed from
+ * `POST /api/search/stream`, with an elapsed counter and running cost.
  */
 export function LoadingScreen({
   query,
@@ -62,11 +39,8 @@ export function LoadingScreen({
   activePhase,
   onPreview,
 }: LoadingScreenProps): React.ReactElement {
-  // Real elapsed time since this screen first rendered — the single source of
-  // truth is the wall-clock `startedAt`, captured once in a ref (so it survives
-  // re-renders and never resets). Each render recomputes `now - startedAt`; a
-  // 500 ms interval only forces those re-renders. This drives the counter from
-  // true wall-clock, not per-frame/per-phase increments that ran ~2× fast.
+  // Elapsed time is recomputed from a wall-clock start on every render; the
+  // interval only forces re-renders. Counting ticks instead would drift.
   const startedAtRef = useRef<number>(Date.now());
   const [, forceTick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -77,9 +51,7 @@ export function LoadingScreen({
 
   const stages = phaseToStages(phaseRecords, activePhase);
 
-  // Cumulative spend so far — summed across every completed phase. Shown as a
-  // single live counter in the header so the user sees the running cost without
-  // the per-phase chips that the lean rail omits.
+  // The live rail omits per-phase cost chips, so the header shows the running total.
   const spent = phaseRecords.reduce(
     (acc, r) => ({
       tokens: acc.tokens + (r.tokens?.total ?? 0),
@@ -103,7 +75,7 @@ export function LoadingScreen({
       }
     >
       <Stack direction="vertical" gap={10}>
-        {/* Query recap — a read-only inline search field. */}
+        {/* Read-only query recap */}
         <SearchField
           id="loading-search"
           value={query}
@@ -111,12 +83,11 @@ export function LoadingScreen({
           onSubmit={() => {}}
         />
 
-        {/* Pipeline progress card. */}
+        {/* Pipeline progress */}
         <Card elevated>
           <Stack direction="vertical" gap={10}>
-            {/* Spinner row: icon, heading, spacer, live elapsed + cost counters.
-                The two live counters share one polite status region so screen
-                readers hear the running progress without interruption (FE-30). */}
+            {/* Both live counters share one polite status region so screen
+                readers hear progress without being interrupted. */}
             <Stack direction="horizontal" gap={9} align="center">
               <Spinner size="small" label="Searching" />
               <Text as="span" variant="body-emphasis">
@@ -141,7 +112,7 @@ export function LoadingScreen({
           </Stack>
         </Card>
 
-        {/* Skeleton source placeholders. */}
+        {/* Skeleton sources */}
         {[0, 1].map((i) => (
           <Card key={i}>
             <Stack direction="vertical" gap={4}>

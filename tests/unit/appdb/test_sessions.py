@@ -1,11 +1,4 @@
-"""Tests for appdb.sessions — the Session dataclass and session queries.
-
-Covers create (persists; populates timestamps), get_by_token_hash (hit and
-miss; expired rows are still returned — expiry is the caller's check),
-touch_last_seen, delete, delete_for_user (revokes every session of one user),
-prune_expired (removes only past-expiry rows), and the ON DELETE CASCADE from
-users to sessions.
-"""
+"""Tests for appdb.sessions, the Session dataclass and session queries."""
 
 from __future__ import annotations
 
@@ -34,8 +27,7 @@ def _iso(offset_seconds: int) -> str:
 
 @pytest.fixture()
 def conn(tmp_path):
-    """A migrated app.db connection with one user (id available via the
-    ``user_id`` fixture)."""
+    """A migrated app.db connection."""
     c = connect(str(tmp_path / "app.db"))
     ensure_schema(c)
     yield c
@@ -89,10 +81,8 @@ def test_get_by_token_hash_returns_none_when_absent(conn) -> None:
 
 
 def test_get_by_token_hash_still_returns_an_expired_row(conn, user_id) -> None:
-    """Expiry is the caller's check; the lookup itself does not filter it.
-
-    get_current_user must compare expires_at against the clock — the row is
-    returned so that comparison can happen (and the row can be pruned)."""
+    """Expiry is the caller's check: get_current_user compares expires_at
+    against the clock, so the lookup must still return the row."""
     create(conn, token_hash="expired", user_id=user_id, expires_at=_iso(-10))
     assert get_by_token_hash(conn, "expired") is not None
 
@@ -141,7 +131,6 @@ def test_prune_expired_removes_only_past_sessions(conn, user_id) -> None:
 
 
 def test_deleting_a_user_cascades_to_their_sessions(conn, user_id) -> None:
-    """ON DELETE CASCADE: removing the user removes their sessions."""
     from appdb.users import delete as delete_user
 
     create(conn, token_hash="cascade", user_id=user_id, expires_at=_iso(3600))

@@ -1,11 +1,9 @@
-"""Tests for search.retriever._match_name — taxonomy name resolution (spec §B1).
+"""Tests for search.retriever._match_name, the taxonomy name resolution.
 
-Verifies the resolution passes: exact, punctuation/case-normalised, then
-content-word-set equality (order- and connective-independent). A loose match
-resolves only when an entry has EXACTLY the candidate's meaningful words — never
-broader, never more specific. Guesses that overlap real names but are not equal
-are reported as near-misses (diagnostic only, never applied); genuinely
-word-identical duplicate types are ambiguous.
+Passes run exact, then punctuation/case-normalised, then content-word-set
+equality. A loose match resolves only to an entry with exactly the candidate's
+meaningful words; overlapping but unequal names are near-misses (diagnostic
+only), and word-identical duplicates are ambiguous.
 """
 
 from __future__ import annotations
@@ -33,9 +31,8 @@ def test_normalised_match_on_punctuation_and_case() -> None:
 
 
 def test_word_set_equality_resolves_ignoring_order_and_stopwords() -> None:
-    # The reported bug: "Employment Contract" must resolve to "Contract of
-    # Employment" (same words, reordered, connective "of" ignored) and NOT to
-    # the broader "Contract".
+    # "Employment Contract" must resolve to "Contract of Employment" (same words,
+    # reordered, connective "of" ignored) and NOT to the broader "Contract".
     match = _match_name(
         "Employment Contract", _entries("Contract", "Contract of Employment")
     )

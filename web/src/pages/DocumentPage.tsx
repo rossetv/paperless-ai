@@ -15,8 +15,6 @@ import { ApiError } from '../api/client';
  * Parent context: if the URL carries a search query (`?q=…`) the breadcrumb
  * in `DocumentScreen` links back to `/?<params>` so the user returns to the
  * same result list; otherwise it links to `/library` as the default.
- *
- * Tier: pages (CODE_GUIDELINES §12.3) — composes features + layout only.
  */
 export function DocumentPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>();
@@ -26,9 +24,8 @@ export function DocumentPage(): React.ReactElement {
 
   const docQuery = useDocument(documentId);
   const me = useMe();
-  // Derive the role for ActionsCard / DocumentScreen. Treat an unresolved me
-  // query (still loading) as 'readonly' so the screen renders immediately
-  // without waiting — editing affordances appear once me resolves.
+  // Treat an unresolved `me` as 'readonly' so the screen renders immediately;
+  // editing affordances appear once it resolves.
   const meRole = me.data?.user?.role;
   const role = meRole === 'admin' ? 'admin' : meRole === 'member' ? 'member' : 'readonly';
 

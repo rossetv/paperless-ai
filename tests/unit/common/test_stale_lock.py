@@ -10,12 +10,7 @@ MODULE = "common.stale_lock"
 
 
 class TestRecoverStaleLocks:
-    """Tests for recover_stale_locks().
-
-    Every test passes ``recovery_enabled=True`` explicitly so the sweep runs
-    without consulting ``current_settings()`` — the flag-resolution path has its
-    own dedicated tests below.
-    """
+    """Tests pass ``recovery_enabled=True`` so the sweep skips current_settings()."""
 
     def test_returns_zero_when_processing_tag_id_is_none(self):
         client = MagicMock()
@@ -102,7 +97,6 @@ class TestRecoverStaleLocks:
             {"id": 3, "tags": [50]},
         ]
         client.get_documents_by_tag.return_value = docs
-        # Second document fails
         client.update_document_metadata.side_effect = [
             None,  # doc 1 OK
             ConnectionError("update failed"),  # doc 2 fails
@@ -204,7 +198,6 @@ class TestStaleLockRecoveryFlag:
         client.get_documents_by_tag.assert_called_once_with(50)
 
     def test_default_resolves_the_flag_from_settings_false(self):
-        # STALE_LOCK_RECOVERY False, resolved from settings, skips the sweep.
         client = MagicMock()
         settings = MagicMock(STALE_LOCK_RECOVERY=False)
 

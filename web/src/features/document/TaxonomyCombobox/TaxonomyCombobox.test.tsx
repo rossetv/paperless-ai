@@ -136,7 +136,6 @@ describe('TaxonomyCombobox', () => {
     fireEvent.click(screen.getByRole('button'));
     fireEvent.click(screen.getByText('Clear'));
     expect(onSelect).toHaveBeenCalledWith(null);
-    // Dropdown should be closed after clearing.
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 });

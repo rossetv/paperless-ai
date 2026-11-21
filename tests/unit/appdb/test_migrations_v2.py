@@ -1,11 +1,4 @@
-"""Tests for app.db migration v2 — the recent_searches table.
-
-Covers: a fresh database now reaches schema version 2; the recent_searches
-table and its (user_id, created_at) index exist after the migration; the
-user_id foreign key is declared with ON DELETE CASCADE; the NOT NULL
-constraints on user_id and query are enforced; and migrating an
-already-v1 database forward adds the table without disturbing v1 data.
-"""
+"""Tests for app.db migration v2, the recent_searches table."""
 
 from __future__ import annotations
 
@@ -19,7 +12,6 @@ from appdb.schema import SCHEMA_VERSION
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
-    """Return the names of every non-internal table in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
         "AND name NOT LIKE 'sqlite_%'"
@@ -28,7 +20,6 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 
 
 def _index_names(conn: sqlite3.Connection) -> set[str]:
-    """Return the names of every non-internal index in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'index' "
         "AND name NOT LIKE 'sqlite_%'"
@@ -45,7 +36,6 @@ def conn(tmp_path):
 
 
 def test_schema_version_constant_includes_migration_v2() -> None:
-    """SCHEMA_VERSION advanced to at least 2 — migration v2 is registered."""
     assert SCHEMA_VERSION >= 2
 
 
@@ -67,7 +57,6 @@ def test_fresh_database_has_the_recent_searches_index(conn) -> None:
 
 
 def test_recent_searches_user_id_cascades_on_user_delete(conn) -> None:
-    """Deleting a user removes their recent_searches rows (ON DELETE CASCADE)."""
     run_migrations(conn)
     conn.execute(
         "INSERT INTO users "
@@ -86,7 +75,6 @@ def test_recent_searches_user_id_cascades_on_user_delete(conn) -> None:
 
 
 def test_recent_searches_query_is_not_null(conn) -> None:
-    """The query column rejects a NULL value."""
     run_migrations(conn)
     conn.execute(
         "INSERT INTO users "
@@ -102,7 +90,6 @@ def test_recent_searches_query_is_not_null(conn) -> None:
 
 
 def test_recent_searches_user_id_is_not_null(conn) -> None:
-    """The user_id column rejects a NULL value."""
     run_migrations(conn)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
@@ -112,7 +99,6 @@ def test_recent_searches_user_id_is_not_null(conn) -> None:
 
 
 def test_v1_database_migrates_forward_keeping_users(conn) -> None:
-    """A database stopped at v1 migrates to v2 without losing v1 rows."""
     # Apply only v1 by pinning MIGRATIONS to the v1 entry.
     import appdb.migrations as migrations_module
 
@@ -131,7 +117,6 @@ def test_v1_database_migrates_forward_keeping_users(conn) -> None:
     conn.commit()
     assert "recent_searches" not in _table_names(conn)
 
-    # Now run the full migration list — v2 should apply on top.
     run_migrations(conn)
     assert "recent_searches" in _table_names(conn)
     kept = conn.execute("SELECT username FROM users WHERE id = 7").fetchone()

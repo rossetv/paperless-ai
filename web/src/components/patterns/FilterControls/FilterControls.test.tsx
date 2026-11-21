@@ -3,19 +3,13 @@ import userEvent from '@testing-library/user-event';
 import type { FacetsResponse, FilterRequest } from '../../../api/types';
 import { FilterControls } from './FilterControls';
 
-// ---------------------------------------------------------------------------
-// Mock the useFacets hook so tests do not need a real QueryClient or network
-// ---------------------------------------------------------------------------
+// Mock useFacets so the tests need no QueryClient or network.
 vi.mock('../../../api/hooks', () => ({
   useFacets: vi.fn(),
 }));
 
 import { useFacets } from '../../../api/hooks';
 const mockUseFacets = useFacets as ReturnType<typeof vi.fn>;
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
 
 /** Two tags — well under the 12-chip threshold. */
 const facets: FacetsResponse = {
@@ -35,10 +29,7 @@ const facets: FacetsResponse = {
   latest: '2024-12-31',
 };
 
-/**
- * Build facets with N tags (names: tag-1, tag-2, …, tag-N).
- * Handy for testing the bounded / "Show all" path.
- */
+/** Facets with N tags named tag-1 … tag-N. */
 function makeFacetsWithTags(n: number): FacetsResponse {
   return {
     ...facets,
@@ -54,16 +45,10 @@ const emptyFilters: FilterRequest = {
   tag_ids: [],
 };
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('FilterControls', () => {
   beforeEach(() => {
     mockUseFacets.mockReturnValue({ data: facets, isLoading: false, isError: false });
   });
-
-  // ── Existing smoke tests (preserved) ──────────────────────────────────────
 
   it('renders correspondent options from facets', () => {
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
@@ -133,15 +118,12 @@ describe('FilterControls', () => {
     expect(screen.getByText('Vaillant')).toBeInTheDocument();
   });
 
-  // ── Bounded tag picker — ≤ 12 tags ──────────────────────────────────────
-
   it('shows all tags when total is within the 12-chip limit', () => {
     // facets fixture has 2 tags — both should be visible.
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
     const group = screen.getByRole('group', { name: /tags/i });
     expect(within(group).getByRole('button', { name: 'tax' })).toBeInTheDocument();
     expect(within(group).getByRole('button', { name: 'warranty' })).toBeInTheDocument();
-    // No "Show all" toggle should appear.
     expect(screen.queryByRole('button', { name: /show all/i })).not.toBeInTheDocument();
   });
 
@@ -158,8 +140,6 @@ describe('FilterControls', () => {
     const chips = within(group).getAllByRole('button');
     expect(chips).toHaveLength(12);
   });
-
-  // ── "Show all" toggle ────────────────────────────────────────────────────
 
   it('renders the "Show all" button when more than 12 unselected tags exist', () => {
     mockUseFacets.mockReturnValue({
@@ -210,8 +190,6 @@ describe('FilterControls', () => {
     expect(chips).toHaveLength(12);
   });
 
-  // ── Tag search input ─────────────────────────────────────────────────────
-
   it('renders the tag search input with an accessible label', () => {
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
     expect(screen.getByRole('searchbox', { name: /search tags/i })).toBeInTheDocument();
@@ -233,7 +211,6 @@ describe('FilterControls', () => {
   });
 
   it('keeps selected tags visible even when the search query does not match them', async () => {
-    // Start with 'tax' pre-selected.
     const preSelected: FilterRequest = { tag_ids: [100] };
     render(<FilterControls filters={preSelected} onFiltersChange={vi.fn()} />);
 
@@ -248,8 +225,6 @@ describe('FilterControls', () => {
       expect(within(group).getByRole('button', { name: 'warranty' })).toBeInTheDocument();
     });
   });
-
-  // ── Tag toggle correctness with mixed state ───────────────────────────────
 
   it('deselects a tag when a selected chip is clicked', async () => {
     const handler = vi.fn();
@@ -273,14 +248,10 @@ describe('FilterControls', () => {
     );
   });
 
-  // ── Accessibility ────────────────────────────────────────────────────────
-
   it('tag group has an accessible name via aria-labelledby', () => {
     render(<FilterControls filters={emptyFilters} onFiltersChange={vi.fn()} />);
     expect(screen.getByRole('group', { name: /tags/i })).toBeInTheDocument();
   });
-
-  // ── Mobile collapse (UI-05) ──────────────────────────────────────────────
 
   it('starts the Filters panel collapsed when defaultExpanded is false', () => {
     render(

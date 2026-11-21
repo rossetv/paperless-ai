@@ -119,10 +119,8 @@ describe('MetadataCard', () => {
         onCreateDocumentType={vi.fn()}
       />,
     );
-    // TaxonomyCombobox renders "—" for null selectedId.
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(2);
-    // Date row renders "No date" (consistent with the rest of the codebase).
     expect(screen.getByText('No date')).toBeInTheDocument();
   });
 
@@ -138,7 +136,6 @@ describe('MetadataCard', () => {
         onCreateDocumentType={vi.fn()}
       />,
     );
-    // TaxonomyCombobox shows a trigger button with the current value.
     expect(screen.getByRole('button', { name: /ebay/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /payslip/i })).toBeInTheDocument();
   });
@@ -156,9 +153,7 @@ describe('MetadataCard', () => {
         onCreateDocumentType={vi.fn()}
       />,
     );
-    // Open the correspondent combobox.
     fireEvent.click(screen.getByRole('button', { name: /ebay/i }));
-    // Select "Revenue.ie".
     fireEvent.click(screen.getByText('Revenue.ie'));
     expect(onPatch).toHaveBeenCalledWith({ correspondent_id: 2 });
   });
@@ -213,8 +208,7 @@ describe('MetadataCard', () => {
         onCreateDocumentType={vi.fn()}
       />,
     );
-    // EditableField for date — the view button shows the formatted date; click
-    // it to enter edit mode, where the input carries the bare ISO.
+    // The view button shows the formatted date; the input holds the bare ISO.
     fireEvent.click(screen.getByRole('button', { name: /22 May 2026/i }));
     const input = screen.getByDisplayValue('2026-05-22');
     fireEvent.change(input, { target: { value: '2026-06-01' } });

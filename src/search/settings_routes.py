@@ -1,29 +1,13 @@
-"""The admin-only Settings ``/api`` router for the search server (§5, Wave 4).
-
-Three endpoints, all gated by :data:`search.deps.require_admin` (only an admin
-may view or change configuration — web-redesign §4.3):
+"""Admin-only Settings router: view, change and test the configuration.
 
 - ``GET  /api/settings``                 — every config key and its state.
 - ``PUT  /api/settings``                 — apply configuration changes.
-- ``POST /api/settings/test-connection`` — round-trip the Paperless API.
+- ``POST /api/settings/test-connection`` — probe Paperless, OpenAI or Ollama.
 
-The handlers are thin: read/diff/re-index logic is in
-:mod:`search.settings_service`, the ``config``-table I/O is :mod:`appdb.config`,
-and the ``app.db`` connection is opened per-request by
-:func:`~search.deps.get_app_db`. Saving config bumps ``config_version``, so
-every daemon and the search server hot-load the change — no restart.
-
-Secrets: a secret key's value is masked in ``GET /api/settings`` unless the
-caller passes ``?reveal=true`` — the reveal mechanism. ``app.db`` is on the
-protected ``/data`` volume, so masking is purely an API-surface defence
-against shoulder-surfing the Settings screen, not encryption at rest. A
-successful ``?reveal=true`` is audit-logged with the admin's username and the
-set of secret keys whose values were revealed — the trail makes a leak
-attributable.
-
-Allowed deps: fastapi, structlog, os, sqlite3, appdb (config, connection),
-common (config, paperless), search (deps, index_sentinel, wire,
-settings_service).
+Saving bumps ``config_version``, so every process hot-loads the change.
+Secret values are masked unless the caller passes ``?reveal=true``; the mask
+only guards against shoulder-surfing (``app.db`` is not encrypted), and each
+reveal is audit-logged.
 """
 
 from __future__ import annotations
@@ -64,31 +48,19 @@ _SECRET_MASK = "********"
 
 
 class _ReindexScheduleError(Exception):
-    """Internal signal: scheduling the index rebuild failed mid-save.
+    """Scheduling the index rebuild failed mid-save.
 
-    Raised inside the config-write transaction when a re-index-forcing change
-    (EMBEDDING_MODEL / chunking) cannot drop its rebuild sentinel. It rolls the
-    transaction back — so the new value is never persisted without its wipe
-    scheduled — and is translated to an HTTP 503 once the transaction has
-    unwound. Never escapes this module.
+    Raised inside the config-write transaction so it rolls back: a re-index
+    key must never persist without its rebuild scheduled. Becomes a 503.
     """
 
 
 def build_settings_router(settings: Settings) -> APIRouter:
-    """Build the admin Settings ``/api`` router (web-redesign §5).
+    """Build the admin Settings router.
 
-    The handlers reach the ``app.db`` connection through the per-request
-    :func:`~search.deps.get_app_db` dependency. Only the static *settings* is
-    closed over — its ``INDEX_DB_PATH`` is where a re-index-forcing save drops
-    the rebuild sentinel (the path never changes at runtime).
-
-    Args:
-        settings: Application settings; ``INDEX_DB_PATH`` locates the index
-            data directory the rebuild sentinels are written into.
-
-    Returns:
-        A configured :class:`~fastapi.APIRouter`. Every route is gated by
-        :data:`~search.deps.require_admin`.
+    Only *settings* is closed over: its ``INDEX_DB_PATH`` is where a
+    re-index-forcing save drops the rebuild sentinel, and it never changes at
+    runtime.
     """
     router = APIRouter()
 
@@ -98,12 +70,9 @@ def build_settings_router(settings: Settings) -> APIRouter:
         app_db: sqlite3.Connection = Depends(get_app_db),
         admin: CurrentUser = Depends(require_admin),
     ) -> SettingsResponse:
-        """Return every config key, its effective value, source and flags.
+        """Return every config key with its effective value, source and flags.
 
-        Secret values are masked unless *reveal* is true (the reveal
-        mechanism; the route is already admin-gated). A successful reveal is
-        audit-logged with the actor's username and the revealed key set, so
-        the trail makes a leak attributable.
+        Secret values are masked unless *reveal* is true.
         """
         return _read_settings(app_db, reveal=reveal, admin=admin)
 
@@ -114,11 +83,8 @@ def build_settings_router(settings: Settings) -> APIRouter:
     ) -> SettingsResponse:
         """Validate and apply configuration changes.
 
-        400 when a key is unknown, a value is invalid, or a secret key
-        carries the masked placeholder — the ``config`` table is left
-        untouched in that case. On success the response is the full re-read
-        settings list, so the UI refreshes from one response. When the change
-        touches a re-index key the response's ``reindex_triggered`` is true.
+        400 (table untouched) when a key is unknown, a value is invalid, or a
+        secret carries the masked placeholder. Returns the full re-read list.
         """
         return _put_settings(body, app_db, settings)
 
@@ -130,7 +96,7 @@ def build_settings_router(settings: Settings) -> APIRouter:
         body: TestConnectionRequest,
         app_db: sqlite3.Connection = Depends(get_app_db),
     ) -> TestConnectionResponse:
-        """Round-trip the Paperless API (the design's "Test connection")."""
+        """Probe the service named in the request with the given credentials."""
         return _test_connection(body, app_db)
 
     return router
@@ -145,13 +111,8 @@ def _read_settings(
 ) -> SettingsResponse:
     """Build the settings list from the config table and the environment.
 
-    Shared by GET /api/settings and the PUT response — the same list shape
-    so the Settings screen has one model to consume. When *reveal* is true
-    and *admin* is supplied (the GET path always supplies it), a
-    ``search.settings_revealed`` audit event is emitted with the admin's
-    username and the secret keys that were actually unmasked — the PUT
-    response never reveals (``reveal=False`` is hard-wired) and so never
-    audits.
+    Shared by GET and the PUT response. A reveal with *admin* supplied emits a
+    ``search.settings_revealed`` audit event naming the unmasked keys.
     """
     config_table = config_store.get_all(app_db)
 
@@ -171,16 +132,12 @@ def _read_settings(
                 source=view.source,
                 is_secret=view.is_secret,
                 requires_reindex=view.key in REINDEX_KEYS,
-                # Secrets never expose a default_value — their coded default
-                # is either absent or a placeholder. Only non-secret keys
-                # surface their coded default so the UI can display it.
+                # A secret's coded default is absent or a placeholder.
                 default_value=view.default_value if not view.is_secret else None,
             )
         )
     if reveal and admin is not None and revealed_keys:
-        # rationale: never log the values themselves — only the *keys* whose
-        # secrets the admin chose to reveal. The values are still secrets;
-        # the audit is "who and what", not "what was it".
+        # Log only the keys, never the secret values.
         log.warning(
             "search.settings_revealed",
             username=admin.username,
@@ -194,25 +151,11 @@ def _put_settings(
 ) -> SettingsResponse:
     """Validate and persist a change set; return the re-read settings list.
 
-    The read-validate-write trio runs inside one ``BEGIN IMMEDIATE`` so two
-    concurrent admin saves serialise on SQLite's write lock — the validation
-    sees the same snapshot the write commits against, and no admin can
-    persist a value that violates an invariant against another admin's
-    concurrent change. Saving bumps ``config_version`` (inside
-    :func:`appdb.config.set_many`, in the same transaction), so every daemon
-    and the search server hot-load the change on their next check — no
-    restart. The response is the full re-read list.
+    A change to a re-index key (embedding model or chunking) schedules a full
+    index rebuild, because old and new vectors cannot coexist.
 
-    When the change touches a re-index key (the embedding model or chunking),
-    the save forces a full index rebuild — the indexer wipes every chunk and
-    re-embeds the archive with the new config — because old and new vectors
-    cannot coexist. ``reindex_triggered`` in the response reports whether that
-    rebuild was scheduled.
-
-    The masked sentinel (``********``) is *never* accepted as a secret value:
-    the frontend correctly omits an unchanged secret, but a buggy or
-    compromised client could POST the mask and persist it. Reject it at the
-    boundary as defence-in-depth.
+    The mask (``********``) is never accepted as a secret value: the frontend
+    omits an unchanged secret, but a buggy or hostile client could post it.
     """
     masked_secrets = [
         key
@@ -220,9 +163,6 @@ def _put_settings(
         if key in SECRET_KEYS and val == _SECRET_MASK
     ]
     if masked_secrets:
-        # rationale: the only way a secret arrives equal to the mask is a
-        # client bug or a deliberate attempt to persist the placeholder as
-        # the value. Either way: reject, the table is untouched.
         raise HTTPException(
             status_code=400,
             detail=(
@@ -231,12 +171,10 @@ def _put_settings(
             ),
         )
 
-    # Read, validate, and write inside one BEGIN IMMEDIATE so the validation
-    # runs against the exact snapshot the write commits against (CODE_GUIDELINES
-    # §9 — transactions). Without this, two concurrent admins could each
-    # validate against their own snapshot and commit a combined state that
-    # violates an invariant of either snapshot (e.g. CHUNK_OVERLAP > CHUNK_SIZE
-    # after one save changes the size and another changes the overlap).
+    # Read, validate and write inside one BEGIN IMMEDIATE so validation sees
+    # the snapshot the write commits against. Otherwise two concurrent saves
+    # could combine into an invalid state (e.g. CHUNK_OVERLAP > CHUNK_SIZE
+    # after one changes the size and the other the overlap).
     reindex_triggered = False
     try:
         with transaction(app_db):
@@ -248,21 +186,12 @@ def _put_settings(
                     environ=os.environ,
                 )
             except ValueError as exc:
-                # A bad key or value — a client error. The transaction rolls
-                # back via the context manager's exception path, so the table is
-                # untouched. raise HTTPException after escaping the transaction
-                # block so structlog sees the failure cleanly.
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-            # A change to a re-index key (the embedding model or the chunking)
-            # makes the existing vectors stale, so the indexer must wipe every
-            # chunk and re-embed the archive with the new config — old and new
-            # vectors cannot coexist (a single mismatched-width row makes every
-            # vector search raise StoreError → 500). Schedule the rebuild
-            # *before* committing the config change: if the sentinel write fails
-            # we refuse the whole save, so a new EMBEDDING_MODEL / chunking value
-            # can NEVER persist (and hot-load) without its wipe scheduled. We
-            # only drop the sentinel; the indexer (sole writer) does the wipe.
+            # A re-index key change makes every vector stale (one
+            # mismatched-width row breaks every vector search). Drop the
+            # rebuild sentinel before committing, so the new value can never
+            # persist without its wipe scheduled; the indexer does the wipe.
             if changed and reindex_required(
                 changes=body.changes, config_table=config_table, environ=os.environ
             ):
@@ -274,26 +203,17 @@ def _put_settings(
                         error=str(exc),
                         error_type=type(exc).__name__,
                     )
-                    # Raise inside the transaction so the context manager rolls
-                    # the config change back — nothing is persisted. Translated
-                    # to an HTTP 503 once the transaction has unwound.
+                    # Raising here rolls the config change back.
                     raise _ReindexScheduleError from exc
                 reindex_triggered = True
 
             if changed:
-                # Persist only the keys that genuinely changed.
-                # set_many_in_transaction writes inside the outer BEGIN IMMEDIATE
-                # (SQLite forbids a nested BEGIN, so the in-transaction variant
-                # exists for exactly this case) and bumps config_version in the
-                # same transaction, so the change hot-loads on every other
-                # process's next check.
+                # SQLite forbids a nested BEGIN, hence the in-transaction
+                # variant; it also bumps config_version.
                 config_store.set_many_in_transaction(
                     app_db, {k: body.changes[k] for k in changed}
                 )
     except _ReindexScheduleError as exc:
-        # The rebuild could not be scheduled and the config change has been
-        # rolled back. Refuse the save with a 5xx so the operator knows nothing
-        # persisted — a re-index key must never hot-load without its wipe.
         raise HTTPException(
             status_code=503,
             detail=(
@@ -309,28 +229,15 @@ def _put_settings(
         requires_reindex=reindex_triggered,
         reindex_triggered=reindex_triggered,
     )
-    # Re-read so the response reflects exactly what was persisted.
     return _read_settings(app_db, reveal=False, reindex_triggered=reindex_triggered)
 
 
 def _probe_openai(probe_settings: Settings) -> None:
-    """Verify that the OpenAI API key in *probe_settings* is accepted.
+    """Check the OpenAI key by calling ``models.list()``, the cheapest call.
 
-    Builds a throwaway :class:`openai.OpenAI` client (mirroring the
-    construction in :mod:`common.library_setup`) and calls ``models.list()``
-    — the cheapest authenticated endpoint. Raises an :exc:`openai.APIError`
-    subclass on any authentication or connectivity failure.
-
-    The client is bounded by ``REQUEST_TIMEOUT`` (mirroring
-    :mod:`common.library_setup`). Without it the OpenAI SDK applies its default
-    read timeout of 600s, so a hung endpoint would pin a FastAPI threadpool
-    worker for up to ten minutes — a handful of concurrent admin probes could
-    then starve every synchronous handler. The bound is applied both to the
-    SDK and to the inner ``httpx`` client so neither layer can hang unbounded.
-
-    Args:
-        probe_settings: A fully-built :class:`Settings` instance whose
-            ``OPENAI_API_KEY`` is the key under test.
+    Raises an :exc:`openai.APIError` subclass on failure. Both the SDK and its
+    ``httpx`` client are bounded by ``REQUEST_TIMEOUT``: the SDK's default
+    600s read timeout would let a hung endpoint pin a threadpool worker.
     """
     client = openai.OpenAI(
         api_key=probe_settings.OPENAI_API_KEY,
@@ -346,18 +253,10 @@ def _probe_openai(probe_settings: Settings) -> None:
 
 
 def _probe_ollama(probe_settings: Settings) -> None:
-    """Verify that the Ollama daemon at *probe_settings.OLLAMA_BASE_URL* is reachable.
+    """Check that the Ollama server answers ``GET {base_url}/models``.
 
-    Issues a GET to the OpenAI-compatible ``/models`` endpoint
-    (``{base_url.rstrip('/')}/models``).  A real Ollama server returns 404 for
-    the bare ``/v1/`` base URL, so probing that directly would always fail; the
-    ``/models`` list endpoint is the right liveness check.  Any 2xx response is
-    "up".  Raises :exc:`httpx.HTTPError` or :exc:`OSError` on failure (matching
-    the transport-layer exceptions already handled for the Paperless probe).
-
-    Args:
-        probe_settings: A fully-built :class:`Settings` instance whose
-            ``OLLAMA_BASE_URL`` is the endpoint under test.
+    Ollama returns 404 for the bare ``/v1/`` base URL, so ``/models`` is the
+    liveness check. Raises :exc:`httpx.HTTPError` or :exc:`OSError` on failure.
     """
     base_url = (probe_settings.OLLAMA_BASE_URL or "").rstrip("/")
     models_url = f"{base_url}/models"
@@ -368,22 +267,15 @@ def _probe_ollama(probe_settings: Settings) -> None:
 def _test_connection(
     body: TestConnectionRequest, app_db: sqlite3.Connection
 ) -> TestConnectionResponse:
-    """Probe one of three services with the stored or supplied credentials.
+    """Probe ``body.service`` with the stored config plus any request overrides.
 
-    Builds a throwaway :class:`Settings` from the current configuration with
-    any non-empty request overrides applied, then delegates to the appropriate
-    probe helper based on ``body.service``.  A 200 is always returned — any
-    failure is a clean ``ok=False`` outcome; this endpoint never 500s.
-
-    Service dispatch:
-    - ``"paperless"`` (default) — unchanged path, populates ``document_count``.
-    - ``"openai"`` — calls :func:`_probe_openai`; ``document_count`` is 0.
-    - ``"ollama"`` — calls :func:`_probe_ollama`; ``document_count`` is 0.
+    Always returns 200; a failure is ``ok=False``. Only the Paperless probe
+    fills ``document_count``.
     """
     config_table = config_store.get_all(app_db)
     merged: dict[str, str] = dict(os.environ)
     merged.update(config_table)
-    # An empty override means "keep the stored value" — the masked-token path.
+    # An empty override means "keep the stored value".
     if body.paperless_url:
         merged["PAPERLESS_URL"] = body.paperless_url
     if body.paperless_token:
@@ -392,19 +284,14 @@ def _test_connection(
         merged["OPENAI_API_KEY"] = body.openai_api_key
     if body.ollama_base_url:
         merged["OLLAMA_BASE_URL"] = body.ollama_base_url
-    # build_settings requires every SECRET_KEY to be non-empty. Inject
-    # sentinels for any missing required keys so validation passes regardless
-    # of which service is being probed.
+    # build_settings requires every SECRET_KEY; fill the missing ones so
+    # validation passes whichever service is probed.
     _SENTINEL = "__test_connection_placeholder__"
     for req in SECRET_KEYS:
         merged.setdefault(req, _SENTINEL)
 
-    # Short-circuit BEFORE building Settings: if the credential we would actually
-    # use is absent or only a sentinel, there is no point attempting the probe.
-    # We check the merged dict here (not the built Settings) because build_settings
-    # may normalise or discard values based on LLM_PROVIDER — e.g. OLLAMA_BASE_URL
-    # is set to None by Settings when LLM_PROVIDER=openai regardless of the
-    # value in merged.
+    # Check the merged dict, not the built Settings: build_settings discards
+    # values by LLM_PROVIDER (OLLAMA_BASE_URL is None when it is openai).
     if body.service == "openai":
         effective_key = merged.get("OPENAI_API_KEY", "")
         if not effective_key or effective_key == _SENTINEL:
@@ -422,7 +309,6 @@ def _test_connection(
     try:
         probe_settings = build_settings(merged)
     except ValueError as exc:
-        # The override or stored config is itself invalid (e.g. no token).
         return TestConnectionResponse(ok=False, document_count=0, detail=str(exc))
 
     if body.service == "openai":
@@ -443,7 +329,6 @@ def _test_connection(
             ok=True, document_count=0, detail="Connected to Ollama successfully."
         )
 
-    # Default: paperless
     client = PaperlessClient(probe_settings)
     try:
         count = client.count_documents()
@@ -454,8 +339,6 @@ def _test_connection(
             detail=f"Paperless returned {exc.response.status_code}.",
         )
     except (httpx.HTTPError, OSError) as exc:
-        # rationale: a connection/timeout failure is a normal "test failed"
-        # outcome the admin must see, not a server fault — report it cleanly.
         return TestConnectionResponse(
             ok=False,
             document_count=0,

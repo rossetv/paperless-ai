@@ -1,34 +1,19 @@
-/*
- * PdfViewerCard — CSS Module.
- *
- * Layout: a single PdfFrame viewport filling the card. The document-level
- * actions live in the page's DocumentActions row, not on this card.
- *
- * All values reference design tokens exclusively (Stylelint enforces this —
- * no hex literals, raw px/rem, or named colours are permitted here).
- */
-
-/* Override Card's default padding — the iframe must bleed to the card edge. */
+/* Override Card's default padding so the iframe nearly bleeds to the edge. */
 .card {
   padding: var(--spacing-6);
   display: flex;
   flex-direction: column;
 }
 
-/* ── PDF frame area ──────────────────────────────────────────────────────── */
-
 /*
- * Viewport layers an app-owned error state over the live iframe. It is the
- * positioning context (position: relative) and owns the height. The viewport
- * fills with --colour-surface-dark, so the viewer area is dark from first paint
- * and an unloaded iframe never flashes white (UI-03).
+ * Positioning context for the error overlay. The dark fill means an unloaded
+ * iframe never flashes white.
  */
 .viewport {
   position: relative;
 
-  /* A4 portrait aspect ratio so a whole page is visible at once, rather than the
-     old short band. Height tracks the column width; the min-height keeps it
-     usable when the column is narrow (single-column / mobile layout). */
+  /* A4 portrait so a whole page is visible at once; the min-height keeps it
+     usable in a narrow single-column layout. */
   aspect-ratio: 210 / 297;
   min-height: 70dvh;
   border-radius: var(--radius-standard);
@@ -37,12 +22,9 @@
 }
 
 /*
- * Dark error overlay shown ONLY when the iframe reports a load failure. It is
- * the later sibling and fully opaque, so it stacks over the frame and covers
- * the browser's grey "refused to connect" / broken-document box (UI-03). Forced
- * dark in both themes (--colour-surface-dark), so the standard EmptyState text
- * tokens (dark ink) would be illegible — we redefine those token roles to
- * on-dark values for the subtree, which the EmptyState reads via the cascade.
+ * Opaque error overlay over the frame on load failure; as the later sibling it
+ * stacks above without a z-index. It is dark in both themes, so the text tokens
+ * are redefined to on-dark values for the EmptyState inside.
  */
 .placeholder {
   position: absolute;
@@ -57,12 +39,7 @@
   --colour-text-tertiary: var(--colour-text-on-dark);
 }
 
-/*
- * PdfFrame's wrapper fills the viewport via inset: 0, giving its internal
- * height: 100% iframe a definite box to resolve against. The error overlay,
- * when present, is the later sibling and stacks above it without an explicit
- * z-index.
- */
+/* Gives PdfFrame's height: 100% iframe a definite box to resolve against. */
 .frame {
   position: absolute;
   inset: 0;

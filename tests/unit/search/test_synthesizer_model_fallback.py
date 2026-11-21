@@ -1,18 +1,7 @@
-"""Tests for search.synthesizer — model selection and the AI_MODELS fallback.
+"""Tests for search.synthesizer: model selection and the model fallback chain.
 
-Verifies:
-- The configured SEARCH_ANSWER_MODEL is the model requested.
-- Exactly one LLM call is made per synthesise() invocation (per model attempt).
-- When the primary model raises an OpenAI error, the next in AI_MODELS is tried.
-- Every OpenAI API error — retryable AND non-retryable (AuthenticationError,
-  etc.) — degrades gracefully per mode; synthesise() never raises (C1/C2).
-
-Outcome behaviour and prompt-injection safety are in :mod:`test_synthesizer`
-(split for the 500-line ceiling, §3.1).
-
-LLM mocking: these tests build a bare Synthesizer and assign
-``_create_completion`` a ``side_effect`` mock directly, since they script
-multiple model attempts in one call.
+These build a bare Synthesizer and assign ``_create_completion`` a
+``side_effect`` mock, since they script several model attempts per call.
 """
 
 from __future__ import annotations
@@ -36,11 +25,6 @@ def _chunk(document_id: int, text: str) -> RetrievedChunk:
     return make_retrieved_chunk(
         chunk_id=document_id * 10, document_id=document_id, text=text
     )
-
-
-# ---------------------------------------------------------------------------
-# Model selection: SEARCH_ANSWER_MODEL is used
-# ---------------------------------------------------------------------------
 
 
 class TestModelSelection:
@@ -83,11 +67,6 @@ class TestModelSelection:
         assert synthesiser._create_completion.call_count == 1  # type: ignore[attr-defined]
 
 
-# ---------------------------------------------------------------------------
-# AI_MODELS fallback chain
-# ---------------------------------------------------------------------------
-
-
 class TestModelFallback:
     """When the primary model raises an OpenAI error, the next in AI_MODELS is tried."""
 
@@ -113,20 +92,12 @@ class TestModelFallback:
         assert isinstance(outcome, Answered)
 
 
-# ---------------------------------------------------------------------------
-# C1/C2 — every OpenAI API error degrades gracefully; synthesise() never raises
-# ---------------------------------------------------------------------------
-
-
 class TestApiErrorNeverEscapes:
     """synthesise() catches every openai.APIError subclass — retryable or not.
 
-    Finding C1/C2: the old hand-rolled loop caught only the retryable errors
-    plus BadRequestError, so AuthenticationError / PermissionDeniedError /
-    NotFoundError propagated out of synthesise() and turned every search into
-    an unhandled 500.  The migration to OpenAIChatMixin catches the whole
-    openai.APIError family as the terminal skip-model branch, then degrades
-    per mode.
+    An AuthenticationError, PermissionDeniedError or NotFoundError escaping
+    synthesise() would turn every search into an unhandled 500; each degrades per
+    mode instead.
     """
 
     def test_authentication_error_in_final_mode_returns_answered(self) -> None:

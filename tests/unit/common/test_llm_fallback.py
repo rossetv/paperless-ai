@@ -1,9 +1,4 @@
-"""Tests for common.llm — model-fallback chain and retry/limiter integration.
-
-Split from test_llm.py to stay within the §3.1 500-line ceiling.
-Covers: OpenAIChatMixin._complete_with_model_fallback and the
-retry-decorator + LLMConcurrencyLimiter interaction tests.
-"""
+"""Tests for common.llm model fallback and retry/limiter integration."""
 
 from __future__ import annotations
 
@@ -43,13 +38,7 @@ def _api_error() -> openai.APIError:
 
 
 class TestCompleteWithModelFallback:
-    """Tests for OpenAIChatMixin._complete_with_model_fallback.
-
-    The shared model-fallback loop owns the chain that the planner and the
-    synthesiser both use (CODE_GUIDELINES.md §8.1).  These tests pin it
-    directly; the planner and synthesiser tests cover the same behaviour
-    through their public ``plan`` / ``synthesise`` entry points.
-    """
+    """The model-fallback loop shared by the planner and the synthesiser."""
 
     @pytest.fixture()
     def client(self):
@@ -59,7 +48,6 @@ class TestCompleteWithModelFallback:
         return _TestClient(settings)
 
     def test_returns_primary_model_content_on_success(self, client):
-        """The first model's content is returned when the primary call succeeds."""
         client._create_completion = MagicMock(
             return_value=_completion("primary answer")
         )
@@ -76,7 +64,6 @@ class TestCompleteWithModelFallback:
         assert client._create_completion.call_args.kwargs["model"] == "m1"
 
     def test_falls_through_to_the_next_model_on_api_error(self, client):
-        """An openai.APIError on a model skips it and tries the next."""
         client._create_completion = MagicMock(
             side_effect=[_api_error(), _completion("second answer")]
         )
@@ -92,7 +79,6 @@ class TestCompleteWithModelFallback:
         assert client._create_completion.call_count == 2
 
     def test_returns_none_when_every_model_fails(self, client):
-        """When every model in the chain raises, the helper returns None."""
         client._create_completion = MagicMock(side_effect=_api_error())
 
         result = client._complete_with_model_fallback(
@@ -107,7 +93,6 @@ class TestCompleteWithModelFallback:
         assert client._create_completion.call_count == 3
 
     def test_primary_model_is_not_tried_twice(self, client):
-        """A primary that also appears in the fallback list is deduplicated."""
         client._create_completion = MagicMock(side_effect=_api_error())
 
         client._complete_with_model_fallback(
@@ -125,7 +110,6 @@ class TestCompleteWithModelFallback:
         assert models_tried == ["m1", "m2"]
 
     def test_none_content_is_coerced_to_empty_string(self, client):
-        """A successful call whose message content is None yields ''."""
         client._create_completion = MagicMock(return_value=_completion(None))
 
         result = client._complete_with_model_fallback(
@@ -138,7 +122,6 @@ class TestCompleteWithModelFallback:
         assert result == ""
 
     def test_non_retryable_api_error_is_caught(self, client):
-        """A non-retryable openai.APIError subclass also skips the model."""
         response = MagicMock(status_code=401, headers={})
         auth_error = openai.AuthenticationError(
             message="bad key", response=response, body=None
@@ -157,7 +140,7 @@ class TestCompleteWithModelFallback:
         assert result == "recovered"
 
     def test_per_model_failure_is_logged_without_the_messages(self, client):
-        """A skipped model logs a warning carrying the model name, not the prompt."""
+        """A skipped model logs its name, never the prompt."""
         client._create_completion = MagicMock(
             side_effect=[_api_error(), _completion("ok")]
         )
@@ -170,11 +153,8 @@ class TestCompleteWithModelFallback:
                 log_event_prefix="planner",
             )
 
-        # A skipped model is now logged at two layers: the shared compat method
-        # (``llm.model_failed`` with the error string) and this fallback loop
-        # (the stable ``llm.fallback_model_failed`` event, with the per-stage
-        # prefix as a ``stage`` kwarg and the model name). The security
-        # invariant is that NEITHER line carries the prompt.
+        # A skipped model is logged by both the compat method (llm.model_failed)
+        # and this loop (llm.fallback_model_failed); neither may carry the prompt.
         warning_calls = mock_log.warning.call_args_list
         events = [call.args[0] for call in warning_calls]
         assert "llm.fallback_model_failed" in events
@@ -191,12 +171,7 @@ class TestCompleteWithModelFallback:
 
 
 class TestNoArgInvarianceCharacterisation:
-    """Pins today's no-extra-kwarg behaviour so Task 7's extension cannot drift it.
-
-    With none of the new optional kwargs supplied, the outgoing params must be
-    exactly ``{model, messages}`` and the fallback semantics identical to the
-    pre-extension direct-_create_completion path.
-    """
+    """With no optional kwargs the outgoing params are exactly ``{model, messages}``."""
 
     @pytest.fixture()
     def client(self):
@@ -269,7 +244,7 @@ def _bad_request_fb(message: str) -> openai.BadRequestError:
 
 
 class TestCompleteWithModelFallbackOptionalKwargs:
-    """The three optional kwargs are forwarded through the compat layer."""
+    """The optional kwargs are forwarded through the compat layer."""
 
     @pytest.fixture()
     def client(self):
@@ -384,7 +359,6 @@ class TestCompleteWithModelFallbackOptionalKwargs:
         assert set(captured[0].keys()) == {"model", "messages"}
 
     def test_a_forwarded_param_is_stripped_via_compat_then_succeeds(self, client):
-        """A model that rejects reasoning_effort strips it and recovers."""
         client._create_completion = MagicMock(
             side_effect=[
                 _bad_request_fb("reasoning_effort is not supported"),
@@ -418,12 +392,7 @@ class TestCompleteWithModelFallbackOptionalKwargs:
 
 
 class TestRetryLimiterIntegration:
-    """Integration tests for the retry decorator + LLMConcurrencyLimiter interaction.
-
-    These tests use a *real* LLMConcurrencyLimiter (not a mock) so we can
-    verify that the semaphore is correctly acquired and released on every
-    attempt, including retries and failures.
-    """
+    """A real limiter must be acquired and released on every retry attempt."""
 
     @pytest.fixture()
     def client(self):
@@ -440,7 +409,6 @@ class TestRetryLimiterIntegration:
 
     @pytest.fixture()
     def real_limiter(self):
-        """Create a real LLMConcurrencyLimiter with concurrency=1."""
         limiter = LLMConcurrencyLimiter()
         limiter.init(1)
         return limiter
@@ -449,7 +417,6 @@ class TestRetryLimiterIntegration:
     def test_limiter_acquired_and_released_on_each_retry(
         self, mock_sleep, client, real_limiter
     ):
-        """On each retry attempt the limiter semaphore is acquired then released."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
 
@@ -492,7 +459,6 @@ class TestRetryLimiterIntegration:
 
     @patch("common.retry._sleep_backoff")
     def test_limiter_released_on_final_failure(self, mock_sleep, client, real_limiter):
-        """When all retries are exhausted the limiter is still released every time."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
 
@@ -523,13 +489,11 @@ class TestRetryLimiterIntegration:
             with pytest.raises(openai.APIConnectionError):
                 client._create_completion(model="m")
 
-        # All 3 attempts should acquire and release, even though all failed.
         assert acquire_count == 3
         assert release_count == 3
 
     @patch("common.retry._sleep_backoff")
     def test_api_call_happens_inside_limiter_context(self, mock_sleep, client):
-        """The OpenAI API call occurs strictly inside the limiter context manager."""
         mock_openai = MagicMock()
         expected = MagicMock(name="chat_completion_result")
         mock_openai.chat.completions.create.return_value = expected
@@ -568,7 +532,6 @@ class TestRetryLimiterIntegration:
 
     @patch("common.retry._sleep_backoff")
     def test_retry_reacquires_limiter_each_attempt(self, mock_sleep, client):
-        """Each retry attempt goes through the full acquire-call-release cycle."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
 
@@ -621,7 +584,6 @@ class TestRetryLimiterIntegration:
 
     @patch("common.retry._sleep_backoff")
     def test_semaphore_not_leaked_on_exception(self, mock_sleep, client, real_limiter):
-        """After all retries fail, the semaphore is fully released (not leaked)."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
 
@@ -635,8 +597,7 @@ class TestRetryLimiterIntegration:
             with pytest.raises(openai.InternalServerError):
                 client._create_completion(model="m")
 
-        # The semaphore should be fully available again (not leaked).
-        # With BoundedSemaphore(1), we can acquire once more without blocking.
+        # With BoundedSemaphore(1) a non-blocking acquire succeeds only if none leaked.
         acquired = real_limiter._semaphore.acquire(blocking=False)
         assert acquired, (
             "Semaphore was leaked - could not re-acquire after all retries failed"

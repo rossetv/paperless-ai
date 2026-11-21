@@ -26,7 +26,7 @@ class TestWriteBackCircuitBreaker:
         breaker = WriteBackCircuitBreaker(failures_before_halt=3)
         breaker.record_failure()
         breaker.record_failure()
-        breaker.record_success()  # streak back to zero
+        breaker.record_success()
         breaker.record_failure()
         breaker.record_failure()
         assert breaker.is_tripped() is False  # only two since the reset

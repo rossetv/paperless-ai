@@ -1,23 +1,8 @@
-"""Regression eval: "What was my salary in April 2025?" surfaces the April payslip.
+"""Regression: "What was my salary in April 2025?" surfaces the April payslip.
 
-This test pins the motivating bug for the multi-spec retrieval overhaul:
-a date-scoped semantic query must return the April 2025 payslip (doc #750)
-and must NOT return the February/January decoys (#1482, #1483) that are
-vector-equally-near the query but outside the April date window.
-
-Three documents are seeded with distinct ``created`` dates and the same
-embedding axis (so vector similarity cannot distinguish them — only the
-``date()`` SQL filter does).
-
-Assertions:
-1. The full pipeline answer cites doc #750.
-2. Date-scoped specs (``resolve_specs`` + ``Retriever.retrieve``) return #750
-   and exclude both decoys.
-3. The April doc (created 2025-04-25) falls within the 2025-04-01..2025-04-30
-   window, exercising the ``date()`` fix end-to-end.
-
-Split from the main pipeline tests for the 500-line ceiling
-(CODE_GUIDELINES §3.1).  Seeding wiring mirrors ``test_search_pipeline.py``.
+A date-scoped query must return the April payslip and not the January and
+February decoys. All three share one embedding axis, so only the ``date()``
+filter can tell them apart.
 """
 
 from __future__ import annotations
@@ -44,9 +29,7 @@ from tests.integration.conftest import (
     make_pipeline_settings as _make_settings,
 )
 
-# Embedding axis shared by all three docs.  The query also lands on this axis,
-# so vector similarity is identical across all three — only the date filter
-# decides what each date-scoped spec returns.
+# Shared by all three docs and the query, so only the date filter separates them.
 _AXIS = _AXIS_SALARY
 
 # Document ids for the three seeded payslips.
@@ -63,12 +46,7 @@ def _seed_payslip(
     text: str,
     created: str,
 ) -> None:
-    """Upsert one payslip document with a custom ``created`` date.
-
-    ``seed_pipeline_document`` from conftest hard-codes ``created``; this
-    helper calls ``StoreWriter.upsert_document`` directly so each doc can
-    carry its real creation timestamp (the crux of the regression test).
-    """
+    """Upsert one payslip document with its own ``created`` date."""
     meta = DocumentMeta(
         id=document_id,
         title=title,
@@ -114,20 +92,13 @@ def _seed_all(store_writer: StoreWriter) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Focused retrieval sub-test: date filter alone excludes decoys
-# ---------------------------------------------------------------------------
-
-
 class TestDateFilterExcludesDecoys:
-    """``resolve_specs`` + ``Retriever.retrieve`` with date-scoped specs return
-    only the April doc and exclude the February and January decoys."""
+    """Date-scoped specs retrieve only the April doc, not the decoys."""
 
     def test_date_scoped_specs_include_april_and_exclude_decoys(
         self, tmp_path: Any
     ) -> None:
-        """The date filter ``2025-04-01..2025-04-30`` includes doc #750 (created
-        2025-04-25) and excludes #1482 (2025-02-05) and #1483 (2025-01-05)."""
+        """The ``2025-04-01..2025-04-30`` filter keeps #750 and drops the decoys."""
         settings = _make_settings(tmp_path)
         store_writer = StoreWriter(settings)
         try:
@@ -199,17 +170,11 @@ class TestDateFilterExcludesDecoys:
             store_reader.close()
 
 
-# ---------------------------------------------------------------------------
-# Full pipeline: the answer cites the April payslip
-# ---------------------------------------------------------------------------
-
-
 class TestFullPipelineAprilSalary:
     """End-to-end: "What was my salary in April 2025?" cites the April doc."""
 
     def test_april_salary_query_cites_april_payslip(self, tmp_path: Any) -> None:
-        """The full pipeline — real planner specs, real retriever, scripted LLM
-        — answers the April salary query citing doc #750 and not the decoys."""
+        """The full pipeline answers the April salary query citing only doc #750."""
         settings = _make_settings(tmp_path)
         store_writer = StoreWriter(settings)
         try:

@@ -8,7 +8,6 @@ from common.clock import utc_now_iso
 
 
 def test_utc_now_iso_returns_a_parseable_iso_string() -> None:
-    """The returned string round-trips through datetime.fromisoformat."""
     parsed = datetime.fromisoformat(utc_now_iso())
     assert isinstance(parsed, datetime)
 
@@ -21,7 +20,6 @@ def test_utc_now_iso_is_timezone_aware() -> None:
 
 
 def test_utc_now_iso_is_monotonic_across_calls() -> None:
-    """A later call never produces an earlier timestamp."""
     first = utc_now_iso()
     second = utc_now_iso()
     assert second >= first

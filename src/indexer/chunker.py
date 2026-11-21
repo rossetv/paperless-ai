@@ -29,18 +29,12 @@ from dataclasses import dataclass
 # Capture group 1 is the 1-based page number.
 _PAGE_MARKER_RE = re.compile(r"^--- Page (\d+)(?: \([^)]+\))? ---$")
 
-# A defensive character ceiling enforced AFTER paragraph-aware chunking, so no
-# single chunk can exceed the embedding model's 8191-token input limit. Chunk
-# size is configured in CHARACTERS (CHUNK_SIZE, default 2000), but the OpenAI
-# embedding limit is in TOKENS: dense CJK / non-Latin / base64-like OCR can pack
-# well over 8191 tokens into 2000 characters, and such a chunk fails the whole
-# embedding batch (a non-retryable 400) — re-billing up to 95 valid siblings on
-# every retry (IDX-02). ~6000 characters is a conservative floor: even at the
-# ~1 token : 1 character worst case for dense scripts it stays under 8191
-# tokens, while leaving normal CHUNK_SIZE-2000 chunks completely untouched.
-#
-# Exact token counting via tiktoken is a deliberately-avoided dependency
-# (CODE_GUIDELINES §15.1); a conservative character cap is used instead.
+# Hard character cap applied after chunking so no chunk exceeds the embedding
+# model's 8191-token limit. CHUNK_SIZE is in characters, but dense CJK or
+# base64-like OCR can pack far more tokens into them, and one oversized chunk
+# fails the whole embedding batch with a non-retryable 400. 6000 stays under the
+# limit even at ~1 token per character and leaves normal chunks untouched. A
+# character cap avoids taking a dependency on tiktoken for exact counts.
 _MAX_CHUNK_CHARS = 6000
 
 
@@ -66,34 +60,19 @@ def _assemble_chunks(
     chunk_size: int,
     overlap: int,
 ) -> list[TextChunk]:
-    """Assemble (page, text) paragraph pairs into overlapping TextChunks.
+    """Assemble ``(page_hint, text)`` paragraphs into overlapping TextChunks.
 
-    Pass 2 of the chunking algorithm: paragraphs are accumulated into a running
-    window.  When the next paragraph would overflow ``chunk_size``, the window
-    is emitted and a new one begins from the last ``overlap`` characters of the
-    previous chunk.  Paragraphs larger than ``chunk_size`` are sliced directly.
-    A paragraph that fits ``chunk_size`` alone but not alongside the carried-over
-    overlap prefix is placed in a fresh window with the overlap dropped — the
-    one bounded resolution; re-emitting the overlap prefix would loop forever.
-
-    Args:
-        paragraphs: Ordered list of ``(page_hint, text)`` pairs from Pass 1.
-        chunk_size: Maximum character length of each chunk.
-        overlap: Characters shared between the tail of chunk N and the start
-            of chunk N+1.
-
-    Returns:
-        Ordered list of :class:`TextChunk` instances.
+    Paragraphs accumulate into a window; when the next one would overflow
+    ``chunk_size`` the window is emitted and a new one starts from the last
+    ``overlap`` characters. Paragraphs larger than ``chunk_size`` are sliced
+    directly.
     """
     chunks: list[TextChunk] = []
     overlap_prefix: str = ""
     window_page: int | None = None
     window_text: str = ""
-    # True once a real paragraph has been added to the current window — as
-    # opposed to a window holding only the overlap prefix carried over from the
-    # previous chunk.  The distinction is load-bearing: a paragraph that fits
-    # chunk_size alone but not alongside the overlap prefix must drop the
-    # overlap rather than re-emit it forever (an unbounded loop otherwise).
+    # True once a real paragraph is in the window, as opposed to only the
+    # carried-over overlap prefix.
     window_has_para: bool = False
     prev_chunk_page: int | None = None
 
@@ -118,8 +97,7 @@ def _assemble_chunks(
                 window_page = para_page
             paragraph_idx += 1
         elif window_has_para:
-            # The window holds a real paragraph — emit it and retry this
-            # paragraph in a fresh window starting from the overlap tail.
+            # Emit the window and retry this paragraph after the overlap tail.
             prev_chunk_page = window_page
             chunks.append(_emit(window_text, window_page))
             overlap_prefix = window_text[-overlap:] if overlap > 0 else ""
@@ -127,19 +105,15 @@ def _assemble_chunks(
             window_page = None
             window_has_para = False
         elif window_text:
-            # The window holds only the overlap prefix carried over from the
-            # previous chunk, and this paragraph does not fit alongside it.
-            # Drop the overlap so the paragraph gets a clean window — emitting
-            # the overlap prefix and retrying would loop forever, as the prefix
-            # never shrinks.  One overlap seam is lost; that is the correct,
-            # bounded resolution.  paragraph_idx is not advanced: the next
-            # iteration retries this paragraph in the now-empty window.
+            # Only the overlap prefix is in the window and the paragraph does
+            # not fit beside it. Drop the overlap: re-emitting the prefix and
+            # retrying would loop forever, as it never shrinks. The paragraph is
+            # retried in the now-empty window.
             overlap_prefix = ""
             window_text = ""
             window_page = None
         else:
-            # Truly empty window — the paragraph alone exceeds chunk_size, so
-            # slice it directly into chunk_size windows.
+            # The paragraph alone exceeds chunk_size: slice it directly.
             start = 0
             while start < len(para_text):
                 slice_text = para_text[start : start + chunk_size]
@@ -162,19 +136,10 @@ def _assemble_chunks(
 def _cap_chunk_sizes(chunks: list[TextChunk], *, max_chars: int) -> list[TextChunk]:
     """Hard-split any chunk longer than *max_chars*, re-numbering chunk_index.
 
-    The defensive ceiling that keeps a single chunk under the embedding model's
-    token limit (IDX-02). A chunk whose text is at or below *max_chars* passes
-    through unchanged; a longer one is sliced into contiguous *max_chars*-
-    character sub-chunks that inherit its ``page_hint``. ``chunk_index`` is
-    reassigned across the whole returned list so indices stay contiguous from 0.
-
-    No overlap is added between forced sub-splits: overlap is a retrieval
-    nicety, and a chunk this dense is already an anomaly — re-adding overlap
-    here would re-introduce the very size risk this guard exists to remove.
+    Sub-chunks inherit the parent's ``page_hint`` and get no overlap, which
+    would reintroduce the size risk this guard removes.
     """
     if all(len(chunk.text) <= max_chars for chunk in chunks):
-        # Common case (CHUNK_SIZE 2000 < cap): nothing to split — return as-is
-        # so the normal path is byte-for-byte unchanged.
         return chunks
 
     capped: list[TextChunk] = []
@@ -205,29 +170,11 @@ def chunk_text(
     chunk_size: int,
     overlap: int,
 ) -> list[TextChunk]:
-    """Split *content* into overlapping TextChunks.
+    """Split *content* into overlapping TextChunks, indexed contiguously from 0.
 
-    The algorithm:
-    1. Walk the content line by line, tracking the current page number from
-       OCR page markers.  Each non-marker line is appended to a working
-       paragraph buffer.  A blank line triggers a paragraph flush.
-    2. Paragraphs are accumulated into a running window.  When adding the next
-       paragraph would push the window past ``chunk_size``, the current window
-       is emitted as a chunk and a new window is started from the last
-       ``overlap`` characters of the previous chunk (the overlap tail).
-    3. After all paragraphs are consumed, any remaining window is emitted.
-
-    Empty or whitespace-only *content* returns ``[]``.
-
-    Args:
-        content: The full OCR text, possibly containing ``--- Page N ---`` markers.
-        chunk_size: Maximum character length of each chunk's text.
-        overlap: Number of characters shared between the end of chunk N and
-            the start of chunk N+1.
-
-    Returns:
-        An ordered list of :class:`TextChunk` instances with contiguous
-        ``chunk_index`` values starting from 0.
+    Lines are grouped into paragraphs (blank lines separate them, page markers
+    set the page hint), paragraphs are packed into ``chunk_size`` windows, then
+    the hard character cap is applied. Blank *content* returns ``[]``.
     """
     if not 0 <= overlap < chunk_size:
         raise ValueError(
@@ -238,8 +185,7 @@ def chunk_text(
     if not content.strip():
         return []
 
-    # --- Pass 1: parse lines into (page_number | None, paragraph_text) pairs.
-    # A paragraph is a run of non-blank lines; blank lines are separators.
+    # Pass 1: parse lines into (page_number | None, paragraph_text) pairs.
     paragraphs: list[tuple[int | None, str]] = []
     current_page: int | None = None
     paragraph_lines: list[str] = []
@@ -275,7 +221,5 @@ def chunk_text(
     if not paragraphs:
         return []
 
-    # --- Pass 2: assemble paragraphs into chunks.
     chunks = _assemble_chunks(paragraphs, chunk_size=chunk_size, overlap=overlap)
-    # --- Pass 3: enforce the defensive per-chunk character cap (IDX-02).
     return _cap_chunk_sizes(chunks, max_chars=_MAX_CHUNK_CHARS)

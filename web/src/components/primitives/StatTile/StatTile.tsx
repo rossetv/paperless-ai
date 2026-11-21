@@ -11,20 +11,10 @@ export interface StatTileProps {
   sub?: string;
   /** When true the figure is rendered in the accent colour. */
   accent?: boolean;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
-/**
- * A small statistic tile — an uppercase label, a large figure, an optional
- * sub-line.
- *
- * Presentational and domain-agnostic. Used in the Index dashboard stat row.
- * The `accent` flag tints the figure with the accent colour for the single
- * "headline" metric in a row.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
- */
+/** Small statistic tile: an uppercase label, a large figure and an optional sub-line. */
 export function StatTile({
   value,
   label,

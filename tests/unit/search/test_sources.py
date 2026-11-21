@@ -1,9 +1,4 @@
-"""Tests for search.sources — pure chunk→SourceDocument assembly (spec §6.4).
-
-The source-assembly logic was lifted out of core.py into this focused module;
-core's existing tests still cover it through the public API, and these add
-direct unit coverage of the pure functions (CODE_GUIDELINES §11.2).
-"""
+"""Tests for search.sources: pure chunk-to-SourceDocument assembly."""
 
 from __future__ import annotations
 

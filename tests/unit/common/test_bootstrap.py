@@ -12,8 +12,6 @@ MODULE = "common.bootstrap"
 
 
 class TestBootstrapDaemon:
-    """Tests for bootstrap_daemon()."""
-
     @patch(f"{MODULE}.recover_stale_locks")
     @patch(f"{MODULE}.run_preflight_checks")
     @patch(f"{MODULE}.PaperlessClient")
@@ -37,7 +35,6 @@ class TestBootstrapDaemon:
         mock_settings.LLM_MAX_CONCURRENT = 8
         mock_settings.OCR_PROCESSING_TAG_ID = 55
         mock_settings.PRE_TAG_ID = 443
-        # bootstrap_daemon builds Settings via the hot-load accessor.
         mock_current_settings.return_value = mock_settings
         mock_client = MagicMock()
         mock_paperless_cls.return_value = mock_client
@@ -121,8 +118,6 @@ class TestBootstrapDaemon:
 
 
 class TestBootstrapProcess:
-    """Tests for bootstrap_process() — the per-process startup shared by all."""
-
     @patch(f"{MODULE}.llm_limiter")
     @patch(f"{MODULE}.register_signal_handlers")
     @patch(f"{MODULE}.setup_libraries")
@@ -136,13 +131,7 @@ class TestBootstrapProcess:
         mock_register_signals,
         mock_llm_limiter,
     ):
-        """bootstrap_process runs all five steps and returns the settings.
-
-        Regression: an entry point that omits llm_limiter.init() leaves the
-        limiter uninitialised, so every LLM call raises RuntimeError at request
-        time — the search server 500ed on every query before this sequence was
-        centralised here.
-        """
+        """Without llm_limiter.init() every LLM call raises RuntimeError."""
         mock_settings = MagicMock(LLM_MAX_CONCURRENT=4)
         mock_current_settings.return_value = mock_settings
 
@@ -156,8 +145,7 @@ class TestBootstrapProcess:
 
 
 def test_bootstrap_process_loads_settings_from_app_db(tmp_path) -> None:
-    """bootstrap_process builds Settings via the DB-backed loader, reading
-    APP_DB_PATH from the environment and layering the config table over it."""
+    """The config table at APP_DB_PATH is layered over the environment."""
     from appdb import config as config_store
     from appdb.connection import connect
     from appdb.schema import ensure_schema

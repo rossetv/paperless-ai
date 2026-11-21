@@ -1,21 +1,8 @@
 """Semaphore-based concurrency guards for outbound API calls.
 
-This module owns the single "0 means unbounded, otherwise cap with a bounded
-semaphore" pattern, so neither the LLM wrapper nor the embedding client
-hand-rolls it.
-
-Two shapes are exported:
-
-- :class:`ConcurrencyGuard` — a per-instance guard whose limit is known at
-  construction. The embedding client (:mod:`common.embeddings`) constructs one
-  directly from ``EMBEDDING_MAX_CONCURRENT``.
-- ``llm_limiter`` — the module-global :class:`LLMConcurrencyLimiter` singleton
-  used by every LLM call. Its limit is **not** known at import time, so it is
-  initialised by :func:`common.bootstrap.bootstrap_daemon` via
-  ``llm_limiter.init(max_concurrent)`` *after* ``setup_libraries`` and *before*
-  preflight checks. Calling ``acquire()`` without a prior ``init()`` raises
-  ``RuntimeError`` so a missing bootstrap step fails loud rather than silently
-  degrading to unlimited concurrency.
+:class:`ConcurrencyGuard` takes its limit at construction. ``llm_limiter`` is
+initialised at bootstrap via ``llm_limiter.init()``; ``acquire()`` before that
+raises ``RuntimeError`` rather than silently running unbounded.
 """
 
 from __future__ import annotations
@@ -30,19 +17,9 @@ log = structlog.get_logger(__name__)
 
 
 class ConcurrencyGuard:
-    """A reusable "at most N concurrent" guard, or unbounded when N is 0.
-
-    The limit is fixed at construction. ``acquire()`` is a context manager: it
-    blocks until a slot is free, yields, and releases the slot on exit — even
-    when the guarded block raises.
-
-    A non-positive *max_concurrent* means unbounded: ``acquire()`` becomes a
-    zero-cost passthrough and no semaphore is allocated.
-    """
+    """An "at most N concurrent" guard; a non-positive N means unbounded."""
 
     def __init__(self, max_concurrent: int) -> None:
-        # Clamp to a non-negative integer so callers can pass through a
-        # Settings field directly without re-checking the sign.
         self.max_concurrent = max(0, max_concurrent)
         if self.max_concurrent > 0:
             self._semaphore: threading.BoundedSemaphore | None = (
@@ -68,42 +45,23 @@ class ConcurrencyGuard:
 
 
 class LLMConcurrencyLimiter:
-    """The deferred-init concurrency guard for LLM API calls.
-
-    Wraps a :class:`ConcurrencyGuard` whose limit is supplied later, at daemon
-    bootstrap, rather than at import time. Until :meth:`init` is called,
-    :meth:`acquire` raises ``RuntimeError``.
-    """
+    """The concurrency guard for LLM API calls, sized at bootstrap via :meth:`init`."""
 
     def __init__(self) -> None:
         self._guard: ConcurrencyGuard | None = None
 
     @property
     def _semaphore(self) -> threading.BoundedSemaphore | None:
-        """The underlying semaphore, or ``None`` when unbounded or uninitialised.
-
-        Exposed for tests that assert on the guard's internal state.
-        """
+        """The underlying semaphore, or ``None``; exposed for tests."""
         return self._guard._semaphore if self._guard is not None else None
 
     def init(self, max_concurrent: int) -> None:
         """Set the concurrency limit. ``0`` (or negative) means unlimited.
 
-        Idempotent when *max_concurrent* matches the existing limit — the
-        existing guard is kept so the underlying semaphore (and any in-flight
-        permits) is preserved. A change builds a new guard; the previous one
-        is dereferenced from this limiter but stays alive (and continues to
-        bound its in-flight holders) until the last holder of an old permit
-        releases it. During that window the *new* limit is in force for new
-        callers, but the *old* limit is still being honoured by the threads
-        that already acquired against the old guard — so the total
-        simultaneously-active LLM calls may briefly exceed ``max_concurrent``
-        by up to ``old_in_flight``. The window is bounded by the longest
-        in-flight LLM call (typically seconds) and is the trade-off for not
-        blocking a config change on every old caller draining first.
+        An unchanged limit keeps the existing guard. A changed one swaps in a new
+        guard without waiting for old permits to drain, so in-flight calls may
+        briefly push the total above the new limit.
         """
-        # No-op when nothing changed — preserves the existing semaphore and
-        # avoids the brief over-commit window described above.
         if self._guard is not None and self._guard.max_concurrent == max_concurrent:
             return
         self._guard = ConcurrencyGuard(max_concurrent)
@@ -112,12 +70,7 @@ class LLMConcurrencyLimiter:
 
     @contextmanager
     def acquire(self) -> Generator[None, None, None]:
-        """Acquire a slot; no-op when unlimited.
-
-        Raises ``RuntimeError`` if :meth:`init` was never called, so that
-        a missing bootstrap step surfaces immediately rather than silently
-        degrading to unlimited concurrency.
-        """
+        """Acquire a slot; no-op when unlimited. Raises if :meth:`init` never ran."""
         if self._guard is None:
             raise RuntimeError(
                 "LLMConcurrencyLimiter.acquire() called before init(); "

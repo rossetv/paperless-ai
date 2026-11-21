@@ -1,18 +1,9 @@
-/*
- * LibraryCard feature — CSS Module.
- *
- * A clickable document card: a soft preview area carrying a scaled DocThumb
- * with a hover "Preview" affordance, then a meta block. All values are design
- * tokens (var(--…)) — Stylelint forbids raw literals.
- */
-
 .card {
   display: flex;
   flex-direction: column;
 
-  /* height: 100% ensures the button fills its grid cell in Safari, which does
-   * not stretch buttons to fill align-stretch by default. This lets the spacer
-   * correctly pin chips to the bottom and equalises row heights across cards. */
+  /* Safari does not stretch buttons to fill their grid cell; without this the
+   * spacer cannot pin chips to the bottom and row heights differ. */
   height: 100%;
   overflow: hidden;
   border: none;
@@ -27,19 +18,16 @@
     box-shadow var(--duration-standard) var(--easing-standard);
 }
 
-/* List-view modifier — thumbnail left column, metadata right.
- * height: auto overrides the base height: 100% so the row is content-sized,
- * not stretched to fill the grid track. */
+/* List view: content-sized rows, not stretched to the grid track. */
 .card-list {
   flex-direction: row;
   align-items: stretch;
   height: auto;
 
-  /* Give the row a resting surface so the hover shadow reads against the page. */
+  /* A resting surface so the hover shadow reads against the page. */
   background: var(--colour-button-light-bg);
 }
 
-/* Lift on hover/focus — the card is a single interactive surface. */
 .card:hover,
 .card:focus-visible {
   transform: translateY(calc(-1 * var(--spacing-1)));
@@ -51,7 +39,6 @@
   outline-offset: var(--spacing-1);
 }
 
-/* ── Preview area — soft surface with the real thumbnail or DocThumb fallback ── */
 .preview {
   position: relative;
   display: flex;
@@ -64,9 +51,7 @@
 }
 
 .thumb {
-  /* Fills the preview area; the real thumbnail <img> sits inside it.
-   * position: relative lets the real image be absolutely placed on top of the
-   * DocThumb placeholder so the placeholder is always visible during lazy-load. */
+  /* Positioning context so the real image can sit on top of the DocThumb. */
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -75,14 +60,8 @@
   height: 100%;
 }
 
-/* Real thumbnail image — portrait page sitting at the top of the preview.
- * Width and height both come from tokens (one source of truth); the removed
- * width/height HTML attributes on <img> previously duplicated these values.
- * Absolutely positioned so it layers on top of the DocThumb placeholder;
- * left/right: 0 + margin: auto re-creates the flex justify-content: center
- * that the static position relied on.
- * The border frames the image against the dark preview background so it never
- * reads as faint — matching the border/shadow the DocThumb wrapper already has. */
+/* Layered over the DocThumb; left/right 0 with auto margins centres it. The
+ * border keeps the image from reading as faint on the dark preview. */
 .thumb-img {
   position: absolute;
   top: 0;
@@ -100,29 +79,24 @@
   transition: opacity var(--duration-standard) var(--easing-standard);
 }
 
-/* Hidden until the image has loaded — keeps the DocThumb visible underneath. */
 .thumb-img-loading {
   opacity: 0;
 }
 
-/* DocThumb placeholder — rendered at 1.5× the artboard size so it fills the
- * preview area without letterboxing. Shown while the real image lazy-loads and
- * permanently when the real image fails. Expressed as explicit width/height from
- * the DocThumb tokens instead of a magic scale factor (FE-41). */
+/* 1.5x the DocThumb artboard so it fills the preview without letterboxing. */
 .thumb-fallback {
   width: calc(1.5 * var(--size-doc-thumb-width));
   height: calc(1.5 * var(--size-doc-thumb-height));
   margin-block-start: var(--spacing-9);
 }
 
-/* Once the real image has loaded successfully, collapse the DocThumb. Using
- * display: none (not visibility: hidden) so it takes no space in list view,
- * where the real image is position: static and the two would stack otherwise. */
+/* display: none, not visibility, because in list view the image is static and
+ * the two would otherwise stack. */
 .thumb-fallback-hidden {
   display: none;
 }
 
-/* Hover "Preview" pill — hidden until the card is hovered or focused. */
+/* "View" pill, shown on hover or focus. */
 .open-affordance {
   position: absolute;
   inset-block-end: var(--spacing-9);
@@ -146,7 +120,6 @@
   opacity: 1;
 }
 
-/* ── Meta block ── */
 .meta {
   display: flex;
   flex: 1;
@@ -155,22 +128,18 @@
   padding: var(--spacing-12);
 }
 
-/* In list view the preview is a fixed-width left column with auto height so it
-   doesn't dictate the row height, and the meta block fills the rest. (Declared
-   after the base .preview/.meta rules to keep specificity ascending.) */
+/* Declared after the base .preview/.meta rules to keep specificity ascending. */
 .card-list .preview {
   width: var(--width-library-thumb);
   flex-shrink: 0;
   height: auto;
 
-  /* Vertical padding is halved in list view so the thumbnail strip is compact. */
+  /* A compact strip in list view. */
   padding-block: var(--spacing-9);
 }
 
-/* The real thumbnail image must not carry its grid-view fixed height into list
- * view — that 220 px value is what forces the row tall. Let height follow the
- * narrower list column width via object-fit instead.
- * Also undo the absolute position so the image drives the column height. */
+/* The grid-view fixed height would force the row tall; here the static image
+ * follows the column width and drives the row height. */
 .card-list .thumb-img {
   position: static;
   width: 100%;
@@ -178,8 +147,7 @@
   max-height: var(--height-library-preview);
 }
 
-/* In list view the loading image is display: none (not just opacity: 0) so it
- * takes no space — the DocThumb placeholder drives the column height instead. */
+/* Takes no space while loading, so the DocThumb drives the column height. */
 .card-list .thumb-img-loading {
   display: none;
 }
@@ -193,8 +161,7 @@
   flex: 1;
 }
 
-/* In list view there is no space to fill vertically — the card is content-sized,
- * so the spacer would just add dead air. Collapse it. */
+/* List cards are content-sized, so the spacer would only add dead air. */
 .card-list .spacer {
   display: none;
 }
@@ -211,8 +178,7 @@
 }
 
 .correspondent {
-  /* min-width: 0 is required for text-overflow: ellipsis to fire inside a flex
-   * container — without it the flex item refuses to shrink below its content. */
+  /* A flex item will not shrink below its content (so no ellipsis) without this. */
   min-width: 0;
   color: var(--colour-text-secondary);
   overflow: hidden;
@@ -220,7 +186,6 @@
   white-space: nowrap;
 }
 
-/* The middot separating correspondent and date. */
 .dot {
   flex-shrink: 0;
 }
@@ -236,7 +201,7 @@
   line-height: var(--line-height-body-emphasis);
   color: var(--colour-text-primary);
 
-  /* Clamp to two lines. */
+  /* Two-line clamp. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

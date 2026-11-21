@@ -7,7 +7,7 @@ vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 
-// ActiveFiltersStrip calls useFacets — mock it so the test has no query client.
+// ActiveFiltersStrip calls useFacets, which needs a query client.
 vi.mock('../ActiveFiltersStrip/ActiveFiltersStrip', () => ({
   ActiveFiltersStrip: () => null,
 }));
@@ -21,9 +21,7 @@ const EMPTY_FILTERS = {
 };
 
 const RESPONSE: SearchResponse = {
-  // Citation marker uses the document_id of the source, matching the
-  // synthesiser's real output format. The AnswerCard resolves [9823] to the
-  // source's 1-based position (1) for display.
+  // Markers carry the document_id, as the synthesiser emits them.
   answer: 'You paid £1,847.32 to Npower in 2024 [9823].',
   sources: [
     {
@@ -134,8 +132,7 @@ describe('ResultsScreen', () => {
 
   it('renders the whole-query cost chip', () => {
     renderResults();
-    // The same whole-query tokens · cost appears in both the answer footer and
-    // the trace-panel summary — assert at least one is present.
+    // The figure appears in both the answer footer and the trace summary.
     expect(screen.getAllByText('2.1k tok · $0.006').length).toBeGreaterThan(0);
   });
 
@@ -154,7 +151,6 @@ describe('ResultsScreen', () => {
     await userEvent.click(
       screen.getByRole('button', { name: /view source 1/i }),
     );
-    // RESPONSE.sources[0].document_id === 9823
     expect(onPreview).toHaveBeenCalledWith(9823);
   });
 

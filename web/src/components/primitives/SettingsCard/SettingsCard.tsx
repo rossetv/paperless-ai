@@ -11,20 +11,12 @@ export interface SettingsCardProps {
   headerActions?: React.ReactNode;
   /** The card body — typically a stack of `Row`s. */
   children: React.ReactNode;
-  /** Additional class names to merge onto the card root. */
   className?: string;
 }
 
 /**
- * A sub-card surface within a settings section block.
- *
- * Renders a surface (`--colour-surface`) with a hairline border and a padded
- * header (title + optional subtitle + optional actions slot) above a padded
- * body. The header bottom-edge carries a hairline that separates it from the
- * rows below.
- *
- * Purely presentational. Tier: components/primitives. Allowed deps: lib/,
- * styles/.
+ * A sub-card within a settings section: a header (title, optional subtitle and
+ * actions) above a body of `Row`s.
  */
 export function SettingsCard({
   title,

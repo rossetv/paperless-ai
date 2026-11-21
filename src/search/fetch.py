@@ -1,18 +1,9 @@
-"""Full-document fetch assembly for the MCP ``fetch_documents`` tool (spec §4.3).
-
-Pure given its arguments — the Paperless client, the store reader, the public
-base URL, and the cap — exactly like :mod:`search.sources`. For each requested
-id it fetches the canonical full OCR text from Paperless, caps it, and wraps it
-with local metadata (title, page count, deep-link).
+"""Full-document fetch assembly for the MCP ``fetch_documents`` tool.
 
 A per-id failure becomes an error-carrying :class:`~search.models.FetchedDocument`
-rather than an exception, so one bad id cannot fail the whole batch. A 404 from
-Paperless (unknown / deleted id) is reported as ``"not found"``; any other fault
-is logged with its traceback server-side and reported as the sanitised
-``"fetch failed"`` — no internal detail reaches the client (CODE_GUIDELINES §6.4).
-
-Allowed deps: search.models, search.sources, common.paperless, store.reader,
-    httpx, standard library. Forbidden: no FastAPI, no MCP, no LLM calls.
+rather than an exception, so one bad id cannot fail the whole batch. A 404 is
+reported as ``"not found"``; any other fault is logged server-side and reported
+only as ``"fetch failed"`` so no internal detail reaches the client.
 """
 
 from __future__ import annotations
@@ -39,20 +30,10 @@ def assemble_fetched(
     paperless_public_url: str,
     max_chars: int,
 ) -> list[FetchedDocument]:
-    """Fetch and assemble full OCR text for each id, one result per id.
+    """Fetch full OCR text for each id, one result per id in request order.
 
-    Args:
-        ids: Document ids to fetch (already validated/bounded by the caller).
-        paperless_client: A per-request client; the caller owns its lifecycle
-            (opening and closing it).
-        store_reader: The local index, for wrapper metadata (title, page count).
-        paperless_public_url: Browser-facing Paperless base URL (no trailing
-            slash) for the deep-links.
-        max_chars: Per-document character cap; longer content is truncated and
-            flagged.
-
-    Returns:
-        One :class:`~search.models.FetchedDocument` per id, in request order.
+    The caller owns *paperless_client*'s lifecycle. Content longer than
+    *max_chars* is truncated and flagged.
     """
     results: list[FetchedDocument] = []
     for doc_id in ids:

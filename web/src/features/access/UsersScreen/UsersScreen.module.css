@@ -1,15 +1,3 @@
-/*
- * UsersScreen feature component — CSS Module.
- *
- * Layout-only styling for the user-management screen: the stat grid, the
- * toolbar (search input above the table), the identity cell, inline tags,
- * and the row-action ghost button. The page chrome comes from
- * SettingsLayout; the table from the Table primitive.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Stat grid — 4 equal columns spanning the full content width. ── */
 .stat-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -17,22 +5,20 @@
   margin-bottom: var(--spacing-13);
 }
 
-/* Tablet (≤834 px, after the settings rail collapses at 960 px): 2-up grid
-   so tiles have room to breathe instead of being crammed into 4 columns. */
+/* Tablet (after the settings rail collapses at 960 px): 2-up instead of 4. */
 @media (width <= 833.98px) {
   .stat-row {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-/* Mobile (≤699 px): still 2-up but tighter gap to stay comfortable at 360 px. */
+/* Mobile: still 2-up, with a tighter gap to fit 360 px. */
 @media (width <= 699.98px) {
   .stat-row {
     gap: var(--spacing-8);
   }
 }
 
-/* ── Toolbar above the table — SearchField primitive on the left. ── */
 .toolbar {
   display: flex;
   align-items: center;
@@ -41,14 +27,12 @@
   max-width: var(--width-search-narrow);
 }
 
-/* On mobile the search field stretches to fill available width. */
 @media (width <= 699.98px) {
   .toolbar {
     max-width: 100%;
   }
 }
 
-/* ── User identity cell — avatar beside name + username. ── */
 .identity {
   display: flex;
   align-items: center;
@@ -80,7 +64,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── A small inline tag ("You"). ── */
 .tag {
   padding: var(--spacing-1) var(--spacing-6);
   border-radius: var(--radius-micro);
@@ -91,7 +74,6 @@
   font-weight: var(--font-weight-micro-bold);
 }
 
-/* ── Row action cluster — right-aligned ghost-pill buttons. ── */
 .row-actions {
   display: flex;
   justify-content: flex-end;

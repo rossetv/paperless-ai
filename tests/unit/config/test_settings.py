@@ -1,10 +1,4 @@
-"""Tests for the multi-spec retrieval settings in common.config.Settings.
-
-Verifies default values, env-var overrides, and clamping for:
-- SEARCH_PLANNER_MAX_SPECS  (default 8, clamped >= 1)
-- SEARCH_PER_SPEC_K         (default == SEARCH_TOP_K, clamped >= 1)
-- SEARCH_MAX_CHUNKS_PER_DOC (default 3, clamped >= 1)
-"""
+"""Tests for the multi-spec retrieval settings in common.config.Settings."""
 
 from __future__ import annotations
 
@@ -27,11 +21,6 @@ def _make_settings(**overrides: str) -> Settings:
         return Settings.from_environment()
 
 
-# ---------------------------------------------------------------------------
-# SEARCH_PLANNER_MAX_SPECS
-# ---------------------------------------------------------------------------
-
-
 class TestSearchPlannerMaxSpecs:
     def test_default_is_eight(self) -> None:
         settings = _make_settings()
@@ -48,11 +37,6 @@ class TestSearchPlannerMaxSpecs:
     def test_negative_clamps_to_one(self) -> None:
         settings = _make_settings(SEARCH_PLANNER_MAX_SPECS="-3")
         assert settings.SEARCH_PLANNER_MAX_SPECS == 1
-
-
-# ---------------------------------------------------------------------------
-# SEARCH_PER_SPEC_K
-# ---------------------------------------------------------------------------
 
 
 class TestSearchPerSpecK:
@@ -77,11 +61,6 @@ class TestSearchPerSpecK:
     def test_negative_clamps_to_one(self) -> None:
         settings = _make_settings(SEARCH_PER_SPEC_K="-1")
         assert settings.SEARCH_PER_SPEC_K == 1
-
-
-# ---------------------------------------------------------------------------
-# SEARCH_MAX_CHUNKS_PER_DOC
-# ---------------------------------------------------------------------------
 
 
 class TestSearchMaxChunksPerDoc:

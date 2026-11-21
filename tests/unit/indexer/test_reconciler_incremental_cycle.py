@@ -1,19 +1,5 @@
-"""Tests for indexer.reconciler incremental sync — per-cycle bookkeeping.
-
-Each ``incremental_sync`` cycle does more than index documents:
-- It refreshes the taxonomy every cycle, so a Paperless rename propagates even
-  on a cycle that indexes nothing (SPEC §5.5).
-- It writes ``last_reconcile_at`` at the end of every completed cycle, so
-  ``/api/healthz`` can report the index as ready (SPEC §4.1).
-- It returns a frozen :class:`~indexer.reconciler.SyncReport`.
-
-The watermark-driven core lives in test_reconciler_incremental.py; the bounded
-failed-document retry in test_reconciler_failed_documents.py — the reconciler's
-tests are split across files to stay under the 500-line ceiling
-(CODE_GUIDELINES §3.1, §11.2).  The Paperless and StoreWriter mock builders,
-``always_indexed``, and ``run_incremental_sync`` come from
-tests/unit/indexer/conftest.py.
-"""
+"""Tests for the incremental sync's per-cycle bookkeeping: taxonomy refresh,
+``last_reconcile_at`` and the report shape."""
 
 from __future__ import annotations
 
@@ -32,11 +18,6 @@ from tests.unit.indexer.conftest import (
     make_reconciler_store_writer,
     run_incremental_sync,
 )
-
-
-# ---------------------------------------------------------------------------
-# incremental_sync — taxonomy refresh every cycle
-# ---------------------------------------------------------------------------
 
 
 class TestIncrementalSyncRefreshesTaxonomy:
@@ -67,7 +48,6 @@ class TestIncrementalSyncRefreshesTaxonomy:
     def test_renamed_correspondent_propagates_into_the_refresh(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The name from Paperless is what reaches refresh_taxonomy verbatim."""
         paperless = make_reconciler_paperless(documents=[])
         paperless.list_correspondents.return_value = [
             {"id": 42, "name": "Npower Renamed Ltd"}
@@ -88,7 +68,6 @@ class TestIncrementalSyncRefreshesTaxonomy:
     def test_taxonomy_refreshed_once_not_per_document(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The taxonomy maps are built once per cycle, not per document (§14.5)."""
         docs = [make_paperless_document(doc_id=i) for i in range(1, 6)]
         paperless = make_reconciler_paperless(documents=docs)
         store_writer = make_reconciler_store_writer()
@@ -105,25 +84,13 @@ class TestIncrementalSyncRefreshesTaxonomy:
         assert paperless.list_tags.call_count == 1
 
 
-# ---------------------------------------------------------------------------
-# incremental_sync — last_reconcile_at is written every completed cycle
-# ---------------------------------------------------------------------------
-
-
 class TestIncrementalSyncWritesLastReconcileAt:
-    """``incremental_sync`` writes ``last_reconcile_at`` at the end of every
-    completed cycle so that ``/api/healthz`` can report the index as ready.
-
-    Regression: the reconciler previously wrote ``modified_watermark``,
-    ``last_full_sweep_at``, and ``failed_documents`` but never
-    ``last_reconcile_at``, so the search server returned 503 index-not-ready
-    for its entire lifetime.
-    """
+    """Every completed cycle writes ``last_reconcile_at``; without it
+    ``/api/healthz`` reports the index as not ready."""
 
     def test_last_reconcile_at_is_set_after_a_cycle_with_documents(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A normal cycle that indexes documents must set last_reconcile_at."""
         paperless = make_reconciler_paperless(
             documents=[make_paperless_document(doc_id=1)]
         )
@@ -141,8 +108,7 @@ class TestIncrementalSyncWritesLastReconcileAt:
     def test_last_reconcile_at_is_set_after_an_empty_cycle(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """An empty cycle must still set last_reconcile_at — an empty-but-
-        reconciled index is genuinely ready."""
+        """An empty but reconciled index is genuinely ready."""
         paperless = make_reconciler_paperless(documents=[])
         store_writer = make_reconciler_store_writer()
         assert "last_reconcile_at" not in store_writer._meta
@@ -158,8 +124,6 @@ class TestIncrementalSyncWritesLastReconcileAt:
     def test_last_reconcile_at_is_set_even_when_some_documents_fail(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Per-document failures are isolated; the cycle still completes and
-        must write last_reconcile_at (SPEC §5.7)."""
         docs = [make_paperless_document(doc_id=i) for i in (1, 2)]
         paperless = make_reconciler_paperless(documents=docs)
         store_writer = make_reconciler_store_writer()
@@ -179,13 +143,7 @@ class TestIncrementalSyncWritesLastReconcileAt:
         report = run_incremental_sync(paperless, store_writer)
 
         assert report.failed == 1
-        # The cycle completed despite the failure — last_reconcile_at must be set.
         assert store_writer._meta.get("last_reconcile_at") is not None
-
-
-# ---------------------------------------------------------------------------
-# Report shape
-# ---------------------------------------------------------------------------
 
 
 class TestSyncReportShape:
@@ -197,7 +155,7 @@ class TestSyncReportShape:
             report.indexed = 99  # type: ignore[misc]
 
     def test_overlap_margin_is_a_short_timedelta(self) -> None:
-        """OVERLAP_MARGIN is a few seconds — long enough to absorb a boundary
-        race, short enough that re-processing is trivial."""
+        """Long enough to absorb a boundary race, short enough that
+        re-processing is trivial."""
         assert isinstance(OVERLAP_MARGIN, timedelta)
         assert timedelta(0) < OVERLAP_MARGIN <= timedelta(minutes=1)

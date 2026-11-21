@@ -3,8 +3,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal } from './Modal';
 
-// jsdom does not implement HTMLDialogElement.showModal/close natively,
-// so we provide minimal stubs so Modal's imperativeAPI calls do not throw.
+// jsdom does not implement HTMLDialogElement.showModal/close, so stub them for
+// Modal's imperative API calls.
 beforeEach(() => {
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
@@ -123,7 +123,6 @@ describe('Modal', () => {
     expect(screen.getByRole('dialog')).toContainElement(
       document.activeElement as HTMLElement,
     );
-    // Specifically: the close button should now be active.
     expect(document.activeElement).toBe(closeButton);
   });
 

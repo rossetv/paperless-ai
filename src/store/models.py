@@ -1,7 +1,6 @@
-"""Frozen dataclasses for the store's public API surface.
+"""Frozen dataclasses for every value that crosses the store boundary.
 
-Every value that crosses the store boundary travels in one of these shapes.
-Raw sqlite3.Row objects never leave src/store/.
+Raw ``sqlite3.Row`` objects never leave the store.
 """
 
 from __future__ import annotations
@@ -14,8 +13,7 @@ class IndexState:
     """A single entry returned by StoreWriter.get_index_state().
 
     Attributes:
-        modified: Normalised UTC ISO-8601 timestamp of the last known
-            Paperless modification.
+        modified: Last known Paperless modification, normalised UTC ISO-8601.
         content_hash: SHA-256 of the document's OCR content at index time.
     """
 
@@ -27,16 +25,8 @@ class IndexState:
 class DocumentMeta:
     """Structured document metadata; input to upsert_document / update_metadata.
 
-    Attributes:
-        id: The Paperless document id (INTEGER PRIMARY KEY in documents).
-        title: Human-readable title from Paperless, or None if unset.
-        correspondent_id: FK-by-value into the taxonomy table; None if unset.
-        document_type_id: FK-by-value into the taxonomy table; None if unset.
-        tag_ids: Tuple of tag ids; stored as a JSON array in the DB.
-        created: Document date normalised to UTC ISO-8601; None if unset.
-        modified: Paperless 'modified' field normalised to UTC ISO-8601.
-        content_hash: SHA-256 hex digest of the OCR content.
-        page_count: Number of pages; None if unknown.
+    ``created`` and ``modified`` are normalised UTC ISO-8601; ``tag_ids`` is
+    stored as a JSON array; ``content_hash`` is the SHA-256 of the OCR content.
     """
 
     id: int
@@ -54,12 +44,8 @@ class DocumentMeta:
 class ChunkInput:
     """One text chunk awaiting storage, produced by the chunker.
 
-    Attributes:
-        chunk_index: Zero-based position within the parent document.
-        text: The chunk's text content.
-        page_hint: Estimated source page number for citations; None if
-            no page marker was found in the OCR output.
-        embedding: The float32 vector produced by the embedding client.
+    ``page_hint`` is the estimated source page for citations, or None when the
+    OCR output had no page marker.
     """
 
     chunk_index: int
@@ -70,13 +56,7 @@ class ChunkInput:
 
 @dataclass(frozen=True, slots=True)
 class TaxonomyEntry:
-    """A single row from the taxonomy table.
-
-    Attributes:
-        kind: One of 'correspondent', 'document_type', or 'tag'.
-        id: The Paperless id for this entity.
-        name: The current display name (refreshed each reconciliation cycle).
-    """
+    """A taxonomy row; *kind* is 'correspondent', 'document_type', or 'tag'."""
 
     kind: str
     id: int
@@ -85,15 +65,11 @@ class TaxonomyEntry:
 
 @dataclass(frozen=True, slots=True)
 class ChunkHit:
-    """A single search hit — one chunk with its relevance score.
+    """One chunk with its relevance score.
 
-    Attributes:
-        chunk_id: The chunks.id (== chunks_fts rowid) for this hit.
-        document_id: The parent document's id.
-        text: The chunk text.
-        page_hint: Source page number, or None if unavailable.
-        score: Cosine distance for vector search; BM25 rank for keyword search.
-            Lower is better for cosine distance; higher is better for BM25.
+    ``chunk_id`` equals the ``chunks_fts`` rowid. ``score`` is the cosine
+    distance (vector search) or raw BM25 rank (keyword search); lower is better
+    for both.
     """
 
     chunk_id: int
@@ -107,17 +83,9 @@ class ChunkHit:
 class FailedDocument:
     """A document the indexer has failed to index, for the Index dashboard.
 
-    Sourced from the ``failed_documents`` map in ``index.db`` meta — the
-    indexer's record of documents whose indexing raised (web-redesign spec
-    §5, Wave 6). The indexer re-attempts every entry each cycle until it
-    succeeds or is dead-lettered.
-
-    Attributes:
-        document_id: The Paperless document id.
-        title: The document's title from the index, or ``None`` when the
-            document has no indexed row (it failed before it was ever
-            stored).
-        failure_count: How many consecutive cycles the document has failed.
+    Read from the ``failed_documents`` map in meta. ``title`` is ``None`` when
+    the document failed before it was ever stored; ``failure_count`` counts
+    consecutive failed cycles.
     """
 
     document_id: int
@@ -127,16 +95,7 @@ class FailedDocument:
 
 @dataclass(frozen=True, slots=True)
 class IndexedDocument:
-    """A documents row joined to taxonomy display names.
-
-    Attributes:
-        id: The Paperless document id.
-        title: Document title, or None.
-        correspondent: Resolved correspondent name, or None.
-        document_type: Resolved document-type name, or None.
-        tags: Tuple of tag names (resolved from taxonomy).
-        created: Document date in normalised UTC ISO-8601, or None.
-    """
+    """A documents row joined to taxonomy display names."""
 
     id: int
     title: str | None
@@ -148,15 +107,7 @@ class IndexedDocument:
 
 @dataclass(frozen=True, slots=True)
 class FacetSet:
-    """Aggregated facet data for the search UI.
-
-    Attributes:
-        correspondents: All correspondent taxonomy entries present in the index.
-        document_types: All document-type taxonomy entries present in the index.
-        tags: All tag taxonomy entries present in the index.
-        earliest: Earliest document creation date in the index (ISO-8601), or None.
-        latest: Latest document creation date in the index (ISO-8601), or None.
-    """
+    """Taxonomy entries in the index plus the created-date range, for the UI."""
 
     correspondents: tuple[TaxonomyEntry, ...]
     document_types: tuple[TaxonomyEntry, ...]
@@ -167,30 +118,11 @@ class FacetSet:
 
 @dataclass(frozen=True, slots=True)
 class SearchFilters:
-    """Optional pre-ranking filters for vector_search and keyword_search.
+    """Optional filters applied as SQL WHERE clauses *before* ranking.
 
-    A store-boundary input shape: the search pipeline constructs it and hands
-    it to the StoreReader, which applies the non-default fields as SQL WHERE
-    clauses on the documents table *before* ranking.  All fields default to
-    "no restriction", so an all-default SearchFilters leaves the candidate set
-    as the full document table.
-
-    Attributes:
-        date_from: Inclusive lower bound on ``documents.created`` (bare
-            ``YYYY-MM-DD`` string; compared directly against the stored
-            ISO-8601 timestamp using a sargable ``>=`` predicate).  None
-            means no lower bound.
-        date_to: Inclusive upper bound on ``documents.created`` (bare
-            ``YYYY-MM-DD`` string).  The reader advances this by one day and
-            uses ``<`` so every timestamp on the given date is captured while
-            ``idx_documents_created`` remains usable.  None means no upper
-            bound.
-        correspondent_id: Exact match on documents.correspondent_id.
-            None means no restriction.
-        document_type_id: Exact match on documents.document_type_id.
-            None means no restriction.
-        tag_ids: Every id in the tuple must appear in documents.tag_ids.
-            An empty tuple means no restriction.
+    None (or an empty ``tag_ids``) means no restriction. ``date_from`` and
+    ``date_to`` are inclusive ``YYYY-MM-DD`` bounds on ``documents.created``;
+    every id in ``tag_ids`` must be present.
     """
 
     date_from: str | None
@@ -205,22 +137,11 @@ class IndexStats:
     """Summary statistics for the search index.
 
     Attributes:
-        document_count: Number of indexed documents.
-        chunk_count: Total number of stored chunks.
-        last_reconcile_at: ISO-8601 timestamp of the last successful
-            reconciliation cycle, or None if reconciliation has never run.
-        embedding_model: The embedding model name recorded in meta, or None.
-        latest_indexed_at: ``MAX(documents.indexed_at)`` — the most recent
-            per-document index timestamp, or None on an empty index. The
-            indexer stamps ``indexed_at`` on every content or metadata upsert
-            (a corrected OCR, a re-classification, an edited title/tags), so
-            this moves whenever a document's *content* changes even when the
-            document and chunk counts do not — unlike ``last_reconcile_at``,
-            which is rewritten every cycle including no-op ones. It is the
-            content signal the result cache folds into its index-version key so
-            an in-place re-index busts stale answers (see ``search.cache``).
-            Optional with a ``None`` default so older callers and tests that
-            build an ``IndexStats`` positionally are unaffected.
+        last_reconcile_at: When the last successful cycle ran, or None. Rewritten
+            every cycle, including no-op ones.
+        latest_indexed_at: ``MAX(documents.indexed_at)``, or None on an empty
+            index. It moves on any content or metadata upsert even when counts do
+            not, so the result cache keys on it to drop stale answers.
     """
 
     document_count: int
@@ -232,22 +153,10 @@ class IndexStats:
 
 @dataclass(frozen=True, slots=True)
 class DocumentSummary:
-    """One document row for the Library browse list (web-redesign §5).
+    """One document row for the Library browse list.
 
-    A documents-table row joined to taxonomy display names, like
-    :class:`IndexedDocument`, but additionally carrying ``page_count`` —
-    the Library list shows a page count per document and ``IndexedDocument``
-    (the search-result shape) deliberately omits it.  A distinct shape keeps
-    each read's projection honest rather than overloading one dataclass.
-
-    Attributes:
-        id: The Paperless document id.
-        title: Document title, or None.
-        correspondent: Resolved correspondent name, or None.
-        document_type: Resolved document-type name, or None.
-        tags: Tuple of tag names resolved from taxonomy.
-        created: Document date in normalised UTC ISO-8601, or None.
-        page_count: Number of pages, or None when unknown.
+    Like :class:`IndexedDocument` plus ``page_count``, which the search-result
+    shape does not need.
     """
 
     id: int
@@ -263,35 +172,10 @@ class DocumentSummary:
 class DocumentBrowseQuery:
     """Parameters for :meth:`~store.reader.StoreReader.list_documents`.
 
-    A store-boundary input shape (like :class:`SearchFilters`): the search
-    server constructs it from validated HTTP query parameters and hands it to
-    the reader.  Every filter field defaults to "no restriction" semantics;
-    the caller is responsible for supplying sane pagination and sort values.
-
-    Attributes:
-        text: Optional case-insensitive substring matched against the
-            document title, correspondent name, and document-type name.
-            None or empty means no text restriction.
-        date_from: Inclusive lower bound on ``documents.created`` (bare
-            ``YYYY-MM-DD`` string; compared directly against the stored
-            ISO-8601 timestamp using a sargable ``>=`` predicate).  None
-            means no lower bound.
-        date_to: Inclusive upper bound on ``documents.created`` (bare
-            ``YYYY-MM-DD`` string).  The reader advances this by one day
-            and uses ``<`` so every timestamp on the given date is captured
-            while ``idx_documents_created`` remains usable.  None means no
-            upper bound.
-        correspondent_id: Exact match on ``documents.correspondent_id``.
-            None means no restriction.
-        document_type_id: Exact match on ``documents.document_type_id``.
-            None means no restriction.
-        tag_ids: Every id in the tuple must appear in ``documents.tag_ids``.
-            An empty tuple means no restriction.
-        sort: The sort column — one of ``'created'``, ``'title'``, or
-            ``'indexed_at'`` (date added).  Validated by the reader.
-        descending: When True the sort is descending; when False, ascending.
-        offset: Number of rows to skip (pagination); must be >= 0.
-        limit: Maximum number of rows to return; must be > 0.
+    Filter fields mean the same as in :class:`SearchFilters`; ``text`` is a
+    case-insensitive substring of the title, correspondent or document type.
+    ``sort`` is ``'created'``, ``'title'`` or ``'indexed_at'`` (date added) and
+    is validated by the reader; the caller supplies sane pagination.
     """
 
     text: str | None
@@ -308,15 +192,7 @@ class DocumentBrowseQuery:
 
 @dataclass(frozen=True, slots=True)
 class DocumentPage:
-    """One page of Library browse results (web-redesign §5).
-
-    Attributes:
-        documents: The document summaries for this page, in sort order.
-        total: The total number of documents matching the query's filters,
-            ignoring pagination — the count the UI's pager needs.
-        offset: The offset that produced this page (echoed back).
-        limit: The limit that produced this page (echoed back).
-    """
+    """One page of Library browse results; *total* ignores pagination."""
 
     documents: tuple[DocumentSummary, ...]
     total: int
@@ -329,12 +205,10 @@ class KeywordHit:
     """One document matched by a keyword (FTS) search.
 
     Attributes:
-        document: The matched document's summary (taxonomy names resolved).
-        snippet: A collapsed, length-capped excerpt from the best-matching
-            chunk, or None for a filter-only browse (no keyword to excerpt).
-        rank: The document's best (lowest) BM25 rank across its matching
-            chunks; closer to zero is a stronger match. 0.0 for a filter-only
-            browse, which does not rank by relevance.
+        snippet: Excerpt from the best-matching chunk, or None for a filter-only
+            browse.
+        rank: Best (lowest) BM25 rank across the document's chunks; 0.0 for a
+            filter-only browse.
     """
 
     document: DocumentSummary
@@ -344,14 +218,7 @@ class KeywordHit:
 
 @dataclass(frozen=True, slots=True)
 class KeywordPage:
-    """One page of keyword-search document hits plus the total match count.
-
-    Attributes:
-        hits: The page's document hits, strongest match first.
-        total: Distinct documents matching the query, ignoring pagination.
-        offset: The offset that produced this page (echoed back).
-        limit: The limit that produced this page (echoed back).
-    """
+    """One page of keyword hits, strongest first; *total* ignores pagination."""
 
     hits: tuple[KeywordHit, ...]
     total: int
@@ -361,14 +228,7 @@ class KeywordPage:
 
 @dataclass(frozen=True, slots=True)
 class FilterFacet:
-    """A taxonomy entry plus the count of documents carrying it.
-
-    Attributes:
-        id: The Paperless id for this correspondent / document type / tag.
-        name: The current display name.
-        count: Number of indexed documents carrying this entry (0 when the
-            entry exists in the taxonomy but no indexed document uses it).
-    """
+    """A taxonomy entry plus the count of indexed documents carrying it (may be 0)."""
 
     id: int
     name: str
@@ -377,16 +237,8 @@ class FilterFacet:
 
 @dataclass(frozen=True, slots=True)
 class FilterCatalog:
-    """Every filterable value in the index, with counts, plus the date range.
-
-    Attributes:
-        correspondents: Correspondent facets, ordered by name.
-        document_types: Document-type facets, ordered by name.
-        tags: Tag facets, ordered by name.
-        earliest: Earliest document creation date in the index (ISO-8601),
-            or None when the index holds no dated documents.
-        latest: Latest document creation date in the index (ISO-8601), or None.
-    """
+    """Every filterable value in the index with counts, ordered by name, plus the
+    created-date range (None when no document is dated)."""
 
     correspondents: tuple[FilterFacet, ...]
     document_types: tuple[FilterFacet, ...]

@@ -27,7 +27,6 @@ def _settings(**overrides):
 
 
 def _doc(id, tags=None):
-    """Shorthand for a document dict."""
     return make_document(id=id, tags=tags or [])
 
 
@@ -56,7 +55,6 @@ class TestMain:
         main()
 
         call_kwargs = mock_bootstrap.call_args[1]
-        # Verify the lambdas actually extract the right fields from settings
         settings = _settings(OCR_PROCESSING_TAG_ID=777, PRE_TAG_ID=888)
         assert call_kwargs["get_processing_tag_id"](settings) == 777
         assert call_kwargs["get_pre_tag_id"](settings) == 888
@@ -287,7 +285,7 @@ class TestIterDocsToOcrSkipsPostTagged:
 
     @patch("common.document_iter.remove_stale_queue_tag")
     def test_skips_doc_with_post_tag_without_pre_tag(self, mock_remove):
-        # Arrange — has post tag but not pre tag (shouldn't call remove)
+        # No pre tag, so there is no stale queue tag to remove.
         settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
@@ -319,7 +317,6 @@ class TestIterDocsToOcrSkipsClaimed:
         assert result == []
 
     def test_no_processing_tag_configured_does_not_skip(self):
-        # Arrange — processing tag not configured, should not skip
         settings = _settings(
             PRE_TAG_ID=443,
             POST_TAG_ID=444,
@@ -360,8 +357,6 @@ class TestIterDocsToOcrMixed:
 
 
 class TestProcessDocument:
-    """_process_document builds an OcrProcessor under run_per_document."""
-
     @patch("ocr.daemon.OcrProvider")
     @patch("common.per_document.PaperlessClient")
     @patch("ocr.daemon.OcrProcessor")
@@ -425,8 +420,6 @@ class TestProcessDocument:
 
 
 class TestProcessAndRecord:
-    """_process_and_record feeds each document's outcome to the circuit breaker."""
-
     @patch("ocr.daemon._process_document")
     def test_saved_outcome_records_a_success(self, mock_process):
         mock_process.return_value = WriteBackOutcome.SAVED
@@ -471,7 +464,7 @@ class TestProcessAndRecord:
 
 
 class _FakeListClient:
-    """Stub for the daemon's list_client whose close() is a no-op."""
+    """Stub client that records whether close() was called."""
 
     def __init__(self) -> None:
         self.closed = False
@@ -481,8 +474,7 @@ class _FakeListClient:
 
 
 def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
-    """_reload_if_changed rebuilds the daemon state when config_version moves,
-    and is a no-op when it has not."""
+    """_reload_if_changed rebuilds the daemon state only when config_version moves."""
     from appdb import config as config_store
     from appdb.connection import connect
     from appdb.schema import ensure_schema
@@ -519,7 +511,7 @@ def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
         breaker = WriteBackCircuitBreaker(failures_before_halt=1)
         breaker.record_failure()
         assert breaker.is_tripped() is True
-        # No config change — _reload_if_changed leaves state.settings as-is.
+        # No config change: state is left as-is.
         _reload_if_changed(state, breaker)
         assert state.settings is settings
         assert state.list_client is list_client

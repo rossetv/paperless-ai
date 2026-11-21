@@ -1,10 +1,3 @@
-/**
- * Tests for the useFocusTrap hook.
- *
- * Verifies the three behaviours of a modal focus trap: focus moves into the
- * dialog on open, Tab / Shift+Tab cycle within it, and Escape calls onClose.
- */
-
 import React, { useRef } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -102,7 +95,6 @@ describe('useFocusTrap', () => {
     const trigger = screen.getByRole('button', { name: 'open' });
     trigger.focus();
     await userEvent.click(trigger);
-    // Close via Escape — focus must return to the trigger.
     await userEvent.keyboard('{Escape}');
     await waitFor(() => {
       expect(document.activeElement).toBe(trigger);

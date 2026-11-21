@@ -120,7 +120,6 @@ describe('UsersScreen', () => {
     mockUseUsers.mockReturnValue(usersResult({ isSuccess: true, data: { users: USERS } }));
     renderScreen();
     expect(screen.getByText('total accounts')).toBeInTheDocument();
-    // 3 users total
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 

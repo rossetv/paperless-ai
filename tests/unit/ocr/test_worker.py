@@ -1,9 +1,4 @@
-"""Tests for ocr.worker — the end-to-end ``OcrProcessor.process()`` lifecycle.
-
-The per-method helpers (page OCR, the Paperless update, error finalisation,
-stats) are covered in ``test_worker_internals``; this file is split off it for
-the 500-line ceiling (CODE_GUIDELINES §3.1).
-"""
+"""Tests for the end-to-end ocr.worker ``OcrProcessor.process()`` lifecycle."""
 
 from __future__ import annotations
 
@@ -67,14 +62,12 @@ class TestProcessHappyPath:
 
         outcome = proc.process()
 
-        # Assert — full pipeline invoked with correct data flow
         assert outcome is WriteBackOutcome.SAVED
         mock_claim.assert_called_once()
         paperless.download_content.assert_called_once_with(1)
         mock_open_pages.assert_called_once()
         mock_assemble.assert_called_once()
         mock_release.assert_called_once()
-        # Verify update_document called with correct content and tags
         paperless.update_document.assert_called_once()
         call_args = paperless.update_document.call_args[0]
         assert call_args[0] == 1  # doc_id
@@ -95,7 +88,6 @@ class TestProcessClaimFails:
         proc.process()
 
         paperless.download_content.assert_not_called()
-        # Release not called because claimed=False
         mock_release.assert_not_called()
 
 
@@ -106,7 +98,6 @@ class TestProcessErrorTagPresent:
     def test_error_tag_skips_ocr(self, mock_clean, mock_claim, mock_release):
         settings = make_settings_obj(ERROR_TAG_ID=552)
         paperless = make_mock_paperless()
-        # Return doc with error tag
         paperless.get_document.return_value = {
             "id": 1,
             "title": "T",
@@ -118,7 +109,6 @@ class TestProcessErrorTagPresent:
 
         proc.process()
 
-        # Assert — claim never called, finalise_with_error called via clean_pipeline_tags
         mock_claim.assert_not_called()
         paperless.download_content.assert_not_called()
         mock_clean.assert_called_once()
@@ -133,7 +123,7 @@ class TestProcessRefreshFailure:
         paperless.get_document.side_effect = ConnectionError("Network error")
         proc = make_processor(paperless=paperless)
 
-        # Act — exception propagates to the caller (daemon thread pool handles it)
+        # The daemon's thread pool handles the propagated exception.
         with pytest.raises(ConnectionError, match="Network error"):
             proc.process()
 
@@ -264,7 +254,7 @@ class TestProcessWriteBackFailure:
         mock_latest,
     ):
         # A document that OCRs to empty/refusal content is error-tagged, but the
-        # outcome is None — NOT SAVED. Reporting SAVED here would reset the
+        # outcome is None, not SAVED. Reporting SAVED here would reset the
         # circuit breaker's failure streak, letting a backlog of blank scans mask
         # a systemic Paperless write failure. This runs the real worker (not a
         # stubbed outcome) so the whole process() path is exercised.
@@ -325,7 +315,7 @@ class TestProcessAlwaysReleasesLock:
             paperless=paperless, ocr_provider=ocr_provider, settings=settings
         )
 
-        # Act — the per-page failure is isolated inside the thread pool, so
+        # The per-page failure is isolated inside the thread pool, so
         # process() does not raise; the page result carries the error marker.
         proc.process()
 
@@ -430,7 +420,6 @@ class TestProcessNoPages:
         proc.process()
 
         ocr_provider.transcribe_image.assert_not_called()
-        # Lock still released
         mock_release.assert_called_once()
 
 

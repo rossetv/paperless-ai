@@ -1,15 +1,4 @@
-"""Tests for StoreReader.list_filters_with_counts — taxonomy + doc counts.
-
-Covers:
-- correspondents / document types / tags are returned with accurate per-entry
-  document counts (tags counted via json_each over the tag_ids JSON array);
-- a taxonomy entry no indexed document uses reports a count of 0;
-- the created-date range is reported.
-
-The ``populated_db`` fixture comes from tests/unit/store/conftest.py:
-document 1 → correspondent 10 (Alpha Corp), type 20 (Invoice), tags 101, 102;
-document 2 → correspondent 11 (Beta Ltd), no type, tag 102.
-"""
+"""Tests for StoreReader.list_filters_with_counts."""
 
 from __future__ import annotations
 
@@ -47,7 +36,6 @@ def test_list_filters_with_counts_reports_date_range(populated_db: str) -> None:
 
 
 def test_list_filters_with_counts_zero_for_unused_taxonomy(db_path: str) -> None:
-    """A taxonomy entry that no document carries reports count 0, not omitted."""
     from store.models import TaxonomyEntry
     from tests.helpers.store import open_writer
 

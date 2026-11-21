@@ -1,30 +1,11 @@
-/*
- * TagEditor — CSS Module.
- *
- * Chip row with an inline FilterableListbox for multi-select tag editing.
- * The Chip primitive styles are used for selected-tag chips (Chip.module.css).
- * The interactive combobox (trigger, input, listbox) is fully owned by the
- * FilterableListbox primitive; no combobox rules live here.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Chip row wrapper ── */
 .wrap {
   display: flex;
   flex-wrap: wrap;
 
   /*
-   * Two-value gap: row-gap column-gap.
-   *
-   * FilterableListbox's .trigger carries negative margins
-   * (−4 px vertical, −8 px horizontal) to extend its click target beyond its
-   * visual bounds. Those negative margins eat into a naïve single-value gap
-   * and cause the "+ Add tag" trigger to visually collide with the preceding
-   * chip. The column-gap must exceed the −8 px pull (var(--spacing-6) = 8 px)
-   * so there is always visible clearance; var(--spacing-10) = 14 px gives a
-   * comfortable 6 px net gap. The row-gap of var(--spacing-6) = 8 px similarly
-   * absorbs the −4 px vertical pull and keeps wrapped lines tidy.
+   * FilterableListbox's trigger has negative margins (-4px vertical, -8px
+   * horizontal) to widen its click target. The column-gap must exceed the 8px
+   * pull or "+ Add tag" collides with the previous chip.
    */
   gap: var(--spacing-6) var(--spacing-10);
   align-items: center;

@@ -1,24 +1,9 @@
-/*
- * Grid layout component — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Stylelint enforces this.
- *
- * DESIGN.md §5 Grid & Container:
- *   - Product grids: 2–3 column layouts within a centred container
- *   - No visible grid lines or gutters; spacing tokens create implied structure
- *
- * Responsive strategy: the caller supplies the columns count appropriate for
- * the current viewport. This avoids media query px values (which are disallowed
- * by Stylelint); page-level composition handles viewport-specific column counts.
- * Each columns-N class uses equal-width fr tracks.
- */
+/* Not responsive by itself: callers pass the column count for the current viewport. */
 
 .grid {
   display: grid;
 }
 
-/* ── Column count classes ── */
 .columns-1 { grid-template-columns: 1fr; }
 .columns-2 { grid-template-columns: repeat(2, 1fr); }
 .columns-3 { grid-template-columns: repeat(3, 1fr); }

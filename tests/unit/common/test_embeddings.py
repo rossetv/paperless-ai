@@ -14,11 +14,6 @@ from common.embeddings import EmbeddingClient, EmbeddingError
 from tests.helpers.mocks import make_mock_embeddings
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_settings(
     *,
     max_retries: int = 3,
@@ -46,26 +41,18 @@ def _make_settings(
 def _client_with(mock_openai: MagicMock) -> Iterator[None]:
     """Patch ``openai.OpenAI`` so EmbeddingClient builds *mock_openai*.
 
-    EmbeddingClient constructs its own OpenAI client pinned to OPENAI_API_KEY
-    (it does not reuse the shared singleton), so tests patch the constructor.
+    EmbeddingClient builds its own client rather than reusing the shared
+    singleton, so tests patch the constructor.
     """
     with patch("common.embeddings.openai.OpenAI", return_value=mock_openai):
         yield
 
 
-# ---------------------------------------------------------------------------
-# Test: client is pinned to OpenAI with the configured API key
-# ---------------------------------------------------------------------------
-
-
 class TestClientIsPinnedToOpenAI:
     def test_constructs_openai_client_with_configured_api_key(self) -> None:
-        """OpenAI/prod regression: EMBEDDING_PROVIDER=openai builds the SAME client.
+        """The default provider: OPENAI_API_KEY and OpenAI's default base_url.
 
-        The default (and production) embedding provider is OpenAI. The client
-        must be constructed exactly as before this feature: pinned to
-        OPENAI_API_KEY with OpenAI's default base_url (no override). Any drift
-        here would change how prod embeds against its real, un-backed-up index.
+        Any drift here changes how production embeds against its live index.
         """
         settings = _make_settings(
             embedding_provider="openai", openai_api_key="sk-embeddings-key"
@@ -85,11 +72,9 @@ class TestClientUsesOllamaWhenProviderIsOllama:
     def test_constructs_client_against_ollama_base_url_with_placeholder_key(
         self,
     ) -> None:
-        """EMBEDDING_PROVIDER=ollama points the client at OLLAMA_BASE_URL.
+        """Under ollama no chunk may leave the box, so OpenAI is never the target.
 
-        The privacy fix: under ollama the embedding client must target the
-        local OpenAI-compatible /v1/ endpoint with a placeholder key (Ollama
-        ignores it), never OpenAI — so no chunk leaves the box.
+        Ollama ignores the API key, so a placeholder is sent.
         """
         settings = _make_settings(
             embedding_provider="ollama",
@@ -107,7 +92,6 @@ class TestClientUsesOllamaWhenProviderIsOllama:
         assert call.kwargs.get("api_key") == "dummy"
 
     def test_custom_ollama_base_url_is_honoured(self) -> None:
-        """A custom OLLAMA_BASE_URL (e.g. a GPU host) is forwarded verbatim."""
         settings = _make_settings(
             embedding_provider="ollama",
             ollama_base_url="http://gpu:11434/v1/",
@@ -121,14 +105,8 @@ class TestClientUsesOllamaWhenProviderIsOllama:
         )
 
 
-# ---------------------------------------------------------------------------
-# Test: empty input
-# ---------------------------------------------------------------------------
-
-
 class TestEmptyInput:
     def test_empty_sequence_returns_empty_list(self) -> None:
-        """embed([]) returns [] without calling the OpenAI API."""
         settings = _make_settings()
         mock_openai = MagicMock()
 
@@ -140,14 +118,8 @@ class TestEmptyInput:
         mock_openai.embeddings.create.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Test: one vector returned per input, in order
-# ---------------------------------------------------------------------------
-
-
 class TestReturnOrder:
     def test_single_text_returns_one_vector(self) -> None:
-        """embed returns exactly one vector for a single input."""
         settings = _make_settings()
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=4)
 
@@ -158,7 +130,6 @@ class TestReturnOrder:
         assert len(result) == 1
 
     def test_multiple_texts_preserves_input_order(self) -> None:
-        """embed returns one vector per input, in the same order as the input."""
         settings = _make_settings()
         vec_a = [1.0, 0.0]
         vec_b = [0.0, 1.0]
@@ -172,14 +143,9 @@ class TestReturnOrder:
         assert result == [vec_a, vec_b, vec_c]
 
 
-# ---------------------------------------------------------------------------
-# Test: batching (>96 inputs split into multiple requests)
-# ---------------------------------------------------------------------------
-
-
 class TestBatching:
     def test_exactly_one_batch_for_small_input(self) -> None:
-        """96 texts or fewer are sent in a single API request."""
+        """96 is the per-request input cap."""
         settings = _make_settings()
         texts = [f"text {i}" for i in range(96)]
         mock_openai, _ = make_mock_embeddings(n=96, dimensions=2)
@@ -192,7 +158,6 @@ class TestBatching:
         assert len(result) == 96
 
     def test_97_inputs_split_into_two_requests(self) -> None:
-        """97 texts (one over the 96-cap) produce two API calls."""
         settings = _make_settings()
         texts = [f"text {i}" for i in range(97)]
         mock_openai, _ = make_mock_embeddings(n=97, dimensions=2)
@@ -205,7 +170,6 @@ class TestBatching:
         assert len(result) == 97
 
     def test_large_input_split_into_correct_number_of_batches(self) -> None:
-        """200 inputs → ceil(200/96) = 3 API calls, all vectors returned."""
         settings = _make_settings()
         texts = [f"text {i}" for i in range(200)]
         mock_openai, _ = make_mock_embeddings(n=200, dimensions=2)
@@ -218,7 +182,6 @@ class TestBatching:
         assert len(result) == 200
 
     def test_cross_batch_vectors_preserve_order(self) -> None:
-        """Vectors from multiple batches are returned in input order."""
         settings = _make_settings()
         # Build 100 distinct vectors that are recognisable by their first element.
         vectors = [[float(i), 0.0] for i in range(100)]
@@ -232,15 +195,9 @@ class TestBatching:
         assert result == vectors
 
 
-# ---------------------------------------------------------------------------
-# Test: transient error is retried then succeeds
-# ---------------------------------------------------------------------------
-
-
 class TestRetry:
     @patch("common.retry._sleep_backoff")
     def test_transient_error_retried_then_succeeds(self, mock_sleep) -> None:
-        """A single transient API error triggers a retry and ultimately succeeds."""
         settings = _make_settings(max_retries=3)
         vec = [1.0, 2.0]
 
@@ -265,7 +222,6 @@ class TestRetry:
     def test_non_retryable_openai_error_raises_embedding_error(
         self, mock_sleep
     ) -> None:
-        """A non-retryable openai.OpenAIError is wrapped in EmbeddingError."""
         settings = _make_settings(max_retries=3)
         mock_openai = MagicMock()
         original = openai.BadRequestError(
@@ -285,12 +241,7 @@ class TestRetry:
 
     @patch("common.retry._sleep_backoff")
     def test_programming_error_is_not_swallowed(self, mock_sleep) -> None:
-        """A non-OpenAI bug (TypeError) propagates rather than becoming EmbeddingError.
-
-        _embed_batch catches only openai.OpenAIError; a genuine programming
-        bug must surface unmasked so it is not mislabelled as a non-retryable
-        API failure.
-        """
+        """A programming bug surfaces unmasked, not as a non-retryable API failure."""
         settings = _make_settings(max_retries=3)
         mock_openai = MagicMock()
         mock_openai.embeddings.create.side_effect = TypeError("not an API error")
@@ -302,7 +253,6 @@ class TestRetry:
 
     @patch("common.retry._sleep_backoff")
     def test_all_retries_exhausted_raises_retryable_exception(self, mock_sleep) -> None:
-        """When all retries are exhausted, the retryable exception propagates."""
         settings = _make_settings(max_retries=2)
         mock_openai = MagicMock()
         mock_openai.embeddings.create.side_effect = openai.RateLimitError(
@@ -319,14 +269,8 @@ class TestRetry:
         assert mock_openai.embeddings.create.call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# Test: concurrency guard bounds concurrency
-# ---------------------------------------------------------------------------
-
-
 class TestConcurrencyGuard:
     def test_max_concurrent_zero_means_unbounded(self) -> None:
-        """EMBEDDING_MAX_CONCURRENT=0 creates an unbounded guard (no semaphore)."""
         settings = _make_settings(embedding_max_concurrent=0)
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
@@ -336,7 +280,6 @@ class TestConcurrencyGuard:
         assert client._concurrency._semaphore is None
 
     def test_max_concurrent_positive_creates_semaphore(self) -> None:
-        """EMBEDDING_MAX_CONCURRENT>0 gives the guard a bounded semaphore."""
         settings = _make_settings(embedding_max_concurrent=4)
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
@@ -346,12 +289,10 @@ class TestConcurrencyGuard:
         assert client._concurrency._semaphore is not None
 
     def test_semaphore_1_serialises_concurrent_calls(self) -> None:
-        """With EMBEDDING_MAX_CONCURRENT=1, two threads never overlap inside the API call.
+        """With EMBEDDING_MAX_CONCURRENT=1 two threads never overlap in the API call.
 
-        A counting fake records the peak concurrency level and we assert it
-        never exceeds 1.  A release_gate event makes the first call block until
-        both threads have started, maximising the overlap window if the
-        guard's semaphore were absent.
+        release_gate holds the first call open until the second thread has
+        started, maximising the overlap window if the semaphore were missing.
         """
         settings = _make_settings(embedding_max_concurrent=1)
 
@@ -369,7 +310,6 @@ class TestConcurrencyGuard:
                 in_flight_current += 1
                 in_flight_peak = max(in_flight_peak, in_flight_current)
             thread_a_entered.set()
-            # Block until the test tells us to continue.
             release_gate.wait(timeout=5)
             with counter_lock:
                 in_flight_current -= 1
@@ -401,8 +341,7 @@ class TestConcurrencyGuard:
         thread_a_entered.wait(timeout=5)
 
         thread_b.start()
-        # Thread_b is now blocked on the semaphore.  Release thread_a so
-        # thread_b can acquire and complete.
+        # thread_b is now blocked on the semaphore; release thread_a so it can run.
         release_gate.set()
 
         thread_a.join(timeout=5)
@@ -416,14 +355,8 @@ class TestConcurrencyGuard:
         assert mock_openai.embeddings.create.call_count == 2
 
 
-# ---------------------------------------------------------------------------
-# Test: configured model is passed to the API
-# ---------------------------------------------------------------------------
-
-
 class TestModelPassthrough:
     def test_configured_model_sent_to_api(self) -> None:
-        """embed passes settings.EMBEDDING_MODEL to the OpenAI embeddings.create call."""
         settings = _make_settings(embedding_model="text-embedding-3-large")
         mock_openai, _ = make_mock_embeddings(n=1, dimensions=2)
 
@@ -436,19 +369,9 @@ class TestModelPassthrough:
         assert call_kwargs.kwargs.get("model") == "text-embedding-3-large"
 
 
-# ---------------------------------------------------------------------------
-# Test: configured dimensions are passed to the API
-# ---------------------------------------------------------------------------
-
-
 class TestDimensionsPassthrough:
     def test_configured_dimensions_sent_to_api(self) -> None:
-        """embed passes settings.EMBEDDING_DIMENSIONS to the OpenAI embeddings.create call.
-
-        Without this, a non-default EMBEDDING_DIMENSIONS setting is silently ignored:
-        the API returns vectors of the model's native width while meta records the
-        configured number, creating a silent dimension mismatch.
-        """
+        """Otherwise vectors come back at native width while meta records another."""
         settings = _make_settings(
             embedding_model="text-embedding-3-small",
             embedding_dimensions=512,
@@ -466,20 +389,10 @@ class TestDimensionsPassthrough:
         )
 
 
-# ---------------------------------------------------------------------------
-# IDX-02: a non-retryable batch failure names the offending batch
-# ---------------------------------------------------------------------------
-
-
 class TestBatchFailureDiagnostics:
     @patch("common.retry._sleep_backoff")
     def test_embedding_error_names_the_failing_batch_index(self, mock_sleep) -> None:
-        """A non-retryable failure on the SECOND batch names batch index 1.
-
-        With >96 inputs the call splits into batches; a 400 on the second batch
-        must surface an EmbeddingError whose message identifies which batch
-        failed, so an operator can locate the offending chunk window.
-        """
+        """Naming the batch lets an operator locate the offending chunk window."""
         settings = _make_settings(max_retries=3)
         texts = [f"text {i}" for i in range(97)]  # 96 + 1 → two batches
 
@@ -507,5 +420,4 @@ class TestBatchFailureDiagnostics:
             with pytest.raises(EmbeddingError) as exc_info:
                 client.embed(texts)
 
-        # The message identifies the failing batch (the second, index 1).
         assert "batch 1" in str(exc_info.value)

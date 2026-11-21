@@ -1,10 +1,4 @@
-"""Tests for the admin/list/lifecycle appdb.api_keys functions.
-
-Covers get_by_id (hit, miss), list_all (ordering, empty), list_for_user
-(filtering by owner), revoke (sets revoked_at, idempotent), delete, the
-throttled touch (advances last_used_at and request_count), and update
-(partial edits, clearing the expiry, no-op, unknown id).
-"""
+"""Tests for the appdb.api_keys list, lifecycle and update functions."""
 
 from __future__ import annotations
 
@@ -92,9 +86,7 @@ def test_revoke_sets_revoked_at(conn) -> None:
 
 
 def test_revoke_is_idempotent(conn) -> None:
-    """Revoking an already-revoked key keeps the original timestamp intact
-    only changing it on the second call is acceptable; the function must not
-    raise and the key stays revoked."""
+    """A second revoke must not raise, and the key stays revoked."""
     created = _make(conn, key_hash="h1")
     revoke(conn, created.id, revoked_at="2026-05-22T00:00:00+00:00")
     revoke(conn, created.id, revoked_at="2026-05-23T00:00:00+00:00")
@@ -157,7 +149,6 @@ def test_update_changes_the_supplied_fields(conn) -> None:
 
 
 def test_update_leaves_omitted_fields_untouched(conn) -> None:
-    """A field not passed keeps its stored value — only `name` changes here."""
     created = _make(conn, key_hash="h1", name="old", scopes="api")
     updated = update(conn, created.id, name="renamed")
     assert updated is not None

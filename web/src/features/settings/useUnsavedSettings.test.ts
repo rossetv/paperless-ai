@@ -37,7 +37,7 @@ describe('useUnsavedSettings', () => {
   it('compares array values structurally, not by reference', () => {
     const { result } = renderHook(() => useUnsavedSettings(BASELINE));
     act(() => result.current.setValue('AI_MODELS', ['a', 'b']));
-    // Same contents → not a change.
+    // Equal contents in a new array are not a change.
     expect(result.current.changedKeys).toEqual([]);
     act(() => result.current.setValue('AI_MODELS', ['a', 'b', 'c']));
     expect(result.current.changedKeys).toEqual(['AI_MODELS']);

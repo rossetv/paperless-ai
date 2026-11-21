@@ -1,14 +1,3 @@
-/*
- * EmptyState pattern — CSS Module.
- *
- * Centred layout: icon above, message below, optional description, optional
- * action. All values come exclusively from design tokens (§12.4).
- *
- * Typography follows the Apple body/caption scale from DESIGN.md §3:
- *   - message: subheading scale (21 px, weight 400)
- *   - description: body scale (17 px, secondary colour)
- */
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -24,14 +13,13 @@
   align-items: center;
   justify-content: center;
 
-  /* Tinted circular container so the icon reads intentional (UI-17). */
+  /* Tinted circular container so the icon reads as intentional. */
   width: var(--size-empty-state-icon);
   height: var(--size-empty-state-icon);
   border-radius: 50%;
   background-color: var(--colour-accent-wash);
 
-  /* Icon colour — the icon's size comes from its own `xlarge` token
-   * (size prop), not from a font-size context. */
+  /* The icon's size comes from its own size prop, not from a font-size context. */
   color: var(--colour-text-tertiary);
 }
 
@@ -54,7 +42,7 @@
   letter-spacing: var(--letter-spacing-body);
   color: var(--colour-text-secondary);
 
-  /* Tighten width and left-align multi-line copy (DESIGN.md §7). */
+  /* Tighten width and left-align multi-line copy. */
   max-width: var(--width-empty-state);
   text-align: left;
 }

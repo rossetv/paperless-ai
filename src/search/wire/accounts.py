@@ -1,13 +1,6 @@
-"""Pydantic wire models for authentication, setup, and user accounts.
+"""Wire models for login, first-run setup and user management.
 
-The request/response shapes for the login, setup, and user-management endpoints
-(web-redesign §4.6) plus the converter from the internal user dataclass. A
-boundary module of the :mod:`search.wire` package: field validators delegate to
-:mod:`search.validation` so the rules live in one place
-(``CODE_GUIDELINES.md`` §5.6).
-
-Allowed deps: pydantic, search.validation, appdb.users (User, type-only).
-Forbidden: FastAPI, sqlite3, any I/O.
+Field validators delegate to :mod:`search.validation`.
 """
 
 from __future__ import annotations
@@ -26,10 +19,6 @@ from search.validation import (
 
 if TYPE_CHECKING:
     from appdb.users import User
-
-# ---------------------------------------------------------------------------
-# Reusable annotated field types — one validator definition per rule.
-# ---------------------------------------------------------------------------
 
 _Username = Annotated[str, AfterValidator(validate_username)]
 _Password = Annotated[str, AfterValidator(validate_password)]
@@ -50,16 +39,10 @@ _OptionalRole = Annotated[str | None, AfterValidator(_validate_optional_role)]
 _OptionalPassword = Annotated[str | None, AfterValidator(_validate_optional_password)]
 
 
-# ---------------------------------------------------------------------------
-# Request models
-# ---------------------------------------------------------------------------
-
-
 class LoginRequest(BaseModel):
-    """Body for ``POST /api/auth/login`` — username/password credentials.
+    """Body for ``POST /api/auth/login``.
 
-    Replaces the Wave 0 ``{api_key}`` body. ``remember`` selects the session
-    lifetime: ticked → seven days, un-ticked → eight hours (spec §4.4).
+    ``remember`` selects the session lifetime: seven days, else eight hours.
     """
 
     username: _Username
@@ -107,11 +90,6 @@ class UpdateUserRequest(BaseModel):
         return value
 
 
-# ---------------------------------------------------------------------------
-# Response models
-# ---------------------------------------------------------------------------
-
-
 class UserResponse(BaseModel):
     """A user as returned to the browser — never carries the password hash."""
 
@@ -146,15 +124,7 @@ class SetupStatusResponse(BaseModel):
 def to_user_response(user: User) -> UserResponse:
     """Convert an :class:`appdb.users.User` to its public wire shape.
 
-    The single boundary mapper from the internal user dataclass to the HTTP
-    response. It deliberately drops ``password_hash``, ``updated_at`` and
-    ``password_changed_at`` — none of which belongs in an API response.
-
-    Args:
-        user: The internal user dataclass.
-
-    Returns:
-        A :class:`UserResponse` safe to serialise to JSON.
+    Drops ``password_hash``, ``updated_at`` and ``password_changed_at``.
     """
     return UserResponse(
         id=user.id,

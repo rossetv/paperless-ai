@@ -1,17 +1,4 @@
-"""The StoreReader facade — the read-side interface to the search index.
-
-:class:`StoreReader` owns the index connection and the thread lock that
-serialises queries across the search server's request threads.  The query
-implementations live in the three sibling concept-modules — ranked retrieval
-in :mod:`store.reader._ranked`, look-ups and introspection in
-:mod:`store.reader._lookups`, and the Library browse in
-:mod:`store.reader._browse` — and this class is a thin facade that holds the
-shared state and delegates each call.
-
-DB reads are fast at this scale (≤10k documents); a single lock serialising
-them is correct and keeps the concurrency model simple (SPEC §3.2,
-CODE_GUIDELINES §8.4).
-"""
+"""The StoreReader facade: owns the connection and lock, delegates each query."""
 
 from __future__ import annotations
 
@@ -41,30 +28,16 @@ from store.schema import connect
 class StoreReader:
     """Read API for the SQLite search index.
 
-    A single instance is shared across the search server's request threads; an
-    internal Lock serialises every query so concurrent callers do not race on
-    the connection (SPEC §3.2, CODE_GUIDELINES §8.4).  The class exposes no
-    write method — read-only access is a structural property of the API
-    surface, backed by the indexer's single-writer flock.
-
-    Raises:
-        StoreError: Any sqlite3.Error encountered during a query is wrapped in
-            StoreError (with ``from``) and re-raised.
+    One instance is shared across the search server's request threads. A single
+    lock serialises every query; reads are fast at this scale (about 10k
+    documents), so that keeps concurrency simple. Every ``sqlite3.Error`` is
+    re-raised as :class:`StoreError`.
     """
 
     def __init__(self, settings: Settings) -> None:
-        """Open a connection to the index database.
-
-        Args:
-            settings: Application settings; ``INDEX_DB_PATH`` is used.
-        """
+        """Open a connection to the index database."""
         self._conn = connect(settings.INDEX_DB_PATH)
-        # Serialises all queries across threads (SPEC §3.2, CODE_GUIDELINES §8.4).
         self._query_lock = threading.Lock()
-
-    # ------------------------------------------------------------------
-    # Ranked retrieval
-    # ------------------------------------------------------------------
 
     def vector_search(
         self,
@@ -99,12 +72,9 @@ class StoreReader:
         limit: int,
         offset: int,
     ) -> KeywordPage:
-        """FTS5 keyword search grouped to ranked documents (spec §4.4).
+        """FTS5 keyword search grouped to ranked documents, with snippets.
 
-        Wraps :func:`store.reader._ranked.keyword_document_search`, resolving
-        each hit's :class:`~store.models.DocumentSummary` and a collapsed,
-        length-capped snippet from its best-matching chunk.  Returns a
-        :class:`~store.models.KeywordPage`.
+        See :func:`store.reader._ranked.keyword_document_search`.
         """
         rows, total = _ranked.keyword_document_search(
             self._conn, self._query_lock, terms, filters, limit, offset
@@ -115,16 +85,11 @@ class StoreReader:
                 self._conn, self._query_lock, doc_id
             )
             if summary is None:
-                # A document indexed at FTS time but pruned before this lookup —
-                # a rare race; skip it rather than return a hit with no metadata.
+                # Pruned between the FTS query and this lookup; skip it.
                 continue
             snippet = " ".join(text.split())[:280]
             hits.append(KeywordHit(document=summary, snippet=snippet, rank=rank))
         return KeywordPage(hits=tuple(hits), total=total, offset=offset, limit=limit)
-
-    # ------------------------------------------------------------------
-    # Look-ups and introspection
-    # ------------------------------------------------------------------
 
     def get_documents(self, ids: Iterable[int]) -> list[IndexedDocument]:
         """Return IndexedDocument objects for the given document ids.
@@ -188,10 +153,6 @@ class StoreReader:
         See :func:`store.reader._lookups.quick_check`.
         """
         return _lookups.quick_check(self._conn, self._query_lock)
-
-    # ------------------------------------------------------------------
-    # Library browse
-    # ------------------------------------------------------------------
 
     def list_documents(self, query: DocumentBrowseQuery) -> DocumentPage:
         """List documents for the Library with pagination, sorting and filters.

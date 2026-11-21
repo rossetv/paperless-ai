@@ -1,38 +1,18 @@
 /**
- * Search page — the primary view of the application.
+ * Search page — orchestrates the search screens over the live NDJSON stream
+ * (`useStreamingSearch`). Query and filters live in the URL; the highlighted
+ * citation stays local.
  *
- * A pure orchestrator. It owns the query, filter and citation-highlight state
- * (query and filters via `useSearchUrlState`; highlight index stays local as
- * ephemeral interaction state), drives the LIVE streaming search
- * (`useStreamingSearch`), and selects which search screen to render:
+ *   - no query                           → IdleScreen
+ *   - streaming                          → LoadingScreen (live per-phase rail)
+ *   - error, 503                         → IndexNotReadyScreen
+ *   - error, 401                         → invalidate `me`; ProtectedRoute → login
+ *   - error, other                       → SearchErrorScreen (+ partial trace)
+ *   - done, outcome `clarify`/`no_match` → NoResultsScreen (+ trace)
+ *   - done, outcome `answered`           → ResultsScreen (+ SearchTracePanel)
  *
- *   - no query                       → IdleScreen (the hero)
- *   - search streaming               → LoadingScreen (live per-phase rail)
- *   - search error, 503              → IndexNotReadyScreen
- *   - search error, 401              → invalidate `me`; ProtectedRoute → login
- *   - search error, other            → SearchErrorScreen (+ partial trace)
- *   - done, outcome `clarify`/`no_match` → NoResultsScreen (reason-aware + trace)
- *   - done, outcome `answered`          → ResultsScreen (+ SearchTracePanel)
- *
- * The search runs over `POST /api/search/stream` (NDJSON): the planner rewrite,
- * vector-gate drops, per-document judge verdicts, synthesis and refinement are
- * streamed live into the loading rail, and fold into the "How this answer was
- * found" trace panel — with per-step and total token/dollar cost — once the
- * answer lands. A `run(query, filters)` is fired by an effect whenever the URL's
- * query/filters change, mirroring the old query-key-driven refetch.
- *
- * Opening a document preview navigates to `/document/<id>?<searchString>` so
- * the preview URL is shareable and the back button returns to the results.
- *
- * The page composes the Wave 1 `AppNavBar` shell and the `features/search`
- * screen components; it reaches no primitive or pattern directly (§12.3) and
- * ships no styling of its own (§12.5).
- *
- * Auth: a 401 from the stream's initial response means the session cookie has
- * expired; the page invalidates the cached `me` query so `useAuth` re-resolves
- * and `ProtectedRoute` redirects the user to the login screen. (Preserved
- * exactly from the pre-streaming behaviour — `useStreamingSearch` surfaces the
- * HTTP status of a failed initial response on `state.error.status`.)
+ * Opening a preview navigates to `/document/<id>?<searchString>` so the URL is
+ * shareable and the back button returns to the results.
  */
 
 import React from 'react';
@@ -53,9 +33,6 @@ import {
   EMPTY_FILTERS,
 } from '../features/search/useSearchUrlState';
 
-/**
- * The main search page — orchestrates the search screens over a live stream.
- */
 export function SearchPage(): React.ReactElement {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -68,11 +45,9 @@ export function SearchPage(): React.ReactElement {
 
   const { state, run } = useStreamingSearch();
 
-  // Kick off (or re-run) the stream whenever the URL's query/filters change to
-  // a non-empty query — the streaming equivalent of the old query-key refetch.
-  // `run` is referentially stable (useCallback []), so the effect fires only on
-  // a genuine query/filter change. Filters are serialised so a fresh-but-equal
-  // object identity does not retrigger a search.
+  // Re-run the stream whenever the URL's query/filters change to a non-empty
+  // query. Filters are serialised so a fresh-but-equal object does not
+  // retrigger a search; `run` is referentially stable.
   const filtersKey = JSON.stringify(filters);
   React.useEffect(() => {
     const trimmed = query.trim();
@@ -84,10 +59,9 @@ export function SearchPage(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, filtersKey, run]);
 
-  // A 401 from the stream's initial response means the session expired.
-  // Invalidate the `me` query so `useAuth` re-resolves and ProtectedRoute
-  // redirects. Preserves the pre-streaming auth behaviour exactly. Guarded on
-  // the error belonging to the current query so a stale 401 cannot fire.
+  // A 401 from the stream's initial response means the session expired:
+  // invalidate `me` so `useAuth` re-resolves and ProtectedRoute redirects.
+  // Guarded on the error belonging to the current query so a stale 401 cannot fire.
   React.useEffect(() => {
     if (
       query.trim().length > 0 &&
@@ -112,9 +86,7 @@ export function SearchPage(): React.ReactElement {
     setHighlightedIndex(index);
   }
 
-  // useCallback so the reference is stable across renders — SourceCard is
-  // React.memo'd and receives this as onPreview, so an inline/unstable handler
-  // would defeat the memo and re-render every source card on each parent render.
+  // Stable reference: SourceCard is React.memo'd and receives this as onPreview.
   const openPreview = React.useCallback(
     (documentId: number): void => {
       navigate(`/document/${documentId}${searchString}`);
@@ -124,7 +96,6 @@ export function SearchPage(): React.ReactElement {
 
   /** Pick the screen to render from the query and the stream state. */
   function renderScreen(): React.ReactElement {
-    // Idle — no query submitted.
     if (query.trim().length === 0) {
       return <IdleScreen onSearch={runSearch} />;
     }
@@ -136,7 +107,6 @@ export function SearchPage(): React.ReactElement {
     // `start` lands, treat such a state as still loading.
     const stateIsCurrent = state.query === query.trim();
 
-    // Error states — mapped from the initial-response HTTP status.
     if (stateIsCurrent && state.status === 'error' && state.error !== null) {
       if (state.error.status === 503) {
         return <IndexNotReadyScreen onRetry={() => run(query.trim(), filters)} />;
@@ -159,8 +129,6 @@ export function SearchPage(): React.ReactElement {
       );
     }
 
-    // Done — route on outcome_kind: answered → ResultsScreen; everything else
-    // (clarify | no_match) → NoResultsScreen (reason-aware + trace).
     if (stateIsCurrent && state.status === 'done' && state.result !== null) {
       const result = state.result;
       if (result.outcome_kind !== 'answered') {
@@ -193,8 +161,7 @@ export function SearchPage(): React.ReactElement {
       );
     }
 
-    // Otherwise the stream is starting or in flight — the live loading rail.
-    // (Default before the first effect runs and while status is 'streaming'.)
+    // Starting or in flight, including before the first effect runs.
     return (
       <LoadingScreen
         query={query}

@@ -1,8 +1,7 @@
-"""Tests for common.paperless — client setup, document CRUD, list endpoints,
-create-named-item, retry behaviour, ping, and close.
+"""Tests for common.paperless.PaperlessClient.
 
-iter_all_documents, document_exists, and create-named-item edge cases live in
-test_paperless_iter.py (§3.1 500-line ceiling split).
+iter_all_documents, document_exists and create-named-item edge cases are in
+test_paperless_iter.py.
 """
 
 from __future__ import annotations
@@ -45,8 +44,7 @@ class _ClientRegistry:
         return client
 
     def close_all(self) -> None:
-        # PaperlessClient.close() just closes the httpx session; it is safe and
-        # idempotent, so no error guard is needed (CODE_GUIDELINES §17.6).
+        # close() only closes the httpx session and is idempotent.
         for client in self.clients:
             client.close()
         self.clients.clear()
@@ -64,12 +62,7 @@ def _auto_close_clients():
 
 
 def _make_client(settings=None):
-    """Create a PaperlessClient with test settings.
-
-    All clients created via this helper are automatically closed after each
-    test by the ``_auto_close_clients`` fixture, ensuring no resource leaks
-    even when assertions fail.
-    """
+    """Create a PaperlessClient that ``_auto_close_clients`` closes after the test."""
     if settings is None:
         settings = _make_settings()
     c = PaperlessClient(settings)
@@ -343,11 +336,9 @@ class TestUpdateDocumentMetadata:
         client.close()
 
     def test_omits_custom_fields_when_none(self):
-        """``custom_fields=None`` means "leave unchanged", not "clear".
+        """None means "leave unchanged": Paperless rejects ``custom_fields: null``.
 
-        Paperless rejects ``custom_fields: null`` with a 400 ("This field may
-        not be null."); clearing is done with an empty list. So None must be
-        omitted from the payload rather than forwarded as null.
+        Clearing is done with an empty list.
         """
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/7/").mock(
@@ -364,12 +355,9 @@ class TestUpdateDocumentMetadata:
         client.close()
 
     def test_omits_document_date_when_none(self):
-        """``document_date=None`` means "leave unchanged", not "clear".
+        """None means "leave unchanged": Paperless rejects ``created: null``.
 
-        Paperless rejects ``created: null`` with a 400 ("This field may not be
-        null.") — every document always has a creation date, so there is no
-        clear operation. The classifier passes None whenever it cannot extract
-        a date, so None must be omitted rather than forwarded as null.
+        The classifier passes None whenever it cannot extract a date.
         """
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/9/").mock(
@@ -386,7 +374,6 @@ class TestUpdateDocumentMetadata:
         client.close()
 
     def test_skips_absent_fields(self):
-        """Fields NOT passed as kwargs do not appear in the payload."""
         with respx.mock:
             route = respx.patch(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(200, json={"id": 42}),
@@ -397,7 +384,7 @@ class TestUpdateDocumentMetadata:
 
         assert route.called
         body = json_mod.loads(route.calls[0].request.content)
-        assert body == {"title": "just title"}  # no other keys
+        assert body == {"title": "just title"}
         client.close()
 
 
@@ -436,9 +423,8 @@ class TestIsPermanentPaperlessError:
 class TestMetadataWriteLogsRejectionBody:
     """A 4xx PATCH must log the Paperless error body before raising.
 
-    httpx.HTTPStatusError carries only the status line; without capturing the
-    response body the rejected field is invisible, which is what made the
-    reprocessing loop undiagnosable.
+    httpx.HTTPStatusError carries only the status line, so without the response
+    body the rejected field is invisible.
     """
 
     def test_update_document_metadata_logs_body_on_400(self):
@@ -566,7 +552,7 @@ class TestCreateNamedItems:
         client.close()
 
     def test_falls_back_string_to_int_on_400_error(self):
-        # Arrange — first call with "none" fails 400, second with 0 succeeds
+        # "none" is rejected with a 400; the retry with 0 succeeds.
         with respx.mock:
             route = respx.post(f"{BASE}/api/correspondents/")
             route.side_effect = [
@@ -582,7 +568,7 @@ class TestCreateNamedItems:
         client.close()
 
     def test_falls_back_int_to_string_on_400_error(self):
-        # Arrange — first call with int 0 fails 400, second with "none" succeeds
+        # 0 is rejected with a 400; the retry with "none" succeeds.
         with respx.mock:
             route = respx.post(f"{BASE}/api/document_types/")
             route.side_effect = [
@@ -616,8 +602,7 @@ class TestCreateNamedItems:
             )
             client = _make_client()
 
-            # Act / Assert — 500 triggers _raise_for_status_if_server_error
-            # which raises HTTPStatusError; the retry exhausts MAX_RETRIES
+            # The 500 is retried until MAX_RETRIES is exhausted.
             with pytest.raises(httpx.HTTPStatusError):
                 client.create_tag("fail-tag", matching_algorithm="none")
         client.close()
@@ -683,7 +668,7 @@ class TestRetryBehavior:
 
 class TestPostRetryBehaviour:
     """A POST is non-idempotent: it retries only on the connect phase, never on
-    a response-read drop the server may already have applied (M4)."""
+    a response-read drop the server may already have applied."""
 
     def test_post_is_not_retried_on_read_timeout(self):
         # A ReadTimeout drops while reading the RESPONSE to a request the server
@@ -698,7 +683,6 @@ class TestPostRetryBehaviour:
 
             with pytest.raises(httpx.ReadTimeout):
                 client.add_note(42, "hi")
-            # Exactly one attempt — no retry.
             assert route.call_count == 1
         client.close()
 
@@ -718,9 +702,8 @@ class TestPostRetryBehaviour:
         client.close()
 
     def test_post_is_retried_on_connect_error(self):
-        # A ConnectError proves the request never reached the server, so a single
-        # retry is safe and must still happen — GET's connect-retry is preserved
-        # for POST's connect phase.
+        # A ConnectError proves the request never reached the server, so a retry
+        # is safe.
         with respx.mock:
             route = respx.post(f"{BASE}/api/documents/42/notes/")
             route.side_effect = [
@@ -734,8 +717,8 @@ class TestPostRetryBehaviour:
         client.close()
 
     def test_post_is_retried_on_5xx_server_error(self):
-        # A 5xx means the server refused to process the request, so re-sending is
-        # safe — _raise_for_status_if_server_error raises and the breaker retries.
+        # A 5xx means the server refused to process the request, so re-sending
+        # is safe.
         with respx.mock:
             route = respx.post(f"{BASE}/api/documents/42/notes/")
             route.side_effect = [
@@ -763,7 +746,7 @@ class TestPing:
         client.close()
 
     def test_follows_redirect(self):
-        # Arrange – Paperless-ngx may redirect /api/ to schema/view/
+        # Paperless-ngx may redirect /api/ to schema/view/.
         with respx.mock:
             respx.get(f"{BASE}/api/").mock(
                 return_value=httpx.Response(
@@ -794,7 +777,6 @@ class TestPing:
 
 class TestCountDocuments:
     def test_count_documents_returns_the_paperless_count(self):
-        """count_documents reads the `count` field of the documents list page."""
         url = f"{BASE}/api/documents/?page_size=1"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -810,7 +792,6 @@ class TestCountDocuments:
         client.close()
 
     def test_count_documents_raises_on_http_error(self):
-        """A non-2xx from Paperless raises HTTPStatusError."""
         url = f"{BASE}/api/documents/?page_size=1"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -828,7 +809,6 @@ class TestClose:
 
         client.close()
 
-        # Assert — httpx.Client is closed; subsequent requests would fail
         assert client._client.is_closed
 
 
@@ -899,8 +879,7 @@ class TestNoteHelpers:
 
 class TestUpdateDocumentMetadataNotes:
     def test_update_document_metadata_supports_notes_replace(self):
-        """Notes are written via the separate endpoint: add the new note, then
-        delete the existing ones (add-before-delete)."""
+        """Notes go through the notes endpoint: add the new note, delete the old."""
         with respx.mock:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(
@@ -926,8 +905,7 @@ class TestUpdateDocumentMetadataNotes:
         client.close()
 
     def test_update_document_metadata_notes_adds_before_deleting(self):
-        """The new note is POSTed before the old notes are deleted, so a failure
-        mid-operation never leaves the document with zero notes (M4)."""
+        """Adding first means a failure mid-operation never leaves zero notes."""
         request_methods: list[str] = []
 
         def _record(request: httpx.Request) -> httpx.Response:
@@ -952,13 +930,11 @@ class TestUpdateDocumentMetadataNotes:
             client = _make_client()
             client.update_document_metadata(42, notes="fresh")
 
-        # The POST precedes every DELETE — the add-before-delete ordering.
         assert request_methods == ["POST", "DELETE", "DELETE"]
         client.close()
 
     def test_update_document_metadata_notes_does_not_delete_the_new_note(self):
-        """The freshly-added note's id is never passed to delete_note — only the
-        snapshot of pre-existing ids is deleted (M4 regression)."""
+        """Only the snapshot of pre-existing note ids is deleted."""
         deleted_ids: list[str] = []
 
         def _record_delete(request: httpx.Request) -> httpx.Response:
@@ -981,12 +957,10 @@ class TestUpdateDocumentMetadataNotes:
             client = _make_client()
             client.update_document_metadata(42, notes="fresh")
 
-        # Only the pre-existing note id (1) is deleted — never the new note (9).
         assert deleted_ids == ["1"]
         client.close()
 
     def test_update_document_metadata_notes_empty_string_deletes_all(self):
-        """notes='' deletes existing notes without adding a new one."""
         with respx.mock:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(
@@ -1058,7 +1032,6 @@ class TestDownloadStream:
     def test_download_stream_yields_the_body(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The chunk iterator reassembles to the full document body."""
         pdf = b"%PDF-1.7\nfake pdf payload\n%%EOF"
         client = self._streaming_client(monkeypatch, body=pdf)
         try:
@@ -1071,7 +1044,6 @@ class TestDownloadStream:
     def test_download_stream_returns_the_content_type(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The Paperless Content-Type header is returned to the caller."""
         client = self._streaming_client(
             monkeypatch, body=b"%PDF-1.7", content_type="application/pdf"
         )
@@ -1085,10 +1057,7 @@ class TestDownloadStream:
     def test_download_stream_defaults_content_type_when_absent(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A missing Content-Type header falls back to application/pdf."""
-
         def _handler(request: httpx.Request) -> httpx.Response:
-            # No Content-Type header at all.
             return httpx.Response(200, content=b"%PDF-1.7")
 
         settings = MagicMock()
@@ -1108,12 +1077,7 @@ class TestDownloadStream:
     def test_download_stream_raises_on_404(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A 404 surfaces as httpx.HTTPStatusError eagerly, before iterating.
-
-        The single-stream rewrite checks raise_for_status() when the stream
-        is opened, so the caller never receives a chunk iterator for a
-        failed request — the error is raised by download_stream itself.
-        """
+        """The error is raised by download_stream itself, before any iteration."""
         client = self._streaming_client(monkeypatch, body=b"not found", status_code=404)
         try:
             with pytest.raises(httpx.HTTPStatusError):
@@ -1124,12 +1088,7 @@ class TestDownloadStream:
     def test_download_stream_makes_a_single_http_request(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """download_stream opens exactly one upstream request, not two.
-
-        The previous implementation made a probe GET for the Content-Type
-        and a second GET for the body — doubling Paperless load per PDF
-        view. The rewrite reads the headers off the single body stream.
-        """
+        """Headers are read off the body stream; a probe GET would double the load."""
         requests: list[httpx.Request] = []
 
         def _handler(request: httpx.Request) -> httpx.Response:
@@ -1152,12 +1111,8 @@ class TestDownloadStream:
 
 
 class TestThumbStream:
-    """PaperlessClient.thumb_stream shares download_stream's contract.
-
-    thumb_stream and download_stream were near-verbatim duplicates (COMMON-09);
-    these tests pin the thumbnail-specific behaviour (the /thumb/ endpoint and
-    the image/jpeg default) so the shared extraction stays behaviour-preserving.
-    """
+    """thumb_stream shares download_stream's contract, with its own endpoint and
+    an image/jpeg default."""
 
     @staticmethod
     def _streaming_client(

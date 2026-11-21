@@ -1,12 +1,7 @@
 """OCR daemon entry point.
 
-Configuration is loaded from the application database (``app.db``) layered
-over the environment by :func:`common.bootstrap.bootstrap_daemon` (web-redesign
-spec §5), and **re-checked at the top of every poll** via
-:func:`common.config.current_settings` so a saved configuration change takes
-effect on the next cycle with no restart. The daemon imports ``appdb`` for
-configuration hot-load and heartbeat bootstrap but remains barred from
-``store``; it accesses no search-index tables directly.
+Configuration is re-read from ``app.db`` before every poll, so a saved change
+takes effect on the next cycle without a restart.
 """
 
 from __future__ import annotations
@@ -41,9 +36,8 @@ log = structlog.get_logger(__name__)
 class _DaemonState:
     """The OCR daemon's config-derived resources, swapped on a config change.
 
-    ``fetch_work`` / ``process_item`` close over this holder rather than a
-    bare ``Settings``, so a hot-reload between polls is picked up by the next
-    poll without rebuilding the loop (web-redesign §5).
+    The loop callbacks close over this holder rather than a bare ``Settings``,
+    so a reload between polls is picked up without rebuilding the loop.
     """
 
     settings: Settings
@@ -54,22 +48,15 @@ class _DaemonState:
 def _reload_if_changed(
     state: _DaemonState, circuit_breaker: WriteBackCircuitBreaker
 ) -> None:
-    """The before-each-poll hook: rebuild config-derived resources on a change.
+    """Rebuild config-derived resources before a poll if the config changed.
 
-    ``current_settings()`` returns the SAME cached object when the config is
-    unchanged, so the ``is`` check is the steady-state cost. On a change it
-    closes the old Paperless client, rebuilds logging / libraries / the LLM
-    limiter and the client, points *state* at the new configuration, and resets
-    the write-back circuit breaker — a config change is the operator's signal
-    that a halting fault (e.g. a bad tag id) may now be fixed, so the daemon
-    resumes.
+    ``current_settings()`` returns the same cached object while the config is
+    unchanged, so the ``is`` check is the steady-state cost. A change also
+    resets the write-back circuit breaker: it is the operator's signal that a
+    halting fault (e.g. a bad tag id) may now be fixed.
 
-    ``poll_interval_seconds`` and ``max_workers`` are read once at loop
-    construction — :func:`common.daemon_loop.run_polling_threadpool` fixes
-    them for the loop's life; a change to ``POLL_INTERVAL`` /
-    ``DOCUMENT_WORKERS`` is the one class of change that does *not* hot-load
-    for the tag daemons (the loop's cadence and pool size are structural).
-    Every other key hot-loads.
+    ``POLL_INTERVAL`` and ``DOCUMENT_WORKERS`` are fixed when the loop starts,
+    so those two keys need a restart; every other key hot-loads.
     """
     latest = current_settings(state.app_db_path)
     if latest is state.settings:
@@ -149,21 +136,16 @@ def main() -> None:
         ocr_processing_tag_id=settings.OCR_PROCESSING_TAG_ID,
     )
 
-    # APP_DB_PATH is the location the hot-load accessor watches every poll.
-    # Resolved here and threaded down so the hook never re-reads os.environ.
     app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
     state = _DaemonState(
         settings=settings, list_client=list_client, app_db_path=app_db_path
     )
 
     # Halts the daemon if Paperless rejects write-backs repeatedly, so a
-    # systemic failure cannot burn one LLM call per queued document. Process-
-    # lifetime, not config-derived: it survives a hot-reload and is only reset
-    # by one (see _reload_if_changed), so it lives here rather than in _DaemonState.
+    # systemic failure cannot burn one LLM call per queued document. It lives
+    # for the process, outside _DaemonState; a config reload resets it.
     circuit_breaker = WriteBackCircuitBreaker()
 
-    # The Index dashboard heartbeat (web-redesign spec §5). Reuse the
-    # already-resolved app_db_path rather than re-reading the env var.
     app_db = connect_app_db(app_db_path)
     ensure_schema(app_db)
     heartbeat = Heartbeat(name="ocr", conn=app_db)
@@ -185,12 +167,11 @@ def main() -> None:
         _reload_if_changed(state, circuit_breaker)
         poll_in_flight.set()
 
-    # A poll cycle can legitimately block far past the heartbeat staleness
-    # window — the flex capacity-429 wait parks every worker until OpenAI has
-    # capacity — and _on_cycle only beats AFTER the poll returns. The stall
-    # ticker beats while a cycle is in flight so the dashboard shows a long
-    # wait as working, not "stopped". Its thread owns its own app.db
-    # connection (sqlite connections must not cross threads).
+    # A poll can block far past the heartbeat staleness window (the flex
+    # capacity-429 wait parks every worker), and _on_cycle only beats after the
+    # poll returns. The stall ticker beats meanwhile so the dashboard does not
+    # show "stopped". It opens its own app.db connection because sqlite
+    # connections must not cross threads.
     poll_in_flight = threading.Event()
     ticker_stop = threading.Event()
 

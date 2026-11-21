@@ -1,14 +1,4 @@
-/*
- * Shared gap classes for the layout primitives — CSS Module.
- *
- * Stack and Grid both expose a `gap` prop mapped to the --spacing-N token
- * scale. The gap rules are identical between them, so they live here once and
- * each component pulls them in with CSS Modules `composes` — there is no
- * second copy to drift (CODE_GUIDELINES §1.3, §12.5).
- *
- * One class per spacing token; values come exclusively from tokens.css.
- * The matching TypeScript union is `SpacingScale` in ./spacing.ts.
- */
+/* Gap classes shared by Stack and Grid, one per --spacing-N token (see ./spacing.ts). */
 
 .gap-1 {
   gap: var(--spacing-1);

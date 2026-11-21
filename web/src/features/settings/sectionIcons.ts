@@ -1,14 +1,6 @@
 /**
- * Icon assignments for every settings navigation item.
- *
- * Maps each settings section id (and the access-control items) to the icon
- * name used in the side-nav rail. Defined here once so both the rail
- * (`SettingsSideNav`) and any future consumer can import without coupling.
- *
- * Section ids correspond to `SETTINGS_SECTIONS` in `fieldModel.ts`; the
- * `users` and `keys` ids cover the Access Control group.
- *
- * Tier: features/settings — shared domain knowledge for the settings area.
+ * Side-nav icon for each settings section id (`SETTINGS_SECTIONS`) plus the Access Control
+ * items `users` and `keys`.
  */
 
 import type { IconName } from '../../components/primitives/Icon/Icon';

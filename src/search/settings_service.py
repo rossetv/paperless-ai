@@ -1,21 +1,8 @@
-"""Read, diff and re-index-impact logic for the Settings API (web-redesign §5).
+"""Settings logic behind :mod:`search.settings_routes`, free of HTTP and DB.
 
-The Settings endpoints (:mod:`search.settings_routes`) are a thin HTTP shell;
-the logic they need that is worth testing in isolation lives here, FastAPI-free:
-
-- :func:`view_settings` resolves every config key to its *effective* value
-  and *source* (``database`` / ``environment`` / ``default``), so the Settings
-  screen can show where each value comes from.
-- :func:`validate_change_set` checks a proposed change against the catalogue
-  and against :func:`common.config.build_settings`, so an invalid value is
-  rejected *before* it touches ``app.db``.
-- :func:`reindex_required` reports whether any changed key needs a full
-  document re-index. Saving hot-loads with no restart (spec §5); the only
-  operator-facing consequence of a change is whether the index must be
-  rebuilt — true exactly when a :data:`common.config.REINDEX_KEYS` key moved.
-
-Allowed deps: common.config (the key catalogue and the settings builder).
-Forbidden: fastapi, sqlite3, appdb (the routes layer owns the DB connection).
+- :func:`view_settings` resolves each key's effective value and its source.
+- :func:`validate_change_set` rejects an invalid change before it is written.
+- :func:`reindex_required` reports whether a change needs a full re-index.
 """
 
 from __future__ import annotations
@@ -35,10 +22,8 @@ from common.config import (
 # Where a key's effective value came from, in precedence order.
 ValueSource = Literal["database", "environment", "default"]
 
-# The per-step provider keys whose selected provider must have its connection
-# configured before that step may use it (the five chat/vision steps plus the
-# embedding step). Used by the connection-requirement guard in
-# :func:`validate_change_set`.
+# Per-step provider keys: a step may only select a provider whose connection
+# is configured.
 _STEP_PROVIDER_KEYS = (
     "OCR_PROVIDER",
     "CLASSIFY_PROVIDER",
@@ -48,18 +33,8 @@ _STEP_PROVIDER_KEYS = (
     "EMBEDDING_PROVIDER",
 )
 
-# ---------------------------------------------------------------------------
-# Coded-default map — built once at module load.
-#
-# Call build_settings with sentinel placeholders for the two required secret
-# keys so the builder can parse every other key's default without failing on
-# missing credentials. The resulting Settings instance is converted field-by-
-# field to a string map: that is _CODED_DEFAULTS.
-#
-# Keys absent from CONFIG_KEYS (BOOTSTRAP_KEYS, REFUSAL_MARK) are not in the
-# map. Secret keys get None rather than their sentinel-built value — a secret
-# has no meaningful coded default to show.
-# ---------------------------------------------------------------------------
+# Coded defaults come from building Settings with placeholder secrets, so the
+# builder parses every other key's default without real credentials.
 _SENTINEL = "__defaults_probe__"
 
 _defaults_instance = build_settings(
@@ -71,19 +46,15 @@ _defaults_instance = build_settings(
 
 
 def _settings_to_str_map() -> dict[str, str | None]:
-    """Convert the coded-default Settings instance to a key→string-or-None map.
+    """Map each config key to its coded default in config-table string form.
 
-    Iterates every field on the dataclass, converts the value to the
-    wire-string form the config table would store, and returns the map. Secret
-    keys are mapped to ``None`` — their sentinel values are not meaningful
-    defaults to surface in the UI.
+    Secrets map to ``None``: their placeholder values are not real defaults.
     """
     result: dict[str, str | None] = {}
     for f in dataclasses.fields(_defaults_instance):
         key = f.name
         if key not in CONFIG_KEYS:
-            # BOOTSTRAP_KEYS (APP_DB_PATH, INDEX_DB_PATH) and REFUSAL_MARK
-            # are on Settings but not in CONFIG_KEYS — skip them.
+            # Bootstrap keys and REFUSAL_MARK are not configurable.
             continue
         if key in SECRET_KEYS:
             result[key] = None
@@ -94,21 +65,17 @@ def _settings_to_str_map() -> dict[str, str | None]:
         elif isinstance(raw, list):
             result[key] = ", ".join(str(item) for item in raw)
         elif raw is None:
-            # Optional keys that default to None (e.g. OLLAMA_BASE_URL when
-            # provider is openai) have no coded default to show.
             result[key] = None
         else:
             result[key] = str(raw)
     return result
 
 
-#: Single source of truth for coded defaults, keyed by config-key name.
 #: ``None`` for secret keys and optional keys whose default is ``None``.
 _CODED_DEFAULTS: dict[str, str | None] = _settings_to_str_map()
 
-# Placeholder for the two required secret keys when building a Settings purely
-# to validate or resolve *other* keys — the caller may be changing an unrelated
-# key on an instance whose secrets are not yet configured.
+# Fills missing secrets when building Settings only to validate other keys:
+# an instance may not have its secrets configured yet.
 _VALIDATION_SENTINEL = "__validation_placeholder__"
 
 
@@ -130,12 +97,7 @@ def _merged_for_build(
 
 
 def _is_openai_embedding_model(model: str) -> bool:
-    """Whether *model* names an OpenAI embedding model.
-
-    Every OpenAI embedding model is named ``text-embedding-*``; no Ollama
-    embedding model is. Used to reject the incoherent ``EMBEDDING_PROVIDER=ollama``
-    + OpenAI-model combination that would wipe the index and then fail to embed.
-    """
+    """Whether *model* names an OpenAI embedding model (``text-embedding-*``)."""
     return model.startswith("text-embedding-")
 
 
@@ -144,20 +106,10 @@ class SettingView:
     """One config key as the Settings screen sees it.
 
     Attributes:
-        key: The canonical config key (an env-var name).
-        effective_value: The precedence-resolved string the daemons would
-            load — the ``config``-table value, else the environment value,
-            else ``None`` when only a coded default applies (the default
-            itself is not re-derived here; ``None`` means "shows the default").
-        source: ``database`` / ``environment`` / ``default`` — where
-            *effective_value* came from.
-        is_secret: Whether this key holds a secret and must be masked in API
-            responses.
-        default_value: The coded default as a string, or ``None`` when the key
-            has no coded default (secrets, optional keys that default to
-            ``None``). Surfaced so the Settings screen can display the default
-            even when ``source`` is ``"default"`` and ``effective_value`` is
-            ``None``.
+        effective_value: The ``config``-table value, else the environment
+            value, else ``None`` when only the coded default applies.
+        default_value: The coded default as a string, or ``None`` for secrets
+            and keys whose default is ``None``.
     """
 
     key: str
@@ -172,16 +124,7 @@ def view_settings(
     config_table: Mapping[str, str],
     environ: Mapping[str, str],
 ) -> list[SettingView]:
-    """Return one :class:`SettingView` per config key, precedence-resolved.
-
-    Args:
-        config_table: The ``config`` table as a key→value dict.
-        environ: The process environment mapping.
-
-    Returns:
-        A :class:`SettingView` for every key in
-        :data:`common.config.CONFIG_KEYS`, in sorted key order.
-    """
+    """Return one :class:`SettingView` per config key, in sorted key order."""
     views: list[SettingView] = []
     for key in sorted(CONFIG_KEYS):
         if key in config_table:
@@ -211,50 +154,27 @@ def validate_change_set(
     config_table: Mapping[str, str],
     environ: Mapping[str, str],
 ) -> set[str]:
-    """Validate a proposed configuration change and return the changed keys.
+    """Validate a proposed change and return the keys whose value differs.
 
-    Two checks. First, every key in *changes* must be a known config key —
-    an unknown key is a client error, not something to silently store.
-    Second, the would-be result (the change set layered over the current
-    table over the environment) must build a valid :class:`Settings`, so a
-    value that would break a daemon's startup is rejected here rather than
-    after it is written and a daemon later fails to boot.
-
-    Args:
-        changes: The proposed key→value changes from the request body.
-        config_table: The current ``config`` table.
-        environ: The process environment.
-
-    Returns:
-        The subset of *changes* keys whose value actually differs from the
-        current effective value — the keys that genuinely changed.
+    Every key must be known, and the result must build a valid
+    :class:`Settings`, so a value that would stop a daemon from booting is
+    rejected before it is written.
 
     Raises:
-        ValueError: A key is not a known config key, or the resulting
-            configuration fails validation. The message names the offender.
+        ValueError: Naming the unknown key or the invalid value.
     """
     unknown = set(changes) - set(CONFIG_KEYS)
     if unknown:
         raise ValueError(f"unknown configuration key(s): {', '.join(sorted(unknown))}")
 
-    # Build the would-be merged mapping and run the real Settings builder; it
-    # raises ValueError naming the offending key on any invalid value. (Secret
-    # keys absent on an unconfigured instance are filled with a sentinel so the
-    # builder can validate the changed keys without failing on a missing secret.)
     merged = _merged_for_build(
         config_table=config_table, environ=environ, changes=changes
     )
-    after = build_settings(merged)  # raises ValueError on a bad value
+    after = build_settings(merged)
 
-    # Embedding-coherence guard. EMBEDDING_PROVIDER does not follow
-    # LLM_PROVIDER: _resolve_embedding_provider hard-defaults it to "openai"
-    # regardless of the chat provider, so the operator must set it explicitly
-    # to reach "ollama" here. The bundled EMBEDDING_MODEL default is an
-    # OpenAI model name, which an Ollama embedding endpoint cannot serve —
-    # saving EMBEDDING_PROVIDER=ollama without also updating EMBEDDING_MODEL
-    # would wipe the index (a re-index key changed) and then fail to
-    # re-embed, leaving search permanently broken. Refuse it here so that
-    # flip can never destroy the index into a dead state.
+    # Ollama cannot serve an OpenAI embedding model. Saving
+    # EMBEDDING_PROVIDER=ollama with the default model would wipe the index
+    # and then fail to re-embed, leaving search broken.
     if after.EMBEDDING_PROVIDER == "ollama" and _is_openai_embedding_model(
         after.EMBEDDING_MODEL
     ):
@@ -266,13 +186,9 @@ def validate_change_set(
             "save."
         )
 
-    # Connection-requirement guard. A step may only select a provider whose
-    # connection is configured. The builder defaults OLLAMA_BASE_URL to localhost
-    # and the validator injects a sentinel for the OPENAI_API_KEY secret, so the
-    # *raw* merged source (not ``after``) is what tells us the operator actually
-    # configured the connection. The UI mirrors this by disabling the option, but
-    # this guard is the backstop: without it a UI/API change could be accepted,
-    # written to app.db, and then break the daemon's next config build.
+    # A step may only select a provider whose connection is configured. Check
+    # the raw merged source, not ``after``: the builder defaults
+    # OLLAMA_BASE_URL to localhost and OPENAI_API_KEY holds a placeholder.
     raw_ollama_url = (merged.get("OLLAMA_BASE_URL") or "").strip()
     ollama_steps = [k for k in _STEP_PROVIDER_KEYS if getattr(after, k) == "ollama"]
     if ollama_steps and not raw_ollama_url:
@@ -280,11 +196,8 @@ def validate_change_set(
             "Configure OLLAMA_BASE_URL under Connections before selecting Ollama "
             f"for: {', '.join(ollama_steps)}."
         )
-    # The mirror guard for OpenAI fires only when the change-set *actively*
-    # selects OpenAI for a step (not on the ambient default), so an ordinary
-    # settings change never has to re-supply the masked OPENAI_API_KEY secret —
-    # preserving the secret-sentinel workflow — while switching a step TO OpenAI
-    # with no key configured is still rejected before it can break the next build.
+    # The OpenAI guard fires only when the change set selects OpenAI, so an
+    # unrelated save never has to re-supply the masked OPENAI_API_KEY.
     raw_openai_key = (
         changes.get("OPENAI_API_KEY")
         or config_table.get("OPENAI_API_KEY")
@@ -298,8 +211,6 @@ def validate_change_set(
             f"for: {', '.join(openai_selected)}."
         )
 
-    # Determine which keys genuinely change. The current effective value is
-    # the table value if present, else the environment value, else absent.
     changed: set[str] = set()
     for key, new_value in changes.items():
         if key in config_table:
@@ -317,29 +228,12 @@ def reindex_required(
     config_table: Mapping[str, str],
     environ: Mapping[str, str],
 ) -> bool:
-    """Return whether applying *changes* needs a full document re-index.
+    """Return whether applying *changes* makes the existing index stale.
 
-    Saving configuration hot-loads — no daemon restarts (spec §5). The one
-    operator-facing consequence of a change is whether the existing index
-    becomes stale: that happens exactly when the *resolved* value of a
-    :data:`common.config.REINDEX_KEYS` setting moves.
-
-    The comparison is made on the built :class:`~common.config.Settings`, not on
-    the raw changed keys, so a **derived** change is caught: ``EMBEDDING_PROVIDER``
-    follows ``LLM_PROVIDER`` unless set explicitly, so flipping the provider
-    stales every vector even though only ``LLM_PROVIDER`` — which is not itself a
-    re-index key — appears in the change set. A raw changed-key intersection
-    missed exactly this case.
-
-    Args:
-        changes: The proposed key→value changes from the request body.
-        config_table: The current ``config`` table.
-        environ: The process environment.
-
-    Returns:
-        ``True`` when applying *changes* moves the resolved embedding model,
-        embedding provider, or chunking; ``False`` otherwise (including for an
-        empty change set).
+    True exactly when the resolved value of a
+    :data:`common.config.REINDEX_KEYS` setting moves. The comparison is on the
+    built :class:`~common.config.Settings`, not the raw keys, so a change that
+    moves a re-index value indirectly is caught too.
     """
     before = build_settings(
         _merged_for_build(config_table=config_table, environ=environ)

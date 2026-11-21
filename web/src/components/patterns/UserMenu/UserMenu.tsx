@@ -16,35 +16,18 @@ export interface UserMenuProps {
   username?: string;
   /** The user's email, shown under the name. May be `null` (then omitted). */
   email: string | null;
-  /**
-   * Called when the user chooses "Sign out". The pattern stays domain-free —
-   * the caller performs the actual logout mutation and routing.
-   */
+  /** Called on "Sign out"; the caller performs the logout and routing. */
   onSignOut: () => void;
   /** Background colour for the avatar. Defaults to the neutral grey gradient. */
   avatarColour?: string;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
-/** Default avatar colour — references the design token so it stays in sync with tokens.css. */
 const DEFAULT_AVATAR_COLOUR = 'var(--gradient-avatar-default)';
 
 /**
- * Account dropdown menu — an `Avatar` trigger that opens a small menu with a
- * name/email header and a "Sign out" item.
- *
- * Closes on Escape, on an outside pointer-down, and after an item is chosen.
- * The dropdown is a `role="menu"` with `role="menuitem"` children for
- * assistive technology. The trigger carries `aria-haspopup="menu"` and
- * `aria-expanded`.
- *
- * Domain-free: it never calls the API or `useAuth` — sign-out is delegated to
- * the `onSignOut` callback so the pattern is reusable and testable in
- * isolation.
- *
- * Tier: components/patterns (CODE_GUIDELINES §12.3) — composes the Avatar
- * primitive. Allowed deps: primitives, hooks, lib.
+ * Account dropdown: an `Avatar` trigger opening a menu with a name/email header
+ * and a "Sign out" item. Closes on Escape, an outside pointer-down, or a pick.
  */
 export function UserMenu({
   initials,

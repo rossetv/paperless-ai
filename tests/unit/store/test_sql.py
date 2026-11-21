@@ -20,7 +20,6 @@ def test_placeholders_builds_a_long_run() -> None:
 
 
 def test_placeholders_of_zero_is_an_empty_string() -> None:
-    """Zero placeholders yields an empty string — callers guard empty id lists."""
     assert placeholders(0) == ""
 
 
@@ -30,5 +29,5 @@ def test_placeholders_rejects_a_negative_count() -> None:
 
 
 def test_placeholders_contains_only_question_marks_and_commas() -> None:
-    """No value is ever interpolated — the output is structural only (§9.5)."""
+    """No value is ever interpolated; the output is structural only."""
     assert set(placeholders(10)) == {"?", ","}

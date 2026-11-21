@@ -20,26 +20,13 @@ export interface ChipProps {
    * callers must supply this for non-string children.
    */
   removeLabel?: string;
-  /** Chip label content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * Compact tag/filter chip.
- *
- * When `onClick` is provided, the chip root renders as a <button> so it is
- * keyboard-operable (Enter/Space) and participates in the tab order. The
- * accent focus ring applies. This is the interactive toggle mode used by
- * FilterControls.
- *
- * Without `onClick`, renders as a <span> container — not itself interactive.
- *
- * When `onRemove` is provided, a <button> dismiss control is rendered inside
- * with an accessible aria-label so screen readers announce the action.
- *
- * The remove button carries the accent focus ring for keyboard operability.
+ * Compact tag/filter chip. With `onClick` the root is a toggle `<button>`;
+ * without it, a plain `<span>`. `onRemove` adds a labelled dismiss button.
  */
 export function Chip({
   selected = false,
@@ -57,7 +44,7 @@ export function Chip({
   );
 
   // Derive a default accessible label from string children; fall back to
-  // 'Remove' for non-string children with no explicit removeLabel (FE-35).
+  // 'Remove' for non-string children with no explicit removeLabel.
   const computedRemoveLabel =
     removeLabel ??
     (typeof children === 'string' ? `Remove ${children}` : 'Remove');
@@ -69,15 +56,12 @@ export function Chip({
       aria-label={computedRemoveLabel}
       onClick={onRemove}
     >
-      {/* × character — visually communicates dismissal without a dependency */}
       <span aria-hidden="true">×</span>
     </button>
   ) : null;
 
-  // When the root is a <button> (onClick) AND onRemove is supplied, the remove
-  // control must be a sibling — not nested — to avoid invalid button-in-button
-  // HTML (FE-34). Wrap both in a span so the pair can still share the chip
-  // visual class from the inner toggle button.
+  // With both onClick and onRemove, the remove control must be a sibling of the
+  // toggle button, not nested in it (button-in-button is invalid HTML).
   if (onClick !== undefined) {
     if (removeButton !== null) {
       return (

@@ -1,16 +1,4 @@
-"""Tests for StoreReader.keyword_document_search — FTS grouped to documents.
-
-Covers:
-- a content keyword matches and is grouped to one row per document, with a
-  best-chunk snippet;
-- the same pre-ranking SearchFilters that ranked retrieval uses apply here too;
-- pagination returns disjoint pages and a stable total;
-- the empty-terms / non-positive-limit guards return an empty page.
-
-The ``populated_db`` fixture and ``unit_vec`` helper come from
-tests/unit/store/conftest.py; ``open_writer``/``open_reader`` from
-tests/helpers/store.py.
-"""
+"""Tests for StoreReader.keyword_document_search, FTS hits grouped by document."""
 
 from __future__ import annotations
 
@@ -39,7 +27,6 @@ def test_keyword_document_search_matches_content_and_groups_by_document(
 
 
 def test_keyword_document_search_applies_filters(populated_db: str) -> None:
-    """A correspondent filter excluding the match returns nothing."""
     reader = open_reader(populated_db)
     # "invoice" lives in document 1 (correspondent 10); filter to 11 → no match.
     page = reader.keyword_document_search(

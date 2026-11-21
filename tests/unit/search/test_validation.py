@@ -1,8 +1,6 @@
-"""Tests for search.validation — account-field validation rules.
+"""Tests for search.validation: account-field validation rules.
 
-Covers the API-contract limits: username length and charset; password
-minimum length; role enum; display_name optional length; email optional
-basic shape. Each validator returns the cleaned value or raises ValueError.
+Each validator returns the cleaned value or raises ValueError.
 """
 
 from __future__ import annotations

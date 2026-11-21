@@ -1,28 +1,6 @@
 /**
- * Streaming search client — `POST /api/search/stream` (NDJSON).
- *
- * The agentic search pipeline streams its per-phase reasoning live as
- * `application/x-ndjson`: one JSON object per `\n`-terminated line. This module
- * has two halves:
- *
- *   - `streamSearch(body, signal?)` — fires the POST and, on a 2xx, returns the
- *     raw `Response` so the caller can read its `body` stream. On a NON-OK
- *     *initial* response it throws the SAME typed errors as the JSON `request`
- *     wrapper (`Unauthenticated` for 401, `ApiError` carrying the status for
- *     anything else) so `SearchPage` can reproduce the existing 401 → login and
- *     503 → "index not ready" behaviour. The status is surfaced BEFORE any
- *     streaming begins — a non-OK response never has a body to stream.
- *   - `parseNdjson(stream)` — an async generator that decodes the byte stream
- *     (a streaming UTF-8 `TextDecoder`), buffers a partial trailing line across
- *     chunk boundaries, splits on `\n`, and `JSON.parse`s each COMPLETE line
- *     into a `StreamEvent`, flushing any final buffered (newline-less) line
- *     when the stream ends.
- *
- * Security: mirrors `client/core.ts` — `credentials: 'include'` so the signed
- * `HttpOnly` session cookie is attached; the JS bundle never sees a raw secret.
- *
- * Allowed deps: core (error types + BASE_URL), types (leaf module —
- * CODE_GUIDELINES §12.3).
+ * Streaming search client for `POST /api/search/stream`, which streams the
+ * pipeline's per-phase reasoning as NDJSON (one JSON object per line).
  */
 
 import type { SearchRequest, StreamEvent } from '../types';
@@ -43,17 +21,11 @@ export class StreamError extends Error {
 }
 
 /**
- * POST to `/api/search/stream` and return the streaming `Response`.
+ * POST to `/api/search/stream` and return the raw `Response` for {@link parseNdjson}.
  *
- * Resolves with the raw `Response` on a 2xx so the caller can pipe
- * `response.body` through {@link parseNdjson}. Throws on a non-OK *initial*
- * response, BEFORE any body is read:
- *   - 401 → `Unauthenticated` (drives `me`-invalidation → login redirect)
- *   - any other non-2xx → `ApiError` carrying the HTTP status (503 → the
- *     "index not ready" screen; everything else → the generic error screen).
- *
- * @param body   The search request (query + optional filters).
- * @param signal Optional `AbortSignal` to cancel the in-flight request.
+ * A non-OK initial response throws before any body is read, with the same errors
+ * as `request`: 401 → `Unauthenticated`, otherwise `ApiError` with the status
+ * (503 drives the "index not ready" screen).
  */
 export async function streamSearch(
   body: SearchRequest,
@@ -78,21 +50,11 @@ export async function streamSearch(
 }
 
 /**
- * Decode an NDJSON byte stream into a sequence of `StreamEvent`s.
+ * Decode an NDJSON byte stream into `StreamEvent`s.
  *
- * Reads the stream chunk by chunk, decoding UTF-8 with a streaming
- * `TextDecoder` (`{ stream: true }` carries a partial multi-byte character
- * across reads), accumulates text in a buffer, and emits one event per
- * `\n`-terminated line. A line that spans a chunk boundary stays in the buffer
- * until its newline arrives, so a frame split mid-line is reassembled
- * correctly. When the stream ends, the decoder is flushed and any final
- * buffered line (a terminal frame sent without a trailing newline) is emitted.
- *
- * Blank lines are skipped. A line that fails to `JSON.parse` raises a
- * `StreamError` — a corrupt frame is a hard failure, not a silently-dropped
- * one.
- *
- * @param stream The `Response.body` to read; `null` raises a `StreamError`.
+ * A line split across chunks is buffered until its newline arrives, and a final
+ * line without a trailing newline is still emitted. Blank lines are skipped; a
+ * line that is not valid JSON, or a `null` stream, raises a `StreamError`.
  */
 export async function* parseNdjson(
   stream: ReadableStream<Uint8Array> | null,
@@ -138,11 +100,7 @@ export async function* parseNdjson(
   }
 }
 
-/**
- * Parse one NDJSON line into a `StreamEvent`, or `null` for a blank line.
- *
- * A non-blank line that is not valid JSON raises a `StreamError`.
- */
+/** Parse one NDJSON line into a `StreamEvent`, or `null` for a blank line. */
 function parseLine(line: string): StreamEvent | null {
   const trimmed = line.trim();
   if (trimmed.length === 0) {

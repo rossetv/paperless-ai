@@ -1,9 +1,7 @@
 """Tests for the list_filters MCP tool.
 
-list_filters is a zero-LLM tool: it returns the filter catalogue (correspondents,
-document types, tags — each with a count — plus the date range) from the local
-index so a calling model can discover valid filter ids. These tests drive it via
-the in-memory MCP transport.
+list_filters returns the filter catalogue from the local index so a calling
+model can discover valid filter ids.
 """
 
 from __future__ import annotations

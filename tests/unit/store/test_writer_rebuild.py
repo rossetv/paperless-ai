@@ -1,10 +1,4 @@
-"""Tests for StoreWriter.rebuild_index — the full index wipe.
-
-Covers: after rebuild_index the documents and chunks tables are empty and
-the modified_watermark meta key is cleared, so the next reconcile re-indexes
-everything; the embedding-model meta is stamped with the configured model so
-the next boot does not see a false drift and re-embed twice.
-"""
+"""Tests for StoreWriter.rebuild_index, the full index wipe."""
 
 from __future__ import annotations
 
@@ -13,10 +7,6 @@ import structlog.testing
 from store.writer import StoreWriter
 from tests.helpers.factories import make_chunks, make_document_meta
 from tests.helpers.store import open_writer
-
-
-# db_path comes from tests/unit/store/conftest.py (a fresh tmp_path file
-# per test — the same fixture every other store unit test uses).
 
 
 def test_rebuild_index_empties_documents_and_chunks(db_path: str) -> None:
@@ -59,10 +49,10 @@ def test_rebuild_index_writes_the_configured_embedding_model_meta(
 
 
 def test_rebuild_index_reconciles_meta_to_a_changed_model(db_path: str) -> None:
-    """Regression (IDX): a rebuild after the operator switches models in the UI
-    must stamp the NEW model into meta. Otherwise the next boot's
-    check_embedding_model() sees stored small vs configured large, calls it
-    drift, and redundantly re-embeds the whole corpus a second time.
+    """A rebuild after a model switch must stamp the new model into meta.
+
+    Otherwise the next boot's check_embedding_model() sees drift and re-embeds
+    the whole corpus a second time.
     """
     writer = open_writer(db_path)
     try:
@@ -78,12 +68,9 @@ def test_rebuild_index_reconciles_meta_to_a_changed_model(db_path: str) -> None:
 
 
 def test_rebuild_index_is_a_writer_only_operation(db_path: str) -> None:
-    """I4: the wipe lives only on the write side (StoreWriter).
+    """A full re-embed must not be reachable from the read/search side.
 
-    A regression guard: rebuild_index must remain a StoreWriter method (gated by
-    the indexer's single-writer flock), never reachable from the read side. The
-    StoreReader has no such method — asserting its absence pins the invariant
-    that a full re-embed cannot be triggered from a read/search path.
+    The wipe is gated by the indexer's single-writer flock.
     """
     from store.reader import StoreReader
 
@@ -93,7 +80,7 @@ def test_rebuild_index_is_a_writer_only_operation(db_path: str) -> None:
 
 
 def test_rebuild_index_logs_projected_scope_at_critical(db_path: str) -> None:
-    """rebuild_index logs a CRITICAL projected-cost line before the wipe (IDX-04)."""
+    """rebuild_index logs a CRITICAL projected-cost line before the wipe."""
     writer = open_writer(db_path)
     try:
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
@@ -116,7 +103,7 @@ def test_rebuild_index_logs_projected_scope_at_critical(db_path: str) -> None:
 
 
 def test_rebuild_index_still_wipes_after_logging(db_path: str) -> None:
-    """The CRITICAL log does not gate the wipe — the index is still emptied."""
+    """The CRITICAL log does not gate the wipe."""
     writer = open_writer(db_path)
     try:
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))

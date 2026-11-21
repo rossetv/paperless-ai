@@ -1,26 +1,13 @@
-/*
- * UserEditDrawer feature component — CSS Module.
- *
- * The create / edit user form rendered inside the shared Modal. A two-column
- * field grid above a footer split between a destructive action (left) and
- * the save / cancel buttons (right).
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Two-column field grid. ── */
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-13);
 }
 
-/* A field that spans the full grid width. */
 .full {
   grid-column: 1 / -1;
 }
 
-/* ── A server / submit error banner. ── */
 .error {
   margin-top: var(--spacing-10);
   padding: var(--spacing-8) var(--spacing-10);
@@ -32,7 +19,7 @@
   line-height: var(--line-height-caption);
 }
 
-/* ── Footer — destructive action left, primary actions right. ── */
+/* Footer: destructive actions left, cancel / save right. */
 .footer {
   display: flex;
   align-items: center;
@@ -43,16 +30,14 @@
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
-/* The destructive cluster — reversible action left, permanent action right,
-   separated so the two cannot be misclicked for one another (DD-3). */
+/* Reversible (Suspend) left, permanent (Delete) right, spaced apart so one
+   cannot be misclicked for the other. */
 .destructive {
   display: flex;
   align-items: center;
   gap: var(--spacing-8);
 }
 
-/* A thin vertical rule that spatially separates the reversible (Suspend) from
-   the permanent (Delete) action, satisfying the DD-3 spatial-separation rule. */
 .destructive-separator {
   display: block;
   width: var(--spacing-1);
@@ -61,7 +46,6 @@
   flex-shrink: 0;
 }
 
-/* The primary cluster — cancel + save. */
 .primary {
   display: flex;
   align-items: center;

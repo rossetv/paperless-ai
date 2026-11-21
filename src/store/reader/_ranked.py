@@ -1,17 +1,7 @@
-"""Ranked-retrieval queries for the search index store.
+"""Ranked retrieval: exact brute-force vector KNN and FTS5 BM25 keyword search.
 
-Implements the two ranked-retrieval operations of the read side: exact
-brute-force vector KNN (``vector_search``) and FTS5 BM25 keyword search
-(``keyword_search``).  Both apply the caller's :class:`~store.models.SearchFilters`
-as SQL WHERE clauses on the documents table *before* ranking, so filtered
-recall is exact — there is no "k rows ranked, all filtered out" failure
-(SPEC §6.2).
-
-Each function takes the connection and the StoreReader's query lock by
-argument; :class:`~store.reader.StoreReader` is the facade that owns them.
-
-Allowed deps: sqlite3, sqlite_vec, store.models, store.reader._filters,
-    store.migrations.
+Filters are applied in SQL *before* ranking, so filtered recall is exact: there
+is no "k rows ranked, all filtered out" failure.
 """
 
 from __future__ import annotations
@@ -20,19 +10,16 @@ import sqlite3
 import threading
 from collections.abc import Sequence
 
-# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+# sqlite_vec ships no type stubs.
 import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import StoreError
 from store.models import ChunkHit, SearchFilters
 from store.reader._filters import build_filters, escape_fts_term
 
-# Dimension consistency: vector_search passes the query blob directly to
-# vec_distance_cosine without a per-row dimension check.  This is safe because
-# StoreWriter.check_embedding_model() wipes and rebuilds all chunks whenever
-# the embedding model or configured dimension changes, so every stored
-# embedding is guaranteed to share the same width.  A per-row fallback for
-# mismatched dimensions is therefore unnecessary.
+# No per-row dimension check is needed: StoreWriter.check_embedding_model()
+# wipes every chunk when the model or dimensions change, so all stored
+# embeddings share one width.
 
 
 def vector_search(
@@ -42,33 +29,15 @@ def vector_search(
     k: int,
     filters: SearchFilters,
 ) -> list[ChunkHit]:
-    """Exact scalar-distance KNN over the SQL-filtered candidate set.
+    """Exact KNN over the SQL-filtered candidate set, nearest first.
 
-    Applies *filters* as SQL WHERE clauses on *documents* before ranking by
-    cosine distance, so filtered recall is exact (SPEC §6.2).
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the query.
-        query_embedding: The float32 query vector (must match stored dimensions).
-        k: Maximum number of results to return.
-        filters: Pre-ranking filter; applied as SQL WHERE on documents.
-
-    Returns:
-        Up to *k* ChunkHit objects ordered by ascending cosine distance
-        (nearest first).  ChunkHit.score is the cosine distance.
-
-    Raises:
-        StoreError: On SQLite error.
+    ``ChunkHit.score`` is the cosine distance.
     """
     if k <= 0:
         return []
     query_blob = sqlite_vec.serialize_float32(list(query_embedding))
     where_clause, params = build_filters(filters)
-    # rationale: where_clause is composed solely of fixed SQL keywords and
-    # ``?`` placeholders by build_filters — no caller value is ever spliced
-    # into the string.  Every filter value travels in *params* and is bound by
-    # parameter substitution (CODE_GUIDELINES §9.5).
+    # where_clause holds only fixed SQL and ``?`` placeholders.
     sql = (
         "SELECT c.id, c.document_id, c.text, c.page_hint, "
         "       vec_distance_cosine(c.embedding, ?) AS distance "
@@ -100,47 +69,24 @@ def keyword_search(
     k: int,
     filters: SearchFilters,
 ) -> list[ChunkHit]:
-    """FTS5 BM25 search over chunks_fts with the same pre-ranking filters.
+    """FTS5 BM25 search over chunks_fts, *terms* AND-combined, best match first.
 
-    Filters are applied as SQL WHERE on documents *before* the FTS MATCH
-    ranking, consistent with :func:`vector_search` (SPEC §6.2).
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the query.
-        terms: One or more search terms.  They are combined with AND via the
-            FTS5 MATCH syntax.
-        k: Maximum number of results to return.
-        filters: Pre-ranking filter; applied as SQL WHERE on documents.
-
-    Returns:
-        Up to *k* ChunkHit objects ordered by ascending BM25 rank (best match
-        first, i.e. most-negative bm25 value).  ChunkHit.score is the raw
-        bm25() value (negative; closer to 0 is better).
-
-    Raises:
-        StoreError: On SQLite error.
+    ``ChunkHit.score`` is the raw ``bm25()`` value: negative, and the most
+    negative is the best match.
     """
     if not terms or k <= 0:
         return []
 
-    # Build the FTS MATCH expression: each term is quoted and joined with AND.
-    # Only the structure (AND, quotes) is assembled here — the term text itself
-    # goes through parameter substitution via the MATCH ? binding below.
+    # The whole MATCH expression is bound as one parameter.
     match_expr = " AND ".join(f'"{escape_fts_term(term)}"' for term in terms)
 
     where_clause, params = build_filters(filters)
-    # Append the FTS condition: when build_filters produced clauses the string
-    # already opens with WHERE, so AND extends it; otherwise WHERE starts it.
     if where_clause:
         fts_join = where_clause + " AND fts.text MATCH ?"
     else:
         fts_join = "WHERE fts.text MATCH ?"
 
-    # rationale: fts_join is built only from fixed SQL keywords and ``?``
-    # placeholders (build_filters' output plus the literal MATCH clause) — no
-    # caller value is spliced into the string.  The terms and every filter
-    # value are bound by parameter substitution (CODE_GUIDELINES §9.5).
+    # fts_join holds only fixed SQL and ``?`` placeholders.
     sql = (
         "SELECT c.id, c.document_id, c.text, c.page_hint, "
         "       bm25(chunks_fts) AS rank "
@@ -174,31 +120,11 @@ def keyword_document_search(
     limit: int,
     offset: int,
 ) -> tuple[list[tuple[int, str, float]], int]:
-    """FTS5 keyword search grouped to documents (spec §4.4).
+    """Like :func:`keyword_search`, but one row per document: its best chunk.
 
-    Like :func:`keyword_search`, but collapses the chunk-level FTS hits to one
-    row per document — the best (lowest BM25) chunk — so the caller gets a
-    ranked document list rather than passages.  The same ``SearchFilters`` are
-    applied as a WHERE on the documents table *before* ranking, so filtered
-    recall is exact.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the count + page queries.
-        terms: One or more keyword terms, AND-combined via FTS5 MATCH.
-        filters: Pre-ranking filter applied as SQL WHERE on documents.
-        limit: Maximum number of documents to return; ``<= 0`` returns nothing.
-        offset: Number of documents to skip (pagination); must be ``>= 0``.
-
-    Returns:
-        A ``(rows, total)`` pair where each row is
-        ``(document_id, best_chunk_text, best_rank)`` ordered by ascending
-        (best) BM25 rank, and *total* is the count of distinct matching
-        documents ignoring pagination.  ``([], 0)`` when *terms* is empty or
-        *limit* ``<= 0``.
-
-    Raises:
-        StoreError: On SQLite error.
+    Returns ``(rows, total)``: rows of ``(document_id, best_chunk_text,
+    best_rank)``, best first, and the distinct matching-document count ignoring
+    pagination.
     """
     if not terms or limit <= 0:
         return [], 0
@@ -210,9 +136,7 @@ def keyword_document_search(
     else:
         fts_join = "WHERE fts.text MATCH ?"
 
-    # rationale: fts_join is build_filters() output (fixed SQL + ? placeholders)
-    # plus the literal MATCH clause — no caller value is spliced in.  Terms and
-    # every filter value bind via parameter substitution (CODE_GUIDELINES §9.5).
+    # fts_join holds only fixed SQL and ``?`` placeholders.
     # Two CTEs: compute bm25 once per matching chunk, then keep each document's
     # best (lowest-rank) chunk via a window function before paginating.
     page_sql = (

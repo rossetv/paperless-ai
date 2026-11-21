@@ -1,17 +1,4 @@
-"""Write API for the search index store.
-
-StoreWriter is the sole write-side interface to the SQLite search index.
-The indexer daemon uses it to upsert documents, delete stale documents,
-refresh the taxonomy, and manage the embedding-model meta.
-
-Every write goes through an internal threading.Lock so that concurrent
-indexer workers can safely share one StoreWriter instance.
-
-Allowed deps: sqlite3, sqlite_vec, store.schema, store.migrations, store.models,
-    common.config.
-Forbidden: imports from indexer/, search/, or any package above store/.
-No HTTP, no LLM calls, no business logic.
-"""
+"""Write API for the search index, used only by the indexer daemon."""
 
 from __future__ import annotations
 
@@ -20,7 +7,7 @@ import sqlite3
 import threading
 from collections.abc import Iterable, Sequence
 
-# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+# sqlite_vec ships no type stubs.
 import sqlite_vec  # type: ignore[import-untyped]
 import structlog
 
@@ -38,42 +25,22 @@ log = structlog.get_logger(__name__)
 class StoreWriter:
     """Write API for the SQLite search index.
 
-    Owns all write transactions against the index database.  A single instance
-    is shared across the indexer's worker threads; an internal Lock serialises
-    every transaction.
-
-    Raises:
-        StoreError: Any sqlite3.Error encountered during a write is wrapped
-            in StoreError (with ``from``) and re-raised.
+    One instance is shared across the indexer's worker threads; an internal lock
+    serialises every write transaction. Every ``sqlite3.Error`` is re-raised as
+    :class:`StoreError`.
     """
 
     def __init__(self, settings: Settings) -> None:
-        """Open a read-write connection and apply pending migrations.
-
-        Args:
-            settings: Application settings; ``INDEX_DB_PATH``,
-                ``EMBEDDING_MODEL``, and ``EMBEDDING_DIMENSIONS`` are used.
-        """
+        """Open a read-write connection and apply pending migrations."""
         self._settings = settings
-        # The writer is the index's sole writer process (SPEC §3.2).
         self._conn = connect(settings.INDEX_DB_PATH)
-        # Serialises all write transactions across threads (SPEC §5.6, §8.4).
         self._write_lock = threading.Lock()
         ensure_schema(self._conn)
 
-    # ------------------------------------------------------------------
-    # Reads (no lock needed — WAL allows concurrent reads)
-    # ------------------------------------------------------------------
+    # Reads take no lock: WAL allows concurrent reads.
 
     def get_index_state(self) -> dict[int, IndexState]:
-        """Return the current indexed state for every document.
-
-        Returns:
-            Mapping of document id to its IndexState (modified + content_hash).
-
-        Raises:
-            StoreError: On SQLite error.
-        """
+        """Return the current indexed state of every document, keyed by id."""
         try:
             rows = self._conn.execute(
                 "SELECT id, modified, content_hash FROM documents"
@@ -85,11 +52,7 @@ class StoreWriter:
         }
 
     def get_all_document_ids(self) -> set[int]:
-        """Return the set of all document ids currently in the index.
-
-        Raises:
-            StoreError: On SQLite error.
-        """
+        """Return the set of all document ids currently in the index."""
         try:
             rows = self._conn.execute("SELECT id FROM documents").fetchall()
         except sqlite3.Error as exc:
@@ -97,17 +60,7 @@ class StoreWriter:
         return {row[0] for row in rows}
 
     def read_meta(self, key: str) -> str | None:
-        """Read a value from the meta table.
-
-        Args:
-            key: The meta key to look up.
-
-        Returns:
-            The stored value, or None if the key is absent.
-
-        Raises:
-            StoreError: On SQLite error.
-        """
+        """Return the meta value for *key*, or None if absent."""
         try:
             row = self._conn.execute(
                 "SELECT value FROM meta WHERE key = ?", (key,)
@@ -116,20 +69,10 @@ class StoreWriter:
             raise StoreError(f"failed to read meta key {key!r}") from exc
         return row[0] if row is not None else None
 
-    # ------------------------------------------------------------------
-    # Writes (all serialised through _write_lock)
-    # ------------------------------------------------------------------
+    # Writes are serialised through _write_lock.
 
     def write_meta(self, key: str, value: str) -> None:
-        """Write or replace a meta key/value pair.
-
-        Args:
-            key: The meta key.
-            value: The value to store.
-
-        Raises:
-            StoreError: On SQLite error.
-        """
+        """Write or replace a meta key/value pair."""
         try:
             with self._write_lock:
                 with self._conn:
@@ -141,29 +84,11 @@ class StoreWriter:
             raise StoreError(f"failed to write meta key {key!r}") from exc
 
     def upsert_document(self, meta: DocumentMeta, chunks: Sequence[ChunkInput]) -> None:
-        """Atomically upsert one document: delete its old chunks, insert new ones.
+        """Atomically replace one document and its chunks.
 
-        The operation runs in a single transaction under the write lock so
-        that a crash mid-document leaves the prior version fully intact.
-
-        Sequence of operations inside the transaction:
-        1. Read the current chunks.id values for this document.
-        2. Delete the matching chunks_fts rows by rowid explicitly (FK cascade
-           does NOT cover the FTS5 virtual table — see SPEC §4.5 / §9.8).
-        3. Delete the chunks rows (FK cascade removes them from chunks, but
-           we delete chunks_fts first while we still have the ids).
-        4. Upsert the documents row (INSERT OR REPLACE).
-        5. For each ChunkInput: INSERT INTO chunks, capture the auto-assigned id,
-           INSERT INTO chunks_fts using that exact id as the rowid.
-           This enforces chunks.id == chunks_fts.rowid (SPEC §4.2 invariant).
-
-        Args:
-            meta: Document metadata to upsert.
-            chunks: Ordered sequence of chunks (with embeddings) to store.
-
-        Raises:
-            StoreError: On SQLite error; the transaction is rolled back and
-                the prior version remains intact.
+        One transaction, so a crash leaves the prior version intact. Each chunk's
+        ``chunks_fts`` row reuses the chunk's id as its rowid; that invariant is
+        how FTS rows are found and deleted later.
         """
         now = utc_now_iso()
         tag_ids_json = json.dumps(list(meta.tag_ids))
@@ -193,10 +118,8 @@ class StoreWriter:
                             now,
                         ),
                     )
-                    # Accumulate (chunk_id, text) pairs so the FTS inserts can
-                    # be flushed in one executemany, halving the statement count.
-                    # Per-row INSERT into chunks must stay to capture lastrowid
-                    # — that id enforces chunks.id == chunks_fts.rowid (SPEC §4.2).
+                    # Chunks are inserted one by one to capture lastrowid; the
+                    # FTS rows then go in one executemany.
                     fts_rows: list[tuple[int, str]] = []
                     for chunk in chunks:
                         cursor = self._conn.execute(
@@ -212,11 +135,7 @@ class StoreWriter:
                                 sqlite_vec.serialize_float32(list(chunk.embedding)),
                             ),
                         )
-                        # Capture the auto-assigned rowid so chunks_fts.rowid
-                        # matches exactly (SPEC §4.2); collect for batch insert below.
-                        # A successful INSERT always sets lastrowid; None would mean
-                        # the sqlite3 layer returned success with no rowid — impossible
-                        # on a normal INSERT INTO an autoincrement table.
+                        # Never None after a successful INSERT; guarded for typing.
                         chunk_id = cursor.lastrowid
                         if chunk_id is None:
                             raise StoreError(
@@ -234,19 +153,11 @@ class StoreWriter:
     def update_metadata(self, meta: DocumentMeta) -> None:
         """Update only the metadata columns; never touches chunks or chunk_count.
 
-        Called when the Paperless document's OCR content is unchanged but its
-        metadata (title, correspondent, tags, modified) has advanced.  Skipping
-        re-chunking and re-embedding saves embedding API cost.
-
-        Args:
-            meta: Updated document metadata.
+        Used when the OCR content is unchanged, which saves re-embedding.
 
         Raises:
-            StoreError: On SQLite error, or when no document row matched
-                ``meta.id`` — a 0-row update means the index has diverged from
-                the reconciler's in-memory state (the row was concurrently
-                pruned or never upserted), which must fail loud rather than
-                silently no-op (§1.11).
+            StoreError: On SQLite error, or when no row matched ``meta.id``: the
+                index has diverged from the reconciler's state.
         """
         now = utc_now_iso()
         tag_ids_json = json.dumps(list(meta.tag_ids))
@@ -276,11 +187,8 @@ class StoreWriter:
                             meta.id,
                         ),
                     )
-                    # rowcount is reliable here: same connection, single
-                    # UPDATE, inside the transaction. 0 rows means the target
-                    # document is no longer in the index — surface it loudly so
-                    # the next reconcile re-indexes it rather than leaving the
-                    # index quietly missing a document.
+                    # Fail loudly so the next reconcile re-indexes the document
+                    # instead of the index quietly missing it.
                     if cursor.rowcount == 0:
                         raise StoreError(
                             f"update_metadata: document {meta.id} is not in the "
@@ -295,16 +203,8 @@ class StoreWriter:
     def delete_documents(self, ids: Iterable[int]) -> None:
         """Delete documents and all their chunks from the index.
 
-        FK ON DELETE CASCADE removes chunks rows when documents rows go.
-        chunks_fts is a standalone FTS5 virtual table that does NOT honour FK
-        cascade — its rows must be deleted explicitly before the documents
-        delete (while the chunk ids are still available).
-
-        Args:
-            ids: Document ids to delete.
-
-        Raises:
-            StoreError: On SQLite error.
+        The FK cascade removes chunks but not their ``chunks_fts`` rows, so those
+        are deleted first, while the chunk ids are still known.
         """
         document_ids = list(ids)
         if not document_ids:
@@ -329,17 +229,10 @@ class StoreWriter:
             raise StoreError(f"failed to delete documents {document_ids}") from exc
 
     def refresh_taxonomy(self, entries: Iterable[TaxonomyEntry]) -> None:
-        """Replace the entire taxonomy table with the given entries.
+        """Replace the entire taxonomy table in one transaction.
 
-        Runs as one transaction: DELETE all existing rows, then INSERT the
-        new ones.  A rename in Paperless therefore takes effect immediately
-        for all queries without any document-level rewrite.
-
-        Args:
-            entries: The complete current taxonomy from Paperless.
-
-        Raises:
-            StoreError: On SQLite error.
+        Documents store ids only, so a rename in Paperless takes effect without
+        rewriting any document.
         """
         rows = list(entries)
         try:
@@ -354,40 +247,15 @@ class StoreWriter:
             raise StoreError("failed to refresh taxonomy") from exc
 
     def check_embedding_model(self) -> bool:
-        """Compare the configured embedding identity against the stored meta.
+        """Wipe the index if the embedding identity changed; return whether it did.
 
-        The embedding identity is the triple ``(provider, model, dimensions)``.
-        On a mismatch (or first run) it calls :meth:`_wipe_and_stamp_model`,
-        which empties chunks, chunks_fts, documents, and taxonomy, clears the
-        modified_watermark, and stamps the new identity — so the next
-        reconciliation re-indexes and re-embeds everything from scratch — then
-        returns True. Documents MUST be wiped along with the chunks: keeping
-        them lets the reconcile's content-hash check skip re-embedding (a
-        metadata-only pass), which would leave the index permanently empty after
-        an identity change.
-
-        Provider back-compat (the load-bearing part): an index built before this
-        field existed has **no** ``embedding_provider`` meta key. A missing key
-        is read as ``"openai"`` — the only provider embeddings ever used before
-        this change — so a production OpenAI index whose meta predates the
-        provider field reads ``(openai, model, dims)`` and, when the config is
-        still ``openai`` with the same model/dims, MATCHES and is **not** wiped.
-        A genuine provider switch (openai↔ollama) mismatches and triggers the
-        wipe, which is correct: OpenAI and Ollama vectors are not comparable.
-
-        If the identity already matches, returns False (no wipe).
-
-        Returns:
-            True if a rebuild is needed (provider, model, or dimensions changed,
-            or first run); False if the stored identity matches the configured
-            one.
-
-        Raises:
-            StoreError: On SQLite error.
+        The identity is ``(provider, model, dimensions)``. On a mismatch or first
+        run the index is emptied via :meth:`_wipe_and_stamp_model` so the next
+        reconcile re-embeds everything; vectors from different models or
+        providers are not comparable.
         """
-        # Absent embedding_provider meta ⇒ "openai": every index built before
-        # this field existed embedded with OpenAI, so an upgrade of an existing
-        # OpenAI index reads as openai and does NOT trigger a false re-embed.
+        # Indexes that predate the embedding_provider key were all built with
+        # OpenAI; reading a missing key as "openai" avoids a false re-embed.
         stored_provider = self.read_meta("embedding_provider") or "openai"
         stored_model = self.read_meta("embedding_model")
         stored_dims = self.read_meta("embedding_dimensions")
@@ -411,9 +279,7 @@ class StoreWriter:
             configured_model=configured_model,
             configured_dimensions=configured_dims,
         )
-        # LLM-11 / IDX-04: make the impending full re-embed loud BEFORE the
-        # wipe.  Read outside the write lock through the existing connection;
-        # the wipe transaction below is unchanged.
+        # Read outside the write lock, before the wipe.
         log_reembed_projection(
             self._conn,
             trigger="embedding_model_change",
@@ -441,28 +307,14 @@ class StoreWriter:
     ) -> None:
         """Empty every indexed table and stamp the identity the next reconcile uses.
 
-        The shared wipe behind :meth:`rebuild_index` (the operator "Rebuild
-        index") and :meth:`check_embedding_model` (an identity change detected on
-        boot). Both must leave the index FULLY empty so the next incremental
-        sync re-indexes and re-embeds everything.
+        ``documents`` must go too: if its rows survived, the content-hash check
+        would treat every document as unchanged and never re-create the chunks.
+        Clearing ``modified_watermark`` makes the next sync re-fetch everything.
+        The identity is stamped in the same transaction, so it can never disagree
+        with the chunk set.
 
-        Deleting ``documents`` is load-bearing and the subtle part: keeping the
-        document rows lets the reconcile's content-hash check classify every
-        document as unchanged and take a metadata-only pass — which leaves the
-        index permanently chunk-less (an empty search index) after an identity
-        change. ``taxonomy`` is wiped too; the next cycle refreshes it. The
-        ``modified_watermark`` is cleared so the sync runs with no server-side
-        filter and re-fetches every document.
-
-        The provider/model/dims meta is stamped in the SAME transaction as the
-        wipe, so a crash leaves meta and chunks consistent and the stored
-        identity can never disagree with the (now empty) chunk set. The
-        ``embedding_provider`` key is always written here — so once an index is
-        wiped under this code, its provider is recorded explicitly rather than
-        relying on the absent-⇒-openai back-compat default.
-
-        Acquires the write lock. Propagates ``sqlite3.Error``; callers wrap it
-        in :class:`StoreError` with their own context.
+        Takes the write lock and propagates ``sqlite3.Error`` for the caller to
+        wrap.
         """
         with self._write_lock:
             with self._conn:
@@ -487,46 +339,13 @@ class StoreWriter:
         embedding_dimensions: int,
         embedding_provider: str | None = None,
     ) -> None:
-        """Wipe the entire index so the next reconcile rebuilds it from scratch.
+        """Wipe the entire index in one transaction for the "Rebuild index" action.
 
-        The destructive "Rebuild index" operation (web-redesign spec §5, Wave 6).
-        Deletes every chunk, document, and taxonomy row and clears the
-        ``modified_watermark`` meta key — all in one transaction, so a crash
-        mid-wipe leaves the index either wholly intact or wholly empty, never
-        half-wiped.
-
-        The embedding-identity meta is stamped with *embedding_provider* /
-        *embedding_model* / *embedding_dimensions* — the identity the next
-        reconcile will re-embed with. The caller passes the **live**
-        (hot-reloaded) config, not the writer's boot settings: a "Rebuild index"
-        triggered after the operator switches the embedding model in the UI
-        re-embeds with the NEW model, so leaving the stored meta on the old model
-        would make the next boot's ``check_embedding_model`` detect a false drift
-        and redundantly re-embed the whole corpus. When the identity is unchanged
-        the write is a harmless no-op (same value).
-
-        *embedding_provider* is optional for source-compatibility with the
-        indexer call site, which passes only model/dimensions: when ``None`` it
-        falls back to the writer's ``settings.EMBEDDING_PROVIDER`` (the boot
-        value). This is the same provider the freshly-built per-cycle
-        ``EmbeddingClient`` uses, so the stamp matches the re-embed unless the
-        provider was hot-switched without restarting the indexer — an edge the
-        next-boot ``check_embedding_model`` self-heals by detecting the drift.
-
-        After this returns the index has no documents; the indexer's next
-        incremental sync (watermark cleared → no server-side filter) re-indexes
-        the whole Paperless archive.
-
-        Args:
-            embedding_model: The model the next reconcile will embed with — the
-                live resolved ``EMBEDDING_MODEL`` (stamped into meta).
-            embedding_dimensions: The matching ``EMBEDDING_DIMENSIONS`` (stamped
-                into meta as a string, mirroring ``check_embedding_model``).
-            embedding_provider: The provider the next reconcile will embed with;
-                ``None`` (the default) resolves to ``settings.EMBEDDING_PROVIDER``.
-
-        Raises:
-            StoreError: On SQLite error — the transaction is rolled back.
+        The caller passes the live (hot-reloaded) embedding identity, not the boot
+        settings: stamping the old model would make the next boot's
+        ``check_embedding_model`` see a false drift and re-embed everything again.
+        *embedding_provider* defaults to the boot ``EMBEDDING_PROVIDER``; if it was
+        hot-switched, the next boot's check corrects it.
         """
         provider = (
             embedding_provider
@@ -534,9 +353,6 @@ class StoreWriter:
             else self._settings.EMBEDDING_PROVIDER
         )
         log.warning("store.index_rebuild_started")
-        # LLM-11 / IDX-04: a "Rebuild index" wipes every chunk and forces a full
-        # re-embed on the next reconcile — log the projected scope at CRITICAL
-        # before the wipe.
         log_reembed_projection(self._conn, trigger="index_rebuild")
         try:
             self._wipe_and_stamp_model(
@@ -551,20 +367,10 @@ class StoreWriter:
     def checkpoint(self) -> None:
         """Refresh query-planner stats, then issue a WAL checkpoint (TRUNCATE).
 
-        Called at the end of each reconciliation cycle so the search server
-        never chases an unbounded WAL file (SPEC §3.2).
-
-        ``PRAGMA optimize`` runs first: after a large backfill the documents and
-        chunks tables have no ``sqlite_stat1`` statistics, so the read-side
-        planner (the search server's filter/browse queries) plans against
-        default uniform-distribution assumptions and can pick a worse index. It
-        is self-throttling — a no-op when nothing changed, re-ANALYZEing only
-        stale/missing stats — so it is safe to call every cycle, and running it
-        before the checkpoint folds its small ``sqlite_stat1`` write into the
-        same WAL truncation.
-
-        Raises:
-            StoreError: On SQLite error.
+        Called after each reconciliation cycle so the WAL never grows unbounded.
+        ``PRAGMA optimize`` gives the search server's planner statistics after a
+        large backfill; it is a no-op when nothing changed, so it is cheap every
+        cycle, and running it first folds its write into the same truncation.
         """
         try:
             self._conn.execute("PRAGMA optimize")
@@ -576,18 +382,10 @@ class StoreWriter:
         """Close the underlying database connection."""
         self._conn.close()
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
     def _delete_fts_rows(self, chunk_ids: list[int]) -> None:
-        """Delete chunks_fts rows for *chunk_ids* (no lock, no txn).
+        """Delete chunks_fts rows for *chunk_ids*; FTS5 ignores the FK cascade.
 
         Caller must hold the write lock and be inside a transaction.
-
-        chunks_fts is a standalone FTS5 virtual table — it does NOT honour FK
-        cascade and must be cleaned explicitly (SPEC §4.5, CODE_GUIDELINES §9.8).
-        An empty list is a no-op.
         """
         if not chunk_ids:
             return
@@ -597,14 +395,9 @@ class StoreWriter:
         )
 
     def _delete_chunks_for_document(self, document_id: int) -> None:
-        """Delete chunks and chunks_fts rows for *document_id* (no lock, no txn).
+        """Delete chunks and chunks_fts rows for *document_id*.
 
         Caller must hold the write lock and be inside a transaction.
-
-        The FK ON DELETE CASCADE on chunks.document_id would remove chunks rows
-        when the documents row is deleted, but we delete chunks first (before
-        the documents row) so we can collect the chunk ids to delete from
-        chunks_fts.  See :meth:`_delete_fts_rows` for the FTS5 rationale.
         """
         rows = self._conn.execute(
             "SELECT id FROM chunks WHERE document_id = ?", (document_id,)

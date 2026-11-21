@@ -13,14 +13,12 @@ from ocr.provider import OcrProvider, _is_model_refusal
 
 
 def _make_settings(**overrides):
-    """Create a mock Settings for OcrProvider."""
     from tests.helpers.factories import make_settings_obj
 
     return make_settings_obj(**overrides)
 
 
 def _make_provider(settings=None, **setting_overrides):
-    """Create an OcrProvider with mocked settings."""
     if settings is None:
         settings = _make_settings(**setting_overrides)
     with patch.object(OcrProvider, "_create_completion"):
@@ -29,7 +27,6 @@ def _make_provider(settings=None, **setting_overrides):
 
 
 def _make_response(text: str) -> MagicMock:
-    """Create a mock OpenAI chat completion response."""
     response = MagicMock()
     response.choices = [MagicMock()]
     response.choices[0].message.content = text
@@ -37,13 +34,11 @@ def _make_response(text: str) -> MagicMock:
 
 
 def _make_test_image(width: int = 100, height: int = 100) -> Image.Image:
-    """Create a non-blank test image."""
     img = Image.new("RGB", (width, height), color="red")
     return img
 
 
 def _make_blank_image() -> Image.Image:
-    """Create a blank (all-white) image."""
     return Image.new("RGB", (100, 100), color="white")
 
 
@@ -91,7 +86,6 @@ class TestIsRefusal:
         assert is_error_content("I am unable to help", markers) is True
 
     def test_mixed_case_markers_still_match(self):
-        """Markers with uppercase chars should still match (case-insensitive)."""
         markers = ["Cannot Process", "REFUSED"]
 
         assert is_error_content("i cannot process this image", markers) is True
@@ -293,12 +287,11 @@ class TestOcrProviderImageResize:
         )
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(return_value=_make_response("text"))
-        # Create image larger than OCR_MAX_SIDE
         image = _make_test_image(width=1000, height=800)
 
         provider.transcribe_image(image)
 
-        # Assert — the caller's image must NOT be mutated (copy is made internally)
+        # The caller's image is not mutated; the provider resizes a copy.
         assert image.size == (1000, 800)
 
     @patch("ocr.provider.is_blank", return_value=False)
@@ -408,7 +401,7 @@ class TestOcrProviderDuplicateModels:
 
         page = provider.transcribe_image(image)
 
-        # Assert — model-a tried once (deduplicated), then model-b
+        # model-a is tried once, then model-b.
         assert page.text == "ok from b"
         assert page.model == "model-b"
         assert provider._create_completion.call_count == 2
@@ -426,7 +419,7 @@ class TestOcrProviderNoneContent:
 
         page = provider.transcribe_image(image)
 
-        # Assert — empty string is not a refusal, so it returns
+        # An empty string is not a refusal.
         assert page.text == ""
         assert page.model == "model-a"
 
@@ -545,10 +538,7 @@ class TestOcrProviderServiceTier:
 
 
 class TestOcrProviderReadsOcrModels:
-    """OCR provider must read OCR_MODELS, not AI_MODELS."""
-
     def test_uses_ocr_models_field(self):
-        """OcrProvider iterates settings.OCR_MODELS, not settings.AI_MODELS."""
         settings = _make_settings(OCR_MODELS=["ocr-only-model"])
         provider = OcrProvider(settings)
         provider._create_completion = MagicMock(
@@ -562,7 +552,7 @@ class TestOcrProviderReadsOcrModels:
 
 
 class TestIsModelRefusal:
-    """M5: refusal detection must not discard genuine document content.
+    """Refusal detection must not discard genuine document content.
 
     A document body that happens to contain a phrase like "I cannot assist
     you" (e.g. a denial or legal letter) must NOT be treated as a model

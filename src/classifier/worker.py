@@ -49,29 +49,22 @@ log = structlog.get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class _PrepareOutcome:
-    """Carries pre-LLM screening results back to :meth:`ClassificationProcessor.process`.
+    """Pre-LLM screening result.
 
-    ``content`` is the raw OCR text when screening passes; ``None`` means the
-    document was diverted (error-tagged, requeued, refused, or unclaimed) and
-    ``process()`` should return ``None`` immediately.  ``claimed`` records
-    whether the processing-lock tag was acquired so the ``finally`` block can
-    release it regardless of outcome.
+    ``content`` is ``None`` when the document was diverted (error-tagged,
+    requeued, refused or unclaimed). ``claimed`` tells ``process()`` whether to
+    release the processing tag.
     """
 
     content: str | None
     claimed: bool
-    document: dict[str, object]  # re-used by _apply_classification
-    current_tags: set[int]  # extracted once, shared across screening and apply steps
+    document: dict[str, object]
+    current_tags: set[int]
 
 
 @dataclass(frozen=True, slots=True)
 class _ResolvedTaxonomyIds:
-    """The Paperless ids resolved from a classification result.
-
-    A named shape rather than a 3-tuple so the call site reads by field, not by
-    position (CODE_GUIDELINES §5.8). ``tag_ids`` is a tuple to keep the shape
-    fully immutable.
-    """
+    """The Paperless ids resolved from a classification result."""
 
     tag_ids: tuple[int, ...]
     correspondent_id: int | None
@@ -79,11 +72,9 @@ class _ResolvedTaxonomyIds:
 
 
 class ClassificationProcessor:
-    """
-    Orchestrates the classification of a single Paperless document.
+    """Classifies one Paperless document.
 
-    Instantiated per-document by the daemon's thread pool.  Each instance
-    gets its own :class:`PaperlessClient` (HTTP session) and a shared
+    Built per document with its own :class:`PaperlessClient` and the shared
     :class:`TaxonomyCache`.
     """
 
@@ -103,28 +94,16 @@ class ClassificationProcessor:
         self.title: str = doc.get("title") or "<untitled>"  # type: ignore[assignment]
 
     def process(self) -> WriteBackOutcome | None:
-        """
-        Run the full classification workflow.
+        """Screen, truncate, classify and write back one document.
 
-        Steps:
-        1. Pre-LLM screening via :meth:`_prepare_or_divert` (fetch, error-tag
-           check, claim, empty-content requeue, refusal check).
-        2. Truncate content (by pages, then by characters).
-        3. Call the classification LLM.
-        4. Validate the result (non-empty, non-generic).
-        5. Apply metadata to Paperless (tags, correspondent, type, etc.).
-        6. Release the processing-lock tag.
-
-        Returns the write-back outcome the daemon feeds to the circuit breaker:
-        :attr:`WriteBackOutcome.SAVED` when the metadata was applied,
-        :attr:`WriteBackOutcome.QUARANTINED` when a permanent Paperless
-        rejection error-tagged the document, or ``None`` for a cycle that wrote
-        back nothing (skipped, requeued, or already-errored).
+        Returns the outcome the daemon feeds to the circuit breaker: ``SAVED``,
+        ``QUARANTINED`` when Paperless permanently rejected the write, or
+        ``None`` when nothing was written back.
         """
         log.info("Classifying document", doc_id=self.document_id, title=self.title)
         self.classifier.reset_stats()
-        # Initialise with a safe "not claimed, no content" sentinel so the
-        # finally block is always safe to read, even if _prepare_or_divert raises.
+        # A "not claimed" default so the finally block is safe if
+        # _prepare_or_divert raises.
         prepare = _PrepareOutcome(
             content=None, claimed=False, document={}, current_tags=set()
         )
@@ -154,12 +133,9 @@ class ClassificationProcessor:
                 )
                 return WriteBackOutcome.SAVED
             except PAPERLESS_CALL_EXCEPTIONS as exc:
-                # The LLM tokens for this document are already spent. A 4xx here
-                # (a rejected metadata PATCH, a stale taxonomy pk) is permanent:
-                # leaving the document queued would re-classify it every poll and
-                # burn tokens forever. Quarantine it with the error tag so it
-                # leaves the queue. Transient errors (5xx/network) re-raise so the
-                # daemon loop retries them once Paperless recovers.
+                # A 4xx here is permanent: leaving the document queued would
+                # re-classify it, and spend tokens, on every poll. Quarantine it.
+                # Transient errors re-raise so the loop retries them later.
                 if not is_permanent_paperless_error(exc):
                     raise
                 log.error(
@@ -186,16 +162,7 @@ class ClassificationProcessor:
             self._log_classification_stats()
 
     def _prepare_or_divert(self) -> _PrepareOutcome:
-        """
-        Fetch the document and run pre-LLM screening checks.
-
-        Returns a :class:`_PrepareOutcome` whose ``content`` is the raw OCR
-        text when the document should proceed to classification, or ``None``
-        when the document was diverted (error-tagged, unclaimed, empty-content
-        requeued, or contained refusal markers).  ``claimed`` records whether
-        the processing-lock tag was acquired; ``document`` is the refreshed
-        Paperless document dict.
-        """
+        """Fetch the document, claim it, and run the pre-LLM screening checks."""
         document = self.paperless_client.get_document(self.document_id)
         content: str = document.get("content", "") or ""  # type: ignore[assignment]
         current_tags = extract_tags(
@@ -218,10 +185,8 @@ class ClassificationProcessor:
                 "Document has error tag; skipping classification",
                 doc_id=self.document_id,
             )
-            # Finalise with error: strips pipeline/queue tags and re-adds
-            # ERROR_TAG_ID so the document leaves the queue and the error state
-            # is preserved. clean_pipeline_tags() unconditionally removes
-            # ERROR_TAG_ID, so a bare strip-and-write would silently drop it.
+            # Not a bare clean_pipeline_tags() write: that removes ERROR_TAG_ID,
+            # which must be kept.
             finalise_document_with_error(
                 self.paperless_client, self.document_id, current_tags, self.settings
             )
@@ -263,20 +228,16 @@ class ClassificationProcessor:
     def _usable_result(
         self, result: ClassificationResult | None, current_tags: set[int]
     ) -> ClassificationResult | None:
-        """
-        Return the classifier output when it is fit to apply, else ``None``.
+        """Return the classifier output when it is fit to apply, else ``None``.
 
-        An empty result or a vague document type is unusable: the document is
-        finalised with an error tag and ``None`` is returned so the caller
-        stops before applying metadata. ``None`` here is a handled outcome —
-        the error has already been recorded — not a swallowed failure.
+        An empty result or a vague document type error-tags the document before
+        returning ``None``.
         """
         if not result or is_empty_classification(result):
             if is_shutdown_requested():
-                # A shutdown-aborted flex-capacity wait yields the same empty
-                # result as a genuine model failure; error-tagging now would
-                # quarantine a healthy document on a routine deploy. Leave
-                # the queue tag so the next boot re-attempts it (spec D5).
+                # A shutdown-aborted flex-capacity wait looks like a model
+                # failure; error-tagging would quarantine a healthy document on a
+                # routine deploy. Leave it queued for the next boot.
                 log.warning(
                     "Empty classification during shutdown; leaving document queued",
                     doc_id=self.document_id,
@@ -301,11 +262,7 @@ class ClassificationProcessor:
         return result
 
     def _truncate_content(self, content: str) -> tuple[str, list[str]]:
-        """
-        Apply page-based and character-based truncation in sequence.
-
-        Returns ``(truncated_text, list_of_truncation_notes)``.
-        """
+        """Truncate by pages, then by characters; return the text and the notes."""
         input_text = content
         truncation_notes: list[str] = []
 
@@ -327,8 +284,7 @@ class ClassificationProcessor:
                     tail_pages=self.settings.CLASSIFY_TAIL_PAGES,
                 )
 
-        # The character cap is a hard ceiling applied after page truncation;
-        # it preserves the model footer so model tags survive.
+        # The footer is preserved so the model tags survive.
         if (
             self.settings.CLASSIFY_MAX_CHARS > 0
             and len(input_text) > self.settings.CLASSIFY_MAX_CHARS
@@ -391,12 +347,10 @@ class ClassificationProcessor:
     def _drop_born_digital_tag(self, tags: list[str]) -> list[str]:
         """Remove the born-digital tag from the LLM's suggestions.
 
-        why: that tag records the OCR gate's verdict that no transcription ran.
-        The LLM sees it in the tag vocabulary and picks it for scans the OCR
-        daemon did transcribe, so only the gate may set it. Matched by the
-        configured id (the name is operator-chosen) and dropped before the tag
-        limit is applied, so a rejected suggestion does not use up a slot. A
-        tag already on the document is kept by ``_apply_classification``.
+        The tag records the OCR gate's verdict that no transcription ran, but
+        the LLM sees it in the vocabulary and picks it for scanned documents, so
+        only the gate may set it. Dropped before the tag limit so it does not
+        use a slot; a tag already on the document is kept.
         """
         tag_id = self.settings.OCR_BORN_DIGITAL_TAG_ID
         name = self.taxonomy_cache.tag_name(tag_id) if tag_id is not None else None
@@ -457,9 +411,7 @@ class ClassificationProcessor:
         language = normalise_language(result.language)
         title = result.title.strip() if result.title else ""
 
-        # why: Paperless treats an empty-string title identically to None (no
-        # update), so collapse "" → None at this API boundary to make the intent
-        # explicit and avoid a redundant PATCH field.
+        # Paperless treats "" like no update; None keeps it out of the PATCH.
         self.paperless_client.update_document_metadata(
             self.document_id,
             title=title or None,

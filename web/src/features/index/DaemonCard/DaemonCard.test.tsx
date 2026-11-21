@@ -2,10 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { DaemonCard } from './DaemonCard';
 import type { DaemonStatus } from '../../../api/types';
 
-/**
- * Fixture mirrors `DaemonStatusResponse` in `wire.py` exactly.
- * Fields: name, state, detail, processed_count, last_heartbeat.
- */
 const RUNNING: DaemonStatus = {
   name: 'ocr',
   state: 'running',
@@ -27,13 +23,11 @@ describe('DaemonCard', () => {
 
   it('renders the processed_count figure', () => {
     render(<DaemonCard daemon={RUNNING} />);
-    // Formatted as en-GB locale number
     expect(screen.getByText(/412 processed/)).toBeInTheDocument();
   });
 
   it('renders a relative last-seen time from last_heartbeat', () => {
     render(<DaemonCard daemon={RUNNING} />);
-    // last_heartbeat is well in the past relative to test run time
     expect(screen.getByText(/last seen/i)).toBeInTheDocument();
   });
 

@@ -1,22 +1,7 @@
-"""The indexer's reconcile-cycle activity log — ``reconcile_activity``.
+"""The indexer's append-only log of sync and sweep cycles, for the dashboard.
 
-An append-only record of every incremental-sync and deletion-sweep cycle the
-indexer runs, so the Index dashboard can show "Recent activity"
-(web-redesign spec §5, Wave 6).
-
-This log lives in ``app.db``, not ``index.db``, for two reasons: ``index.db``
-keeps only the *latest* reconcile timestamp (a single overwritten value, no
-history), and the destructive "Rebuild" action deletes ``index.db`` outright
-— the operations history must survive that.
-
-The indexer calls :func:`record_cycle` at the end of each cycle; the search
-server calls :func:`read_recent` to render the dashboard. The per-cycle
-count maps (``SyncReport`` / ``SweepReport``) are passed as a plain
-``dict[str, int]`` and stored as a JSON string — this module owns the
-(de)serialisation so callers always see typed counts.
-
-Allowed deps: sqlite3, structlog, json. Forbidden: store, search, daemon
-packages, FastAPI, common.
+Kept in ``app.db`` rather than ``index.db`` because "Rebuild" deletes
+``index.db`` and the history must survive it.
 """
 
 from __future__ import annotations
@@ -30,14 +15,10 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
-#: The two kinds of reconcile cycle the indexer runs.
 CycleKind = Literal["sync", "sweep"]
 
-#: Maximum rows retained in this append-only log. The dashboard shows only the
-#: newest ~50 (index_routes._ACTIVITY_LIMIT); a generous cap keeps support
-#: history while stopping the table growing without bound over the indexer's
-#: (potentially months-long) lifetime. Trimmed once per cycle — cycles are
-#: minutes apart, so the cost is negligible.
+# The dashboard shows ~50 rows; a generous cap keeps support history while
+# bounding the table over a months-long lifetime.
 _ACTIVITY_CAP = 500
 
 
@@ -46,14 +27,10 @@ class ReconcileCycle:
     """One recorded reconcile or sweep cycle.
 
     Attributes:
-        id: The row's autoincrement id — also its append order.
-        kind: ``sync`` (an incremental sync) or ``sweep`` (a deletion sweep).
-        started_at: ISO-8601 UTC timestamp the cycle began.
-        finished_at: ISO-8601 UTC timestamp the cycle ended.
+        id: Autoincrement id, which is also the append order.
         ok: True when the cycle completed without aborting or erroring.
-        summary: The cycle's count map — the ``SyncReport`` /
-            ``SweepReport`` fields, e.g. ``{"indexed": 3, "failed": 0}``.
-        detail: A short human one-liner describing the cycle's outcome.
+        summary: The ``SyncReport`` / ``SweepReport`` counts, e.g.
+            ``{"indexed": 3, "failed": 0}``.
     """
 
     id: int
@@ -75,17 +52,7 @@ def record_cycle(
     summary: dict[str, int],
     detail: str,
 ) -> None:
-    """Append one reconcile/sweep cycle to the activity log, then commit.
-
-    Args:
-        conn: An open, migrated ``app.db`` connection.
-        kind: ``sync`` or ``sweep``.
-        started_at: ISO-8601 UTC timestamp the cycle began.
-        finished_at: ISO-8601 UTC timestamp the cycle ended.
-        ok: Whether the cycle completed without aborting or erroring.
-        summary: The cycle's count map; stored as a JSON object.
-        detail: A short human one-liner.
-    """
+    """Append one cycle to the activity log, trim it to the cap, and commit."""
     with conn:
         conn.execute(
             "INSERT INTO reconcile_activity "
@@ -100,10 +67,8 @@ def record_cycle(
                 detail,
             ),
         )
-        # Trim to the newest _ACTIVITY_CAP rows so this append-only table stays
-        # bounded. id is a monotonic primary key, so this single indexed DELETE
-        # is cheaper than a NOT IN/LIMIT subquery; on a table smaller than the
-        # cap, MAX(id) - cap is negative and nothing is deleted.
+        # id is monotonic, so one indexed DELETE is cheaper than a NOT IN/LIMIT
+        # subquery.
         conn.execute(
             "DELETE FROM reconcile_activity "
             "WHERE id <= (SELECT MAX(id) FROM reconcile_activity) - ?",
@@ -114,18 +79,14 @@ def record_cycle(
 def _parse_summary(raw: str) -> dict[str, int]:
     """Decode a stored summary JSON string into a count map.
 
-    A row whose summary is somehow not a JSON object or contains non-integer
-    values decodes to a partial or empty map rather than raising — a malformed
-    history entry must never break the whole dashboard read.  Individual keys
-    with un-coercible values (e.g. lists, nested objects) are silently skipped.
+    Never raises: a malformed history entry must not break the dashboard read.
+    Undecodable blobs yield ``{}`` and non-integer values are skipped.
     """
     try:
         decoded = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        # A summary that will not decode means record_cycle wrote a corrupt JSON
-        # blob — a real write-side anomaly the operator should see. The recovery
-        # (return {} so the dashboard read survives) stays; the silence goes.
-        # Summary counts carry no secret, so logging the raw value is safe.
+        # A corrupt blob is a write-side anomaly worth surfacing. Counts carry no
+        # secret, so logging the raw value is safe.
         log.warning("appdb.reconcile_activity.summary_undecodable", raw=raw)
         return {}
     if not isinstance(decoded, dict):
@@ -141,17 +102,7 @@ def _parse_summary(raw: str) -> dict[str, int]:
 
 
 def read_recent(conn: sqlite3.Connection, *, limit: int) -> list[ReconcileCycle]:
-    """Return the most recent reconcile/sweep cycles, newest first.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        limit: The maximum number of rows to return.
-
-    Returns:
-        Up to *limit* :class:`ReconcileCycle` rows, ordered newest-first by
-        insertion order (the ``id`` primary key). Empty when nothing has
-        been recorded yet.
-    """
+    """Return up to *limit* recorded cycles, newest first."""
     rows = conn.execute(
         "SELECT id, kind, started_at, finished_at, ok, summary, detail "
         "FROM reconcile_activity ORDER BY id DESC LIMIT ?",

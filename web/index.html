@@ -6,11 +6,9 @@
     <title>Paperless AI Search</title>
     <script>
       /*
-       * Theme bootstrap — runs before first paint so there is no flash of the
-       * wrong theme. When no explicit `data-theme` is set, mirror the OS
-       * `prefers-color-scheme` onto the attribute. This makes `[data-theme]`
-       * the single switch the stylesheet keys off, so themes.css defines the
-       * dark palette exactly once (no `@media` duplicate).
+       * Runs before first paint to avoid a flash of the wrong theme. Mirroring
+       * the OS preference onto `data-theme` makes it the stylesheet's only
+       * switch, so themes.css defines the dark palette once.
        */
       (function () {
         var root = document.documentElement;

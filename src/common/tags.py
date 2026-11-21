@@ -87,7 +87,7 @@ def release_processing_tag(
     *,
     purpose: str,
 ) -> None:
-    """Remove a processing-lock tag after processing. Best-effort, never propagates errors."""
+    """Remove a processing-lock tag after processing. Best-effort; never raises."""
     if tag_id is None:
         return
     try:
@@ -123,10 +123,7 @@ def finalise_document_with_error(
     *,
     content: str | None = None,
 ) -> None:
-    """
-    Mark a document as errored, remove all pipeline tags, and optionally
-    update the document content.
-    """
+    """Error-tag a document, remove its pipeline tags and optionally set content."""
     stripped = clean_pipeline_tags(tags, settings)
     updated = set(stripped)
     if settings.ERROR_TAG_ID is not None:
@@ -140,13 +137,9 @@ def finalise_document_with_error(
             doc_id=doc_id,
             error_tag_id=settings.ERROR_TAG_ID,
         )
-        # If the error tag itself is what Paperless rejected (a stale or deleted
-        # ERROR_TAG_ID is a permanent 4xx), the write above will fail on every
-        # poll — and because the queue (pre) tag is never removed, the document
-        # is reprocessed forever, re-spending LLM tokens. Fall back to stripping
-        # the pipeline tags *without* the error tag so the document at least
-        # leaves the queue and the loop stops. A transient failure fails here too
-        # and is left for the next poll to retry.
+        # A deleted ERROR_TAG_ID would fail this write on every poll and keep
+        # the document queued forever, re-spending LLM tokens. Retry without
+        # the error tag so it at least leaves the queue.
         if settings.ERROR_TAG_ID is None:
             return
         try:

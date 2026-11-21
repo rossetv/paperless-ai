@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import re
 
-# Strips everything except lowercase letters, digits, and whitespace.
 _STRIP_NON_ALNUM_RE: re.Pattern[str] = re.compile(r"[^a-z0-9\s]")
 
-# Common corporate suffixes stripped when comparing organisation names.
-# Kept as a set for O(1) membership tests.
+# Corporate suffixes stripped when comparing organisation names.
 COMPANY_SUFFIXES: frozenset[str] = frozenset(
     {
         "ab",

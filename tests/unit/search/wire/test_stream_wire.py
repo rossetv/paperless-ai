@@ -1,9 +1,7 @@
-"""Tests for the NDJSON line builders in ``search.wire.stream`` (spec §Streaming).
+"""Tests for the NDJSON line builders in ``search.wire.stream``.
 
-Each builder must emit one valid JSON object terminated by a single newline:
-``phase_start`` / ``phase_done`` for the two phase-event kinds, ``result`` for
-the final response, and ``error`` for a terminal failure. Token/cost serialise
-to nested dicts on an LLM phase and to ``null`` on a non-LLM phase.
+Each builder emits one JSON object terminated by a single newline; token/cost
+serialise to nested dicts on an LLM phase and to ``null`` on a non-LLM phase.
 """
 
 from __future__ import annotations
@@ -79,7 +77,7 @@ def test_result_line_nests_the_full_response() -> None:
     assert obj["type"] == "result"
     assert obj["seq"] == 9
     assert obj["result"]["answer"] == "hello"
-    # The trace/cost added in Task 12 ride inside the nested result.
+    # The trace and cost ride inside the nested result.
     assert "trace" in obj["result"]
     assert "cost" in obj["result"]
 

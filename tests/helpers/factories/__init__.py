@@ -1,22 +1,9 @@
 """Shared test object factories.
 
-Every test that needs a domain object — a ``Settings``, a Paperless document,
-a ``RetrievalPlan``, a ``SearchResult`` — builds it through a factory here, so the
-one field a test actually cares about is the only one it has to spell out
-(CODE_GUIDELINES §11.5).  Irrelevant fields carry deterministic defaults.
-Hand-rolled per-file builders are a smell: they drift, and the same literal
-ends up copied across modules.
-
-The package is split by concept:
-
-- :mod:`tests.helpers.factories._core` — ``Settings``, Paperless documents,
-  ``ClassificationResult``, and the store-boundary write shapes.
-- :mod:`tests.helpers.factories._search` — the search-pipeline shapes
-  (``RetrievalPlan``, ``RetrievedChunk``, ``SearchResult``, …) and the store
-  read-shapes the search tests consume.
-
-Both submodules' factories are re-exported here, so a test imports everything
-from ``tests.helpers.factories`` regardless of which submodule defines it.
+Each factory fills irrelevant fields with deterministic defaults, so a test
+spells out only the field it cares about. ``_core`` holds settings, Paperless
+and store-write shapes; ``_search`` holds the search-pipeline shapes. Import
+everything from this package.
 """
 
 from __future__ import annotations

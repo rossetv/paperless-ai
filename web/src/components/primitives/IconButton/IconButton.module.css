@@ -1,13 +1,3 @@
-/*
- * IconButton primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- *
- * Styled as a Media Control button (DESIGN.md §4 "Media Control"):
- * circular shape, translucent background, accent focus ring.
- * The circle shape is set via --radius-circle (50%).
- */
-
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -24,13 +14,12 @@
     transform var(--duration-fast) var(--easing-standard);
 }
 
-/* Disabled state declared before :hover/:active to avoid specificity ordering issues */
+/* Declared before :hover/:active to avoid specificity ordering issues. */
 .icon-button:disabled {
   opacity: var(--opacity-disabled);
   cursor: not-allowed;
 }
 
-/* Focus ring — 2px accent outline per DESIGN.md §6 */
 .icon-button:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
@@ -42,7 +31,6 @@
   background-color: var(--colour-button-light-bg);
 }
 
-/* Active scale — the Apple "press" affordance (DESIGN.md §4 "Media Control") */
 .icon-button:active:not(:disabled) {
   transform: scale(0.9);
   background-color: var(--colour-button-active-bg);

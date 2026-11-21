@@ -1,29 +1,18 @@
-"""SQLite schema definition and connection factory for the search index store.
-
-This module owns the DDL for every table, virtual table, and index in the
-search index.  It also exposes the connect() factory that correctly
-configures every new connection, and ensure_schema() which delegates to the
-versioned migration runner in store.migrations.
-
-Allowed deps: sqlite3, sqlite-vec, store.migrations.
-Forbidden: imports from any package above store/ in the layer hierarchy.
-"""
+"""Search-index DDL, the connection factory, and ``ensure_schema``."""
 
 from __future__ import annotations
 
 import sqlite3
 
-# rationale: sqlite_vec ships no type stubs; untyped import is unavoidable.
+# sqlite_vec ships no type stubs.
 import sqlite_vec  # type: ignore[import-untyped]
 
 from store.migrations import run_migrations
 
-# The schema version recorded in meta.schema_version. Must equal the highest
-# version in store.migrations.MIGRATIONS.
+# Must equal the highest version in store.migrations.MIGRATIONS.
 SCHEMA_VERSION: int = 2
 
-# Verbatim DDL from SPEC §4.1.  All statements use IF NOT EXISTS so that
-# ensure_schema() is idempotent for the v1 schema.
+# Every statement uses IF NOT EXISTS so applying it is idempotent.
 _SCHEMA: str = """
 CREATE TABLE IF NOT EXISTS documents (
     id               INTEGER PRIMARY KEY,
@@ -55,7 +44,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     embedding   BLOB NOT NULL
 );
 
--- Standalone FTS5 (own text copy, no content= pointer) per SPEC §4.1/§4.5.
+-- Standalone FTS5 (own text copy, no content= pointer).
 -- An external-content table does not auto-sync when chunks rows vanish via FK
 -- cascade, which would silently leave a stale keyword index; the writer keeps
 -- chunks_fts in step explicitly, by rowid, inside the same transaction.
@@ -92,93 +81,50 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document_id
 
 
 def connect(db_path: str) -> sqlite3.Connection:
-    """Open a connection to the search-index SQLite database.
+    """Open the search-index database with sqlite-vec loaded and WAL pragmas set.
 
-    Loads the sqlite-vec extension, sets WAL journal mode, and applies the
-    pragmas required by SPEC §4.5 and CODE_GUIDELINES §9.7.
-
-    Every connection is opened read-write.  A connection-level ``mode=ro`` URI
-    is deliberately avoided even for the StoreReader: a read-only SQLite
-    connection cannot maintain the WAL ``-shm`` coordination file while a
-    separate writer process is live.  Read-only access for the search server
-    is enforced structurally instead — the StoreReader API exposes no write
-    methods, and the indexer's flock makes it the sole writer (SPEC §3.2).
-
-    Args:
-        db_path: Filesystem path to the SQLite database file.
-
-    Returns:
-        A configured sqlite3.Connection with sqlite-vec loaded and WAL
-        pragmas applied.
+    Always read-write, even for the StoreReader: a ``mode=ro`` connection cannot
+    maintain the WAL ``-shm`` file while a separate writer process is live. The
+    reader is read-only by API, and the indexer's flock makes it the sole writer.
     """
-    # check_same_thread=False is required: the StoreWriter holds an internal
-    # threading.Lock that serialises writes from multiple worker threads against
-    # one shared connection.  Without this flag, Python's sqlite3 raises a
-    # ProgrammingError when the lock-protected write is executed from any thread
-    # other than the one that opened the connection (SPEC §5.6, §8.4).
+    # The StoreWriter shares one connection across worker threads behind its own
+    # lock; without this flag sqlite3 rejects use from any other thread.
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
-    # Load sqlite-vec for vec_distance_cosine and float32 blob helpers.
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
     conn.enable_load_extension(False)
 
-    # An 8 KiB page holds a 1536-dim float32 embedding (6,144 bytes) plus its
-    # row header on a single leaf page, instead of spilling onto a 4 KiB
-    # overflow-page chain that the brute-force vector scan must then traverse
-    # for every chunk. Measured ~4% faster scans at 40k chunks. Must precede
-    # journal_mode=WAL and any table creation — SQLite only honours a new
-    # page_size on an as-yet-empty database file; on an existing index this is
-    # a harmless no-op (the on-disk size is fixed until a VACUUM/rebuild).
+    # An 8 KiB page fits a 1536-dim float32 embedding on one leaf page instead of
+    # an overflow chain the vector scan must walk (~4% faster at 40k chunks).
+    # Must precede journal_mode=WAL; SQLite only honours it on an empty file.
     conn.execute("PRAGMA page_size=8192")
-    # WAL mode enables one writer + concurrent readers across processes.
+    # WAL: one writer plus concurrent readers across processes.
     conn.execute("PRAGMA journal_mode=WAL")
-    # NORMAL durability: safe with WAL; a crash can lose the last checkpoint
-    # but never corrupt a committed transaction.
+    # Safe with WAL: a crash can lose the last checkpoint, never a commit.
     conn.execute("PRAGMA synchronous=NORMAL")
-    # Enforce FK constraints so ON DELETE CASCADE is active.
+    # Needed for ON DELETE CASCADE.
     conn.execute("PRAGMA foreign_keys=ON")
-    # Avoid indefinite hangs when another connection holds a write lock.
     conn.execute("PRAGMA busy_timeout=5000")
 
-    # Read-performance pragmas. The hot path is a brute-force vector scan that
-    # reads every chunk's embedding BLOB (~6 KiB each) on every query, so the
-    # working set is the whole embeddings column (hundreds of MB at scale).
-    # These trade resident memory for read throughput — a deliberate win on the
-    # RAM-rich deployment target. Measured: ~93ms -> ~56ms per scan over 40k
-    # chunks (a ~40% reduction), reproducible warm-cache.
-    #
-    # 256 MiB page cache (negative => KiB) keeps hot index/leaf pages resident
-    # and lets the indexer's bulk backfill batch dirty pages instead of
-    # thrashing the 2 MiB default cache.
+    # Every query brute-force scans every embedding, so these trade memory for
+    # read throughput (~93ms -> ~56ms per scan over 40k chunks, warm cache).
+    # 256 MiB page cache (negative means KiB); also lets bulk backfill batch
+    # dirty pages instead of thrashing the 2 MiB default.
     conn.execute("PRAGMA cache_size=-262144")
-    # 512 MiB memory-mapped reads serve committed embedding pages zero-copy,
-    # eliminating the per-pread userspace memcpy that dominates a full scan.
-    # mmap only maps up to the file size, so RSS tracks the DB, not this ceiling.
+    # mmap serves embedding pages zero-copy; it only maps up to the file size, so
+    # RSS tracks the database, not this ceiling.
     conn.execute("PRAGMA mmap_size=536870912")
-    # Keep transient B-trees and sort spills in memory rather than on disk.
     conn.execute("PRAGMA temp_store=MEMORY")
 
     return conn
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Ensure the search index schema is up to date by running pending migrations.
-
-    Delegates to store.migrations.run_migrations(), which reads the stored
-    schema_version from the meta table (treating 0 as a fresh database),
-    applies every migration whose version exceeds the current version in
-    ascending order, and persists the new schema_version after each one.
-
-    Safe to call repeatedly — when the stored schema_version already matches
-    the highest known migration, run_migrations() is a no-op.
-
-    Args:
-        conn: An open connection returned by connect().
+    """Apply any pending migrations; a no-op when the schema is current.
 
     Raises:
-        store.migrations.StoreError: The database's schema_version is higher
-            than the maximum known migration version (a future-version guard).
+        store.migrations.StoreError: The database was written by a newer version.
     """
     run_migrations(conn)

@@ -1,21 +1,10 @@
 /*
- * Theme token overrides — light and dark.
+ * Dark theme overrides; the light values live on :root in tokens.css.
  *
- * This file is the ONLY place that legitimately contains literal colour values
- * (it defines the themes). All other files use var(--…).
- *
- * Light theme values are set directly on :root in tokens.css, so no override
- * is needed here for light. The dark palette is defined ONCE, under the
- * [data-theme="dark"] selector. The theme bootstrap in index.html mirrors the
- * OS `prefers-color-scheme` onto `data-theme` before first paint, so this one
- * selector covers both the explicit opt-in and the system-preference case —
- * there is no `@media` duplicate to keep in sync.
+ * The bootstrap in index.html mirrors the OS `prefers-color-scheme` onto
+ * `data-theme` before first paint, so this one selector covers both the
+ * explicit choice and the system preference; no `@media` copy is needed.
  */
-
-/* ──────────────────────────────────────────────────────
- * Dark theme — keyed on the data-theme attribute, which is
- * always set (explicitly, or by the index.html bootstrap).
- * ────────────────────────────────────────────────────── */
 [data-theme="dark"] {
   /* Page background */
   --colour-bg:              #000;
@@ -23,8 +12,7 @@
   /* Surface */
   --colour-surface:         #272729;
 
-  /* Dark-variant card surface — one step darker than the theme surface so a
-     Card surface="dark" stays distinct from a default card in dark mode. */
+  /* One step darker than the surface so a Card surface="dark" stays distinct. */
   --colour-surface-dark:    #1c1c1e;
 
   /* Text */
@@ -33,12 +21,12 @@
   --colour-text-tertiary:   rgb(255 255 255 / 64%);
   --colour-text-on-dark:    #fff;
 
-  /* Interactive / accent — unchanged in dark mode */
+  /* Accent — unchanged in dark mode */
   --colour-accent:          #0071e3;
   --colour-link:            #2997ff;
   --colour-link-on-dark:    #2997ff;
 
-  /* Focus ring — unchanged */
+  /* Focus ring */
   --colour-focus-ring:      #0071e3;
 
   /* Borders */
@@ -54,25 +42,22 @@
   --colour-overlay-dark:    rgb(0 0 0 / 90%);
   --colour-hover-dark:      rgb(255 255 255 / 32%);
 
-  /* Shadows — a black drop shadow is invisible on a black surface, so dark mode
-     pairs a faint top inset highlight with a deeper drop to convey elevation. */
+  /* A black drop shadow is invisible on black, so pair a faint top inset
+     highlight with a deeper drop to convey elevation. */
   --shadow-card:   rgb(255 255 255 / 6%) 0 1px 0 inset, 0 4px 24px rgb(0 0 0 / 60%);
   --shadow-answer: rgb(255 255 255 / 5%) 0 1px 0 inset, 0 8px 24px rgb(0 0 0 / 40%);
 
   /* Navigation — unchanged (already dark glass) */
   --colour-nav-bg:          rgb(0 0 0 / 80%);
 
-  /* Settings savebar — dark glass background. */
+  /* Settings savebar */
   --colour-savebar-bg:      rgb(20 20 22 / 92%);
 
-  /* Strong hairline — slightly brighter on dark. */
+  /* Strong hairline */
   --colour-hairline-strong: rgb(255 255 255 / 12%);
 
-  /* Status — neutral resting badge (e.g. a daemon's "Idle"). The light theme's
-     near-black ink (rgb(0 0 0 / 72%)) is illegible on the dark surface, so the
-     neutral tone is the one status tone that needs a dark override: a soft
-     light-grey wash with light-grey ink reads as a calm resting state, never a
-     caution. The coloured tones (ok/warn/danger/info) stay legible on dark. */
+  /* The light theme's near-black neutral ink is illegible on dark; the
+     coloured status tones stay legible and need no override. */
   --colour-status-neutral-bg: rgb(255 255 255 / 10%);
   --colour-status-neutral-fg: rgb(255 255 255 / 70%);
 }

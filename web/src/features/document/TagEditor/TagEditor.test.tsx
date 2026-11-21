@@ -36,11 +36,9 @@ describe('TagEditor', () => {
         canEdit={true} onAdd={vi.fn()} onRemove={vi.fn()} onCreate={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole('button', { name: /add tag/i }));
-    // The combobox listbox should show invoice + paye but NOT 2026 (already selected).
     expect(screen.getByRole('listbox')).toBeInTheDocument();
     expect(screen.getByText('invoice')).toBeInTheDocument();
     expect(screen.getByText('paye')).toBeInTheDocument();
-    // 2026 chip is still rendered above the combobox, but no '2026' option inside the listbox.
     const list = screen.getByRole('listbox');
     expect(list.textContent ?? '').not.toMatch(/2026/);
   });
@@ -79,9 +77,8 @@ describe('TagEditor', () => {
   });
 
   it('does not offer create when the typed name matches an ALREADY-SELECTED tag (regression: no duplicate minting)', () => {
-    // "invoice" (id 11) is already selected — it is absent from the selectable
-    // list shown in the dropdown. Typing its exact name must NOT reveal a
-    // "Create" row, and onCreate must never be called.
+    // "invoice" is already selected, so it is not in the dropdown; its exact
+    // name must still not offer "Create".
     const onCreate = vi.fn();
     render(
       <TagEditor selectedIds={[11]} availableTags={ALL}
@@ -111,7 +108,6 @@ describe('TagEditor', () => {
     );
     expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /add tag/i })).not.toBeInTheDocument();
-    // Chip text still rendered:
     expect(screen.getByText('2026')).toBeInTheDocument();
   });
 });

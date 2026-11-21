@@ -1,10 +1,5 @@
-/*
- * ErrorBoundary fallback layout.
- *
- * Centred in whatever space the boundary occupies (could be the full
- * viewport at the root or a widget-sized area at the trace level).
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Centred in whatever space the boundary occupies: the full viewport at the
+   root, or a widget-sized area. */
 
 .boundary {
   display: flex;

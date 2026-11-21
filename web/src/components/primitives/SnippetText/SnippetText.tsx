@@ -8,29 +8,20 @@ export interface SnippetTextProps {
    * An empty string renders a short accessible "no excerpt" notice instead.
    */
   text: string;
-  /** Additional class names to merge onto the paragraph. */
   className?: string;
 }
 
 /**
- * Split a snippet on `**bold**` runs.
- *
- * The capturing split yields alternating plain / bold segments: even indices
- * are plain text, odd indices are the emphasised phrase. This is the same
- * `**…**` convention the search backend emits in `snippet` fields.
+ * Split on `**bold**` runs, the convention the search backend uses in `snippet`
+ * fields: even indices are plain text, odd indices the emphasised phrase.
  */
 function splitBoldRuns(text: string): string[] {
   return text.split(/\*\*([^*]+)\*\*/g);
 }
 
 /**
- * A matched-content snippet with `**bold**` runs highlighted.
- *
- * Renders the excerpt as body text; each `**phrase**` becomes an accent
- * `<mark>`. An empty snippet renders a tertiary "No excerpt available."
- * notice so the component never leaves an unexplained blank gap.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Matched-content snippet with `**bold**` runs rendered as accent `<mark>`s. An
+ * empty snippet shows a "No excerpt available." notice instead of a blank gap.
  */
 export function SnippetText({
   text,

@@ -1,10 +1,4 @@
-"""Tests for appdb.daemon_status — the daemon-heartbeat query module.
-
-Covers: record_heartbeat inserts then upserts (no duplicate row); read_statuses
-returns DaemonStatus rows; the state derivation — a fresh active heartbeat is
-running, a fresh idle heartbeat is idle, a stale heartbeat is stopped regardless
-of detail; processed_count round-trips; an empty table reads as an empty list.
-"""
+"""Tests for appdb.daemon_status heartbeats and the derived daemon state."""
 
 from __future__ import annotations
 
@@ -27,7 +21,6 @@ def conn(tmp_path):
 
 
 def _iso(dt: datetime) -> str:
-    """ISO-8601 string for a datetime — the app.db timestamp format."""
     return dt.isoformat()
 
 
@@ -60,7 +53,6 @@ def test_record_heartbeat_upserts_one_row(conn) -> None:
 
 
 def test_fresh_active_heartbeat_is_running(conn) -> None:
-    """A recent heartbeat with a real detail string is 'running'."""
     now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
     daemon_status.record_heartbeat(
         conn, name="ocr", detail="processing 2 documents", processed_count=2
@@ -70,7 +62,6 @@ def test_fresh_active_heartbeat_is_running(conn) -> None:
 
 
 def test_fresh_idle_heartbeat_is_idle(conn) -> None:
-    """A recent heartbeat whose detail is the literal 'idle' is 'idle'."""
     now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
     daemon_status.record_heartbeat(
         conn, name="classifier", detail="idle", processed_count=0
@@ -80,8 +71,7 @@ def test_fresh_idle_heartbeat_is_idle(conn) -> None:
 
 
 def test_stale_heartbeat_is_stopped(conn) -> None:
-    """A heartbeat older than the staleness window is 'stopped' — the
-    process is gone — even though its last detail said it was working."""
+    """Staleness wins over the detail: a stale 'reconciling' row is stopped."""
     stale = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
     conn.execute(
         "INSERT INTO daemon_status "
@@ -106,7 +96,6 @@ def test_read_statuses_returns_every_daemon(conn) -> None:
 
 
 def test_custom_staleness_window_is_honoured(conn) -> None:
-    """A heartbeat inside a generous window is not stale."""
     now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
     daemon_status.record_heartbeat(
         conn, name="search", detail="serving", processed_count=0
@@ -120,11 +109,10 @@ def test_custom_staleness_window_is_honoured(conn) -> None:
 
 
 def test_touch_heartbeat_preserves_the_processed_count(conn) -> None:
-    """touch_heartbeat refreshes detail/freshness but never the counter.
+    """touch_heartbeat refreshes detail and freshness but never the counter.
 
-    Regression: the stall ticker's secondary Heartbeat instance holds no
-    real running total — a full record_heartbeat from it overwrote the
-    persisted monotonic count with zero on every stall beat.
+    The stall ticker's secondary Heartbeat holds no running total, so a full
+    record_heartbeat from it would reset the persisted count to zero.
     """
     daemon_status.record_heartbeat(
         conn, name="ocr", detail="processing 3 documents", processed_count=12

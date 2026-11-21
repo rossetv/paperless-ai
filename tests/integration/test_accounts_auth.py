@@ -1,19 +1,4 @@
-"""Integration tests for the login/session/logout journey (web-redesign §4.8).
-
-Exercises the real FastAPI app through ``TestClient`` against a real
-``tmp_path`` ``app.db``. Users are seeded straight through ``appdb`` so the
-app is past first-run setup.
-
-Coverage:
-- POST /api/auth/login with correct credentials returns 200 and the user,
-  and sets the search_session cookie.
-- The session cookie alone authorises a protected route (POST /api/search).
-- GET /api/auth/me returns the logged-in user; 401 without a cookie.
-- POST /api/auth/logout returns 204 and the cookie no longer authorises.
-- Wrong password -> 401; unknown username -> 401.
-- A suspended account -> 403 on login.
-- The cookie Max-Age is 604800 with remember, 28800 without.
-"""
+"""Integration tests for the login, session and logout journey against a real app.db."""
 
 from __future__ import annotations
 
@@ -223,7 +208,7 @@ def test_login_for_a_suspended_account_returns_403(tmp_path: Path) -> None:
 
 
 def test_repeated_failures_lock_the_login_with_429(tmp_path: Path) -> None:
-    """A burst of wrong passwords locks the (IP, username) with 429 (HTTP-01)."""
+    """A burst of wrong passwords locks the (IP, username) with 429."""
     from search.login_throttle import _MAX_FAILURES_BEFORE_LOCKOUT
 
     settings = make_settings(tmp_path)

@@ -1,12 +1,4 @@
-"""Tests for store.schema and store.models.
-
-Covers:
-- connect() opens a WAL-mode DB with foreign_keys ON
-- sqlite-vec extension loads (vec_version() succeeds)
-- _SCHEMA / ensure_schema() is idempotent (safe to apply twice)
-- Every table and index from SPEC §4.1 exists after ensure_schema()
-- Dataclasses are frozen (attribute mutation raises FrozenInstanceError)
-"""
+"""Tests for store.schema and the frozen store.models dataclasses."""
 
 from __future__ import annotations
 
@@ -16,11 +8,6 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from store.schema import SCHEMA_VERSION, _SCHEMA, connect, ensure_schema
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
@@ -37,11 +24,6 @@ def _index_names(conn: sqlite3.Connection) -> set[str]:
         "SELECT name FROM sqlite_master WHERE type = 'index'"
     ).fetchall()
     return {row[0] for row in rows}
-
-
-# ---------------------------------------------------------------------------
-# connect()
-# ---------------------------------------------------------------------------
 
 
 class TestConnect:
@@ -79,9 +61,8 @@ class TestConnect:
     def test_performance_pragmas_applied(self, tmp_path) -> None:
         """connect() tunes the page cache, mmap, and temp store for read speed.
 
-        These are advisory performance pragmas, not correctness ones, so they
-        are pinned here to stop a future edit silently dropping the measured
-        ~40% vector-scan win.
+        Pinned because dropping them would silently lose a measured ~40%
+        vector-scan speed-up.
         """
         db_path = str(tmp_path / "perf.db")
         conn = connect(db_path)
@@ -96,10 +77,11 @@ class TestConnect:
             conn.close()
 
     def test_fresh_database_uses_8k_page_size(self, tmp_path) -> None:
-        """A freshly created index uses an 8 KiB page so a 6 KiB embedding BLOB
-        does not spill onto an overflow-page chain. page_size only takes on a
-        new value before the first table exists, so this asserts the ordering
-        in connect() (page_size before journal_mode=WAL) is correct."""
+        """An 8 KiB page keeps a 6 KiB embedding BLOB off an overflow chain.
+
+        page_size only applies before the first table exists, so connect() must
+        set it before journal_mode=WAL.
+        """
         db_path = str(tmp_path / "pagesize.db")
         conn = connect(db_path)
         try:
@@ -111,28 +93,21 @@ class TestConnect:
     def test_connect_always_opens_read_write(self, tmp_path) -> None:
         """Every connect() opens a read-write connection, even a re-open.
 
-        connect() takes no read-only mode: a connection-level mode=ro URI is
-        deliberately avoided because a read-only SQLite connection cannot
-        maintain the WAL -shm coordination file while a separate writer process
-        is live.  Read-only access for the search server is enforced by the
-        StoreReader API surface and the indexer's flock, not by the URI
-        (SPEC §3.2).  A second connection to an existing file must therefore
-        still accept writes.
+        A mode=ro connection cannot maintain the WAL -shm file while a separate
+        writer is live, so read-only access is enforced by the StoreReader API
+        and the indexer's flock instead.
         """
         db_path = str(tmp_path / "reopen.db")
-        # Create the DB first so the re-open has an existing file to open.
         conn_first = connect(db_path)
         conn_first.close()
 
         conn = connect(db_path)
         try:
-            # The re-opened connection is a normal read-write one — it writes.
             conn.execute("CREATE TABLE t (x INTEGER)")
         finally:
             conn.close()
 
     def test_sqlite_vec_extension_loaded(self, tmp_path) -> None:
-        """vec_version() must succeed after connect()."""
         db_path = str(tmp_path / "vec.db")
         conn = connect(db_path)
         try:
@@ -141,11 +116,6 @@ class TestConnect:
             assert row[0]  # non-empty version string
         finally:
             conn.close()
-
-
-# ---------------------------------------------------------------------------
-# ensure_schema() — tables and indexes
-# ---------------------------------------------------------------------------
 
 
 class TestEnsureSchema:
@@ -159,7 +129,6 @@ class TestEnsureSchema:
         c.close()
 
     def test_ensure_schema_is_idempotent(self, conn) -> None:
-        """Applying the schema twice must not raise."""
         ensure_schema(conn)
         ensure_schema(conn)  # second application must be a no-op
 
@@ -187,7 +156,6 @@ class TestEnsureSchema:
         assert "meta" in _table_names(conn)
 
     def test_documents_indexes_exist(self, conn) -> None:
-        """All five column indexes on documents must be created."""
         ensure_schema(conn)
         indexes = _index_names(conn)
         assert "idx_documents_modified" in indexes
@@ -201,7 +169,6 @@ class TestEnsureSchema:
         assert "idx_chunks_document_id" in _index_names(conn)
 
     def test_documents_columns(self, conn) -> None:
-        """documents table must have all columns from SPEC §4.1."""
         ensure_schema(conn)
         info = conn.execute("PRAGMA table_info(documents)").fetchall()
         column_names = {row[1] for row in info}
@@ -254,11 +221,6 @@ class TestEnsureSchema:
 
     def test_schema_string_not_empty(self) -> None:
         assert _SCHEMA.strip()
-
-
-# ---------------------------------------------------------------------------
-# Dataclass immutability
-# ---------------------------------------------------------------------------
 
 
 class TestDataclassImmutability:

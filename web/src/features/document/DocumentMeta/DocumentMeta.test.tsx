@@ -46,7 +46,6 @@ describe('DocumentMeta', () => {
 
   it('does not render a correspondent badge when correspondent is null', () => {
     render(<DocumentMeta source={minimalDocument} />);
-    // When all optional fields are null, nothing from the full set should appear
     expect(screen.queryByText('British Gas')).not.toBeInTheDocument();
   });
 
@@ -61,7 +60,6 @@ describe('DocumentMeta', () => {
   });
 
   it('renders without crashing when all optional fields are null', () => {
-    // Should not throw; just render an empty (but valid) component
     expect(() => render(<DocumentMeta source={minimalDocument} />)).not.toThrow();
   });
 

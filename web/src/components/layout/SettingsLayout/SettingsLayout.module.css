@@ -1,14 +1,3 @@
-/*
- * SettingsLayout layout component — CSS Module.
- *
- * The shared shell of the settings / access-control area: a fixed-width
- * left rail beside a content column. The content column has a page header
- * (title + subtitle) above a scrollable region. Centred within a max-width
- * container. Bottom padding leaves room for the sticky SaveBar.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .layout {
   display: grid;
   grid-template-columns: var(--width-settings-nav) 1fr;
@@ -16,13 +5,12 @@
   max-width: var(--width-app-content);
   margin: 0 auto;
   padding: 0 var(--spacing-14);
-  padding-bottom: var(--padding-settings-bottom);
+  padding-bottom: var(--padding-settings-bottom); /* room for the sticky SaveBar */
   align-items: start;
 }
 
-/* ── Below the settings-rail breakpoint (960 px) the grid collapses to a
-   single column. The rail itself becomes a sticky horizontal chip strip
-   (handled in SettingsSideNav.module.css). ── */
+/* Below 960 px the grid collapses to one column; SettingsSideNav turns the rail
+   into a sticky horizontal chip strip. */
 @media (width <= 959.98px) {
   .layout {
     grid-template-columns: 1fr;
@@ -37,12 +25,10 @@
   }
 }
 
-/* ── The content column — header + scrollable body. ── */
 .content {
   min-width: 0;
 }
 
-/* ── Page header — title block on the left, optional actions on the right. ── */
 .header {
   display: flex;
   align-items: flex-end;
@@ -82,7 +68,6 @@
   max-width: 62ch;
 }
 
-/* ── The scrollable content region. ── */
 .body {
   display: flex;
   flex-direction: column;

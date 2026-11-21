@@ -5,15 +5,13 @@ import { ConnectionsPanel } from './ConnectionsPanel';
 import type { SettingsSection } from '../fieldModel/types';
 import { SETTINGS_SECTIONS } from '../fieldModel/sections';
 
-// The 'connections' section from the actual model
 const CONNECTIONS_SECTION = SETTINGS_SECTIONS.find(
   (s) => s.id === 'connections',
 )! as SettingsSection;
 
-// Real backend mask — matches SECRET_MASK in settings_routes.py.
+// Matches SECRET_MASK in settings_routes.py.
 const MASK = '********';
 
-// Minimal draft values — just what's needed for credential checks
 const DRAFT_OPENAI: Record<string, string> = {
   LLM_PROVIDER: 'openai',
   PAPERLESS_URL: 'http://paperless.lan:8000',
@@ -38,8 +36,6 @@ const DRAFT_EMPTY_CREDS: Record<string, string> = {
   OLLAMA_BASE_URL: '',
 };
 
-// Mock useTestConnection so no network calls happen.
-// Individual tests can override the mock behaviour via vi.mocked().
 const mockMutateAsync = vi.fn().mockResolvedValue({ ok: true, document_count: 42, detail: 'ok' });
 
 vi.mock('../../../api/hooks/settings', () => ({
@@ -83,13 +79,11 @@ describe('ConnectionsPanel', () => {
 
   it('always shows OpenAI card header', () => {
     renderPanel();
-    // The provider strip is gone — "OpenAI" now appears only in the card title.
-    // We check the per-card Test button exists.
     expect(screen.getByRole('button', { name: 'Test OpenAI' })).toBeInTheDocument();
   });
 
   it('always shows the Ollama card, regardless of the chat provider', () => {
-    // The Ollama card is no longer gated on LLM_PROVIDER — it is always visible.
+    // The Ollama card is shown regardless of LLM_PROVIDER.
     renderPanel(DRAFT_OPENAI);
     expect(screen.getByRole('button', { name: 'Test Ollama' })).toBeInTheDocument();
   });
@@ -97,7 +91,6 @@ describe('ConnectionsPanel', () => {
   it('shows "Not configured" for a service with empty required credential', async () => {
     renderPanel(DRAFT_EMPTY_CREDS);
     await waitFor(() => {
-      // Both Paperless and OpenAI have empty creds, expect at least one "Not configured"
       const notConfiguredElements = screen.getAllByText('Not configured');
       expect(notConfiguredElements.length).toBeGreaterThan(0);
     });
@@ -108,32 +101,25 @@ describe('ConnectionsPanel', () => {
 
     renderPanel(DRAFT_EMPTY_CREDS);
 
-    // Wait a short while to ensure auto-test would have fired
     await waitFor(() => {
       expect(screen.getByText('Paperless-ngx')).toBeInTheDocument();
     });
 
-    // With all creds empty, no auto-test probes should have been called
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
   it('expanding a card reveals its fields', async () => {
     renderPanel(DRAFT_OPENAI);
-    // The Paperless card should be collapsed; click header to expand
     const paperlessHeader = screen.getByRole('button', { name: 'Paperless-ngx' });
     await userEvent.click(paperlessHeader);
-    // After expansion, the PAPERLESS_URL field should be visible (text label)
     expect(screen.getByText('Server URL')).toBeVisible();
   });
 
   it('does NOT render a provider segmented strip (it moved to AI providers)', () => {
     renderPanel();
-    // The LLM_PROVIDER role selector now lives in the separate 'providers'
-    // section, so no segmented radiogroup is rendered inside this panel.
+    // The LLM_PROVIDER selector lives in the 'providers' section, not here.
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
-
-  // ── Failure-path tests (FIX 2) ──────────────────────────────────────────────
 
   it('shows err tone + detail label when probe resolves ok:false', async () => {
     mockMutateAsync.mockResolvedValue({ ok: false, document_count: 0, detail: 'bad key' });
@@ -147,7 +133,6 @@ describe('ConnectionsPanel', () => {
     mockMutateAsync.mockRejectedValue(new Error('network failure'));
     renderPanel(DRAFT_OPENAI);
     await waitFor(() => {
-      // Expect the Error label to appear at least once
       const errorLabels = screen.getAllByText('Error');
       expect(errorLabels.length).toBeGreaterThan(0);
     });
@@ -170,13 +155,10 @@ describe('ConnectionsPanel', () => {
     expect(screen.queryByText('99 docs')).not.toBeInTheDocument();
   });
 
-  // ── Masked-secret probe body (regression for FIX 1) ───────────────────────
-
   it('paperless probe sends paperless_token:"" when draft token is the server mask', async () => {
     mockMutateAsync.mockClear();
     mockMutateAsync.mockResolvedValue({ ok: true, document_count: 5, detail: 'ok' });
 
-    // PAPERLESS_TOKEN is exactly the mask
     const draft = { ...DRAFT_OPENAI, PAPERLESS_TOKEN: MASK };
     renderPanel(draft);
 
@@ -193,7 +175,7 @@ describe('ConnectionsPanel', () => {
     mockMutateAsync.mockClear();
     mockMutateAsync.mockResolvedValue({ ok: true, document_count: 0, detail: 'ok' });
 
-    // OPENAI_API_KEY is exactly the mask; only OpenAI configured so only one probe fires.
+    // Only OpenAI is configured, so only one probe fires.
     const draft = {
       LLM_PROVIDER: 'openai',
       PAPERLESS_URL: '',
@@ -204,21 +186,19 @@ describe('ConnectionsPanel', () => {
     };
     renderPanel(draft);
 
-    // Wait for the openai probe — it stagger-fires immediately (index=0 since paperless is skipped).
+    // Paperless is skipped, so the OpenAI probe is first in the stagger and fires at once.
     await waitFor(
       () => {
         const openaiCall = (mockMutateAsync.mock.calls as unknown[][]).find(
           (args) => (args[0] as { service: string }).service === 'openai',
         );
         expect(openaiCall).toBeDefined();
-        // The key must be absent — backend uses its stored value.
+        // Absent key: the backend uses its stored value.
         expect(openaiCall![0]).not.toHaveProperty('openai_api_key');
       },
       { timeout: 1000 },
     );
   });
-
-  // ── Ollama auto-probe on mount ────────────────────────────────────────────
 
   it('auto-probes a configured Ollama on mount (no provider gating)', async () => {
     mockMutateAsync.mockClear();

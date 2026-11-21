@@ -1,29 +1,13 @@
 /**
- * Client-side authentication state.
+ * Client-side authentication state: a read-only view over the `useMe` query
+ * (GET /api/auth/me). The server session is the source of truth.
  *
- * `useAuth` is a thin, read-only wrapper over the `useMe` react-query hook
- * (GET /api/auth/me). It does not own state — the source of truth is the
- * server session, cached by react-query. It exposes:
- *
- *   - `user`            — the current `User`, or `null` when not signed in
- *   - `role`            — the user's role, or `null`
- *   - `isAuthenticated` — true once `me` has resolved to a user
- *   - `isLoading`       — true while the first `me` request is in flight
- *
- * Sign-in and sign-out are NOT here: they are the `useLogin` / `useLogout`
- * mutations in `api/hooks.ts`, which invalidate the `me` query so this hook
- * re-resolves. A 401 from any call surfaces as `useMe` error → this hook
- * reports `isAuthenticated: false` and the router routes to `/login`.
- *
- * Allowed deps: api/ + react (CODE_GUIDELINES §12.3 — hooks may import api).
+ * Sign-in and sign-out live in the `useLogin` / `useLogout` mutations, which
+ * invalidate `me` so this hook re-resolves.
  */
 
 import type { User } from '../api/types';
 import { useMe } from '../api/hooks';
-
-// ---------------------------------------------------------------------------
-// Hook return shape
-// ---------------------------------------------------------------------------
 
 /** The authenticated-session view returned by `useAuth`. */
 export interface AuthState {
@@ -36,10 +20,6 @@ export interface AuthState {
   /** True while the first `me` request is in flight (auth state unknown). */
   isLoading: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 /**
  * Returns the current authentication state, derived from `useMe`.

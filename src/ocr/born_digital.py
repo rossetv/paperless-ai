@@ -1,11 +1,8 @@
-"""Born-digital vs scan detection on a document's *original* PDF (spec D1–D6).
+"""Born-digital vs scan detection on a document's *original* PDF.
 
-Pure bytes -> BornDigitalDecision. Shells poppler-utils (pdftotext/pdfinfo/
-pdfimages/pdffonts), the same trust boundary pdf2image already uses. Every probe
-failure and every malformed parse raises ProbeError; classify_original turns any
-ProbeError -- or an OSError from the temp-file write -- into a fail-safe "OCR"
-decision (spec D6). Parsers fail CLOSED — a garbled layout must never read as
-"no signal".
+Shells out to poppler-utils, the same trust boundary pdf2image already uses.
+Any probe or parse failure becomes a fail-safe "OCR" decision; parsers fail
+closed, so a garbled layout never reads as "no signal".
 """
 
 from __future__ import annotations
@@ -27,29 +24,25 @@ PROBE_TIMEOUT: int = 30
 PROBE_MAX_OUTPUT_BYTES: int = 32 * 1024 * 1024
 _GLYPHLESS_NAME: str = "glyphlessfont"
 _SUBSET_PREFIX_RE = re.compile(r"^[A-Z]{6}\+")
-# A semicolon glued between two letters never occurs in prose; it is the
-# fingerprint of a text layer whose ToUnicode maps the "ti" ligature glyph to
-# ";" ("mee;ng", "informa;on") -- macOS Quartz PDFContext does this on
-# Calibri/Aptos, alongside "tt" -> "5", "ft" -> "C", "ffi" -> "m". Only the
-# "ti" mapping is detected, and only intra-word: a document mangled solely
-# in the other ligatures, or with word-initial "ti" only, passes. Semicolon-
-# delimited data, minified CSS/JS and ";"-joined URLs trip it (over-OCR, the
-# safe direction). Such a text layer is not worth keeping.
+# A semicolon between two letters never occurs in prose; it fingerprints a text
+# layer whose ToUnicode maps the "ti" ligature to ";" ("mee;ng") -- macOS Quartz
+# does this on Calibri/Aptos, along with "tt" -> "5", "ft" -> "C", "ffi" -> "m".
+# Only intra-word "ti" is detected. Semicolon-delimited data, minified CSS/JS and
+# ";"-joined URLs also trip it, which over-OCRs: the safe direction.
 _MANGLED_LIGATURE_RE = re.compile(r"[A-Za-z];[A-Za-z]")
 _warned_missing: set[str] = set()  # binaries warned about, once per process
 
 
 class ProbeError(Exception):
-    """A poppler probe failed (non-zero exit, timeout, oversized output, missing binary, unparseable)."""
+    """A poppler probe failed or its output could not be parsed."""
 
 
 def _run_probe(cmd: list[str], timeout: float) -> str:
     """Run a poppler command with a real deadline and a hard stdout cap.
 
-    The deadline is enforced across the whole read via select() — a binary that
-    spins WITHOUT emitting output (a malformed xref loop) would hang a plain
-    read(); the timeout must not live only on wait(). stderr -> DEVNULL so it
-    cannot fill a pipe and deadlock. POSIX (Linux container + macOS dev).
+    The deadline covers the whole read via select(): a binary that spins without
+    output (a malformed xref loop) would hang a plain read(). stderr goes to
+    DEVNULL so it cannot fill a pipe and deadlock. POSIX only.
     """
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -86,9 +79,8 @@ def _run_probe(cmd: list[str], timeout: float) -> str:
                     )
                 chunks.append(chunk)
         except OSError as exc:
-            # select()/read() can fail (EBADF, EINTR-storm, device error); the
-            # module contract is any probe failure -> fail-safe OCR, so a raw
-            # OSError must not escape.
+            # Any probe failure must become ProbeError (fail-safe OCR), so a raw
+            # OSError from select()/read() must not escape.
             raise ProbeError(f"{cmd[0]} read failed: {exc}") from exc
         try:
             rc = proc.wait(timeout=max(0.1, deadline - time.monotonic()))
@@ -127,8 +119,8 @@ def _parse_pdfinfo(text: str) -> tuple[int, float | None]:
 
 def _parse_char_counts(pdftotext_out: str, page_count: int) -> list[int]:
     segments = pdftotext_out.split("\f")
-    # pdftotext appends a trailing \f after the last page -> exactly page_count + 1 segments.
-    # Anything else (embedded \f in text, truncation) is misalignment -> fail safe (D3).
+    # pdftotext ends every page with \f, giving page_count + 1 segments. Any other
+    # count (an embedded \f, truncation) is misalignment, so fail safe.
     if len(segments) != page_count + 1:
         raise ProbeError(
             f"pdftotext: {len(segments)} segments, expected {page_count + 1}"
@@ -171,9 +163,7 @@ def _parse_max_coverage(
         cov = 0.0
         if xppi > 0 and yppi > 0:
             cov = min(1.0, (w / xppi) * (h / yppi) / page_area)
-        per_page[page] = max(
-            per_page.get(page, 0.0), cov
-        )  # LARGEST image per page (spec D3)
+        per_page[page] = max(per_page.get(page, 0.0), cov)  # largest image per page
     return per_page
 
 
@@ -189,7 +179,7 @@ def _has_glyphless(pdffonts_out: str) -> bool:
 
 @dataclass(frozen=True)
 class BornDigitalDecision:
-    """The gate's verdict for one document, plus the signals that produced it (for logging)."""
+    """The gate's verdict for one document, plus the signals behind it."""
 
     skip: bool
     reason: str
@@ -198,7 +188,7 @@ class BornDigitalDecision:
 
 @dataclass(frozen=True)
 class _ProbeSignals:
-    """The four poppler probes' parsed outputs for one document (spec D3)."""
+    """The four poppler probes' parsed outputs for one document."""
 
     char_counts: list[int]
     coverage: dict[int, float]
@@ -207,10 +197,7 @@ class _ProbeSignals:
 
 
 def _probe_signals(path: str, timeout: float) -> _ProbeSignals:
-    """Run the four poppler probes into a :class:`_ProbeSignals`.
-
-    Any probe/parse failure propagates as ProbeError.
-    """
+    """Run the four poppler probes; any failure raises ProbeError."""
     pages, area = _parse_pdfinfo(_run_probe(["pdfinfo", path], timeout))
     if pages <= 0:
         raise ProbeError("pdfinfo: non-positive page count")
@@ -231,7 +218,7 @@ def classify_original(
     coverage_threshold: float = COVERAGE_THRESHOLD,
     timeout: float = PROBE_TIMEOUT,
 ) -> BornDigitalDecision:
-    """Decide skip (born-digital) vs OCR from a document's ORIGINAL PDF bytes (spec D3, D6)."""
+    """Decide skip (born-digital) vs OCR from a document's original PDF bytes."""
     fd, path = tempfile.mkstemp(suffix=".pdf")
     try:
         try:
@@ -255,10 +242,9 @@ def classify_original(
         if glyphless:
             return BornDigitalDecision(False, "glyphless-ocr-layer", signals)
         # The text floor only bites on a page that also carries a raster: a
-        # textless, imageless page is a blank verso, a divider or (rarely) a
-        # vector-outline page -- not a scan (spec D3, blank-page clause; the
-        # outline case is an accepted residual, spec risk 4b). The offending
-        # page is named because min_page_chars may belong to an exempted page.
+        # textless, imageless page is a blank verso, a divider or (rarely, and
+        # accepted) a vector-outline page, not a scan. The offending page is
+        # named because min_page_chars may belong to an exempted page.
         low_text_page = next(
             (
                 page
@@ -273,11 +259,9 @@ def classify_original(
             )
         if any(c >= coverage_threshold for c in coverage.values()):
             return BornDigitalDecision(False, "full-page-image", signals)
-        # Presence is not enough when the text layer itself is garbage: a
-        # broken ligature ToUnicode passes every presence signal yet leaves
-        # ngx with "mee;ng" for "meeting". One hit routes to OCR -- over-OCR
-        # on doubt is the safe direction (spec D6). Last, so a scan that also
-        # happens to carry a stray ";" keeps its scan reason in the census.
+        # A broken ligature ToUnicode passes every presence signal yet leaves
+        # "mee;ng" for "meeting"; one hit routes to OCR. Checked last so a scan
+        # with a stray ";" keeps its scan reason in the logs.
         if probe.mangled_hits:
             return BornDigitalDecision(False, "mangled-text-layer", signals)
         return BornDigitalDecision(True, "born-digital", signals)

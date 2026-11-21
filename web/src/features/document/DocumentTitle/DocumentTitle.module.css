@@ -1,15 +1,3 @@
-/*
- * DocumentTitle — CSS Module.
- *
- * The document's primary <h1>. Uses the heading scale from tokens.css
- * (DESIGN.md §3): 2.5 rem semibold with tight tracking.
- *
- * Minimal padding keeps the block flush enough that Wave B can add a
- * hover/focus affordance around it without causing a layout shift.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .title {
   margin: 0;
   padding: var(--spacing-1) var(--spacing-2);
@@ -33,7 +21,7 @@
   text-overflow: ellipsis;
 }
 
-/* When canEdit=true the h1 acts as a button — show a pointer and hover affordance. */
+/* Editable: the h1 acts as a button. */
 .title[role='button'] {
   cursor: pointer;
   border-radius: var(--radius-micro);
@@ -49,7 +37,6 @@
   outline-offset: var(--spacing-1);
 }
 
-/* Inline input shown when the title is being edited. */
 .title-input {
   appearance: none;
   background: var(--colour-surface);

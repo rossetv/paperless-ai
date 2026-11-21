@@ -1,13 +1,3 @@
-/*
- * MetadataCard — CSS Module.
- *
- * Styles for the card heading and the read-only date row. The taxonomy rows
- * (TaxonomyCombobox) and editable date (EditableField) bring their own styles.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Card heading (e.g. "Details") ── */
 .card-h {
   margin: 0;
   margin-bottom: var(--spacing-10);

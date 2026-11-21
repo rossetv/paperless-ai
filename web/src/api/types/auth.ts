@@ -1,13 +1,6 @@
-/**
- * Auth and account wire types — mirrors the Wave 1 backend contract.
- *
- * Covers setup, login, and the current-user query. These are the leaf types
- * the rest of the access-control and auth domains build on.
- *
- * Allowed deps: none (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Setup, login and current-user wire types. */
 
-/** A user account, as returned by the server. Mirrors the Wave 1 contract. */
+/** A user account, as returned by the server. */
 export interface User {
   id: number;
   username: string;
@@ -29,9 +22,7 @@ export interface SetupStatus {
 export interface SetupRequest {
   /** The setup token printed to the container logs. */
   token: string;
-  /** Desired admin username. */
   username: string;
-  /** Desired admin password. */
   password: string;
 }
 

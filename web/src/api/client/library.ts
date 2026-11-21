@@ -1,11 +1,4 @@
-/**
- * Library and document-editing endpoint functions — Wave 5 / Wave 8/9.
- *
- * Covers the paginated document list, individual document fetch, metadata
- * patch, AI re-classification / re-transcription, and document deletion.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Library and document endpoints: list, fetch, metadata patch, AI re-runs and deletion. */
 
 import type {
   DocumentsQuery,
@@ -15,17 +8,11 @@ import type {
 } from '../types';
 import { BASE_URL, request } from './core';
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 /**
- * Build the `?…` query string for GET /api/documents.
+ * Build the query string for GET /api/documents.
  *
- * `page`, `page_size`, `sort` and `descending` are always present. Optional
- * filters are appended only when non-nullish and (for strings) non-empty.
- * `tag_ids` becomes one repeated `tag_ids=` parameter per id, matching the
- * FastAPI list-query convention the backend declared.
+ * Optional filters are sent only when non-nullish and non-empty; `tag_ids`
+ * repeats once per id, the FastAPI list-query convention.
  */
 function buildDocumentsQuery(q: DocumentsQuery): string {
   const params = new URLSearchParams();
@@ -54,16 +41,7 @@ function buildDocumentsQuery(q: DocumentsQuery): string {
   return params.toString();
 }
 
-// ---------------------------------------------------------------------------
-// Endpoints
-// ---------------------------------------------------------------------------
-
-/**
- * GET /api/documents — the paginated, sortable, filterable library list.
- *
- * Throws `Unauthenticated` on 401 and `ApiError` on any other non-2xx, via
- * the shared `request` wrapper.
- */
+/** GET /api/documents — the paginated, sortable, filterable library list. */
 export async function getDocuments(
   query: DocumentsQuery,
 ): Promise<DocumentsResponse> {
@@ -74,14 +52,10 @@ export async function getDocuments(
 }
 
 /**
- * GET /api/documents/{id} — fetch one document's metadata.
+ * GET /api/documents/{id} — one document's metadata.
  *
- * Used by the route components that mount the document preview from a
- * shareable URL (`/document/:id`, `/library/document/:id`) when there is
- * no cached library list to read from. Returns the same `LibraryDocument`
- * shape as items in the library list response.
- *
- * Throws `Unauthenticated` on 401 and `ApiError` on any other non-2xx.
+ * Used when a shareable URL (`/document/:id`, `/library/document/:id`) opens the
+ * preview with no cached library list to read from.
  */
 export async function getDocument(documentId: number): Promise<LibraryDocument> {
   return request<LibraryDocument>(`${BASE_URL}/api/documents/${documentId}`, {
@@ -92,11 +66,7 @@ export async function getDocument(documentId: number): Promise<LibraryDocument> 
 /**
  * PATCH /api/documents/{id} — partially update a document's metadata.
  *
- * Only the fields present in `patch` are forwarded to Paperless-ngx. A `null`
- * value clears the field; omitting the key leaves it unchanged. Returns the
- * updated `LibraryDocument` shape.
- *
- * Throws `Unauthenticated` on 401, `ApiError` on any other non-2xx.
+ * A `null` value clears the field; an omitted key leaves it unchanged.
  */
 export async function patchDocument(
   id: number,
@@ -110,23 +80,15 @@ export async function patchDocument(
 }
 
 /**
- * POST /api/documents/{id}/reclassify — trigger AI re-classification for a document.
+ * POST /api/documents/{id}/reclassify — queue AI re-classification.
  *
- * Resolves on 202 Accepted. The backend queues the job; actual classification
- * happens asynchronously. Throws `Unauthenticated` on 401 and `ApiError` on
- * any other non-2xx (notably 403 for a readonly caller).
+ * Resolves on 202; the job runs asynchronously. A readonly caller gets 403.
  */
 export async function reclassifyDocument(id: number): Promise<void> {
   return request<void>(`${BASE_URL}/api/documents/${id}/reclassify`, { method: 'POST' });
 }
 
-/**
- * POST /api/documents/{id}/retranscribe — trigger AI re-transcription (OCR) for a document.
- *
- * Resolves on 202 Accepted. The backend queues the job; actual transcription
- * happens asynchronously. Throws `Unauthenticated` on 401 and `ApiError` on
- * any other non-2xx.
- */
+/** POST /api/documents/{id}/retranscribe — queue AI re-transcription (OCR); resolves on 202. */
 export async function retranscribeDocument(id: number): Promise<void> {
   return request<void>(`${BASE_URL}/api/documents/${id}/retranscribe`, { method: 'POST' });
 }
@@ -134,9 +96,7 @@ export async function retranscribeDocument(id: number): Promise<void> {
 /**
  * DELETE /api/documents/{id} — permanently delete a document in Paperless-ngx.
  *
- * Resolves on 204 No Content. This operation is irreversible — the document is
- * removed from Paperless-ngx and cannot be restored via the search server.
- * Admin-only; a non-admin caller receives 403 surfaced as `ApiError`.
+ * Irreversible and admin-only (403 otherwise). Resolves on 204.
  */
 export async function deleteDocument(id: number): Promise<void> {
   return request<void>(`${BASE_URL}/api/documents/${id}`, { method: 'DELETE' });

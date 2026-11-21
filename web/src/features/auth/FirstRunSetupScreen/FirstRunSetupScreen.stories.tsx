@@ -1,10 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { FirstRunSetupScreen } from './FirstRunSetupScreen';
 
-/**
- * FirstRunSetupScreen drives the `useSetup` hook. Storybook does not wire
- * TanStack Query, so this story is a visual reference only.
- */
+/** Storybook does not wire TanStack Query, so this is a visual reference only. */
 const meta = {
   title: 'Features/Auth/FirstRunSetupScreen',
   component: FirstRunSetupScreen,
@@ -14,5 +11,4 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The dark first-run setup island. */
 export const Default: Story = {};

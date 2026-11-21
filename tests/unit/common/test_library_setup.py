@@ -15,9 +15,7 @@ def _make_settings(
     api_key: str = "sk-test",
     base_url: str | None = None,
 ) -> MagicMock:
-    """A settings stub. setup_libraries reads only OPENAI_API_KEY (any step on
-    openai → built), OLLAMA_BASE_URL (any step on ollama → built), and
-    REQUEST_TIMEOUT — not LLM_PROVIDER, which is now just a per-step seed."""
+    """setup_libraries reads only these three; LLM_PROVIDER is just a per-step seed."""
     s = MagicMock()
     s.OPENAI_API_KEY = api_key
     s.OLLAMA_BASE_URL = base_url
@@ -37,12 +35,7 @@ def _reset_client_registry():
 
 @pytest.fixture(autouse=True)
 def _reset_library_setup_module_state():
-    """Reset the active-httpx-clients list and the atexit flag after each test.
-
-    setup_libraries keeps one active httpx client per built provider and a single
-    atexit registration across the process. The hot-reload tests assert on both,
-    so each test starts with a clean slate.
-    """
+    """Reset the active-httpx-clients list and the atexit flag after each test."""
     saved_clients = library_setup._active_http_clients
     saved_atexit = library_setup._atexit_registered
     library_setup._active_http_clients = []
@@ -57,7 +50,7 @@ class TestPillowConfig:
         settings = _make_settings()
         original = Image.MAX_IMAGE_PIXELS
         try:
-            Image.MAX_IMAGE_PIXELS = None  # the old, guard-disabling value
+            Image.MAX_IMAGE_PIXELS = None  # disables the decompression-bomb guard
             setup_libraries(settings)
             assert Image.MAX_IMAGE_PIXELS == library_setup._MAX_IMAGE_PIXELS
         finally:
@@ -123,8 +116,7 @@ class TestBothProviders:
     def test_both_clients_built_when_both_connections_configured(
         self, mock_register, mock_client_cls, mock_openai_cls
     ):
-        """A mixed deployment (some steps OpenAI, some Ollama) builds both slots
-        and tracks both httpx clients."""
+        """A deployment with steps on both providers builds both slots."""
         import common.llm as llm_mod
 
         mock_client_cls.side_effect = [
@@ -153,9 +145,8 @@ class TestHttpxClientAndCleanup:
         setup_libraries(settings)
         mock_client_cls.assert_called_once_with(trust_env=False)
         assert mock_openai_cls.call_args.kwargs["http_client"] is mock_http
-        # The atexit callback is the module's _close_active_http_clients function
-        # (NOT a client's .close directly) — so it always closes whichever
-        # clients are active, never stale ones a hot-reload replaced.
+        # Registering the module function rather than a client's .close means
+        # exit closes whichever clients are active, not ones a hot-reload replaced.
         mock_register.assert_called_once_with(library_setup._close_active_http_clients)
 
     @patch("common.library_setup.openai.OpenAI")
@@ -164,8 +155,7 @@ class TestHttpxClientAndCleanup:
     def test_hot_reload_closes_the_previous_clients_and_replaces_them(
         self, mock_register, mock_client_cls, mock_openai_cls
     ):
-        """A second setup_libraries call closes the previous httpx client(s) and
-        installs the new one(s). Regression for the per-reload client leak."""
+        """Otherwise every hot reload leaks an httpx client."""
         first_http = MagicMock(name="first_httpx_client")
         second_http = MagicMock(name="second_httpx_client")
         mock_client_cls.side_effect = [first_http, second_http]
@@ -176,7 +166,6 @@ class TestHttpxClientAndCleanup:
 
         first_http.close.assert_called_once()
         assert library_setup._active_http_clients == [second_http]
-        # atexit is only registered ONCE for the lifetime of the process.
         mock_register.assert_called_once()
 
     @patch("common.library_setup.openai.OpenAI")
@@ -185,8 +174,6 @@ class TestHttpxClientAndCleanup:
     def test_atexit_callback_closes_the_currently_active_clients(
         self, mock_register, mock_client_cls, mock_openai_cls
     ):
-        """The single atexit callback routes through the active list, so even
-        after a hot-reload it closes the *current* clients."""
         first_http = MagicMock(name="first_httpx_client")
         second_http = MagicMock(name="second_httpx_client")
         mock_client_cls.side_effect = [first_http, second_http]

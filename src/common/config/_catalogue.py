@@ -1,36 +1,16 @@
-"""The catalogue of configuration keys.
-
-Defines which environment / config-table keys exist and how they are
-classified: the two bootstrap keys that stay environment-only, the secret keys
-the Settings API masks, the full universe of config-table keys, and the keys
-whose change forces a full re-index. This is the single enumeration the parsing
-layer (:mod:`._settings`) and the DB-backed loader (:mod:`._loader`) both refer
-to.
-"""
+"""The catalogue of configuration keys and how each is classified."""
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Config-in-database key catalogue (web-redesign spec §5, Wave 4)
-# ---------------------------------------------------------------------------
-
-# The two bootstrap variables. They tell a process where its databases live,
-# so they cannot themselves be stored in a database — they stay environment
-# variables and are never written to the config table.
+# They tell a process where its databases live, so they cannot be stored in one.
 BOOTSTRAP_KEYS: frozenset[str] = frozenset({"APP_DB_PATH", "INDEX_DB_PATH"})
 
-# Config keys whose value is a secret. The Settings API masks these in
-# GET /api/settings responses; a value is revealed only via the explicit
-# reveal mechanism. app.db sits on the protected /data volume, so the secrets
-# are stored there in clear — masking is an API-surface concern, not storage.
+# Masked by GET /api/settings unless explicitly revealed. Stored in clear: app.db
+# sits on the protected /data volume, so masking is an API concern, not storage.
 SECRET_KEYS: frozenset[str] = frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 
-# The canonical universe of config-table keys — every value the application
-# reads from the config table rather than as a bootstrap env-var. This is the
-# complete enumeration of the env-driven Settings fields; PUT /api/settings
-# rejects any key not in this set. The two BOOTSTRAP_KEYS and the fixed
-# REFUSAL_MARK constant are deliberately absent. SEARCH_API_KEY is absent too
-# — Wave 3 retired the legacy bearer-token path, so no process reads it.
+# Every key the config table may hold; PUT /api/settings rejects any other. The
+# BOOTSTRAP_KEYS and the fixed REFUSAL_MARK constant are deliberately absent.
 CONFIG_KEYS: frozenset[str] = frozenset(
     {
         "PAPERLESS_URL",
@@ -126,16 +106,10 @@ CONFIG_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# Config keys whose change requires re-indexing every document — they govern
-# how text is chunked and embedded, so a change is only consistent once the
-# whole index is rebuilt. Saving still hot-loads (no restart); the Settings
-# UI warns the operator to run a full re-index from the Index page for these
-# keys, and only these. EMBEDDING_PROVIDER is included: stored vectors are
-# provider-specific (an OpenAI vector and an Ollama vector are not comparable),
-# so switching the provider — like switching the model — invalidates the whole
-# index. EMBEDDING_DIMENSIONS is deliberately excluded: it is locked to the
-# embedding model and the index schema pins it on first reconcile, so a lone
-# change is rejected by validation rather than warned.
+# Keys that govern chunking and embedding, so a change is only consistent after
+# a full re-index; the Settings UI warns for these. Vectors from different
+# providers are not comparable, hence EMBEDDING_PROVIDER. EMBEDDING_DIMENSIONS is
+# excluded: the index pins it, so a lone change is rejected by validation.
 REINDEX_KEYS: frozenset[str] = frozenset(
     {"EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "CHUNK_SIZE", "CHUNK_OVERLAP"}
 )

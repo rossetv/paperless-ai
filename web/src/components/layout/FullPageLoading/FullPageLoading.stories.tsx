@@ -13,8 +13,5 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/**
- * Default full-viewport loading screen shown while bootstrap queries resolve.
- * Renders a centred Spinner on a dark backdrop.
- */
+/** Full-viewport loading screen shown while bootstrap queries resolve. */
 export const Default: Story = {};

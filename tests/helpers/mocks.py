@@ -17,16 +17,7 @@ from tests.helpers.factories import (
 def make_mock_embedding_client(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
 ) -> MagicMock:
-    """Create a MagicMock that behaves like a ``common.embeddings.EmbeddingClient``.
-
-    ``embed(texts)`` returns one deterministic unit vector per input text,
-    built by :func:`tests.helpers.factories.make_embedding` — so the indexer
-    worker, the reconciler, and the pipeline tests share a single embedding
-    client mock instead of hand-rolling the ``1/sqrt(d)`` literal each.
-
-    Args:
-        dimensions: Width of every returned embedding vector.
-    """
+    """Create an EmbeddingClient mock whose ``embed`` gives one unit vector per text."""
     client = MagicMock()
     vector = list(make_embedding(dimensions))
     client.embed.side_effect = lambda texts: [list(vector) for _ in texts]
@@ -41,14 +32,10 @@ def make_mock_embeddings(
 ) -> tuple[MagicMock, MagicMock]:
     """Create a mock OpenAI client whose embeddings.create returns predictable vectors.
 
-    Either supply *vectors* (explicit list of vectors, one per input) or *n*
-    (number of inputs; generic zero-vectors of the given *dimensions* are used).
-    The mock is stateful: successive calls consume the next slice of vectors, so
-    batched calls that split a long input across multiple requests work correctly.
-
-    Returns a ``(mock_openai, last_response)`` pair.  ``last_response`` is the
-    ``MagicMock`` returned by the most-recent call, which is useful in tests that
-    want to pass it as a ``side_effect`` value.
+    Supply *vectors* (one per input) or *n* (that many zero vectors). Successive
+    calls consume the next slice, so a batched request split across calls keeps
+    its order. Returns ``(mock_openai, dummy_response)``, where
+    ``dummy_response`` is a standalone one-vector response object.
     """
     if vectors is not None:
         all_vectors = vectors
@@ -57,8 +44,6 @@ def make_mock_embeddings(
     else:
         raise ValueError("Provide either vectors= or n= to make_mock_embeddings")
 
-    # Track the position in all_vectors across successive calls so that
-    # cross-batch ordering tests work without per-call bookkeeping in the test.
     position: list[int] = [0]
 
     last_response: list[MagicMock] = []
@@ -80,7 +65,6 @@ def make_mock_embeddings(
     mock_openai = MagicMock()
     mock_openai.embeddings.create.side_effect = _create
 
-    # Build a dummy response for callers that need the raw response object.
     dummy_response = MagicMock()
     dummy_response.data = [MagicMock(embedding=[0.0] * dimensions, index=0)]
     return mock_openai, dummy_response
@@ -89,10 +73,8 @@ def make_mock_embeddings(
 def make_mock_paperless(**overrides: Any) -> MagicMock:
     """Create a MagicMock that behaves like a PaperlessClient.
 
-    The mock supports common operations out of the box:
-    - ``get_document`` returns ``make_document()``
-    - ``download_content`` returns dummy PDF bytes
-    - ``list_tags/correspondents/document_types`` return empty lists
+    ``get_document`` returns ``make_document()``, ``download_content`` returns
+    dummy PDF bytes and the taxonomy list calls return empty lists.
     """
     mock = MagicMock()
     mock.settings = make_settings_obj()
@@ -123,20 +105,9 @@ def make_stateful_paperless(
 ) -> tuple[MagicMock, dict[str, Any]]:
     """Create a mock PaperlessClient that tracks tag state across calls.
 
-    The claim-processing-tag workflow refreshes the document, patches a tag on,
-    then re-reads to verify the tag stuck — so a stateless mock would fail the
-    verify step.  This mock keeps the document's tag list in a mutable ``state``
-    dict that ``update_document`` and ``update_document_metadata`` write and
-    ``get_document`` reads, so the OCR and classifier e2e workflows share one
-    builder instead of each hand-rolling a stateful client (CODE_GUIDELINES
-    §11.5).
-
-    Args:
-        initial_doc: The document the mock starts from; its ``tags`` seed the
-            tracked state.
-        with_taxonomy: When ``True``, also stub the correspondent / document-type
-            / tag list and create endpoints with a fixed taxonomy — the shape
-            the classifier workflow tests resolve ids against.
+    Claiming the processing tag re-reads the document to verify the tag stuck,
+    which a stateless mock would fail. Updates write ``state["tags"]`` and
+    ``get_document`` reads it. *with_taxonomy* also stubs a fixed taxonomy.
 
     Returns:
         A ``(client, state)`` pair; ``state["tags"]`` is the live tag list.
@@ -285,31 +256,13 @@ def make_reconciler_paperless(
     all_ids: list[int] | None = None,
     correspondents: list[dict] | None = None,
 ) -> MagicMock:
-    """Create a mock PaperlessClient for the reconciler unit and integration tests.
+    """Create a mock PaperlessClient for the reconciler tests.
 
-    The incremental sync calls ``iter_all_documents(modified_after=...)`` — the
-    keyword is always passed, even when its value is None on the first run.
-    The deletion sweep calls ``iter_all_documents()`` with no keyword at all.
-    The side effect disambiguates on keyword *presence*: an incremental call
-    yields *documents*, a sweep call yields *all_ids* as bare-id docs.
-    Disambiguating on a ``None`` value instead would misroute a first-run
-    incremental sync into the sweep branch.
-
-    The steady-state incremental sync (IDX-03) passes a ``fields`` projection and
-    then re-fetches each new/changed document by id via ``get_document``.  This
-    builder serves the full *documents* for the projected list call (the
-    reconciler reads ``id`` and ``modified`` off each row to drive the diff) and
-    stubs ``get_document`` to return the matching document by id, falling back to
-    a generic ``make_paperless_document(doc_id=...)`` for an id not in
-    *documents* (e.g. an out-of-band failed-document retry that lives past the
-    watermark).  A test that needs a bespoke fetch can still override
-    ``get_document`` after construction.
-
-    Args:
-        documents: Documents an incremental call returns.
-        all_ids: Document ids a deletion-sweep enumeration returns.
-        correspondents: Correspondent taxonomy entries ``list_correspondents``
-            returns; defaults to an empty list.
+    ``iter_all_documents`` routes on whether ``modified_after`` is *present*:
+    the incremental sync always passes it (``None`` on the first run) and gets
+    *documents*; the deletion sweep omits it and gets *all_ids* as bare-id docs.
+    ``get_document`` returns the matching document, or a generic stub for an id
+    outside *documents* (an out-of-band retry past the watermark).
     """
     paperless = MagicMock()
     docs = documents if documents is not None else []
@@ -322,9 +275,6 @@ def make_reconciler_paperless(
         return [{"id": doc_id} for doc_id in ids]
 
     def _get_document(doc_id: int) -> dict:
-        # Serve the full document the steady-state diff re-fetches by id; an id
-        # outside *documents* (an out-of-band retry past the watermark) gets a
-        # generic indexer-shaped stub so the worker still has a real dict to hash.
         return by_id.get(doc_id, make_paperless_document(doc_id=doc_id))
 
     paperless.iter_all_documents.side_effect = _iter_all_documents

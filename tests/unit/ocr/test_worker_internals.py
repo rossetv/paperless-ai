@@ -1,9 +1,4 @@
-"""Tests for ocr.worker — the per-method helpers of ``OcrProcessor``.
-
-Covers parallel page OCR, the Paperless content update, error finalisation,
-and stats logging.  Split from ``test_worker`` (the ``process()`` lifecycle)
-for the 500-line ceiling (CODE_GUIDELINES §3.1).
-"""
+"""Tests for the per-method helpers of ocr.worker ``OcrProcessor``."""
 
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ from tests.unit.ocr.conftest import (
 
 class TestOcrPagesInParallel:
     def test_preserves_page_order(self):
-        # Arrange — single worker for deterministic side_effect ordering
+        # One worker keeps the side_effect order deterministic.
         settings = make_settings_obj(PAGE_WORKERS=1)
         ocr_provider = make_mock_ocr_provider()
         ocr_provider.transcribe_image.side_effect = [
@@ -41,7 +36,6 @@ class TestOcrPagesInParallel:
 
         results, failed = proc._ocr_pages_in_parallel(pages)
 
-        # Assert — correct count, no failures, and content in correct order
         assert len(results) == 3
         assert failed == []
         assert results[0] == PageResult("Text page 1", "m")
@@ -118,7 +112,6 @@ class TestUpdatePaperlessDocumentErrors:
         # must not reset the circuit breaker's failure streak (a backlog of blank
         # scans during a systemic Paperless outage would otherwise mask it).
         assert outcome is None
-        # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
@@ -132,7 +125,6 @@ class TestUpdatePaperlessDocumentErrors:
 
         proc._update_paperless_document(f"Some text {OCR_ERROR_MARKER} more", {"m"})
 
-        # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
@@ -149,7 +141,6 @@ class TestUpdatePaperlessDocumentErrors:
 
         proc._update_paperless_document("CHATGPT REFUSED TO TRANSCRIBE", set())
 
-        # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
@@ -167,8 +158,8 @@ class TestUpdatePaperlessDocumentErrors:
         outcome = proc._update_paperless_document("   ", set())
 
         # A shutdown-aborted flex-capacity wait poisons page results with the
-        # refusal sentinel; the document must NOT be error-tagged — it keeps
-        # its queue tag and the next boot re-attempts it (spec D5).
+        # refusal sentinel; the document must not be error-tagged, so it keeps
+        # its queue tag and the next boot re-attempts it.
         assert outcome is None
         paperless.update_document.assert_not_called()
 
@@ -181,7 +172,6 @@ class TestUpdatePaperlessDocumentErrors:
 
         proc._update_paperless_document("Name: [REDACTED]", {"m"})
 
-        # Assert — finalise_with_error calls update_document with error tag
         paperless.update_document.assert_called_once()
         tags_arg = paperless.update_document.call_args[0][2]
         assert 552 in tags_arg
@@ -219,7 +209,6 @@ class TestLogOcrStats:
 
         proc._log_ocr_stats()
 
-        # Assert — stats fetched but NOT logged (zero attempts)
         ocr_provider.get_stats.assert_called_once()
         mock_log.info.assert_not_called()
 
@@ -228,18 +217,15 @@ class TestLogOcrStats:
         ocr_provider.get_stats.return_value = {}
         proc = make_processor(ocr_provider=ocr_provider)
 
-        # Act — should not raise (empty dict is falsy -> returns early)
+        # An empty dict returns early without raising.
         proc._log_ocr_stats()
 
 
 class TestUpdatePaperlessDocumentSuccessFlag:
-    """L8: the success flag logged at the end of process() reflects the actual
-    write-back outcome, not merely the absence of an exception from
-    _update_paperless_document.
+    """process() logs ``success=True`` only for a SAVED write-back.
 
-    _update_paperless_document returns None for error/refusal/blank-page cases
-    and WriteBackOutcome.SAVED for genuine write-backs. The logged
-    ``success=True`` must only fire for SAVED, not for None.
+    _update_paperless_document returns None for error, refusal and blank-page
+    cases and WriteBackOutcome.SAVED only for genuine write-backs.
     """
 
     @patch("ocr.worker.get_latest_tags")
@@ -294,11 +280,12 @@ def _skip(dec: bool = True) -> BornDigitalDecision:
 
 
 class TestTrySkipBornDigital:
-    """The born-digital gate (spec D1–D6): the tags-only skip branch that runs
-    before the OCR path in ``process()``.  Every fail-safe returns
-    ``(False, None)`` (fall through to OCR); a clean skip returns ``(True,
-    None)``; a permanent skip-write rejection returns ``(True,
-    WriteBackOutcome.QUARANTINED)``; a transient one re-raises."""
+    """The born-digital gate: a tags-only skip that runs before OCR in process().
+
+    Every fail-safe returns ``(False, None)`` (fall through to OCR); a clean skip
+    returns ``(True, None)``; a permanent skip-write rejection returns
+    ``(True, WriteBackOutcome.QUARANTINED)``; a transient one re-raises.
+    """
 
     def test_gate_off_returns_proceed(self):
         proc = make_processor(OCR_SKIP_BORN_DIGITAL=False)

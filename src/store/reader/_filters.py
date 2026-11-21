@@ -1,11 +1,6 @@
-"""SQL filter helpers private to the reader.
+"""Parameterised ``WHERE`` builders and FTS5/LIKE escaping for the reader.
 
-Builds the parameterised ``WHERE`` fragment shared by ``vector_search`` and
-``keyword_search`` (:func:`build_filters`), escapes a single FTS5 search term
-(:func:`escape_fts_term`), and builds the ``WHERE`` fragment for the Library
-browse list (:func:`build_browse_where`).  Every value is bound through
-parameter substitution; only ``?`` placeholders and fixed SQL keywords are
-ever interpolated (CODE_GUIDELINES §9.5).
+Only fixed SQL and ``?`` placeholders are interpolated; every value is bound.
 """
 
 from __future__ import annotations
@@ -16,33 +11,12 @@ from store.models import DocumentBrowseQuery, SearchFilters
 
 
 def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
-    """Build the SQL WHERE clause and parameter list for *filters*.
+    """Return ``(where_clause, params)`` for *filters*; ``""`` when none is set.
 
-    Returns a tuple of ``(where_clause, params)``.  When no filter is active
-    the clause is the empty string; otherwise it starts with the ``WHERE``
-    keyword.  The clause contains only fixed SQL and ``?`` placeholders — every
-    filter value is in *params*, bound by parameter substitution.
-
-    Filter semantics:
-
-    - ``date_from`` / ``date_to``: half-open date range on ``d.created``.
-      Documents store a full ISO-8601 timestamp
-      (e.g. ``"2025-04-25T00:00:00+00:00"``).  Bare ``YYYY-MM-DD`` bounds
-      compare correctly against full timestamps lexicographically:
-      ``"2025-04-25T..."`` sorts after ``"2025-04-25"`` so ``>= date_from``
-      captures every timestamp on that day.  For the upper bound we use a
-      half-open ``< (date_to + 1 day)`` so that any timestamp on ``date_to``
-      is included while the stored ``idx_documents_created`` index remains
-      usable (wrapping the column in ``date()`` would make the predicate
-      non-sargable and force a full table scan).
-    - ``correspondent_id``: equality on ``d.correspondent_id``.
-    - ``document_type_id``: equality on ``d.document_type_id``.
-    - ``tag_ids``: each id in the tuple must appear as a value in
-      ``d.tag_ids``, which is stored as a JSON array.  The membership test
-      uses ``json_each(d.tag_ids)``, which requires valid JSON — the writer
-      serialises tag_ids with ``json.dumps(list(meta.tag_ids))`` (see
-      store/writer.py:upsert_document), so all stored values are valid JSON
-      arrays and ``json_each`` works correctly.
+    ``d.created`` holds full ISO-8601 timestamps, which compare correctly
+    against bare ``YYYY-MM-DD`` bounds as strings. The upper bound is the
+    half-open ``< date_to + 1 day`` because wrapping the column in ``date()``
+    would stop ``idx_documents_created`` being used.
     """
     clauses: list[str] = []
     params: list[str | int] = []
@@ -52,9 +26,6 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
         params.append(filters.date_from)
 
     if filters.date_to is not None:
-        # Half-open upper bound: advance by one day so any timestamp on
-        # date_to is captured. The plain column reference keeps the
-        # idx_documents_created index usable (a date() wrapper is non-sargable).
         exclusive_upper = _exclusive_upper_bound(filters.date_to)
         if exclusive_upper is not None:
             clauses.append("d.created < ?")
@@ -69,9 +40,6 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
         params.append(filters.document_type_id)
 
     for tag_id in filters.tag_ids:
-        # Each tag_id must appear in the JSON array stored in d.tag_ids.
-        # json_each() expands the array into rows; EXISTS ensures the document
-        # is only returned if the given id is present.
         clauses.append("EXISTS (SELECT 1 FROM json_each(d.tag_ids) WHERE value = ?)")
         params.append(tag_id)
 
@@ -84,14 +52,10 @@ def build_filters(filters: SearchFilters) -> tuple[str, list[str | int]]:
 def _exclusive_upper_bound(date_to: str) -> str | None:
     """Return the half-open ``< bound`` for an inclusive ``date_to`` day.
 
-    *date_to* is documented as a bare ``YYYY-MM-DD`` string, but it crosses an
-    untrusted boundary (a UI query param and the LLM planner both feed it
-    verbatim), so it can arrive as a full ISO-8601 timestamp
-    (``"2023-12-31T23:59:59+00:00"``) or as malformed garbage.  Only the date
-    portion matters for an inclusive whole-day bound, so we parse the leading
-    ``YYYY-MM-DD`` and advance it by one day.  An unparseable value yields
-    ``None`` — the caller then omits the upper bound rather than crashing the
-    search (the old ``date(d.created) <= ?`` form silently tolerated junk too).
+    *date_to* comes verbatim from a UI query param or the LLM planner, so it
+    may be a full timestamp or garbage. Only its leading ``YYYY-MM-DD`` is used;
+    an unparseable value returns ``None`` and the bound is dropped rather than
+    failing the search.
     """
     try:
         day = date.fromisoformat(date_to[:10])
@@ -103,33 +67,22 @@ def _exclusive_upper_bound(date_to: str) -> str | None:
 def escape_fts_term(term: str) -> str:
     """Escape a single FTS5 search term by doubling embedded double-quotes.
 
-    The term is placed between double-quotes in the MATCH expression so that
-    FTS5 treats it as a phrase/token rather than a boolean operator.  Any
-    literal double-quote inside the term is doubled per the FTS5 spec.
-
-    Invariant (§10.4): the caller re-quotes *each* element as a literal phrase
-    (``f'"{escape_fts_term(term)}"'``), so a term like ``foo OR bar`` becomes
-    the literal phrase ``"foo OR bar"`` — operators are neutralised. This holds
-    only while every element is a single user token; never pass a pre-built
-    MATCH expression (multiple terms joined with operators) as one ``term`` and
-    expect boolean behaviour — it would be quoted into a single literal phrase.
+    The caller wraps each escaped term in double-quotes, so ``foo OR bar``
+    becomes a literal phrase and FTS5 operators are neutralised. Never pass a
+    pre-built MATCH expression as one term: it would be quoted into a phrase.
     """
     return term.replace('"', '""')
 
 
-# The character used to escape LIKE metacharacters in the browse text match.
-# Bound into the SQL via ``ESCAPE '\'`` so a literal ``%`` / ``_`` typed by
-# the user is matched verbatim rather than acting as a wildcard.
+# Paired with ``ESCAPE '\'`` in the SQL so a typed ``%`` or ``_`` matches literally.
 _LIKE_ESCAPE = "\\"
 
 
 def _escape_like_term(term: str) -> str:
     """Escape LIKE metacharacters in *term* so it matches literally.
 
-    ``%``, ``_`` and the escape character itself are each prefixed with the
-    escape character.  The result is intended to be wrapped in ``%`` wildcards
-    and bound to a ``LIKE ? ESCAPE '\\'`` predicate.  The backslash is escaped
-    first so the escapes added for ``%`` / ``_`` are not themselves re-escaped.
+    The backslash is escaped first so the escapes added for ``%`` and ``_`` are
+    not themselves re-escaped.
     """
     escaped = term.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
     escaped = escaped.replace("%", _LIKE_ESCAPE + "%")
@@ -139,27 +92,12 @@ def _escape_like_term(term: str) -> str:
 def build_browse_where(
     query: DocumentBrowseQuery,
 ) -> tuple[str, list[str | int]]:
-    """Build the SQL WHERE clause and parameters for a Library browse query.
+    """Return ``(where_clause, params)`` for a Library browse query.
 
-    Reuses :func:`build_filters` for the correspondent / document-type /
-    tags / date-range predicates — :class:`~store.models.DocumentBrowseQuery`
-    shares those five fields with :class:`~store.models.SearchFilters` by
-    design — and adds the optional case-insensitive text predicate.
-
-    The text predicate matches when the search text appears as a substring of
-    **any** of: the document title (``d.title``), the joined correspondent
-    name (``corr.name``), or the joined document-type name (``dtype.name``).
-    The caller's SQL must therefore ``LEFT JOIN taxonomy`` under the aliases
-    ``corr`` and ``dtype``.  Matching is via SQLite ``LIKE``, case-insensitive
-    for ASCII; the term is escaped (:func:`_escape_like_term`) and wrapped in
-    ``%`` wildcards so user-typed metacharacters match literally.
-
-    Returns a tuple of ``(where_clause, params)``.  When no filter is active
-    the clause is the empty string; otherwise it starts with ``WHERE``.  The
-    clause contains only fixed SQL and ``?`` placeholders — every value is in
-    *params*, bound by parameter substitution (CODE_GUIDELINES §9.5).
+    Adds to :func:`build_filters` a text match on the title, correspondent or
+    document type, so the caller's SQL must ``LEFT JOIN taxonomy`` as ``corr``
+    and ``dtype``. SQLite ``LIKE`` is case-insensitive for ASCII only.
     """
-    # Reuse the shared filter fragment for the five common fields.
     shared = SearchFilters(
         date_from=query.date_from,
         date_to=query.date_to,
@@ -170,14 +108,11 @@ def build_browse_where(
     base_clause, params = build_filters(shared)
 
     clauses: list[str] = []
-    # build_filters returns either "" or a "WHERE ..."-prefixed string; strip
-    # the keyword so this function can re-assemble one WHERE for everything.
     if base_clause:
         clauses.append(base_clause.removeprefix("WHERE "))
 
     if query.text:
         like_term = f"%{_escape_like_term(query.text)}%"
-        # OR across the three searchable fields; each branch binds the term.
         clauses.append(
             "("
             "d.title LIKE ? ESCAPE '\\' "

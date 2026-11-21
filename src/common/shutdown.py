@@ -1,11 +1,4 @@
-"""Thread-safe graceful shutdown flag for SIGTERM/SIGINT handling.
-
-The module-level ``_shutdown_event`` is process-global state.  Tests that
-call :func:`request_shutdown` (directly or via signal delivery) **must**
-call :func:`reset_shutdown` during teardown (e.g. in a pytest fixture or
-``addCleanup``) so that the flag does not leak into subsequent tests and
-cause spurious "shutdown requested" behaviour.
-"""
+"""Process-wide graceful-shutdown flag, set by SIGTERM/SIGINT."""
 
 from __future__ import annotations
 
@@ -32,11 +25,7 @@ def is_shutdown_requested() -> bool:
 
 
 def reset_shutdown() -> None:
-    """Clear the shutdown flag.
-
-    **Must** be called in test teardown whenever a test triggers
-    :func:`request_shutdown`, to prevent state leaking between tests.
-    """
+    """Clear the shutdown flag; tests that set it must call this in teardown."""
     _shutdown_event.clear()
 
 

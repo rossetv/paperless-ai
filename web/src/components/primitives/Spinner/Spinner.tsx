@@ -1,30 +1,19 @@
 import { cn } from '../../../lib/cn';
 import styles from './Spinner.module.css';
 
-/** Size scale for the spinner ring. */
 export type SpinnerSize = 'small' | 'medium' | 'large';
 
 export interface SpinnerProps {
-  /**
-   * Accessible label announced to screen readers.
-   * Defaults to "Loading…" — override for context-specific messages.
-   */
+  /** Accessible label. Defaults to "Loading…". */
   label?: string;
   /** Size of the spinner ring. Defaults to 'medium'. */
   size?: SpinnerSize;
-  /** Additional class names to merge onto the wrapper element. */
   className?: string;
 }
 
 /**
- * Accessible CSS-animated loading indicator.
- *
- * Uses role="status" so screen readers announce the label as a live region
- * without interrupting the user. The label text is visually hidden but present
- * in the accessibility tree.
- *
- * The spin animation respects prefers-reduced-motion: the rotation is replaced
- * with a simple opacity pulse that conveys "activity" without vestibular risk.
+ * Loading indicator with role="status", so screen readers announce the visually
+ * hidden label without interrupting.
  */
 export function Spinner({
   label = 'Loading…',
@@ -36,8 +25,6 @@ export function Spinner({
   return (
     <span role="status" aria-label={label} className={classes}>
       <span className={styles['ring']} aria-hidden="true" />
-      {/* Screen-reader label — the canonical `.visually-hidden` utility from
-          styles/global.css; there is one definition of the technique. */}
       <span className="visually-hidden">{label}</span>
     </span>
   );

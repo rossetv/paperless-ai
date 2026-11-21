@@ -1,13 +1,3 @@
-/*
- * ConnectionCard feature — CSS Module.
- *
- * An accordion integration card: coloured glyph, title/subtitle, status pill,
- * Test button, rotating chevron. Body hidden when collapsed.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Card container ── */
 .card {
   background-color: var(--colour-surface);
   border: var(--spacing-1) solid var(--colour-border);
@@ -15,7 +5,6 @@
   overflow: hidden;
 }
 
-/* ── Header row — the always-visible toggle button + Test sibling ── */
 .header {
   display: flex;
   align-items: center;
@@ -23,7 +12,6 @@
   padding: var(--spacing-13) var(--spacing-14);
 }
 
-/* ── Toggle — the real <button> that expands/collapses the card ── */
 .toggle {
   flex: 1;
   min-width: 0;
@@ -45,9 +33,8 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Brand glyph — brand-neutral rounded square (DD-1d) ──
- * Always a neutral fill (--colour-glyph-neutral), never status-ok green, so the
- * provider badge can never be confused with the green "Connected" status dot. */
+/* Always a neutral fill, never status-ok green, so the provider badge can never
+ * be confused with the green "Connected" status dot. */
 .glyph {
   flex-shrink: 0;
   display: inline-flex;
@@ -68,7 +55,6 @@
   opacity: var(--opacity-subdued);
 }
 
-/* ── Title + subtitle ── */
 .header-info {
   flex: 1;
   min-width: 0;
@@ -98,7 +84,6 @@
   text-overflow: ellipsis;
 }
 
-/* ── Status pill — dot + label ── */
 .pill {
   display: inline-flex;
   align-items: center;
@@ -146,7 +131,6 @@
   opacity: var(--opacity-inactive);
 }
 
-/* ── Ghost Test button ── */
 .btn-test {
   display: inline-flex;
   align-items: center;
@@ -183,13 +167,12 @@
   border-color: var(--colour-text-tertiary);
 }
 
-/* Tactile press — matches the Button primitive's ghost press feel (§4). */
+/* Matches the Button primitive's ghost press feel. */
 .btn-test:active:not(:disabled) {
   background: var(--colour-button-active-bg);
   transform: scale(0.97);
 }
 
-/* ── Chevron — rotates 180° when expanded ── */
 .chevron {
   flex-shrink: 0;
   display: inline-flex;
@@ -201,7 +184,6 @@
   transform: rotate(180deg);
 }
 
-/* ── Body — hidden via HTML hidden attribute, padded when visible ── */
 .body {
   padding: 0 var(--spacing-14);
 }

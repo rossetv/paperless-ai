@@ -1,11 +1,4 @@
-"""Tests for search.cookies — session-cookie set and clear.
-
-Covers: set_session_cookie writes the token under the documented name with
-HttpOnly, SameSite=Strict, Path=/ and the supplied Max-Age; the Secure flag
-is set when secure=True (HTTPS) and absent when secure=False (HTTP);
-clear_session_cookie removes it. A starlette Response is used directly — no
-HTTP server needed.
-"""
+"""Tests for search.cookies: setting and clearing the session cookie."""
 
 from __future__ import annotations
 
@@ -46,10 +39,8 @@ def test_set_session_cookie_is_secure_over_https() -> None:
 def test_set_session_cookie_is_not_secure_over_http() -> None:
     """Secure flag is absent when the request arrived over plain HTTP.
 
-    A Secure cookie is silently dropped by the browser over HTTP — making
-    login appear to succeed (200) but leaving no session cookie, so the next
-    request is 401. When the scheme is HTTP (e.g. direct LAN/IP access),
-    omit the flag so the cookie is actually stored.
+    Browsers drop a Secure cookie over HTTP, so login would appear to succeed but
+    the next request would be 401.
     """
     response = Response()
     set_session_cookie(response, token="t", max_age=3600, secure=False)

@@ -1,18 +1,9 @@
 /**
- * Search-pipeline wire types — request, response sub-types, and facets.
- *
- * Mirrors `SearchRequest`, `SearchResponse`, `SourceDocumentResponse`,
- * `FacetsResponse` from the backend's `wire.py`. Field names are kept in
- * exact correspondence — a divergence is a bug, not a style choice.
- *
- * Allowed deps: none (leaf module — CODE_GUIDELINES §12.3).
+ * Search-pipeline wire types. Field names match `src/search/wire/search.py` and
+ * `src/search/wire/stream.py` exactly; a divergence is a bug.
  */
 
-// ---------------------------------------------------------------------------
-// Search request types
-// ---------------------------------------------------------------------------
-
-/** Optional filters supplied in a search request (spec §7.1). */
+/** Optional filters supplied in a search request. */
 export interface FilterRequest {
   date_from?: string | null;
   date_to?: string | null;
@@ -27,10 +18,6 @@ export interface SearchRequest {
   filters?: FilterRequest | null;
 }
 
-// ---------------------------------------------------------------------------
-// Response sub-types
-// ---------------------------------------------------------------------------
-
 /** A single taxonomy entry as returned to the browser. */
 export interface TaxonomyEntry {
   kind: string;
@@ -39,24 +26,14 @@ export interface TaxonomyEntry {
 }
 
 /**
- * Qualitative relevance of a search hit, from the backend's absolute vector
- * similarity. Rendered as the `RelevanceMeter` badge (a 4-dot meter + label)
- * in place of the raw rank-based score, which read as a misleadingly tiny
- * number even for a perfect match.
+ * Qualitative relevance of a search hit, from absolute vector similarity. The UI
+ * shows this instead of the rank-based score, which looks misleadingly tiny.
  */
 export type RelevanceTier = 'strong' | 'good' | 'partial' | 'weak';
 
 /**
- * The superset document shape accepted by the preview viewer.
- *
- * Library and Index screens fabricate a local object to open the viewer —
- * they do not have a deep-link URL, so `paperless_url` is `string | null`
- * here. The wire-strict `SourceDocument` (below) extends this with a
- * non-nullable `paperless_url: string` matching the backend wire contract.
- *
- * `DocumentPreviewScreen` and `DocumentViewerChrome` accept this looser
- * interface so both fabricated and wire-originated documents can be previewed
- * without type assertions.
+ * The looser document shape the preview viewer accepts, so Library and Index can
+ * open it with a locally built object that has no `paperless_url`.
  */
 export interface PreviewableDocument {
   document_id: number;
@@ -65,54 +42,27 @@ export interface PreviewableDocument {
   document_type: string | null;
   created: string | null;
   snippet: string;
-  /**
-   * The deep-link URL to the document in the Paperless web UI.
-   *
-   * Null when the URL is not available (e.g. Library/Index preview). The
-   * `DocumentViewerChrome` omits the "Open in Paperless" action when null.
-   */
+  /** Deep link into the Paperless web UI; null hides the "Open in Paperless" action. */
   paperless_url: string | null;
   score: number;
-  /**
-   * Qualitative match strength, present on search results (`SourceDocument`)
-   * and absent on locally-fabricated Library/Index documents.
-   */
+  /** Present on search results, absent on locally built Library/Index documents. */
   relevance_tier?: RelevanceTier;
 }
 
-/**
- * One ranked source document in the search response.
- *
- * Wire-strict: mirrors `SourceDocumentResponse` in `wire.py` exactly.
- * `paperless_url` is a non-nullable `str` on the backend — the search API
- * always resolves the public Paperless URL before returning results.
- * `tags` is a flat list of tag name strings returned by the backend.
- *
- * Screens that fabricate a local document object (Library, Index) use
- * `PreviewableDocument` instead and supply `null` for `paperless_url`.
- */
+/** One ranked source document in the search response (`SourceDocumentResponse`). */
 export interface SourceDocument extends PreviewableDocument {
   paperless_url: string;
-  /** A search result always carries a relevance tier (required override). */
   relevance_tier: RelevanceTier;
-  /**
-   * Tag names attached to this document.
-   *
-   * Optional: the backend `SourceDocumentResponse` wire model does not emit
-   * a `tags` field, so callers must guard with `?? []`. Made optional here
-   * so TypeScript enforces that guard at every call site.
-   */
+  /** Optional because the backend does not emit `tags`; this forces a `?? []` guard. */
   tags?: string[];
 }
 
 /**
- * One planned search in the multi-spec plan, for UI transparency (spec §7.1).
+ * One planned search in the query plan (`SpecResponse`).
  *
- * Mirrors `SpecResponse` in `wire/search.py`: the planner's free-text filter
- * *guesses* (correspondent / document_type / tags / date bounds), NOT the
- * resolved taxonomy ids — resolution happens later in the pipeline (the
- * `resolve` phase). `semantic` is null for a keyword-only spec; `keywords` is
- * empty for a semantic-only spec.
+ * The filters are the planner's free-text guesses, not resolved taxonomy ids
+ * (the `resolve` phase does that). `semantic` is null for a keyword-only spec;
+ * `keywords` is empty for a semantic-only one.
  */
 export interface Spec {
   mode: string;
@@ -126,7 +76,7 @@ export interface Spec {
   rationale: string;
 }
 
-/** The multi-spec query plan for UI transparency (spec §7.1). */
+/** The multi-spec query plan, shown for transparency. */
 export interface QueryPlan {
   specs: Spec[];
 }
@@ -138,16 +88,9 @@ export interface SearchStats {
   refined: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Trace + cost telemetry (Wave — live reasoning trace + token/cost)
-// ---------------------------------------------------------------------------
-
 /**
- * Token counts for one or more LLM calls.
- *
- * Mirrors `TokenUsageResponse` in `wire/search.py`. `reasoning` is a SUBSET of
- * `completion` (reasoning tokens bill as output) — never add it to a cost
- * separately; `total` is the API's `total_tokens`.
+ * Token counts for one or more LLM calls. `reasoning` is a subset of `completion`
+ * (it bills as output), so never add it to a cost separately.
  */
 export interface TokenUsage {
   prompt: number;
@@ -157,21 +100,15 @@ export interface TokenUsage {
 }
 
 /**
- * A priced cost for one phase or one call.
- *
- * Mirrors `CostResponse`. `usd` is `null` for an unknown/unpriced model (the UI
- * shows "—"); `local` is `true` for a local (Ollama) provider, where the cost
- * is genuinely zero.
+ * A priced cost for one phase or call. `usd` is `null` for an unpriced model;
+ * `local` is `true` for a local (Ollama) provider, where the cost really is zero.
  */
 export interface Cost {
   usd: number | null;
   local: boolean;
 }
 
-/**
- * The pipeline phases, in execution order. `cache` is emitted only on a
- * cache-hit short-circuit. Mirrors the backend `phase` discriminator.
- */
+/** The pipeline phases in execution order; `cache` appears only on a cache hit. */
 export type SearchPhase =
   | 'plan'
   | 'resolve'
@@ -184,11 +121,8 @@ export type SearchPhase =
   | 'cache';
 
 /**
- * One completed pipeline phase, for the trace.
- *
- * Mirrors `PhaseRecordResponse`. `tokens`/`cost` are `null` for the non-LLM
- * phases (retrieve, gate, cache). `detail` is a per-phase free-form map the SPA
- * renders (the planner's rewritten query, the judge's per-document verdicts, …).
+ * One completed pipeline phase. `tokens`/`cost` are `null` for the non-LLM phases
+ * (retrieve, gate, cache); `detail` is a free-form per-phase map.
  */
 export interface PhaseRecord {
   phase: SearchPhase;
@@ -199,21 +133,16 @@ export interface PhaseRecord {
   ms: number;
 }
 
-/** The ordered per-phase trace assembled during a search. Mirrors `SearchTraceResponse`. */
+/** The ordered per-phase trace assembled during a search. */
 export interface SearchTrace {
   phases: PhaseRecord[];
 }
 
 /**
- * Whole-query token + dollar-cost totals. Mirrors `CostSummaryResponse`.
+ * Whole-query token and dollar-cost totals.
  *
- * `usd` is `null` when any LLM call was unpriced-and-not-local (no honest
- * total); `local` is `true` when every billed call was local.
- *
- * `prices_as_of` carries the date (YYYY-MM-DD) of the price table used to
- * compute `usd`. `prices_source` identifies the table origin: `"bundled"` for
- * the shipped defaults, or a URL / label when overridden by configuration.
- * Both fields are optional — older API versions omit them.
+ * `usd` is `null` when any call was unpriced and not local, since no honest total
+ * exists; `local` is `true` when every billed call was local.
  */
 export interface CostSummary {
   tokens: TokenUsage;
@@ -226,10 +155,7 @@ export interface CostSummary {
   prices_source?: string;
 }
 
-// ---------------------------------------------------------------------------
 // NDJSON stream events — one JSON object per line from POST /api/search/stream
-// ---------------------------------------------------------------------------
-
 /** A phase has begun, emitted before its work runs (`type: "phase_start"`). */
 export interface PhaseStartEvent {
   type: 'phase_start';
@@ -238,10 +164,7 @@ export interface PhaseStartEvent {
   label: string;
 }
 
-/**
- * A phase has completed (`type: "phase_done"`). Carries the full `PhaseRecord`
- * fields inline alongside the frame discriminator and sequence number.
- */
+/** A phase has completed (`type: "phase_done"`), with its `PhaseRecord` fields inline. */
 export interface PhaseDoneEvent extends PhaseRecord {
   type: 'phase_done';
   seq: number;
@@ -269,33 +192,15 @@ export type StreamEvent =
   | ResultEvent
   | ErrorEvent;
 
-// ---------------------------------------------------------------------------
-// Top-level search response types
-// ---------------------------------------------------------------------------
-
 /**
- * Discriminator for the search result type (spec §7.1).
- *
- * ``"answered"``  — the synthesiser produced a full answer with sources.
- * ``"clarify"``   — the query was too vague (Layer 1 fail-fast); `answer`
- *                   carries a nudge message and `sources` is empty.
- * ``"no_match"``  — retrieval was too weak (Layer 2 fail-fast); `answer`
- *                   carries a nudge message and `sources` is empty.
+ * The kind of search result. For `clarify` (query too vague) and `no_match`
+ * (retrieval too weak) `answer` carries a nudge and `sources` is empty.
  */
 export type OutcomeKind = 'answered' | 'clarify' | 'no_match';
 
 /**
- * Machine-readable reason for a zero-result response (spec §7.1).
- *
- * ``"empty_retrieval"``  — the vector store returned no candidates for the
- *                          query (before any judge ran).
- * ``"weak_relevance"``   — candidates were retrieved but the vector similarity
- *                          scores were all below the relevance gate threshold.
- * ``"judge_rejected"``   — the judge evaluated candidates but rejected them
- *                          all as not answering the question.
- *
- * `null` when `outcome_kind` is ``"answered"`` or the backend does not supply
- * the field (older API versions).
+ * Why a search returned nothing: no candidates retrieved, all below the relevance
+ * gate, or all rejected by the judge.
  */
 export type NoMatchReason = 'empty_retrieval' | 'weak_relevance' | 'judge_rejected';
 
@@ -305,32 +210,13 @@ export interface SearchResponse {
   sources: SourceDocument[];
   plan: QueryPlan;
   stats: SearchStats;
-  /**
-   * The ordered per-phase reasoning trace (mirrors `SearchResponse.trace`).
-   * Always present now — empty `phases` for a Layer-1 clarify short-circuit.
-   */
+  /** The per-phase reasoning trace; `phases` is empty for a clarify short-circuit. */
   trace: SearchTrace;
-  /**
-   * Whole-query token + cost totals (mirrors `SearchResponse.cost`). Always
-   * present now; `usd` is `null` when the spend cannot be honestly priced.
-   */
   cost: CostSummary;
-  /** Discriminator for the result type — branch on this in the UI. */
   outcome_kind: OutcomeKind;
-  /**
-   * Machine-readable reason for a zero-result response.
-   *
-   * Present (and non-null) only when `outcome_kind` is ``"no_match"``.
-   * `null` for a ``"clarify"`` or ``"answered"`` result, and absent on older
-   * API responses that pre-date this field.
-   */
+  /** Set only when `outcome_kind` is `"no_match"`. */
   no_match_reason?: NoMatchReason | null;
-  /**
-   * Number of candidate documents evaluated by the judge before it rejected
-   * them all (only meaningful when `no_match_reason` is ``"judge_rejected"``).
-   *
-   * `null` / absent when the count is not available (e.g. empty retrieval).
-   */
+  /** How many candidates the judge rejected; only meaningful for `"judge_rejected"`. */
   candidate_count?: number | null;
 }
 
@@ -356,19 +242,8 @@ export interface StatusResponse {
   status: string;
 }
 
-// ---------------------------------------------------------------------------
-// Recent searches (Wave 2 — Search redesign)
-// ---------------------------------------------------------------------------
-
-/**
- * One entry in the signed-in user's recent-search history.
- *
- * Mirrors `RecentSearchEntry` in `src/search/wire.py`: a row of the
- * `recent_searches` table added by the Wave 2 backend (`app.db` migration
- * v2). `created_at` is an ISO-8601 UTC timestamp.
- */
+/** One entry in the signed-in user's recent-search history. */
 export interface RecentSearch {
-  /** The raw query text the user searched for. */
   query: string;
   /** ISO-8601 UTC timestamp of when the search ran. */
   created_at: string;

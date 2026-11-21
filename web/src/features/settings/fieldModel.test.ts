@@ -15,7 +15,7 @@ describe('settings field model', () => {
   });
 
   it('uses the seven expected section anchor ids in pipeline order', () => {
-    // The standalone "providers" section is gone — provider lives on each step.
+    // No standalone "providers" section: the provider is chosen per step.
     expect(SETTINGS_SECTIONS.map((s) => s.id)).toEqual([
       'connections',
       'ocr',
@@ -136,8 +136,6 @@ describe('settings field model', () => {
     expect(fieldByKey('__unknown__')).toBeUndefined();
   });
 
-  // ── New-model specific assertions ─────────────────────────────────────────
-
   it('allFieldKeys contains OCR_MODELS and CLASSIFY_MODELS', () => {
     const keys = allFieldKeys();
     expect(keys).toContain('OCR_MODELS');
@@ -205,8 +203,7 @@ describe('settings field model', () => {
       expect(keys).toContain(`SEARCH_${stage}_MODEL`);
       expect(keys).toContain(`SEARCH_${stage}_REASONING_EFFORT`);
 
-      // The model is an OpenAI dropdown, a free-text Ollama model otherwise,
-      // keyed on this sub-step's own provider.
+      // OpenAI dropdown or free-text Ollama model, keyed on this sub-step's own provider.
       const model = models.fields.find((f) => f.key === `SEARCH_${stage}_MODEL`)!;
       expect(model.control.kind).toBe('conditional');
       if (model.control.kind === 'conditional') {
@@ -215,7 +212,7 @@ describe('settings field model', () => {
         expect(model.control.fallback.kind).toBe('text');
       }
 
-      // Reasoning effort is OpenAI-only — its row hides on Ollama.
+      // Reasoning effort is OpenAI-only.
       const reasoning = models.fields.find(
         (f) => f.key === `SEARCH_${stage}_REASONING_EFFORT`,
       )!;
@@ -235,11 +232,10 @@ describe('settings field model', () => {
     expect(advancedKeys).toContain('OCR_REFUSAL_MARKERS');
   });
 
-  // ── Per-step provider selection (no standalone AI providers section) ───────
+  // Per-step provider selection
 
   it('has no standalone "providers" section and no LLM_PROVIDER field', () => {
-    // Provider lives on each step now; LLM_PROVIDER survives only as a hidden
-    // back-compat seed (no UI control).
+    // LLM_PROVIDER survives only as a hidden back-compat seed with no UI control.
     expect(SETTINGS_SECTIONS.find((s) => s.id === 'providers')).toBeUndefined();
     expect(allFieldKeys()).not.toContain('LLM_PROVIDER');
   });
@@ -310,8 +306,7 @@ describe('settings field model', () => {
     const openai = connections.groups.find((g) => g.id === 'openai')!;
     const ollama = connections.groups.find((g) => g.id === 'ollama')!;
 
-    // No "whichever you set to" / "selected provider" phrasing — the cards now
-    // describe the service itself, not which role it serves.
+    // The cards describe the service itself, not which role it serves.
     for (const group of [openai, ollama]) {
       expect(group.subtitle).not.toMatch(/whichever you set to/i);
       expect(group.subtitle).not.toMatch(/selected provider/i);
@@ -320,7 +315,7 @@ describe('settings field model', () => {
     expect(ollama.subtitle).toBe('A local Ollama server (OpenAI-compatible endpoint).');
   });
 
-  it("connections no longer has a 'provider' group (the strip moved to AI providers)", () => {
+  it("connections has no 'provider' group", () => {
     const connections = SETTINGS_SECTIONS.find((s) => s.id === 'connections')!;
     expect(connections.groups.find((g) => g.id === 'provider')).toBeUndefined();
   });
@@ -329,7 +324,7 @@ describe('settings field model', () => {
     expect(allFieldKeys()).toContain('EMBEDDING_PROVIDER');
   });
 
-  // ── GPT-5.6 / live reasoning-effort set / flex tier toggle ────────────────
+  // Model options, reasoning-effort set and flex tier toggle
 
   test('MODEL_OPTIONS is the gpt-5.6 family plus the 5.4-era escape hatches', () => {
     expect(MODEL_OPTIONS.map((o) => o.value)).toEqual([

@@ -1,11 +1,4 @@
-"""Tests for the DB-backed session lifecycle in search.sessions.
-
-Covers begin_session (creates a row keyed by the hashed token; returns the
-raw token and an expiry in the future), resolve_session (returns a
-CurrentUser for a live session; None for an unknown, expired, or
-suspended-user session; prunes the expired row), end_session, and the
-last_seen throttle.
-"""
+"""Tests for the DB-backed session lifecycle in search.sessions."""
 
 from __future__ import annotations
 
@@ -60,9 +53,8 @@ def test_begin_session_stores_only_the_hashed_token(conn, user) -> None:
 def test_begin_session_prunes_expired_sessions(conn, user) -> None:
     """A new login sweeps already-expired sessions so the table stays bounded.
 
-    Regression guard for the sessions leak: prune_expired was dead code until
-    begin_session was wired to call it. Without the sweep, a session whose
-    owner never returns to present the cookie would live in app.db forever.
+    Without the sweep, a session whose owner never returns would live in app.db
+    forever.
     """
     past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     create_session(

@@ -1,14 +1,7 @@
 """Shared fixtures and mock builders for the indexer unit tests.
 
-The reconciler's tests are split across several files mirroring the
-``indexer/reconciler/`` package (CODE_GUIDELINES §11.2); the StoreWriter mock
-builder, the construct-and-run helper, and the common ``index_document`` stub
-they all share live here so each test file imports one definition rather than
-redeclaring it.  The Paperless mock builder lives in :mod:`tests.helpers.mocks`
-(the reconciler integration tests share it too) and is re-exported here so the
-reconciler unit test files import everything from one place.  The daemon's
-tests (``test_daemon*.py``) share the mock Reconciler and loop-settings
-builders at the end of this module for the same reason.
+``make_reconciler_paperless`` is re-exported from :mod:`tests.helpers.mocks` so
+the reconciler test files import everything from one place.
 """
 
 from __future__ import annotations
@@ -37,11 +30,7 @@ __all__ = [
 
 @pytest.fixture(autouse=True)
 def _reset_shutdown() -> Iterator[None]:
-    """Clear the process-global shutdown flag before and after each test.
-
-    The daemon's shutdown signal is a process-global; without this reset a test
-    that requests shutdown would leak the flag into the next test.
-    """
+    """Reset the process-global shutdown flag so it cannot leak between tests."""
     shutdown_mod.reset_shutdown()
     yield
     shutdown_mod.reset_shutdown()
@@ -57,11 +46,6 @@ def make_reconciler_store_writer(
 
     ``read_meta`` / ``write_meta`` are backed by a dict exposed as ``_meta`` so
     tests can assert on what the reconciler persisted.
-
-    Args:
-        watermark: Initial ``modified_watermark`` meta value, if any.
-        index_state: The mapping ``get_index_state`` returns.
-        store_ids: The id set ``get_all_document_ids`` returns.
     """
     store_writer = MagicMock()
     meta: dict[str, str] = {}
@@ -80,22 +64,12 @@ def make_reconciler_store_writer(
 def always_indexed(
     _self: object, doc: dict, existing: IndexState | None
 ) -> IndexOutcome:
-    """A DocumentIndexer.index_document stub that indexes every document.
-
-    The common case for reconciler tests exercising watermark and taxonomy
-    behaviour rather than per-document worker outcomes.  Usable directly as a
-    ``monkeypatch.setattr`` value for the method.
-    """
+    """A ``DocumentIndexer.index_document`` stub that indexes every document."""
     return IndexOutcome.INDEXED
 
 
 def run_incremental_sync(paperless: MagicMock, store_writer: MagicMock) -> SyncReport:
-    """Construct a Reconciler over the mocks and run one incremental_sync.
-
-    Settings and the embedding client are the shared factory defaults; the
-    reconciler holds no state worth keeping past the call, so this collapses
-    the construct-and-run boilerplate every incremental-sync test repeats.
-    """
+    """Construct a Reconciler over the mocks with default settings and run one sync."""
     return Reconciler(
         make_settings_obj(), paperless, store_writer, make_mock_embedding_client()
     ).incremental_sync()

@@ -1,10 +1,4 @@
-"""Tests for search.settings_service — read/diff/re-index-impact logic.
-
-Covers: effective-value resolution with the correct source label; secret
-flagging; validate_change_set rejects unknown keys and values that break
-Settings; reindex_required is true exactly when a re-index key changed; an
-empty change set needs no re-index.
-"""
+"""Tests for search.settings_service: read, diff and re-index-impact logic."""
 
 from __future__ import annotations
 
@@ -43,11 +37,8 @@ def test_view_carries_coded_default_for_default_sourced_keys() -> None:
     """A key on its coded default gets a non-None default_value string."""
     views = view_settings(config_table={}, environ={})
     by_key = {v.key: v for v in views}
-    # OCR_DPI coded default is 300.
     assert by_key["OCR_DPI"].default_value == "300"
-    # CHUNK_SIZE coded default is 2000.
     assert by_key["CHUNK_SIZE"].default_value == "2000"
-    # EMBEDDING_MODEL coded default is text-embedding-3-small.
     assert by_key["EMBEDDING_MODEL"].default_value == "text-embedding-3-small"
 
 
@@ -111,7 +102,7 @@ def test_validate_accepts_a_good_change_set() -> None:
 
 def test_validate_rejects_selecting_ollama_without_a_base_url() -> None:
     """A step may not select Ollama unless OLLAMA_BASE_URL is configured — the
-    backstop for the UI's disabled Ollama option (spec §3.3)."""
+    backstop for the UI's disabled Ollama option."""
     with pytest.raises(ValueError, match="OLLAMA_BASE_URL"):
         validate_change_set(
             changes={"OCR_PROVIDER": "ollama"},
@@ -151,7 +142,7 @@ def test_validate_rejects_selecting_openai_without_an_api_key() -> None:
 
 def test_validate_does_not_require_openai_key_for_an_unrelated_change() -> None:
     """An ordinary change must not force re-supplying the masked OPENAI_API_KEY
-    secret — the secret-sentinel workflow (regression for the over-eager guard)."""
+    secret (the secret-sentinel workflow)."""
     changed = validate_change_set(
         changes={"OCR_DPI": "175"},
         config_table={},
@@ -193,7 +184,7 @@ def test_reindex_required_of_an_empty_change_set_is_false() -> None:
 
 def test_reindex_required_is_false_for_a_bare_chat_provider_flip() -> None:
     """The embedding provider is decoupled from the chat provider, so flipping
-    only LLM_PROVIDER no longer moves embeddings and needs no re-index."""
+    only LLM_PROVIDER does not move embeddings and needs no re-index."""
     assert (
         reindex_required(
             changes={"LLM_PROVIDER": "ollama"},

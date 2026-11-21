@@ -5,47 +5,28 @@ import { Icon } from '../../primitives/Icon/Icon';
 import type { IconName } from '../../primitives/Icon/Icon';
 import styles from './SettingsSideNav.module.css';
 
-// rationale: ~115 lines — component is data-driven with two distinct render
-// branches (anchor vs NavLink) that each need icon+label markup plus independent
-// active-state derivation. Splitting further would scatter the logic that must
-// stay co-located for readability. Kept below 130 lines with icon+label factored
-// into NavItemContent below.
-
 /** A single navigable item in a {@link SettingsNavGroup}. */
 export interface SettingsNavItem {
-  /** Stable identifier — used for React keys, never displayed. */
+  /** Used for React keys, never displayed. */
   id: string;
-  /** Visible link label. */
   label: string;
-  /** Route path the link navigates to. */
   to: string;
   /** Optional icon shown to the left of the label. */
   icon?: IconName;
 }
 
-/**
- * A titled group of settings nav items.
- *
- * Wave 3 supplies one group ("Access Control"). Wave 4 adds a second
- * ("Configuration") simply by passing another group object — the component
- * needs no change.
- */
+/** A titled group of settings nav items. */
 export interface SettingsNavGroup {
   /** Uppercase group heading. */
   title: string;
-  /** The items in this group, top-to-bottom. */
   items: SettingsNavItem[];
 }
 
 export interface SettingsSideNavProps {
   /** The groups to render, top-to-bottom. */
   groups: SettingsNavGroup[];
-  /**
-   * Optional eyebrow text shown at the very top of the rail, above the first
-   * group — e.g. "SETTINGS".
-   */
+  /** Optional eyebrow text above the first group, e.g. "SETTINGS". */
   eyebrow?: string;
-  /** Additional class names to merge onto the `<nav>`. */
   className?: string;
 }
 
@@ -59,13 +40,9 @@ function readStickyOffset(): number {
 }
 
 /**
- * Watch the in-page anchor blocks (the ids on the right of every Configuration
- * link's `#…`) and report the one currently in view as the user scrolls.
- *
- * Mirrors mediaman's rail scroll-spy: we pick the block whose top has just
- * passed the sticky-offset line (--height-settings-sticky), so the active item
- * flips as the user reaches each section heading. Falls back to `null` when no
- * anchor blocks are present on the page (e.g. /settings/users routed pages).
+ * Scroll-spy over the in-page anchor blocks: returns the id of the block whose
+ * top has just passed the sticky-offset line (--height-settings-sticky), or
+ * `null` when the page has none of the anchors (e.g. routed /settings/users).
  */
 function useAnchorScrollSpy(anchorIds: readonly string[]): string | null {
   const [active, setActive] = React.useState<string | null>(null);
@@ -140,20 +117,11 @@ function NavItemContent({
 }
 
 /**
- * The left navigation rail of the settings / access-control area.
+ * Left navigation rail of the settings and access-control area.
  *
- * Fully data-driven: it renders whatever `groups` it is given. Each item is
- * a `NavLink` (routed pages) or a plain `<a>` (in-page anchors). An optional
- * `eyebrow` string appears at the top of the rail as a small uppercase label.
- * Items can carry an optional `icon` name for the icon column.
- *
- * Anchor items participate in a scroll-spy: as the user scrolls the
- * /settings page, the rail flips its active state to mirror whichever block
- * heading has crossed the top of the viewport. Clicking an anchor item scrolls
- * smoothly to the target section, accounting for the sticky header offset.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/,
- * components/primitives, react-router-dom.
+ * Items are `NavLink`s for routed pages or plain `<a>`s for in-page anchors.
+ * Anchor items follow a scroll-spy and scroll smoothly to their section,
+ * offset by the sticky header.
  */
 export function SettingsSideNav({
   groups,
@@ -162,9 +130,8 @@ export function SettingsSideNav({
 }: SettingsSideNavProps): React.ReactElement {
   const location = useLocation();
 
-  // The anchor ids the page exposes — derived from every item.to with a `#`.
-  // Stable across renders by serialising; useMemo keeps the array identity
-  // steady so the scroll-spy effect does not re-run on every render.
+  // useMemo keeps the array identity stable so the scroll-spy effect does not
+  // re-run on every render.
   const anchorIds = React.useMemo(() => {
     const ids: string[] = [];
     for (const group of groups) {

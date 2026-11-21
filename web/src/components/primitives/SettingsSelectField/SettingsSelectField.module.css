@@ -1,21 +1,9 @@
-/*
- * SettingsSelectField primitive — CSS Module.
- *
- * A native <select> styled to match SettingsTextField: a soft-bordered white
- * pill. The browser's default select chevron is hidden and replaced with a
- * tokenised SVG via the background image, so the control looks identical to
- * the other settings fields.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .wrapper {
   position: relative;
   width: 100%;
 }
 
-/* --padding-settings-field-trailing (64 px) clears the 16 px chevron at right:11 px.
-   --spacing-section (96 px) was a semantic misuse of the vertical-rhythm token. */
+/* --padding-settings-field-trailing (64 px) clears the 16 px chevron at right:11 px. */
 .select {
   width: 100%;
   padding: var(--spacing-7) var(--padding-settings-field-trailing) var(--spacing-7) var(--spacing-9);
@@ -41,7 +29,7 @@
   color: var(--colour-text-secondary);
 }
 
-/* ── The chevron — a static decorative glyph pinned to the right edge. ── */
+/* Stands in for the native chevron hidden by appearance: none. */
 .chevron {
   position: absolute;
   top: 50%;

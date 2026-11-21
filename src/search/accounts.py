@@ -1,29 +1,11 @@
-"""Account-management guards for the search server (web-redesign §4.6).
+"""Guards that stop an admin locking the deployment out of administration.
 
-The user-CRUD endpoints (``PATCH``/``DELETE /api/users/{id}``) enforce two
-safety rules so an admin cannot lock the deployment out of administration:
+Two rules: a user cannot delete, suspend, or demote themselves, and the last
+active admin cannot be deleted, suspended, or demoted.
 
-- **No self-foot-gun.** A user cannot delete themselves, suspend themselves,
-  or demote themselves out of the admin role.
-- **Never zero admins.** The last *active* admin cannot be deleted,
-  suspended, or demoted — there must always be at least one admin who can
-  sign in and administer the system.
-
-:func:`guard_delete` and :func:`guard_update` are the pure predicate checks —
-they read live counts and raise :class:`GuardError` when a requested change
-would breach a rule.
-
-:func:`apply_guarded_delete` and :func:`apply_guarded_update` are how the
-route handlers actually mutate a user: they run the guard read **and** the
-mutating write inside one ``BEGIN IMMEDIATE`` transaction. Without that, the
-guard is a read-then-write TOCTOU — two concurrent requests demoting the two
-remaining admins could both pass ``count_admins() > 1`` and leave zero admins,
-an unrecoverable lockout. Under the shared transaction the second writer
-blocks on SQLite's write lock until the first commits, then re-reads the count
-and sees the first writer's effect.
-
-Allowed deps: sqlite3, appdb (connection, users, sessions), search.errors.
-Forbidden: FastAPI, store, daemons.
+The ``apply_guarded_*`` functions run the guard read and the write in one
+``BEGIN IMMEDIATE`` transaction. Otherwise two concurrent requests demoting the
+two remaining admins could both pass ``count_admins() > 1`` and leave zero.
 """
 
 from __future__ import annotations
@@ -38,27 +20,13 @@ from search.errors import RowVanishedError
 
 
 class GuardError(Exception):
-    """Raised when an account change would breach a safety rule.
-
-    Carries a human-readable message explaining which rule was hit (deleting
-    yourself, removing the last admin, etc.). The route layer maps it to a
-    ``409 Conflict`` response with that message as the ``detail``.
-    """
+    """An account change would breach a safety rule; the message says which."""
 
 
 def _is_demotion_from_admin(
     conn: sqlite3.Connection, target_id: int, new_role: str | None
 ) -> bool:
-    """Return whether *new_role* demotes *target_id* out of the admin role.
-
-    A demotion only when the target is currently an admin and *new_role* is a
-    supplied, non-admin role.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user being changed.
-        new_role: The requested new role, or ``None`` when role is unchanged.
-    """
+    """Return whether *new_role* demotes *target_id* out of the admin role."""
     if new_role is None or new_role == "admin":
         return False
     target = user_store.get_by_id(conn, target_id)
@@ -71,45 +39,21 @@ def _would_remove_last_admin(
     *,
     removes_admin: bool,
 ) -> bool:
-    """Return whether removing *target_id*'s admin-ness empties the admin set.
+    """Return whether the operation would leave no active admin.
 
     *removes_admin* is ``True`` when the operation deletes, suspends, or
-    demotes the target. The operation empties the admin set when the target
-    is currently an active admin and they are the only active admin.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user being changed.
-        removes_admin: Whether the operation removes the target's ability to
-            act as an admin.
+    demotes the target.
     """
     if not removes_admin:
         return False
     target = user_store.get_by_id(conn, target_id)
     if target is None or target.role != "admin" or target.status != "active":
-        # The target is not an active admin, so removing them cannot empty
-        # the active-admin set.
         return False
-    # The target is one active admin; the operation is unsafe only if they
-    # are the *only* active admin.
     return user_store.count_admins(conn) <= 1
 
 
 def guard_delete(conn: sqlite3.Connection, *, target_id: int, actor_id: int) -> None:
-    """Raise :class:`GuardError` if deleting *target_id* is unsafe.
-
-    Unsafe when the actor is deleting themselves, or when the target is the
-    last active admin. This is the pure check; :func:`apply_guarded_delete`
-    runs it atomically with the delete.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user to be deleted.
-        actor_id: The id of the admin performing the deletion.
-
-    Raises:
-        GuardError: The deletion would breach a safety rule.
-    """
+    """Raise :class:`GuardError` if the actor deletes themselves or the last admin."""
     if target_id == actor_id:
         raise GuardError("You cannot delete yourself.")
     if _would_remove_last_admin(conn, target_id, removes_admin=True):
@@ -128,19 +72,7 @@ def guard_update(
 
     Unsafe when the actor suspends or demotes themselves, or when the change
     suspends or demotes the last active admin. A change that touches neither
-    role nor status (e.g. a display-name edit) is always allowed, including
-    on oneself. This is the pure check; :func:`apply_guarded_update` runs it
-    atomically with the update.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user being updated.
-        actor_id: The id of the admin performing the update.
-        new_role: The requested new role, or ``None`` when unchanged.
-        new_status: The requested new status, or ``None`` when unchanged.
-
-    Raises:
-        GuardError: The update would breach a safety rule.
+    role nor status is always allowed, including on oneself.
     """
     suspending = new_status == "suspended"
     demoting = _is_demotion_from_admin(conn, target_id, new_role)
@@ -160,21 +92,10 @@ def guard_update(
 def apply_guarded_delete(
     conn: sqlite3.Connection, *, target_id: int, actor_id: int
 ) -> None:
-    """Delete *target_id*, with the last-admin/self guard applied atomically.
-
-    The guard read (``count_admins``) and the ``DELETE`` run inside one
-    ``BEGIN IMMEDIATE`` transaction, so a concurrent delete/demote/suspend of
-    another admin serialises behind SQLite's write lock and the guard here
-    sees its committed effect — two races cannot both empty the admin set.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user to delete.
-        actor_id: The id of the admin performing the deletion.
+    """Delete *target_id* with the guard applied in the same transaction.
 
     Raises:
-        GuardError: The deletion would breach a safety rule; nothing is
-            written and the transaction is rolled back.
+        GuardError: The deletion would breach a safety rule; nothing is written.
     """
     with transaction(conn):
         guard_delete(conn, target_id=target_id, actor_id=actor_id)
@@ -192,39 +113,15 @@ def apply_guarded_update(
     status: UserStatus | None = None,
     password_hash: str | None = None,
 ) -> User:
-    """Apply a partial update to *target_id*, guarded atomically.
+    """Apply a partial update to *target_id* with the guard in the same transaction.
 
-    The guard read and the ``UPDATE`` run inside one ``BEGIN IMMEDIATE``
-    transaction (see :func:`apply_guarded_delete` for why) — that atomicity is
-    what makes the last-admin invariant race-free.
-
-    When the update suspends the user, every session they hold is then deleted
-    so access is revoked immediately (spec §4.4). That session sweep is a
-    committed follow-on, not part of the guarded transaction; it does not need
-    to be, because :func:`~search.sessions.resolve_session` already fails
-    closed on a ``suspended`` user, so the suspension takes effect the instant
-    the ``UPDATE`` commits regardless of whether the session rows are gone yet.
-
-    The caller must have already confirmed *target_id* exists (the route
-    layer's 404 check); this function asserts the row is present after the
-    update rather than returning ``None``.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        target_id: The id of the user to update.
-        actor_id: The id of the admin performing the update.
-        display_name: A new display name, or ``None`` to leave it.
-        email: A new email, or ``None`` to leave it.
-        role: A new role, or ``None`` to leave it.
-        status: A new status, or ``None`` to leave it.
-        password_hash: A new argon2id hash, or ``None`` to leave it.
-
-    Returns:
-        The updated :class:`~appdb.users.User`.
+    ``None`` fields are left unchanged. Suspending a user also deletes their
+    sessions; that runs after the commit, which is safe because
+    :func:`~search.sessions.resolve_session` already rejects a suspended user.
+    The caller must have confirmed *target_id* exists.
 
     Raises:
-        GuardError: The update would breach a safety rule; nothing is written
-            and the transaction is rolled back.
+        GuardError: The update would breach a safety rule; nothing is written.
     """
     with transaction(conn):
         guard_update(
@@ -243,15 +140,9 @@ def apply_guarded_update(
             status=status,
             password_hash=password_hash,
         )
-    # The caller's 404 check passed and this is the only writer for the row
-    # within the transaction — the update matched a row. An explicit raise
-    # (not an `assert`, which `python -O` strips — §17.2) makes a row that
-    # vanished mid-transaction fail loud here rather than as a later
-    # AttributeError.
+    # A raise rather than an assert, which `python -O` strips.
     if updated is None:
         raise RowVanishedError(f"user {target_id} vanished during a guarded update")
-    # Suspending a user revokes their access immediately: drop every session
-    # they hold (spec §4.4). A committed follow-on — see the docstring.
     if status == "suspended":
         session_store.delete_for_user(conn, target_id)
     return updated

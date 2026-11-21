@@ -13,12 +13,8 @@ import type {
 } from '../fieldModel';
 
 /**
- * Resolve a field's control to a concrete one for the current draft.
- *
- * A `conditional` control renders a different concrete control depending on the
- * live value of another field (its `on` key) — e.g. the embedding model is a
- * dropdown when `EMBEDDING_PROVIDER` is `openai` and a free-text field when it
- * is `ollama`. Every other control kind is already concrete and returned as-is.
+ * Resolve a `conditional` control to the concrete one selected by its `on` key's live value
+ * (e.g. the embedding model is a dropdown for `openai`, free text for `ollama`).
  */
 function resolveControl(
   control: SettingsField['control'],
@@ -34,10 +30,8 @@ function resolveControl(
 /**
  * Grey out any segmented option whose `disabledWhenEmpty` key has no value.
  *
- * Locks the "Ollama" provider choice until `OLLAMA_BASE_URL` is configured under
- * Connections — a step may not select a provider whose connection is missing
- * (the Settings API enforces the same rule on save). Returns the control
- * unchanged when nothing is locked, so referential identity is preserved.
+ * A step may not pick a provider whose connection is missing (the Settings API enforces the
+ * same rule on save). Returns the same object when nothing is locked, preserving identity.
  */
 function applySegmentedLocks(
   control: ConcreteControl,
@@ -63,9 +57,8 @@ function applySegmentedLocks(
 }
 
 /**
- * Whether a field's row should render for the current draft. A field with a
- * `visibleWhen` condition (e.g. a reasoning-effort row) shows only when the
- * referenced key matches — hiding `reasoning_effort` when the step is on Ollama.
+ * A field with `visibleWhen` shows only when the referenced key matches (e.g. no reasoning effort
+ * on Ollama).
  */
 function isFieldVisible(field: SettingsField, values: SettingsDraft): boolean {
   if (field.visibleWhen === undefined) return true;
@@ -73,45 +66,23 @@ function isFieldVisible(field: SettingsField, values: SettingsDraft): boolean {
 }
 
 export interface SettingsSectionProps {
-  /** The section descriptor from the field model. */
   section: SectionModel;
-  /** The current draft values, keyed by config-key name. */
   values: SettingsDraft;
-  /**
-   * The config keys whose change requires a full document re-index — the
-   * server's `requires_reindex` set. A field in this set shows an amber
-   * "Rebuilds the index on save" pill beside its label.
-   */
+  /** The server's `requires_reindex` keys; each gets an amber "Rebuilds the index on save" pill. */
   reindexKeys?: ReadonlySet<string>;
-  /**
-   * The config keys whose value is currently on the coded default. A field in
-   * this set shows a subtle "default" badge so the operator can tell a coded
-   * default from an explicit override.
-   */
+  /** Keys on their coded default; each gets a "default" badge to tell it from an override. */
   defaultKeys?: ReadonlySet<string>;
-  /**
-   * Called when any field changes. For a secret key the value is the new
-   * secret string, or `null` when the user is not replacing it.
-   */
+  /** For a secret key the value is the new secret, or `null` when the user is not replacing it. */
   onChange: (key: string, value: ConfigValue | null) => void;
-  /**
-   * Map from group id to a React node to render in that group's card header
-   * actions slot. Available for any group that needs injected header actions.
-   */
+  /** Group id to a node rendered in that group's card-header actions slot. */
   groupActions?: Record<string, React.ReactNode>;
 }
 
 /**
- * Render one field as a `Row` with the correct `FieldControl` inside.
+ * Render one field as a `Row` with the matching `FieldControl` inside.
  *
- * Handles the `controlId` labellability rule (segmented and secret are not
- * labellable), the `requiresReindex` pill, the `isDefault` badge, and the
- * `reasoningValue` pass-through for composite select+reasoning controls.
- *
- * Exported so other settings panels (e.g. `ConnectionsPanel`) render rows
- * through the identical Row + FieldControl wiring — keeping label association,
- * the shared control-column width and compact-control centring consistent
- * rather than re-implementing it per panel.
+ * Exported so other settings panels (e.g. `ConnectionsPanel`) share the same label association
+ * and control-column layout.
  */
 export function FieldRow({
   field,
@@ -128,9 +99,6 @@ export function FieldRow({
   onChange: (key: string, value: ConfigValue | null) => void;
   last: boolean;
 }): React.ReactElement {
-  // Resolve a conditional control (e.g. the embedding model) to the concrete
-  // control that applies to the current draft, then lock any provider option
-  // whose connection is not configured (Ollama before OLLAMA_BASE_URL is set).
   const control = applySegmentedLocks(
     resolveControl(field.control, values),
     values,
@@ -145,8 +113,6 @@ export function FieldRow({
   const requiresReindex = reindexKeys?.has(field.key) ?? false;
   const isDefault = defaultKeys?.has(field.key) ?? false;
 
-  // For select controls with a reasoningKey, pass the reasoning draft value
-  // through so FieldControl can bind the companion segmented.
   const reasoningValue =
     control.kind === 'select' && control.reasoningKey !== undefined
       ? values[control.reasoningKey]
@@ -174,16 +140,8 @@ export function FieldRow({
 }
 
 /**
- * One settings section — a `SettingsBlock` of model-driven `SettingsCard`s.
- *
- * Renders a `SettingsBlock` for the section, then a `SettingsCard` for each
- * group. Fields within each card are rendered as `Row`s. When a group has an
- * `advanced` array, those fields appear inside a collapsed `Disclosure` with
- * an "Advanced · {n}" summary, below the primary fields.
- *
- * The `groupActions` map lets callers inject actions into specific card headers.
- *
- * Tier: features/ — knows the field model, composes primitives + FieldControl.
+ * One settings section: a `SettingsBlock` with a `SettingsCard` per group. A group's `advanced`
+ * fields go in a collapsed "Advanced · {n}" `Disclosure` below the primary fields.
  */
 export function SettingsSection({
   section,
@@ -200,16 +158,14 @@ export function SettingsSection({
       subtitle={section.subtitle}
     >
       {section.groups.map((group) => {
-        // Drop rows hidden for the current draft (e.g. a reasoning-effort row
-        // whose step is on Ollama) before the "last row" divider maths, so the
-        // divider lands on the last *visible* row.
+        // Filter hidden rows before the "last row" divider maths so the divider lands on the last
+        // visible row.
         const advancedFields = (group.advanced ?? []).filter((field) =>
           isFieldVisible(field, values),
         );
         const hasAdvanced = advancedFields.length > 0;
-        // The "last" row logic must account for both primary and advanced fields.
-        // If there are advanced fields, the last primary row is never truly last
-        // in the visual card — the disclosure follows — so we keep the divider.
+        // When advanced fields follow, the last primary row keeps its divider: the disclosure is
+        // below it.
         const primaryFields = group.fields.filter((field) =>
           isFieldVisible(field, values),
         );

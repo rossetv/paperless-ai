@@ -1,16 +1,7 @@
 """Tests for the recent-search record hook on POST /api/search.
 
-A successful search by a real session user must write a recent_searches
-row; a failed search must not record; and a database error while recording
-must not fail the search. These exercise the real search router over a
-tmp_path app.db.
-
-Adaptation note: the plan specified ``AppState(app_db=conn, ...)`` but
-``AppState`` holds ``app_db_path: str``, not a live connection.  The
-``_build_app`` helper below passes ``app_db_path`` (a file path) so that
-``get_app_db`` opens per-request connections — consistent with the real app
-and the per-request connection model (CODE_GUIDELINES §8.4).  The ``conn``
-fixture still provides a direct inspection connection to the same file.
+A successful search by a session user writes a recent_searches row; a failed
+search does not, and a database error while recording does not fail the search.
 """
 
 from __future__ import annotations
@@ -69,9 +60,7 @@ def _mock_core(*, fail: bool = False) -> MagicMock:
 def _build_app(tmp_path, core: MagicMock) -> FastAPI:
     """A FastAPI app mounting only the search router over a tmp_path app.db.
 
-    ``AppState`` holds ``app_db_path`` (a string path), not a live connection.
-    Each request opens its own connection through ``get_app_db``, exactly as
-    the production app does.
+    Each request opens its own connection through ``get_app_db``, as in production.
     """
     app_db_path = str(tmp_path / "app.db")
     app = FastAPI()
@@ -158,10 +147,10 @@ def test_record_failure_does_not_fail_the_search(conn, tmp_path, monkeypatch) ->
 
 
 def test_record_failure_logs_the_traceback(conn, tmp_path, monkeypatch) -> None:
-    """The swallowed record failure is logged with its traceback (§7.5).
+    """The swallowed record failure is logged with its traceback.
 
-    A best-effort side path that loses the stack is undebuggable; the handler
-    must use ``log.exception`` so a recurring fault here carries ``exc_info``.
+    The handler must use ``log.exception`` so a recurring fault here carries
+    ``exc_info``.
     """
     user = create_user(conn, username="dave", password_hash="h", role="readonly")
     token = begin_session(conn, user_id=user.id, ttl_seconds=3600).token

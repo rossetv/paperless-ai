@@ -1,7 +1,6 @@
 """Tests for classifier.result.
 
-The JSON-extraction behaviour parse_classification_response relies on is the
-shared ``common.llm.extract_json_object`` helper; its own tests live in
+JSON extraction itself is ``common.llm.extract_json_object``, tested in
 tests/unit/common/test_llm.py.
 """
 
@@ -15,8 +14,6 @@ from classifier.result import parse_classification_response
 
 
 class TestParseClassificationResponse:
-    """Tests for parse_classification_response(text)."""
-
     def _full_response(self, **overrides):
         data = {
             "title": "Invoice 2024",
@@ -110,9 +107,8 @@ class TestParseClassificationResponse:
         assert result.person == ""
 
     def test_bool_false_document_type_treated_as_absent(self):
-        """On providers without JSON-schema enforcement the LLM may return
-        ``false`` for a text field.  It must be treated as absent (empty
-        string), not coerced to the string "False"."""
+        """Without JSON-schema enforcement a model may return ``false`` for a
+        text field; it must not be coerced to the string "False"."""
         result = parse_classification_response(self._full_response(document_type=False))
         assert result.document_type == ""
         assert result.document_type != "False"
@@ -131,8 +127,6 @@ class TestParseClassificationResponse:
         assert result.language == ""
 
     def test_string_fields_still_parsed_correctly(self):
-        """OpenAI schema-enforced responses always deliver strings — verify no
-        regression."""
         result = parse_classification_response(self._full_response())
         assert result.document_type == "Invoice"
         assert result.title == "Invoice 2024"

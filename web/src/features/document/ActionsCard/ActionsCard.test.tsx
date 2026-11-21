@@ -100,7 +100,6 @@ describe('ActionsCard', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
-    // The modal confirm button is labelled exactly "Delete"
     const confirmBtn = await screen.findByRole('button', { name: /^delete$/i });
     fireEvent.click(confirmBtn);
     expect(onDelete).toHaveBeenCalledWith(42);

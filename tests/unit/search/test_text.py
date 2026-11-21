@@ -1,4 +1,4 @@
-"""Tests for search.text helpers, incl. the RAG-08 trivial-query predicate."""
+"""Tests for search.text helpers, including the trivial-query predicate."""
 
 from __future__ import annotations
 

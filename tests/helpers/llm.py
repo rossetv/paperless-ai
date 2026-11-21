@@ -1,12 +1,7 @@
-"""Shared LLM-mocking helpers for the search-pipeline tests.
+"""LLM-mocking helpers for the search-pipeline tests.
 
-The planner and synthesiser subclass ``OpenAIChatMixin``; their tests patch the
-instance's ``_create_completion`` with a fake rather than injecting a client
-(mirroring ``tests/unit/classifier``).  Several search test files need the same
-three things — an OpenAI-shaped completion object, a driver that routes a
-``_create_completion`` call to the planner or the next synthesiser response,
-and the canned JSON payloads — so they live here once instead of being
-re-hand-rolled per file (CODE_GUIDELINES §11.5).
+The LLM stages are tested by patching each instance's ``_create_completion``
+with :meth:`ScriptedLLMClient.route`, which returns canned JSON payloads.
 """
 
 from __future__ import annotations
@@ -19,12 +14,7 @@ import openai
 
 
 def make_api_error(message: str = "server error") -> openai.APIError:
-    """Return a bare ``openai.APIError`` — the base of the openai error tree.
-
-    The planner and synthesiser are documented to catch the whole
-    ``openai.APIError`` family; constructing one here is fixture-building for
-    that contract, not a production OpenAI call.
-    """
+    """Return a bare ``openai.APIError``, the base of the openai error tree."""
     return openai.APIError(message=message, request=MagicMock(), body=None)
 
 
@@ -37,10 +27,7 @@ def make_internal_server_error() -> openai.InternalServerError:
 
 
 def make_authentication_error() -> openai.AuthenticationError:
-    """Return a non-retryable 401 ``openai.AuthenticationError`` for tests.
-
-    Models a wrong or expired ``OPENAI_API_KEY``.
-    """
+    """Return a non-retryable 401 ``openai.AuthenticationError`` (a bad API key)."""
     response = MagicMock()
     response.status_code = 401
     response.headers = {}
@@ -50,21 +37,10 @@ def make_authentication_error() -> openai.AuthenticationError:
 
 
 def make_chat_completion(content: str | None) -> MagicMock:
-    """Wrap a raw content string in an OpenAI-shaped chat-completion object.
+    """Wrap *content* in an OpenAI-shaped chat-completion object.
 
-    The shape ``OpenAIChatMixin._create_completion`` returns:
-    ``completion.choices[0].message.content``.
-
-    ``usage`` is pinned to ``None`` so the ``usage_sink`` capture path in
-    ``_complete_with_model_fallback`` records honest zeros (the Ollama/older-
-    provider case) rather than reading a truthy auto-``MagicMock`` for every
-    token field — which would poison the telemetry's token sums and pricing
-    arithmetic with mock objects. A test that needs real token counts sets
-    ``completion.usage`` itself (see ``tests/unit/common/test_llm_usage_sink``).
-
-    Args:
-        content: The assistant message content, or ``None`` to model an empty
-            completion.
+    ``usage`` is ``None`` so token telemetry records zeros instead of summing
+    auto-created MagicMocks; a test that needs token counts sets it itself.
     """
     choice = MagicMock()
     choice.message.content = content
@@ -86,22 +62,7 @@ def _make_spec(
     date_to: str | None = None,
     rationale: str = "test spec",
 ) -> dict[str, object]:
-    """Build a single spec dict in the new planner JSON shape.
-
-    Convenience helper so tests can construct individual specs with sensible
-    defaults and pass them to :func:`planner_response_json`.
-
-    Args:
-        mode: ``"semantic"`` (default) or ``"keyword"``.
-        semantic: Text to embed; null for keyword specs.
-        keywords: Verbatim FTS terms; empty for semantic specs.
-        correspondent: Free-text correspondent guess, or None.
-        document_type: Free-text document-type guess, or None.
-        tags: Tag label guesses.
-        date_from: ISO date lower bound, or None.
-        date_to: ISO date upper bound, or None.
-        rationale: One-line explanation for this spec.
-    """
+    """Build one planner spec dict for :func:`planner_response_json`."""
     return {
         "mode": mode,
         "semantic": semantic,
@@ -121,18 +82,10 @@ def planner_response_json(
     specs: list[dict[str, object]] | None = None,
     clarify_reason: str | None = None,
 ) -> str:
-    """Return a well-formed planner JSON response string (multi-spec shape).
+    """Return a well-formed planner JSON response string.
 
-    When *specs* is None a single default semantic spec is used.  Pass
-    ``specs=[]`` (with a *clarify_reason*) to model a clarify-only response.
-    Each spec dict is typically built via :func:`_make_spec`.
-
-    Args:
-        specs: List of spec dicts in the new planner schema shape.  Defaults to
-            one broad semantic spec so existing call-sites that pass no args keep
-            working.
-        clarify_reason: When set, ``clarify`` is ``{"reason": clarify_reason}``;
-            otherwise ``clarify`` is null.
+    *specs* defaults to one broad semantic spec. Pass ``specs=[]`` with a
+    *clarify_reason* to model a clarify-only response.
     """
     if specs is None:
         specs = [_make_spec()]
@@ -160,20 +113,12 @@ def judge_response_json(
     kept_score: float = 0.9,
     dropped_score: float = 0.1,
 ) -> str:
-    """Return a well-formed relevance-judge JSON response (per-document verdicts).
+    """Return a well-formed relevance-judge JSON response.
 
-    Two shapes, kept backward-friendly:
-
-    * **Explicit verdicts.** Pass ``verdicts=[{"document_id": .., "keep": ..,
-      "reason": .., "score": ..}]`` for per-document control of every field.
-      Each dict is emitted verbatim, so a test can omit ``score`` to exercise
-      the judge's missing-score default.
-    * **Id lists (the default).** Each id in *relevant_document_ids* produces a
-      ``keep: true`` verdict scored *kept_score* (default ``0.9`` — above the
-      default keep threshold). Each id in *dropped_document_ids* produces an
-      explicit ``keep: false`` verdict scored *dropped_score* (default ``0.1``).
-      Callers needing explicit drops (so the judge does not default-keep omitted
-      ids) pass both lists.
+    Pass *verdicts* to emit verdict dicts verbatim (omit ``score`` to exercise
+    the judge's missing-score default). Otherwise each id in
+    *relevant_document_ids* becomes a kept verdict scored *kept_score* and each
+    id in *dropped_document_ids* an explicit drop scored *dropped_score*.
     """
     if verdicts is not None:
         return json.dumps({"verdicts": verdicts})
@@ -195,29 +140,16 @@ def judge_response_json(
 
 
 class ScriptedLLMClient:
-    """A scripted driver for ``_create_completion`` across both LLM stages.
+    """A scripted ``_create_completion`` shared by every LLM stage.
 
-    The planner and the synthesiser call ``_create_completion`` with distinct
-    system prompts.  :meth:`route` inspects the system message to route each
-    call to the planner response or the next synthesiser response, and records
-    per-stage call counts so a test can assert the exact LLM-call budget.
+    :meth:`route` tells the stages apart by their system prompt (a re-plan by
+    the ``"This is a RE-PLAN."`` marker in its user message) and counts calls
+    per stage so a test can assert the exact LLM-call budget.
 
-    Install :meth:`route` as each stage's ``_create_completion`` — the planner
-    and the synthesiser then share one driver, and the test asserts how many
-    calls of each kind were made.
-
-    Args:
-        planner_response: Raw JSON string the *initial* planner call returns.
-        synthesiser_responses: Ordered raw JSON strings; the *n*-th synthesiser
-            call returns the *n*-th entry.  When exhausted the last entry is
-            reused, so an over-eager loop stays observable rather than crashing.
-        judge_response: Raw JSON string the judge call returns (or None when no
-            judge call is scripted).
-        replan_response: Raw JSON string the planner's *re-plan* call returns.
-            A re-plan call shares the planner system prompt; it is distinguished
-            by the ``"This is a RE-PLAN."`` marker its user message carries.
-            When None (the default) a re-plan reuses *planner_response*, so the
-            re-plan resolves to the same specs as pass 1 — the no-op path.
+    The *n*-th synthesiser call returns the *n*-th response; once they run out
+    the last one is reused, so an over-eager loop shows up in the counts rather
+    than crashing. A re-plan reuses *planner_response* unless *replan_response*
+    is given.
     """
 
     def __init__(
@@ -247,12 +179,7 @@ class ScriptedLLMClient:
         )
 
     def route(self, *, model: str, messages: list[dict[str, str]], **_: Any) -> Any:
-        """Stand-in for ``OpenAIChatMixin._create_completion``.
-
-        Accepts the same ``model=`` / ``messages=`` keyword arguments the mixin
-        passes through, routes by the system prompt, and returns an
-        OpenAI-shaped completion.
-        """
+        """Stand-in for ``OpenAIChatMixin._create_completion``."""
         system = next((m["content"] for m in messages if m["role"] == "system"), "")
         if "search-query planning engine" in system:
             user = next((m["content"] for m in messages if m["role"] == "user"), "")

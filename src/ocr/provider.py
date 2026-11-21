@@ -16,9 +16,8 @@ from .text_assembly import PageResult
 
 log = structlog.get_logger(__name__)
 
-# A model response shorter than this threshold that contains a refusal phrase is
-# treated as a genuine refusal. Longer responses — which may be real document
-# content that happens to contain the phrase (e.g. a denial letter) — are not.
+# Only a response shorter than this counts as a refusal on a soft phrase; a
+# longer one may be real content that contains it (e.g. a denial letter).
 _REFUSAL_DOMINANCE_THRESHOLD_CHARS = 200
 
 
@@ -27,42 +26,24 @@ def _is_model_refusal(
 ) -> bool:
     """Return ``True`` only when *text* is a genuine model refusal.
 
-    Two tiers of detection:
-
-    1. **Hard sentinel** — the *refusal_mark* (e.g. ``"CHATGPT REFUSED TO
-       TRANSCRIBE"``): matched unconditionally regardless of response length.
-       This sentinel is written by this provider itself; if a downstream model
-       echoes it back verbatim the page is genuinely unprocessable.
-    2. **Soft phrases** (e.g. ``"i cannot assist"``): treated as a refusal only
-       when the response is *dominated* by the phrase — the full response is
-       shorter than :data:`_REFUSAL_DOMINANCE_THRESHOLD_CHARS`.  A long response
-       containing such a phrase mid-text is real document content (a denial
-       letter, a legal notice) and must not be silently discarded.
-
-    This prevents permanent data loss when a scanned document contains common
-    refusal-adjacent language, while still catching genuine short refusals
-    (CODE_GUIDELINES §1.4 / M5 fix).
+    *refusal_mark*, the sentinel the prompt asks for, matches anywhere. A soft
+    phrase (e.g. ``"i cannot assist"``) counts only in a short response, so a
+    document that merely contains such language is not discarded.
     """
     text_lower = text.lower()
 
-    # Hard sentinel: match anywhere, regardless of surrounding text or length.
     if refusal_mark.lower() in text_lower:
         return True
 
-    # Soft markers: only a short response that is essentially nothing but the
-    # refusal phrase is genuinely a refusal.
     if len(text) >= _REFUSAL_DOMINANCE_THRESHOLD_CHARS:
         return False
     return any(phrase.lower() in text_lower for phrase in refusal_markers)
 
 
 def is_blank(image: Image.Image, threshold: int = 5) -> bool:
-    """Return ``True`` if the image is pixel-perfect white (greyscale value 255).
+    """Return ``True`` if the image is pure white (greyscale 255).
 
-    Counts only exact-255 pixels as white; near-white scanner backgrounds
-    (values 250–254) are treated as non-blank.  Used to skip synthetically
-    blank pages without wasting an API call.  Real-world scans with slight
-    off-white backgrounds will not match this check.
+    Only synthetic blank pages match; near-white scanner backgrounds do not.
     """
     histogram = image.convert("L").histogram()
     return (sum(histogram) - histogram[255]) < threshold
@@ -87,13 +68,7 @@ class OcrProvider(OpenAIChatMixin):
         return self.settings.OCR_PROVIDER
 
     def _reasoning_effort(self) -> str | None:
-        """The OpenAI ``reasoning_effort`` for OCR, or ``None`` for non-OpenAI.
-
-        Gated on the OCR step's own provider so non-OpenAI requests never
-        include the kwarg.  If an OpenAI model still rejects it,
-        ``_create_with_compat`` strips and caches the rejection rather than
-        failing the whole fallback chain.
-        """
+        """The OpenAI ``reasoning_effort`` for OCR, or ``None`` for non-OpenAI."""
         if self.settings.OCR_PROVIDER != "openai":
             return None
         return self.settings.OCR_REASONING_EFFORT
@@ -182,12 +157,8 @@ class OcrProvider(OpenAIChatMixin):
     def _encode_page(self, image: Image.Image) -> str:
         """Return the base64 PNG payload for *image*, capped at ``OCR_MAX_SIDE``.
 
-        Only pages whose longer side exceeds the cap are resized, and only those
-        pay for a copy — pages already at or below the cap (the common case once
-        the PDF is rasterised at target size) are encoded straight from the
-        caller's image. The caller's image is never mutated either way: the
-        resize happens on a private copy that is closed here, once the payload —
-        the only thing that must outlive this call — has been built.
+        Only oversized pages pay for a copy to resize; the caller's image is
+        never mutated.
         """
         if max(image.size) <= self.settings.OCR_MAX_SIDE:
             return _image_to_base64_png(image)

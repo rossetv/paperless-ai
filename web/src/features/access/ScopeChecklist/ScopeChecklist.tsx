@@ -6,7 +6,6 @@ import { SCOPES } from '../apiKeyFormData';
 import styles from './ScopeChecklist.module.css';
 
 export interface ScopeChecklistProps {
-  /** The currently selected scopes. */
   selectedScopes: Set<ApiScope>;
   /** Called with the toggled scope when a checkbox is changed. */
   onToggle: (scope: ApiScope) => void;
@@ -15,10 +14,8 @@ export interface ScopeChecklistProps {
 }
 
 /**
- * Renders the scope checkbox list shared by APIKeyCreatePanel and
- * APIKeyEditPanel. Stateless — the parent owns `selectedScopes` and `error`.
- *
- * Tier: features/access. Allowed deps: components/*, api/types, lib/.
+ * The scope checkbox list shared by APIKeyCreatePanel and APIKeyEditPanel.
+ * Stateless — the parent owns `selectedScopes` and `error`.
  */
 export function ScopeChecklist({
   selectedScopes,

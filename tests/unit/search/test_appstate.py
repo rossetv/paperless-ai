@@ -1,9 +1,4 @@
-"""Tests for search.appstate — the per-app account context.
-
-Covers: AppState bundles the app.db path and the SetupState; get_app_state
-reads the AppState stashed on a request's app.state and raises a clear error
-when it is absent.
-"""
+"""Tests for search.appstate, the per-app account context."""
 
 from __future__ import annotations
 

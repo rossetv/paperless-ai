@@ -13,14 +13,11 @@ from classifier.tag_filters import (
     filter_redundant_tags,
 )
 
-# A fixed "today" injected into enrich_tags so the year-fallback path is
-# deterministic regardless of the wall clock (CODE_GUIDELINES §11.4).
+# Injected as "today" so the year-fallback path does not depend on the clock.
 _FIXED_TODAY = dt.date(2025, 5, 20)
 
 
 class TestDedupeTags:
-    """Tests for dedupe_tags(tags)."""
-
     def test_deduplicates_case_insensitively(self):
         result = dedupe_tags(["Bills", "bills", "BILLS"])
         assert result == ["Bills"]
@@ -46,8 +43,6 @@ class TestDedupeTags:
 
 
 class TestFilterBlacklistedTags:
-    """Tests for filter_blacklisted_tags(tags)."""
-
     def test_removes_blacklisted_tags(self):
         result = filter_blacklisted_tags(["AI", "error", "new", "indexed", "Bills"])
         assert result == ["Bills"]
@@ -65,8 +60,6 @@ class TestFilterBlacklistedTags:
 
 
 class TestFilterRedundantTags:
-    """Tests for filter_redundant_tags(tags, correspondent, document_type, person)."""
-
     def test_removes_tag_matching_correspondent(self):
         result = filter_redundant_tags(
             ["Revolut", "Bills"], correspondent="Revolut", document_type="", person=""
@@ -74,7 +67,6 @@ class TestFilterRedundantTags:
         assert result == ["Bills"]
 
     def test_removes_tag_matching_correspondent_with_suffix(self):
-        """Tag 'Revolut Ltd' should be removed when correspondent is 'Revolut'."""
         result = filter_redundant_tags(
             ["Revolut Ltd", "Bills"],
             correspondent="Revolut",
@@ -118,8 +110,6 @@ class TestFilterRedundantTags:
 
 
 class TestIsGenericDocumentType:
-    """Tests for is_generic_document_type(value)."""
-
     def test_document_is_generic(self):
         assert is_generic_document_type("Document") is True
 
@@ -144,8 +134,6 @@ class TestIsGenericDocumentType:
 
 
 class TestNeedsErrorTag:
-    """Tests for needs_error_tag(text)."""
-
     def test_refusal_text(self):
         assert needs_error_tag("I'm sorry, I can't assist with that.") is True
 
@@ -163,8 +151,6 @@ class TestNeedsErrorTag:
 
 
 class TestExtractModelTags:
-    """Tests for extract_model_tags(text)."""
-
     def test_single_model(self):
         text = "Content\n\nTranscribed by model: gpt-5.4-mini"
         result = extract_model_tags(text)
@@ -197,8 +183,6 @@ class TestExtractModelTags:
 
 
 class TestEnrichTags:
-    """Tests for enrich_tags(tags, text, document_date, default_country_tag, tag_limit)."""
-
     def test_adds_year_tag_from_date(self):
         result = enrich_tags(
             tags=["bills"],
@@ -238,8 +222,7 @@ class TestEnrichTags:
             default_country_tag="",
             tag_limit=2,
         )
-        # Required: year tag "2024"
-        # Non-required: capped to 2
+        # The year tag is required and does not count against the limit.
         non_required = [t for t in result if t != "2024"]
         assert len(non_required) <= 2
 
@@ -252,8 +235,7 @@ class TestEnrichTags:
             default_country_tag="sweden",
             tag_limit=1,
         )
-        # Required: gpt-5.4-mini, 2024, sweden (3 tags)
-        # Non-required: "bills" capped to 1
+        # The model, year and country tags are required; "bills" fills the limit.
         assert "gpt-5.4-mini" in result
         assert "2024" in result
         assert "sweden" in result
@@ -288,7 +270,6 @@ class TestEnrichTags:
             default_country_tag="",
             tag_limit=0,
         )
-        # Only required tags remain (year)
         assert "bills" not in result
         assert "finance" not in result
         assert "2024" in result
@@ -312,7 +293,6 @@ class TestEnrichTags:
             default_country_tag="",
             tag_limit=10,
         )
-        # Only year + bills expected, no country
         assert len(result) == 2
 
     def test_negative_tag_limit_treated_as_zero(self):
@@ -327,7 +307,6 @@ class TestEnrichTags:
         assert "finance" not in result
 
     def test_invalid_date_falls_back_to_injected_today(self):
-        # _extract_year returns None for invalid dates
         result = enrich_tags(
             tags=[],
             text="text",

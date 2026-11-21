@@ -1,10 +1,3 @@
-/**
- * Tests for SetupPage.
- *
- * SetupPage is a thin host for the `FirstRunSetupScreen` feature, which is
- * mocked here so the test only verifies the page renders it.
- */
-
 import { render, screen } from '@testing-library/react';
 import React from 'react';
 import { SetupPage } from './SetupPage';

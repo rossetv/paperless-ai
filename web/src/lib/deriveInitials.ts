@@ -1,11 +1,8 @@
 /**
  * Derive 1–2 character initials from a display name or username.
  *
- * "Alex Morgan" → "AM"; "alex.morgan" → "AL"; single word → first two
+ * "Alex Morgan" → "AM"; "alex.morgan" → "AM"; single word → first two
  * letters; empty → "?".
- *
- * Shared helper so any avatar caller gets the same logic without duplicating
- * it per component.
  */
 export function deriveInitials(displayName: string | null, username: string): string {
   const source = (displayName ?? username).trim();

@@ -1,19 +1,3 @@
-/**
- * ActionsCard — document action buttons in the sidebar.
- *
- * Renders a card with AI re-classify, AI re-transcribe, and (admins only)
- * delete actions. Returns null for readonly users so it is safe to mount
- * unconditionally in `DocumentScreen`.
- *
- * The delete button opens `DeleteConfirmModal` before firing the handler —
- * an extra confirmation step to guard against accidental irreversible deletes.
- *
- * Callbacks are plain synchronous handlers; the calling component owns the
- * mutation lifecycle (isPending, error toasts, navigation-after-delete, etc.).
- *
- * Tier: features/document — composes Card, Button primitives and
- * DeleteConfirmModal.
- */
 import React from 'react';
 import { Card } from '../../../components/primitives/Card/Card';
 import { Button } from '../../../components/primitives/Button/Button';
@@ -24,26 +8,21 @@ import styles from './ActionsCard.module.css';
 export type Role = 'admin' | 'member' | 'readonly';
 
 export interface ActionsCardProps {
-  /** Paperless-ngx document id. */
   documentId: number;
-  /** Document title — passed to the delete confirmation modal. */
+  /** Shown in the delete confirmation modal. */
   title: string;
-  /** Access role of the signed-in user. */
   role: Role;
-  /** Called when the user triggers AI re-classification. */
   onReclassify: (id: number) => void;
-  /** Called when the user triggers AI re-transcription. */
   onRetranscribe: (id: number) => void;
-  /** Called when the user confirms document deletion. */
+  /** Called only after the user confirms in the modal. */
   onDelete: (id: number) => void;
 }
 
 /**
- * Sidebar card exposing document actions.
- *
- * Readonly users see nothing (returns null). Members see Re-classify and
- * Re-transcribe. Admins additionally see the Delete button guarded by a
- * confirmation modal.
+ * Sidebar card with the document actions. Readonly users get null, members get
+ * Re-classify and Re-transcribe, admins also get Delete behind a confirmation
+ * modal. The caller owns the mutation lifecycle (pending state, toasts,
+ * navigation after delete).
  */
 export function ActionsCard({
   documentId,

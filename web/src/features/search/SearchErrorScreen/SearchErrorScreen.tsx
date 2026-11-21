@@ -9,45 +9,23 @@ import { SearchTracePanel } from '../SearchTracePanel/SearchTracePanel';
 import type { FilterRequest, PhaseRecord } from '../../../api/types';
 
 export interface SearchErrorScreenProps {
-  /** The query that failed — recapped in the editable inline field. */
+  /** The failed query, recapped in the editable search field. */
   query: string;
-  /** The error detail message to show beneath the headline. */
   message: string;
-  /** The active filters — rendered in the left rail so the failure screen keeps
-   *  the same chrome as the no-match and results screens. */
+  /** Shown in the rail so this screen keeps the results screens' chrome. */
   filters: FilterRequest;
-  /** Called when the user changes a filter in the rail. */
   onFiltersChange: (filters: FilterRequest) => void;
-  /** Called when the user asks to retry — the page re-runs the search. */
   onRetry: () => void;
-  /**
-   * Called with a new query when the user submits the recap search field —
-   * the parent re-runs the search, so the user is not stranded on the error.
-   */
+  /** Called when the recap field is submitted, so the user is not stranded. */
   onSearch: (query: string) => void;
-  /**
-   * The phases that completed before the stream failed. When non-empty the
-   * partial trace is folded below the error so the user can see how far the
-   * pipeline got. Defaults to empty (no trace shown).
-   */
+  /** Phases that completed before the failure, shown as a partial trace. */
   phaseRecords?: PhaseRecord[];
 }
 
 /**
- * The search-failure screen.
- *
- * Shown when a search fails for a reason other than a 503 index-not-ready or
- * a 401 — a 500, a network drop, a malformed response. The same rail chrome as
- * the no-match and results screens (the filter rail on the left, the editable
- * query recap on top) wraps a centred `EmptyState` that reports the failure and
- * offers a "Try again" action; submitting the recap field starts a fresh
- * search, so the user is never stranded. When the stream failed mid-pipeline,
- * a partial `SearchTracePanel` below shows how far it got. Distinct from
- * `NoResultsScreen`, which is a *successful* search that matched nothing.
- *
- * Composed from: SearchScreenLayout, Stack, SearchField, EmptyState, Button,
- * FilterControls, SearchTracePanel. No own CSS module (§12.5 — features layer
- * is composition-only).
+ * Shown when a search fails for any reason other than 503 (index not ready) or
+ * 401: a 500, a network drop, a malformed response. Unlike `NoResultsScreen`,
+ * which is a successful search that matched nothing.
  */
 export function SearchErrorScreen({
   query,
@@ -66,8 +44,7 @@ export function SearchErrorScreen({
       }
     >
       <Stack direction="vertical" gap={10} align="center">
-        {/* Editable query recap — submitting it runs a fresh search. Keyed
-            by `query` so it re-seeds whenever a new search is attempted. */}
+        {/* Keyed by `query` so it re-seeds whenever a new search is attempted. */}
         <SearchField
           key={query}
           id="search-error-search"
@@ -86,8 +63,7 @@ export function SearchErrorScreen({
             }
           />
         </div>
-        {/* Partial trace — what ran before the failure. Renders nothing when
-            no phases completed (the panel returns null on empty input). */}
+        {/* Partial trace of what ran before the failure */}
         <SearchTracePanel phases={phaseRecords} />
       </Stack>
     </SearchScreenLayout>

@@ -1,10 +1,4 @@
-"""Tests for search.setup — first-run setup token and setup-mode detection.
-
-Covers: generate_setup_token yields a non-empty high-entropy token; the
-SetupState holder stores it; verify_setup_token is a constant-time compare
-that accepts the held token and rejects anything else (including when no
-token is set); is_setup_needed reflects whether the users table is empty.
-"""
+"""Tests for search.setup: the first-run setup token and setup-mode detection."""
 
 from __future__ import annotations
 

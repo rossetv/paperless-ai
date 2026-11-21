@@ -2,9 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { LoadingScreen } from './LoadingScreen';
 
 /**
- * LoadingScreen embeds `FilterControls`, which drives `useFacets`. Storybook
- * does not wire TanStack Query, so this is a structural reference; behavioural
- * coverage lives in the test suite.
+ * `FilterControls` needs TanStack Query, which Storybook does not wire, so this
+ * is a structural reference only; behaviour is covered by the tests.
  */
 const meta = {
   title: 'Features/Search/LoadingScreen',

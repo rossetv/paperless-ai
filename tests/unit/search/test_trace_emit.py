@@ -1,9 +1,7 @@
-"""Tests for Tasks 3 and 4 of the search trace redesign.
+"""Tests for the trace emit helpers in search.core.
 
-Calls the private emit helpers (_emit_resolve_phase, _trace_chunks,
-_gate_documents) directly with hand-built fixtures and a real _Telemetry
-instance so the assertions are tightly scoped to the shape of the emitted
-detail dicts, without needing a full end-to-end search.
+Calls _emit_resolve_phase, _trace_chunks and _gate_documents directly with a
+real _Telemetry, so assertions are scoped to the emitted detail dicts.
 """
 
 from __future__ import annotations
@@ -26,10 +24,6 @@ from tests.helpers.factories import (
     make_search_filters,
     make_taxonomy_entry,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _tele() -> tuple[_Telemetry, list[PhaseRecord]]:
@@ -79,11 +73,6 @@ def _spec(
         ),
         rationale="test",
     )
-
-
-# ---------------------------------------------------------------------------
-# Task 3: resolve phase emit
-# ---------------------------------------------------------------------------
 
 
 class TestResolvePhaseEmitResolved:
@@ -336,11 +325,6 @@ class TestResolvePhaseEmitDropped:
         assert _record(records, "resolve").detail["dropped"] == []
 
 
-# ---------------------------------------------------------------------------
-# Task 4: retrieve phase — _trace_chunks helper
-# ---------------------------------------------------------------------------
-
-
 class TestTraceChunks:
     def test_sorted_by_similarity_descending(self) -> None:
         chunks = [
@@ -441,11 +425,6 @@ class TestTraceChunks:
         ]
         result = _trace_chunks(chunks, {})
         assert len(result) == 7
-
-
-# ---------------------------------------------------------------------------
-# Task 4: gate phase — _gate_documents helper
-# ---------------------------------------------------------------------------
 
 
 class TestGateDocuments:

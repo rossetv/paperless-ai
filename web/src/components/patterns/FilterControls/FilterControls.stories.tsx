@@ -2,8 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 import type { FilterRequest } from '../../../api/types';
 import { FilterControls } from './FilterControls';
 
-// NOTE: Stories that use useFacets require a QueryClient provider in .storybook/preview.tsx.
-// The decorator is assumed present as per the project Storybook setup.
+// Stories that use useFacets rely on the QueryClient provider in .storybook/preview.tsx.
 
 const emptyFilters: FilterRequest = { tag_ids: [] };
 

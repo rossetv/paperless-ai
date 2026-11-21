@@ -23,19 +23,13 @@ def retry(
     """
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        # rationale: `self` is any provider whose `settings` carries MAX_RETRIES /
-        # MAX_RETRY_BACKOFF_SECONDS; the @retry contract is structural (duck-typed),
-        # so Any is correct here — a Protocol would add a nominal layer nothing relies on.
         @wraps(func)
         def wrapper(self: Any, *args: object, **kwargs: object) -> T:
             settings = self.settings
             if settings.MAX_RETRIES < 1:
                 raise ValueError("MAX_RETRIES must be >= 1")
 
-            # Attempts 1 .. MAX_RETRIES-1 retry on a retryable failure; the
-            # final attempt is made outside the loop so its result — a return
-            # value or a propagated exception — is the function's outcome.
-            # There is therefore no unreachable fall-through branch.
+            # The final attempt runs outside the loop so its exception propagates.
             for attempt in range(1, settings.MAX_RETRIES):
                 try:
                     return func(self, *args, **kwargs)
@@ -49,9 +43,6 @@ def retry(
                     )
                     _sleep_backoff(attempt, settings)
 
-            # Final attempt: a retryable failure here is logged with its
-            # traceback and re-raised; a non-retryable failure propagates
-            # untouched; success returns.
             try:
                 return func(self, *args, **kwargs)
             except retryable_exceptions:
@@ -67,8 +58,6 @@ def retry(
     return decorator
 
 
-# rationale: `settings` is any provider's structural settings object, read here for
-# MAX_RETRY_BACKOFF_SECONDS / MAX_RETRIES; duck-typed, not a Protocol.
 def _sleep_backoff(attempt: int, settings: Any) -> None:
     delay = (2**attempt) * random.uniform(0.8, 1.2)
     delay = min(delay, settings.MAX_RETRY_BACKOFF_SECONDS)

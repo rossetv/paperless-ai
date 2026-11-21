@@ -1,14 +1,3 @@
-/**
- * Application entry point.
- *
- * Wires the provider stack around `App`:
- *   1. `QueryClientProvider` — TanStack Query server state
- *   2. `BrowserRouter`       — React Router
- *
- * The `BrowserRouter` sits inside `QueryClientProvider` so auth-aware
- * mutations (the login form) have access to the query client.
- */
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -26,10 +15,8 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 60_000,
       retry: 1,
-      // Disable refetch on window focus — the LLM-backed /api/search is
-      // expensive (up to 3 chained LLM calls) and re-billing on every
-      // alt-tab is wasteful. Auth hooks use staleTime:0 + mount refetch
-      // so login/logout state is unaffected by this setting.
+      // The LLM-backed search is expensive; re-billing on every alt-tab is
+      // wasteful. Auth hooks use staleTime:0 + mount refetch, so are unaffected.
       refetchOnWindowFocus: false,
     },
   },

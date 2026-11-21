@@ -37,11 +37,9 @@ class TestConsoleFormat:
         configure_logging(settings)
 
         root = logging.getLogger()
-        # Find the handler we added (StreamHandler to stdout)
         handler = root.handlers[-1]
         formatter = handler.formatter
         assert isinstance(formatter, structlog.stdlib.ProcessorFormatter)
-        # The processor chain should end with ConsoleRenderer
         assert isinstance(formatter.processors[-1], structlog.dev.ConsoleRenderer)
 
 

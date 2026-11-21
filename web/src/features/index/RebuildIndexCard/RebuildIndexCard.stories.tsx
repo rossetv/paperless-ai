@@ -2,12 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RebuildIndexCard } from './RebuildIndexCard';
 
-/**
- * RebuildIndexCard owns the `useRebuildIndex` mutation, so the story wraps it
- * in a QueryClientProvider. The destructive POST is never reached in
- * Storybook — the confirmation flow can be exercised but the request fails
- * harmlessly with no backend.
- */
+/** With no backend in Storybook, the rebuild request fails harmlessly. */
 const meta = {
   title: 'Features/Index/RebuildIndexCard',
   component: RebuildIndexCard,

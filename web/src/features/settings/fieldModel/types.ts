@@ -1,20 +1,8 @@
-/**
- * Control, field, group, and section interfaces for the Settings screen model.
- *
- * Also exports the `ConfigValue` and `SettingsDraft` types used by the
- * draft-state machinery in `useUnsavedSettings`.
- *
- * Tier: features/ — leaf module, no deps outside the settings feature.
- */
-
-// ---------------------------------------------------------------------------
-// Control kinds
-// ---------------------------------------------------------------------------
+/** Types for the Settings screen model: controls, fields, groups, sections and the draft. */
 
 /**
- * A − / + numeric control. `min`/`max` clamp; `suffix` is an optional unit;
- * `step` is the − / + increment (defaults to 1 — set a fraction like 0.01 for
- * the [0, 1] similarity-threshold fields).
+ * A − / + numeric control. `step` defaults to 1; use a fraction like 0.01 for the [0, 1]
+ * similarity-threshold fields.
  */
 export interface NumberControl {
   kind: 'number';
@@ -24,37 +12,28 @@ export interface NumberControl {
   suffix?: string;
 }
 
-/** A single-line text control. `mono` renders a monospace face. */
 export interface TextControl {
   kind: 'text';
   mono?: boolean;
   placeholder?: string;
 }
 
-/** A masked secret control — a SecretField with a reveal toggle. */
 export interface SecretControl {
   kind: 'secret';
 }
 
-/** An on/off Toggle. */
 export interface ToggleControl {
   kind: 'toggle';
 }
 
-/** A Segmented single-choice control over a fixed option set. */
 export interface SegmentedControl {
   kind: 'segmented';
   options: SegmentedOptionModel[];
 }
 
 /**
- * One option in a {@link SegmentedControl}.
- *
- * `disabledWhenEmpty` names a config key that must hold a non-empty value for
- * this option to be selectable — the renderer greys it out otherwise. It is how
- * the per-step provider controls lock the "Ollama" option until `OLLAMA_BASE_URL`
- * is configured under Connections (a step may not select a provider whose
- * connection is missing; the Settings API enforces the same rule on save).
+ * `disabledWhenEmpty` names a config key that must be non-empty for this option to be
+ * selectable; it locks "Ollama" until `OLLAMA_BASE_URL` is set.
  */
 export interface SegmentedOptionModel {
   value: string;
@@ -63,39 +42,23 @@ export interface SegmentedOptionModel {
 }
 
 /**
- * A dropdown over a fixed option set.
- *
- * When `reasoningKey` is set, SettingsSection renders a second line beneath
- * the select: a compact `Segmented` whose `value` comes from `reasoningKey`
- * in the draft and whose options are `reasoningOptions`. This lets a model
- * select and its reasoning-effort control share one visual unit without
- * duplicating rows.
+ * A dropdown. With `reasoningKey` set, a compact "Reasoning" `Segmented` over
+ * `reasoningOptions` renders beneath it, so a model and its reasoning effort share one row.
  */
 export interface SelectControl {
   kind: 'select';
   options: { value: string; label: string }[];
-  /**
-   * The config key for the companion reasoning-effort segmented control.
-   * When present, a "Reasoning" segmented is rendered immediately beneath
-   * the select using `reasoningOptions`.
-   */
   reasoningKey?: string;
-  /**
-   * The option list for the companion reasoning-effort segmented control.
-   * Required when `reasoningKey` is set; ignored otherwise.
-   */
+  /** Required when `reasoningKey` is set. */
   reasoningOptions?: { value: string; label: string }[];
 }
 
-/**
- * A comma-separated list control — an editable text field whose value is a
- * `string[]`. Used for OCR_MODELS, CLASSIFY_MODELS and OCR_REFUSAL_MARKERS.
- */
+/** A comma-separated text field whose value is a `string[]`. */
 export interface ListControl {
   kind: 'list';
 }
 
-/** Every control kind that renders directly (i.e. not the conditional wrapper). */
+/** Every control kind except the conditional wrapper. */
 export type ConcreteControl =
   | NumberControl
   | TextControl
@@ -106,104 +69,62 @@ export type ConcreteControl =
   | ListControl;
 
 /**
- * A control whose concrete kind depends on another field's current value.
- *
- * `SettingsSection` resolves it at render time from the live draft: the
- * `variants` entry matching the current value of the `on` key, or `fallback`
- * when none matches. Used for the embedding model — a dropdown of OpenAI models
- * when `EMBEDDING_PROVIDER` is `openai`, a free-text field for an Ollama model
- * otherwise.
+ * A control whose concrete kind depends on another field's draft value: the `variants` entry for
+ * the `on` key's value, else `fallback`.
  */
 export interface ConditionalControl {
   kind: 'conditional';
-  /** The config key whose current draft value selects the variant. */
   on: string;
-  /** Map of the `on` key's value → the control to render for it. */
   variants: Record<string, ConcreteControl>;
-  /** The control to render when no variant matches the current value. */
   fallback: ConcreteControl;
 }
 
-/** The discriminated union of every control kind. */
 export type FieldControl = ConcreteControl | ConditionalControl;
-
-// ---------------------------------------------------------------------------
-// Field, group, section
-// ---------------------------------------------------------------------------
 
 /** One editable configuration field. */
 export interface SettingsField {
-  /** The config-key name — a `Settings`-dataclass field name. */
+  /** A `Settings`-dataclass field name. */
   key: string;
-  /** The visible row label. */
   label: string;
-  /** One-line explanatory hint. */
   hint: string;
-  /** The control to render for this field. */
   control: FieldControl;
   /**
-   * True for secret keys (PAPERLESS_TOKEN, OPENAI_API_KEY). The screen masks
-   * the value and only sends the key back when the user changes it. A field
-   * with `control.kind === 'secret'` is always also `secret: true`.
+   * The screen masks the value and sends the key back only when changed. A `secret` control
+   * always also has `secret: true`.
    */
   secret?: boolean;
   /**
-   * Render this row only when another field's draft value matches. Used to hide
-   * a step's reasoning-effort row when that step's provider is not OpenAI —
-   * `reasoning_effort` is OpenAI-only, so it is meaningless on Ollama. e.g.
+   * Render only when another field's draft value matches, e.g. reasoning effort is OpenAI-only:
    * `{ key: 'OCR_PROVIDER', equals: 'openai' }`.
    */
   visibleWhen?: { key: string; equals: string };
 }
 
-/**
- * A named sub-card group within a settings section.
- *
- * Each group renders as a `SettingsCard` inside its parent `SettingsBlock`.
- * The `id` is used as a React key; `title` and `subtitle` are passed to the
- * card header.
- */
+/** A sub-card group, rendered as a `SettingsCard` inside its section's `SettingsBlock`. */
 export interface SettingsGroup {
-  /** Stable identifier — used as a React key and for group-action mapping. */
+  /** Used as a React key and for group-action mapping. */
   id: string;
-  /** The sub-card heading. */
   title: string;
-  /** Optional sub-card subtitle shown under the heading. */
   subtitle?: string;
-  /** The fields in this group, top to bottom. */
   fields: SettingsField[];
-  /**
-   * Fields shown inside a collapsed "Advanced" `Disclosure` beneath the
-   * primary fields. Collapsed by default. Omit (or leave empty) when all
-   * fields belong in the primary list.
-   */
+  /** Fields in a collapsed "Advanced" `Disclosure` beneath the primary fields. */
   advanced?: SettingsField[];
 }
 
 /** One section of the Settings screen — a `SettingsBlock` with sub-cards. */
 export interface SettingsSection {
-  /** Stable anchor id — matches the SettingsSideNav Configuration item id. */
+  /** Matches the SettingsSideNav Configuration item id. */
   id: string;
-  /** The section title. */
   title: string;
-  /** The section subtitle, shown right-aligned beside the title. */
+  /** Shown right-aligned beside the title. */
   subtitle: string;
-  /** The sub-card groups, top to bottom. */
   groups: SettingsGroup[];
 }
 
-// ---------------------------------------------------------------------------
-// Draft state types
-// ---------------------------------------------------------------------------
-
 /**
- * One parsed config value in the editable draft.
- *
- * The backend sends every value as a string; the screen parses each to its
- * real type for editing (a NumberStepper needs a number, a Toggle a boolean,
- * a list control a `string[]`) and serialises it back to a string to save.
+ * One parsed config value. The backend sends strings; the screen parses each to its real type
+ * for editing and serialises it back to save.
  */
 export type ConfigValue = string | number | boolean | string[];
 
-/** The parsed draft — every config key mapped to its typed value. */
 export type SettingsDraft = Record<string, ConfigValue>;

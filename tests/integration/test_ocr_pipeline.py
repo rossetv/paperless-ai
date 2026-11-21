@@ -1,4 +1,4 @@
-"""Tests for OCR pipeline integration."""
+"""Integration tests for image conversion, PDF rasterisation and OCR text assembly."""
 
 from __future__ import annotations
 
@@ -55,7 +55,6 @@ class TestFullOcrPipeline:
         with open_page_source(png_bytes, "image/png") as source:
             assert len(source) == 1
 
-            # Simulate OCR provider returning transcription for each page
             page_results = [PageResult("Hello world from page 1.", "gpt-5.4-mini")]
 
             full_text, models = assemble_full_text(len(source), page_results)
@@ -73,7 +72,6 @@ class TestFullOcrPipeline:
             assert len(source) == 3
             page_count = len(source)
 
-        # Simulate transcription for each page with different models
         page_results = [
             PageResult("Page one content.", "gpt-5.4-mini"),
             PageResult("Page two content.", "gpt-5.4-mini"),
@@ -82,7 +80,6 @@ class TestFullOcrPipeline:
 
         full_text, models = assemble_full_text(page_count, page_results)
 
-        # Multi-page: page headers expected
         assert "--- Page 1 ---" in full_text
         assert "--- Page 2 ---" in full_text
         assert "--- Page 3 ---" in full_text
@@ -95,7 +92,6 @@ class TestFullOcrPipeline:
 
     def test_multi_page_with_page_model_headers(self):
         """Verify include_page_models adds model names to page headers."""
-        # Simulate a 2-page document
         page_results = [
             PageResult("First page.", "gpt-5.4-mini"),
             PageResult("Second page.", "o4-mini"),
@@ -188,16 +184,9 @@ _POPPLER_AVAILABLE = shutil.which("pdftoppm") is not None
 class TestRealPopplerPdfStreaming:
     """End-to-end PDF rasterisation against the real poppler binary.
 
-    The unit tests mock ``convert_from_bytes`` and so cannot catch the
-    file-lifecycle bugs that motivated this module: a page handle that goes
-    stale once its temp directory is cleaned, a wrong long-side scale, or a
-    leaked temp directory. These exercise the genuine streamed path.
-
-    This whole class FAILS against the broken "local TemporaryDirectory cleaned
-    on return, hand out lazy file-backed images" variant: ``load_page`` -> pixel
-    access in :meth:`test_pages_usable_through_to_assembly` would hit a missing
-    file, and :meth:`test_temp_directory_cleaned_up_after_close` would find the
-    directory already gone before the worker owned it.
+    The unit tests mock ``convert_from_bytes``, so only these catch file-lifecycle
+    bugs: a lazy page handle going stale once its temp directory is cleaned, a
+    wrong long-side scale, or a leaked temp directory.
     """
 
     def test_correct_page_count_and_order(self):
@@ -223,7 +212,7 @@ class TestRealPopplerPdfStreaming:
         assert centres[0] < centres[1] < centres[2]
 
     def test_long_side_capped_at_max_side(self):
-        # Portrait page (taller than wide): the cap must apply to the HEIGHT.
+        # Portrait page (taller than wide): the cap must apply to the height.
         pdf = _make_pdf_bytes(num_pages=1, width=300, height=424)
 
         with open_page_source(pdf, "application/pdf", max_side=800) as source:
@@ -234,9 +223,8 @@ class TestRealPopplerPdfStreaming:
             page.close()
 
     def test_pages_usable_through_to_assembly(self):
-        # The critical lazy-cleanup regression test: load every page AFTER the
-        # converter has returned, run the is_blank-style pixel access the
-        # provider performs, and assemble text — all without the source open.
+        # Load every page after the converter has returned and touch its pixels
+        # as the provider does, so a stale file-backed handle would fail here.
         pdf = _make_pdf_bytes(num_pages=2)
 
         source = open_page_source(pdf, "application/pdf", max_side=1600)
@@ -299,20 +287,17 @@ class TestContentPrepWithAssembly:
 
     def test_truncated_content_preserves_footer(self):
         """Build multi-page OCR text, truncate it, verify footer survives."""
-        # Build a realistic multi-page document
         page_results = [
             PageResult(f"Content for page {i}. " * 50, "gpt-5.4-mini")
-            for i in range(1, 11)  # 10 pages
+            for i in range(1, 11)
         ]
 
         full_text, _ = assemble_full_text(10, page_results)
 
-        # Verify we have the expected structure
         assert "--- Page 1 ---" in full_text
         assert "--- Page 10 ---" in full_text
         assert "Transcribed by model: gpt-5.4-mini" in full_text
 
-        # Truncate to first 3 pages with 2 tail pages
         truncated, note = truncate_content_by_pages(
             full_text,
             max_pages=3,
@@ -320,7 +305,6 @@ class TestContentPrepWithAssembly:
             headerless_char_limit=15000,
         )
 
-        # Footer must survive truncation
         assert "Transcribed by model: gpt-5.4-mini" in truncated
         # We should have pages 1-3 (head) and pages 9-10 (tail)
         assert "--- Page 1 ---" in truncated
@@ -328,10 +312,8 @@ class TestContentPrepWithAssembly:
         assert "--- Page 3 ---" in truncated
         assert "--- Page 9 ---" in truncated
         assert "--- Page 10 ---" in truncated
-        # Middle pages should be removed
         assert "--- Page 5 ---" not in truncated
         assert "--- Page 6 ---" not in truncated
-        # Truncation note should be present
         assert note is not None
         assert "truncated" in note.lower()
 

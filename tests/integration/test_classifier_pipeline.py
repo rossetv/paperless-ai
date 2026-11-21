@@ -26,11 +26,7 @@ class TestClassificationPipelineIntegration:
     """Full classification data pipeline with real functions."""
 
     def test_full_pipeline_realistic_ocr_text(self):
-        """
-        Create realistic OCR text -> truncate -> parse LLM JSON -> filter tags
-        -> enrich tags -> verify final tag list.
-        """
-        # Step 1: Build realistic multi-page OCR text
+        """OCR text -> truncate -> parse LLM JSON -> filter tags -> enrich tags."""
         pages = []
         for i in range(1, 6):
             pages.append(f"--- Page {i} ---")
@@ -41,7 +37,7 @@ class TestClassificationPipelineIntegration:
         footer = "\n\nTranscribed by model: gpt-5.4-mini"
         ocr_text = body + footer
 
-        # Step 2: Truncate (should keep all 5 pages since max_pages > 5 isn't triggered)
+        # 3 head + 2 tail pages covers all 5, so nothing is cut.
         truncated, note = truncate_content_by_pages(
             ocr_text,
             max_pages=3,
@@ -49,10 +45,8 @@ class TestClassificationPipelineIntegration:
             headerless_char_limit=15000,
         )
 
-        # 5 pages, keeping 3 head + 2 tail = 5 total -> no truncation
         assert "Transcribed by model: gpt-5.4-mini" in truncated
 
-        # Step 3: Parse a mock LLM JSON response
         llm_json = """{
             "title": "Invoice #12345",
             "correspondent": "Acme Corp Ltd",
@@ -69,7 +63,6 @@ class TestClassificationPipelineIntegration:
         assert result.document_type == "Invoice"
         assert len(result.tags) == 5
 
-        # Step 4: Filter blacklisted tags ("AI" and "New" should be removed)
         filtered = filter_blacklisted_tags(result.tags)
         assert "AI" not in filtered
         assert "New" not in filtered
@@ -77,7 +70,6 @@ class TestClassificationPipelineIntegration:
         assert "payment" in filtered
         assert "urgent" in filtered
 
-        # Step 5: Filter redundant tags (those matching correspondent/type/person)
         filtered = filter_redundant_tags(
             filtered,
             correspondent=result.correspondent,
@@ -89,7 +81,6 @@ class TestClassificationPipelineIntegration:
         assert "payment" in filtered
         assert "urgent" in filtered
 
-        # Step 6: Enrich tags (add model tags, year tag, country tag)
         enriched = enrich_tags(
             filtered,
             ocr_text,
@@ -98,13 +89,9 @@ class TestClassificationPipelineIntegration:
             tag_limit=5,
         )
 
-        # Model tag extracted from footer
         assert "gpt-5.4-mini" in enriched
-        # Year tag from document_date
         assert "2025" in enriched
-        # Country tag
         assert "de" in enriched  # enriched tags are lowercased
-        # Original tags preserved (lowercased)
         assert "payment" in enriched
         assert "urgent" in enriched
 
@@ -194,7 +181,6 @@ class TestTaxonomyCacheIntegration:
                 "document_count": 5,
             },
         ]
-        # Mock creation endpoints
         _next_id = [200]
 
         def _create_tag(name, **kw):
@@ -221,11 +207,9 @@ class TestTaxonomyCacheIntegration:
         cache = TaxonomyCache(client, taxonomy_limit=100)
         cache.refresh()
 
-        # Look up existing correspondent by exact name
         corr_id = cache.get_or_create_correspondent_id("Acme Corp")
         assert corr_id == 1
 
-        # No creation call should have been made
         client.create_correspondent.assert_not_called()
 
     def test_resolve_correspondent_with_suffix_matching(self):
@@ -306,7 +290,6 @@ class TestMetadataPipelineIntegration:
 
     def test_full_metadata_pipeline(self):
         """Parse date, normalise language, update custom fields together."""
-        # Parse a valid date
         parsed_date = parse_document_date("2025-06-15")
         assert parsed_date == "2025-06-15"
 
@@ -314,7 +297,6 @@ class TestMetadataPipelineIntegration:
         tag_date = resolve_date_for_tags(parsed_date, "2024-01-01")
         assert tag_date == "2025-06-15"
 
-        # Normalise language
         lang = normalise_language("en-US")
         assert lang == "en"
 
@@ -342,8 +324,7 @@ class TestMetadataPipelineIntegration:
         parsed_date = parse_document_date("not-a-date")
         assert parsed_date is None
 
-        # Falls back to the injected "today" when both dates are invalid;
-        # a fixed clock keeps the assertion deterministic (CODE_GUIDELINES §11.4).
+        # Falls back to the injected "today" when both dates are invalid.
         fixed_today = dt.date(2025, 5, 20)
         tag_date = resolve_date_for_tags(None, None, today=lambda: fixed_today)
         assert tag_date == fixed_today.isoformat()

@@ -10,15 +10,10 @@ export interface InputProps {
   label?: string;
   /** Input type — defaults to 'text'. */
   type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number' | 'date';
-  /** Input name attribute for form submission. */
   name?: string;
-  /** Controlled value. */
   value?: string;
-  /** Placeholder hint. */
   placeholder?: string;
-  /** Whether the input is non-interactive. */
   disabled?: boolean;
-  /** Whether the input is required. */
   required?: boolean;
   /** Validation error message — also sets aria-invalid. */
   error?: string | undefined;
@@ -29,26 +24,13 @@ export interface InputProps {
   surface?: 'light' | 'dark';
   /** Browser autofill hint — forwarded to the native `autocomplete` attribute. */
   autoComplete?: string;
-  /** Change handler for controlled usage. */
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
-  /** Focus handler. */
   onFocus?: React.FocusEventHandler<HTMLInputElement>;
-  /** Blur handler. */
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
-  /** Additional class names for the root wrapper. */
   className?: string;
 }
 
-/**
- * Generic text input primitive.
- *
- * Renders a <label> + <input> pair, correctly associated via the `id` prop.
- * The label, the field wrapper, and the validation-error region come from the
- * shared `FormField` scaffolding; this component only owns the <input> itself.
- *
- * Styled as the Filter/Search field style from DESIGN.md §4 — 11px radius,
- * light background, accent focus ring.
- */
+/** Labelled text input built on the shared `FormField` scaffolding. */
 export function Input({
   id,
   label,

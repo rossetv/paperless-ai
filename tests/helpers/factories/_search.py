@@ -1,21 +1,4 @@
-"""Search-pipeline test factories.
-
-The ``tests.helpers.factories`` package re-exports every factory from its
-``__init__``; this submodule holds the builders for the search-pipeline shapes
-— :class:`~search.models.FilterCandidates`, :class:`~search.models.PlannedSpec`,
-:class:`~search.models.RetrievalPlan`,
-:class:`~search.models.RetrievedChunk`, :class:`~search.models.SourceDocument`,
-:class:`~search.models.SearchStats`, :class:`~search.models.SearchResult`,
-:class:`~search.models.Answered`, :class:`~search.models.NeedsMore` — and the
-store read-shapes the search tests need (:class:`~store.models.ChunkHit`,
-:class:`~store.models.IndexedDocument`, :class:`~store.models.TaxonomyEntry`,
-:class:`~store.models.FacetSet`, :class:`~store.models.IndexStats`).
-
-Each factory fills every irrelevant field with a deterministic default so a
-test spells out only the field under test (CODE_GUIDELINES §11.5).  These
-replace the ~28 hand-rolled ``_make_*`` builders the search test files used to
-each redeclare.
-"""
+"""Search-pipeline test factories, plus the store read-shapes the search tests use."""
 
 from __future__ import annotations
 
@@ -51,9 +34,7 @@ from store.models import (
 )
 
 
-# ---------------------------------------------------------------------------
 # Planner / retriever shapes
-# ---------------------------------------------------------------------------
 
 
 def make_filter_candidates(
@@ -64,11 +45,7 @@ def make_filter_candidates(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> FilterCandidates:
-    """Create a FilterCandidates; every field defaults to "no candidate".
-
-    The all-default call models the planner emitting no filter guesses; a test
-    that exercises one candidate passes only that keyword.
-    """
+    """Create a FilterCandidates; every field defaults to "no candidate"."""
     return FilterCandidates(
         correspondent=correspondent,
         document_type=document_type,
@@ -86,12 +63,7 @@ def make_planned_spec(
     filter_guess: FilterCandidates | None = None,
     rationale: str = "test spec",
 ) -> PlannedSpec:
-    """Create a PlannedSpec with a single semantic query and no filter guesses.
-
-    *filter_guess* defaults to an all-``None`` :class:`FilterCandidates`
-    (via :func:`make_filter_candidates`) so a test that does not care about
-    filters need not spell one out.
-    """
+    """Create a PlannedSpec with a single semantic query and no filter guesses."""
     return PlannedSpec(
         mode=mode,  # type: ignore[arg-type]
         semantic=semantic,
@@ -108,11 +80,7 @@ def make_retrieval_plan(
     specs: tuple[PlannedSpec, ...] | None = None,
     clarify: object | None = None,
 ) -> RetrievalPlan:
-    """Create a RetrievalPlan with one broad semantic spec and no clarify.
-
-    *specs* defaults to a single :func:`make_planned_spec` so a test that does
-    not care about the plan shape need not spell one out.
-    """
+    """Create a RetrievalPlan with one broad semantic spec and no clarify."""
     return RetrievalPlan(
         specs=specs if specs is not None else (make_planned_spec(),),
         clarify=clarify,  # type: ignore[arg-type]
@@ -139,9 +107,7 @@ def make_retrieved_chunk(
     )
 
 
-# ---------------------------------------------------------------------------
 # Synthesiser outcome shapes
-# ---------------------------------------------------------------------------
 
 
 def make_answered(
@@ -160,9 +126,7 @@ def make_needs_more(
     return NeedsMore(adjustment=adjustment)
 
 
-# ---------------------------------------------------------------------------
 # Result shapes
-# ---------------------------------------------------------------------------
 
 
 def make_source_document(
@@ -177,11 +141,7 @@ def make_source_document(
     score: float = 0.9,
     relevance_tier: RelevanceTier = "good",
 ) -> SourceDocument:
-    """Create a SourceDocument — one ranked source in a SearchResult.
-
-    *paperless_url* defaults to a deep-link derived from *document_id* so a
-    test that does not care about the URL need not spell one out.
-    """
+    """Create a SourceDocument; *paperless_url* defaults to a link for *document_id*."""
     return SourceDocument(
         document_id=document_id,
         title=title,
@@ -206,11 +166,9 @@ def make_search_stats(
     refined: bool = False,
     total_tokens: int | None = None,
 ) -> SearchStats:
-    """Create a SearchStats — the default models a normal two-call query.
+    """Create a SearchStats; the default models a normal two-call query.
 
-    Pass *total_tokens* to set the whole-query ``cost.tokens.total`` (the value
-    the spend-quota record reads); it defaults to the zero-token cost summary,
-    matching the production default for a result that carries no telemetry.
+    *total_tokens* sets ``cost.tokens.total``, the value the spend quota reads.
     """
     if total_tokens is None:
         return SearchStats(llm_calls=llm_calls, latency_ms=latency_ms, refined=refined)
@@ -237,9 +195,8 @@ def make_search_result(
 ) -> SearchResult:
     """Create a SearchResult with one source, a default plan, and default stats.
 
-    Each absent argument is filled from the matching factory, so a test asserts
-    on only the field it cares about. Pass ``outcome_kind="no_match"`` or
-    ``"clarify"`` (with ``sources=()``) to build the short-circuit shapes.
+    Pass ``outcome_kind="no_match"`` or ``"clarify"`` (with ``sources=()``) to
+    build the short-circuit shapes.
     """
     return SearchResult(
         answer=answer,
@@ -250,9 +207,7 @@ def make_search_result(
     )
 
 
-# ---------------------------------------------------------------------------
-# Store read-shapes the search tests consume
-# ---------------------------------------------------------------------------
+# Store read-shapes
 
 
 def make_chunk_hit(
@@ -331,11 +286,8 @@ def make_index_stats(
 ) -> IndexStats:
     """Create an IndexStats; defaults model a reconciled, empty index.
 
-    ``last_reconcile_at`` defaults to a real timestamp so the common healthz
-    "index is ready" path needs no override; pass ``None`` for the
-    never-reconciled case. ``latest_indexed_at`` is the cache content signal
-    (``MAX(documents.indexed_at)``); defaults to ``None`` (empty index) and is
-    varied by the result-cache tests to model an in-place re-index.
+    Pass ``last_reconcile_at=None`` for the never-reconciled case.
+    ``latest_indexed_at`` is the result cache's content signal.
     """
     return IndexStats(
         document_count=document_count,
@@ -346,9 +298,7 @@ def make_index_stats(
     )
 
 
-# ---------------------------------------------------------------------------
 # Settings-like mock for the search pipeline
-# ---------------------------------------------------------------------------
 
 
 # A per-process temp directory for the unique ``APP_DB_PATH`` default below,
@@ -361,14 +311,10 @@ _app_db_counter = 0
 
 
 def _unique_app_db_path() -> str:
-    """Return a fresh, unused ``app.db`` path for a settings mock.
+    """Return a fresh ``app.db`` path for a settings mock.
 
-    ``search.api.create_app`` opens and migrates ``Settings.APP_DB_PATH`` at
-    startup, then each request opens its own connection to it. A test that
-    builds the app over the factory defaults therefore needs an ``app.db`` of
-    its own — a shared path would let one test's users leak into another's
-    first-run-setup state. Each call returns a distinct file under a
-    process-scoped temp directory.
+    ``create_app`` migrates and persists users into ``APP_DB_PATH``; a shared
+    path would leak one test's users into another's first-run-setup state.
     """
     global _app_db_counter
     _app_db_counter += 1
@@ -378,12 +324,7 @@ def _unique_app_db_path() -> str:
 def make_relevance_thresholds(
     *, strong: float = 0.70, good: float = 0.66, partial: float = 0.60
 ) -> RelevanceThresholds:
-    """Build a :class:`RelevanceThresholds` with the calibrated defaults.
-
-    Centralises the badge cut-points the source-assembly and relevance tests
-    pass, so the default triple lives in one place. Override a band to exercise
-    a custom configuration.
-    """
+    """Build a :class:`RelevanceThresholds` with the calibrated defaults."""
     return RelevanceThresholds(strong=strong, good=good, partial=partial)
 
 
@@ -396,11 +337,7 @@ def make_judge_candidate(
     correspondent: str | None = None,
     document_type: str | None = None,
 ) -> JudgeCandidate:
-    """Build a JudgeCandidate for judge/core tests.
-
-    Metadata fields default to ``None`` (the snippet-only judge candidate); a
-    test exercising scope-aware judging passes the relevant metadata field.
-    """
+    """Build a JudgeCandidate; metadata fields default to ``None`` (snippet only)."""
     return JudgeCandidate(
         document_id=document_id,
         snippet=snippet,
@@ -417,11 +354,10 @@ def make_judge_verdict(
     degraded: bool = False,
     score: float = 1.0,
 ) -> JudgeVerdict:
-    """Build a JudgeVerdict from a set of kept ids; defaults to keeping document 1.
+    """Build a JudgeVerdict keeping each id in *relevant_document_ids* (default: 1).
 
-    Constructs one :class:`~search.models.DocVerdict` per kept id (keep=True,
-    full-confidence *score*, empty reason). Tests that care about per-document
-    verdict details should build :class:`~search.models.JudgeVerdict` directly.
+    Tests that care about per-document verdict details should build a
+    :class:`~search.models.JudgeVerdict` directly.
     """
     ids = frozenset(relevant_document_ids if relevant_document_ids is not None else {1})
     return JudgeVerdict(
@@ -436,20 +372,9 @@ def make_judge_verdict(
 def make_search_settings(**overrides: Any) -> Any:
     """Create a Settings-like MagicMock with every search-pipeline field set.
 
-    The defaults span the planner, retriever, synthesiser, core, and the
-    search/MCP servers, so this single factory replaces the per-file
-    ``_make_settings`` mocks the search test files used to hand-roll.  The
-    ``MAX_RETRIES`` / ``MAX_RETRY_BACKOFF_SECONDS`` ints keep the inherited
-    ``@retry`` decorator on the planner and synthesiser well-formed even though
-    tests patch ``_create_completion`` and never enter the retry loop.
-
-    ``APP_DB_PATH`` defaults to a *unique* path per call (see
-    :func:`_unique_app_db_path`) so a test building the search app over these
-    defaults gets an isolated ``app.db``; pass an explicit ``APP_DB_PATH``
-    override to point at a known file.
-
-    Args:
-        **overrides: Any field override — e.g. ``SEARCH_MAX_REFINEMENTS=0``.
+    A MagicMock turns any unset attribute into a truthy mock, which silently
+    breaks comparisons, slices and flags downstream, so every field the pipeline
+    reads is pinned to a real value. ``APP_DB_PATH`` is unique per call.
     """
     from unittest.mock import MagicMock
 
@@ -467,22 +392,16 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_ANSWER_MODEL": "gpt-5.4",
         "CLASSIFY_MODELS": ["gpt-5.4-mini", "gpt-5.4"],
         "SEARCH_SESSION_TTL": 3600,
-        # Per-key daily token quota OFF by default (0 = unlimited), so existing
-        # search tests do no quota I/O and behave exactly as before; quota tests
-        # override with a positive value (CODE_GUIDELINES §11.5).
+        # 0 = unlimited, so non-quota tests do no quota I/O.
         "SEARCH_KEY_DAILY_TOKEN_QUOTA": 0,
+        # Keep the planner and synthesiser ``@retry`` decorators well-formed.
         "MAX_RETRIES": 3,
         "MAX_RETRY_BACKOFF_SECONDS": 30,
-        # Area-3 SEARCH_* settings. A MagicMock auto-creates any unset attribute
-        # as a truthy mock, so these must be pinned or downstream search tests
-        # silently misbehave (CODE_GUIDELINES §11.5). The cache is OFF (TTL 0)
-        # so existing two-call assertions keep making real (mocked) LLM calls;
-        # LLM_PROVIDER="openai" so the structured-output helpers build a schema.
+        # "openai" so the structured-output helpers build a schema.
         "LLM_PROVIDER": "openai",
-        # Per-step providers all default to openai (their seed) so the
-        # structured-output / reasoning gates fire and the cross-stage fallback
-        # to CLASSIFY_MODELS is provider-coherent; tests of the Ollama path pin
-        # the specific step provider instead (CODE_GUIDELINES §11.5).
+        # All openai so the structured-output / reasoning gates fire and the
+        # fallback to CLASSIFY_MODELS stays provider-coherent; Ollama tests pin
+        # the specific step provider instead.
         "OCR_PROVIDER": "openai",
         "CLASSIFY_PROVIDER": "openai",
         "SEARCH_PLANNER_PROVIDER": "openai",
@@ -490,58 +409,30 @@ def make_search_settings(**overrides: Any) -> Any:
         "SEARCH_ANSWER_PROVIDER": "openai",
         "SEARCH_PLANNER_REASONING_EFFORT": "medium",
         "SEARCH_ANSWER_REASONING_EFFORT": "medium",
+        # Cache off so LLM-call-count assertions see real (mocked) calls.
         "SEARCH_CACHE_TTL_SECONDS": 0,
         "SEARCH_SKIP_PLANNER_FOR_TRIVIAL": False,
-        # Fail-fast gate knobs (Task 1). Mirror the production defaults so tests
-        # are explicit about what they get rather than relying on MagicMock's
-        # auto-truthy behaviour (CODE_GUIDELINES §11.5).
         "SEARCH_GATE_ADEQUACY": True,
         "SEARCH_GATE_RELEVANCE": True,
-        # 0.0 keeps Layer 2 inert by default (the production default is 0.60, but
-        # a real floor against a synthetic test index is brittle).  Tests that
-        # exercise Layer 2 override with an explicit non-zero value.
+        # Production uses 0.60, but a real floor against a synthetic test index
+        # is brittle; Layer 2 tests override it.
         "SEARCH_RELEVANCE_MIN_SIMILARITY": 0.0,
-        # Relevance-badge cut-points — mirror the production defaults so the core
-        # builds a well-formed RelevanceThresholds (a bare MagicMock attribute
-        # would be a truthy mock, not a float, and break the comparison).
         "SEARCH_RELEVANCE_TIER_STRONG": 0.70,
         "SEARCH_RELEVANCE_TIER_GOOD": 0.66,
         "SEARCH_RELEVANCE_TIER_PARTIAL": 0.60,
         "SEARCH_MIN_QUERY_CHARS": 2,
-        # The judge defaults ON in production, but OFF here so existing core
-        # tests keep their exact LLM-call-count assertions (it is a real extra
-        # LLM call). Judge tests opt in with SEARCH_GATE_JUDGE=True and a scripted
-        # judge_response, mirroring SEARCH_RELEVANCE_MIN_SIMILARITY=0.0.
+        # On in production, off here: the judge is an extra LLM call that would
+        # change call-count assertions. Judge tests opt in.
         "SEARCH_GATE_JUDGE": False,
         "SEARCH_JUDGE_MODEL": "gpt-5.4-mini",
         "SEARCH_JUDGE_REASONING_EFFORT": "low",
-        # Rationales ON mirrors the production default; tests that want lean
-        # output (no reason strings) can override with SEARCH_JUDGE_RATIONALES=False.
         "SEARCH_JUDGE_RATIONALES": True,
-        # Identity-awareness (Task 10). Defaults ON in production; pinned here
-        # so make_search_settings always returns a real bool, not a truthy mock,
-        # and tests that need it off can override with SEARCH_IDENTITY_AWARE=False.
         "SEARCH_IDENTITY_AWARE": True,
-        # Cap on the number of planner specs (SEARCH_PLANNER_MAX_SPECS). A
-        # MagicMock auto-attribute used as a slice index silently returns only
-        # the first element; pin to 8 (the production default) so multi-spec
-        # tests get the full list without needing to override.
         "SEARCH_PLANNER_MAX_SPECS": 8,
-        # Names per taxonomy list fed to the planner prompt
-        # (SEARCH_PLANNER_TAXONOMY_LIMIT). Pinned to the production default so
-        # tests exercising the taxonomy block get a real int, not a MagicMock.
         "SEARCH_PLANNER_TAXONOMY_LIMIT": 100,
-        # Multi-spec retriever knobs. A MagicMock auto-attribute used as an
-        # int comparison or slice index misbehaves, so pin both to their
-        # production defaults (SEARCH_PER_SPEC_K defaults to SEARCH_TOP_K=10).
         "SEARCH_PER_SPEC_K": 10,
         "SEARCH_MAX_CHUNKS_PER_DOC": 3,
-        # Price-book refresh OFF by default (empty URL = disabled), matching
-        # prod: create_app then starts no refresh thread and makes no network
-        # call, so building the app over these defaults is network-free. A bare
-        # MagicMock attribute would be a truthy URL and spuriously start the
-        # refresh thread (CODE_GUIDELINES §11.5). Tests exercising refresh
-        # override PRICING_REFRESH_URL with a real URL.
+        # Empty URL disables the refresh thread, keeping create_app network-free.
         "PRICING_REFRESH_URL": "",
         "PRICING_REFRESH_INTERVAL_HOURS": 24,
     }

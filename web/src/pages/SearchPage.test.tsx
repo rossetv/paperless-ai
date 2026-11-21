@@ -256,7 +256,6 @@ describe('SearchPage', () => {
   });
 
   it('renders the ResultsScreen (not NoResultsScreen) for an answered result with sources', async () => {
-    // outcome_kind 'answered' → ResultsScreen regardless of sources count.
     mockUseStreamingSearch.mockReturnValue(
       streamState({ status: 'done', result: SUCCESS_DATA }),
     );
@@ -306,7 +305,6 @@ describe('SearchPage', () => {
       'data-answer',
       'Could you be more specific about the date range?',
     );
-    // Must not accidentally show ResultsScreen.
     expect(screen.queryByTestId('results')).not.toBeInTheDocument();
   });
 
@@ -385,32 +383,23 @@ describe('SearchPage', () => {
       }),
     );
     renderPage('/?q=invoice');
-    // A 401 renders the calm idle hero, not the error screen.
     expect(screen.getByTestId('idle')).toBeInTheDocument();
     expect(screen.queryByTestId('search-error')).not.toBeInTheDocument();
   });
 
   it('re-runs the search when a second query is submitted from the results view', async () => {
-    // Regression: once a search ran, `query` never reset and only the idle
-    // screen had an editable field — the user was stranded on the results
-    // screen with no way to start a fresh search short of a full reload.
     mockUseStreamingSearch.mockReturnValue(
       streamState({ status: 'done', result: SUCCESS_DATA }),
     );
     renderPage();
 
-    // First search — from the idle hero — renders the results.
     await userEvent.click(screen.getByTestId('idle'));
     expect(screen.getByTestId('results-query')).toHaveTextContent(
       'npower bills',
     );
 
-    // Second search — from the editable recap field on the results screen.
     await userEvent.click(screen.getByTestId('results-new-search'));
 
-    // The page re-runs the search with the NEW query, no reload needed. (With
-    // the live stream the new results land once it completes; the contract
-    // tested here is that the page is not stranded — it dispatches the run.)
     await waitFor(() => {
       expect(mockRun).toHaveBeenCalledWith(
         'rolling-blackout refunds',
@@ -424,7 +413,6 @@ describe('SearchPage', () => {
       streamState({ query: 'invoice', status: 'done', result: SUCCESS_DATA }),
     );
     renderPage('/?q=invoice');
-    // The results screen renders immediately — no interaction needed.
     await waitFor(() => {
       expect(screen.getByTestId('results')).toBeInTheDocument();
     });

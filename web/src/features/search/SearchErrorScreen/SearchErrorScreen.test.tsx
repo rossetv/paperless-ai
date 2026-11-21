@@ -2,8 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SearchErrorScreen } from './SearchErrorScreen';
 
-// FilterControls calls useFacets (needs a query client) — mock it to a probe,
-// as the sibling NoResultsScreen test does. We only assert the rail renders it.
+// FilterControls calls useFacets (needs a query client); a probe stands in for it.
 vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
@@ -60,8 +59,6 @@ describe('SearchErrorScreen', () => {
   });
 
   it('runs a fresh search when the recap field is submitted', async () => {
-    // The user must not be stranded on the error: editing and submitting
-    // the recap field starts a new search.
     const onSearch = vi.fn();
     renderScreen({ onSearch });
     const recap = screen.getByDisplayValue(

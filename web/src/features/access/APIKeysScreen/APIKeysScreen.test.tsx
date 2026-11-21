@@ -11,7 +11,7 @@ vi.mock('../../../api/hooks', () => ({
 }));
 // useAuth tells the screen which keys the caller owns (Edit is owner-only).
 vi.mock('../../../hooks/useAuth', () => ({ useAuth: vi.fn() }));
-// Stub the create panel — it is unit-tested separately.
+// Both panels are unit-tested separately.
 vi.mock('../APIKeyCreatePanel/APIKeyCreatePanel', () => ({
   APIKeyCreatePanel: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="key-panel">
@@ -21,7 +21,6 @@ vi.mock('../APIKeyCreatePanel/APIKeyCreatePanel', () => ({
     </div>
   ),
 }));
-// Stub the edit panel — it is unit-tested separately.
 vi.mock('../APIKeyEditPanel/APIKeyEditPanel', () => ({
   APIKeyEditPanel: ({ onClose }: { onClose: () => void }) => (
     <div data-testid="key-edit-panel">

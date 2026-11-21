@@ -1,4 +1,4 @@
-"""Tests for the usage_sink parameter on _complete_with_model_fallback (Task 3)."""
+"""Tests for the usage_sink parameter on _complete_with_model_fallback."""
 
 from types import SimpleNamespace
 

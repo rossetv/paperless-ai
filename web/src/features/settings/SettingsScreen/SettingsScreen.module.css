@@ -1,9 +1,1 @@
-/*
- * SettingsScreen feature — CSS Module.
- *
- * The screen body is a vertical stack of SettingsBlock sections; the layout
- * shell already supplies that. Loading and error states are handled by the
- * Spinner and EmptyState primitives, which carry their own styles.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Empty: SettingsLayout and the Spinner/EmptyState primitives supply all styling. */

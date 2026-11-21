@@ -43,7 +43,6 @@ class TestAssembleFullTextSinglePage:
 
         full_text, _ = assemble_full_text(1, page_results)
 
-        # Assert — text and footer separated by double newline
         assert "Page text\n\nTranscribed by model: model-a" == full_text
 
 
@@ -150,7 +149,6 @@ class TestAssembleFullTextBlankPages:
         assert models == set()
 
     def test_blank_page_model_not_collected(self):
-        # Arrange — blank page with model shouldn't add model to set
         page_results = [
             PageResult("", "model-skipped"),
             PageResult("Real", "model-used"),
@@ -188,7 +186,6 @@ class TestAssembleFullTextIncludePageModels:
         assert "(gpt-5.4-mini)" not in full_text
 
     def test_empty_model_not_in_header(self):
-        # Arrange — empty model string should not appear in header
         page_results = [
             PageResult("Text A", ""),
         ]
@@ -199,7 +196,6 @@ class TestAssembleFullTextIncludePageModels:
         assert "()" not in full_text
 
     def test_include_page_models_single_page_no_header(self):
-        # Arrange — single page never gets header even with flag
         page_results = [PageResult("Text", "gpt-5")]
 
         full_text, _ = assemble_full_text(1, page_results, include_page_models=True)
@@ -241,12 +237,10 @@ class TestAssembleFullTextFooter:
         assert models == set()
 
     def test_footer_only_when_all_sections_empty_but_models_exist(self):
-        # Arrange — all pages are blank, so no sections and no models
         page_results = [PageResult("", "model-a")]
 
         full_text, models = assemble_full_text(1, page_results)
 
-        # Assert — blank pages skipped, model not collected
         assert full_text == ""
         assert models == set()
 
@@ -261,12 +255,11 @@ class TestAssembleFullTextEdgeCases:
         assert models == set()
 
     def test_page_count_greater_than_results(self):
-        # Arrange — page_count says multi-page but only one result
+        # page_count, not the number of results, decides whether headers appear.
         page_results = [PageResult("Only page", "m")]
 
         full_text, _ = assemble_full_text(5, page_results)
 
-        # Assert — still gets header because page_count > 1
         assert "--- Page 1 ---" in full_text
 
     def test_model_with_empty_string_not_in_set(self):
@@ -303,8 +296,6 @@ class TestAssembleFullTextEdgeCases:
 
 
 class TestPageResult:
-    """The PageResult value object is a frozen pair of (text, model)."""
-
     def test_holds_text_and_model(self):
         page = PageResult("transcribed text", "gpt-5.4-mini")
 

@@ -1,4 +1,4 @@
-"""Tests for pytest root configuration."""
+"""Root pytest configuration and process-singleton resets."""
 
 from __future__ import annotations
 
@@ -44,12 +44,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_login_throttle():
-    """Drop the process-wide login throttle before each test.
-
-    The throttle is a process singleton (one per single-process server); left
-    standing, failed-login counts from one test would leak into the next. Reset
-    it up front so every test starts from a clean throttle.
-    """
+    """Drop the process-wide login throttle so failed logins don't leak across tests."""
     from search.login_throttle import reset_login_throttle
 
     reset_login_throttle()
@@ -60,14 +55,8 @@ def _reset_login_throttle():
 def _reset_search_result_cache():
     """Drop the process-wide search-result cache before each test.
 
-    The result cache is a process singleton keyed by query + config version. A
-    test that runs a cacheable query with a live TTL leaves a warm entry that a
-    later test issuing the *same* query (same config version) would be served
-    from cache — short-circuiting the pipeline and breaking its LLM-call-count
-    assertions (e.g. ``test_search_pipeline`` expecting two calls). The unit
-    search tests reset it by hand; doing it here as an autouse fixture makes
-    every test — unit, integration, e2e — start from a cold cache, closing the
-    cross-suite leak at source rather than per file.
+    A warm entry left by one test would serve a later test's identical query from
+    cache, skipping the pipeline and breaking its LLM-call-count assertions.
     """
     from search.cache import reset_search_result_cache
 
@@ -79,12 +68,9 @@ def _reset_search_result_cache():
 def _reset_current_price_book():
     """Restore the bundled-seed live price book before each test.
 
-    The live price book is a process singleton (one per server process). A test
-    that loads an app.db cache or runs a refresh into it via ``create_app``
-    leaves a non-seed book standing; a later test that asserts seed-identical
-    dollars or ``prices_source == "bundled"`` would then read the leaked book.
-    Reset to the seed up front so every test starts from the behaviour-preserving
-    default, closing the cross-suite leak at source.
+    The price book is a process singleton; a test that loads or refreshes it via
+    ``create_app`` would otherwise leak a non-seed book into later tests that
+    assert seed prices or ``prices_source == "bundled"``.
     """
     from search.pricing_book import reset_current_price_book
 

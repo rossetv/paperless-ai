@@ -1,12 +1,4 @@
-"""Tests for the shared event-loop offload helpers (search.offload).
-
-Covers:
-- run_blocking() returns the call's value and runs it off the loop thread.
-- LazySemaphore bounds concurrency at its ceiling.
-- A ceiling of 0 means unbounded (a no-op acquire) — NOT asyncio.Semaphore(0),
-  which would deadlock the first acquirer.
-- set_limit() switches the ceiling.
-"""
+"""Tests for the event-loop offload helpers in search.offload."""
 
 from __future__ import annotations
 
@@ -60,8 +52,7 @@ async def test_lazy_semaphore_bounds_concurrency() -> None:
 async def test_lazy_semaphore_zero_is_unbounded() -> None:
     """A ceiling of 0 never blocks — all workers run concurrently, no deadlock.
 
-    Regression guard: a naive asyncio.Semaphore(0) would block the first
-    acquirer forever; the unbounded contract (0 == no limit) must hold.
+    A naive asyncio.Semaphore(0) would block the first acquirer forever.
     """
     assert await _peak_concurrency(LazySemaphore(0), workers=5) == 5
 

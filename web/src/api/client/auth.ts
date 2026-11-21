@@ -1,11 +1,4 @@
-/**
- * Auth and setup endpoint functions.
- *
- * Covers first-run setup, session login/logout, the `me` probe, and the
- * public stats call used on the login splash.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** First-run setup, session login/logout, the `me` probe and the public login-splash stats. */
 
 import type {
   LoginRequest,

@@ -15,11 +15,7 @@ export interface APIKeyCreatePanelProps {
   onClose: () => void;
 }
 
-// ── Reveal sub-component. ──
-// rationale: The reveal panel and the create form share the same Modal but
-// have no shared state after the secret is set — two logically distinct
-// screens. Extracting this keeps each screen's JSX below ~60 lines and makes
-// the one-time-view guarantee easy to audit.
+// The one-time secret view shown after a successful mint.
 interface RevealPanelProps {
   secret: string;
   onClose: () => void;
@@ -37,9 +33,8 @@ function RevealPanel({ secret, onClose }: RevealPanelProps): React.ReactElement 
       setCopyError(false);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Clipboard access was denied — the user must copy the key manually.
-      // Surface an error so they know the one-time secret was not captured
-      // and the key text above is still selectable.
+      // Clipboard access denied: tell the user the secret was not copied so they
+      // copy the (still selectable) key text by hand.
       setCopied(false);
       setCopyError(true);
     }
@@ -84,9 +79,6 @@ function RevealPanel({ secret, onClose }: RevealPanelProps): React.ReactElement 
  * the form is replaced by a reveal panel that shows the full `sk-pls-…`
  * secret exactly once — it is held in component state and discarded when the
  * modal closes. The secret is never re-fetchable.
- *
- * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
- * api/, hooks/, lib/.
  */
 export function APIKeyCreatePanel({
   onClose,
@@ -99,10 +91,8 @@ export function APIKeyCreatePanel({
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [scopeError, setScopeError] = React.useState<string | null>(null);
   const [serverError, setServerError] = React.useState<string | null>(null);
-  // Once set, the form is replaced by the reveal panel.
   const [secret, setSecret] = React.useState<string | null>(null);
 
-  /** Toggle a scope on or off. */
   function toggleScope(scope: ApiScope): void {
     setScopeError(null);
     setScopes((prev) => {
@@ -113,7 +103,6 @@ export function APIKeyCreatePanel({
     });
   }
 
-  /** Submit — mint the key. */
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setServerError(null);
@@ -143,7 +132,6 @@ export function APIKeyCreatePanel({
     return <RevealPanel secret={secret} onClose={onClose} />;
   }
 
-  // ── Create form. ──
   return (
     <Modal isOpen title="Create API key" onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>

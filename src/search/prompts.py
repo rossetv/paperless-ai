@@ -1,45 +1,11 @@
-"""System prompts for the search pipeline LLM stages.
+"""Prompts, output schemas and user-message builders for the search LLM calls.
 
-This module holds the static prompt templates for the three LLM stages:
-
-1. **Planner** (``PLANNER_SYSTEM_PROMPT`` + ``build_planner_user_message``)
-   — analyses a user query and emits structured JSON that drives hybrid
-   retrieval.  The system prompt is byte-stable (no per-call variable) so the
-   provider can cache it; today's date lives in the *user* turn so the model can
-   still resolve relative temporal language (RAG-09).
-
-2. **Judge** (``JUDGE_SYSTEM_PROMPT`` + ``build_judge_user_message``)
-   — evaluates each retrieved candidate document for relevance to the query
-   (Layer 3, spec §7.3).  Emits a per-document keep/drop verdict with an
-   optional short rationale.
-
-3. **Synthesiser** (``SYNTHESISER_SYSTEM_PROMPT`` + ``build_synthesiser_user_message``)
-   — assembles the user's question and retrieved chunks into a single user-role
-   message.  The control plane (the question and any instructions) is placed
-   *first*; the untrusted chunk content follows, wrapped in a data block fenced
-   by an unpredictable per-message nonce (SRCH-01, CODE_GUIDELINES.md §10.2).
-   A document chunk cannot reproduce the nonce, so it cannot forge the
-   data-block boundary or smuggle a control marker that reads as being outside
-   the data region.
-
-Usage pattern::
-
-    from search.prompts import PLANNER_SYSTEM_PROMPT, build_planner_user_message
-    user_message = build_planner_user_message(query=query, today="2026-05-20")
-
-Security note: these prompts embed no retrieved document content in the system
-prompt; they are control-plane prompts only.  Document chunks arrive in the
-*user* message of the synthesiser call, after the question and fenced inside a
-nonce-delimited data block the chunk cannot forge (CODE_GUIDELINES.md §10.2).
+The planner, judge and synthesiser system prompts carry no per-call variable, so
+the provider can cache them; today's date goes in the user turn. Retrieved
+document text only ever appears in a user message, after the control text and
+inside a data block fenced by a per-message nonce the document cannot
+reproduce, so it cannot forge the boundary.
 """
-
-# rationale: 896 lines, over the §3.1 ceiling. The three stages (planner,
-# judge, synthesiser) are tightly coupled by shared JSON-schema helpers
-# (_planner_response_format, _synthesiser_response_format) and the nonce-fence
-# utility; splitting into per-stage modules would add cross-import plumbing
-# for little cohesion gain. All three are pure data + small builders — no
-# business logic, no I/O. Accepted as a data-heavy file with an authorised
-# rationale per §3.1.
 
 from __future__ import annotations
 
@@ -55,29 +21,12 @@ if TYPE_CHECKING:
     from store.models import FacetSet, TaxonomyEntry
 
 
-# ---------------------------------------------------------------------------
-# Structured-output schemas (RAG-06) — OpenAI strict json_schema.
-# Modelled on classifier/prompts.CLASSIFICATION_JSON_SCHEMA: strict mode
-# requires ``additionalProperties: false`` and every property listed in
-# ``required`` at every object level.
-# ---------------------------------------------------------------------------
+# OpenAI strict json_schema mode requires ``additionalProperties: false`` and
+# every property listed in ``required`` at every object level.
 
-#: Strict schema for the planner's retrieval-plan-OR-clarify output.
-#:
-#: The planner emits a JSON object with two keys:
-#: - ``specs``: an array of PlannedSpec objects (one per planned search).  On a
-#:   clarify response this array is empty; the clarify path is signalled only via
-#:   the ``clarify`` field.
-#: - ``clarify``: null on a normal plan; ``{"reason": "..."}`` when the model
-#:   judges the query obviously inadequate.
-#:
-#: Each spec in ``specs`` has:
-#: - ``mode``: ``"semantic"`` or ``"keyword"``.
-#: - ``semantic``: text to embed for a semantic spec; null for a keyword spec.
-#: - ``keywords``: verbatim FTS terms for a keyword spec; empty for semantic.
-#: - ``filter_guess``: free-text filter guesses (correspondent, document_type,
-#:   tags, date_from, date_to) — code resolves them, never the LLM.
-#: - ``rationale``: one-line explanation for why this spec exists.
+#: Strict schema for the planner's output: ``specs``, plus ``clarify`` (null on
+#: a normal plan, ``{"reason": ...}`` when the query is obviously inadequate,
+#: with ``specs`` empty).
 PLANNER_JSON_SCHEMA: dict[str, object] = {
     "name": "search_query_plan",
     "strict": True,
@@ -123,8 +72,6 @@ PLANNER_JSON_SCHEMA: dict[str, object] = {
                     ],
                 },
             },
-            # Adequacy gate (Layer 1): null on a normal plan; an object with a
-            # ``reason`` string when the model judges the query inadequate.
             "clarify": {
                 "anyOf": [
                     {
@@ -141,11 +88,9 @@ PLANNER_JSON_SCHEMA: dict[str, object] = {
     },
 }
 
-#: Strict schema for the synthesiser's discriminated Answered | NeedsMore union.
-#: A single required-superset object (not a oneOf): ``outcome`` discriminates; the
-#: branch-specific fields are all required and filled empty when unused — the
-#: existing tolerant parser (synthesizer._parse_response) already reads it this
-#: way, and final-mode coercion stays in code, never in the schema (spec §4.2).
+#: Strict schema for the synthesiser's Answered | NeedsMore outcome. One object
+#: with every field required (not a oneOf): ``outcome`` discriminates and unused
+#: fields are filled empty. Final-mode coercion stays in code, not the schema.
 SYNTHESISER_JSON_SCHEMA: dict[str, object] = {
     "name": "search_answer_outcome",
     "schema": {
@@ -194,10 +139,8 @@ JUDGE_JSON_SCHEMA: dict[str, object] = {
 def _planner_response_format(settings: Settings) -> dict[str, object] | None:
     """Return the planner ``response_format`` for OpenAI, else ``None``.
 
-    Mirrors ``classifier/provider.ClassificationProvider._response_format``: the
-    strict ``json_schema`` is OpenAI-only; gated on the planner step's *own*
-    provider so a planner on Ollama relies on the prompt instruction plus
-    ``extract_json_object`` (RAG-06, spec §4.1).
+    Strict ``json_schema`` is OpenAI-only; on Ollama the planner relies on the
+    prompt instruction plus ``extract_json_object``.
     """
     if settings.SEARCH_PLANNER_PROVIDER != "openai":
         return None
@@ -205,29 +148,21 @@ def _planner_response_format(settings: Settings) -> dict[str, object] | None:
 
 
 def _synthesiser_response_format(settings: Settings) -> dict[str, object] | None:
-    """Return the synthesiser ``response_format`` for OpenAI, else ``None``
-    (gated on the answer step's own provider)."""
+    """Return the synthesiser ``response_format`` for OpenAI, else ``None``."""
     if settings.SEARCH_ANSWER_PROVIDER != "openai":
         return None
     return {"type": "json_schema", "json_schema": SYNTHESISER_JSON_SCHEMA}
 
 
 def _judge_response_format(settings: Settings) -> dict[str, object] | None:
-    """Return the judge ``response_format`` for OpenAI, else ``None`` — gated on
-    the judge step's own provider (Ollama relies on the prompt instruction plus
-    ``extract_json_object``)."""
+    """Return the judge ``response_format`` for OpenAI, else ``None``."""
     if settings.SEARCH_JUDGE_PROVIDER != "openai":
         return None
     return {"type": "json_schema", "json_schema": JUDGE_JSON_SCHEMA}
 
 
-# ---------------------------------------------------------------------------
-# Planner prompt
-# ---------------------------------------------------------------------------
-
-#: The byte-stable planner system prompt — no per-call variable, so it is a
-#: stable, cacheable prefix across every query and every day (RAG-09, spec §4.3).
-#: Today's date lives in the user turn (:func:`build_planner_user_message`).
+#: Kept free of per-call variables so it stays a cacheable prefix; today's date
+#: goes in the user turn (:func:`build_planner_user_message`).
 PLANNER_SYSTEM_PROMPT: str = """
 You are a search-query planning engine.  Your sole job is to analyse the user's
 search query and produce a structured JSON object that drives a hybrid retrieval
@@ -349,9 +284,8 @@ jurisdiction or tax-year boundaries.
 def _sorted_capped_names(entries: tuple[TaxonomyEntry, ...], limit: int) -> list[str]:
     """Alphabetical (case-insensitive), de-duplicated names, capped at *limit*.
 
-    The search :class:`~store.models.FacetSet` carries no usage counts, so
-    ordering is alphabetical — deterministic and byte-stable so the rendered
-    block stays cacheable across calls. ``limit <= 0`` means no cap.
+    The facets carry no usage counts, so the order is alphabetical, which also
+    keeps the rendered block stable and cacheable. ``limit <= 0`` means no cap.
     """
     seen: set[str] = set()
     names: list[str] = []
@@ -368,14 +302,8 @@ def _sorted_capped_names(entries: tuple[TaxonomyEntry, ...], limit: int) -> list
 def build_planner_taxonomy_block(facets: FacetSet, limit: int) -> str:
     """Render the live taxonomy as names-only JSON arrays for the planner.
 
-    Mirrors :meth:`classifier.provider.ClassifierProvider._taxonomy_block`: names
-    only (the planner resolves names -> ids downstream), three sections. Lives in
-    the cacheable prefix of the planner user turn, ahead of the volatile date, so
-    it is cached while the taxonomy is unchanged.
-
-    When ``limit`` is a positive cap, a trailing note tells the model the lists
-    are truncated and it may use a correct name even if it is not shown — the
-    resolver still matches such a name against the *full* taxonomy.
+    When ``limit`` caps the lists, a note tells the model it may still use an
+    unlisted name: the resolver matches against the full taxonomy.
     """
     corr = _sorted_capped_names(facets.correspondents, limit)
     types = _sorted_capped_names(facets.document_types, limit)
@@ -404,23 +332,9 @@ def build_planner_user_message(
 ) -> str:
     """Assemble the planner user-role message: taxonomy, date, optional asker, query.
 
-    The optional *taxonomy_block* (the live correspondent/type/tag lists) is
-    prepended *ahead of* the volatile date so the cacheable prefix covers the
-    system prompt plus the taxonomy; the date then breaks the cache exactly as
-    before. When *asker* is set, an identity line tells the planner who is asking
-    so it can resolve first-person references **in the semantic query text only**
-    — never as the correspondent filter (the archive owner is the recipient of
-    their documents, never the correspondent). With no *taxonomy_block* and no
-    *asker* the message is byte-identical to the pre-identity behaviour.
-
-    Args:
-        query: The raw user search query.
-        today: Today's date in YYYY-MM-DD form.
-        asker: The sanitised asker identity, or None for anonymous queries.
-        taxonomy_block: The rendered taxonomy lists, or "" to omit them.
-
-    Returns:
-        The formatted user message string.
+    The taxonomy goes ahead of the date so the cacheable prefix covers it. The
+    asker resolves first-person references in the semantic text only, never as
+    the correspondent: the archive owner receives their documents.
     """
     identity = (
         f"\nThe person asking is {asker}. Resolve first-person references "
@@ -436,21 +350,7 @@ def build_planner_user_message(
 
 
 def _render_prior_spec(index: int, spec: RetrievalSpec) -> str:
-    """Render one already-tried resolved spec into a compact human-readable line.
-
-    Shows the spec's mode, its semantic query (or joined keywords), and any
-    filter guesses that were resolved (correspondent / document-type ids, tags,
-    date bounds). The model only needs enough to recognise *what was already
-    tried* so it can produce something different — not the raw taxonomy ids in
-    full fidelity.
-
-    Args:
-        index: The 1-based position of this spec in the prior plan.
-        spec: A resolved :class:`~search.models.RetrievalSpec`.
-
-    Returns:
-        A single-line summary string.
-    """
+    """Render one already-tried spec as a compact line, so the re-plan avoids it."""
     query_text = spec.semantic if spec.mode == "semantic" else " ".join(spec.keywords)
     filters = spec.filters
     filter_parts: list[str] = []
@@ -478,28 +378,11 @@ def build_replan_user_message(
     asker: str | None = None,
     taxonomy_block: str = "",
 ) -> str:
-    """Assemble the re-plan user message: a richer turn that targets a gap.
+    """Assemble the re-plan user message that asks for different specs.
 
-    Reuses the byte-stable :data:`PLANNER_SYSTEM_PROMPT`; this user turn carries
-    the extra context the re-plan needs: the optional taxonomy block (prepended
-    ahead of the volatile date, as in :func:`build_planner_user_message`),
-    today's date, the optional asker identity line (same semantic-only wording —
-    never set the correspondent to the asker), the original query, a compact
-    rendering of the specs already tried, the titles of the documents already
-    found, the gap to close (the synthesiser's hint), and an explicit
-    instruction to produce *different* specs that target the gap.
-
-    Args:
-        query: The raw user search query.
-        today: Today's date in YYYY-MM-DD form.
-        hint: The synthesiser's adjustment hint — the gap to close.
-        prior_specs: The resolved specs already tried in the first pass.
-        prior_findings: Titles of the documents already found (may be empty).
-        asker: The sanitised asker identity, or None for anonymous queries.
-        taxonomy_block: The rendered taxonomy lists, or "" to omit them.
-
-    Returns:
-        The formatted re-plan user message string.
+    Laid out like :func:`build_planner_user_message`, plus the specs already
+    tried, the titles already found (*prior_findings*), and the gap to close
+    (*hint*).
     """
     identity = (
         f"\nThe person asking is {asker}. Resolve first-person references "
@@ -533,25 +416,12 @@ def build_replan_user_message(
     )
 
 
-# ---------------------------------------------------------------------------
-# Synthesiser prompt
-# ---------------------------------------------------------------------------
-
-# The trigger phrase that switches the synthesiser into final mode.  The system
-# prompt instructs the model to always answer when it sees this phrase, and
-# build_synthesiser_user_message emits it verbatim when final=True.  Both sites
-# interpolate this one constant, so the two can never drift out of step
-# (CODE_GUIDELINES.md §3.5).
+# The phrase that switches the synthesiser into final mode. Both the system
+# prompt and the user message interpolate it, so they cannot drift apart.
 _FINAL_MODE_TRIGGER: str = "FINAL — you must answer"
 
-# The system prompt is control-plane only — it contains no retrieved content.
-# Retrieved chunks are injected into the *user* message, after the question and
-# inside a data block fenced by an unpredictable per-message nonce.  The system
-# prompt tells the model that everything between the two nonce fences is data,
-# never instructions — the injection-safe pattern required by
-# CODE_GUIDELINES.md §10.2.
-#: The static synthesiser system prompt.  Referenced directly by the synthesiser;
-#: exposed as a public constant because it is intentionally used by importers.
+#: Control text only: retrieved chunks arrive in the user message, inside the
+#: nonce fences this prompt tells the model to treat as data.
 SYNTHESISER_SYSTEM_PROMPT: str = """
 You are an answer-synthesis engine for a personal document archive.
 Your job is to read the user's question and the retrieved document chunks,
@@ -623,23 +493,17 @@ Use British English throughout.  Be concise; avoid padding.
 """.strip().replace("FINAL_MODE_TRIGGER", _FINAL_MODE_TRIGGER)
 
 
-# The label woven into the per-message data fence built by
-# common.prompt_fences.build_data_fence — it produces "<<<DATA nonce>>>" and the
-# matching "<<<END DATA nonce>>>" the system prompt above describes.  The nonce
-# is far beyond any chunk's ability to guess or reproduce, so a chunk cannot
-# forge the closing fence and break out of the data region.
+# Yields the "<<<DATA nonce>>>" / "<<<END DATA nonce>>>" fences the prompts
+# describe.
 _DATA_FENCE_LABEL: str = "DATA"
 
 
 def _chunk_header(document_id: int, title: str | None, created: str | None) -> str:
     """Render a chunk's labelled header — ``[id] <title> (<date>)`` when known.
 
-    The title and date come from our own index (never the chunk body), so the
-    header stays control text even though it sits inside the data region. A
-    document with no title falls back to the bare ``[id]`` label (the
-    pre-metadata behaviour); a known title without a date drops the trailing
-    ``(<date>)`` segment. The date is trimmed to its ``YYYY-MM-DD`` prefix — the
-    time-of-day in an ISO timestamp adds noise the model does not need.
+    The title and date come from our own index, never the chunk body, so the
+    header adds no injection surface even inside the data region. The date is
+    trimmed to ``YYYY-MM-DD``.
     """
     if not title:
         return f"[{document_id}]"
@@ -658,56 +522,16 @@ def build_synthesiser_user_message(
 ) -> str:
     """Assemble the user-role message for the synthesiser LLM call.
 
-    The message is laid out **control plane first**, then untrusted data, so a
-    malicious chunk cannot escape its data region or forge the boundary
-    (SRCH-01, CODE_GUIDELINES.md §10.2):
-
-    1. **Control plane** — the ``Question:`` line, any final-mode directive,
-       optional identity directive (before the data fence, never inside it), and
-       an instruction telling the model that everything between the two fence
-       markers is untrusted data.
-    2. **Data plane** — the retrieved chunk texts, each labelled
-       ``[document_id] <title> (<date>)`` when the document's metadata is known
-       (so the model can attribute and reconcile across documents — Phase 3B),
-       falling back to a bare ``[document_id]`` label otherwise.  The labelled
-       header is *our* control text (it comes from our store via
-       *documents_by_id*, never from the chunk body), so it adds no injection
-       surface even though it sits inside the data region.  The texts are
-       wrapped between an opening ``<<<DATA {nonce}>>>`` and a closing
-       ``<<<END DATA {nonce}>>>`` fence.  The *nonce* is a fresh random token
-       per message, so a chunk cannot reproduce the closing fence to end the
-       data region early, and a chunk that embeds boundary-shaped text (a bare
-       ``---``, a forged ``Question:``) reads as data — the model is told the
-       data region ends only at the matching nonce fence, which the chunk cannot
-       see.
+    Control text first (the question, final-mode and identity directives), then
+    the chunks inside a nonce fence. Boundary-shaped text in a chunk (a bare
+    ``---``, a forged ``Question:``) reads as data, because the region ends only
+    at the matching nonce fence.
 
     Args:
-        query: The user's original search query.
-        labelled_chunks: A list of (document_id, chunk_text) pairs to include
-            as context.  Each chunk is labelled with its document id so the
-            model can cite [n] references.
-        final: When True, appends a directive that forces the model to produce
-            an "answered" outcome even on thin context (used in the final
-            synthesis pass of the bounded loop — spec §6.3).
-        asker: The sanitised asker identity, or None. When set, a directive is
-            added to the control plane (before the data fence) so the model can
-            resolve first-person references and address the asker as "you".
-            When None the message is byte-identical to the pre-identity
-            behaviour.
-        documents_by_id: Optional ``{document_id: (title, created)}`` look-up
-            (sourced from our index, not the chunk text) used to enrich each
-            chunk's labelled header with the document's title and date.  A
-            document absent from the map, or carrying a ``None`` title, falls
-            back to the bare ``[document_id]`` label — preserving the
-            pre-metadata behaviour.
-
-    Returns:
-        The formatted user message string.
+        final: Force an "answered" outcome even on thin context.
+        documents_by_id: Optional ``{document_id: (title, created)}`` from the
+            index, used to label each chunk with its document's title and date.
     """
-    # The directive opens with _FINAL_MODE_TRIGGER — the same constant the
-    # system prompt's "Final-mode rule" interpolates — so the model keys
-    # final-mode behaviour off a phrase defined in exactly one place.  It sits
-    # in the control plane, above the untrusted data.
     final_directive = (
         f"\n\n{_FINAL_MODE_TRIGGER}: provide your best answer based on the "
         "document chunks below, or state honestly that no relevant information "
@@ -716,10 +540,6 @@ def build_synthesiser_user_message(
         else ""
     )
 
-    # Identity directive: placed in the control plane (before the data fence)
-    # so the model can resolve first-person references and address the asker
-    # naturally. When asker is None the message is byte-identical to the
-    # pre-identity behaviour (no identity injection).
     identity_directive = (
         f"\n\nThe person asking is {asker}. Resolve first-person references in "
         'the question to them, and you may address them as "you". Do not '
@@ -736,11 +556,8 @@ def build_synthesiser_user_message(
         chunks_section_parts.append(f"{header}\n{chunk_text}")
     chunks_section = "\n\n".join(chunks_section_parts)
 
-    # A fresh nonce per message: a document chunk cannot see or reproduce it, so
-    # it cannot forge the closing fence to break out of the data region or
-    # introduce a control marker that reads as instructions (SRCH-01, §10.2).
-    # The nonce is built here, after the chunk text exists, so the content can
-    # never contain it.
+    # A fresh nonce per message, built after the chunk text exists, so the
+    # content can never contain it.
     fence = build_data_fence(label=_DATA_FENCE_LABEL)
 
     control_plane = (
@@ -753,15 +570,8 @@ def build_synthesiser_user_message(
     return f"{control_plane}\n\n{fence.wrap(chunks_section)}"
 
 
-# ---------------------------------------------------------------------------
-# Judge prompt (Layer 3 — cheap pre-synthesis document-relevance screen)
-# ---------------------------------------------------------------------------
-
-#: The static judge system prompt. Control-plane only (no retrieved content);
-#: candidate documents arrive in the user message, fenced by a per-message nonce
-#: exactly like the synthesiser (SRCH-01, CODE_GUIDELINES.md §10.2). The opening
-#: phrase "document-relevance judge" is the routing key the scripted test client
-#: keys off, mirroring the planner/synthesiser phrases.
+#: Fenced like the synthesiser. The opening phrase "document-relevance judge" is
+#: the key the scripted test client routes on.
 JUDGE_SYSTEM_PROMPT: str = """
 You are a document-relevance judge for a personal document archive.
 Your sole job is to decide which of the retrieved candidate documents could
@@ -827,11 +637,8 @@ Use British English.
 def _render_judge_candidate(candidate: JudgeCandidate) -> str:
     """Render one judge candidate: its id, a metadata line, then the snippet.
 
-    The metadata line names only the fields that are present —
-    ``title: ... | date: ... | from: ... | type: ...`` — so a document missing
-    a title, date, correspondent, or type drops that segment rather than showing
-    a bare ``None``. When no metadata at all is present the line is omitted, so
-    a snippet-only candidate renders exactly as it did before metadata existed.
+    The metadata line (``title: ... | date: ... | from: ... | type: ...``) names
+    only the fields present, and is omitted when none are.
     """
     segments: list[str] = []
     if candidate.title is not None:
@@ -858,34 +665,12 @@ def build_judge_user_message(
 ) -> str:
     """Assemble the judge user-role message: question first, then fenced candidates.
 
-    Control-plane-first, then untrusted data inside a per-message nonce fence —
-    the same injection-safe layout as the synthesiser (SRCH-01, §10.2). Each
-    candidate is labelled ``[document_id]`` so the verdict can name ids.
-
-    When *asker* is set, an identity line is added to the control plane so the
-    judge knows who is asking; a document whose content is consistent with that
-    person is treated as theirs even when the title does not repeat their name.
-    When *today* is set, a date line is added so the judge can resolve relative
-    temporal language. Both sit in the control plane (before the data fence) —
-    never inside it — preserving the injection-safe layout (SRCH-01, §10.2).
-    When both are ``None`` the message is byte-identical to the pre-identity
-    behaviour.
+    Same layout as the synthesiser: the optional date and asker lines and the
+    question come before the fence, the candidates inside it.
 
     Args:
-        query: The user's original search query.
-        candidates: The document-level candidates (id + best-chunk snippet).
-        include_reasons: When ``True`` (the default), the judge is asked to
-            write a one-line reason per verdict. When ``False``, a control-plane
-            instruction tells it to leave every reason empty — saving a few
-            tokens per query when rationales are disabled via
-            ``SEARCH_JUDGE_RATIONALES``.
-        asker: The sanitised asker identity, or ``None`` for anonymous queries.
-            When set, an identity line is prepended to the control plane.
-        today: Today's date in YYYY-MM-DD form, or ``None``. When set, a date
-            line is prepended to the control plane.
-
-    Returns:
-        The formatted user message string.
+        include_reasons: When ``False``, tell the judge to leave every reason
+            empty, saving tokens when ``SEARCH_JUDGE_RATIONALES`` is off.
     """
     candidate_parts = [_render_judge_candidate(c) for c in candidates]
     candidates_section = "\n\n".join(candidate_parts)

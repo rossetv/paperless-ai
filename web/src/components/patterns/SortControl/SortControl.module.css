@@ -1,10 +1,3 @@
-/*
- * SortControl pattern — CSS Module.
- *
- * An inline labelled dropdown: a bordered surface pill (`Sort: Title ▾`) that
- * opens a small radio menu beneath it. All values are design tokens.
- */
-
 .sort-control {
   position: relative;
   display: inline-block;
@@ -30,12 +23,10 @@
   outline-offset: var(--spacing-1);
 }
 
-/* The "Sort" prefix label — muted. */
 .label {
   color: var(--colour-text-tertiary);
 }
 
-/* The current selection — emphasised. */
 .value {
   color: var(--colour-text-primary);
   font-weight: var(--font-weight-caption-bold);
@@ -51,7 +42,6 @@
   transform: rotate(180deg);
 }
 
-/* ── The dropdown menu ── */
 .menu {
   position: absolute;
   z-index: var(--z-dropdown);
@@ -89,7 +79,6 @@
   outline: none;
 }
 
-/* The currently selected menu item. */
 .item-selected {
   color: var(--colour-text-primary);
   font-weight: var(--font-weight-caption-bold);

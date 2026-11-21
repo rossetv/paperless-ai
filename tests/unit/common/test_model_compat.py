@@ -1,9 +1,7 @@
-"""Tests for common.model_compat — the per-model rejected-parameter cache.
+"""Tests for common.model_compat, the per-model rejected-parameter cache.
 
-The cache is a process-lifetime singleton (CODE_GUIDELINES §8.5): unsupported
-parameters are a property of the model/API, not of any caller, so every daemon
-worker in a process shares one cache. These tests pin the singleton's
-record/get/reset contract and its thread-safety.
+The cache is process-wide: unsupported parameters belong to the model, not to
+any caller, so every worker in a process shares it.
 """
 
 from __future__ import annotations
@@ -66,7 +64,6 @@ class TestReset:
 
 class TestThreadSafety:
     def test_concurrent_records_do_not_corrupt_the_cache(self, cache):
-        """N threads each record a distinct param for one model; all survive."""
         params = [f"param_{i}" for i in range(50)]
         barrier = threading.Barrier(len(params))
         errors: list[Exception] = []

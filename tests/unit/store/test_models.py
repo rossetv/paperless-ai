@@ -1,9 +1,4 @@
-"""Tests for store.models — the store-boundary dataclass shapes.
-
-Covers the Wave 5 browse dataclasses: DocumentSummary carries page_count,
-DocumentBrowseQuery carries the browse parameters, and DocumentPage carries
-the rows plus the total match count. All three are frozen.
-"""
+"""Tests for the store.models browse dataclasses."""
 
 from __future__ import annotations
 
@@ -15,7 +10,6 @@ from store.models import DocumentBrowseQuery, DocumentPage, DocumentSummary
 
 
 def test_document_summary_carries_page_count() -> None:
-    """DocumentSummary exposes page_count alongside the resolved names."""
     summary = DocumentSummary(
         id=1,
         title="Invoice",
@@ -30,7 +24,6 @@ def test_document_summary_carries_page_count() -> None:
 
 
 def test_document_summary_is_frozen() -> None:
-    """DocumentSummary is immutable — a store-boundary shape."""
     summary = DocumentSummary(
         id=1,
         title=None,
@@ -45,7 +38,6 @@ def test_document_summary_is_frozen() -> None:
 
 
 def test_document_browse_query_holds_browse_parameters() -> None:
-    """DocumentBrowseQuery carries filters, sort, pagination and the text query."""
     query = DocumentBrowseQuery(
         text="gas",
         date_from="2024-01-01",
@@ -65,7 +57,6 @@ def test_document_browse_query_holds_browse_parameters() -> None:
 
 
 def test_document_page_carries_rows_and_total() -> None:
-    """DocumentPage pairs the page rows with the full match count."""
     summary = DocumentSummary(
         id=1,
         title="Invoice",

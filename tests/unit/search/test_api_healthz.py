@@ -1,19 +1,4 @@
-"""Unit tests for the search server's healthz endpoint and concurrency cap.
-
-Covers (spec §4.7, §7.4):
-
-- ``evaluate_index_health`` — the pure three-state decision helper.
-- GET /api/healthz — 503 index-not-ready when the DB file is absent, the
-  schema is missing, or the index has never been reconciled; 503
-  index-corrupt when quick_check fails; 200 when healthy.  healthz is
-  unauthenticated.
-- The SEARCH_MAX_CONCURRENT semaphore caps in-flight /api/search requests.
-
-Split from :mod:`test_api` for the 500-line ceiling (CODE_GUIDELINES §3.1).
-healthz now distinguishes "schema missing" from "corrupt" through the typed
-``SchemaNotReadyError`` — these tests raise that typed exception, not a
-generic StoreError with a hand-attached sqlite3 cause.
-"""
+"""Tests for the search server's healthz endpoint and concurrency cap."""
 
 from __future__ import annotations
 
@@ -64,11 +49,6 @@ def _bearer_headers(raw_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {raw_key}"}
 
 
-# ---------------------------------------------------------------------------
-# evaluate_index_health — the pure three-state decision helper
-# ---------------------------------------------------------------------------
-
-
 class TestEvaluateIndexHealth:
     """The three-state index-health evaluation, exercised in isolation."""
 
@@ -117,11 +97,6 @@ class TestEvaluateIndexHealth:
         assert evaluate_index_health(store_reader).state == "index-corrupt"
 
 
-# ---------------------------------------------------------------------------
-# Healthz endpoint — three states over HTTP
-# ---------------------------------------------------------------------------
-
-
 def test_healthz_returns_503_when_db_absent() -> None:
     """GET /api/healthz returns 503 index-not-ready when the DB does not exist."""
     client = build_test_client(
@@ -137,10 +112,8 @@ def test_healthz_returns_503_when_db_present_but_schema_missing(
 ) -> None:
     """GET /api/healthz returns 503 index-not-ready when the DB has no schema.
 
-    sqlite3.connect auto-creates an empty DB file when the directory is
-    writable, so a present-but-empty file is NOT a sign the index is ready.
-    StoreReader.get_stats raises the typed SchemaNotReadyError for that case;
-    the handler maps it to index-not-ready, not index-corrupt or 200.
+    sqlite3.connect creates an empty file when the directory is writable, so a
+    present-but-empty file does not mean the index is ready.
     """
     db_path = tmp_path / "index.db"
     db_path.write_bytes(b"")  # Empty file — no schema written yet.
@@ -177,8 +150,7 @@ def test_healthz_returns_503_when_schema_present_but_never_reconciled(
 def test_healthz_returns_503_when_index_corrupt(tmp_path: Path) -> None:
     """GET /api/healthz returns 503 index-corrupt when quick_check fails.
 
-    The DB must have a schema and a reconcile timestamp so the corruption
-    check is reached; a file that merely exists is no longer sufficient.
+    The DB needs a schema and a reconcile timestamp for the corruption check to run.
     """
     db_path = tmp_path / "index.db"
     db_path.write_bytes(b"")
@@ -197,12 +169,7 @@ def test_healthz_returns_503_when_index_corrupt(tmp_path: Path) -> None:
 
 
 def test_healthz_returns_200_when_healthy(tmp_path: Path) -> None:
-    """GET /api/healthz returns 200 when the index is populated, reconciled, healthy.
-
-    The handler confirms: schema present (get_stats succeeds), at least one
-    reconciliation completed (last_reconcile_at set), integrity passes
-    (quick_check True).
-    """
+    """GET /api/healthz returns 200 when the index is populated, reconciled, healthy."""
     db_path = tmp_path / "index.db"
     db_path.write_bytes(b"")
     store_reader = MagicMock()
@@ -222,20 +189,14 @@ def test_healthz_returns_200_when_healthy(tmp_path: Path) -> None:
 def test_healthz_does_not_require_auth() -> None:
     """GET /api/healthz must be accessible without authentication."""
     client = build_test_client(_settings("/nonexistent/index.db"))
-    # No auth header — must not get 401.
     assert client.get("/api/healthz").status_code != 401
-
-
-# ---------------------------------------------------------------------------
-# Concurrency — SEARCH_MAX_CONCURRENT semaphore
-# ---------------------------------------------------------------------------
 
 
 def test_search_max_concurrent_semaphore_is_created_and_limits_search() -> None:
     """SEARCH_MAX_CONCURRENT creates an asyncio.Semaphore that caps /api/search.
 
-    Verified by checking that sequential requests within the limit all succeed.
-    The genuinely-concurrent behaviour is exercised by the async test below.
+    Only checks that sequential requests within the limit succeed; the async test
+    below exercises real concurrency.
     """
     core = MagicMock()
     core.answer.return_value = make_search_result()
@@ -254,15 +215,9 @@ def test_search_max_concurrent_semaphore_is_created_and_limits_search() -> None:
 async def test_semaphore_caps_concurrent_requests_to_max_concurrent() -> None:
     """The asyncio.Semaphore genuinely limits concurrent in-flight requests.
 
-    This test would fail if the semaphore were removed: it fires
-    ``SEARCH_MAX_CONCURRENT + 1`` concurrent coroutines against the ASGI app
-    (via ``httpx.AsyncClient``) and asserts that no more than
-    ``SEARCH_MAX_CONCURRENT`` requests are inside ``core.answer`` at once
-    (verified via a peak counter shared across the executor threads).  After
-    the blocking event is released, all requests complete with 200.
-
-    A single ``httpx.AsyncClient`` guarantees all requests share one event
-    loop and therefore one ``asyncio.Semaphore`` instance.
+    Fires ``SEARCH_MAX_CONCURRENT + 1`` concurrent requests and asserts no more than
+    ``SEARCH_MAX_CONCURRENT`` are inside ``core.answer`` at once. One
+    ``httpx.AsyncClient`` keeps them on one event loop, so they share one semaphore.
     """
     import asyncio
 

@@ -1,9 +1,6 @@
-"""Tests for trace + cost mapping in ``search.wire.search`` (spec §Telemetry).
+"""Tests for trace + cost mapping in ``search.wire.search``.
 
-Verifies that :func:`~search.wire.search.to_search_response` maps the
-:class:`~search.models.SearchTrace` and :class:`~search.models.CostSummary`
-that now ride on every ``SearchResult.stats`` into the wire response — including
-the ``None``-token / ``None``-cost passthrough for a non-LLM phase and the
+Covers the ``None`` token/cost passthrough for a non-LLM phase and the
 ``usd=None`` "unpriced" marker.
 """
 
@@ -104,8 +101,8 @@ def test_unpriced_cost_summary_maps_usd_none() -> None:
 def test_default_result_carries_an_empty_trace_and_zero_cost() -> None:
     """A plain make_search_result (defaulted stats) still produces trace/cost.
 
-    The new wire fields are required; the converter fills them from the
-    defaulted ``SearchStats.trace``/``cost`` so existing callers do not break.
+    The wire fields are required; the converter fills them from the defaulted
+    ``SearchStats.trace``/``cost``.
     """
     resp = to_search_response(make_search_result())
     assert resp.trace.phases == []

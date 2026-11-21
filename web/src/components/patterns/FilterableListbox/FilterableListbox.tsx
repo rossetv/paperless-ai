@@ -16,7 +16,10 @@ export interface FilterableItem<T extends string | number = string> {
 export interface FilterableListboxProps<T extends string | number = string> {
   /** Id root for ARIA associations (input, listbox, option ids derive from it). */
   id: string;
-  /** The full set of selectable items (the caller pre-filters out anything it does not want offered, e.g. already-selected tags in multi-select). */
+  /**
+   * The selectable items. The caller filters out anything it does not want
+   * offered, e.g. already-selected tags in multi-select.
+   */
   items: ReadonlyArray<FilterableItem<T>>;
   /**
    * The current selection used to mark options `aria-selected`. A single value
@@ -55,34 +58,21 @@ export interface FilterableListboxProps<T extends string | number = string> {
    */
   clearOption?: { label: string; onClear: () => void } | undefined;
   /**
-   * Additional names (beyond those in `items`) that suppress the "Create …" row
-   * when the query matches exactly. Use this when the caller pre-filters `items`
-   * (e.g. already-selected tags are excluded) but still wants to prevent creating
-   * a duplicate of an existing name that is absent from the visible list.
+   * Extra names that suppress the "Create …" row on an exact match, for names the
+   * caller filtered out of `items` (e.g. already-selected tags).
    */
   existingNames?: ReadonlyArray<string> | undefined;
-  /** Additional class names merged onto the root. */
   className?: string | undefined;
 }
 
 /**
  * Filtered, keyboard-navigable single- or multi-select ARIA combobox with an
- * optional create-new row. Backs `TaxonomyCombobox` (single-select) and
- * `TagEditor` (multi-select) — see DESIGN.md §11.5 / DD-5.
+ * optional create-new row. Backs `TaxonomyCombobox` (single) and `TagEditor` (multi).
  *
- * Closed, it renders a trigger button. Open, it renders a `role="combobox"`
- * filter input (`aria-expanded`, `aria-controls`, `aria-activedescendant`) above
- * a `role="listbox"` of `role="option"` rows. The full option set, in order, is:
- *   [ clear row ]  [ filtered items ]  [ "Create <query>" row ]
- * Each carries a synthetic activedescendant id so the highlight is announced.
- *
- * Keyboard:
- *  - ArrowDown / ArrowUp — move the highlight (wraps within the visible set).
- *  - Enter — activate the highlighted row (select / clear / create).
- *  - Escape — close without firing any callback; focus returns to the trigger.
- * The list also closes on a pointer-down outside the root (mirrors
- * SortControl / UserMenu). Domain-free; generic over the item value type `T`.
- * Tier: components/patterns (allowed deps: Icon primitive, lib/).
+ * Closed, it renders a trigger button; open, a `role="combobox"` filter input over
+ * a listbox whose rows are, in order: [clear] [filtered items] ["Create <query>"].
+ * ArrowUp/Down move the highlight (wrapping), Enter activates it, and Escape or a
+ * pointer-down outside closes it without firing a callback.
  */
 export function FilterableListbox<T extends string | number = string>({
   id,
@@ -123,10 +113,8 @@ export function FilterableListbox<T extends string | number = string>({
     () => items.filter((item) => item.label.toLowerCase().includes(q)),
     [items, q],
   );
-  // Suppress the create row when the query exactly matches an offered item's
-  // label (case-insensitive) OR any name in `existingNames` — creating a
-  // duplicate makes no sense, even if the matching item is absent from `items`
-  // (e.g. because the caller pre-filters out already-selected tags).
+  // No create row when the query exactly matches (case-insensitively) an offered
+  // label or any name in `existingNames`.
   const exactMatch = useMemo(
     () =>
       items.some((item) => item.label.toLowerCase() === q) ||
@@ -308,7 +296,7 @@ export function FilterableListbox<T extends string | number = string>({
                       highlighted && styles['highlighted'],
                     )}
                     // onMouseDown+preventDefault keeps the input focused so its
-                    // blur does not race the click (see DD-5 / TagEditor note).
+                    // blur does not race the click.
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => setHighlight(index)}
                     onClick={() => activateRow(row)}

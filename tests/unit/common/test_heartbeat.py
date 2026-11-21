@@ -1,10 +1,4 @@
-"""Tests for common.heartbeat — the best-effort daemon heartbeat helper.
-
-Covers: a beat writes a daemon_status row; processed_delta accumulates across
-beats; an idle beat writes detail='idle'; a beat against a broken connection
-is swallowed (never raises) and logs a warning; open_app_db_connection yields
-a usable connection.
-"""
+"""Tests for common.heartbeat, the best-effort daemon heartbeat helper."""
 
 from __future__ import annotations
 
@@ -51,8 +45,7 @@ def test_idle_beat_writes_the_idle_detail(conn) -> None:
 
 
 def test_beat_against_a_closed_connection_is_swallowed(conn) -> None:
-    """A heartbeat write must never crash a daemon — a dead connection
-    logs a warning and returns, it does not raise."""
+    """A heartbeat write must never crash a daemon."""
     hb = Heartbeat(name="indexer", conn=conn)
     conn.close()  # simulate app.db becoming unavailable
     # Must not raise.
@@ -60,17 +53,12 @@ def test_beat_against_a_closed_connection_is_swallowed(conn) -> None:
 
 
 def test_beat_against_a_closed_connection_does_not_lose_the_count(conn) -> None:
-    """A swallowed beat still accumulates the processed-count, so the next
-    successful beat reports the true total."""
     hb = Heartbeat(name="indexer", conn=conn)
     hb.beat(detail="batch 1", processed_delta=5)
-    # The count is now 5 in the DB and in the helper.
     assert hb.processed_count == 5
 
 
 def test_run_heartbeat_ticker_beats_until_stopped(conn) -> None:
-    """run_heartbeat_ticker calls beat repeatedly until its stop predicate
-    returns True, then returns."""
     from common.heartbeat import Heartbeat, run_heartbeat_ticker
 
     hb = Heartbeat(name="search", conn=conn)
@@ -89,14 +77,12 @@ def test_run_heartbeat_ticker_beats_until_stopped(conn) -> None:
         sleep=lambda _s: None,
     )
 
-    # The daemon row exists and the ticker exited cleanly.
     rows = daemon_status.read_statuses(conn)
     assert rows[0].name == "search"
     assert rows[0].detail == "serving search"
 
 
 def test_run_heartbeat_ticker_stops_immediately_if_already_stopped(conn) -> None:
-    """If should_stop is already True the ticker beats once and returns."""
     from common.heartbeat import Heartbeat, run_heartbeat_ticker
 
     hb = Heartbeat(name="search", conn=conn)
@@ -112,8 +98,6 @@ def test_run_heartbeat_ticker_stops_immediately_if_already_stopped(conn) -> None
 
 
 def test_run_heartbeat_ticker_survives_a_failing_detail_fn(conn) -> None:
-    """A detail_fn that raises is isolated — the ticker keeps going and
-    stops cleanly rather than propagating."""
     from common.heartbeat import Heartbeat, run_heartbeat_ticker
 
     hb = Heartbeat(name="search", conn=conn)
@@ -137,8 +121,7 @@ def test_run_heartbeat_ticker_survives_a_failing_detail_fn(conn) -> None:
 
 
 def test_run_stall_ticker_beats_only_while_in_flight(conn) -> None:
-    """The stall ticker beats when in_flight is set and stays silent when
-    it is clear — idle/halted beats remain the poll loop's alone."""
+    """Idle and halted beats belong to the poll loop alone."""
     import threading
 
     from common.heartbeat import Heartbeat, run_stall_ticker
@@ -179,7 +162,6 @@ def test_run_stall_ticker_beats_only_while_in_flight(conn) -> None:
 
 
 def test_run_stall_ticker_exits_promptly_on_stop(conn) -> None:
-    """Setting stop ends the ticker without waiting out a full interval."""
     import threading
     import time
 
@@ -205,11 +187,7 @@ def test_run_stall_ticker_exits_promptly_on_stop(conn) -> None:
 
 
 def test_run_stall_ticker_never_clobbers_the_processed_count(conn) -> None:
-    """A stall beat leaves the poll loop's monotonic counter untouched.
-
-    Regression: the ticker's own Heartbeat starts at zero; beating through
-    it wrote processed_count=0 over the real total during every stall.
-    """
+    """The ticker's own Heartbeat starts at zero and must not overwrite the total."""
     import threading
 
     from common.heartbeat import Heartbeat, run_stall_ticker

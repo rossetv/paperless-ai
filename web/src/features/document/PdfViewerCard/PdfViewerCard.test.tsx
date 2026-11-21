@@ -27,8 +27,7 @@ describe('PdfViewerCard', () => {
         downloadFilename="An invoice.pdf"
       />,
     );
-    // Download / Open-in-Paperless were moved out of the card to DocumentActions;
-    // the card only surfaces them in the load-error escape hatch (below).
+    // The card offers the actions only in the load-error state.
     expect(screen.queryByRole('link', { name: /download/i })).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /open in paperless/i }),
@@ -55,13 +54,11 @@ describe('PdfViewerCard', () => {
           downloadFilename="An invoice.pdf"
         />,
       );
-      // The frame never loads — surface the dark app error state.
       act(() => {
         vi.advanceTimersByTime(8000);
       });
       const alert = screen.getByRole('alert');
       expect(alert).toHaveTextContent(/couldn't load the preview/i);
-      // Escape hatches are offered inside the error state via DocumentActions.
       expect(
         screen.getByRole('link', { name: /download/i }).getAttribute('href'),
       ).toMatch(/\/api\/documents\/42\/pdf$/);

@@ -1,14 +1,4 @@
-"""Tests for src/search/models.py.
-
-Verifies:
-- Every dataclass is frozen (mutation raises FrozenInstanceError).
-- Every dataclass can be constructed with the documented fields.
-- AnswerOutcome discriminated union narrows correctly with isinstance checks.
-- ClarifyNeeded, RetrievalSignal, and PlanOutcome (Task 2 additions) behave
-  correctly.
-- SearchResult.outcome_kind defaults to "answered" and accepts explicit values.
-- PlannedSpec, RetrievalSpec, and RetrievalPlan (multi-spec plan dataclasses).
-"""
+"""Tests for search.models: the frozen result, plan and outcome dataclasses."""
 
 from __future__ import annotations
 
@@ -38,11 +28,6 @@ from tests.helpers.factories import (
     make_search_stats,
     make_source_document,
 )
-
-
-# ---------------------------------------------------------------------------
-# FilterCandidates
-# ---------------------------------------------------------------------------
 
 
 class TestFilterCandidates:
@@ -86,11 +71,6 @@ class TestFilterCandidates:
             fc.correspondent = "changed"  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# RetrievedChunk
-# ---------------------------------------------------------------------------
-
-
 class TestRetrievedChunk:
     def test_construction_with_all_fields(self) -> None:
         chunk = RetrievedChunk(
@@ -126,11 +106,6 @@ class TestRetrievedChunk:
         )
         with pytest.raises(Exception):  # FrozenInstanceError
             chunk.text = "changed"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# SourceDocument
-# ---------------------------------------------------------------------------
 
 
 class TestSourceDocument:
@@ -185,11 +160,6 @@ class TestSourceDocument:
             doc.score = 1.0  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# SearchStats
-# ---------------------------------------------------------------------------
-
-
 class TestSearchStats:
     def test_construction(self) -> None:
         stats = SearchStats(llm_calls=2, latency_ms=450, refined=True)
@@ -203,16 +173,10 @@ class TestSearchStats:
             stats.llm_calls = 99  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# SearchResult
-# ---------------------------------------------------------------------------
-
-
 class TestSearchResult:
     """SearchResult composes a SourceDocument, a RetrievalPlan, and SearchStats.
 
-    The composed parts are built via the shared factories (CODE_GUIDELINES
-    §11.5) — only SearchResult itself is the shape under test here.
+    The parts come from the shared factories; only SearchResult is under test.
     """
 
     def test_construction(self) -> None:
@@ -241,11 +205,6 @@ class TestSearchResult:
             search_result.answer = "changed"  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# Answered
-# ---------------------------------------------------------------------------
-
-
 class TestAnswered:
     def test_construction(self) -> None:
         answered = Answered(
@@ -261,11 +220,6 @@ class TestAnswered:
             answered.answer = "changed"  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# NeedsMore
-# ---------------------------------------------------------------------------
-
-
 class TestNeedsMore:
     def test_construction(self) -> None:
         needs_more = NeedsMore(adjustment="broaden date range to 2018–2025")
@@ -275,11 +229,6 @@ class TestNeedsMore:
         needs_more = NeedsMore(adjustment="original")
         with pytest.raises(Exception):  # FrozenInstanceError
             needs_more.adjustment = "changed"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# AnswerOutcome discriminated union narrowing
-# ---------------------------------------------------------------------------
 
 
 class TestAnswerOutcome:
@@ -305,11 +254,6 @@ class TestAnswerOutcome:
         assert outcome.adjustment == "include earlier documents"
 
 
-# ---------------------------------------------------------------------------
-# ClarifyNeeded (Layer 1 fail-fast signal)
-# ---------------------------------------------------------------------------
-
-
 class TestClarifyNeeded:
     def test_construction(self) -> None:
         cn = ClarifyNeeded(reason="Query is too vague to produce a useful search plan.")
@@ -319,11 +263,6 @@ class TestClarifyNeeded:
         cn = ClarifyNeeded(reason="original reason")
         with pytest.raises(dataclasses.FrozenInstanceError):
             cn.reason = "changed"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# RetrievalSignal (Layer 2 fail-fast signal)
-# ---------------------------------------------------------------------------
 
 
 class TestRetrievalSignal:
@@ -343,11 +282,6 @@ class TestRetrievalSignal:
             sig.has_keyword_hit = False  # type: ignore[misc]
 
 
-# ---------------------------------------------------------------------------
-# PlanOutcome discriminated union narrowing
-# ---------------------------------------------------------------------------
-
-
 class TestPlanOutcome:
     def test_retrieval_plan_is_a_valid_plan_outcome(self) -> None:
         outcome: PlanOutcome = make_retrieval_plan()
@@ -358,11 +292,6 @@ class TestPlanOutcome:
         outcome: PlanOutcome = ClarifyNeeded(reason="too vague")
         assert isinstance(outcome, ClarifyNeeded)
         assert not isinstance(outcome, RetrievalPlan)
-
-
-# ---------------------------------------------------------------------------
-# SearchResult.outcome_kind discriminator field
-# ---------------------------------------------------------------------------
 
 
 class TestSearchResultOutcomeKind:
@@ -404,11 +333,6 @@ class TestSearchResultOutcomeKind:
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             result.outcome_kind = "clarify"  # type: ignore[misc]
-
-
-# ---------------------------------------------------------------------------
-# PlannedSpec (multi-spec plan dataclass — Phase 1)
-# ---------------------------------------------------------------------------
 
 
 def _make_filter_candidates(
@@ -499,11 +423,6 @@ class TestPlannedSpec:
         assert spec.rationale == "Keyword pass for exact account reference."
 
 
-# ---------------------------------------------------------------------------
-# RetrievalSpec (resolved, ready-for-store search)
-# ---------------------------------------------------------------------------
-
-
 class TestRetrievalSpec:
     def test_construction(self) -> None:
         sf = _make_search_filters(correspondent_id=7, tag_ids=(3, 9))
@@ -561,11 +480,6 @@ class TestRetrievalSpec:
         assert spec.filters.date_from == "2023-01-01"
         assert spec.filters.date_to == "2023-12-31"
         assert spec.filters.document_type_id == 2
-
-
-# ---------------------------------------------------------------------------
-# RetrievalPlan (the planner's structured output)
-# ---------------------------------------------------------------------------
 
 
 class TestRetrievalPlan:

@@ -1,14 +1,7 @@
-"""Integration tests for the SPA catch-all (§4.8).
+"""Integration tests for bearer rejection and the SPA deep-link catch-all.
 
-The SPA deep-link catch-all serves ``index.html`` for client-router paths
-such as ``/login`` and ``/setup`` so a hard refresh resolves.
-
-``search.api`` resolves ``FRONTEND_DIST`` at *import* time, so the SPA tests
-set the env var, build the app in a child process-free way by reloading the
-module, and restore the environment afterwards.
-
-Wave 3 note: the legacy SEARCH_API_KEY bearer tests are removed. The legacy
-bearer is retired as of Wave 3; programmatic access is by minted API keys.
+The catch-all serves ``index.html`` for client-router paths such as ``/login``
+so a hard refresh resolves.
 """
 
 from __future__ import annotations
@@ -48,17 +41,14 @@ def test_a_wrong_bearer_is_rejected_401(tmp_path: Path) -> None:
         app_db.close()
 
 
-# ---------------------------------------------------------------------------
 # SPA deep-link catch-all
-# ---------------------------------------------------------------------------
 
 
 def _build_spa_client(tmp_path: Path) -> TestClient:
     """Build the real app with a populated ``web/dist`` set via FRONTEND_DIST.
 
-    ``search.api`` reads ``FRONTEND_DIST`` at import time, so the env var is
-    set and the module reloaded before ``create_app`` is called. The caller
-    restores the environment in a ``finally`` block.
+    ``search.api`` reads ``FRONTEND_DIST`` at import time, so the module is
+    reloaded after setting it. The caller restores the environment.
     """
     dist = tmp_path / "dist"
     dist.mkdir()
@@ -76,9 +66,7 @@ def _build_spa_client(tmp_path: Path) -> TestClient:
 
     settings = make_settings(tmp_path)
     seed_store(settings)
-    # Migrate the app.db at settings.APP_DB_PATH so the app starts cleanly; the
-    # connection is closed at once — the app opens its own per request, and the
-    # SPA tests do not inspect app.db directly.
+    # Migrate app.db so the app starts cleanly; the app opens its own connections.
     open_app_db(tmp_path).close()
     store_reader = StoreReader(settings)
     app = search_api.create_app(

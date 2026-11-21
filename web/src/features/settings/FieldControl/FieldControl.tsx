@@ -1,15 +1,5 @@
 /**
- * FieldControl — renders the right-column control for one settings field.
- *
- * Extracted from SettingsSection so that other panels (e.g. ConnectionsPanel)
- * can reuse the same dispatch without duplicating the switch statement.
- *
- * For a `select` field with a `reasoningKey`, the component renders the
- * `SettingsSelectField` as normal, then a second line — a compact "Reasoning"
- * `Segmented` whose value comes from `reasoningValue` and whose onChange calls
- * `onChange(control.reasoningKey, v)`.
- *
- * Tier: features/settings — knows the field model, composes primitives + SecretField.
+ * The right-column control for one settings field, shared by SettingsSection and ConnectionsPanel.
  */
 
 import React from 'react';
@@ -24,36 +14,25 @@ import type { ConfigValue, SettingsField } from '../fieldModel';
 import styles from './FieldControl.module.css';
 
 export interface FieldControlProps {
-  /** The field descriptor from the field model. */
   field: SettingsField;
-  /** The current draft value for this field's key. */
   value: ConfigValue | undefined;
-  /**
-   * Called when the field's value changes. The key is always `field.key`,
-   * except for the companion reasoning segmented — in that case the key is
-   * `control.reasoningKey`.
-   */
+  /** The key is `field.key`, or `control.reasoningKey` for the companion reasoning segmented. */
   onChange: (key: string, value: ConfigValue | null) => void;
   /**
-   * The id to set on the underlying input element (for label association).
-   * Omit for controls that are not a single labellable element (Segmented,
-   * SecretField).
+   * The id for the underlying input, for label association. Omit for controls that are not a
+   * single labellable element (Segmented, SecretField).
    */
   controlId?: string;
   /**
-   * The current draft value for the companion reasoning-effort key.
-   * Only used when `field.control.kind === 'select'` and `control.reasoningKey`
-   * is set. Defaults to `''` (no selection) when omitted.
+   * The draft value for the companion reasoning-effort key; used only by a `select` with a
+   * `reasoningKey`. Defaults to `''` (no selection).
    */
   reasoningValue?: ConfigValue;
 }
 
 /**
- * Dispatch on `field.control.kind` and render the matching primitive.
- *
- * For a `select` control with a `reasoningKey`, renders the select plus a
- * companion "Reasoning" `Segmented` on a second line, bound to
- * `reasoningValue` / `onChange(control.reasoningKey, v)`.
+ * Renders the primitive matching `field.control.kind`. A `select` with a `reasoningKey` also
+ * gets a companion "Reasoning" `Segmented` on a second line.
  */
 export function FieldControl({
   field,
@@ -98,8 +77,8 @@ export function FieldControl({
       );
 
     case 'select': {
-      // Destructure the guarded values so TS narrows them without `!` (FE-54):
-      // both are present exactly when there is a non-empty reasoning option set.
+      // Destructured so TS narrows them without `!`: both are present exactly when there is a
+      // non-empty reasoning option set.
       const { reasoningKey, reasoningOptions } = control;
       const reasoning =
         reasoningKey !== undefined && (reasoningOptions?.length ?? 0) > 0

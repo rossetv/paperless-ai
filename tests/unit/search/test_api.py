@@ -1,26 +1,6 @@
-"""Unit tests for search.api — the FastAPI search server.
+"""Unit tests for search.api, the FastAPI search server.
 
-Covers the security-critical contracts (spec §7.1, §7.3, §7.4):
-
-- An unauthenticated POST /api/search → 401; a DB-backed API key Bearer token
-  authorises /api/search.
-- POST /api/search / GET /api/facets / GET /api/stats return correctly-mapped
-  wire responses; POST /api/reconcile writes the sentinel and returns 202.
-- The SPA catch-all never serves a path outside the frontend directory, and
-  the index DB is never web-reachable.
-- main() delegates per-process startup to ``common.bootstrap``.
-- POST /api/search returns 422 when query exceeds max length (MINOR 2).
-
-The username/password login handshake and the session-cookie path are
-exercised by the account integration suite (spec §4.8). The healthz
-three-state endpoint and the SEARCH_MAX_CONCURRENT semaphore are covered in
-:mod:`test_api_healthz` (split for the 500-line ceiling, §3.1).
-
-``build_test_client`` (see conftest.py) wraps the real ``create_app`` with a
-mock core, a mock store reader, and a fresh in-memory ``app.db``.
-
-Wave 3 note: the legacy SEARCH_API_KEY bearer is retired. Tests that relied on
-it now use a minted DB-backed API key or a session cookie.
+Healthz and the SEARCH_MAX_CONCURRENT cap are covered in :mod:`test_api_healthz`.
 """
 
 from __future__ import annotations
@@ -42,10 +22,6 @@ from tests.helpers.factories import (
 from tests.helpers.search import mint_api_key
 from tests.unit.search.conftest import build_test_client
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _settings(
     *, db_path: str = "/nonexistent/index.db", **overrides: object
@@ -55,13 +31,7 @@ def _settings(
 
 
 def _seed_api_key(settings: MagicMock) -> str:
-    """Seed a user and an API key in the app.db at *settings.APP_DB_PATH*.
-
-    Returns the raw key string for use as a Bearer token. The app.db is
-    already migrated by ``create_app`` inside ``build_test_client``, so this
-    function opens a second connection to the same file to insert the seed
-    rows — the established per-request connection pattern.
-    """
+    """Seed a user and an API key in *settings.APP_DB_PATH*; return the raw key."""
     from appdb.connection import connect
     from appdb.passwords import hash_password
     from appdb.users import create as create_user
@@ -99,11 +69,6 @@ def _seeded_facets() -> object:
     )
 
 
-# ---------------------------------------------------------------------------
-# Authentication — unauthenticated access is rejected
-# ---------------------------------------------------------------------------
-
-
 def test_unauthenticated_search_returns_401() -> None:
     """An unauthenticated POST /api/search must return 401."""
     client = build_test_client(_settings())
@@ -124,11 +89,6 @@ def test_unauthenticated_stats_returns_401() -> None:
 def test_unauthenticated_reconcile_returns_401() -> None:
     client = build_test_client(_settings())
     assert client.post("/api/reconcile").status_code == 401
-
-
-# ---------------------------------------------------------------------------
-# Authentication — bearer token authorises requests
-# ---------------------------------------------------------------------------
 
 
 def test_bearer_token_authorises_search() -> None:
@@ -152,11 +112,6 @@ def test_wrong_bearer_token_returns_401() -> None:
     assert response.status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# Reconcile — writes the sentinel file and returns 202
-# ---------------------------------------------------------------------------
-
-
 def test_reconcile_writes_sentinel_and_returns_202(tmp_path: Path) -> None:
     """POST /api/reconcile must touch the sentinel file and return 202."""
     settings = _settings(db_path=str(tmp_path / "index.db"))
@@ -178,11 +133,6 @@ def test_reconcile_does_not_write_index_db(tmp_path: Path) -> None:
     assert not (tmp_path / "index.db").exists(), (
         "Reconcile must never write the index DB."
     )
-
-
-# ---------------------------------------------------------------------------
-# Search — correct wire mapping
-# ---------------------------------------------------------------------------
 
 
 def test_search_returns_correctly_mapped_response() -> None:
@@ -254,11 +204,6 @@ def test_search_with_filters_passes_filters_to_core() -> None:
     assert 10 in ui_filters.tag_ids
 
 
-# ---------------------------------------------------------------------------
-# Facets — correct wire mapping
-# ---------------------------------------------------------------------------
-
-
 def test_facets_returns_correctly_mapped_response() -> None:
     """GET /api/facets must return a correctly-mapped FacetsResponse."""
     store_reader = MagicMock()
@@ -279,11 +224,6 @@ def test_facets_returns_correctly_mapped_response() -> None:
     assert body["tags"][0]["name"] == "important"
     assert body["earliest"] == "2020-01-01T00:00:00Z"
     assert body["latest"] == "2024-12-31T00:00:00Z"
-
-
-# ---------------------------------------------------------------------------
-# Stats — correct wire mapping
-# ---------------------------------------------------------------------------
 
 
 def test_stats_returns_correctly_mapped_response() -> None:
@@ -309,23 +249,15 @@ def test_stats_returns_correctly_mapped_response() -> None:
     assert body["embedding_model"] == "text-embedding-3-small"
 
 
-# ---------------------------------------------------------------------------
-# Security — index DB is never web-reachable
-# ---------------------------------------------------------------------------
-
-
 def test_index_db_is_not_served_over_http(tmp_path: Path) -> None:
     """The index DB must never be served via the SPA static mount.
 
-    The SPA catch-all serves a real file only when it resolves inside
-    ``web/dist``; ``/index.db`` does not, so the deep-link catch-all hands
-    back the SPA shell (``index.html``) instead. The index DB content is
-    never reachable over HTTP — that is the invariant under test.
+    ``/index.db`` does not resolve inside ``web/dist``, so the catch-all returns the
+    SPA shell instead.
     """
     db_path = tmp_path / "index.db"
     db_path.write_text("sensitive data")
-    # No auth needed — the SPA mount does not enforce authentication;
-    # the invariant is about path containment, not auth.
+    # No auth: the SPA mount is unauthenticated; the invariant is path containment.
     settings = _settings(db_path=str(db_path))
     client = build_test_client(settings)
 
@@ -336,12 +268,8 @@ def test_index_db_is_not_served_over_http(tmp_path: Path) -> None:
 def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
     """Path traversal on the SPA mount must not escape the frontend directory.
 
-    A percent-encoded ``..`` survives client-side URL normalisation and
-    reaches the catch-all as a literal traversal segment. ``register_spa``
-    resolves the candidate path and refuses to serve anything outside
-    ``web/dist`` — so a crafted path cannot read an out-of-tree file. The
-    catch-all falls back to the SPA shell; the probe file's content must
-    never appear in the response.
+    A percent-encoded ``..`` survives client-side URL normalisation and reaches the
+    catch-all as a literal traversal segment.
     """
     probe = tmp_path / "traversal_probe.txt"
     probe.write_text("out-of-tree-secret")
@@ -352,19 +280,11 @@ def test_path_traversal_on_static_mount_is_rejected(tmp_path: Path) -> None:
     assert "root:" not in response.text
 
 
-# ---------------------------------------------------------------------------
-# Entry point — main() delegates to the shared bootstrap
-# ---------------------------------------------------------------------------
-
-
 def test_main_runs_the_shared_process_bootstrap() -> None:
     """main() delegates startup to common.bootstrap.bootstrap_process().
 
-    The per-process startup — Settings, logging, the library singletons, the
-    signal handlers, and the LLM concurrency limiter — is defined once in
-    common.bootstrap and shared with the daemons.  This test fails if main()
-    stops calling it: re-inlining that sequence is what dropped
-    llm_limiter.init() and 500ed every /api/search query in production.
+    Inlining that sequence risks dropping a step such as llm_limiter.init(), which
+    makes every /api/search query fail with a 500.
     """
     from search.api import main
 
@@ -382,18 +302,10 @@ def test_main_runs_the_shared_process_bootstrap() -> None:
     mock_bootstrap.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# MINOR 2 regression — over-length query returns 422
-# ---------------------------------------------------------------------------
-
-
 def test_search_returns_422_when_query_exceeds_max_length() -> None:
     """POST /api/search returns 422 when query exceeds the 4000-character limit.
 
-    Pydantic enforces ``max_length=MAX_QUERY_LENGTH`` on SearchRequest.query;
-    this test confirms the constraint is present and active. The 422 fires
-    before the auth dependency runs in FastAPI (body-schema rejection), so no
-    key is required.
+    The body schema rejects it before the auth dependency runs, so no key is needed.
     """
     settings = _settings()
     client = build_test_client(settings)
@@ -406,21 +318,12 @@ def test_search_returns_422_when_query_exceeds_max_length() -> None:
     assert response.status_code == 422
 
 
-# ---------------------------------------------------------------------------
-# Heartbeat — opens the Settings-provided app.db, never the env default
-# ---------------------------------------------------------------------------
-
-
 def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> None:
-    """``_start_search_heartbeat`` must open ``settings.APP_DB_PATH``.
+    """``_start_search_heartbeat`` opens ``settings.APP_DB_PATH``, not the env default.
 
-    Regression: the heartbeat closure read ``os.environ["APP_DB_PATH"]``
-    (defaulting to ``/data/app.db``) instead of the ``Settings`` it was given.
-    On any deployment whose ``app.db`` lives elsewhere — or in a process where
-    that variable is unset — the search tile heartbeat wrote to the wrong file
-    (or the hard-coded default), so the Index dashboard reported the live
-    server as "stopped". This pins the path to the injected settings and proves
-    the stale env default is never consulted.
+    Reading ``os.environ["APP_DB_PATH"]`` would write the heartbeat to the wrong
+    file wherever app.db lives elsewhere, and the Index dashboard would report the
+    server as stopped.
     """
     from search.api import _start_search_heartbeat
 
@@ -434,8 +337,7 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
         opened_paths.append(path)
         return MagicMock()
 
-    # Force the env default to a different, wrong path: if the closure still
-    # read the environment, the assertion below would catch it pointing here.
+    # Point the env default at a wrong path so reading the environment is caught.
     with (
         patch("search.api.connect_app_db", side_effect=_record_connect),
         patch("search.api.ensure_app_db_schema"),
@@ -445,9 +347,8 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
         patch.dict("os.environ", {"APP_DB_PATH": "/data/wrong.db"}),
     ):
         stop_heartbeat = _start_search_heartbeat(settings)
-        # The heartbeat runs on a daemon thread the starter now owns: the
-        # returned stop callable sets the per-app event and joins only this
-        # call's thread — never the same-named threads other tests started.
+        # The returned stop callable joins only this call's thread, never the
+        # same-named threads other tests started.
         stop_heartbeat()
 
     assert opened_paths == [app_db_path]
@@ -457,11 +358,8 @@ def test_search_heartbeat_connects_to_settings_app_db_path(tmp_path: Path) -> No
 def test_search_heartbeat_stop_terminates_the_thread(tmp_path: Path) -> None:
     """The stop callable returned by ``_start_search_heartbeat`` ends the thread.
 
-    Regression: the ticker previously ran until the process-global shutdown
-    flag — which no test or lifespan exit ever set — so every app instance
-    leaked a live "search-heartbeat" thread for the rest of the process.
-    This drives the REAL ticker (no patch) and proves the per-app stop event
-    terminates it promptly.
+    Drives the real ticker so a leaked "search-heartbeat" thread per app instance
+    would fail the test.
     """
     from search.api import _start_search_heartbeat
 

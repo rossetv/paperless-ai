@@ -89,7 +89,6 @@ describe('LibraryCard', () => {
     const img = container.querySelector('img');
     expect(img).not.toBeNull();
     fireEvent.error(img!);
-    // After error the SVG fallback is rendered and the broken <img> is gone.
     expect(container.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(container.querySelector('img')).toBeNull();
   });

@@ -1,9 +1,4 @@
-/**
- * Tests for the useAuth hook.
- *
- * useAuth wraps the `useMe` react-query hook. These tests mock `useMe` so the
- * hook can be exercised without a QueryClient or network.
- */
+// `useMe` is mocked so the hook runs without a QueryClient or network.
 
 import { renderHook } from '@testing-library/react';
 import type { UseQueryResult } from '@tanstack/react-query';

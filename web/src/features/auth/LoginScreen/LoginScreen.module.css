@@ -1,17 +1,4 @@
-/*
- * LoginScreen feature — CSS Module.
- *
- * The dark "island" sign-in screen. Dark in BOTH light and dark themes, so
- * it uses the theme-INDEPENDENT forced-dark tokens (--colour-dark-*). A
- * two-column layout on desktop — brand + hero on the left, the sign-in
- * card on the right — collapses to a centred single column on tablet and
- * mobile, with the hero stacked above the card.
- *
- * Hero typography steps down across breakpoints (hero → heading → tile)
- * via fixed scale tokens; no raw font sizes anywhere.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Dark in both themes, so it uses the theme-independent --colour-dark-* tokens. */
 
 .screen {
   position: relative;
@@ -26,7 +13,6 @@
   overflow: hidden;
 }
 
-/* ── Aurora glows — soft radial brand light, never a full gradient. ── */
 .aurora,
 .aurora-far {
   position: absolute;
@@ -50,7 +36,6 @@
   );
 }
 
-/* ── Layout — two columns over the aurora. ── */
 .layout {
   position: relative;
   z-index: var(--z-base);
@@ -64,9 +49,7 @@
   box-sizing: border-box;
 }
 
-/* ── Left column — brand + hero.
-       Width is constrained by the grid column itself (1.05fr); we don't cap
-       further so the hero copy can breathe on wide displays. ── */
+/* Not capped beyond its grid column, so the copy breathes on wide displays. */
 .hero {
   width: 100%;
 }
@@ -117,7 +100,6 @@
   color: var(--colour-dark-text-secondary);
 }
 
-/* ── Right column — the sign-in card. ── */
 .card-column {
   display: flex;
   justify-content: flex-end;
@@ -150,15 +132,14 @@
   color: var(--colour-dark-text-secondary);
 }
 
-/* ── Form internals. ── */
 .form {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-13);
 }
 
-/* Password field — manual label + a relative wrap so the Show toggle can be
-   absolutely centred on the input itself (not on the label above it). */
+/* A manual label and a relative wrap, so the Show toggle centres on the input
+   rather than on the input plus label. */
 .password-field {
   display: flex;
   flex-direction: column;
@@ -179,31 +160,23 @@
   position: relative;
 }
 
-/* Extra right padding on the password input clears the in-field Show button
-   so typed characters never collide with it. */
+/* Clears the in-field Show button. */
 .password-input input {
   padding-right: var(--spacing-15);
 }
 
-/* In-field icon toggle — eye / eye-off. Vertically centred on the input
-   (top: half the input height) so the error message below the input never
-   pushes the toggle out of alignment. Only positioning is declared here;
-   visual chrome (background, border, sizing, focus ring, hover) is provided
-   by the IconButton primitive. */
+/* Only positioning here; IconButton provides the visual chrome. */
 .show-toggle {
   position: absolute;
   right: var(--spacing-6);
 
-  /* Vertical centre of the input element measured from wrap top:
-       padding-block (spacing-6 = 8px) + half line-height (≈ 12.5px) + border (spacing-1 = 2px)
-       = 22.5px. Tokens compose this exactly via spacing-13 (20px) + spacing-3 / 2 (2.5px).
-       This anchors on the input alone, so an error message below the input never pushes
-       the toggle out of alignment. */
+  /* The input's vertical centre from the wrap top (padding 8px + half line-height
+       12.5px + border 2px = 22.5px). Measuring from the top, not centring in the
+       wrap, keeps an error message below from shifting the toggle. */
   top: calc(var(--spacing-13) + var(--spacing-3) / 2);
   transform: translateY(-50%);
 }
 
-/* ── Keep-signed-in checkbox row. ── */
 .remember {
   display: flex;
   align-items: center;
@@ -223,24 +196,20 @@
   color: var(--colour-dark-text-secondary);
 }
 
-/* ── Submit button — full-width accent. ── */
 .submit-button {
   width: 100%;
   padding-top: var(--spacing-9);
   padding-bottom: var(--spacing-9);
 }
 
-/* ── Inline error alert. ── */
 .error {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
   color: var(--colour-status-danger-fg);
 }
 
-/* ── Responsive — tablet and below: stack hero above the card, both centred.
-       The two-column layout needs room to keep the hero on a single line; we
-       collapse early (at 1199.98px) so a 1024 px desktop never shows an
-       awkwardly-wrapped headline. ── */
+/* Stack hero above the card. Collapses early so a 1024px desktop never shows
+   an awkwardly wrapped headline. */
 @media (width <= 1199.98px) {
   .layout {
     grid-template-columns: 1fr;
@@ -279,7 +248,6 @@
   }
 }
 
-/* ── Responsive — mobile: tighter typography and full-width card. ── */
 @media (width <= 699.98px) {
   .layout {
     gap: var(--spacing-15);
@@ -324,8 +292,7 @@
   }
 }
 
-/* ── Responsive — small mobile: shrink padding further so 360px viewports
-       breathe without the card touching the screen edge. ── */
+/* Keeps the card off the screen edge on 360px viewports. */
 @media (width <= 419.98px) {
   .layout {
     padding: var(--spacing-15) var(--spacing-13) var(--spacing-15);
@@ -341,7 +308,7 @@
   }
 }
 
-/* ── Reduced motion — skip the hero fade-in. ── */
+/* Fade the hero and card in only when the user allows motion. */
 @media (prefers-reduced-motion: no-preference) {
   .hero,
   .card {

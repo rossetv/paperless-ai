@@ -31,7 +31,7 @@ export const Spacious: Story = {
     spacious: true,
     children: (
       <div style={{ background: 'var(--colour-bg)', padding: 'var(--spacing-6)' }}>
-        Spacious section — cinematic breathing room (DESIGN.md §5).
+        Spacious section.
       </div>
     ),
   },

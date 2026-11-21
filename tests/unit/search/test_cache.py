@@ -1,8 +1,6 @@
-"""Tests for search.cache — the process-singleton TTL result cache (RAG-05).
+"""Tests for search.cache, the process-singleton TTL result cache.
 
-The cache stores successful SearchResults keyed on
-(normalised_query, filters, index_version). A clock is injected so TTL expiry
-is deterministic — no time.sleep (CODE_GUIDELINES §11.7). No LLM is involved.
+An injected clock makes TTL expiry deterministic without sleeping.
 """
 
 from __future__ import annotations
@@ -185,9 +183,8 @@ class TestIsCacheable:
         assert is_cacheable(result) is False
 
     def test_no_match_is_cacheable(self) -> None:
-        # A no-match carries the no-match answer and no sources, but is now cached
-        # so an identical repeat is not re-run; the index version evicts it when
-        # the corpus changes.
+        # A no-match is cached too; the index version evicts it when the corpus
+        # changes.
         from search.core import _NO_MATCHES_ANSWER
 
         result = make_search_result(
@@ -217,8 +214,7 @@ class TestIsCacheable:
 class TestTraceCostRoundTrip:
     """A populated trace + cost summary survives the cache byte-for-byte, and a
     cache hit emits exactly one ``cache`` phase before returning the cached
-    result (the trace/cost ride on the result, so no extra plumbing is needed —
-    this locks that contract)."""
+    result."""
 
     def _result_with_trace(self):
         from search.models import (

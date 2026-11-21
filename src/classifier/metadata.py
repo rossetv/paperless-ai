@@ -13,7 +13,7 @@ from .result import ClassificationResult
 
 log = structlog.get_logger(__name__)
 
-# Splits locale-style strings like "en-US" or "pt_BR" on the separator.
+# Splits locale strings like "en-US" or "pt_BR".
 _LOCALE_SEP_RE: re.Pattern[str] = re.compile(r"[-_]")
 
 
@@ -37,14 +37,11 @@ _DATE_FUTURE_DAYS = 366
 
 
 def parse_document_date(value: str) -> str | None:
-    """
-    Validate and normalise a date string to ``YYYY-MM-DD``.
+    """Validate an ISO-8601 date string and normalise it to ``YYYY-MM-DD``.
 
-    Accepts ISO-8601 date strings (optionally with a ``T`` time component).
-    Returns ``None`` when the value is empty, unparseable, or outside the
-    plausibility window (before 1900-01-01 or more than 366 days in the
-    future).  Out-of-window dates are logged as a warning so operators can
-    spot prompt-injection or hallucination.
+    Returns ``None`` when it is empty, unparseable, or outside 1900-01-01 to
+    366 days ahead. Out-of-window dates are logged so operators can spot
+    prompt injection or hallucination.
     """
     parsed = parse_iso_date_prefix(value)
     if parsed is None:
@@ -70,17 +67,10 @@ def resolve_date_for_tags(
     *,
     today: Callable[[], dt.date] = dt.date.today,
 ) -> str:
-    """
-    Pick the best available date for year-tag derivation.
+    """Pick the date for year-tag derivation.
 
-    Prefers the classifier's *result_date*, falls back to the document's
-    *existing_date* (the ``created`` field in Paperless), and finally uses
-    today's date.
-
-    Args:
-        today: The current-date source for the final fallback. Defaults to
-            :func:`datetime.date.today`; tests inject a fixed date so the
-            fallback is deterministic (CODE_GUIDELINES §11.4).
+    Prefers *result_date*, then *existing_date* (Paperless ``created``), then
+    *today()*.
     """
     for value in (result_date, existing_date):
         parsed = parse_iso_date_prefix(value)
@@ -90,12 +80,10 @@ def resolve_date_for_tags(
 
 
 def normalise_language(language: str) -> str | None:
-    """
-    Coerce a language string to an ISO-639-1 two-letter code or ``"und"``.
+    """Coerce a language string to an ISO-639-1 code or ``"und"``.
 
-    Handles bare codes (``"en"``), locale-style strings (``"en-US"``), and
-    the special undetermined code (``"und"``).  Returns ``None`` when the
-    input is empty, which tells the caller to leave the field unchanged.
+    Accepts bare codes (``"en"``) and locales (``"en-US"``). Returns ``None``
+    for empty input, meaning leave the field unchanged.
     """
     if not language:
         return None
@@ -116,12 +104,7 @@ def update_custom_fields(
     field_id: int,
     value: str,
 ) -> list[PaperlessCustomField]:
-    """
-    Upsert a Paperless custom-field value in the existing list.
-
-    If a field with *field_id* already exists it is replaced; otherwise a new
-    entry is appended.  The original list is not mutated.
-    """
+    """Return a copy of *existing* with the *field_id* value set (upserted)."""
     existing = existing or []
     updated: list[PaperlessCustomField] = []
     found = False
@@ -137,12 +120,7 @@ def update_custom_fields(
 
 
 def is_empty_classification(result: ClassificationResult) -> bool:
-    """
-    Return ``True`` if the classification result contains no usable fields.
-
-    A result is "empty" when every scalar field is blank and the tag list
-    contains no non-whitespace entries.
-    """
+    """Return ``True`` if every field and tag of *result* is blank."""
     if result.tags and any(tag.strip() for tag in result.tags):
         return False
     fields = [

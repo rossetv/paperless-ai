@@ -1,12 +1,4 @@
-"""Integration tests for the Index dashboard API (web-redesign §5, Wave 6).
-
-Drives the four /api/index/* endpoints through the real search FastAPI app
-over a real tmp_path app.db, reusing the Wave 1 account helpers. Covers the
-status payload (overall health + four daemon tiles), the activity payload,
-the failed-documents payload, the rebuild sentinel write, and the RBAC gates
-— Read-only can view, a non-admin cannot rebuild (403), an unauthenticated
-caller is rejected (401).
-"""
+"""Integration tests for the /api/index/* dashboard endpoints and their role gates."""
 
 from __future__ import annotations
 
@@ -28,10 +20,7 @@ from tests.integration.accounts_helpers import (
 
 @pytest.fixture()
 def index_env(tmp_path):
-    """A search app over a real app.db, with both an admin and a Read-only
-    user seeded. Yields (settings, app_db, store_reader) so a test can build
-    whichever client it needs and inspect the database directly.
-    """
+    """Yield ``(settings, app_db, store_reader)`` with an admin and a Read-only user."""
     from store.reader import StoreReader
 
     settings = make_settings(tmp_path)
@@ -88,13 +77,9 @@ def test_status_reports_degraded_when_only_the_search_server_is_alive(
 ) -> None:
     """Worker daemons stopped but the search server alive → 'degraded'.
 
-    The search server's heartbeat thread is lifespan-owned; this test never
-    enters a lifespan, so no heartbeat thread exists here and the manual
-    ``record_heartbeat`` below is load-bearing — it is the sole reason the
-    ``search`` daemon reads ``running`` while the three worker daemons that
-    have never beaten remain ``stopped``. The rolled-up verdict is therefore
-    ``degraded``, not ``down`` — ``down`` would require *every* daemon
-    stopped, which can never be observed through a live search server.
+    No lifespan runs here, so the manual ``record_heartbeat`` is what makes the
+    ``search`` daemon read ``running``. ``down`` would need every daemon
+    stopped, which a live search server can never observe.
     """
     _settings, app_db, _reader = index_env
     daemon_status.record_heartbeat(
@@ -189,10 +174,8 @@ def test_rebuild_writes_the_sentinel(index_env) -> None:
 def test_rebuild_also_touches_the_reconcile_sentinel(index_env) -> None:
     """Rebuild writes reconcile.request alongside rebuild.request.
 
-    The indexer's ``_interruptible_wait`` watches ``reconcile.request`` to
-    wake early — without it the rebuild would wait up to RECONCILE_INTERVAL
-    (default 5 min) before being applied.  Both sentinels must be written in
-    the same handler call.
+    The indexer only wakes early for ``reconcile.request``; without it the
+    rebuild would wait up to RECONCILE_INTERVAL before being applied.
     """
     settings, _app_db, _reader = index_env
     client = _admin_client(index_env)

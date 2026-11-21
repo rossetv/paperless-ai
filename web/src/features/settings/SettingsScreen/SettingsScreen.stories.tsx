@@ -4,12 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SettingsScreen } from './SettingsScreen';
 
 /**
- * The Settings screen story.
- *
- * The screen fetches `/api/settings` on mount. Storybook has no backend, so
- * this story shows the screen's loading / error placeholders — the populated
- * screen is exercised by `SettingsScreen.test.tsx`, which mocks fetch. The
- * individual controls each have their own populated stories.
+ * Storybook has no backend, so this shows only the loading / error placeholders; the populated
+ * screen is covered by `SettingsScreen.test.tsx`.
  */
 const meta = {
   title: 'Features/Settings/SettingsScreen',

@@ -13,22 +13,14 @@ export interface MobileTopBarProps {
    * When omitted the bar is brand-only.
    */
   actions?: React.ReactNode;
-  /** Additional class names to merge onto the root element. */
   className?: string;
 }
 
 /**
  * Sticky top bar for mobile viewports (< 700 px).
  *
- * Implements the mediaman `nav-topbar` pattern: 48 px high, glass background,
- * brand on the left and optional action slots on the right. Hidden at ≥ 700 px
- * via media query — the desktop `NavBar` takes over above that breakpoint.
- *
- * Both `MobileTopBar` and `NavBar` are rendered into the DOM simultaneously;
- * the surface swap is purely CSS `display: none / flex`. This avoids any
- * conditional-render flicker on resize and keeps server-rendered HTML stable.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Rendered alongside the desktop `NavBar` and swapped purely in CSS, which
+ * avoids conditional-render flicker on resize.
  */
 export function MobileTopBar({
   brand,

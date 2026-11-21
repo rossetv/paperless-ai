@@ -1,19 +1,7 @@
-"""Integration tests for the indexer reconciliation pipeline — deletion sweep.
+"""Integration tests for the indexer's deletion sweep against a real store.
 
-These exercise the real :class:`~indexer.reconciler.Reconciler` and the real
-:class:`~store.writer.StoreWriter` against a ``tmp_path`` SQLite store; only
-Paperless and the embedding client are mocked.
-
-Coverage here — the deletion sweep, SPEC §5.4:
-- A complete enumeration prunes only the truly-absent documents.
-- A successful but empty enumeration prunes every 404-confirmed document.
-- A mid-pagination failure prunes NOTHING and leaves the store byte-for-byte
-  intact (the data-loss prevention case).
-- A candidate the per-id 404-confirm reports present survives.
-
-The incremental-sync end-to-end coverage lives in test_indexer_pipeline.py —
-the indexer pipeline tests are split across two files for the 500-line ceiling
-(CODE_GUIDELINES §3.1).
+Only Paperless and the embedding client are mocked. A document is pruned only
+when the enumeration completed and a per-id lookup confirms it is gone.
 """
 
 from __future__ import annotations
@@ -51,11 +39,6 @@ def _seed(store_writer: Any, tmp_path: Any, doc_ids: tuple[int, ...]) -> None:
     ).incremental_sync()
 
 
-# ---------------------------------------------------------------------------
-# Deletion sweep — end to end against a real store
-# ---------------------------------------------------------------------------
-
-
 class TestDeletionSweepEndToEnd:
     """The real sweep prunes a real store — safely."""
 
@@ -85,12 +68,9 @@ class TestDeletionSweepEndToEnd:
     def test_empty_complete_enumeration_prunes_every_document(
         self, tmp_path: Any
     ) -> None:
-        """The dangerous boundary, end to end: a SUCCESSFUL enumeration that
-        yields zero ids while the store holds documents.
+        """A successful enumeration that yields zero ids is authoritative.
 
-        ``iter_all_documents()`` completes normally returning ``[]`` — it does
-        not raise — so the enumeration is authoritative, and every store
-        document is 404-confirmed absent and pruned.
+        Every store document is then 404-confirmed absent and pruned.
         """
         store_writer = _open_writer(tmp_path)
         try:
@@ -116,8 +96,7 @@ class TestDeletionSweepEndToEnd:
     def test_empty_enumeration_keeps_a_document_the_confirm_says_exists(
         self, tmp_path: Any
     ) -> None:
-        """Empty enumeration, but one candidate's 404-confirm reports it PRESENT
-        — that document survives.  The per-id confirm is the real guard."""
+        """With an empty enumeration, a document the per-id confirm finds survives."""
         store_writer = _open_writer(tmp_path)
         try:
             _seed(store_writer, tmp_path, (1, 2, 3))
@@ -142,11 +121,7 @@ class TestDeletionSweepEndToEnd:
     def test_mid_pagination_failure_prunes_nothing_and_leaves_store_intact(
         self, tmp_path: Any
     ) -> None:
-        """THE data-loss prevention case, end to end.
-
-        If the enumeration raises mid-pagination, the sweep aborts and the
-        store is left byte-for-byte unchanged — not one document is pruned.
-        """
+        """If the enumeration raises mid-pagination, the sweep prunes nothing."""
         store_writer = _open_writer(tmp_path)
         try:
             _seed(store_writer, tmp_path, (1, 2, 3, 4, 5))

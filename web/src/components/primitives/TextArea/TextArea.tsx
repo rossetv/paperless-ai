@@ -8,40 +8,22 @@ export interface TextAreaProps {
   id: string;
   /** Visible label text rendered in a <label> element. Omit to label externally. */
   label?: string;
-  /** Input name attribute for form submission. */
   name?: string;
-  /** Controlled value. */
   value?: string;
-  /** Placeholder hint. */
   placeholder?: string;
   /** Number of visible text rows. Defaults to 4. */
   rows?: number;
-  /** Whether the textarea is non-interactive. */
   disabled?: boolean;
-  /** Whether the textarea is required. */
   required?: boolean;
   /** Validation error message — also sets aria-invalid. */
   error?: string;
-  /** Change handler for controlled usage. */
   onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;
-  /** Focus handler. */
   onFocus?: React.FocusEventHandler<HTMLTextAreaElement>;
-  /** Blur handler. */
   onBlur?: React.FocusEventHandler<HTMLTextAreaElement>;
-  /** Additional class names for the root wrapper. */
   className?: string;
 }
 
-/**
- * Generic multi-line text input primitive.
- *
- * Mirrors the Input primitive: a <label> + <textarea> pair associated via the
- * `id` prop. The label, the field wrapper, and the validation-error region
- * come from the shared `FormField` scaffolding; this component owns only the
- * <textarea> itself.
- *
- * Design tokens drive all visual values — no hardcoded sizes or colours.
- */
+/** Labelled multi-line text input built on the shared `FormField` scaffolding. */
 export function TextArea({
   id,
   label,

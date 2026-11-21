@@ -1,9 +1,7 @@
-"""Tests for search.passwords_login — credential authentication.
+"""Tests for search.passwords_login, credential authentication.
 
-Covers: authenticate returns the User for a correct username/password;
-None for a wrong password; None for an unknown username; it returns a
-suspended user too (status is the login handler's concern, not this
-function's) so the handler can issue a distinct 403.
+authenticate returns suspended users too, so the login handler can issue a
+distinct 403.
 """
 
 from __future__ import annotations

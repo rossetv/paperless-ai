@@ -8,31 +8,17 @@ import { hasActiveFilters } from '../filters';
 import styles from './ActiveFiltersStrip.module.css';
 
 export interface ActiveFiltersStripProps {
-  /** The currently active filters — used to derive chip labels. */
   filters: FilterRequest;
-  /**
-   * Total number of matching documents. Pass 0 on the no-results screen.
-   * Rendered as "<N> documents · sorted by relevance".
-   */
+  /** Matching document count; 0 on the no-results screen. */
   docCount: number;
-  /** Called when the user activates "Clear all". */
   onClearAll: () => void;
 }
 
 /**
- * Active-filters chip strip.
- *
- * Rendered between the recap SearchField and the main content area whenever
- * at least one filter is active. Shows a "Filtered by" label, one selected
- * Chip per active filter, a "Clear all" link, and a trailing document count.
- *
- * Name resolution uses `useFacets` — the query is already cached by
- * FilterControls, so this never triggers a second network request.
- *
- * Renders nothing when no filters are active, so callers can render it
- * unconditionally.
- *
- * Composed from: Stack, Text, Chip. No layout CSS beyond the strip flex row.
+ * One chip per active filter, plus "Clear all" and the document count.
+ * Renders nothing when no filter is set, so callers can render it
+ * unconditionally. `useFacets` is already cached by FilterControls, so name
+ * resolution costs no extra request.
  */
 export function ActiveFiltersStrip({
   filters,
@@ -45,9 +31,8 @@ export function ActiveFiltersStrip({
     return null;
   }
 
-  // Build a flat list of active filter chips with stable dimension keys.
-  // Index keys are unstable across add/remove — use the filter dimension as
-  // the key so React can reconcile correctly without remounting chips.
+  // Keyed by filter dimension, not index, so adding or removing a filter does
+  // not remount the other chips.
   const chips: Array<{ key: string; label: string }> = [];
 
   if (filters.correspondent_id != null && facets !== undefined) {
@@ -66,8 +51,7 @@ export function ActiveFiltersStrip({
       if (match !== undefined) chips.push({ key: `tag-${tagId}`, label: match.name });
     }
   } else {
-    // Facets not yet loaded — show placeholder chip counts so the strip
-    // still communicates that filters are set.
+    // Facets not loaded yet: placeholder chips still show that tags are set.
     for (const tagId of filters.tag_ids) {
       chips.push({ key: `tag-${tagId}`, label: '…' });
     }
@@ -81,7 +65,7 @@ export function ActiveFiltersStrip({
 
   return (
     <div className={styles['strip']} role="region" aria-label="Active filters">
-      {/* "Filtered by" label — caption variant, secondary tone. */}
+      {/* "Filtered by" label */}
       <Text as="span" variant="caption" tone="secondary">
         Filtered by
       </Text>
@@ -92,15 +76,15 @@ export function ActiveFiltersStrip({
         </Chip>
       ))}
 
-      {/* Clear all — ghost Button carries the token-based focus ring. */}
+      {/* Clear all */}
       <Button variant="ghost" size="small" onClick={onClearAll}>
         Clear all
       </Button>
 
       <span className={styles['spacer']} />
 
-      {/* Document count — outer span holds the class; Text renders without
-          a className so exactOptionalPropertyTypes is satisfied. */}
+      {/* The class sits on the outer span; Text takes no className under
+          exactOptionalPropertyTypes. */}
       <span className={styles['count']}>
         <Text as="span" variant="caption">
           <strong>{docCount.toLocaleString('en-GB')} {docCount === 1 ? 'document' : 'documents'}</strong>

@@ -14,10 +14,8 @@ import { APIKeyEditPanel } from '../APIKeyEditPanel/APIKeyEditPanel';
 import { formatShortDate } from '../../../lib/formatDate';
 import styles from './APIKeysScreen.module.css';
 
-/** The lifecycle state of a key, derived from its timestamps. */
 type KeyState = 'active' | 'expired' | 'revoked';
 
-/** Derive a key's state from `revoked_at` / `expires_at`. */
 function keyStateOf(key: ApiKey): KeyState {
   if (key.revoked_at !== null) return 'revoked';
   if (key.expires_at !== null && new Date(key.expires_at).getTime() < Date.now()) {
@@ -63,23 +61,17 @@ function ExpiryLabel({ keyRow }: { keyRow: ApiKey }): React.ReactElement {
  * so the Edit affordance is shown only on an active key the signed-in caller
  * owns — `useAuth` supplies the caller's id. An admin viewing another user's
  * key sees Revoke but not Edit.
- *
- * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
- * api/, hooks/, lib/.
  */
 export function APIKeysScreen(): React.ReactElement {
   const keysQuery = useApiKeys();
   const deleteKey = useDeleteApiKey();
   const { user: me } = useAuth();
   const [panelOpen, setPanelOpen] = React.useState(false);
-  // The key currently open in the edit panel, or null when none.
   const [editingKey, setEditingKey] = React.useState<ApiKey | null>(null);
-  // The id of the key currently awaiting a delete/revoke confirmation.
   const [confirmingId, setConfirmingId] = React.useState<number | null>(null);
 
   const keys = keysQuery.data?.keys ?? [];
 
-  /** Run the delete/revoke for a key, then clear the confirm state. */
   async function handleDelete(id: number): Promise<void> {
     try {
       await deleteKey.mutateAsync(id);
@@ -148,8 +140,7 @@ export function APIKeysScreen(): React.ReactElement {
       render: (k) => {
         const state = keyStateOf(k);
         const actionLabel = state === 'active' ? 'Revoke' : 'Delete';
-        // Editing is owner-only — show Edit only on an active key the
-        // signed-in caller owns (the server enforces this too).
+        // Editing is owner-only; the server enforces this too.
         const canEdit = state === 'active' && k.owner_id === me?.id;
         return (
           <div className={styles['row-actions']}>

@@ -1,27 +1,8 @@
-"""FastAPI search server — HTTP API, account management, SPA, and MCP mount.
+"""FastAPI search server: the API routers, ``/mcp`` and the built SPA.
 
-One uvicorn process serves:
-- the account endpoints (setup, login/logout/me, user CRUD) — ``account_routes``
-- the search endpoints (search, facets, stats, reconcile, healthz) — ``routes``
-- ``/mcp``  — the MCP streamable-HTTP ASGI app
-- ``/``     — the built React SPA, with a deep-link catch-all
-
-This module is component wiring only: build the core, migrate ``app.db`` (a
-short-lived startup connection), enter setup mode if there are no users,
-attach the per-app account context, mount the routers and the SPA. Each
-request opens its own ``app.db`` connection — see :mod:`search.deps`.
-
-Security invariants (web-redesign §4; CODE_GUIDELINES §10):
-- Browser auth is a server-side session behind an opaque, hashed cookie.
-- Programmatic access is by ``Authorization: Bearer sk-pls-...`` API keys,
-  looked up in ``app.db`` and bounded by their scopes and owner's role.
-  ``SEARCH_API_KEY`` is retired (web-redesign §5).
-- The index DB is never web-reachable — static serving is rooted only at the
-  built frontend directory.
-
-Allowed deps: fastapi, uvicorn, starlette, search (routes, account_routes,
-    deps, appstate, setup, spa, appdb_setup, mcp_server, offload,
-    security_headers, core), store (reader), appdb, common.config.
+Browser auth is a server-side session behind an opaque, hashed cookie;
+programmatic access uses ``sk-pls-...`` bearer API keys. The index DB is never
+web-reachable: static serving is rooted only at the built frontend directory.
 """
 
 from __future__ import annotations
@@ -80,10 +61,8 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# Path to the built frontend. Resolution order: the FRONTEND_DIST env var
-# (set by the Dockerfile), else the path relative to the repo root for
-# source-tree execution. Resolved at import time; a missing directory makes
-# the SPA mount a no-op rather than crashing the server.
+# FRONTEND_DIST is set by the Dockerfile; the fallback serves a source checkout.
+# A missing directory makes the SPA mount a no-op.
 _env_frontend = os.environ.get("FRONTEND_DIST", "").strip()
 if _env_frontend:
     _FRONTEND_DIST = Path(_env_frontend)
@@ -91,32 +70,18 @@ else:
     _REPO_ROOT = Path(__file__).parent.parent.parent
     _FRONTEND_DIST = _REPO_ROOT / "web" / "dist"
 
-# How often the search server writes its daemon-status heartbeat, in
-# seconds. Comfortably inside appdb.daemon_status.DEFAULT_STALE_AFTER_SECONDS
-# so the dashboard never flickers the server to "stopped" between beats.
+# Well inside appdb.daemon_status.DEFAULT_STALE_AFTER_SECONDS so the dashboard
+# never flickers the server to "stopped" between beats.
 _SEARCH_HEARTBEAT_INTERVAL_SECONDS = 30
 
 
 def _start_search_heartbeat(settings: Settings) -> Callable[[], None]:
     """Start the search server's heartbeat thread; return its stop callable.
 
-    The search server has no polling loop, so it heartbeats from a daemon
-    thread: it beats every ``_SEARCH_HEARTBEAT_INTERVAL_SECONDS`` until the
-    returned stop callable is invoked (the app's lifespan exit) or the shared
-    shutdown flag is set. The per-app stop event is what lets each app
-    instance own its thread's lifetime — with only the process-global flag,
-    every ``create_app()`` in a test process leaked a ticker thread that ran
-    for the rest of the suite. The stop-aware sleep (``Event.wait``) makes
-    the exit prompt rather than up to one full interval late. A failure
-    opening ``app.db`` is logged and the heartbeat is simply skipped — the
-    search server still serves requests; only the dashboard's "search" tile
-    goes stale (web-redesign spec §5, Wave 6: heartbeats are best-effort).
-
-    Args:
-        settings: Application settings — only ``APP_DB_PATH`` is read here.
-
-    Returns:
-        A callable that stops the ticker and joins the thread briefly.
+    The per-app stop event gives each app instance ownership of its thread, so
+    an app built in a test does not leak a ticker for the rest of the process.
+    The heartbeat is best-effort: if ``app.db`` cannot be opened it is skipped
+    and only the dashboard's "search" tile goes stale.
     """
     stop_event = threading.Event()
 
@@ -128,8 +93,6 @@ def _start_search_heartbeat(settings: Settings) -> Callable[[], None]:
             conn = connect_app_db(settings.APP_DB_PATH)
             ensure_app_db_schema(conn)
         except Exception as exc:  # noqa: BLE001
-            # rationale: best-effort heartbeat — if app.db cannot be opened
-            # the search server still works; only the dashboard tile is lost.
             log.warning("api.heartbeat_disabled", error=str(exc))
             return
         heartbeat = Heartbeat(name="search", conn=conn)
@@ -155,29 +118,17 @@ def _start_search_heartbeat(settings: Settings) -> Callable[[], None]:
     return _stop
 
 
-# Seconds the background price-refresh loop sleeps between its wake-checks of the
-# shutdown flag. The refresh cadence itself is PRICING_REFRESH_INTERVAL_HOURS;
-# this short tick only bounds how long the daemon thread lingers after shutdown
-# is requested, so the process can exit promptly rather than sleeping out a
-# multi-hour interval. (The thread is daemon=True, so it never blocks exit
-# regardless — this just keeps it tidy.)
+# How often the price-refresh thread checks the shutdown flag. The refresh
+# cadence itself is PRICING_REFRESH_INTERVAL_HOURS.
 _PRICE_REFRESH_TICK_SECONDS = 60
 
 
 def _load_cached_price_book(app_db_path: str) -> None:
     """Set the live price book from the app.db cache, if one exists.
 
-    Run once at startup BEFORE any refresh task. When the ``model_pricing`` cache
-    holds rows (a prior refresh persisted them), the live book is set to that
-    cache so a refreshed price survives a restart; when it is empty the bundled
-    seed (the import-time default of the price-book singleton) stands. A failure
-    reading the cache is logged and ignored — the seed is a safe fallback, and a
-    cache read must never abort startup.
-
-    With ``PRICING_REFRESH_URL`` unset this is the ONLY price-book action: a
-    fresh deployment has an empty cache, so the seed stands and the dollar
-    figures are byte-identical to before this feature existed — and no network
-    call is made here.
+    Runs once at startup, before any refresh. With an empty cache the bundled
+    seed stands. A failed cache read is logged and ignored so it never aborts
+    startup.
     """
     try:
         conn = connect_app_db(app_db_path)
@@ -186,8 +137,6 @@ def _load_cached_price_book(app_db_path: str) -> None:
         finally:
             conn.close()
     except Exception as exc:  # noqa: BLE001
-        # rationale: a cache read must never abort startup — the seed book is a
-        # correct fallback, so degrade to it and log rather than crash.
         log.warning("api.price_cache_load_failed", error=str(exc))
         return
     if cached is None:
@@ -202,39 +151,22 @@ def _load_cached_price_book(app_db_path: str) -> None:
 
 
 def _start_price_refresh(settings: Settings, app_db_path: str) -> None:
-    """Start the background price-refresh thread — ONLY when a URL is configured.
+    """Start the background price-refresh thread when a URL is configured.
 
-    With ``PRICING_REFRESH_URL`` empty (the default, and prod's config) this is a
-    no-op: NO thread is started and NO network call is ever made — the seed (or
-    the cache loaded at startup) stands and the dollar figures are unchanged.
-
-    When a URL is set, a ``daemon=True`` thread (mirroring the heartbeat) fetches
-    immediately on start, then re-fetches every ``PRICING_REFRESH_INTERVAL_HOURS``
-    until the shared shutdown flag is set. Each success persists the new table via
-    :func:`appdb.model_pricing.save_cached_prices` (so it survives a restart) and
-    publishes it via :func:`~search.pricing_book.set_current_price_book`. A
-    :class:`~search.pricing_book.PricingRefreshError` is logged at WARNING and the
-    current book is kept — a flaky price-list host never crashes the server nor
-    changes the live prices. The fetch runs entirely off the request path, so it
-    can never block request handling.
-
-    Args:
-        settings: Application settings — ``PRICING_REFRESH_URL`` and
-            ``PRICING_REFRESH_INTERVAL_HOURS`` are read.
-        app_db_path: Path to ``app.db`` for persisting a refreshed cache.
+    With ``PRICING_REFRESH_URL`` empty (the default) no thread starts and no
+    network call is made. Otherwise the thread fetches at once, then every
+    ``PRICING_REFRESH_INTERVAL_HOURS`` until shutdown.
     """
     url = settings.PRICING_REFRESH_URL
     if not url:
-        # The behaviour-preserving default: no URL ⇒ no thread, no network.
         return
 
     interval_seconds = settings.PRICING_REFRESH_INTERVAL_HOURS * 3600
 
     def _run() -> None:
         _refresh_once(url, app_db_path)
-        # Sleep in short ticks so shutdown is honoured promptly rather than
-        # blocking out a multi-hour interval; refresh only when a full interval
-        # has elapsed since the last fetch.
+        # Short ticks so shutdown is honoured promptly, not after a multi-hour
+        # sleep.
         next_refresh = time.monotonic() + interval_seconds
         while not is_shutdown_requested():
             time.sleep(_PRICE_REFRESH_TICK_SECONDS)
@@ -256,11 +188,8 @@ def _start_price_refresh(settings: Settings, app_db_path: str) -> None:
 def _refresh_once(url: str, app_db_path: str) -> None:
     """Fetch the price book from *url* once; persist and publish on success.
 
-    A :class:`~search.pricing_book.PricingRefreshError` (any fetch/parse failure)
-    is logged at WARNING and swallowed — the current book stands. A failure
-    persisting the cache after a successful fetch is also logged and swallowed,
-    but the freshly fetched book is still published so the running process uses
-    it even if it could not be cached for next restart.
+    A fetch or parse failure keeps the current book. A failure persisting the
+    cache is logged, and the fetched book is still published.
     """
     try:
         book = refresh_price_book(url)
@@ -280,36 +209,18 @@ def _refresh_once(url: str, app_db_path: str) -> None:
         finally:
             conn.close()
     except (sqlite3.Error, OSError) as exc:
-        # rationale: persistence is best-effort — a DB lock / disk error must not
-        # lose the freshly fetched prices for the running process, so publish
-        # anyway and log; the next successful refresh re-attempts the cache write.
-        # A non-DB error (a logic bug) is NOT swallowed — it surfaces loudly.
+        # Only storage errors are swallowed; a logic bug still surfaces.
         log.warning("api.price_cache_save_failed", source=url, error=str(exc))
     set_current_price_book(book)
     log.info("api.price_refreshed", source=url, as_of=book.as_of)
 
 
 def register_paperless_exception_handlers(app: FastAPI) -> None:
-    """Register centralised Paperless-ngx error handlers on *app*.
+    """Map ``httpx`` errors escaping a route handler to meaningful statuses.
 
-    Any ``httpx`` error that escapes a route handler — from mutation endpoints
-    such as PATCH, reclassify, retranscribe, delete, or taxonomy create — is
-    caught here and mapped to a meaningful HTTP status rather than surfacing as
-    a generic 500.
-
-    The streaming PDF/thumb handlers handle their own errors manually (they
-    must close the per-request ``httpx`` client before returning), so this
-    function is the safety net for all non-streaming paths.
-
-    Mapping:
-    - ``httpx.HTTPStatusError`` 404 → 404 "not found in Paperless-ngx"
-    - ``httpx.HTTPStatusError`` 409 → 409 "conflict in Paperless-ngx"
-    - ``httpx.HTTPStatusError`` 5xx → 502 "Paperless-ngx upstream error"
-    - ``httpx.HTTPStatusError`` other → forward the upstream status
-    - ``httpx.RequestError`` (network/timeout) → 502 "Could not reach Paperless-ngx"
-
-    Args:
-        app: The FastAPI application to register the handlers on.
+    Upstream 404 and 409 pass through, 5xx and network errors become 502. The
+    streaming PDF/thumbnail handlers handle their own errors because they must
+    close their ``httpx`` client first.
     """
 
     @app.exception_handler(httpx.HTTPStatusError)
@@ -359,41 +270,23 @@ def create_app(
     store_reader: StoreReader | None = None,
     app_db_path: str | None = None,
 ) -> FastAPI:
-    """Build and return the FastAPI application.
+    """Build the FastAPI application.
 
-    Builds the search core from *settings* when *core*/*store_reader* are not
-    supplied (production), migrates ``app.db``, detects first-run setup, and
-    wires the account context onto the app. The ``app.db`` *path* — not a live
-    connection — is what the app holds: each request opens its own connection
-    through :func:`~search.deps.get_app_db`, because a ``sqlite3.Connection``
-    cannot be safely shared across the threads FastAPI serves requests on.
-
-    Args:
-        settings: Application settings.
-        core: An optional pre-built :class:`~search.core.SearchCore`.
-        store_reader: An optional pre-built :class:`~store.reader.StoreReader`.
-        app_db_path: An optional ``app.db`` path. Tests pass a ``tmp_path``
-            file; production passes ``None`` and ``settings.APP_DB_PATH`` is
-            used.
-
-    Returns:
-        A configured FastAPI application.
+    The app holds the ``app.db`` path, not a connection: each request opens its
+    own, because a ``sqlite3.Connection`` cannot be shared across the threads
+    FastAPI serves requests on. *core* and *store_reader* are built from
+    *settings* when not supplied.
     """
     core, store_reader = _resolve_components(settings, core, store_reader)
     app_db_path = settings.APP_DB_PATH if app_db_path is None else app_db_path
 
-    # ONE concurrency bound shared by the HTTP /api/search surface and the MCP
-    # tools, so the SEARCH_MAX_CONCURRENT ceiling is a single shared cap rather
-    # than 2N (one semaphore per surface). It binds lazily to the serving event
-    # loop on first acquire.
+    # Shared by HTTP search and the MCP tools so SEARCH_MAX_CONCURRENT is one cap,
+    # not one per surface.
     search_semaphore = LazySemaphore(settings.SEARCH_MAX_CONCURRENT)
 
-    # Build the MCP app now so its streamable-HTTP session manager can be
-    # started from the lifespan below. Attaching an ASGI sub-app (whether by
-    # Route or app.mount) does NOT run its own lifespan, so without explicitly
-    # running session_manager.run() the manager's task group is never
-    # initialised and every /mcp request fails with "Task group is not
-    # initialized" (the bug fixed in this wiring).
+    # An attached ASGI sub-app's lifespan never runs, so the lifespan below must
+    # run the MCP session manager or every /mcp request fails with "Task group
+    # is not initialized".
     mcp_app = build_mcp_app(
         _resolve_search_core,
         app_db_path,
@@ -402,11 +295,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        # Run the MCP streamable-HTTP session manager for the app's lifetime so
-        # the /mcp endpoint has a live task group to serve requests. The
-        # heartbeat thread is lifespan-owned too: started here, stopped on
-        # exit via its per-app event, so an app instance never leaks its
-        # ticker thread (create_app() alone starts no thread at all).
+        # The heartbeat starts here rather than in create_app() so building an
+        # app starts no thread.
         stop_heartbeat = _start_search_heartbeat(settings)
         try:
             async with mcp_app.session_manager.run():
@@ -418,30 +308,21 @@ def create_app(
         title="Paperless Semantic Search",
         docs_url=None,
         redoc_url=None,
-        # Also disable the machine-readable schema. docs_url/redoc_url=None only
-        # hide the human UIs; /openapi.json stays served by default and would leak
-        # every route, method, and request/response model to anyone past the Access
-        # edge. Nothing first-party consumes it, so turn it off too.
+        # /openapi.json would otherwise still be served and list every route and
+        # model; nothing first-party consumes it.
         openapi_url=None,
         lifespan=lifespan,
     )
 
-    # Conservative, SPA-safe security headers on every response (defence in
-    # depth). Registered first so it wraps the whole app — the API routers, the
-    # MCP mount, and the static SPA alike.
+    # Registered first so it wraps everything, including /mcp and the SPA.
     app.add_middleware(SecurityHeadersMiddleware)
 
     register_paperless_exception_handlers(app)
 
-    # Startup uses ONE short-lived connection: migrate app.db, then decide
-    # whether first-run setup is needed. It is closed immediately — request
-    # work opens its own connection per request (search.deps.get_app_db).
     setup_state = SetupState()
     startup_conn = open_app_db(app_db_path)
     try:
         if is_setup_needed(startup_conn):
-            # No users yet: enter setup mode — generate a token and log it
-            # prominently (spec §4.5).
             setup_state.token = generate_setup_token()
             log.warning(
                 "search.setup_mode",
@@ -453,9 +334,6 @@ def create_app(
     finally:
         startup_conn.close()
 
-    # Load any persisted price cache into the live price book before serving.
-    # With no PRICING_REFRESH_URL and an empty cache this is a no-op (the seed
-    # stands) and makes no network call — the behaviour-preserving default.
     _load_cached_price_book(app_db_path)
 
     attach_app_state(
@@ -463,22 +341,11 @@ def create_app(
         AppState(app_db_path=app_db_path, setup_state=setup_state),
     )
 
-    # Pre-populate the per-request core cache with the startup-built core so
-    # the first request hits the cache and pays only a one-row SELECT — the
-    # per-request accessor takes over from here, rebuilding only on a config
-    # change (web-redesign §5, Wave 4).
     _seed_core_cache(app_db_path, core)
 
-    # Attach /mcp as an EXACT-PATH ASGI Route (not app.mount) so the endpoint a
-    # client POSTs to is exactly "/mcp" — no trailing slash, no redirect. A
-    # Mount under "/mcp" can only serve "/mcp/..." and would 405 the bare "/mcp"
-    # once the SPA catch-all is in play (the catch-all's method-mismatch shadows
-    # Starlette's slash-redirect). A Route forwards the unmodified path, so the
-    # FastMCP app's own "/mcp" route matches it directly. Registered BEFORE the
-    # /api routers and the SPA catch-all so it wins. Its session manager is
-    # started by the lifespan above; the tools resolve the live core per call
-    # via _resolve_search_core, so a saved config change reaches MCP callers
-    # without a restart.
+    # An exact-path Route, not app.mount: a Mount only serves "/mcp/..." and the
+    # SPA catch-all would 405 the bare "/mcp" instead of Starlette redirecting.
+    # Registered before the other routers and the catch-all so it wins.
     app.router.routes.append(Route("/mcp", mcp_app))
     app.include_router(build_account_router(settings, store_reader))
     app.include_router(build_settings_router(settings))
@@ -498,8 +365,6 @@ def create_app(
     )
 
     register_spa(app, _FRONTEND_DIST)
-    # Start the background price refresh ONLY when a URL is configured; with the
-    # prod default (unset) no thread starts and no network call is made.
     _start_price_refresh(settings, app_db_path)
     return app
 
@@ -509,11 +374,7 @@ def _resolve_components(
     core: SearchCore | None,
     store_reader: StoreReader | None,
 ) -> tuple[SearchCore, StoreReader]:
-    """Return the core and store reader, building any not supplied by a caller.
-
-    Tests inject pre-built stubs; production passes neither and gets the real
-    component graph wired from *settings*.
-    """
+    """Return the core and store reader, building any not supplied by a caller."""
     if core is not None and store_reader is not None:
         return core, store_reader
 
@@ -541,43 +402,21 @@ def _resolve_components(
     return core, store_reader
 
 
-# Process-local hot-reload cache for the search core: app.db path ->
-# (config_version, core). _resolve_search_core rebuilds the config-derived
-# component graph only when the configuration has changed (web-redesign §5,
-# Wave 4); a steady-state request pays one cheap one-row SELECT.
+# app.db path -> (config_version, core); rebuilt only when the config changes.
 _CORE_CACHE: dict[str, tuple[int, "SearchCore"]] = {}
 
-# Serialises the rebuild path so two concurrent first-callers (or two callers
-# landing on a fresh config_version) do not both build a core. The cache
-# lookup itself stays lock-free; only the rebuild is gated.
+# Gates only the rebuild, so concurrent callers on a new config_version do not
+# both build a core; the lookup stays lock-free.
 _CORE_CACHE_LOCK = threading.Lock()
 
 
 def _resolve_search_core(app_db_path: str) -> SearchCore:
     """Return the search core for the current configuration, rebuilt on change.
 
-    Called per request. Reads ``config_version`` under a snapshot; when it is
-    unchanged since the last call for this *app_db_path*, returns the cached
-    core. When it has moved, rebuilds the core (and its :class:`Settings`,
-    via :func:`common.config.current_settings`) from the new configuration so
-    the next query uses the edited values — no restart.
-
-    The shared process singletons that LLM calls go through —
-    :func:`common.library_setup.setup_libraries` (the ``_openai_holder``) and
-    :func:`common.concurrency.llm_limiter.init` (the concurrency limiter) —
-    are re-initialised here whenever a new :class:`Settings` is built. The
-    planner and synthesiser read the OpenAI client through ``_openai_holder``,
-    so a saved ``OPENAI_API_KEY`` / ``LLM_PROVIDER`` / ``OLLAMA_BASE_URL`` /
-    ``LLM_MAX_CONCURRENT`` change propagates to every LLM call on the very
-    next request — the daemons do the same in their ``_reload_if_changed``
-    hooks.
-
-    Args:
-        app_db_path: Filesystem path to ``app.db``. The search server passes
-            ``AppState.app_db_path`` (the value resolved at app build time).
-
-    Returns:
-        The current :class:`SearchCore`.
+    Called per request; a steady-state call costs one ``config_version`` read.
+    A rebuild also re-initialises the process-wide OpenAI client holder and LLM
+    limiter, so a saved provider, key or concurrency change reaches every LLM
+    call on the next request.
     """
     from appdb import config as config_store  # noqa: PLC0415
     from appdb.connection import connect  # noqa: PLC0415
@@ -603,24 +442,17 @@ def _resolve_search_core(app_db_path: str) -> SearchCore:
         if cached is not None and cached[0] == version:
             return cached[1]
 
-        # current_settings_with_version takes a single BEGIN DEFERRED snapshot
-        # so the version and the settings it returns are consistent — the
-        # cache is keyed against exactly the version the settings describe.
-        # This eliminates the triple-read race where a write landing between
-        # the settings build and a post-build re-read could stamp a later
-        # version onto an earlier core (self-locking stale cache).
+        # Read version and settings in one snapshot: a write landing between two
+        # reads could stamp a newer version onto an older core and pin the stale
+        # core in the cache.
         cache_version, settings = current_settings_with_version(app_db_path)
         setup_libraries(settings)
         llm_limiter.init(settings.LLM_MAX_CONCURRENT)
         core, _store_reader = _resolve_components(settings, None, None)
         _CORE_CACHE[app_db_path] = (cache_version, core)
-        # A config change can alter the answer for an otherwise-identical query
-        # (answer model, reasoning effort, top-k, prompts, ...). Drop the
-        # result-cache singleton so the next query recomputes under the new
-        # configuration — and the cache rebuilds with any new
-        # SEARCH_CACHE_TTL_SECONDS — rather than serving a pre-change answer for
-        # up to the TTL. The index-version key already busts on corpus changes;
-        # this closes the config-change gap.
+        # A config change can alter the answer to an identical query (model,
+        # top-k, prompts, ...), and the result cache is keyed only on the index
+        # version, so drop it rather than serve pre-change answers until the TTL.
         reset_search_result_cache()
         return core
 
@@ -631,13 +463,7 @@ def _reset_core_cache_for_test() -> None:
 
 
 def _seed_core_cache(app_db_path: str, core: SearchCore) -> None:
-    """Prime the per-request core cache with the startup-built *core*.
-
-    Reads the current ``config_version`` from *app_db_path* and stores the
-    pair so the first request hits the cache and pays only a one-row
-    ``SELECT`` — the per-request accessor rebuilds only on a later config
-    change (web-redesign §5, Wave 4).
-    """
+    """Prime the core cache with the startup-built *core*."""
     from appdb import config as config_store  # noqa: PLC0415
     from appdb.connection import connect  # noqa: PLC0415
 
@@ -652,25 +478,12 @@ def _seed_core_cache(app_db_path: str, core: SearchCore) -> None:
 def main() -> None:
     """Start the search server (entry point: ``paperless-search-server``).
 
-    Runs the shared per-process bootstrap, then builds and serves the app.
-    ``app.db`` is migrated inside :func:`create_app`. ``SEARCH_API_KEY`` is
-    retired (Wave 3): programmatic access is by minted API keys only, so the
-    legacy key is neither read nor required.
-
-    uvicorn is run with ``proxy_headers=True`` so that, behind the documented
-    nginx + Cloudflare deployment, ``request.url.scheme`` reflects the real
-    edge scheme (HTTPS — so the session cookie gets its ``Secure`` flag) and
-    ``request.client.host`` reflects the real client IP from
-    ``X-Forwarded-For`` (so ``sessions.ip`` records the client, not the
-    proxy).
-
-    ``forwarded_allow_ips`` is the set of peers uvicorn trusts those headers
-    from. It is taken from ``SEARCH_FORWARDED_ALLOW_IPS`` and defaults to
-    ``"*"`` (trust any peer) — unchanged behaviour, correct when the uvicorn
-    port is reachable only by the reverse proxy. If that port can be reached
-    directly, pin the setting to the proxy's IP/CIDR so an attacker cannot
-    spoof ``X-Forwarded-For`` / ``X-Forwarded-Proto`` to forge the audited
-    client IP or flip the cookie ``Secure`` flag (CODE_GUIDELINES §10.1).
+    ``proxy_headers=True`` makes the request scheme and client IP reflect the
+    reverse proxy's forwarded values, so the session cookie gets ``Secure`` and
+    ``sessions.ip`` records the real client. ``SEARCH_FORWARDED_ALLOW_IPS``
+    defaults to ``"*"``, which is only safe when the uvicorn port is reachable
+    solely by the proxy; otherwise pin it to the proxy's address so the
+    forwarded headers cannot be spoofed.
     """
     from common.bootstrap import bootstrap_process
 
@@ -679,9 +492,8 @@ def main() -> None:
     try:
         app = create_app(settings)
     except Exception:
-        # rationale: outer-boundary catch (CODE_GUIDELINES §6.4) — a failure
-        # here (e.g. an app.db written by newer code) must abort startup
-        # loudly rather than serve a half-built app.
+        # E.g. an app.db written by newer code: abort rather than serve a
+        # half-built app.
         log.exception("search.startup_failed")
         sys.exit(1)
 

@@ -3,12 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { IndexScreen } from './IndexScreen';
 
-/**
- * IndexScreen drives polling react-query hooks and `useAuth`. Storybook does
- * not stub a backend, so this story is a structural reference — the queries
- * resolve to their empty/error states harmlessly. Behavioural coverage lives
- * in the test suite.
- */
+/** Storybook stubs no backend, so the queries settle into their empty/error states. */
 const meta = {
   title: 'Features/Index/IndexScreen',
   component: IndexScreen,

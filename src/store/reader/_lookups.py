@@ -1,14 +1,4 @@
-"""Look-up and introspection queries for the search index store.
-
-Implements the non-ranked read operations: document and chunk look-up by id,
-taxonomy reads, facet aggregation, index statistics, and the integrity check.
-None of these rank — they resolve known ids or summarise the index.
-
-Each function takes the connection and the StoreReader's query lock by
-argument; :class:`~store.reader.StoreReader` is the facade that owns them.
-
-Allowed deps: sqlite3, json, store.models, store._sql, store.migrations.
-"""
+"""Non-ranked reads: look-ups by id, taxonomy, facets, stats, integrity check."""
 
 from __future__ import annotations
 
@@ -21,11 +11,7 @@ import structlog
 
 from store._sql import placeholders
 
-# _is_missing_table_error lives in store.migrations (the lower module) so the
-# corrupt-vs-fresh distinction is defined once; a fresh, schema-less index
-# database (auto-created empty by ``sqlite3.connect``) raises "no such table",
-# which the store maps to the typed ``SchemaNotReadyError`` so callers never
-# string-match ``sqlite3`` internals.
+# A fresh, empty index raises "no such table", mapped to SchemaNotReadyError.
 from store.migrations import (
     SchemaNotReadyError,
     StoreError,
@@ -49,19 +35,9 @@ log = structlog.get_logger(__name__)
 def _names_for_tag_ids(
     tag_ids: list[int], tag_name_by_id: dict[int, str]
 ) -> tuple[str, ...]:
-    """Resolve a list of tag ids to a tuple of names using a pre-built map.
+    """Resolve *tag_ids* to names in order, dropping ids with no entry.
 
-    Returns only the names whose ids are present in *tag_name_by_id*; ids with
-    no entry are silently dropped (a tag deleted from Paperless after indexing
-    simply disappears rather than causing a KeyError).
-
-    Args:
-        tag_ids: The ordered list of tag ids to resolve.
-        tag_name_by_id: The ``{id: name}`` map to look each id up in.
-
-    Returns:
-        A tuple of display names in the same order as *tag_ids*, with
-        unresolvable ids omitted.
+    A tag deleted from Paperless after indexing simply disappears.
     """
     return tuple(
         tag_name_by_id[tag_id] for tag_id in tag_ids if tag_id in tag_name_by_id
@@ -73,24 +49,7 @@ def get_documents(
     query_lock: threading.Lock,
     ids: Iterable[int],
 ) -> list[IndexedDocument]:
-    """Return IndexedDocument objects for the given document ids.
-
-    Joins the taxonomy table to resolve correspondent and document_type
-    display names.  Tag names are resolved by reading the tag_ids JSON array
-    and looking each id up in taxonomy.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the query.
-        ids: Document ids to fetch.
-
-    Returns:
-        One IndexedDocument per id that exists in the index.  Order is not
-        guaranteed; missing ids are silently omitted.
-
-    Raises:
-        StoreError: On SQLite error.
-    """
+    """Return an IndexedDocument per existing id; order is not guaranteed."""
     document_ids = list(ids)
     if not document_ids:
         return []
@@ -114,9 +73,7 @@ def get_documents(
     try:
         with query_lock:
             rows = conn.execute(sql, document_ids).fetchall()
-            # Parse each row's tag ids first, then resolve only the ids
-            # actually present on these documents — O(this page's tags),
-            # not O(all tags). Identical fix to get_document_summary (§14.1).
+            # Resolve only the tag ids on these documents, not the whole taxonomy.
             all_tag_ids: list[int] = []
             per_row_tag_ids: list[list[int]] = []
             for row in rows:
@@ -148,21 +105,7 @@ def get_chunks(
     query_lock: threading.Lock,
     ids: Iterable[int],
 ) -> list[ChunkHit]:
-    """Return ChunkHit objects for the given chunk ids.
-
-    ChunkHit.score is set to 0.0 — a direct look-up carries no ranking context.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the query.
-        ids: Chunk ids (chunks.id) to fetch.
-
-    Returns:
-        One ChunkHit per id that exists in the index.
-
-    Raises:
-        StoreError: On SQLite error.
-    """
+    """Return a ChunkHit per existing chunk id, with ``score`` 0.0 (unranked)."""
     chunk_ids = list(ids)
     if not chunk_ids:
         return []
@@ -193,19 +136,7 @@ def get_taxonomy(
     query_lock: threading.Lock,
     kind: str,
 ) -> list[TaxonomyEntry]:
-    """Return every taxonomy entry of the given *kind*, ordered by name.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the query.
-        kind: One of ``'correspondent'``, ``'document_type'``, or ``'tag'``.
-
-    Returns:
-        The matching TaxonomyEntry rows; an empty list when none exist.
-
-    Raises:
-        StoreError: On SQLite error.
-    """
+    """Return every taxonomy entry of the given *kind*, ordered by name."""
     try:
         with query_lock:
             rows = conn.execute(
@@ -222,18 +153,9 @@ def get_taxonomy(
 def list_facets(conn: sqlite3.Connection, query_lock: threading.Lock) -> FacetSet:
     """Return all taxonomy entries grouped by kind, plus the date range.
 
-    Returns:
-        FacetSet with tuples of TaxonomyEntry for each kind (correspondent,
-        document_type, tag) and the earliest/latest created dates from the
-        documents table.
-
     Raises:
-        SchemaNotReadyError: The index schema is not present (a present-but-empty
-            file, or the brief mid-rebuild window where the indexer has dropped
-            and not yet recreated the tables).  Distinguished from a generic
-            failure — exactly as :func:`get_stats` does — so the search server
-            can answer "index not ready" (503) rather than crashing the search
-            path with a 500.
+        SchemaNotReadyError: The schema is not present (an empty file, or mid
+            rebuild), so the server can answer 503 rather than 500.
         StoreError: On any other SQLite error.
     """
     try:
@@ -282,17 +204,10 @@ def list_filters_with_counts(
 ) -> FilterCatalog:
     """Return every taxonomy entry with its document count, plus the date range.
 
-    Like :func:`list_facets` but attaches a document count to each entry, so an
-    MCP caller can discover which filter ids are worth using. Counts come from
-    three aggregations under one held lock: correspondents and document types
-    via ``GROUP BY`` the foreign-key column; tags via ``json_each`` over the
-    ``documents.tag_ids`` JSON array (SQLite JSON1). A taxonomy entry no indexed
-    document carries reports a count of 0.
+    Lets an MCP caller see which filter ids are worth using.
 
     Raises:
-        SchemaNotReadyError: The index schema is not present (mirrors
-            :func:`list_facets` / :func:`get_stats`), so the search server can
-            answer "index not ready" rather than crash.
+        SchemaNotReadyError: The index schema is not present.
         StoreError: On any other SQLite error.
     """
     try:
@@ -365,28 +280,16 @@ def list_filters_with_counts(
 def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStats:
     """Return summary statistics for the search index.
 
-    Returns:
-        IndexStats with document count, chunk count, last_reconcile_at (from
-        meta), embedding_model (from meta), and latest_indexed_at
-        (``MAX(documents.indexed_at)`` — the content signal the result cache
-        keys on).
-
     Raises:
-        SchemaNotReadyError: The database has no schema yet (a present-but-empty
-            file the indexer has not initialised).  Distinguishing this from a
-            generic failure lets the search server's healthz handler report
-            "index not ready" without inspecting ``sqlite3`` internals.
+        SchemaNotReadyError: The indexer has not created the schema yet, so
+            healthz can report "index not ready".
         StoreError: On any other SQLite error.
     """
     try:
         with query_lock:
             doc_count_row = conn.execute("SELECT COUNT(*) FROM documents").fetchone()
             chunk_count_row = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()
-            # MAX(indexed_at) is the cache's content signal: it advances on every
-            # document upsert (corrected OCR, re-classification, edited metadata)
-            # even when the counts do not move, and is served by
-            # idx_documents_indexed_at so the aggregate is an index scan, not a
-            # table scan. NULL on an empty index.
+            # Served by idx_documents_indexed_at, so this is an index scan.
             latest_indexed_row = conn.execute(
                 "SELECT MAX(indexed_at) FROM documents"
             ).fetchone()
@@ -412,34 +315,18 @@ def get_stats(conn: sqlite3.Connection, query_lock: threading.Lock) -> IndexStat
     )
 
 
-# The index.db meta key under which the indexer persists its failed-document
-# map: a JSON object of str(doc_id) -> consecutive_failure_count. Owned by
-# the indexer (indexer.reconciler._failed_documents); read here for the
-# Index dashboard.
+# JSON object of str(doc_id) -> consecutive failure count, written by
+# indexer.reconciler._failed_documents.
 _FAILED_DOCUMENTS_META_KEY = "failed_documents"
 
 
 def get_failed_documents(
     conn: sqlite3.Connection, query_lock: threading.Lock
 ) -> list[FailedDocument]:
-    """Return the documents the indexer has failed to index.
+    """Return the documents the indexer has failed to index, ordered by id.
 
-    Reads the ``failed_documents`` JSON map from ``index.db`` meta and joins
-    each id to the ``documents`` table for its title. A document that failed
-    before it was ever stored has no ``documents`` row — its title is
-    ``None`` and it is still listed.
-
-    A missing meta key, an empty value, or a value that does not parse as the
-    expected ``{str: int}`` shape yields an empty list — a corrupt entry must
-    not break the dashboard, exactly as the indexer's own reader tolerates it.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the query's duration.
-
-    Returns:
-        A list of :class:`~store.models.FailedDocument`, ordered by document
-        id. Empty when nothing is currently failing.
+    A document that was never stored is listed with a ``None`` title. A corrupt
+    meta value yields an empty list rather than breaking the dashboard.
 
     Raises:
         SchemaNotReadyError: The index schema is not present.
@@ -473,17 +360,11 @@ def get_failed_documents(
 
 
 def _parse_failed_documents(raw: str | None) -> dict[int, int]:
-    """Decode the failed_documents meta JSON into an id -> count map.
-
-    A missing, empty, or malformed value decodes to an empty map — a corrupt
-    meta entry must never break the dashboard read.
-    """
+    """Decode the failed_documents meta JSON; malformed input yields ``{}``."""
     if not raw:
         return {}
     try:
         decoded = json.loads(raw)
-        # Non-dict JSON (e.g. a bare string) → AttributeError on .items();
-        # non-int keys/values → ValueError; unexpected None-like types → TypeError.
         if not isinstance(decoded, dict):
             return {}
         return {int(key): int(value) for key, value in decoded.items()}
@@ -492,15 +373,9 @@ def _parse_failed_documents(raw: str | None) -> dict[int, int]:
 
 
 def _fetch_titles(conn: sqlite3.Connection, ids: list[int]) -> dict[int, str | None]:
-    """Return a doc-id -> title map for the given ids from the documents table.
-
-    Ids with no ``documents`` row are simply absent from the returned map;
-    the caller treats a missing id as a ``None`` title.
-    """
+    """Return a doc-id -> title map; ids with no ``documents`` row are absent."""
     if not ids:
         return {}
-    # rationale: ids is a list of ints built from JSON-parsed keys — no value
-    # is ever interpolated into the SQL string, only the placeholder count.
     rows = conn.execute(
         f"SELECT id, title FROM documents WHERE id IN ({placeholders(len(ids))})",  # nosec B608 - placeholders() emits `?,?,?` from an int; ids bound via ?
         ids,
@@ -509,14 +384,7 @@ def _fetch_titles(conn: sqlite3.Connection, ids: list[int]) -> dict[int, str | N
 
 
 def quick_check(conn: sqlite3.Connection, query_lock: threading.Lock) -> bool:
-    """Run ``PRAGMA quick_check`` on the database.
-
-    Returns:
-        True if the database reports ``'ok'``; False otherwise.
-
-    Raises:
-        StoreError: On SQLite error.
-    """
+    """Run ``PRAGMA quick_check``; return whether the database reports ``'ok'``."""
     try:
         with query_lock:
             row = conn.execute("PRAGMA quick_check").fetchone()
@@ -526,12 +394,7 @@ def quick_check(conn: sqlite3.Connection, query_lock: threading.Lock) -> bool:
 
 
 def _parse_tag_ids(raw_tag_ids: str | None, *, document_id: int) -> list[int]:
-    """Parse the documents.tag_ids JSON array into a list of ints.
-
-    Returns an empty list for a NULL/empty column or a corrupt value — a
-    hand-edited non-JSON tag_ids must degrade to "no tags", never raise
-    (defence in depth; the same fail-closed posture get_documents uses).
-    """
+    """Parse the documents.tag_ids JSON array; NULL or corrupt yields no tags."""
     if not raw_tag_ids:
         return []
     try:
@@ -546,25 +409,15 @@ def _parse_tag_ids(raw_tag_ids: str | None, *, document_id: int) -> list[int]:
 
 
 def _resolve_tag_names(conn: sqlite3.Connection, tag_ids: list[int]) -> dict[int, str]:
-    """Return a {tag id: name} map for exactly *tag_ids* (no full-table scan).
+    """Return a {tag id: name} map for exactly *tag_ids*.
 
-    Resolves only the supplied ids via ``WHERE id IN ({placeholders})`` — the
-    sanctioned dynamic-SQL pattern (§9.5) — rather than loading the whole tag
-    taxonomy to resolve one document's handful of tags. An empty *tag_ids*
-    runs no query at all (``IN ()`` matches nothing).
-
-    Measurement (§14.1): resolving 3 tags against a 2,000-tag taxonomy drops
-    from ~562 µs/call (load every tag) to ~6 µs/call (id-scoped IN), a ~90x
-    reduction — the work is now O(this document's tags), not O(all tags).
+    Scoping by id rather than loading every tag is ~90x faster for 3 tags
+    against a 2,000-tag taxonomy.
     """
     if not tag_ids:
         return {}
     marks = placeholders(len(tag_ids))
     rows = conn.execute(
-        # rationale: IN (...) with a `?`-only placeholder run from an int count
-        # is the one sanctioned dynamic-SQL pattern (§9.5); kind is a fixed
-        # literal and every id is bound as a parameter, so no value is
-        # interpolated and the query carries no injection.
         f"SELECT id, name FROM taxonomy WHERE kind = 'tag' AND id IN ({marks})",  # nosec B608 - marks is `?,?,?` from placeholders(); ids bound via ?
         tag_ids,
     ).fetchall()
@@ -576,25 +429,7 @@ def get_document_summary(
     query_lock: threading.Lock,
     document_id: int,
 ) -> DocumentSummary | None:
-    """Return the DocumentSummary for one document id, or None if absent.
-
-    The same row projection as the browse list (joins taxonomy for the
-    correspondent and document-type display names, resolves tag names from
-    the documents.tag_ids JSON array), but for a single id with no
-    pagination.
-
-    Args:
-        conn: The open index connection.
-        query_lock: The StoreReader's lock, held for the duration of the
-            two queries (row + tag taxonomy).
-        document_id: The Paperless document id to fetch.
-
-    Returns:
-        A DocumentSummary if the id exists in the index, otherwise None.
-
-    Raises:
-        StoreError: On SQLite error.
-    """
+    """Return the DocumentSummary for one document id, or None if absent."""
     sql = (
         "SELECT "
         "    d.id, "
@@ -616,12 +451,6 @@ def get_document_summary(
             row = conn.execute(sql, (document_id,)).fetchone()
             if row is None:
                 return None
-            # Parse this document's own tag ids first, then resolve only those
-            # names with an IN (...) lookup. The previous version read the
-            # entire tag taxonomy (O(all tags)) to resolve a single document's
-            # handful of tags; for a one-document summary that is wasted work
-            # on every call (§14, §14.5). Resolving by id is O(this doc's tags)
-            # and hits the taxonomy primary key.
             tag_ids = _parse_tag_ids(row["tag_ids"], document_id=row["id"])
             tag_name_by_id = _resolve_tag_names(conn, tag_ids)
     except sqlite3.Error as exc:

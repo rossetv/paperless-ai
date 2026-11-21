@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-# The temperature value used for models that support it.
-# Kept low (0.2) to favour deterministic, schema-compliant output.
+# Low, to favour deterministic, schema-compliant output.
 DEFAULT_CLASSIFY_TEMPERATURE: float = 0.2
 
-# The label woven into the per-request nonce fence that isolates the untrusted
-# document transcription (CODE_GUIDELINES §10.2). The OCR text is
-# operator-unknown content that can read as an instruction ("ignore your
-# previous instructions and ..."). A *static* delimiter is source-visible and
-# forgeable — a document can embed it to fake the boundary — so the transcription
-# is instead wrapped in a fresh, unguessable nonce fence built per call by
-# common.prompt_fences.build_data_fence(label=DOCUMENT_FENCE_LABEL). The system
-# prompt (this static, cacheable string) describes the fence form generically;
-# the unforgeable nonce lives only in the per-document user message, never here,
-# so the cacheable prefix is unaffected.
+# Label for the per-request nonce fence around the untrusted OCR text. A static
+# delimiter could be forged by a document, so the fence carries a random nonce
+# built per call; the system prompt below only describes the fence's form, which
+# keeps it static and cacheable.
 DOCUMENT_FENCE_LABEL: str = "DOCUMENT"
 
 
@@ -140,8 +133,7 @@ which the document cannot reproduce.
 ).strip()
 
 
-# Structured output schema for OpenAI's ``response_format`` parameter.
-# Only used when the provider is OpenAI (``LLM_PROVIDER=openai``).
+# OpenAI ``response_format`` schema; used only when ``LLM_PROVIDER=openai``.
 CLASSIFICATION_JSON_SCHEMA: dict[str, object] = {
     "name": "paperless_document_classification",
     "schema": {

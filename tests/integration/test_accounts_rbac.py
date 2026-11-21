@@ -1,18 +1,4 @@
-"""Integration tests for RBAC and suspension revocation (web-redesign §4.8).
-
-Exercises the real FastAPI app through ``TestClient`` against a real
-``tmp_path`` ``app.db`` and a real seeded ``index.db``.
-
-Coverage:
-- Suspending a user via PATCH /api/users/{id} kills their live session: a
-  request on the previously valid cookie afterwards returns 401.
-- Deleting a user likewise revokes their session immediately.
-- A Member calling an admin-only route (GET /api/users) gets 403.
-- A Read-only user calling the Member-gated POST /api/reconcile gets 403.
-- A Read-only user can still reach the readonly-gated routes (search,
-  facets, stats).
-- An admin reaches every route.
-"""
+"""Integration tests for role gates and session revocation on suspend or delete."""
 
 from __future__ import annotations
 
@@ -72,7 +58,6 @@ def test_suspending_a_user_kills_their_live_session(tmp_path: Path) -> None:
 
         # The victim's previously valid cookie is now dead.
         assert victim_client.get("/api/auth/me").status_code == 401
-        # The admin is unaffected — they never use the legacy bearer for that.
         assert admin.id != victim.id
     finally:
         store_reader.close()

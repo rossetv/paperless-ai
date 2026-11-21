@@ -1,18 +1,3 @@
-/*
- * Chip primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
- *
- * Chip maps to the "Filter / Search Button" and "link tag" treatments in DESIGN.md §4:
- *   - --radius-micro: small container / link tag radius per §5
- *   - --colour-button-light-bg: filter button background
- *   - --colour-text-secondary: muted label text
- *   - --colour-accent: selected/active state fill
- *
- * The remove button uses the accent focus ring (DESIGN.md §6 accessibility).
- */
-
 .chip {
   display: inline-flex;
   align-items: center;
@@ -31,14 +16,12 @@
   vertical-align: middle;
 }
 
-/* ── Selected / active state ── */
 .selected {
   background-color: var(--colour-accent);
   color: var(--colour-text-on-dark);
   border-color: transparent;
 }
 
-/* ── Interactive (toggle) mode — chip is a <button> ── */
 .chip-interactive {
   cursor: pointer;
   background: none;
@@ -49,7 +32,6 @@
     transform var(--duration-fast) var(--easing-out);
 }
 
-/* Hover — subtle tint (unselected); the selected accent fill brightens. */
 .chip-interactive:hover {
   background-color: var(--colour-button-light-bg);
   border-color: var(--colour-text-tertiary);
@@ -60,7 +42,7 @@
   border-color: transparent;
 }
 
-/* Tactile press — a quick scale-down, matching the Button primitive (§4). */
+/* Press scale-down, matching Button. */
 .chip-interactive:active {
   transform: scale(0.96);
 }
@@ -70,9 +52,8 @@
   outline-offset: var(--spacing-1);
 }
 
-/* ── Outer wrapper for the clickable+removable variant (FE-34: avoids
-   button-in-button). The outer span provides the visual frame (border,
-   bg, radius); the inner toggle button is stripped to padding/type only. ── */
+/* Clickable + removable: the outer span carries the visual frame so the toggle
+   and remove buttons can be siblings (no button-in-button). */
 .chip-outer {
   display: inline-flex;
   align-items: center;
@@ -124,12 +105,10 @@
   border-radius: var(--radius-micro);
 }
 
-/* ── Label text within the chip ── */
 .chip-label {
   display: inline;
 }
 
-/* ── Remove (dismiss) button ── */
 .chip-remove {
   display: inline-flex;
   align-items: center;
@@ -159,14 +138,13 @@
   opacity: var(--opacity-pressed);
 }
 
-/* Focus ring on remove button — accessibility per DESIGN.md §6 */
 .chip-remove:focus-visible {
   outline: var(--spacing-1) solid var(--colour-focus-ring);
   outline-offset: var(--spacing-1);
   border-radius: var(--radius-micro);
 }
 
-/* Reduced motion — keep the colour shifts, drop the press scale (§4). */
+/* Reduced motion: keep the colour shifts, drop the press scale. */
 @media (prefers-reduced-motion: reduce) {
   .chip-interactive:active {
     transform: none;

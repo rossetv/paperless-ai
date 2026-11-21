@@ -1,12 +1,4 @@
-"""Tests for the API-key wire models in search.wire.
-
-Covers: CreateApiKeyRequest validates name/scopes/optional expiry; a bad
-scope or empty name raises pydantic.ValidationError; UpdateApiKeyRequest
-accepts a partial body and rejects a bad scope; to_api_key_response maps an
-ApiKey to the JSON shape (with the resolved owner name) and never leaks
-key_hash; ApiKeyEnvelope wraps one key; CreatedApiKeyResponse carries the
-one-time raw secret.
-"""
+"""Tests for the API-key wire models in search.wire."""
 
 from __future__ import annotations
 
@@ -67,13 +59,13 @@ def test_create_request_accepts_an_explicit_expiry() -> None:
 
 
 def test_create_request_rejects_a_malformed_expiry() -> None:
-    """A non-ISO expiry is a 422 at the boundary, never stored (H1)."""
+    """A non-ISO expiry is a 422 at the boundary, never stored."""
     with pytest.raises(ValidationError):
         CreateApiKeyRequest(name="CI", scopes=["api"], expires_at="not-a-date")
 
 
 def test_create_request_normalises_a_naive_expiry_to_utc() -> None:
-    """A tz-naive expiry is coerced to a canonical tz-aware UTC isoformat (H1)."""
+    """A tz-naive expiry is coerced to a canonical tz-aware UTC isoformat."""
     body = CreateApiKeyRequest(
         name="CI", scopes=["api"], expires_at="2099-01-01T00:00:00"
     )
@@ -195,13 +187,13 @@ def test_update_request_rejects_an_empty_scope_list() -> None:
 
 
 def test_update_request_rejects_a_malformed_expiry() -> None:
-    """A supplied non-ISO expiry is a 422 (H1)."""
+    """A supplied non-ISO expiry is a 422."""
     with pytest.raises(ValidationError):
         UpdateApiKeyRequest(expires_at="not-a-date")
 
 
 def test_update_request_normalises_a_naive_expiry_to_utc() -> None:
-    """A supplied naive expiry is coerced to canonical tz-aware UTC (H1)."""
+    """A supplied naive expiry is coerced to canonical tz-aware UTC."""
     body = UpdateApiKeyRequest(expires_at="2099-01-01T00:00:00")
     assert body.expires_at == "2099-01-01T00:00:00+00:00"
 

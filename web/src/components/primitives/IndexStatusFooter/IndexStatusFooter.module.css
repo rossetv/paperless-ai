@@ -1,12 +1,3 @@
-/*
- * IndexStatusFooter primitive — CSS Module.
- *
- * The index-status summary line at the foot of the search idle screen:
- * a ready dot, the document/chunk counts and the embedding model.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .footer {
   display: flex;
   align-items: center;

@@ -1,10 +1,8 @@
-"""Tests for common.paperless — iter_all_documents, document_exists, and
+"""Tests for common.paperless iter_all_documents, document_exists and
 create-named-item edge cases.
 
-Split from test_paperless.py to stay within the §3.1 500-line ceiling.
-The shared _make_client / _make_settings helpers and the _ClientRegistry
-autouse fixture are duplicated here so each file is self-contained and can
-run in isolation without import coupling between test modules.
+The client helpers are duplicated from test_paperless.py so neither test
+module imports the other.
 """
 
 from __future__ import annotations
@@ -44,8 +42,7 @@ class _ClientRegistry:
         return client
 
     def close_all(self) -> None:
-        # PaperlessClient.close() just closes the httpx session; it is safe and
-        # idempotent, so no error guard is needed (CODE_GUIDELINES §17.6).
+        # close() only closes the httpx session and is idempotent.
         for client in self.clients:
             client.close()
         self.clients.clear()
@@ -63,12 +60,7 @@ def _auto_close_clients():
 
 
 def _make_client(settings=None):
-    """Create a PaperlessClient with test settings.
-
-    All clients created via this helper are automatically closed after each
-    test by the ``_auto_close_clients`` fixture, ensuring no resource leaks
-    even when assertions fail.
-    """
+    """Create a PaperlessClient that ``_auto_close_clients`` closes after the test."""
     if settings is None:
         settings = _make_settings()
     c = PaperlessClient(settings)
@@ -77,7 +69,6 @@ def _make_client(settings=None):
 
 class TestIterAllDocuments:
     def test_yields_every_document_across_multiple_pages(self):
-        """iter_all_documents pages through all results and yields each document."""
         url1 = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         url2 = f"{BASE}/api/documents/?ordering=modified&page_size=100&page=2"
         with respx.mock:
@@ -110,7 +101,6 @@ class TestIterAllDocuments:
         client.close()
 
     def test_passes_modified_after_as_modified_gt_filter(self):
-        """Passing modified_after adds the modified__gt query parameter."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100&modified__gt=2024-06-01T00%3A00%3A00Z"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -132,7 +122,6 @@ class TestIterAllDocuments:
         client.close()
 
     def test_yields_nothing_when_results_are_empty(self):
-        """iter_all_documents produces no items when Paperless returns an empty list."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -152,7 +141,6 @@ class TestIterAllDocuments:
         client.close()
 
     def test_returns_documents_in_modified_order(self):
-        """Results come back in the order Paperless returns them (ordered by modified)."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         with respx.mock:
             respx.get(url__eq=url).mock(
@@ -176,7 +164,6 @@ class TestIterAllDocuments:
         client.close()
 
     def test_fields_projection_is_sent_as_a_query_param(self):
-        """Passing fields=(...) adds the Paperless `fields` sparse-fieldset param."""
         url = (
             f"{BASE}/api/documents/"
             "?ordering=modified&page_size=100&fields=id%2Cmodified"
@@ -199,7 +186,6 @@ class TestIterAllDocuments:
         client.close()
 
     def test_no_fields_projection_sends_no_fields_param(self):
-        """With fields=None (default) the request carries no `fields` parameter."""
         url = f"{BASE}/api/documents/?ordering=modified&page_size=100"
         with respx.mock:
             route = respx.get(url__eq=url).mock(
@@ -211,13 +197,11 @@ class TestIterAllDocuments:
 
             list(client.iter_all_documents())
 
-        # The exact-URL match above already excludes a fields param; assert the
-        # request was made (the route was hit) for clarity.
+        # The exact-URL match already excludes a fields param.
         assert route.called
         client.close()
 
     def test_fields_and_modified_after_combine(self):
-        """A light projection and the modified__gt filter are both applied."""
         url = (
             f"{BASE}/api/documents/?ordering=modified&page_size=100"
             "&modified__gt=2024-06-01T00%3A00%3A00Z&fields=id%2Cmodified"
@@ -246,7 +230,6 @@ class TestIterAllDocuments:
 
 class TestDocumentExists:
     def test_returns_true_when_document_found(self):
-        """document_exists returns True when Paperless returns HTTP 200."""
         with respx.mock:
             respx.get(f"{BASE}/api/documents/42/").mock(
                 return_value=httpx.Response(200, json={"id": 42}),
@@ -257,7 +240,6 @@ class TestDocumentExists:
         client.close()
 
     def test_returns_false_when_document_not_found(self):
-        """document_exists returns False when Paperless returns HTTP 404."""
         with respx.mock:
             respx.get(f"{BASE}/api/documents/99/").mock(
                 return_value=httpx.Response(404),
@@ -270,7 +252,6 @@ class TestDocumentExists:
     def test_raises_on_server_error(self):
         """document_exists re-raises on 5xx after retries are exhausted."""
         with respx.mock:
-            # Always return 500; after MAX_RETRIES attempts it should raise.
             respx.get(f"{BASE}/api/documents/7/").mock(
                 return_value=httpx.Response(500),
             )
@@ -311,7 +292,7 @@ class TestCreateNamedItemNon400Reraise:
 
 
 class TestUpdateDocumentMetadataAllFields:
-    """Test that each individual metadata field is included when provided."""
+    """Each metadata field maps to its Paperless payload key."""
 
     def test_correspondent_id_sent_as_correspondent(self):
         with respx.mock:

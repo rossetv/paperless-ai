@@ -1,11 +1,3 @@
-/*
- * DeleteConfirmModal — CSS Module.
- *
- * Minimal layout for the confirmation body text and the Cancel / Delete
- * button row. All values come from design tokens.
- */
-
-/* ── Body copy ── */
 .body {
   margin: 0 0 var(--spacing-14);
   font-family: var(--font-text);
@@ -16,7 +8,6 @@
   color: var(--colour-text-secondary);
 }
 
-/* ── Action row — right-aligned Cancel | Delete ── */
 .buttons {
   display: flex;
   justify-content: flex-end;

@@ -16,7 +16,7 @@
        (import.meta.env, *.module.css declarations used by components). */
     "types": ["vitest/globals", "vite/client"],
 
-    /* Strict mode — §12.1 */
+    /* Strict mode */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,

@@ -1,10 +1,4 @@
-"""Tests for search.api_keys — raw-key generation, hashing, scopes.
-
-Covers: generate_raw_key yields an sk-pls-prefixed high-entropy string; two
-keys differ; hash_key is SHA-256 hex and deterministic; key_prefix is the
-documented length; the scope constants and parse_scopes/serialise_scopes
-round-trip and reject junk; should_touch throttles on the stored timestamp.
-"""
+"""Tests for search.api_keys: key generation, hashing, scopes and touch throttling."""
 
 from __future__ import annotations
 

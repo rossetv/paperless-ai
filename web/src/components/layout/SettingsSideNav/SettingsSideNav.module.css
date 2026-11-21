@@ -1,20 +1,7 @@
 /*
- * SettingsSideNav layout component — CSS Module.
- *
- * The left navigation rail of the settings / access-control area: an optional
- * eyebrow label, then stacked groups (each an uppercase title above icon-led
- * NavLinks). The active link gets an accent icon and tinted pill background.
- *
- * Responsive behaviour (mirrors mediaman .setg-rail):
- *   ≥ 960 px — vertical sticky rail on the left of a two-column grid.
- *   < 960 px — sticky horizontal chip strip pinned below the nav bar.
- *     Group titles and the eyebrow are hidden; each item becomes a pill chip.
- *     Full-bleed via negative margins; edge fade via mask-image gradient.
- *   < 700 px — sticks below the MobileTopBar (48 px) instead of the desktop
- *     nav-glass (--height-nav), so `top` changes at that sub-breakpoint.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Literal px values in @media are permitted (stylelint rule).
+ * >= 960 px: vertical sticky rail on the left of a two-column grid.
+ * < 960 px: sticky horizontal chip strip below the nav bar, full-bleed via
+ * negative margins, with an edge fade from mask-image.
  */
 
 .nav {
@@ -33,7 +20,6 @@
   overflow-y: auto;
 }
 
-/* ── Eyebrow — "SETTINGS" label above the first group. ── */
 .eyebrow {
   display: block;
   padding: 0 var(--spacing-10);
@@ -46,7 +32,7 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── One group — title + its links, with hairline separator when not last. ── */
+/* Hairline separator between groups. */
 .group {
   display: flex;
   flex-direction: column;
@@ -69,7 +55,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── A single nav link. ── */
 .link {
   display: flex;
   align-items: center;
@@ -97,7 +82,6 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Icon within a link. ── */
 .link-icon {
   flex-shrink: 0;
   opacity: var(--opacity-muted);
@@ -105,7 +89,6 @@
               opacity var(--duration-standard) var(--easing-standard);
 }
 
-/* ── Active link — tinted background, primary text. ── */
 .link-active {
   background-color: var(--colour-button-light-bg);
   color: var(--colour-text-primary);
@@ -116,22 +99,14 @@
   background-color: var(--colour-button-light-bg);
 }
 
-/* ── Active link icon — accent-coloured, full opacity. ── */
 .link-icon-active {
   color: var(--colour-accent);
   opacity: 1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Responsive chip-strip mode — < 960 px (--bp-settings-rail reference)
- *
- * The vertical rail collapses into a sticky horizontal scrollable chip strip
- * pinned below the desktop nav-glass (≥ 700 px) or the mobile top bar (< 700 px).
- * Mirrors mediaman .setg-rail @media (max-width: 960px) exactly.
- * ═══════════════════════════════════════════════════════════════════════════ */
+/* Chip-strip mode below 960 px (--bp-settings-rail). */
 @media (width <= 959.98px) {
   .nav {
-    /* Reset vertical-rail sizing and switch to chip-strip layout */
     width: auto;
     max-height: none;
     align-self: auto;
@@ -140,7 +115,7 @@
     z-index: calc(var(--z-nav) - 10); /* below the nav bar, above content */
     flex-direction: row;
     gap: var(--spacing-2);
-    overflow: auto hidden; /* horizontal scroll, no vertical overflow */
+    overflow: auto hidden;
     padding: var(--spacing-8) var(--spacing-14);
     margin-bottom: var(--spacing-6);
     background-color: var(--colour-nav-bg);
@@ -154,11 +129,8 @@
     scroll-padding-inline: var(--spacing-16);
 
     /*
-     * Edge fade — scroll affordance cuing off-screen tabs on the right.
-     * mask-image applies on the scroll container itself so it requires no
-     * extra DOM nodes; the left fade is narrow (equal to the padding) because
-     * the leftmost chip is nearly always visible.
-     * mask-image uses alpha channel only — black = opaque, transparent = hidden.
+     * Edge fade cues the off-screen chips. The left fade is narrow (equal to the
+     * padding) because the leftmost chip is nearly always visible.
      */
     /* stylelint-disable-next-line property-no-vendor-prefix */
     -webkit-mask-image: linear-gradient(
@@ -181,7 +153,7 @@
     display: none;
   }
 
-  /* Groups become inline containers — flattened into the flex row */
+  /* Groups are flattened into the flex row. */
   .group {
     display: contents;
   }
@@ -190,13 +162,11 @@
     border-bottom: none;
   }
 
-  /* Eyebrow and group titles — hidden in chip-strip mode */
   .eyebrow,
   .group-title {
     display: none;
   }
 
-  /* Chips — compact pill-shaped tabs */
   .link {
     flex: 0 0 auto;
     padding: var(--spacing-6) var(--spacing-10);
@@ -216,7 +186,7 @@
     opacity: 1;
   }
 
-  /* Active chip — raised above the fade gradients */
+  /* Raised above the fade gradients. */
   .link-active {
     background-color: var(--colour-button-light-bg);
     color: var(--colour-text-primary);
@@ -230,9 +200,8 @@
     color: var(--colour-text-primary);
   }
 
-  /* Icon inside chip */
   .link-icon {
-    width: var(--spacing-11); /* 15 px — matches mediaman .setg-rail-item svg */
+    width: var(--spacing-11); /* 15 px */
     height: var(--spacing-11);
   }
 
@@ -242,9 +211,7 @@
   }
 }
 
-/* Below 700 px the MobileTopBar (48 px = --height-nav) replaces the desktop
-   nav-glass; the sticky offset is identical so no change is needed here.
-   This block is retained for explicit documentation only. */
+/* MobileTopBar has the same height as the desktop nav, so the offset is unchanged. */
 @media (width <= 699.98px) {
   .nav {
     top: var(--height-nav);

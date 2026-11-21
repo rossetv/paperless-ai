@@ -1,9 +1,4 @@
-"""Tests for appdb migration v8 — the model_pricing table.
-
-Covers: a fresh database reaches schema version 8; the model_pricing table
-exists with the expected columns; model is the primary key (rejects a
-duplicate); the migration creates the table empty; the migration is idempotent.
-"""
+"""Tests for app.db migration v8, the model_pricing table."""
 
 from __future__ import annotations
 
@@ -38,7 +33,6 @@ def _schema_version(c: sqlite3.Connection) -> int:
 
 
 def test_schema_version_constant_is_at_least_eight() -> None:
-    """The code's declared schema version includes the model_pricing migration."""
     assert SCHEMA_VERSION >= 8
 
 
@@ -67,7 +61,6 @@ def test_model_pricing_table_has_the_expected_columns(conn) -> None:
 
 
 def test_model_is_the_primary_key_and_rejects_a_duplicate(conn) -> None:
-    """model is the primary key — a model name appears at most once."""
     run_migrations(conn)
     conn.execute(
         "INSERT INTO model_pricing "
@@ -84,7 +77,7 @@ def test_model_is_the_primary_key_and_rejects_a_duplicate(conn) -> None:
 
 
 def test_migration_creates_the_table_empty(conn) -> None:
-    """v8 creates an empty table — the seed lives in code, not the migration."""
+    """The price seed lives in code, not in the migration."""
     run_migrations(conn)
     count = conn.execute("SELECT COUNT(*) FROM model_pricing").fetchone()[0]
     assert count == 0

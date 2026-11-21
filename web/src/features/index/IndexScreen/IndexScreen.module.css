@@ -1,22 +1,9 @@
-/*
- * IndexScreen feature component — CSS Module.
- *
- * The Index operations dashboard layout: a header row, then a vertically
- * stacked body — health hero, stat-tile row, daemon-card row, and a
- * two-column activity/failed region, then the danger zone. Theme-aware via
- * tokens.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* Centres the dashboard within the page and constrains its width. */
 .screen {
   max-width: var(--width-app-content);
   margin: 0 auto;
   padding: var(--spacing-14) var(--spacing-14) var(--spacing-section);
 }
 
-/* ── Header row — title block on the left, actions on the right. ── */
 .header {
   display: flex;
   align-items: flex-end;
@@ -47,7 +34,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Stacked dashboard body. ── */
 .body {
   display: flex;
   flex-direction: column;
@@ -61,7 +47,6 @@
   gap: var(--spacing-10);
 }
 
-/* ── A titled section (the Daemons block). ── */
 .section-head {
   display: flex;
   align-items: baseline;
@@ -86,7 +71,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Two-column activity/failed region — activity wider than failed. ── */
 .split-row {
   display: grid;
   grid-template-columns: 3fr 2fr;
@@ -94,7 +78,6 @@
   align-items: start;
 }
 
-/* ── Recent-activity panel. ── */
 .activity-panel {
   background-color: var(--colour-surface);
   border: var(--spacing-1) solid var(--colour-border);
@@ -111,7 +94,6 @@
   color: var(--colour-text-primary);
 }
 
-/* ── Header action group — holds the two CTA buttons. ── */
 .header-actions {
   display: flex;
   gap: var(--spacing-8);
@@ -119,7 +101,6 @@
   flex-shrink: 0;
 }
 
-/* ── Activity panel heading row — title left, link right. ── */
 .activity-panel-head {
   display: flex;
   align-items: baseline;
@@ -127,7 +108,6 @@
   margin-bottom: var(--spacing-4);
 }
 
-/* ── State containers — loading and error. ── */
 .state-box {
   display: flex;
   align-items: center;
@@ -136,7 +116,6 @@
   padding: var(--spacing-section) var(--spacing-14);
 }
 
-/* ── Responsive collapse — single column on narrow viewports. ── */
 @media (width <= 834px) {
   .quad-row {
     grid-template-columns: repeat(2, 1fr);

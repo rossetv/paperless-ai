@@ -1,32 +1,16 @@
-/*
- * Select pattern — CSS Module.
- *
- * Custom accessible dropdown styled in the Apple Filter/Search field style
- * from DESIGN.md §4. The field wrapper, label, and trigger shell come from
- * the shared FormField scaffolding via `composes` — the trigger only adds the
- * flexbox layout the shared shell does not cover. Select keeps its own markup
- * (the label is a <span>, not a <label>, because the ARIA combobox trigger is
- * a <button>) but shares all of FormField's styling.
- *
- * The listbox uses --radius-standard (8 px) and --shadow-card for elevation,
- * consistent with the Apple card pattern.
- * All values come exclusively from design tokens.
- */
+/* The label is a <span>, not a <label>, because the ARIA combobox trigger is a <button>. */
 
-/* Field wrapper — the shared column field, made a positioning context so the
-   absolutely-positioned listbox anchors to it. */
+/* Positioning context for the absolutely positioned listbox. */
 .select {
   composes: field from '../../primitives/FormField/FormField.module.css';
   position: relative;
 }
 
-/* Label — the shared field label. */
 .label {
   composes: label from '../../primitives/FormField/FormField.module.css';
 }
 
-/* Trigger — the shared input shell plus the flex layout for the value and the
-   chevron. Focus-ring and disabled styling come with the composed shell. */
+/* Focus ring and disabled styling come with the composed input shell. */
 .trigger {
   composes: control from '../../primitives/FormField/FormField.module.css';
   display: flex;

@@ -1,12 +1,4 @@
-/**
- * Shared form data for API key create and edit panels.
- *
- * Extracted here to avoid duplication between `APIKeyCreatePanel` and
- * `APIKeyEditPanel`, which previously each defined byte-identical copies
- * (CODE_GUIDELINES §1.3 — every line is a liability).
- *
- * Allowed deps: api/types (leaf; no React, no hooks, no components).
- */
+/** Form data shared by the API-key create and edit panels. */
 import type { ApiScope } from '../../api/types';
 
 /** The selectable scopes, with their human descriptions. */

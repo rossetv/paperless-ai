@@ -4,37 +4,26 @@ import { SettingsTextField } from '../../../components/primitives/SettingsTextFi
 import styles from './SecretField.module.css';
 
 export interface SecretFieldProps {
-  /** Element id — the settings Row associates its label via htmlFor. */
+  /** The settings Row associates its label via htmlFor. */
   id: string;
-  /** Accessible field name. */
   label: string;
   /** The server-provided MASK of the stored secret — never the real value. */
   maskedValue: string;
   /**
-   * Called when the secret-change intent changes:
-   *  - a string  — the new secret the user is typing,
-   *  - null      — the user is NOT changing this key (initial state, or after
-   *    Cancel). The screen treats null as "omit this key from the PUT body".
+   * Receives the new secret being typed, or `null` when the user is not changing this key
+   * (initially and after Cancel); the screen omits a `null` key from the PUT body.
    */
   onChange: (value: string | null) => void;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
 /**
  * The control for a secret configuration key.
  *
- * The backend never sends a real secret — only a mask. So the field starts
- * locked on that mask and reports `null` (no change). Clicking "Replace"
- * switches it to an empty editable input; from then on each keystroke is
- * reported as the new secret. "Cancel" restores the locked mask and reports
- * `null` again. While replacing, a reveal toggle flips password ↔ text so the
- * user can check what they typed.
- *
- * This two-state design is what lets the screen omit an unchanged secret from
- * the save payload — an untouched SecretField never reports a string.
- *
- * Tier: features/ — composes primitives and owns the secret-handling policy.
+ * The backend only ever sends a mask, so the field starts locked on it and reports `null`.
+ * "Replace" switches to an empty input whose keystrokes are reported as the new secret;
+ * "Cancel" restores the mask and reports `null` again. An untouched field therefore never
+ * reports a string, which lets the screen omit an unchanged secret from the save payload.
  */
 export function SecretField({
   id,

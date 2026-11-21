@@ -1,14 +1,3 @@
-/*
- * SourceCardSurface primitive — CSS Module.
- *
- * The bespoke source-result card shell: a two-column grid (a content column
- * and a thumbnail column) with a circular citation badge overlapping the
- * thumbnail's top-left corner. The `highlighted` modifier lifts the card and
- * adds an accent ring — used for the top-ranked source.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .surface {
   display: grid;
   grid-template-columns: 1fr var(--size-doc-thumb-width);
@@ -20,7 +9,6 @@
   padding: var(--spacing-13) var(--spacing-14);
 }
 
-/* Highlighted (top-ranked) source — lift + accent ring, no flat border. */
 .highlighted {
   border-color: transparent;
   box-shadow: var(--shadow-source-highlight);
@@ -39,7 +27,6 @@
   height: var(--size-doc-thumb-height);
 }
 
-/* Real document thumbnail — fills the column, page top first. */
 .thumb-img {
   display: block;
   width: 100%;
@@ -52,7 +39,6 @@
   background-color: var(--colour-surface);
 }
 
-/* Circular citation badge — overlaps the thumbnail's top-left corner. */
 .badge {
   position: absolute;
   top: calc(-1 * var(--spacing-4));

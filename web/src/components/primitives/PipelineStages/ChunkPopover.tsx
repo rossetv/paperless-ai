@@ -1,17 +1,7 @@
 /**
- * ChunkPopover — a single shared hover/focus popover for retrieve-phase chunk
- * snippets.
- *
- * When a `.chunk-snip` element is hovered or keyboard-focused, this fixed-
- * position popover appears near the cursor (hover) or anchored below the
- * element (focus), showing the chunk's full text (title + score + body).
- *
- * Positioning: clamped to the viewport (flips left/up near edges); max-height
- * with internal scroll for long text. Dismissed on mouseleave / blur / Escape.
- *
- * Animation respects `prefers-reduced-motion`.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3).
+ * One shared hover/focus popover showing the full text of retrieve-phase chunk
+ * snippets. Placed near the cursor on hover or below the snippet on focus,
+ * clamped to the viewport, and dismissed on mouseleave, blur or Escape.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -117,9 +107,7 @@ export function ChunkPopover({ containerRef }: ChunkPopoverProps): React.ReactEl
     function onMouseMove(e: MouseEvent): void {
       const el = (e.target as HTMLElement).closest('[data-full]') as HTMLElement | null;
       if (el === null) return;
-      // Use the functional setState form so the handler never closes over a
-      // stale `state.visible` value — the effect dependency array previously
-      // included `state.visible`, causing the handler to lag a render behind.
+      // Functional setState so the handler never reads a stale `visible`.
       setState((prev) => prev.visible ? { ...prev, x: e.clientX, y: e.clientY } : prev);
     }
     function onMouseLeave(e: MouseEvent): void {
@@ -155,11 +143,9 @@ export function ChunkPopover({ containerRef }: ChunkPopoverProps): React.ReactEl
       container.removeEventListener('focus', onFocus, true);
       container.removeEventListener('blur', onBlur, true);
     };
-    // `state.visible` is intentionally omitted — onMouseMove now uses the
-    // functional setState form, so it no longer needs the closure value.
+    // `state.visible` is deliberately omitted: onMouseMove uses functional setState.
   }, [containerRef, showPop, hidePop]);
 
-  // Dismiss on Escape key.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.key === 'Escape') {

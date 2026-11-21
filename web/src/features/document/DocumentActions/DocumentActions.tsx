@@ -17,19 +17,15 @@ export interface DocumentActionsProps {
    * "Open in Paperless" action is omitted.
    */
   paperlessUrl: string | null;
-  /** Additional class names to merge onto the row. */
   className?: string;
 }
 
 /**
  * The document-level action row: Download (in-app, primary) and Open in
- * Paperless (external, demoted to a quiet inline link — UI-24 / DD-3).
+ * Paperless (external, demoted to a quiet inline link).
  *
- * Rendered as a horizontal row under the document title, and reused as the
- * escape hatches inside the PDF viewer's load-error state. Extracted so both
- * call sites share one definition rather than duplicating the markup.
- *
- * Tier: features/document (CODE_GUIDELINES §12.3). Imports from components/* only.
+ * Used under the document title and as the escape hatches in the PDF viewer's
+ * load-error state.
  */
 export function DocumentActions({
   pdfUrl,

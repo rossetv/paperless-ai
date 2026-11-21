@@ -1,12 +1,4 @@
-/*
- * FirstRunSetupScreen feature — CSS Module.
- *
- * The dark first-run admin-creation screen — the same visual family as
- * LoginScreen but a single, centred card (no hero column). Dark-surfaced in
- * BOTH themes via the forced-dark tokens.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Same family as LoginScreen but one centred card; dark in both themes. */
 
 .screen {
   position: relative;
@@ -22,7 +14,6 @@
   box-sizing: border-box;
 }
 
-/* ── Aurora glow — a single quiet radial behind the card. ── */
 .aurora {
   position: absolute;
   inset: 0;
@@ -34,7 +25,6 @@
   );
 }
 
-/* ── The centred card. ── */
 .card {
   position: relative;
   z-index: var(--z-base);
@@ -48,7 +38,6 @@
   box-sizing: border-box;
 }
 
-/* ── Brand row at the top of the card. ── */
 .brand-row {
   display: inline-flex;
   align-items: center;
@@ -85,22 +74,18 @@
   color: var(--colour-dark-text-secondary);
 }
 
-/* ── Form internals. ── */
 .field + .field {
   margin-top: var(--spacing-10);
 }
 
-/* ── Submit button — full-width accent. ── */
 .submit {
   margin-top: var(--spacing-13);
 }
 
-/* The button itself fills the full width of its .submit container. */
 .submit-button {
   width: 100%;
 }
 
-/* ── Inline error alert. ── */
 .error {
   margin-top: var(--spacing-10);
   font-size: var(--font-size-caption);
@@ -108,7 +93,6 @@
   color: var(--colour-status-danger-fg);
 }
 
-/* ── Footer hint — where to find the setup token. ── */
 .note {
   margin-top: var(--spacing-13);
   font-size: var(--font-size-micro);

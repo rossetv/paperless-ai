@@ -1,19 +1,9 @@
-/*
- * FilterControls layout — pattern-layer stylesheet.
- *
- * Provides layout for the bounded tag picker region: the search input above,
- * the chip cluster below, and a max-height scroll container for the expanded
- * state. All values reference design tokens; no hardcoded px or colours.
- */
-
-/* Wrapper for the entire Tags subsection (label + search input + chips). */
 .tag-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-6);
 }
 
-/* Section label (e.g. "Tags") above the search input. */
 .section-label {
   font-family: var(--font-text);
   font-size: var(--font-size-micro);
@@ -24,17 +14,12 @@
   color: var(--colour-text-tertiary);
 }
 
-/*
- * Scrollable chip container — only used in the expanded state.
- * Constrained to --max-height-tag-picker so the date range is never
- * pushed off screen, even when hundreds of tags are revealed.
- */
+/* Expanded state only; capped so the date range is never pushed off screen. */
 .tag-list-scroll {
   max-height: var(--max-height-tag-picker);
   overflow-y: auto;
 }
 
-/* Flex chip cluster — wraps naturally within whatever container is above it. */
 .tag-chips {
   display: flex;
   flex-wrap: wrap;

@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { PhaseRecord, SearchResponse, StreamEvent } from '../../api/types';
 
-// The hook reads the streaming client; mock both halves so the test drives the
-// event sequence directly without a real fetch.
+// Mock both halves of the streaming client so tests drive the event sequence.
 vi.mock('../../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../api/client')>();
   return {
@@ -27,7 +26,6 @@ const EMPTY_FILTERS = {
   date_to: null,
 };
 
-/** Build an async generator that yields the given events in order. */
 function eventsGen(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
   return (async function* () {
     for (const ev of events) {
@@ -36,7 +34,7 @@ function eventsGen(events: StreamEvent[]): AsyncGenerator<StreamEvent> {
   })();
 }
 
-/** An async generator that never produces a frame (simulates a hung stream). */
+/** A hung stream that never produces a frame. */
 function neverGen(): AsyncGenerator<StreamEvent> {
   return (async function* () {
     await new Promise<void>(() => {}); // never resolves
@@ -44,7 +42,6 @@ function neverGen(): AsyncGenerator<StreamEvent> {
   })();
 }
 
-/** A minimal answered SearchResponse for the `result` frame. */
 function makeResponse(answer: string): SearchResponse {
   return {
     answer,

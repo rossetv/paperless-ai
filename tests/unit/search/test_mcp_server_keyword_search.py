@@ -1,9 +1,6 @@
 """Tests for the keyword_search MCP tool.
 
-keyword_search is a zero-LLM tool returning a ranked document list. These tests
-drive it via the in-memory MCP transport with a stubbed core, asserting the
-JSON contract (document fields + paperless_url + snippet + pagination), the
-limit clamp, and that filters reach the core as the ID-based SearchFilters.
+Driven through the in-memory MCP transport with a stubbed core.
 """
 
 from __future__ import annotations

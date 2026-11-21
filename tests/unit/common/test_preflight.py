@@ -14,20 +14,18 @@ MODULE = "common.preflight"
 
 
 def _patch_openai_client(mock_client):
-    """Patch get_openai_client to return *mock_client* and mark it as ready."""
+    """Patch get_openai_client to return *mock_client*."""
     return patch(f"{MODULE}.get_openai_client", return_value=mock_client)
 
 
 @pytest.fixture(autouse=True)
 def _client_ready():
-    """Default: OpenAI client is ready.  Individual tests override when needed."""
+    """Default to a ready OpenAI client; individual tests override it."""
     with patch(f"{MODULE}.is_openai_client_ready", return_value=True):
         yield
 
 
 class TestRunPreflightChecks:
-    """Tests for run_preflight_checks()."""
-
     def test_all_checks_pass_no_exception(self):
         settings = make_settings_obj(
             PRE_TAG_ID=1,

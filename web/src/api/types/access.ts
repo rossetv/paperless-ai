@@ -1,20 +1,6 @@
-/**
- * User-management and API-key wire types — Wave 3 Access Control.
- *
- * Covers the users CRUD endpoints and the API-key mint/revoke lifecycle.
- * The `User` shape is imported from auth.ts as the shared base type.
- *
- * Allowed deps: auth.ts (peer module — CODE_GUIDELINES §12.3).
- */
+/** User-management and API-key wire types. */
 
 import type { User } from './auth';
-
-// ---------------------------------------------------------------------------
-// User-management types (Wave 3 — Access Control)
-//
-// These consume the Wave 1 users CRUD endpoints. `User` (auth.ts) is the
-// returned shape; the request bodies below mirror the server contract.
-// ---------------------------------------------------------------------------
 
 /** Body for POST /api/users — create a user account. */
 export interface CreateUserRequest {
@@ -26,14 +12,10 @@ export interface CreateUserRequest {
 }
 
 /**
- * Body for PATCH /api/users/{id} — edit a user.
+ * Body for PATCH /api/users/{id} — edit a user; only the supplied fields change.
  *
- * Every field is optional: only the supplied fields are changed. A non-empty
- * `password` resets the password; omit it to keep the current one.
- *
- * `role`, `status`, and `password` mirror the Python `wire.py` declaration of
- * `str | None = None` — each is therefore `field?: X | null` per the contract
- * guideline in types.ts.
+ * A non-empty `password` resets the password. Fields are `field?: X | null` to
+ * mirror the backend's `str | None = None`.
  */
 export interface UpdateUserRequest {
   display_name?: string | null;
@@ -52,10 +34,6 @@ export interface UsersResponse {
 export interface UserResponse {
   user: User;
 }
-
-// ---------------------------------------------------------------------------
-// API-key types (Wave 3 — Access Control)
-// ---------------------------------------------------------------------------
 
 /** The scopes an API key may carry. */
 export type ApiScope = 'api' | 'mcp' | 'admin';
@@ -84,10 +62,8 @@ export interface ApiKey {
 /**
  * Body for POST /api/api-keys — mint a new key.
  *
- * There is no `owner_id`: an API key is always owned by the caller who
- * creates it. The backend hard-wires `owner_user_id = caller.id`, so an
- * `owner_id` here would be silently ignored. Admins can view and revoke
- * other users' keys but cannot mint keys on their behalf.
+ * No `owner_id`: the backend always makes the caller the owner. Admins can view
+ * and revoke other users' keys but cannot mint keys for them.
  */
 export interface CreateApiKeyRequest {
   name: string;
@@ -97,12 +73,10 @@ export interface CreateApiKeyRequest {
 }
 
 /**
- * Body for PATCH /api/api-keys/{id} — edit a key.
+ * Body for PATCH /api/api-keys/{id} — edit a key; only the supplied fields change.
  *
- * Every field is optional: only the supplied fields change. Editing is
- * **owner-only** — the backend returns 403 unless the caller owns the key.
- * `expires_at: null` clears the expiry (the key never expires); omit the
- * field to leave the expiry unchanged.
+ * Owner-only (403 otherwise). `expires_at: null` clears the expiry; omit it to
+ * leave the expiry unchanged.
  */
 export interface UpdateApiKeyRequest {
   name?: string;
@@ -118,9 +92,8 @@ export interface ApiKeysResponse {
 /**
  * Response body for POST /api/api-keys.
  *
- * `api_key` is the persisted key metadata. `secret` is the full `sk-pls-…`
- * key — returned ONCE, at creation, and never again. The UI shows the secret
- * once for the user to copy, then discards it.
+ * `secret` is the full `sk-pls-…` key, returned only here; the UI shows it once
+ * for the user to copy, then discards it.
  */
 export interface CreateApiKeyResponse {
   api_key: ApiKey;

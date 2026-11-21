@@ -1,27 +1,9 @@
-/*
- * Spinner primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- *
- * The ring is a circular element with a transparent gap that rotates.
- * prefers-reduced-motion: animation is replaced by an opacity pulse that
- * conveys "in progress" without triggering vestibular issues.
- *
- * Colour: accent (--colour-accent = Apple Blue) for the active arc;
- * border colour for the track — matches the focus ring convention.
- */
-
-/* The screen-reader label uses the canonical `.visually-hidden` utility in
-   styles/global.css — Spinner no longer carries its own copy. */
-
-/* ── Wrapper ── */
 .spinner {
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
-/* ── The animated ring ── */
 .ring {
   display: block;
   border-radius: var(--radius-circle);
@@ -49,9 +31,6 @@
   }
 }
 
-/* ── Size modifiers ── */
-
-/* rationale: 16 px = calc(var(--spacing-6) * 2); border-width 2 px = var(--spacing-1) */
 .small .ring {
   width: calc(var(--spacing-6) * 2);    /* 16 px */
   height: calc(var(--spacing-6) * 2);
@@ -64,7 +43,6 @@
   border-width: var(--spacing-1);       /* 2 px */
 }
 
-/* rationale: 28 px = --spacing-14 (24 px) + --spacing-2 (4 px) */
 .large .ring {
   width: calc(var(--spacing-14) + var(--spacing-2));  /* 28 px */
   height: calc(var(--spacing-14) + var(--spacing-2));

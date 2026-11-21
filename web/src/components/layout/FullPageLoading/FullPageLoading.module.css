@@ -1,19 +1,9 @@
-/*
- * FullPageLoading layout component — CSS Module.
- *
- * A full-viewport centred loading overlay for use during bootstrap queries.
- * Dark-surfaced to match the app shell's initial state before theme resolves.
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .root {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100vh;
 
-  /* Theme-aware page background — this loader is shown inside the authenticated
-     app shell (ProtectedRoute, DocumentPage) and on the bootstrap/login path,
-     so it must match the current theme rather than force pure black. */
+  /* Follows the theme: shown inside the app shell as well as on the login path. */
   background: var(--colour-bg);
 }

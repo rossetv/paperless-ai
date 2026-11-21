@@ -1,8 +1,7 @@
 """Tests for the facets/taxonomy wire models in search.wire.facets.
 
-Covers the length bounds on TaxonomyCreateRequest.name (L17): the name is
-forwarded verbatim to Paperless, so an empty or over-255-character name is
-rejected at the boundary rather than creating a blank or oversized entry.
+TaxonomyCreateRequest.name is forwarded verbatim to Paperless, so an empty or
+over-255-character name is rejected at the boundary.
 """
 
 from __future__ import annotations

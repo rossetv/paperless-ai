@@ -1,10 +1,4 @@
-"""Tests for common.config — search-server settings.
-
-Split from test_config.py to stay within the §3.1 500-line ceiling.
-Covers: SEARCH_TOP_K, SEARCH_MAX_REFINEMENTS, SEARCH_PLANNER_MODEL,
-SEARCH_ANSWER_MODEL, SEARCH_SERVER_HOST/PORT, SEARCH_SESSION_TTL,
-SEARCH_MAX_CONCURRENT — for both openai and ollama providers.
-"""
+"""Tests for common.config search-server settings."""
 
 from __future__ import annotations
 
@@ -46,8 +40,6 @@ _SEARCH_DEFAULTS_OPENAI = [
 
 
 class TestSearchSettingsDefaultsOpenAI:
-    """Search settings load correct defaults for the openai provider."""
-
     @pytest.mark.parametrize(
         "attr, expected",
         _SEARCH_DEFAULTS_OPENAI,
@@ -59,8 +51,6 @@ class TestSearchSettingsDefaultsOpenAI:
 
 
 class TestSearchSettingsDefaultsOllama:
-    """Provider-aware model defaults switch when LLM_PROVIDER=ollama."""
-
     def test_planner_model_defaults_to_gemma3_12b(self, mocker):
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.SEARCH_PLANNER_MODEL == "gemma3:12b"
@@ -89,8 +79,6 @@ _SEARCH_CUSTOM = [
 
 
 class TestSearchSettingsCustom:
-    """Search settings parse set values correctly."""
-
     @pytest.mark.parametrize(
         "env_key, env_val, attr, expected",
         _SEARCH_CUSTOM,
@@ -102,8 +90,6 @@ class TestSearchSettingsCustom:
 
 
 class TestSearchSettingsInvalidInts:
-    """Non-integer values for integer search settings raise a contextful ValueError."""
-
     @pytest.mark.parametrize(
         "env_key",
         [
@@ -115,21 +101,17 @@ class TestSearchSettingsInvalidInts:
         ],
     )
     def test_non_integer_raises(self, mocker, env_key):
-        # The message must name the offending variable (CODE_GUIDELINES §6.6).
         with pytest.raises(ValueError, match=f"{env_key} must be an integer"):
             _build(mocker, {**_MINIMAL_ENV, env_key: "not-an-int"})
 
 
 class TestSearchSettingsBounds:
-    """Out-of-range integer search settings raise a contextful ValueError."""
-
     @pytest.mark.parametrize("value", ["0", "-1"])
     def test_search_top_k_must_be_positive(self, mocker, value):
         with pytest.raises(ValueError, match="SEARCH_TOP_K must be >= 1"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_TOP_K": value})
 
     def test_search_max_refinements_high_value_is_accepted(self, mocker):
-        # No hard cap any more — the operator may set any non-negative count.
         s = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": "20"})
         assert s.SEARCH_MAX_REFINEMENTS == 20
 
@@ -139,7 +121,6 @@ class TestSearchSettingsBounds:
 
     @pytest.mark.parametrize("value", ["-1", "-5"])
     def test_search_max_refinements_negative_raises(self, mocker, value):
-        # Only a negative count is rejected; there is no upper cap.
         with pytest.raises(ValueError, match="SEARCH_MAX_REFINEMENTS must be"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_MAX_REFINEMENTS": value})
 
@@ -165,8 +146,6 @@ class TestSearchSettingsBounds:
 
 
 class TestSearchRagCostSettings:
-    """The four Area-3 SEARCH_* settings resolve with the documented defaults."""
-
     def test_reasoning_effort_defaults(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_PLANNER_REASONING_EFFORT == "medium"
@@ -175,7 +154,7 @@ class TestSearchRagCostSettings:
         assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is False
 
     def test_overrides_win(self, mocker) -> None:
-        # "high"/"low" (not the "medium" default) so the override genuinely bites.
+        # Not the "medium" default, so the override is observable.
         settings = _build(
             mocker,
             {
@@ -192,7 +171,6 @@ class TestSearchRagCostSettings:
         assert settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL is True
 
     def test_invalid_reasoning_effort_fails_closed(self, mocker) -> None:
-        """An unrecognised reasoning_effort raises at startup, naming the key."""
         with pytest.raises(ValueError, match="SEARCH_PLANNER_REASONING_EFFORT"):
             _build(
                 mocker,
@@ -205,39 +183,31 @@ class TestSearchRagCostSettings:
 
 
 class TestSearchFailFastGateDefaults:
-    """The four fail-fast gate knobs have the correct coded defaults."""
-
     def test_planner_model_defaults_to_gpt_5_6_terra_for_openai(self, mocker) -> None:
-        """OpenAI provider: SEARCH_PLANNER_MODEL defaults to gpt-5.6-terra."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
 
     def test_gate_adequacy_defaults_true(self, mocker) -> None:
-        """SEARCH_GATE_ADEQUACY defaults to True — the gate is on by default."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_GATE_ADEQUACY is True
 
     def test_gate_relevance_defaults_true(self, mocker) -> None:
-        """SEARCH_GATE_RELEVANCE defaults to True — the gate is on by default."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_GATE_RELEVANCE is True
 
     def test_min_query_chars_defaults_to_two(self, mocker) -> None:
-        """SEARCH_MIN_QUERY_CHARS defaults to 2 (the Layer-0 degenerate-input floor)."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_MIN_QUERY_CHARS == 2
 
     def test_relevance_min_similarity_defaults_to_calibrated_floor(
         self, mocker
     ) -> None:
-        """SEARCH_RELEVANCE_MIN_SIMILARITY defaults to 0.60 — between off-topic and real."""
+        """0.60 sits between off-topic and genuine matches."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.60
 
 
 class TestSearchFailFastGateOverrides:
-    """Every fail-fast knob can be overridden from the environment."""
-
     def test_gate_adequacy_overridden_to_false(self, mocker) -> None:
         settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_GATE_ADEQUACY": "false"})
         assert settings.SEARCH_GATE_ADEQUACY is False
@@ -263,34 +233,28 @@ class TestSearchFailFastGateOverrides:
 
 
 class TestSearchFailFastGateClamping:
-    """Floor clamping keeps out-of-range values safe."""
-
     def test_negative_min_query_chars_clamped_to_zero(self, mocker) -> None:
-        """A negative SEARCH_MIN_QUERY_CHARS is clamped to 0, not rejected."""
         settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "-3"})
         assert settings.SEARCH_MIN_QUERY_CHARS == 0
 
     def test_zero_min_query_chars_accepted(self, mocker) -> None:
-        """Zero is a valid floor — the caller opts out of the char check."""
+        """Zero opts out of the character check."""
         settings = _build(mocker, {**_MINIMAL_ENV, "SEARCH_MIN_QUERY_CHARS": "0"})
         assert settings.SEARCH_MIN_QUERY_CHARS == 0
 
     def test_negative_relevance_min_similarity_clamped_to_zero(self, mocker) -> None:
-        """A negative SEARCH_RELEVANCE_MIN_SIMILARITY is clamped to 0.0."""
         settings = _build(
             mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_MIN_SIMILARITY": "-0.5"}
         )
         assert settings.SEARCH_RELEVANCE_MIN_SIMILARITY == 0.0
 
     def test_non_numeric_relevance_min_similarity_raises(self, mocker) -> None:
-        """A non-numeric SEARCH_RELEVANCE_MIN_SIMILARITY fails closed at startup."""
         with pytest.raises(ValueError, match="SEARCH_RELEVANCE_MIN_SIMILARITY"):
             _build(
                 mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_MIN_SIMILARITY": "quite_low"}
             )
 
     def test_non_integer_min_query_chars_raises(self, mocker) -> None:
-        """A non-integer SEARCH_MIN_QUERY_CHARS fails closed at startup."""
         with pytest.raises(
             ValueError, match="SEARCH_MIN_QUERY_CHARS must be an integer"
         ):
@@ -298,8 +262,6 @@ class TestSearchFailFastGateClamping:
 
 
 class TestJudgeSettings:
-    """The relevance-judge gate + model knobs parse, default, and validate."""
-
     def test_gate_defaults_on(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_GATE_JUDGE is True
@@ -309,10 +271,7 @@ class TestJudgeSettings:
         assert settings.SEARCH_GATE_JUDGE is False
 
     def test_judge_and_planner_openai_defaults(self, mocker) -> None:
-        """OpenAI provider: judge defaults to gpt-5.6-luna, planner to
-        gpt-5.6-terra — the judge no longer mirrors the planner default on
-        openai (contrast test_judge_model_defaults_to_planner_model_ollama,
-        below, where it still does)."""
+        """On openai the judge does not mirror the planner model; on ollama it does."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_JUDGE_MODEL == "gpt-5.6-luna"
         assert settings.SEARCH_PLANNER_MODEL == "gpt-5.6-terra"
@@ -355,8 +314,6 @@ class TestJudgeSettings:
 
 
 class TestRelevanceTierThresholds:
-    """The three relevance-badge cut-points parse, default, and validate."""
-
     def test_defaults_are_the_calibrated_cut_points(self, mocker) -> None:
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.SEARCH_RELEVANCE_TIER_STRONG == 0.70
@@ -390,7 +347,6 @@ class TestRelevanceTierThresholds:
         assert settings.SEARCH_RELEVANCE_TIER_GOOD == 0.70
 
     def test_partial_above_good_raises(self, mocker) -> None:
-        """A partial cut-point above good breaks the ordering invariant."""
         with pytest.raises(ValueError, match="Relevance tiers must be ordered"):
             _build(mocker, {**_MINIMAL_ENV, "SEARCH_RELEVANCE_TIER_PARTIAL": "0.95"})
 

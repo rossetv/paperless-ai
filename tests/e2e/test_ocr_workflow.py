@@ -1,4 +1,4 @@
-"""Tests for end-to-end OCR workflow."""
+"""End-to-end tests for the OCR workflow over a stateful Paperless mock."""
 
 from __future__ import annotations
 
@@ -38,15 +38,7 @@ class TestOcrHappyPath:
     """Complete happy path: download -> convert -> OCR -> update Paperless."""
 
     def test_complete_ocr_workflow(self):
-        """
-        Full OCR lifecycle:
-        1. Create a OcrProcessor with mocks
-        2. download_content returns real PNG image bytes
-        3. get_document returns document with pre-tag
-        4. Run process()
-        5. Verify update_document called with correct text and tags
-        6. Verify processing tag released
-        """
+        """A PNG is OCR'd and written back with the post-tag; the lock is released."""
         settings = _make_settings()
         png_bytes = make_png_bytes()
 
@@ -67,10 +59,8 @@ class TestOcrHappyPath:
         )
         processor.process()
 
-        # Verify OCR provider was called
         provider.transcribe_image.assert_called_once()
 
-        # Verify update_document was called
         client.update_document.assert_called_once()
         call_args = client.update_document.call_args
         doc_id = call_args[0][0]
@@ -80,14 +70,11 @@ class TestOcrHappyPath:
         assert doc_id == 42
         assert "Invoice from Acme Corp" in content
         assert "Transcribed by model: gpt-5.4-mini" in content
-        # POST_TAG_ID should be added, PRE_TAG_ID removed
         assert 444 in tags  # POST_TAG_ID
         assert 443 not in tags  # PRE_TAG_ID removed
 
-        # The processing tag (500) should be absent from the final state.
-        # Note: the happy path in _update_paperless_document already discards
-        # the processing tag before calling update_document, and then
-        # release_processing_tag in the finally block confirms it's gone.
+        # The processing tag (500) is dropped before update_document and
+        # released again in the finally block.
         assert 500 not in state["tags"]
         assert 500 not in tags  # also absent from the update_document call itself
 
@@ -95,7 +82,6 @@ class TestOcrHappyPath:
         """Multi-frame TIFF produces multi-page text with page headers."""
         settings = _make_settings()
 
-        # Create a multi-frame TIFF
         frames = [
             Image.new("RGB", (10, 10), color="red"),
             Image.new("RGB", (10, 10), color="green"),
@@ -125,10 +111,8 @@ class TestOcrHappyPath:
         )
         processor.process()
 
-        # Both pages transcribed
         assert call_count[0] == 2
 
-        # Verify assembled text has page headers
         content = client.update_document.call_args[0][1]
         assert "--- Page 1 ---" in content
         assert "--- Page 2 ---" in content
@@ -138,12 +122,7 @@ class TestOcrErrorPath:
     """OCR provider fails, document gets error tag."""
 
     def test_provider_raises_for_all_images(self):
-        """
-        When the OCR provider raises exceptions for all images:
-        1. process() handles the error
-        2. Error tag is added
-        3. Processing tag is released
-        """
+        """When the OCR provider raises for every image, the error tag is applied."""
         settings = _make_settings()
         png_bytes = make_png_bytes()
 
@@ -151,7 +130,6 @@ class TestOcrErrorPath:
         client, state = make_stateful_paperless(doc)
         client.download_content.return_value = (png_bytes, "image/png")
 
-        # Provider raises for every call
         provider = make_mock_ocr_provider()
         provider.transcribe_image.side_effect = Exception("Model unavailable")
 
@@ -163,8 +141,7 @@ class TestOcrErrorPath:
         )
         processor.process()
 
-        # The OCR error marker is in the assembled text, triggering error handling.
-        # update_document should be called with error-marked content and error tag.
+        # The OCR error marker in the assembled text triggers the error path.
         assert client.update_document.called
         content = client.update_document.call_args[0][1]
         tags = client.update_document.call_args[0][2]
@@ -193,7 +170,6 @@ class TestOcrErrorPath:
         )
         processor.process()
 
-        # Error path: update_document called with error tag
         assert client.update_document.called
         tags = client.update_document.call_args[0][2]
         assert 552 in tags  # ERROR_TAG_ID
@@ -204,7 +180,6 @@ class TestOcrErrorPath:
 
         doc = make_document(id=42, tags=[443])
         client, state = make_stateful_paperless(doc)
-        # Return corrupt bytes that will fail image conversion
         client.download_content.return_value = (b"not-an-image", "image/png")
 
         provider = make_mock_ocr_provider()
@@ -217,11 +192,10 @@ class TestOcrErrorPath:
         )
         processor.process()
 
-        # Provider should NOT have been called (conversion fails first)
+        # Conversion fails before the provider is reached.
         provider.transcribe_image.assert_not_called()
 
-        # Error tag should be applied via update_document_metadata
-        # finalise_document_with_error calls update_document_metadata with the error tag
+        # finalise_document_with_error applies the tag via update_document_metadata.
         assert 552 in state["tags"]
 
 
@@ -229,12 +203,7 @@ class TestOcrLockContention:
     """Document already has processing tag -- claim fails, early exit."""
 
     def test_already_claimed_document_skipped(self):
-        """
-        When the document already has the processing tag:
-        1. claim fails
-        2. No update_document call
-        3. Early exit
-        """
+        """A document that already has the processing tag is left untouched."""
         settings = _make_settings()
 
         # Document already has the processing tag (500)
@@ -251,11 +220,8 @@ class TestOcrLockContention:
         )
         processor.process()
 
-        # No OCR was attempted
         provider.transcribe_image.assert_not_called()
-        # No content update was made
         client.update_document.assert_not_called()
-        # download_content should not have been called
         client.download_content.assert_not_called()
 
     def test_no_processing_tag_configured_always_proceeds(self):
@@ -280,9 +246,7 @@ class TestOcrLockContention:
         )
         processor.process()
 
-        # OCR was performed
         provider.transcribe_image.assert_called_once()
-        # Document was updated
         client.update_document.assert_called_once()
 
     def test_error_tag_skips_processing(self):
@@ -302,23 +266,17 @@ class TestOcrLockContention:
         )
         processor.process()
 
-        # No OCR attempted
         provider.transcribe_image.assert_not_called()
-        # No content update
         client.update_document.assert_not_called()
 
 
 class TestOcrBornDigitalSkip:
-    """Deterministic poppler gate (spec D1-D6): a born-digital PDF is skipped
-    before any vision-OCR is attempted."""
+    """The poppler gate skips a born-digital PDF before any vision OCR."""
 
     def test_e2e_born_digital_skips_and_advances_tag(self):
-        """
-        Full skip lifecycle:
-        1. Document is a PDF with real embedded text and the PRE tag
-        2. The poppler gate (mocked at the classify_original seam) says skip
-        3. process() returns None -- no OCR, no content write
-        4. PRE tag is swapped for POST, and the marker tag is applied
+        """A skipped PDF gets no OCR or content write; PRE becomes POST plus marker.
+
+        The poppler gate is mocked at the ``classify_original`` seam.
         """
         doc = make_document(
             mime_type="application/pdf",

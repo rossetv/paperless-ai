@@ -1,30 +1,10 @@
 """Turns document bytes (PDF, PNG, TIFF, ...) into a streamable page source.
 
-Memory is the binding constraint for the OCR daemon: it runs
-``DOCUMENT_WORKERS`` documents at once, each fanning pages across
-``PAGE_WORKERS``, on a memory-capped arm64 container. Two properties of this
-module keep peak RSS bounded:
-
-- **Rasterise at the target size, not full DPI.** A PDF page rendered at
-  300 DPI is ~2480x3509 (~26 MB decoded); the provider immediately shrinks it
-  to ``OCR_MAX_SIDE`` (default 1600) before sending it to the model, so the
-  full-resolution raster exists only to be thrown away. We ask poppler to scale
-  the long side to ``OCR_MAX_SIDE`` up front (``size=max_side`` ->
-  ``pdftoppm -scale-to``), so the bitmap that ever reaches RAM is ~1133x1600
-  (~5 MB) — roughly a quarter of the bytes for a portrait A4 page.
-
-- **Stream pages instead of holding the whole document.** Decoding every page
-  of a 50-page scan into one in-memory list is what OOM-kills the container.
-  For PDFs we hand poppler an *output folder* and take back file *paths*
-  (``paths_only=True``); the worker opens, OCRs, and deletes one page at a time,
-  so at most ~``PAGE_WORKERS`` page bitmaps are ever resident. The folder's
-  lifetime is owned by the caller via :class:`PageSource`'s context-manager
-  protocol.
-
-The non-PDF formats (PNG/JPEG/TIFF) are small and already decoded by Pillow in
-one shot, so they stay an in-memory list behind the same :class:`PageSource`
-interface — the worker consumes both the streamed and the in-memory case
-identically.
+Memory is the binding constraint: the daemon runs several documents at once,
+each fanning pages across workers, on a memory-capped container. So PDFs are
+rasterised straight at ``OCR_MAX_SIDE`` (a quarter of the bytes of a 300 DPI
+A4 page) and streamed as temp files, one page loaded at a time; decoding a
+50-page scan into one list is what OOM-kills the container.
 """
 
 from __future__ import annotations
@@ -45,10 +25,8 @@ from pdf2image.exceptions import (
     PopplerNotInstalledError,
 )
 
-# pdf2image renders PDF pages to this raster format when streaming to a folder.
-# PNG is lossless (no OCR-quality loss versus the default PPM) and far smaller
-# on disk, which matters when a large scan's pages sit in the temp dir waiting
-# their turn.
+# Lossless like the default PPM but far smaller on disk, which matters while a
+# large scan's pages wait in the temp dir.
 _PDF_PAGE_FORMAT = "png"
 
 # Modes the provider can thumbnail and PNG-encode as-is.
@@ -75,45 +53,23 @@ _UNDECODABLE = (UnidentifiedImageError, OSError, Image.DecompressionBombError)
 
 
 class ImageConversionError(Exception):
-    """Raised when raw document bytes cannot be decoded into images.
-
-    The OCR daemon's domain error for an undecodable download — Pillow could
-    not identify the bytes, or the file is truncated/corrupt. The worker
-    catches this to mark the document as errored rather than letting a generic
-    exception escape (CODE_GUIDELINES §6.1).
-    """
+    """Raised when raw document bytes cannot be decoded into images."""
 
 
 class PageSource:
     """A sized, page-at-a-time view over a document's pages.
 
-    The OCR worker needs three things from a converted document: the page
-    *count* up front (for page numbering and assembly), each page *loaded* only
-    when it is about to be transcribed, and the backing storage *released*
-    afterwards. :class:`PageSource` provides exactly those and nothing more.
-
-    Two backings hide behind one interface:
-
-    - **PDF**: a list of temp-file paths plus the temp directory that owns them.
-      :meth:`load_page` opens a path, fully decodes it into a standalone image,
-      and deletes the file; the temp directory is removed on context exit. This
-      keeps at most as many page bitmaps resident as there are concurrent
-      callers.
-    - **Non-PDF (PNG/JPEG/TIFF)**: a list of already-decoded :class:`PIL.Image`
-      objects. :meth:`load_page` hands one out and forgets it; the images are
-      closed on context exit.
-
-    Use it as a context manager so the backing storage is always released::
+    Backed either by temp-file paths (PDF, multi-frame images), each decoded
+    and deleted on load, or by already-decoded images. Use it as a context
+    manager so the backing storage is released::
 
         with open_page_source(content, content_type, ...) as pages:
             for i in range(len(pages)):
                 with pages.load_page(i) as image:
-                    ...  # transcribe; the image is independent of any file
+                    ...
 
-    Every image returned by :meth:`load_page` is fully loaded into memory and
-    depends on no open file handle, so it stays valid after the source — or the
-    individual page file — is gone. Every page is 8-bit in one of the modes
-    1/L/LA/P/RGB/RGBA, so the provider can resize and PNG-encode it.
+    Every loaded page is fully in memory, 8-bit, and in a mode the provider can
+    resize and PNG-encode.
     """
 
     def __init__(
@@ -123,8 +79,7 @@ class PageSource:
         temp_dir: str | None = None,
         images: list[Image.Image] | None = None,
     ) -> None:
-        # Exactly one backing is populated; the other stays empty. ``temp_dir``
-        # is only set for the PDF backing and is the single thing we must clean.
+        # Exactly one backing is populated.
         self._paths = paths or []
         self._temp_dir = temp_dir
         self._images = images or []
@@ -134,39 +89,25 @@ class PageSource:
         return len(self._images) if self._images else len(self._paths)
 
     def load_page(self, index: int) -> Image.Image:
-        """Load page *index* (0-based) as a fully in-memory image.
+        """Load page *index* (0-based) as an image the caller owns and closes.
 
-        For the PDF backing the page file is decoded and then deleted, so the
-        temp directory drains as the document is processed and a crash partway
-        through still frees the pages already consumed. For the in-memory
-        backing the pre-decoded image is returned as-is.
-
-        The returned image owns its pixels outright — no open file handle — so
-        the caller may use it after this :class:`PageSource` is closed. The
-        caller is responsible for closing the returned image.
+        A page file is deleted once decoded, so the temp directory drains as
+        the document is processed.
         """
         if self._images:
-            # Hand back a copy, not the retained object: the worker closes
-            # every image it loads in a finally block (CODE_GUIDELINES §1.4),
-            # and closing the stored copy would invalidate the source's own
-            # reference — corrupting any subsequent load_page of the same index
-            # and the double-close in close(). The PDF path copies for the same
-            # reason; the in-memory path must match.
+            # A copy, because the caller closes what it loads and the stored
+            # image must stay valid.
             return self._images[index].copy()
 
         path = self._paths[index]
         try:
             with Image.open(path) as handle:
-                # load() forces the full decode into RAM; copy() detaches the
-                # result from the file object so deleting the file below cannot
-                # invalidate it (CODE_GUIDELINES §1.4 — the no-open-handle
-                # contract is designed, not hoped for).
+                # copy() detaches the decoded pixels from the file, which is
+                # deleted below.
                 handle.load()
                 image = handle.copy()
         finally:
-            # Delete eagerly so peak disk usage tracks the unprocessed tail,
-            # not the whole document. A missing file is fine — context exit
-            # would only have removed it anyway.
+            # Delete eagerly so disk usage tracks only the unprocessed pages.
             try:
                 os.remove(path)
             except OSError:
@@ -174,12 +115,7 @@ class PageSource:
         return image
 
     def close(self) -> None:
-        """Release all backing storage: the temp directory or the held images.
-
-        Idempotent and exception-safe — called from the worker's ``finally`` and
-        from :meth:`__exit__`, so it must never raise on a partially consumed or
-        already-closed source.
-        """
+        """Release the temp directory or the held images; idempotent, never raises."""
         if self._temp_dir is not None:
             shutil.rmtree(self._temp_dir, ignore_errors=True)
             self._temp_dir = None
@@ -213,38 +149,19 @@ def open_page_source(
 ) -> PageSource:
     """Decode raw document bytes into a streamable :class:`PageSource`.
 
-    - PDFs are rasterised one image per page and streamed via temp files (see
-      the module docstring) so the whole document never sits in RAM at once.
-    - Image formats (PNG/JPEG/TIFF/...) are loaded via Pillow into memory.
-    - Multi-frame images (e.g. TIFF) are expanded into one image per frame.
+    PDFs are rasterised one temp file per page and multi-frame images are
+    split into frames; other images are decoded in memory.
 
     Args:
-        content: The raw file bytes.
-        content_type: MIME type (e.g. ``"application/pdf"``, ``"image/tiff"``).
-        dpi: Rendering resolution for PDF rasterisation (default 300). Ignored
-            when *max_side* drives the output size, but still passed to poppler
-            so DPI-dependent hinting stays sensible.
-        max_side: If set, scale each rasterised PDF page so its longer side is
-            this many pixels (``pdftoppm -scale-to``). This is the long-side
-            cap, not a width cap — ``size=(max_side, None)`` would only fix the
-            *width* and leave a portrait page taller than intended, so an int is
-            used deliberately. Leaves non-PDF inputs untouched; the provider
-            still clamps every page to ``OCR_MAX_SIDE`` as a backstop.
-        timeout: Seconds before Poppler's ``pdftoppm`` is killed. Passed
-            through to ``convert_from_bytes`` as its ``timeout`` kwarg. ``None``
-            means no limit (the default). A timeout triggers a
-            :exc:`PDFPopplerTimeoutError`, which is wrapped as
-            :exc:`ImageConversionError` so the worker can error-tag the
-            document and remove it from the queue.
-
-    Returns:
-        A :class:`PageSource`; use it as a context manager so its backing
-        storage (temp directory or in-memory images) is released.
+        dpi: PDF rendering resolution; still passed to poppler when *max_side*
+            sets the output size.
+        max_side: Scale each PDF page so its longer side is this many pixels
+            (``pdftoppm -scale-to``). An int, because ``size=(max_side, None)``
+            would only fix the width. Non-PDF inputs are not scaled here.
+        timeout: Seconds before ``pdftoppm`` is killed; ``None`` means no limit.
 
     Raises:
-        ImageConversionError: If the image bytes cannot be identified by Pillow
-            or the file is truncated/corrupt, or if PDF rasterisation fails for
-            any reason (corrupt PDF, Poppler timeout, Poppler not installed).
+        ImageConversionError: The bytes cannot be decoded or rasterised.
     """
     if "pdf" in content_type.lower():
         return _pdf_to_page_source(content, dpi=dpi, max_side=max_side, timeout=timeout)
@@ -253,20 +170,14 @@ def open_page_source(
         img = Image.open(BytesIO(content))
         img.load()
         if getattr(img, "n_frames", 1) > 1:
-            # Multi-frame image (e.g. TIFF): mirror the PDF streaming strategy.
-            # Decoding all frames into RAM at once is ~2.6 GB for a 100-page
-            # 300-DPI TIFF; writing each frame to a temp file and loading one at
-            # a time keeps peak RSS bounded to ~PAGE_WORKERS bitmaps, exactly
-            # like the PDF path (M6 fix).
+            # Stream frames like PDF pages: decoding all of a 100-page 300-DPI
+            # TIFF at once is ~2.6 GB.
             img.close()
             return _multiframe_to_page_source(content)
-        # Detach the page so the backing BytesIO can be released immediately.
         single = _to_page_mode(img)
         img.close()
         return PageSource(images=[single])
     except _UNDECODABLE as e:
-        # OSError covers a truncated or otherwise corrupt image — Pillow
-        # identifies the format but fails partway through Image.load().
         raise ImageConversionError(f"Unable to open image: {e}") from e
 
 
@@ -287,27 +198,16 @@ def _to_page_mode(image: Image.Image) -> Image.Image:
 
 
 def _multiframe_to_page_source(content: bytes) -> PageSource:
-    """Write each frame of a multi-frame image (TIFF, etc.) to a temp PNG file.
+    """Write each frame of a multi-frame image to a temp PNG for on-demand loading.
 
-    This mirrors the PDF streaming strategy: rather than holding every decoded
-    frame in RAM simultaneously (which can reach ~2.6 GB for a 100-page
-    300-DPI TIFF), each frame is saved to an individual PNG temp file and
-    loaded on demand. At most ``PAGE_WORKERS`` bitmaps are resident at once.
-
-    The temp directory's lifetime belongs to the returned :class:`PageSource`,
-    which removes it on ``close()``. On any failure the directory is removed
-    before propagating (M6 fix).
-
-    Raises:
-        ImageConversionError: If the image bytes cannot be decoded by Pillow.
+    The returned :class:`PageSource` owns the temp directory; on failure it is
+    removed before the error propagates.
     """
     temp_dir = tempfile.mkdtemp(prefix="paperless-ocr-tiff-")
     paths: list[str] = []
     try:
         with Image.open(BytesIO(content)) as img:
             for frame_index, frame in enumerate(ImageSequence.Iterator(img)):
-                # _to_page_mode materialises the frame pixels independently of
-                # the ImageSequence iterator so saving does not re-seek the source.
                 frame_copy = _to_page_mode(frame)
                 path = os.path.join(temp_dir, f"frame-{frame_index:04d}.png")
                 frame_copy.save(path, format="PNG")
@@ -327,25 +227,15 @@ def _pdf_to_page_source(
 ) -> PageSource:
     """Rasterise a PDF to per-page temp files and wrap them in a PageSource.
 
-    Poppler writes one image file per page into a freshly created temp
-    directory and we take back the paths (``paths_only=True``); the directory's
-    lifetime then belongs to the returned :class:`PageSource`. On any failure
-    the directory is removed before propagating, so a half-written render never
-    leaks a temp dir.
+    The returned :class:`PageSource` owns the temp directory; on failure it is
+    removed before the error propagates.
 
     Raises:
-        ImageConversionError: Wraps any pdf2image / Poppler failure (corrupt PDF,
-            page-count error, Poppler timeout, Poppler not installed) so that the
-            caller sees a uniform domain error and the worker can error-tag the
-            document and remove it from the queue (CODE_GUIDELINES §6.1).
+        ImageConversionError: Any pdf2image / Poppler failure.
     """
     temp_dir = tempfile.mkdtemp(prefix="paperless-ocr-")
-    # Omit ``size`` entirely when no cap is requested: poppler's runtime default
-    # is ``None`` but the published type rejects it, and an absent kwarg is the
-    # honest way to say "render at the natural DPI".
-    # rationale: pdf2image.convert_from_bytes takes a heterogeneous kwarg dict
-    # (int dpi, str output_folder/fmt, bool paths_only, int size, int timeout)
-    # with no published TypedDict, so dict[str, Any] is the only honest value type.
+    # ``size`` is omitted rather than passed as None, which the published type
+    # rejects. pdf2image publishes no TypedDict for these mixed kwargs.
     kwargs: dict[str, Any] = {
         "dpi": dpi,
         "output_folder": temp_dir,
@@ -355,9 +245,6 @@ def _pdf_to_page_source(
     if max_side is not None:
         kwargs["size"] = max_side
     if timeout is not None:
-        # Signals pdftoppm after *timeout* seconds; raises PDFPopplerTimeoutError
-        # which is caught below and re-raised as ImageConversionError so the
-        # worker error-tags the document and removes it from the queue.
         kwargs["timeout"] = timeout
     try:
         raw_paths = convert_from_bytes(content, **kwargs)
@@ -367,22 +254,14 @@ def _pdf_to_page_source(
         PDFPopplerTimeoutError,
         PopplerNotInstalledError,
     ) as exc:
-        # rationale: rasterisation-boundary translation — these pdf2image
-        # exceptions do not inherit from ImageConversionError, so the worker's
-        # `except ImageConversionError` clause would miss them. Wrapping them
-        # here ensures the worker's error path fires, the PRE_TAG is removed,
-        # the document is error-tagged, and it leaves the queue. Temp dir is
-        # cleaned up before we raise (CODE_GUIDELINES §6.3).
+        # Wrapped so the worker error-tags the document and it leaves the queue.
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise ImageConversionError(f"PDF rasterisation failed: {exc}") from exc
     except Exception:
-        # rationale: rasterisation-boundary cleanup — any other unexpected failure
-        # inside Poppler (OOM, missing binary variant, etc.) must not strand the
-        # temp directory. The original exception propagates for triage.
+        # Any other failure must not strand the temp directory.
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
-    # paths_only=True makes convert_from_bytes yield str paths (the published
-    # type only models the in-memory list[Image]); they are sorted by zero-padded
-    # page number, so lexical order is page order even past page 9.
+    # paths_only=True yields str paths, which the published type does not model.
+    # They are named by zero-padded page number, so lexical order is page order.
     paths = cast("list[str]", raw_paths)
     return PageSource(paths=paths, temp_dir=temp_dir)

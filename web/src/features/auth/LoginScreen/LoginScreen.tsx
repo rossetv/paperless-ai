@@ -9,12 +9,7 @@ import { Unauthenticated, ApiError } from '../../../api/client';
 import { validateUsername, validatePassword } from '../../../lib/credentials';
 import styles from './LoginScreen.module.css';
 
-/**
- * Map a login error to user-friendly copy.
- *
- * 401 → wrong credentials; 403 → suspended account; anything else → generic.
- * The raw Error.message is never shown — it is internal (e.g. "API error 403").
- */
+/** User-facing copy for a login error; the raw message is internal and never shown. */
 function loginErrorMessage(e: Error): string {
   if (e instanceof Unauthenticated) return 'Incorrect username or password.';
   if (e instanceof ApiError && e.status === 403) return 'This account is suspended.';
@@ -22,15 +17,9 @@ function loginErrorMessage(e: Error): string {
 }
 
 /**
- * The dark "island" sign-in screen.
- *
- * A two-column layout on desktop — brand + hero copy on the left, the sign-in
- * card on the right — collapsing to a centred single column on tablet and
- * mobile. Dark-surfaced in BOTH themes (it uses the forced-dark tokens).
- * Username / password are validated on submit with the shared `credentials`
- * rules; the `useLogin` mutation sets the session cookie.
- *
- * Tier: features/auth (CODE_GUIDELINES §12.3) — composes primitives + api.
+ * Sign-in screen, dark in both themes: hero copy beside the sign-in card on
+ * desktop, one centred column on smaller screens. `useLogin` sets the session
+ * cookie.
  */
 export function LoginScreen(): React.ReactElement {
   const [username, setUsername] = React.useState('');
@@ -51,8 +40,6 @@ export function LoginScreen(): React.ReactElement {
     if (uErr !== undefined || pErr !== undefined) {
       return;
     }
-    // The second argument is an options object for per-call callbacks;
-    // mutation-level handlers live in useLogin itself.
     login.mutate({ username, password, remember }, {});
   }
 
@@ -65,7 +52,7 @@ export function LoginScreen(): React.ReactElement {
       <div className={styles['aurora-far']} aria-hidden="true" />
 
       <div className={styles['layout']}>
-        {/* Left — brand + hero copy. */}
+        {/* Brand and hero copy */}
         <div className={styles['hero']}>
           <div className={styles['brand-row']}>
             <Brand size={28} />
@@ -83,7 +70,7 @@ export function LoginScreen(): React.ReactElement {
           </p>
         </div>
 
-        {/* Right — the sign-in card. */}
+        {/* Sign-in card */}
         <div className={styles['card-column']}>
           <div className={styles['card']}>
             <h2 className={styles['card-title']}>Sign in</h2>

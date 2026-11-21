@@ -1,10 +1,4 @@
-"""Tests for the account wire models in search.wire.
-
-Covers: LoginRequest validates username/password and defaults remember to
-False; SetupRequest / CreateUserRequest enforce the field rules; an invalid
-field raises pydantic.ValidationError; UpdateUserRequest accepts a partial
-body; to_user_response maps a User to the JSON shape and omits password_hash.
-"""
+"""Tests for the account wire models in search.wire."""
 
 from __future__ import annotations
 

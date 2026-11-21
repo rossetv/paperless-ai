@@ -1,18 +1,6 @@
 /*
- * Tooltip primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- *
- * Design decisions (DESIGN.md-consistent):
- * - Background: --colour-overlay-dark — the same translucent dark used by the
- *   navigation glass, giving the tooltip Apple's frosted glass feel without
- *   needing backdrop-filter on a small element.
- * - Text: --colour-text-on-dark.
- * - Radius: --radius-micro — small container per DESIGN.md §5.
- * - Positioned absolutely below the wrapper; wrapper is position:relative.
- * - Font: --font-size-micro — tooltips are supplementary, not primary content.
- * - No shadow: tooltip sits at the top of the visual stack; elevation is
- *   expressed through the dark background contrast, not a drop shadow.
+ * No shadow: the tooltip sits at the top of the stack and the dark background
+ * supplies the contrast.
  */
 
 .wrapper {

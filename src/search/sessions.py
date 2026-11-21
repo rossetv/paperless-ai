@@ -1,24 +1,9 @@
-"""Server-side session management for the search server (web-redesign §4.4).
+"""Server-side browser sessions.
 
-This module owns the session lifecycle the browser auth flow needs, on top
-of the :mod:`appdb.sessions` table:
-
-- :func:`new_token` mints a high-entropy opaque token for the cookie.
-- :func:`hash_token` is the SHA-256 the database stores — the raw token is
-  never persisted, so a database leak yields no usable sessions.
-- :class:`CurrentUser` is the small, role-carrying identity the FastAPI
-  dependencies hand to route handlers.
-- :func:`begin_session` / :func:`resolve_session` / :func:`end_session`
-  create, look up, and destroy sessions against ``app.db`` (added in the
-  next task).
-
-The token is opaque (no signature, no embedded claims): with a server-side
-store there is nothing to sign, and revocation is a row delete. The cookie
-is ``SameSite=Strict``, so cross-site requests never carry it — that is the
-CSRF defence; no separate CSRF token is added (spec §4.4).
-
-Allowed deps: stdlib (secrets, hashlib), appdb (sessions, users). Forbidden:
-FastAPI, sqlite3 directly, store, daemon packages.
+The cookie holds an opaque random token; only its SHA-256 is stored, so a
+database leak yields no usable sessions. With a server-side store there is
+nothing to sign, and revocation is a row delete. The cookie is
+``SameSite=Strict``, which is the CSRF defence, so there is no CSRF token.
 """
 
 from __future__ import annotations
@@ -33,12 +18,9 @@ from typing import overload
 from appdb import sessions as session_store
 from appdb import users as user_store
 
-# Token entropy in bytes. 32 bytes (256 bits) is well beyond brute-force.
 _TOKEN_BYTES = 32
 
-# Short-session lifetime in seconds (spec §4.4): the lifetime an un-ticked
-# login gets. The "keep me signed in" tick instead uses the operator-configured
-# SEARCH_SESSION_TTL (default 7 days), passed in to cookie_ttl_seconds.
+# A login without "keep me signed in"; with it, SEARCH_SESSION_TTL applies.
 SESSION_TTL_SECONDS = 28800  # 8 hours
 
 
@@ -46,17 +28,7 @@ SESSION_TTL_SECONDS = 28800  # 8 hours
 class CurrentUser:
     """The authenticated identity handed to a route handler.
 
-    A deliberately small projection of the full :class:`appdb.users.User`:
-    the route layer needs the id (for self-action guards), the username (for
-    logging and display), and the role (for RBAC) — plus the display name that
-    the identity-aware search uses as the "who is asking" signal.
-
-    Attributes:
-        id: The user's ``users`` row id.
-        username: The user's login name.
-        role: The role driving RBAC.
-        display_name: The user's optional human-friendly name (the search "who
-            is asking" signal), or None when the account has no display name.
+    *display_name* is the search's "who is asking" signal.
     """
 
     id: int
@@ -66,63 +38,30 @@ class CurrentUser:
 
 
 def new_token() -> str:
-    """Return a fresh, high-entropy, URL-safe opaque session token.
-
-    The value placed in the ``search_session`` cookie. It is never stored as
-    given — :func:`hash_token` produces what the database holds.
-
-    Returns:
-        A URL-safe token string of at least 256 bits of entropy.
-    """
+    """Return a fresh 256-bit URL-safe session token."""
     return secrets.token_urlsafe(_TOKEN_BYTES)
 
 
 def hash_token(token: str) -> str:
-    """Return the SHA-256 hex digest of *token*.
+    """Return the SHA-256 hex digest stored in ``sessions.token_hash``.
 
-    This is the value stored in ``sessions.token_hash``. SHA-256 (a fast
-    hash, not a password hash) is correct here: a session token is already
-    full-entropy random, so it needs no slow KDF — only a one-way mapping so
-    the raw token is absent from the database.
-
-    Args:
-        token: The opaque session token from the cookie.
-
-    Returns:
-        The 64-character lowercase hex SHA-256 digest.
+    The token is full-entropy random, so a fast hash suffices; no slow KDF.
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def cookie_ttl_seconds(*, remember: bool, remember_ttl_seconds: int) -> int:
-    """Return the cookie/session lifetime in seconds for a login.
-
-    Args:
-        remember: ``True`` when the user ticked "keep me signed in".
-        remember_ttl_seconds: The operator-configured ``SEARCH_SESSION_TTL`` —
-            the lifetime to use when *remember* is set.
-
-    Returns:
-        *remember_ttl_seconds* when *remember* is set, otherwise the fixed
-        :data:`SESSION_TTL_SECONDS` short-session lifetime.
-    """
+    """Return the cookie/session lifetime in seconds for a login."""
     return remember_ttl_seconds if remember else SESSION_TTL_SECONDS
 
 
-# How stale last_seen_at may get before a request triggers a refresh write.
-# ~5 minutes (spec §4.4) keeps last_seen useful without a write per request.
+# How stale last_seen_at may get before a request refreshes it.
 _LAST_SEEN_REFRESH = timedelta(minutes=5)
 
 
 @dataclass(frozen=True, slots=True)
 class IssuedSession:
-    """The result of :func:`begin_session`.
-
-    Attributes:
-        token: The raw opaque token to place in the ``search_session``
-            cookie. It is *not* stored anywhere — only its hash is.
-        expires_at: The ISO-8601 UTC expiry of the new session.
-    """
+    """A new session: the raw cookie token (never stored) and its expiry."""
 
     token: str
     expires_at: str
@@ -136,23 +75,7 @@ def begin_session(
     user_agent: str | None = None,
     ip: str | None = None,
 ) -> IssuedSession:
-    """Create a session for *user_id* and return its raw token and expiry.
-
-    Mints a fresh opaque token, inserts a ``sessions`` row keyed by the
-    token's SHA-256 hash, and returns the raw token for the caller to set as
-    the cookie. The raw token is never persisted.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        user_id: The id of the user the session belongs to.
-        ttl_seconds: The session lifetime in seconds (from
-            :func:`cookie_ttl_seconds`).
-        user_agent: The login request's ``User-Agent``, or ``None``.
-        ip: The login request's client IP, or ``None``.
-
-    Returns:
-        An :class:`IssuedSession` with the raw token and the expiry.
-    """
+    """Create a session for *user_id* and return its raw token and expiry."""
     token = new_token()
     expires_at = (
         datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
@@ -165,11 +88,8 @@ def begin_session(
         user_agent=user_agent,
         ip=ip,
     )
-    # Opportunistically sweep expired sessions so the table stays bounded to
-    # live sessions. Login is a cold path and expires_at is indexed, so this is
-    # one cheap indexed DELETE per login. resolve_session already prunes any
-    # single expired session whose cookie is re-presented; this catches the
-    # rest — sessions whose owner never returns to present the cookie again.
+    # Sweep expired sessions whose cookie is never presented again (resolve
+    # prunes the rest). Login is a cold path and expires_at is indexed.
     session_store.prune_expired(conn, now_iso=datetime.now(timezone.utc).isoformat())
     return IssuedSession(token=token, expires_at=expires_at)
 
@@ -177,19 +97,8 @@ def begin_session(
 def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser | None:
     """Resolve a cookie token to a :class:`CurrentUser`, or ``None``.
 
-    Hashes *token*, looks up the session, and returns ``None`` — failing
-    closed — when any of the following holds: *token* is absent; no session
-    matches; the session has expired; the owning user no longer exists; the
-    owning user is suspended. An expired session row is deleted as a side
-    effect, so a dead session is also cleaned up.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        token: The raw session token from the cookie, or ``None``.
-
-    Returns:
-        The :class:`CurrentUser` for a live, active session; otherwise
-        ``None``.
+    Fails closed on an unknown or expired session or a missing or suspended
+    user. An expired session row is deleted on the way.
     """
     if token is None:
         return None
@@ -199,7 +108,6 @@ def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser 
     if session is None:
         return None
 
-    # Reject (and prune) an expired session.
     now = datetime.now(timezone.utc)
     if _parse_iso(session.expires_at, default=now) <= now:
         session_store.delete(conn, token_hash)
@@ -207,7 +115,6 @@ def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser 
 
     user = user_store.get_by_id(conn, session.user_id)
     if user is None or user.status != "active":
-        # The user was deleted or suspended — fail closed.
         return None
 
     return CurrentUser(
@@ -219,14 +126,7 @@ def resolve_session(conn: sqlite3.Connection, token: str | None) -> CurrentUser 
 
 
 def end_session(conn: sqlite3.Connection, token: str | None) -> None:
-    """Destroy the session identified by the cookie *token* (logout).
-
-    A no-op when *token* is ``None`` or matches no session.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        token: The raw session token from the cookie, or ``None``.
-    """
+    """Destroy the session identified by the cookie *token*, if any."""
     if token is None:
         return
     session_store.delete(conn, hash_token(token))
@@ -235,21 +135,9 @@ def end_session(conn: sqlite3.Connection, token: str | None) -> None:
 def should_touch_last_seen(last_seen_at: str) -> bool:
     """Return whether ``last_seen_at`` is stale enough to warrant a write.
 
-    Throttles the per-request ``last_seen`` update: ``True`` only when the
-    stored timestamp is older than the ~5-minute refresh window, so the
-    common case is a read with no write. An unparseable timestamp is treated
-    as stale so the next request repairs it.
-
-    Args:
-        last_seen_at: The session's stored ``last_seen_at`` ISO-8601 string.
-
-    Returns:
-        ``True`` when the timestamp should be refreshed.
+    An unparseable timestamp counts as stale, so the next write repairs it.
     """
     now = datetime.now(timezone.utc)
-    # _parse_iso is called with default=None, so an unparseable stored
-    # timestamp yields None — treated as stale here so the next request
-    # rewrites last_seen_at with a well-formed value and repairs the row.
     parsed = _parse_iso(last_seen_at, default=None)
     if parsed is None:
         return True
@@ -267,16 +155,8 @@ def _parse_iso(value: str, *, default: None) -> datetime | None: ...
 def _parse_iso(value: str, *, default: datetime | None) -> datetime | None:
     """Parse an ISO-8601 timestamp, returning *default* on a malformed value.
 
-    The overloads let the type checker see that a non-``None`` *default*
-    yields a non-``None`` result — :func:`resolve_session` relies on that to
-    compare the parsed expiry against the clock without a redundant guard.
-
-    Args:
-        value: The ISO-8601 string to parse.
-        default: What to return when *value* cannot be parsed.
-
-    Returns:
-        The parsed timezone-aware :class:`~datetime.datetime`, or *default*.
+    The overloads tell the type checker a non-``None`` *default* gives a
+    non-``None`` result.
     """
     try:
         return datetime.fromisoformat(value)

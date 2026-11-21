@@ -1,15 +1,8 @@
-"""Tests for ``QueryPlanner.replan`` — the hint-driven re-plan (Phase 2).
+"""Tests for ``QueryPlanner.replan``, the hint-driven re-plan.
 
-The re-plan reuses the byte-stable planner system prompt and the same parse
-path as ``plan()``, but builds a richer USER message that carries the
-synthesiser's gap hint, a rendering of the specs already tried, and the titles
-already found.  These tests assert:
-
-- the user message sent to the planner contains the hint, a rendering of the
-  prior specs, and the prior findings;
-- a scripted re-plan response is parsed into a ``RetrievalPlan`` with the new
-  specs;
-- a degraded (all-models-failed) re-plan degrades to the safe fallback plan.
+The re-plan reuses the planner system prompt and parse path, but its user
+message carries the synthesiser's gap hint, the specs already tried and the
+titles already found.
 """
 
 from __future__ import annotations

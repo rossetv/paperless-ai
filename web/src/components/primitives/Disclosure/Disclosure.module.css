@@ -1,12 +1,3 @@
-/*
- * Disclosure primitive — CSS Module.
- *
- * A native <details>/<summary> collapsible panel: a summary row with a
- * rotating chevron and a revealed body. Used by QueryPlanSummary.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .disclosure {
   border-radius: var(--radius-large);
   background-color: var(--colour-button-light-bg);

@@ -1,12 +1,6 @@
-"""TypedDict wire shapes for the Paperless-ngx REST API.
+"""TypedDict shapes of the JSON the Paperless-ngx REST API returns and accepts.
 
-The JSON the Paperless-ngx API returns and accepts, pinned as ``TypedDict``s
-(CODE_GUIDELINES §5.3) so daemon code names fields and types instead of
-indexing a bare ``dict``.  These describe the *foreign* wire shape; a daemon
-translates them into domain dataclasses at its boundary.  :mod:`common.paperless`
-re-exports every name here, so callers import from ``common.paperless`` and need
-not know the shapes live in a sibling module — the split exists only to keep
-``paperless.py`` under the file-size ceiling (CODE_GUIDELINES §3.1).
+Re-exported by :mod:`common.paperless`.
 """
 
 from __future__ import annotations
@@ -14,50 +8,26 @@ from __future__ import annotations
 from typing import NotRequired, TypedDict
 
 
-# A single Paperless custom-field assignment on a document. Paperless returns
-# and accepts custom fields as a list of these {field_id, value} pairs; pinning
-# the shape (CODE_GUIDELINES §5.3) keeps the classifier off a bare ``dict``.
 class PaperlessCustomField(TypedDict):
     """One ``{field, value}`` custom-field entry on a Paperless document.
 
-    Attributes:
-        field: The Paperless custom-field id.
-        value: The field's value (Paperless stores custom-field values as
-            strings for the field types this project sets).
+    ``value`` is a string for every field type this project sets.
     """
 
     field: int
     value: str
 
 
-# TypedDict is used here because it maps directly to **kwargs with Unpack,
-# giving callers keyword-level type checking while remaining a plain dict
-# at runtime (no instantiation overhead, easy JSON serialisation).
 class DocumentMetadataUpdate(TypedDict, total=False):
-    """Keyword arguments accepted by :meth:`PaperlessClient.update_document_metadata`.
+    """Keyword arguments for :meth:`PaperlessClient.update_document_metadata`.
 
-    ``total=False`` means every key is optional. The caller's intent is inferred
-    from presence vs absence:
+    An absent key leaves the field unchanged; ``None`` clears it. Exceptions:
+    ``tags`` is never ``None`` (an empty set clears all tags), and a ``None``
+    ``custom_fields`` or ``document_date`` leaves the field unchanged because
+    Paperless rejects null for them.
 
-    - **Absent key** — field was not supplied; Paperless is not touched for it.
-    - **Present key with ``None`` value** — field was explicitly cleared; Paperless
-      receives ``null`` and clears the field on the document.
-
-    ``tags`` is always a concrete set — ``None`` is not a valid value and will
-    not be forwarded (callers use an empty set to clear all tags).
-
-    ``custom_fields`` is an exception to the null-clears rule: Paperless rejects
-    ``custom_fields: null`` with a 400 ("This field may not be null."), so a
-    ``None`` value means "leave unchanged" and is omitted from the payload
-    (callers pass an empty list to clear all custom fields).
-
-    ``notes`` is a special case: Paperless stores notes at a separate endpoint
-    (``/api/documents/{id}/notes/``) rather than the document PATCH endpoint.
-    When provided, all existing notes are deleted and the new text is posted
-    (or the document is left with no notes if the value is the empty string).
-
-    ``archive_serial_number`` maps to the Paperless ``archive_serial_number``
-    PATCH field — the physical archive serial number for the document.
+    ``notes`` replaces every existing note with the new text; an empty string
+    leaves the document with no notes.
     """
 
     title: str | None
@@ -71,27 +41,12 @@ class DocumentMetadataUpdate(TypedDict, total=False):
     archive_serial_number: int | None
 
 
-# A read-side view of the Paperless-ngx document JSON shape (CODE_GUIDELINES
-# §5.3): it pins the field names and types the indexer relies on without
-# copying the whole foreign object into a dataclass.  ``id`` is the only field
-# Paperless guarantees on every document; the rest are NotRequired because the
-# indexer reads them defensively (a not-yet-OCR'd document has no ``content``,
-# an un-dated document no ``created``).  A daemon translates this into a domain
-# dataclass — ``store.models.DocumentMeta`` — at its boundary.
 class PaperlessDocument(TypedDict):
-    """The subset of the Paperless-ngx document JSON the indexer consumes.
+    """The subset of the Paperless-ngx document JSON the indexer reads.
 
-    Attributes:
-        id: The Paperless document id — always present.
-        title: Human-readable title, or ``None`` if unset.
-        content: The OCR content body; absent or ``None`` until the document
-            has been transcribed.
-        tags: Tag ids applied to the document.
-        correspondent: The correspondent id, or ``None`` if unset.
-        document_type: The document-type id, or ``None`` if unset.
-        created: The document date (``"YYYY-MM-DD"`` or ISO-8601 datetime).
-        modified: The last-modified timestamp; an ISO-8601 datetime.
-        page_count: The number of pages, when Paperless reports it.
+    Only ``id`` is guaranteed; the rest may be missing (an un-OCR'd document has
+    no ``content``, and a light listing asks for only some fields). ``created``
+    is ``"YYYY-MM-DD"`` or an ISO-8601 datetime.
     """
 
     id: int
@@ -105,26 +60,12 @@ class PaperlessDocument(TypedDict):
     page_count: NotRequired[int | None]
 
 
-# A read-side view of a Paperless taxonomy item — a correspondent, document
-# type, or tag (CODE_GUIDELINES §5.3). The list and create endpoints all return
-# this shape; pinning it keeps the classifier's taxonomy code off a bare
-# ``dict``. ``id`` and ``name`` are always present; the usage-count field name
-# varies across Paperless-ngx versions (``document_count`` /
-# ``documents_count`` / ``documents``), and ``matching_algorithm`` is an int on
-# some versions and a string on others — the classifier reads all variants
-# defensively, so they are NotRequired and union-typed.
 class PaperlessItem(TypedDict):
-    """A Paperless correspondent, document type, or tag, as returned by the API.
+    """A Paperless correspondent, document type or tag, as the API returns it.
 
-    Attributes:
-        id: The Paperless item id — always present.
-        name: The item's display name — always present.
-        document_count: How many documents reference the item; the field name
-            and value type vary by Paperless-ngx version.
-        documents_count: An older-version alias of ``document_count``.
-        documents: A still-older variant — the referencing document ids.
-        matching_algorithm: The item's matching mode; an int or a string
-            depending on the Paperless-ngx version.
+    The usage-count field differs across Paperless-ngx versions
+    (``document_count``, ``documents_count``, or a ``documents`` id list), and
+    ``matching_algorithm`` is an int on some versions and a string on others.
     """
 
     id: int

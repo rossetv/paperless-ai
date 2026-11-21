@@ -4,8 +4,6 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { DocumentTitle } from './DocumentTitle';
 
 describe('DocumentTitle', () => {
-  // ── Read-only mode ──────────────────────────────────────────────────────────
-
   it('renders the title as a heading (canEdit=false)', () => {
     render(<DocumentTitle title="An invoice" canEdit={false} onChange={() => {}} />);
     expect(screen.getByRole('heading', { name: 'An invoice' })).toBeInTheDocument();
@@ -21,8 +19,6 @@ describe('DocumentTitle', () => {
     expect(screen.getByRole('heading', { name: 'An invoice' })).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
-
-  // ── Editable mode ───────────────────────────────────────────────────────────
 
   it('switches to input on click when canEdit=true', () => {
     render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);

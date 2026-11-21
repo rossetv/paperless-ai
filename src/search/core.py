@@ -1,57 +1,29 @@
-"""Search-core orchestration — the bounded agentic pipeline (spec §6.3).
+"""Search-core orchestration: the bounded agentic pipeline.
 
-``SearchCore`` is the single entry point to the read-side search pipeline.  It
-wires the planner, retriever, and synthesiser into the hard-bounded loop of
-spec §6.3 and assembles the public :class:`~search.models.SearchResult`.
+``SearchCore`` wires the planner, retriever, judge and synthesiser together and
+assembles the public :class:`~search.models.SearchResult`. It imports neither
+FastAPI nor MCP.
 
-Two public methods, both pure-library (no FastAPI, no MCP — CODE_GUIDELINES
-§2.5):
-
-- ``answer(query, ui_filters)`` — the full pipeline: plan, retrieve, an
-  optional single refinement, and synthesis.  Used by the HTTP ``/api/search``
-  endpoint and the MCP ``deep_search`` tool.
-- ``retrieve(query, ui_filters)`` — plan-free hybrid retrieval (vector + FTS on
-  the raw query); ranked sources, no synthesised answer, and **zero chat LLM
-  calls**.  Backs the MCP ``semantic_search`` tool, where the calling agent does
-  its own synthesis at no cost to the archive owner.
+- ``answer(query, ui_filters)`` — plan, retrieve, judge, synthesise, and refine
+  while the synthesiser asks for more. Backs ``/api/search`` and the MCP
+  ``deep_search`` tool.
+- ``retrieve(query, ui_filters)`` — plan-free hybrid retrieval on the raw query
+  with zero chat LLM calls. Backs the MCP ``semantic_search`` tool, where the
+  calling agent does its own synthesis at no cost to the archive owner.
 
 The per-query LLM-call budget
 -----------------------------
-The number of LLM (chat) calls per query is not a fixed ceiling: it follows
-``SEARCH_MAX_REFINEMENTS`` and the judge gate. The base is one planner call, an
-optional judge call, and one exploratory synthesise. Each refinement pass
-(Phase 2) re-plans from the synthesiser's gap hint and re-synthesises — and,
-unless the re-plan is a no-op, re-judges the merged set — so a pass costs one
-re-plan + one synthesise (+ one re-judge when the judge gate is on). The upper
-bound is therefore ``2 + j + R * (2 + j)`` where ``j`` is 1 iff the judge gate
-is on and ``R`` is ``SEARCH_MAX_REFINEMENTS`` (see :func:`_max_llm_calls`). A
-no-op-guard pass skips the re-retrieve and re-judge, so the *actual* count is at
-or below this ceiling. The operator sets the refinement count from the UI with
-no hard cap, so cost and latency scale with it. The query embedding is not a
-chat call and is not counted (spec §6.5).
+The base is one planner call, an optional judge call and one exploratory
+synthesise. Each refinement pass costs one re-plan + one synthesise (+ one
+re-judge when the judge gate is on), so the bound is ``2 + j + R * (2 + j)``
+with ``j`` 1 iff the judge gate is on and ``R`` = ``SEARCH_MAX_REFINEMENTS``
+(see :func:`_max_llm_calls`). The refinement count has no hard cap in the UI,
+so cost and latency scale with it. The query embedding is not a chat call and
+is not counted.
 
-The budget is enforced two ways, belt and braces:
-
-1. *Structurally* — ``answer`` makes the planner call once, the exploratory
-   synthesise once, and then loops the refinement (re-plan + synthesise) at most
-   ``SEARCH_MAX_REFINEMENTS`` times; the loop counter bounds it.
-2. *Defensively* — every LLM stage is invoked through :class:`_LlmBudget`,
-   whose ``record`` increments a counter and raises
-   :class:`~search.errors.LlmBudgetExceededError` if it ever exceeds the
-   per-query limit (:func:`_max_llm_calls`).  A logic regression that tried an
-   extra call would fail loudly here rather than silently overspending
-   (CODE_GUIDELINES §1.11).
-
-Allowed deps: search (models, errors, planner, retriever, synthesizer,
-    refinement), store (reader, models), common.config.
-Forbidden: no FastAPI, no MCP SDK, no sqlite3, no direct LLM/HTTP calls.
-
-# rationale: this file exceeds the §3.1 500-line guideline. Every line is
-# load-bearing: the class is a single cohesive orchestrator; its docstrings
-# are spec cross-references that cannot be removed without losing traceability
-# to §6.3 and §14.3; and the module-level helpers are each cited by tests.
-# Splitting _LlmBudget into its own module would add an import edge with no
-# cohesion benefit. The Wave 4 simplification audit accepted this length.
+The loop structure bounds the calls; every stage is also recorded through
+:class:`_LlmBudget`, which raises :class:`~search.errors.LlmBudgetExceededError`
+if a logic regression ever tries an extra call.
 """
 
 from __future__ import annotations
@@ -119,35 +91,21 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# Per-document character cap for the MCP fetch_documents tool (~12k tokens).
-# A whole document can be hundreds of pages; the cap bounds the tool payload so
-# one fetch cannot blow the caller's context or the MCP transport. Over the cap,
-# content is truncated and flagged (spec §4.3). A module constant, not a setting:
-# there is exactly one value today (Overengineering smell — no config for it).
+# Per-document character cap for the MCP fetch_documents tool (~12k tokens), so
+# one fetch of a long document cannot blow the caller's context or the MCP
+# transport. Longer content is truncated and flagged.
 FETCH_MAX_CHARS = 50_000
 
-# The per-query LLM-call budget is NOT a fixed ceiling — it follows
-# SEARCH_MAX_REFINEMENTS and the judge gate (see _max_llm_calls): 1 planner +
-# optional judge + 1 exploratory synthesise, plus one (re-plan + synthesise [+
-# re-judge]) per refinement pass. The operator sets the refinement count from
-# the UI with no hard cap; _LlmBudget still enforces the resulting per-request
-# limit as a defensive backstop against a logic regression overspending on a
-# billable endpoint. Cost and latency scale with the setting.
-
-# Shown as the answer when retrieval yields nothing or Layer 2 rejects the
-# signal (spec §6.3, §11).  A no-hits or irrelevant-signal query
-# short-circuits before any synthesis call, so there is no model prose.  The
-# exact wording is the spec §11 canonical message — changing it here changes
-# every no_match path simultaneously.
+# The answer when retrieval finds nothing or the relevance gate rejects the
+# signal; both short-circuit before any synthesis call. Shared by every
+# no_match path.
 _NO_MATCHES_ANSWER = (
     "I couldn't find any documents matching that. "
     "Try rephrasing, or broaden your search."
 )
 
-# Fixed user-facing answer for the Layer-1 adequacy gate (spec §11).  The
-# model's reason is logged for triage but NEVER shown to the user — consistent
-# UX requires a single, stable message regardless of which model phrased the
-# rejection.
+# Fixed answer for the planner's adequacy gate. The model's reason is logged but
+# never shown, so the message is stable whichever model phrased the rejection.
 _CLARIFY_ANSWER = (
     "That search is a bit too broad for me to answer well. "
     "Add a detail or two, or use the filters to pick a correspondent or document type."
@@ -157,16 +115,11 @@ _CLARIFY_ANSWER = (
 class _LlmBudget:
     """A monotonically-increasing counter enforcing the per-query LLM-call limit.
 
-    The limit is not fixed: it follows ``SEARCH_MAX_REFINEMENTS`` and the judge
-    gate (see :func:`_max_llm_calls`), passed in at construction as *max_calls*.
-    Every LLM chat call in the pipeline is recorded here *before*
-    it is made — recording first is what lets ``record`` refuse a call that
-    would breach the limit, the defensive backstop against a logic regression
-    overspending on a billable endpoint. ``count`` is the number of calls
-    *attempted*, not necessarily billed: a stage that degrades to its fallback
-    because every model failed (returning no content, with no successful API
-    call) is still counted. ``SearchStats.llm_calls`` therefore reports
-    attempts; on a fully successful query attempts equal billable calls.
+    Every chat call is recorded *before* it is made, so ``record`` can refuse
+    one that would breach the limit. ``count`` is calls *attempted*: a stage
+    whose models all failed is still counted, so ``SearchStats.llm_calls``
+    reports attempts, which equal billable calls only on a fully successful
+    query.
     """
 
     def __init__(self, max_calls: int) -> None:
@@ -176,16 +129,10 @@ class _LlmBudget:
     def record(self) -> None:
         """Register one LLM chat call; fail loud if the limit is breached.
 
-        An explicit ``raise`` is used rather than ``assert`` — an ``assert`` is
-        stripped under ``python -O``, which would silently disable this cost
-        guard on a billable endpoint in exactly the deployments where it
-        matters most.
+        A ``raise`` rather than ``assert``, which ``python -O`` would strip.
 
         Raises:
-            LlmBudgetExceededError: If recording this call would exceed the
-                per-query limit (:func:`_max_llm_calls`). This is unreachable by
-                ``SearchCore``'s own loop logic; it guards against a future
-                regression silently overspending (CODE_GUIDELINES §1.11).
+            LlmBudgetExceededError: Recording this call would exceed the limit.
         """
         self.count += 1
         if self.count > self.max_calls:
@@ -199,13 +146,10 @@ class _LlmBudget:
 class _RetrievalPhaseResult:
     """The output of :meth:`SearchCore._retrieve_phase`.
 
-    Carries the retrieved chunks and signal alongside the resolved pass-1 specs
-    and the facets used to resolve them, so the refinement pass can re-plan
-    against the same taxonomy and run its no-op guard (does the re-plan resolve
-    to the same specs?) without a second ``list_facets`` round-trip.  The
-    ``documents_by_id`` map is built once here and shared with the gate phase
-    so the title look-up is never duplicated.  A small frozen carrier beats a
-    5-tuple the caller would have to unpack positionally (CODE_GUIDELINES §5.8).
+    Carries the resolved pass-1 specs and the facets used to resolve them, so
+    the refinement pass can re-plan against the same taxonomy and run its no-op
+    guard without a second ``list_facets`` round-trip. ``documents_by_id`` is
+    built once here and shared with later phases.
     """
 
     chunks: list[RetrievedChunk]
@@ -216,23 +160,11 @@ class _RetrievalPhaseResult:
 
 
 class SearchCore:
-    """Orchestrates the bounded agentic search pipeline (spec §6.3).
+    """Orchestrates the bounded agentic search pipeline.
 
-    The planner, retriever, and synthesiser are injected so the whole pipeline
-    is testable offline with a mock LLM client (CODE_GUIDELINES §11.4).  A
-    single ``SearchCore`` instance is safe to share across the search server's
-    request threads — it holds no per-request state; every call's state lives
-    in locals.
-
-    Args:
-        settings: Application settings; ``SEARCH_MAX_REFINEMENTS`` and
-            ``PAPERLESS_PUBLIC_URL`` are read.
-        store_reader: The read-side store interface, for facets and document
-            look-ups during source assembly.
-        planner: The query-planning stage (LLM call #1).
-        retriever: The hybrid retrieval stage (no LLM call).
-        synthesizer: The answer-synthesis stage (LLM calls #2 and #3).
-        judge: The document-relevance screen (Layer 3, one cheap LLM call).
+    Stages are injected so the pipeline is testable offline with a mock LLM
+    client. An instance holds no per-request state, so it is safe to share
+    across request threads.
     """
 
     def __init__(
@@ -255,31 +187,23 @@ class SearchCore:
     def settings(self) -> Settings:
         """Return the :class:`Settings` this core was built from.
 
-        Exposed for the per-request hot-reload path in :mod:`search.routes`,
-        which reads ``SEARCH_MAX_CONCURRENT`` off the live core to keep the
-        ``/api/search`` semaphore in step with the latest configuration
-        (web-redesign §5, Wave 4). The attribute is read-only — internal
-        consumers continue to use ``self._settings`` directly.
+        :mod:`search.routes` reads ``SEARCH_MAX_CONCURRENT`` from it to keep the
+        ``/api/search`` semaphore in step with the live configuration.
         """
         return self._settings
 
     def _relevance_thresholds(self) -> RelevanceThresholds:
         """Build the relevance-badge cut-points from the live settings.
 
-        Read per request from ``self._settings`` so a retune of the
-        ``SEARCH_RELEVANCE_TIER_*`` knobs hot-loads on the next search (the core
-        is rebuilt on a config-version bump) with no restart. The values are
-        already validated and ordered by the config layer.
+        Read per request so a retune of ``SEARCH_RELEVANCE_TIER_*`` applies on
+        the next search without a restart (the core is rebuilt on a
+        config-version bump).
         """
         return RelevanceThresholds(
             strong=self._settings.SEARCH_RELEVANCE_TIER_STRONG,
             good=self._settings.SEARCH_RELEVANCE_TIER_GOOD,
             partial=self._settings.SEARCH_RELEVANCE_TIER_PARTIAL,
         )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def answer(
         self,
@@ -290,42 +214,27 @@ class SearchCore:
     ) -> SearchResult:
         """Run the full pipeline and return a synthesised SearchResult.
 
-        Results are served from / written to the process result cache (RAG-05)
-        keyed on the normalised query, the UI filters, a cheap index-version
-        signal, and the asker identity. A cache hit makes zero LLM calls.
-        Answered, clarify, and no-match results are all cached so an identical
-        repeat is not re-run; a no-match is invalidated by the index-version key
-        when a reconciliation indexes a document, not by a timer. The degraded
-        synthesiser fallback is never cached. The cache is bypassed (fail-open)
-        when the index version cannot be read. ``SEARCH_CACHE_TTL_SECONDS`` of 0
-        disables it entirely.
+        Results go through the process result cache, keyed on the normalised
+        query, the UI filters, an index-version signal and the asker; a hit
+        makes zero LLM calls. Answered, clarify and no-match results are all
+        cached (a no-match is invalidated by the index version moving, not a
+        timer); the degraded synthesiser fallback never is. The cache is
+        bypassed when the index version cannot be read, and disabled by a
+        ``SEARCH_CACHE_TTL_SECONDS`` of 0.
 
         Args:
-            query: The raw user search query.
-            ui_filters: Explicit user-set filters; when provided they are
-                authoritative and bypass free-text filter resolution.
-            asker: Optional sanitised display name of the requesting user.
-                Threaded to the planner and synthesiser so first-person
-                references resolve to the right person, and included in the
-                cache key as a cross-user-leak guard.
-            on_event: Optional callback fed a :class:`~search.trace.PhaseStart`
-                then a :class:`~search.models.PhaseRecord` for each executed
-                pipeline phase (the live-streaming route). ``None`` (the
-                default) makes the pipeline byte-identical for MCP/REST/tests —
-                the trace/cost are still assembled onto ``SearchStats``. On a
-                cache hit a single ``cache`` phase is emitted before the cached
-                result is returned, so a streamed search always produces at
-                least one terminal phase.
-
-        Returns:
-            A SearchResult with the synthesised answer, ranked source
-            documents, the query plan, and execution statistics.
+            ui_filters: Explicit user-set filters; authoritative, bypassing
+                free-text filter resolution.
+            asker: Sanitised display name of the requester, so first-person
+                references resolve; part of the cache key so users never share
+                each other's answers.
+            on_event: Fed a :class:`~search.trace.PhaseStart` then a
+                :class:`~search.models.PhaseRecord` per executed phase (the
+                streaming route). A cache hit emits a single ``cache`` phase.
         """
         cache = get_search_result_cache(self._settings.SEARCH_CACHE_TTL_SECONDS)
-        # Only key the cache when it is actually enabled. With a TTL of 0 the
-        # cache's get/put are no-ops, so building the key — which pays a
-        # get_stats() store round-trip in _index_version() — would be wasted
-        # work on every query in the cache-off deployment (BE-perf-07).
+        # Building the key costs a get_stats() round-trip, so skip it when the
+        # cache is off.
         cache_key = (
             self._cache_key(query, ui_filters, asker)
             if self._settings.SEARCH_CACHE_TTL_SECONDS > 0
@@ -351,10 +260,9 @@ class SearchCore:
     def _emit_cache_phase(on_event: OnEvent, cached: SearchResult) -> None:
         """Emit the synthetic ``cache`` phase for a cache hit.
 
-        A cache hit does no pipeline work, but a streamed search still needs a
-        terminal phase. This emits a ``PhaseStart`` then a zero-cost
-        ``PhaseRecord`` whose detail surfaces the *original* (now-saved) cost so
-        the SPA can show "served from cache (saved $X)".
+        A streamed search still needs a terminal phase. Its detail carries the
+        original (now saved) cost so the SPA can show "served from cache
+        (saved $X)".
         """
         on_event(PhaseStart(phase="cache", label="Served from cache"))
         on_event(
@@ -380,61 +288,44 @@ class SearchCore:
     ) -> SearchResult:
         """Run the bounded pipeline once, ignoring the cache.
 
-        The original ``answer`` body — the bounded loop of spec §6.3: plan,
-        resolve filters, retrieve, broaden-and-retry once if retrieval is empty,
-        synthesise once, and — while the synthesiser asks for more and the
-        refinement budget allows — adjust, retrieve again, merge, and
-        re-synthesise. At most ``2 + j + R*(2 + j)`` LLM calls are made
-        (``R`` = SEARCH_MAX_REFINEMENTS, ``j`` = 1 when the judge gate is on;
-        see :func:`_max_llm_calls` and the module docstring).
+        Plan, resolve filters, retrieve (broadening once if empty), judge,
+        synthesise, and refine while the synthesiser asks for more and the
+        budget allows. Fail-fast gates at the front:
 
-        Three fail-fast gates sit at the front of the pipeline (spec §7):
-
-        * **Layer 0** — degenerate-input guard: a query shorter than
-          ``SEARCH_MIN_QUERY_CHARS`` characters (after stripping) is rejected
-          immediately with ``outcome_kind='clarify'`` and **zero** LLM calls.
-        * **Layer 1** — adequacy gate: the planner may return
-          :class:`~search.models.ClarifyNeeded` for an obviously-vague query;
-          the core short-circuits before retrieval or synthesis.
-        * **Layer 2** — relevance gate: when ``SEARCH_GATE_RELEVANCE`` is set,
-          retrieved chunks whose best absolute vector similarity is below
-          ``SEARCH_RELEVANCE_MIN_SIMILARITY`` *and* that have no keyword hit
-          are discarded without synthesis (``outcome_kind='no_match'``).  The
-          gate is fail-open: a ``None`` similarity (no vector pass ran) always
-          proceeds to synthesis.
+        * degenerate input: a stripped query shorter than
+          ``SEARCH_MIN_QUERY_CHARS`` is a clarify with zero LLM calls;
+        * adequacy: the planner may return
+          :class:`~search.models.ClarifyNeeded` for an obviously vague query;
+        * relevance (``SEARCH_GATE_RELEVANCE``): chunks whose best vector
+          similarity is below ``SEARCH_RELEVANCE_MIN_SIMILARITY`` *and* that
+          have no keyword hit are a no_match. A ``None`` similarity (no vector
+          pass ran) always proceeds.
         """
         started = time.monotonic()
         tele = _Telemetry(on_event)
         budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
-        # --- Layer 0: degenerate-input guard (spec §7.0) ---
-        # Emitted before any phase, so the trace is empty (no work was done).
+        # Degenerate-input guard, before any phase, so the trace is empty.
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
             return self._clarify_result(
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        # --- Plan (Layer 1 lives inside the planner) ---
-        # Fetch the live taxonomy once, before planning, so the planner can see
-        # the real correspondent/type/tag names; the same facets are reused for
-        # filter resolution in the retrieve phase (no second list_facets).
+        # Fetched once: the planner sees the real taxonomy names, and the same
+        # facets are reused for filter resolution in the retrieve phase.
         facets = self._store_reader.list_facets()
         plan_outcome = self._plan_phase(query, budget, asker, tele, facets)
         if isinstance(plan_outcome, ClarifyNeeded):
             return self._clarify_result(plan_outcome.reason, budget, started, tele)
         plan = plan_outcome
 
-        # --- Retrieve (broaden-and-retry once) ---
         retrieved = self._retrieve_phase(
             plan, ui_filters, tele, query=query, facets=facets
         )
         chunks, signal = retrieved.chunks, retrieved.signal
         current_specs = retrieved.specs
-        # Built once in the retrieve phase and threaded through the judge,
-        # synth-metadata, finding-titles, and (after a top-up for genuinely new
-        # ids) each refinement pass — so the document look-up is a single store
-        # read per query instead of one per phase (BE-perf-01). The map grows in
-        # place as refinement merges in new documents.
+        # One store read per query, shared by every later phase; refinement
+        # tops it up in place with only the genuinely new documents.
         documents_by_id = retrieved.documents_by_id
         if not chunks:
             log.info(
@@ -450,7 +341,6 @@ class SearchCore:
                 candidate_count=0,
             )
 
-        # --- Layer 2: relevance gate (spec §7.2) ---
         if self._settings.SEARCH_GATE_RELEVANCE and self._gate_rejects(
             signal, chunks, tele, retrieved.documents_by_id
         ):
@@ -469,9 +359,8 @@ class SearchCore:
                 candidate_count=len({c.document_id for c in chunks}),
             )
 
-        # --- Layer 3: document-relevance judge (cheap pre-synthesis screen) ---
-        # The judge's per-document scores are accumulated here (and updated by
-        # any re-judge in refinement) so the final sources rank by relevance.
+        # Judge scores accumulate here (and any re-judge updates them) so the
+        # final sources rank by relevance.
         judge_scores: dict[int, float] = {}
         today_iso = date.today().isoformat()
         filtered = self._judge_and_filter(
@@ -506,14 +395,9 @@ class SearchCore:
             documents_by_id=documents_by_id,
         )
 
-        # Refine while the synthesiser still wants more context, up to the
-        # configured number of passes. Each pass re-plans from the synthesiser's
-        # gap hint (Phase 2), resolves the new specs, and — unless they are a
-        # no-op repeat of what was already tried — retrieves again, merges into
-        # the growing chunk set, re-judges, and re-synthesises. Intermediate
-        # passes stay "exploratory" (may ask for more); the last allowed pass
-        # runs in "final" mode (must answer or say not-found), so the loop always
-        # terminates with an Answered outcome. The budget bounds the calls.
+        # Intermediate passes stay "exploratory" (may ask for more); the last
+        # allowed pass runs in "final" mode (must answer or say not found), so
+        # the loop always ends with an Answered outcome.
         max_refinements = self._settings.SEARCH_MAX_REFINEMENTS
         refinements = 0
         while isinstance(outcome, NeedsMore) and refinements < max_refinements:
@@ -556,10 +440,8 @@ class SearchCore:
     ) -> _CacheKey | None:
         """Build the result-cache key, or None when the index version is unreadable.
 
-        Returning None makes ``answer`` bypass the cache for this request
-        (fail-open) — a search must never fail because the cache could not key
-        itself (spec §6). The asker is included so two users with different
-        identities never share each other's cached answer (cross-user-leak guard).
+        None makes ``answer`` bypass the cache: a search must never fail
+        because the cache could not key itself.
         """
         index_version = self._index_version()
         if index_version is None:
@@ -571,26 +453,13 @@ class SearchCore:
     def _index_version(self) -> str | None:
         """Return ``document_count:chunk_count:latest_indexed_at`` as the cache version.
 
-        The counts move when a document is indexed, re-chunked, or pruned. The
-        third component — ``MAX(documents.indexed_at)`` — is the content signal:
-        an *in-place* re-index (corrected OCR, re-classification, an edited
-        title/tags) that chunks to the same count leaves both counts unchanged,
-        so without it a stale answer would be served until the TTL expired (up to
-        ``SEARCH_CACHE_TTL_SECONDS``, default 4 h). The indexer stamps
-        ``indexed_at`` on every upsert, so any content change advances this and
-        busts prior cache entries on the next query.
+        The counts move when a document is indexed, re-chunked or pruned.
+        ``MAX(indexed_at)`` catches an in-place re-index (corrected OCR, edited
+        tags) that leaves both counts unchanged. It must not be
+        ``last_reconcile_at``, which is rewritten by every reconcile cycle,
+        including no-op ones, and would evict valid entries each cycle.
 
-        It must be ``MAX(indexed_at)``, not ``last_reconcile_at``: the latter is
-        rewritten at the end of *every* reconcile cycle (including no-op ones),
-        which would needlessly drop the cache each cycle and, worse, evict a
-        valid no-match after a reconcile that indexed nothing — the exact case
-        the cache is documented to preserve. ``indexed_at`` moves only when a
-        document actually changes.
-
-        A ``None`` ``latest_indexed_at`` (an empty index) renders as the literal
-        ``"none"`` so the version string stays well-formed. A store read failure
-        logs at DEBUG and returns None — the caller then bypasses the cache
-        rather than failing the search.
+        Returns None on a store read failure, so the caller bypasses the cache.
         """
         try:
             stats = self._store_reader.get_stats()
@@ -608,45 +477,23 @@ class SearchCore:
     ) -> SearchResult:
         """Plan-free hybrid retrieval — ranked sources, zero chat LLM calls.
 
-        The pure-RAG path behind the MCP ``semantic_search`` tool. It skips the
-        planner entirely: a deterministic hybrid plan (vector + FTS on the raw
-        query, :func:`~search.refinement.raw_rag_plan`) is resolved against the
-        live taxonomy and any UI filters, retrieved, and assembled into ranked
-        sources with no synthesised answer. No chat LLM call is made — only the
-        retriever's embedding call for the vector pass — so the calling agent
-        does its own synthesis at no cost to the archive owner.
+        Backs the MCP ``semantic_search`` tool. A deterministic hybrid plan
+        (:func:`~search.refinement.raw_rag_plan`) replaces the planner, and the
+        only model call is the query embedding. The result's ``answer`` is
+        empty.
 
-        Layer 0 (degenerate-input) still applies, so a query shorter than
-        ``SEARCH_MIN_QUERY_CHARS`` returns the standard clarify result without
-        touching the retriever. Layer 2 does NOT apply — retrieve() is advisory.
-
-        Args:
-            query: The raw user search query.
-            ui_filters: Explicit user-set filters; authoritative when set.
-            on_event: Optional per-phase event callback (resolve + retrieve
-                only). ``None`` keeps behaviour unchanged; the trace/cost are
-                assembled onto the result either way.
-
-        Returns:
-            A SearchResult whose ``answer`` is an empty string and whose
-            ``sources`` are the ranked retrieved documents.
+        The degenerate-input guard still applies; the relevance gate does not,
+        since the result is advisory.
         """
         started = time.monotonic()
         tele = _Telemetry(on_event)
         budget = _LlmBudget(max_calls=_max_llm_calls(self._settings))
 
-        # Layer 0: degenerate-input guard (spec §7.0) — same check as
-        # _answer_uncached so callers always get consistent behaviour.
         if len(query.strip()) < self._settings.SEARCH_MIN_QUERY_CHARS:
             return self._clarify_result(
                 "query below SEARCH_MIN_QUERY_CHARS", budget, started, tele
             )
 
-        # Fetch the live taxonomy once and reuse it for filter resolution in the
-        # retrieve phase (no second list_facets round-trip). The plan is built
-        # deterministically — no planner LLM call — so retrieve() is free of any
-        # chat call: this is the zero-cost RAG path the host agent synthesises
-        # over itself.
         facets = self._store_reader.list_facets()
         plan = raw_rag_plan(query)
         retrieved = self._retrieve_phase(
@@ -665,9 +512,8 @@ class SearchCore:
     def list_filters(self) -> FilterCatalog:
         """Return every filter value (with doc counts) + the date range. No LLM.
 
-        Backs the MCP ``list_filters`` tool: one local read so a calling model
-        can discover the exact correspondent / document-type / tag ids to filter
-        on. Makes no LLM or HTTP call.
+        Backs the MCP ``list_filters`` tool, so a calling model can discover
+        the exact ids to filter on.
         """
         return self._store_reader.list_filters_with_counts()
 
@@ -678,23 +524,11 @@ class SearchCore:
         limit: int,
         offset: int,
     ) -> KeywordPage:
-        """Free keyword/filter document search (spec §4.4). No LLM, no embedding.
+        """Free keyword/filter document search. No LLM, no embedding.
 
-        With a non-empty *query*: FTS5 keyword search over chunk content plus the
-        given filters, grouped to ranked documents (best-matching chunk per
-        document). With no *query*: a filter-only browse over the index, sorted
-        most-recently-created first — covering "every document tagged X / from
-        correspondent Y". Filters are the same ID-based shape the search tools
-        accept; discover valid ids via :meth:`list_filters`.
-
-        Args:
-            query: Keyword terms, or None/empty for a filter-only browse.
-            ui_filters: ID-based filters, or None for no restriction.
-            limit: Maximum documents to return.
-            offset: Documents to skip (pagination).
-
-        Returns:
-            A :class:`~store.models.KeywordPage` of ranked document hits.
+        With a *query*: FTS5 search over chunk content, grouped to ranked
+        documents. Without one: a filter-only browse, newest first, covering
+        "every document tagged X / from correspondent Y".
         """
         filters = ui_filters or SearchFilters(
             date_from=None,
@@ -732,18 +566,8 @@ class SearchCore:
     ) -> list[FetchedDocument]:
         """Full OCR text (capped) for a handful of documents by id. No LLM.
 
-        Backs the MCP ``fetch_documents`` tool. Delegates to the pure
-        :func:`~search.fetch.assemble_fetched`: canonical full text from
-        Paperless via *paperless_client*, wrapper metadata from the local index,
-        truncated at :data:`FETCH_MAX_CHARS`. The caller owns the per-request
-        client's lifecycle (open/close).
-
-        Args:
-            ids: Document ids to fetch (validated/bounded by the caller).
-            paperless_client: A per-request Paperless client.
-
-        Returns:
-            One :class:`~search.models.FetchedDocument` per id, in order.
+        Backs the MCP ``fetch_documents`` tool; truncates at
+        :data:`FETCH_MAX_CHARS`. The caller owns *paperless_client*'s lifecycle.
         """
         return assemble_fetched(
             ids,
@@ -753,10 +577,6 @@ class SearchCore:
             FETCH_MAX_CHARS,
         )
 
-    # ------------------------------------------------------------------
-    # Pipeline stages
-    # ------------------------------------------------------------------
-
     def _plan_phase(
         self,
         query: str,
@@ -765,15 +585,7 @@ class SearchCore:
         tele: _Telemetry,
         facets: FacetSet,
     ) -> RetrievalPlan | ClarifyNeeded:
-        """Run the plan stage, emitting the ``plan`` phase with its detail.
-
-        Wraps :meth:`_plan` with the telemetry start/done pair, capturing the
-        planner call's token usage in a fresh sink (empty for the trivial-skip
-        path, which makes no LLM call). The detail carries the rewritten query,
-        the planner's per-spec filter guesses, the human-readable spec list, and
-        whether the trivial skip fired — the SPA renders these as the "Planning"
-        step.
-        """
+        """Run the plan stage, emitting the ``plan`` phase with its detail."""
         tele.start("plan", "Planning the query")
         started = time.monotonic()
         sink: list[LlmCallUsage] = []
@@ -805,19 +617,13 @@ class SearchCore:
         *,
         facets: FacetSet,
     ) -> RetrievalPlan | ClarifyNeeded:
-        """Run the planner stage, or skip it for a trivial query (RAG-08).
+        """Run the planner, or skip it for a trivial query.
 
-        When ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` is set and the query is a
-        short, signal-free keyword lookup, the planner LLM call is skipped and
-        the fallback-shaped trivial plan is used — retrieval still runs vector +
-        FTS on the raw query, so nothing is lost (spec §4.6). The flag defaults
-        off, preserving today's always-plan behaviour.
+        With ``SEARCH_SKIP_PLANNER_FOR_TRIVIAL`` set, a short, signal-free
+        keyword lookup uses the trivial plan instead of an LLM call; retrieval
+        still runs vector + FTS on the raw query, so nothing is lost.
 
-        ``usage_sink``, when given, receives the planner call's token usage; the
-        trivial-skip path makes no LLM call and leaves it empty.
-
-        Returns a ``RetrievalPlan`` in all normal and fallback cases, or a
-        ``ClarifyNeeded`` when the planner's adequacy gate fires (Layer 1).
+        Returns ``ClarifyNeeded`` when the planner's adequacy gate fires.
         """
         if self._settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL and is_trivial_query(query):
             log.info(
@@ -844,25 +650,11 @@ class SearchCore:
     ) -> _RetrievalPhaseResult:
         """Resolve the plan's specs then retrieve, emitting both phases.
 
-        Takes the live taxonomy *facets* (fetched once by the caller, before the
-        planner saw them), emits the non-LLM ``resolve`` phase (the per-spec
-        resolved ids/dates and the guesses that did not resolve), then the
-        ``retrieve`` phase with the chunk/document counts and whether the
-        broadened (filter-dropped) second pass ran.  Neither phase is an LLM
-        call, so neither carries tokens.  The same *facets* are reused across
-        both the first and the broadened retrieval pass.
-
-        The resolved pass-1 specs and the *facets* ride on the returned
-        :class:`_RetrievalPhaseResult` so the refinement pass can re-plan against
-        the same taxonomy and run the no-op guard without a second
-        ``list_facets`` round-trip.
-
-        The raw *query* is threaded through to :func:`~search.retriever.resolve_specs`
-        to power the deterministic date safety net (design §5.2): if no resolved
-        spec carries a date filter but the query names an explicit period, a
-        date-scoped spec is appended automatically.  ``max_specs`` enables the
-        unfiltered recall-twin pass — a bad filter can never silently exclude the
-        answer because its filter-stripped twin still retrieves it.
+        The raw *query* feeds :func:`~search.retriever.resolve_specs`'s date
+        safety net: if no spec carries a date filter but the query names an
+        explicit period, a date-scoped spec is appended. ``max_specs`` enables
+        the unfiltered recall twin, so a bad filter can never silently exclude
+        the answer.
         """
         today = date.today()
         specs = resolve_specs(
@@ -913,17 +705,13 @@ class SearchCore:
     ) -> None:
         """Emit the non-LLM ``resolve`` phase: resolved filter names/methods + drop reasons.
 
-        ``resolved`` lists each spec's per-field ``{id, name, method}`` objects
-        and ISO date bounds after resolution.  ``dropped`` lists each name guess
-        that did not resolve (``method`` in :data:`_DROPPED_METHODS` — ``"none"``,
-        ``"ambiguous"`` or ``"near_miss"``), with the drop reason and, for the
-        ambiguous/near-miss cases, the competing or overlapping candidate names.
-        Both are JSON-serialisable primitives the SPA renders as the "Resolving
-        filters" step.
+        ``dropped`` lists each name guess that did not resolve (``method`` in
+        :data:`_DROPPED_METHODS`), with the competing candidate names for the
+        ambiguous and near-miss cases.
 
-        The ``method`` values are recomputed here via :func:`~search.retriever._match_name`
-        against the live *facets* so the emit does not depend on
-        ``resolve_specs`` threading its intermediate results back out.
+        The methods are recomputed via :func:`~search.retriever._match_name`
+        so this does not depend on ``resolve_specs`` returning its
+        intermediate results.
         """
         tele.start("resolve", "Resolving filters")
         started = time.monotonic()
@@ -951,18 +739,11 @@ class SearchCore:
         tele: _Telemetry,
         documents_by_id: dict[int, IndexedDocument] | None = None,
     ) -> bool:
-        """Run the Layer-2 relevance gate, emitting the ``gate`` phase.
+        """Run the relevance gate, emitting the ``gate`` phase.
 
-        The gate is a BINARY aggregate decision over the retrieval signal — it
-        does not drop individual documents — so the detail reports the signal
-        and a single ``rejected`` boolean, never a per-document drop list (those
-        happen at the judge).  The ``documents`` list in the detail gives
-        one row per evaluated document with its best vector similarity and title,
-        sorted descending, for the trace UI.  Returns True when the signal is
-        too weak to synthesise from.
-
-        *documents_by_id* is the same map built in ``_retrieve_phase`` so the
-        title look-up is shared and never duplicated.
+        The gate is one aggregate decision over the retrieval signal; it never
+        drops individual documents (the judge does that). Returns True when the
+        signal is too weak to synthesise from.
         """
         tele.start("gate", "Relevance gate")
         started = time.monotonic()
@@ -993,28 +774,18 @@ class SearchCore:
     ) -> tuple[list[RetrievedChunk], RetrievalSignal, bool]:
         """Retrieve for the resolved *specs*; broaden and retry once if empty.
 
-        Runs hybrid retrieval over the already-resolved *specs* (the caller
-        resolved them with any UI filters already applied).  An empty result is
-        retried once with every spec's filters dropped (spec §6.3) — a
-        mis-resolved or hallucinated filter is the most common cause of an
-        otherwise-answerable query returning nothing.  The broadened pass
-        re-resolves :func:`~search.refinement.broaden_plan`'s output against the
-        same *facets* (no second ``list_facets`` round-trip) with no UI filters,
-        so a UI-set filter the user explicitly chose does not survive the
-        broaden.  Neither call is an LLM call.
+        A mis-resolved or hallucinated filter is the most common cause of an
+        otherwise answerable query returning nothing, so the retry drops every
+        spec's filters, including UI-set ones.
 
         Returns:
-            A 3-tuple ``(chunks, signal, broadened)`` where *signal* is from
-            whichever retrieval pass found chunks (or the broadened pass when
-            the first was empty) and *broadened* is True iff the second
-            (filter-dropped) pass ran. The signal is forwarded to Layer 2 and
-            *broadened* feeds the retrieve-phase detail.
+            ``(chunks, signal, broadened)``; *broadened* is True iff the
+            filter-dropped pass ran.
         """
         chunks, signal = self._retriever.retrieve(specs)
         if chunks:
             return chunks, signal, False
 
-        # Empty retrieval — drop every spec's filters and try once more.
         broadened_specs = resolve_specs(
             broaden_plan(plan), facets, ui_filters=None, today=today
         )
@@ -1030,17 +801,10 @@ class SearchCore:
     ) -> list[JudgeCandidate]:
         """Reduce chunks to one document-level candidate each, with metadata.
 
-        Keeps each document's highest-rrf_score chunk's text as the snippet —
-        the most relevant slice for a relevance call — reusing the same snippet
-        trimmer as source assembly (no duplication), then attaches the
-        document's title, created date, correspondent, and type so the judge can
-        score relevance to the asked period/entity, not just the snippet.
-
-        The metadata is read from *documents_by_id* — the already-resolved
-        :class:`~store.models.IndexedDocument` look-up, which carries the
-        taxonomy-resolved correspondent and document-type *names* (no second
-        facet round-trip needed). A document missing from the look-up (pruned
-        between retrieval and the judge) keeps a snippet-only candidate.
+        The snippet is the document's highest-``rrf_score`` chunk. The title,
+        date, correspondent and type let the judge score relevance to the asked
+        period or entity, not just the snippet. A document pruned between
+        retrieval and the judge keeps a snippet-only candidate.
         """
         best_score: dict[int, float] = {}
         snippet: dict[int, str] = {}
@@ -1082,27 +846,13 @@ class SearchCore:
     ) -> list[RetrievedChunk] | None:
         """Judge the retrieved documents; return filtered chunks, or None to bail.
 
-        Returns chunks unchanged when the judge is disabled (no ``judge`` phase
-        is emitted then). Otherwise records one budget call, asks the judge
-        which documents are relevant, emits the ``judge`` phase carrying the
-        per-document verdicts (capturing the call's token usage), and: bails
-        (None) only when the judge explicitly drops every document; filters to
-        surviving documents otherwise; fails open (all chunks) if filtering
-        keeps nothing.
+        Returns chunks unchanged when the judge is disabled. Bails (None) only
+        when a non-degraded verdict drops every document; fails open (all
+        chunks) if filtering would otherwise keep nothing.
 
-        The *asker* and *today* are threaded to the judge so it can resolve
-        ownership and temporal references — a document belonging to the asker
-        is relevant to "my …" queries even when the title does not name them.
-
-        *documents_by_id* is the per-query document look-up built once in the
-        retrieve phase (and topped up before each refinement re-judge), reused
-        here for the judge candidates' metadata and the verdict trace titles —
-        no per-judge store read (BE-perf-01). A re-judge over merged chunks
-        relies on the caller having already merged the new documents into it.
-
-        When *judge_scores* is supplied it is populated with each verdict's
-        per-document score (the later, re-judge pass overwrites the earlier one),
-        so the caller can rank the final sources by relevance (Phase 3B).
+        For a re-judge over merged chunks the caller must already have merged
+        the new documents into *documents_by_id*. *judge_scores*, when given,
+        receives each document's score (a re-judge overwrites earlier ones).
         """
         if not self._settings.SEARCH_GATE_JUDGE:
             return chunks
@@ -1114,9 +864,6 @@ class SearchCore:
         verdict = self._judge.judge(
             query, candidates, asker=asker, today=today, usage_sink=sink
         )
-        # A document survives when its verdict is ``keep=True``; a degraded
-        # (fail-open) verdict keeps everything. An explicit non-degraded verdict
-        # that keeps nothing is a bail (no_match, no synthesis).
         kept_ids = _surviving_ids(verdict)
         bailed = not kept_ids and not verdict.degraded
         if judge_scores is not None:
@@ -1132,17 +879,10 @@ class SearchCore:
                 "verdicts": [
                     {
                         "doc_id": dv.document_id,
-                        # The title is resolved from the same get_documents
-                        # look-up that feeds the candidate metadata — no extra
-                        # store read. None when the document was pruned between
-                        # retrieval and the judge.
                         "title": _title_for(documents_by_id, dv.document_id),
                         "keep": dv.keep,
                         "reason": dv.reason,
                         "score": dv.score,
-                        # The Paperless deep-link, built via the same helper the
-                        # SourceDocument link uses, so the SPA can render a
-                        # Preview link per judged document (Phase 3B).
                         "paperless_url": _paperless_url(public_url, dv.document_id),
                     }
                     for dv in verdict.verdicts
@@ -1184,12 +924,7 @@ class SearchCore:
     ) -> Answered | NeedsMore:
         """Run one synthesiser LLM call, emit the ``synthesise`` phase, budget it.
 
-        One ``synthesise`` phase is emitted per call (the exploratory pass and
-        each refinement pass), carrying the mode and whether the model asked for
-        more context, plus the call's token usage. *documents_by_id* is the
-        per-query look-up shared across the pipeline (BE-perf-01); the
-        synthesiser's title/date metadata is derived from it, not a fresh store
-        read.
+        Emitted once per call: the exploratory pass and each refinement pass.
         """
         tele.start("synthesise", "Synthesising the answer")
         started = time.monotonic()
@@ -1228,53 +963,20 @@ class SearchCore:
         judge_scores: dict[int, float],
         documents_by_id: dict[int, IndexedDocument],
     ) -> tuple[Answered | NeedsMore, list[RetrievedChunk], tuple[RetrievalSpec, ...]]:
-        """Run one bounded refinement pass driven by the synth's gap hint (Phase 2).
+        """Run one refinement pass driven by the synthesiser's gap hint.
 
-        Rather than blindly broadening, the pass RE-PLANS: it asks the planner
-        for DIFFERENT specs that target ``needs_more.adjustment``, given the
-        specs already tried (*prior_specs*) and the documents already found. The
-        re-plan output is resolved against the cached *facets* and compared to
-        the prior specs:
-
-        - **No-op guard.** When the re-plan resolves to the *same* specs already
-          tried (a re-plan that changed nothing), the pass does NOT retrieve or
-          re-judge again — those would be a redundant, billable round-trip for an
-          identical result. It runs exactly one final :meth:`_synthesise` on the
-          existing evidence and returns. (The exploratory pass already returned
-          NeedsMore, so a final answer is still owed.)
-        - **Otherwise.** It retrieves for the new specs, merges with the previous
-          round's chunks, re-judges the merged set, and re-synthesises in *mode*.
-
-        A re-plan that returns :class:`ClarifyNeeded` is ignored — refinement is
-        a best-effort improvement, never a place to start asking the user to
-        clarify — and the pass falls through to a single final synthesise on the
-        existing chunks, exactly like the no-op path.
-
-        The re-plan LLM call's token usage is captured and attributed to its own
-        ``replan`` phase (mirroring the ``plan`` phase); the ``refine`` marker
-        phase that follows carries no tokens of its own — the inner
-        :meth:`_synthesise` emits the synthesise phase with that pass's cost.
-
-        Args:
-            query: The raw user query.
-            needs_more: The previous synthesise's NeedsMore signal (the gap hint).
-            previous_chunks: The chunks accumulated so far.
-            prior_specs: The resolved specs already tried (pass 1, or the prior
-                refinement pass), fed to the re-plan and the no-op comparison.
-            facets: The taxonomy, cached from the first retrieve, reused to
-                resolve the re-plan with no extra ``list_facets`` round-trip.
-            ui_filters: The authoritative UI filters, if any.
-            budget: The LLM-call budget; the re-plan and synthesise are recorded.
-            mode: ``"exploratory"`` for an intermediate pass, ``"final"`` for
-                the last allowed pass.
-            asker: Optional sanitised display name of the requesting user.
-            tele: The per-request telemetry accumulator.
+        The pass re-plans: the planner is asked for different specs targeting
+        ``needs_more.adjustment``, given *prior_specs* and the documents found.
+        If the re-plan resolves to the same specs, or returns
+        :class:`ClarifyNeeded` (refinement never asks the user to clarify), the
+        pass skips the redundant, billable retrieve + judge and just
+        synthesises once on the existing evidence. Otherwise it retrieves,
+        merges, re-judges and re-synthesises in *mode*.
 
         Returns:
-            A triple of the synthesiser outcome, the chunk list used as its
-            context (and the result's source set), and the resolved specs now in
-            effect (the new specs, or *prior_specs* on a no-op / clarify) — so
-            the next pass re-plans against what was actually tried.
+            The synthesiser outcome, the chunks used as its context, and the
+            specs now in effect (*prior_specs* on a no-op or clarify), so the
+            next pass re-plans against what was actually tried.
         """
         log.info(
             "search.refined",
@@ -1293,7 +995,6 @@ class SearchCore:
             facets,
         )
 
-        # A clarify on a re-plan is ignored: finalise on the existing evidence.
         if isinstance(replan_outcome, ClarifyNeeded):
             self._emit_refine_marker(
                 needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
@@ -1317,8 +1018,6 @@ class SearchCore:
             max_specs=self._settings.SEARCH_PLANNER_MAX_SPECS,
         )
 
-        # No-op guard: a re-plan that resolves to the same specs already tried
-        # must not pay for a redundant retrieve + judge — just finalise.
         if _specs_equal(new_specs, prior_specs):
             self._emit_refine_marker(
                 needs_more.adjustment, [], len(previous_chunks), noop=True, tele=tele
@@ -1336,9 +1035,6 @@ class SearchCore:
 
         new_chunks, _signal = self._retriever.retrieve(new_specs)
         merged = merge_chunks(previous_chunks, new_chunks)
-        # Top up the shared look-up with only the genuinely-new document ids the
-        # re-retrieve introduced, then reuse it for the re-judge and synthesise —
-        # one store read for the new docs instead of three (BE-perf-01).
         self._merge_documents(documents_by_id, new_chunks)
         self._emit_refine_marker(
             needs_more.adjustment,
@@ -1347,11 +1043,8 @@ class SearchCore:
             noop=False,
             tele=tele,
         )
-        # Re-judge the merged set; a bail here falls back to the merged chunks —
-        # mid-refine we already had relevant evidence, so we never downgrade to
-        # no_match, we just answer from what we have. The re-judge's scores
-        # overwrite the pass-1 scores so the final ranking reflects the latest
-        # verdict on the merged set.
+        # A bail mid-refine falls back to the merged chunks: there was already
+        # relevant evidence, so never downgrade to no_match.
         judged = self._judge_and_filter(
             query,
             merged,
@@ -1379,13 +1072,7 @@ class SearchCore:
         documents_by_id: dict[int, IndexedDocument],
         chunks: list[RetrievedChunk],
     ) -> None:
-        """Fetch and merge any documents in *chunks* missing from the look-up.
-
-        Reads only the document ids not already present, so a refinement pass
-        pays a store round-trip for genuinely-new documents alone — the ones a
-        previous pass already resolved stay cached in *documents_by_id*
-        (BE-perf-01). Mutates the map in place.
-        """
+        """Fetch into *documents_by_id*, in place, any documents it lacks."""
         missing = sorted({c.document_id for c in chunks} - documents_by_id.keys())
         if not missing:
             return
@@ -1405,11 +1092,7 @@ class SearchCore:
     ) -> RetrievalPlan | ClarifyNeeded:
         """Run the re-plan stage, emitting the ``replan`` phase with its usage.
 
-        Mirrors :meth:`_plan_phase`: records one budget call, captures the
-        re-plan call's token usage in a fresh sink, and emits a ``replan`` phase
-        carrying the gap hint and the human-readable new specs (or the clarify
-        reason). The token cost is attributed here, never folded into the
-        ``refine`` marker, so per-phase accounting stays honest.
+        The re-plan's tokens are attributed here, not to the ``refine`` marker.
         """
         tele.start("replan", "Re-planning")
         started = time.monotonic()
@@ -1452,10 +1135,7 @@ class SearchCore:
     ) -> None:
         """Emit the non-LLM ``refine`` marker phase describing the pass's action.
 
-        Carries the gap that prompted the pass, a human-readable ``action``, the
-        new specs (empty on a no-op), how many chunks were carried over from the
-        previous round, and the ``noop`` flag. No tokens — the re-plan and
-        synthesise carry their own.
+        No tokens: the re-plan and synthesise phases carry their own.
         """
         action = (
             "no new searches → finalising on current evidence"
@@ -1478,10 +1158,6 @@ class SearchCore:
             started=started,
         )
 
-    # ------------------------------------------------------------------
-    # Result construction
-    # ------------------------------------------------------------------
-
     def _build_result(
         self,
         answer: str,
@@ -1495,9 +1171,8 @@ class SearchCore:
     ) -> SearchResult:
         """Assemble the final SearchResult with execution statistics.
 
-        The assembled per-phase trace and the whole-query cost summary from
-        *tele* ride on the :class:`SearchStats` so they are cacheable and reach
-        every consumer.
+        The trace and cost summary ride on :class:`SearchStats` so they are
+        cached and reach every consumer.
         """
         stats = SearchStats(
             llm_calls=budget.count,
@@ -1520,14 +1195,8 @@ class SearchCore:
     ) -> SearchResult:
         """Build the no-hits SearchResult — no sources, no synthesis call.
 
-        Used for all three no-match triggers: empty retrieval, the Layer-2
-        relevance-gate rejection, and the Layer-3 judge bailing on every
-        candidate.  The ``outcome_kind`` is ``"no_match"`` in all cases so
-        callers and the SPA can render a consistent "try rephrasing" state.
-        ``reason`` tells the UI *why* so it can show a tailored message;
-        ``candidate_count`` matches the "Retrieving N documents" count in the
-        retrieve trace phase.  The trace/cost accumulated up to the
-        short-circuit ride on the stats.
+        Shared by empty retrieval, the relevance-gate rejection and the judge
+        bailing on every candidate; ``reason`` lets the UI tailor its message.
         """
         stats = SearchStats(
             llm_calls=budget.count,
@@ -1553,34 +1222,15 @@ class SearchCore:
         started: float,
         tele: _Telemetry,
     ) -> SearchResult:
-        """Build the Layer-1 adequacy-gate SearchResult.
+        """Build the clarify SearchResult.
 
-        The model's ``reason`` is logged for operator triage; the user-facing
-        ``answer`` is the FIXED ``_CLARIFY_ANSWER`` message (spec §11) — the
-        model's phrasing is never surfaced directly to preserve consistent UX.
-
-        A minimal RetrievalPlan carrying its ``clarify`` signal and no specs is
-        used as the plan (no retrieval ran, so there is no real plan to report;
-        this satisfies the non-null plan contract).
-
-        Args:
-            reason: The model's reason for the clarify signal (logged only).
-            budget: The LLM budget tracker (reflects the one planner call).
-            started: The monotonic timestamp when the request began.
-            tele: The per-request telemetry accumulator. For the Layer-0
-                degenerate-input clarify this has no phases (empty trace, zero
-                cost); for the Layer-1 planner clarify it carries the plan phase.
-
-        Returns:
-            A SearchResult with outcome_kind='clarify', the fixed answer, empty
-            sources, and stats reflecting the single planner call.
+        *reason* is only logged; the user sees the fixed ``_CLARIFY_ANSWER``.
         """
         log.info(
             "search.clarify_needed",
             reason=reason,
         )
-        # Minimal plan: no specs (no retrieval ran) carrying the clarify signal,
-        # so callers always get a non-null plan.
+        # No retrieval ran, but callers always get a non-null plan.
         minimal_plan = RetrievalPlan(specs=(), clarify=ClarifyNeeded(reason=reason))
         stats = SearchStats(
             llm_calls=budget.count,
@@ -1598,27 +1248,15 @@ class SearchCore:
         )
 
 
-# ---------------------------------------------------------------------------
-# Module-level helpers (no SearchCore state)
-# ---------------------------------------------------------------------------
-
-
 def _elapsed_ms(started: float) -> int:
     """Return whole milliseconds elapsed since the monotonic timestamp *started*."""
     return int((time.monotonic() - started) * 1000)
 
 
 def _surviving_ids(verdict: JudgeVerdict) -> frozenset[int]:
-    """Return the document ids that survive the judge's ``keep`` gate.
+    """Return the document ids whose verdict is ``keep=True``.
 
-    A document survives when its verdict is ``keep=True``. The judge's boolean
-    ``keep`` decision is the sole gate — no secondary score threshold is applied.
-    The ``score`` field is still populated and used for source RANKING (Phase
-    3B), but it no longer influences whether a document reaches synthesis.
-
-    A degraded (fail-open) verdict carries ``keep=True`` on every document, so
-    a broken judge keeps everything — it can only ever lose precision, never
-    block an answer (CODE_GUIDELINES §1.11).
+    ``keep`` is the sole gate; ``score`` only ranks sources.
     """
     return frozenset(v.document_id for v in verdict.verdicts if v.keep)
 
@@ -1637,12 +1275,8 @@ def _synth_metadata(
 ) -> dict[int, tuple[str | None, str | None]]:
     """Build the ``{document_id: (title, created)}`` map for the synthesiser.
 
-    Projects each distinct document id in *chunks* to its indexed title and
-    creation date from the shared per-query *documents_by_id* look-up (built
-    once in the retrieve phase, BE-perf-01) — no fresh store read. A document no
-    longer in the look-up (pruned mid-query, or not yet topped up) is simply
-    absent, and the synthesiser's message builder falls back to its bare
-    ``[id]`` label.
+    A document missing from the look-up (pruned mid-query) is left out, and
+    the synthesiser falls back to its bare ``[id]`` label.
     """
     return {
         document_id: (doc.title, doc.created)
@@ -1657,11 +1291,8 @@ def _finding_titles(
 ) -> tuple[str, ...]:
     """Return the titles of the documents in *chunks*, for the re-plan turn.
 
-    Reads each distinct document id's indexed title from the shared per-query
-    *documents_by_id* look-up (BE-perf-01) — no fresh store read. A document
-    with no title, or one absent from the look-up, is dropped — the re-plan only
-    needs the titles it can name. Order follows first appearance in *chunks*
-    (descending fused score), so the strongest findings lead.
+    Untitled or unknown documents are dropped. Order follows first appearance
+    in *chunks* (descending fused score), so the strongest findings lead.
     """
     seen: list[int] = []
     for chunk in chunks:
@@ -1676,23 +1307,12 @@ def _finding_titles(
 
 
 def _max_llm_calls(settings: Settings) -> int:
-    """Return the per-query LLM-call upper bound for the ``_LlmBudget`` backstop.
+    """Return the per-query LLM-call upper bound for ``_LlmBudget``.
 
-    The bound is **not** fixed — it follows ``SEARCH_MAX_REFINEMENTS`` and
-    whether the judge gate is on:
-
-    - **1** planner call.
-    - **1** exploratory synthesise.
-    - **+1** judge call when ``SEARCH_GATE_JUDGE`` is on (the pass-1 screen).
-    - per refinement pass (Phase 2): **1** re-plan + **1** synthesise, plus
-      **1** re-judge when the judge gate is on. A no-op-guard pass skips the
-      re-retrieve and re-judge, so it costs strictly fewer than this bound — the
-      backstop is an *upper* bound, never an exact count.
-
-    So the limit is ``2 + j + R * (2 + j)`` where ``j`` is 1 iff the judge gate
-    is on and ``R`` is ``SEARCH_MAX_REFINEMENTS``. This is the defensive ceiling
-    ``_LlmBudget`` enforces; the loop's own structure keeps the actual count at
-    or below it.
+    ``2 + j + R * (2 + j)``: one planner call and one exploratory synthesise,
+    plus per refinement pass a re-plan and a synthesise; ``j`` adds a judge call
+    to each when ``SEARCH_GATE_JUDGE`` is on. A no-op refinement pass costs
+    less, so this is an upper bound, not an exact count.
     """
     judge_call = 1 if settings.SEARCH_GATE_JUDGE else 0
     refinements = settings.SEARCH_MAX_REFINEMENTS
@@ -1700,11 +1320,7 @@ def _max_llm_calls(settings: Settings) -> int:
 
 
 def _cost_dict(cs: CostSummary) -> dict[str, object]:
-    """Flatten a :class:`CostSummary` to a JSON-friendly dict for a phase detail.
-
-    Used for the cache-hit phase's ``original_cost`` so the SPA can show what
-    the cached answer originally cost (and therefore what the cache hit saved).
-    """
+    """Flatten a :class:`CostSummary` to a JSON-friendly dict for a phase detail."""
     return {
         "tokens": {
             "prompt": cs.tokens.prompt,
@@ -1721,9 +1337,8 @@ def _cost_dict(cs: CostSummary) -> dict[str, object]:
 def _rewritten_query(plan: RetrievalPlan | None, query: str) -> str:
     """Return the first spec's semantic text as the plan's "rewritten query".
 
-    Falls back to the raw *query* when there is no plan (a clarify outcome) or
-    no spec carries semantic text (e.g. a keyword-only plan) — the SPA always
-    has a non-empty "Planning" label to show.
+    Falls back to the raw *query* (a clarify, or a keyword-only plan) so the
+    SPA always has a non-empty label.
     """
     if plan is None:
         return query
@@ -1736,12 +1351,9 @@ def _rewritten_query(plan: RetrievalPlan | None, query: str) -> str:
 def _filter_detail(plan: RetrievalPlan | None) -> dict[str, object]:
     """Build the plan phase's ``filters`` detail from the plan's filter guesses.
 
-    Reports the planner's non-empty free-text filter-guess *names* (the
-    human-readable guesses available at plan time), not the resolved taxonomy
-    ids — resolution to ids happens in the ``resolve`` phase. The guesses across
-    all specs are merged: the first non-None correspondent / document-type wins,
-    tags and date bounds are unioned. Empty / None guesses are omitted, so a
-    plan with no filters yields ``{}``.
+    Reports the free-text guesses, not resolved ids (that is the ``resolve``
+    phase). Across specs the first non-None correspondent, document type and
+    date bound wins and tags are unioned; empty guesses are omitted.
     """
     if plan is None:
         return {}
@@ -1766,13 +1378,7 @@ def _filter_detail(plan: RetrievalPlan | None) -> dict[str, object]:
 
 
 def _spec_detail(plan: RetrievalPlan | None) -> list[dict[str, object]]:
-    """Build the plan phase's ``specs`` detail — one entry per planned spec.
-
-    Each entry carries the spec's mode, a human-readable query (the semantic
-    text, or the joined keywords for a keyword spec), the spec's pre-resolution
-    filter guesses, and its rationale — all JSON-serialisable primitives the SPA
-    renders. An absent plan (a clarify outcome) yields ``[]``.
-    """
+    """Build the plan phase's ``specs`` detail — one entry per planned spec."""
     if plan is None:
         return []
     return [
@@ -1789,13 +1395,7 @@ def _spec_detail(plan: RetrievalPlan | None) -> list[dict[str, object]]:
 def _spec_detail_for_resolved(
     specs: tuple[RetrievalSpec, ...],
 ) -> list[dict[str, object]]:
-    """Render resolved specs for the ``refine`` phase's ``new_specs`` detail.
-
-    Each entry carries the spec's mode, a human-readable query (semantic text or
-    joined keywords), the resolved taxonomy ids / ISO date bounds, and the
-    rationale — all JSON-serialisable primitives the SPA renders as "the searches
-    the re-plan added".
-    """
+    """Render resolved specs for the ``refine`` phase's ``new_specs`` detail."""
     return [
         {
             "mode": spec.mode,
@@ -1817,13 +1417,10 @@ def _specs_equal(
     left: tuple[RetrievalSpec, ...],
     right: tuple[RetrievalSpec, ...],
 ) -> bool:
-    """Return True when two resolved spec tuples are search-equivalent (no-op guard).
+    """Return True when two resolved spec tuples are search-equivalent.
 
-    Compares only the SEARCH-DETERMINING fields — ``mode``, ``semantic``,
-    ``keywords`` (order-normalised), and ``filters`` (with ``tag_ids`` sorted) —
-    and explicitly EXCLUDES ``rationale``.  The re-plan regenerates rationale on
-    every call, so including it would prevent the guard from ever firing when the
-    actual search is identical but the explanatory text differs.
+    ``rationale`` is excluded: the re-plan rewrites it every call, so including
+    it would stop the no-op guard from ever firing.
     """
     if len(left) != len(right):
         return False
@@ -1833,15 +1430,7 @@ def _specs_equal(
 def _spec_search_key(
     spec: RetrievalSpec,
 ) -> tuple[str, str | None, tuple[str, ...], object]:
-    """Return a comparable key for the search-determining fields of *spec*.
-
-    The key is ``(mode, semantic, sorted_keywords, normalised_filters)`` where
-    ``normalised_filters`` is the spec's :class:`~store.models.SearchFilters`
-    with ``tag_ids`` sorted — so two specs that differ only in tag order or in
-    their ``rationale`` compare as equal.  ``rationale`` is deliberately omitted:
-    it is explanatory text that changes every re-plan call and must not influence
-    the no-op decision.
-    """
+    """Return a comparable key for *spec*, ignoring keyword/tag order and rationale."""
     normalised_filters = replace(
         spec.filters, tag_ids=tuple(sorted(spec.filters.tag_ids))
     )
@@ -1872,16 +1461,12 @@ def _resolved_spec_detail(
 ) -> dict[str, object]:
     """Build the ``resolved[i]`` trace entry for one spec.
 
-    Recomputes :func:`~search.retriever._match_name` for each field so the emit
-    function does not depend on ``resolve_specs`` returning its intermediate
-    match results (spec §B3).  The APPLIED id comes from the spec's
-    post-intersect filters, not the raw match — the UI filter can override the
-    planner guess.
+    The applied id comes from the spec's filters, not the raw match, because a
+    UI filter can override the planner's guess.
     """
     corr_detail: dict[str, object] | None = None
     if guess.correspondent is not None:
         m = _match_name(guess.correspondent, facets.correspondents)
-        # Use the spec's applied id (may differ if ui_filters overrode it).
         applied_id = spec.filters.correspondent_id
         if applied_id is not None:
             name = next(
@@ -1920,13 +1505,7 @@ def _resolved_spec_detail(
 def _drop_entry(
     spec_index: int, field: str, name: str, match: NameMatch
 ) -> dict[str, object]:
-    """Build one ``dropped[i]`` trace entry for a guess that did not resolve.
-
-    Carries ``spec_index`` (which planned query the guess came from) and
-    ``field`` (``"correspondent"`` | ``"document_type"`` | ``"tags"``) so the
-    trace UI can show the drop under its query, labelled with its dimension,
-    instead of as a query-less flat line.
-    """
+    """Build one ``dropped[i]`` trace entry for a guess that did not resolve."""
     return {
         "spec_index": spec_index,
         "field": field,
@@ -1936,9 +1515,7 @@ def _drop_entry(
     }
 
 
-# ``_match_name`` methods that mean a guess did NOT resolve to a filter and so
-# is reported in the trace's ``dropped`` list (``"loose"``/``"exact"``/
-# ``"normalised"`` resolved and are not dropped).
+# ``_match_name`` methods meaning a guess did not resolve to a filter.
 _DROPPED_METHODS = frozenset({"none", "ambiguous", "near_miss"})
 
 
@@ -1949,14 +1526,7 @@ def _dropped_guesses(
 ) -> list[dict[str, object]]:
     """List the name guesses that did not resolve, with reason and candidates.
 
-    A guess is "dropped" when :func:`~search.retriever._match_name` returns a
-    method in :data:`_DROPPED_METHODS` (``"none"``, ``"ambiguous"`` or
-    ``"near_miss"``).  Each dropped entry is ``{"spec_index": <int>, "field":
-    <"correspondent"|"document_type"|"tags">, "name": <guess str>, "reason":
-    <method>, "candidates": [...]}``.  ``spec_index`` and ``field`` let the UI
-    group the drop under its query and name its dimension.  For tags, one entry
-    is emitted per dropped tag.  Dates are deterministic and never reported here.
-    The result is JSON-serialisable primitives.
+    One entry per dropped tag. Dates are deterministic and never reported here.
     """
     dropped: list[dict[str, object]] = []
     for spec_index, (planned, _resolved) in enumerate(zip(plan.specs, specs)):
@@ -1984,10 +1554,9 @@ _TRACE_SNIPPET_CHARS = 160
 
 
 def _trace_snippet(text: str) -> str:
-    """Return a short trace snippet — whitespace-collapsed and capped at 160 chars.
+    """Return a whitespace-collapsed snippet capped at :data:`_TRACE_SNIPPET_CHARS`.
 
-    Uses a tighter limit than the source-card snippet (280 chars) because the
-    trace lists every retrieved chunk and space is at a premium.
+    Tighter than the source-card snippet because the trace lists every chunk.
     """
     collapsed = " ".join(text.split())
     if len(collapsed) <= _TRACE_SNIPPET_CHARS:
@@ -2001,17 +1570,11 @@ def _trace_chunks(
 ) -> list[dict[str, object]]:
     """Serialise *chunks* for the retrieve-phase trace detail.
 
-    Every chunk is emitted as ``{chunk_id, document_id, title, snippet, text,
-    vector_similarity}``, sorted by ``vector_similarity`` descending (``None``
-    last).  ``snippet`` is the 160-char inline preview; ``text`` is the full
-    untruncated chunk for the SPA's hover/focus popover.  Title falls back to
-    ``"Document <id>"`` when the document is not in the look-up (deleted between
-    retrieval and emit).
+    Sorted by ``vector_similarity`` descending, ``None`` last. ``snippet`` is
+    the inline preview; ``text`` is the full chunk for the SPA's popover.
     """
 
     def _sort_key(c: RetrievedChunk) -> tuple[int, float]:
-        # Primary: has a similarity score (0 = yes, 1 = no) for None-last sort.
-        # Secondary: similarity descending (negate for min-sort).
         if c.vector_similarity is None:
             return (1, 0.0)
         return (0, -c.vector_similarity)
@@ -2024,9 +1587,6 @@ def _trace_chunks(
             "title": _title_for(documents_by_id, c.document_id)
             or f"Document {c.document_id}",
             "snippet": _trace_snippet(c.text),
-            # The full (whitespace-collapsed) chunk text, untruncated — the SPA
-            # clamps the inline row to one line but reveals THIS in the hover/focus
-            # popover, so the user reads the whole retrieved passage.
             "text": " ".join(c.text.split()),
             "vector_similarity": c.vector_similarity,
         }
@@ -2040,11 +1600,8 @@ def _gate_documents(
 ) -> list[dict[str, object]]:
     """Serialise per-document best similarity for the gate-phase trace detail.
 
-    One row per distinct document: ``{document_id, title, best_similarity}``.
-    ``best_similarity`` is the maximum ``vector_similarity`` over all of that
-    document's chunks; documents whose every chunk has ``None`` similarity are
-    excluded (no signal to display).  Rows are sorted by ``best_similarity``
-    descending.  Title falls back to ``"Document <id>"`` for a deleted doc.
+    One row per document, sorted by best similarity descending. Documents with
+    no similarity on any chunk are left out.
     """
     best: dict[int, float] = {}
     for c in chunks:
@@ -2053,9 +1610,7 @@ def _gate_documents(
             if current is None or c.vector_similarity > current:
                 best[c.document_id] = c.vector_similarity
 
-    # Sort by the float similarity BEFORE building the dicts, so the sort key is
-    # a float (not the dict's ``object``-typed value) — keeps mypy happy without
-    # a cast.
+    # Sorted before building the dicts so the key is a float, not ``object``.
     ordered = sorted(best.items(), key=lambda item: item[1], reverse=True)
     return [
         {
@@ -2070,29 +1625,12 @@ def _gate_documents(
 def _is_irrelevant(signal: RetrievalSignal, *, min_similarity: float) -> bool:
     """Return True when the retrieval signal is too weak to be worth synthesising.
 
-    Conservative and fail-open (spec §7.2):
-
-    * **Reject only when BOTH signals are poor** — the best vector similarity is
-      below *min_similarity* AND there is no keyword hit.  An exact-term keyword
-      match or a strong semantic match is always allowed through.
-    * **Fail-open when similarity is unavailable** — when ``best_vector_similarity``
-      is ``None`` (no vector search ran or returned results), the function returns
-      ``False`` so synthesis proceeds.  Missing information is not evidence of
-      irrelevance.
-
-    Args:
-        signal: The :class:`~search.models.RetrievalSignal` from the retriever.
-        min_similarity: The absolute vector similarity floor below which retrieval
-            is considered irrelevant.  ``0.0`` makes this function always return
-            ``False`` (the production interim default until Task 4 calibrates it).
-
-    Returns:
-        ``True`` only when both the similarity is known AND is below the floor AND
-        there is no keyword hit; ``False`` in every other case (including when
-        similarity is unknown).
+    Rejects only when the best vector similarity is below *min_similarity* and
+    there is no keyword hit. An unknown similarity (no vector results) is not
+    evidence of irrelevance, so it never rejects. A *min_similarity* of ``0.0``
+    never rejects.
     """
     if signal.best_vector_similarity is None:
-        # No vector data — fail-open, do not reject.
         return False
     return signal.best_vector_similarity < min_similarity and not signal.has_keyword_hit
 
@@ -2103,31 +1641,14 @@ def _cited_sources(
 ) -> tuple[SourceDocument, ...]:
     """Narrow assembled sources to the documents the answer actually cited.
 
-    ``SearchResult.sources`` is the *cited* source set (spec §6.4): the frontend
-    resolves each ``[n]`` marker by matching ``document_id`` in ``sources``, so a
-    returned-but-uncited document is both wrong by contract and noise in the UI
-    (SRCH-02). When the synthesiser emitted parseable citations, keep only the
-    sources whose document is cited, preserving the existing descending-score
-    rank order.
-
-    The fallback is deliberate and safe: if the outcome carries no usable
-    citations — a :class:`NeedsMore`, a degraded answer, or a model that simply
-    cited nothing — every retrieved source is returned rather than an empty
-    list, so a citation-shy answer still shows its supporting documents.
-
-    Args:
-        sources: The rank-ordered sources assembled from the retrieved chunks.
-        outcome: The synthesiser outcome carrying any document-id citations.
-
-    Returns:
-        The cited subset in rank order, or *sources* unchanged when there are
-        no citations to filter by.
+    The frontend resolves each ``[n]`` marker against ``sources``, so an
+    uncited document is noise. Rank order is kept. With no usable citations
+    (a :class:`NeedsMore`, a degraded answer, or none cited) every retrieved
+    source is returned, so the answer still shows its supporting documents.
     """
     if not isinstance(outcome, Answered) or not outcome.citations:
         return sources
     cited_ids = set(outcome.citations)
     cited = tuple(source for source in sources if source.document_id in cited_ids)
-    # A citation set that matches no retrieved document (every cited id was
-    # hallucinated) leaves nothing to show — fall back to the retrieved set
-    # rather than returning an empty, sourceless answer.
+    # Every cited id hallucinated: show the retrieved set, not nothing.
     return cited if cited else sources

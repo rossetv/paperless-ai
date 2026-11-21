@@ -1,16 +1,7 @@
-"""Tests that the MCP asker threads (or doesn't) from the session/API-key caller.
+"""Tests that the MCP asker threads from the session/API-key caller.
 
 Only ``deep_search`` (the full ``core.answer`` pipeline) threads an asker;
 ``semantic_search`` is pure RAG with no LLM stage, so it never forwards one.
-
-Verifies:
-- _run_search_tool forwards the asker argument to the core_call.
-- The _BearerAuthMiddleware sets mcp_asker from the session user's display_name
-  and resets it after the request (contextvar leak guard).
-- With SEARCH_IDENTITY_AWARE=False, resolve_asker returns None so core.answer
-  receives asker=None regardless of the contextvar value.
-- A dirty display_name is sanitised before reaching core.answer via resolve_asker.
-- semantic_search never passes an asker to core.retrieve.
 """
 
 from __future__ import annotations
@@ -32,18 +23,10 @@ from tests.helpers.factories import make_search_result, make_search_settings
 from tests.helpers.search import mint_api_key
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def build_mcp_app(core: object, settings: object, app_db_path: str) -> object:
     """Build the MCP app from a stub *core*, mirroring the production wiring.
 
-    ``build_mcp_app`` now takes a ``resolve_core`` callable and a shared
-    :class:`LazySemaphore`; this shim hands the real builder a ``resolve_core``
-    returning the test's stub core and a fresh per-app semaphore so the test
-    bodies stay unchanged. *settings* is accepted for compatibility and unused.
+    *settings* is accepted for call-site compatibility and unused.
     """
     del settings
     raw_limit = core.settings.SEARCH_MAX_CONCURRENT
@@ -105,11 +88,6 @@ async def _noop_asgi(scope: object, receive: object, send: object) -> None:
     raise AssertionError("the inner app must not run while testing _resolve_caller")
 
 
-# ---------------------------------------------------------------------------
-# _run_search_tool unit tests — direct asker forwarding
-# ---------------------------------------------------------------------------
-
-
 def test_run_search_tool_forwards_asker_to_core_call() -> None:
     """_run_search_tool passes the asker argument through to the core_call."""
     received: list = []
@@ -147,11 +125,6 @@ def test_run_search_tool_forwards_none_asker_when_not_set() -> None:
     assert received == [None]
 
 
-# ---------------------------------------------------------------------------
-# Middleware integration — mcp_asker is set and reset via the ASGI stack
-# ---------------------------------------------------------------------------
-
-
 def test_resolve_caller_returns_the_api_key_owners_display_name() -> None:
     """The middleware resolves an mcp-scoped key to (True, owner display name).
 
@@ -181,18 +154,13 @@ def test_resolve_caller_rejects_an_unknown_credential() -> None:
 
 
 def test_mcp_middleware_resets_mcp_asker_after_request() -> None:
-    """mcp_asker is None before and after a request; the reset is in a finally.
-
-    Verifies the 'always reset, even if app raises' contract — we simulate
-    this by checking the contextvar is back to None after a successful request.
-    """
+    """mcp_asker is None before and after a request; the reset is in a finally."""
     from starlette.testclient import TestClient
 
     settings = make_search_settings(SEARCH_IDENTITY_AWARE=True)
     app_db_path, raw_key = _app_db_with_user(display_name="Someone")
     core = _make_core(settings)
 
-    # Confirm the contextvar is None before the request.
     assert mcp_asker.get() is None
 
     asgi_app = build_mcp_app(core, settings, app_db_path)
@@ -212,22 +180,15 @@ def test_mcp_middleware_resets_mcp_asker_after_request() -> None:
         },
     )
 
-    # After the request, the contextvar must be back to None.
     assert mcp_asker.get() is None
-
-
-# ---------------------------------------------------------------------------
-# resolve_asker gate — SEARCH_IDENTITY_AWARE controls asker in dispatch
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
 async def test_deep_search_suppresses_asker_when_identity_aware_off() -> None:
     """With SEARCH_IDENTITY_AWARE=False, _dispatch resolves asker=None.
 
-    We test this by setting mcp_asker within the same async context as the
-    tool invocation (using the in-memory transport where the tool runs in the
-    same task as the call_tool() awaitable — not a pre-spawned server task).
+    mcp_asker is set in the same async context as the tool call: the in-memory
+    transport runs the tool in the call_tool() task, not a pre-spawned server task.
     """
     from mcp.shared.memory import create_connected_server_and_client_session
 

@@ -27,24 +27,17 @@ const VALID_SORTS: ReadonlySet<DocumentSortField> = new Set([
   'title',
 ]);
 
-/**
- * Narrow an untrusted URL sort string to a `DocumentSortField`. The widening to
- * `ReadonlySet<string>` is on the known-finite token set (no information lost),
- * which keeps the untrusted `value` typed as a plain string until this guard
- * validates it — rather than casting the URL input straight to the union.
- */
+/** Narrow an untrusted URL sort string without casting it to the union. */
 function isSortField(value: string): value is DocumentSortField {
   return (VALID_SORTS as ReadonlySet<string>).has(value);
 }
 
-/** Parse a string into a positive integer, or null if not a positive int. */
 function toPositiveInt(value: string | null): number | null {
   if (value === null) return null;
   const n = Number.parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-/** Derive a DocumentsQuery from a URLSearchParams. */
 function paramsToQuery(params: URLSearchParams): DocumentsQuery {
   const sortRaw = params.get('sort');
   const sort: DocumentSortField =
@@ -67,15 +60,11 @@ function paramsToQuery(params: URLSearchParams): DocumentsQuery {
   };
 }
 
-/** Derive the library view from a URLSearchParams. */
 function paramsToView(params: URLSearchParams): LibraryView {
   return params.get('view') === 'list' ? 'list' : 'grid';
 }
 
-/**
- * Emit a URLSearchParams with default-valued entries stripped, so the URL
- * stays short and `/library` stays `/library` until a real filter is set.
- */
+/** Default values are left out, so `/library` stays bare until a filter is set. */
 function queryToParams(
   query: DocumentsQuery,
   view: LibraryView,
@@ -103,21 +92,11 @@ export interface LibraryUrlState {
   view: LibraryView;
   setQuery: (next: DocumentsQuery) => void;
   setView: (next: LibraryView) => void;
-  /**
-   * The current search-string suffix (e.g. `?q=invoice&tag=5`, including
-   * the leading `?`, or `''` if no params). Useful for building nested
-   * preview links that preserve the parent state.
-   */
+  /** `?q=invoice&tag=5` style suffix, or `''`; for links that keep the parent state. */
   searchString: string;
 }
 
-/**
- * URL ↔ DocumentsQuery + view-toggle binding for the library screen.
- *
- * The library URL is the single source of truth for what the library shows.
- * Reading derives the query and view from `useSearchParams`; writing strips
- * default values so URLs stay short.
- */
+/** Binds the library's DocumentsQuery and view toggle to the URL. */
 export function useLibraryUrlState(): LibraryUrlState {
   const [searchParams, setSearchParams] = useSearchParams();
 

@@ -1,16 +1,8 @@
-"""Integration tests for the bounded refinement loop of the search pipeline.
+"""Integration tests for the search pipeline's bounded refinement loop.
 
-The companion to :mod:`test_search_pipeline`.  These exercise the real
-:class:`~search.core.SearchCore` refinement branch end to end against a real
-``tmp_path`` store: an exploratory ``NeedsMore`` triggers a refined retrieval
-round, the loop runs exactly ``SEARCH_MAX_REFINEMENTS`` passes (bounded by the
-``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` per-query budget, where ``j`` is 1
-when ``SEARCH_GATE_JUDGE`` is on), and the refined round's chunks merge with
-the first round's.
-
-Split from :mod:`test_search_pipeline` for the 500-line ceiling
-(CODE_GUIDELINES §3.1).  Shared store-seeding helpers and the embedding
-geometry come from ``tests/integration/conftest.py``.
+A ``NeedsMore`` answer triggers a re-plan and a refined retrieval round. The
+loop is bounded by the ``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` per-query
+budget, where ``j`` is 1 when ``SEARCH_GATE_JUDGE`` is on.
 """
 
 from __future__ import annotations
@@ -38,12 +30,7 @@ from tests.integration.conftest import (
 
 
 class _VectorSearchSpy:
-    """Wraps a StoreReader, recording every ``vector_search`` filters argument.
-
-    Lets a test prove the refined retrieval used a DIFFERENT date-scoped filter
-    than the first pass — the planner re-plan steers retrieval, not a blind
-    broaden. Every other StoreReader method is delegated unchanged.
-    """
+    """Wraps a StoreReader, recording every ``vector_search`` filters argument."""
 
     def __init__(self, reader: StoreReader) -> None:
         self._reader = reader
@@ -54,14 +41,14 @@ class _VectorSearchSpy:
         return self._reader.vector_search(embedding, k, filters)
 
     def __getattr__(self, name: str) -> Any:
-        # Delegate everything else (list_facets, get_documents, get_stats, …).
         return getattr(self._reader, name)
 
 
 class TestBoundedRefinementEndToEnd:
-    """The refinement loop runs through the real store, bounded by the per-query
-    LLM-call ceiling (Phase 2: 2 + 2 * SEARCH_MAX_REFINEMENTS with the judge gate
-    off)."""
+    """The refinement loop stays within 2 + 2 * SEARCH_MAX_REFINEMENTS LLM calls.
+
+    That is the per-query ceiling with the judge gate off.
+    """
 
     def test_one_refinement_makes_three_calls(self, tmp_path: Any) -> None:
         settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=1)
@@ -101,10 +88,9 @@ class TestBoundedRefinementEndToEnd:
             )
             result = core.answer("what boiler do I have?")
 
-            # Phase 2: the refinement re-plans before re-synthesising. With no
-            # scripted re-plan response the re-plan resolves to the same specs as
-            # pass 1 (the no-op path): planner + exploratory synth + re-plan +
-            # final synth = 4.
+            # The refinement re-plans before re-synthesising. With no scripted
+            # re-plan response it resolves to the pass-1 specs (the no-op path):
+            # planner + exploratory synth + re-plan + final synth = 4.
             assert llm_client.planner_calls == 1
             assert llm_client.replan_calls == 1
             assert llm_client.synthesiser_calls == 2
@@ -115,10 +101,8 @@ class TestBoundedRefinementEndToEnd:
             store_reader.close()
 
     def test_call_count_follows_max_refinements_end_to_end(self, tmp_path: Any) -> None:
-        """End to end, the loop runs exactly SEARCH_MAX_REFINEMENTS passes when
-        every synthesise returns NeedsMore. Phase 2: each pass costs a re-plan
-        plus a synthesise, so the total is 2 + 2 * SEARCH_MAX_REFINEMENTS,
-        bounded by the per-query budget."""
+        """With every synthesise returning NeedsMore, the loop runs exactly
+        SEARCH_MAX_REFINEMENTS passes of re-plan plus synthesise."""
         settings = make_pipeline_settings(tmp_path, SEARCH_MAX_REFINEMENTS=4)
         store_writer = StoreWriter(settings)
         try:
@@ -148,9 +132,7 @@ class TestBoundedRefinementEndToEnd:
             )
             result = core.answer("a query that always needs more")
 
-            # Phase 2: each pass is a re-plan + a synthesise (the no-op path, no
-            # scripted re-plan response). planner + exploratory + 4 * (re-plan +
-            # synth) = 2 + 8 = 10.
+            # planner + exploratory + 4 * (re-plan + synth) = 2 + 8 = 10.
             assert llm_client.total_calls == 10
             assert result.stats.llm_calls == 10
         finally:
@@ -212,7 +194,7 @@ class TestBoundedRefinementEndToEnd:
 
 
 class TestRefineByReplan:
-    """Phase 2: refinement re-plans from the synth hint and steers retrieval."""
+    """Refinement re-plans from the synthesiser's hint and steers retrieval."""
 
     def test_replan_changes_filters_and_surfaces_the_april_doc(
         self, tmp_path: Any
@@ -291,12 +273,10 @@ class TestRefineByReplan:
             assert llm_client.synthesiser_calls == 2
             assert result.stats.refined is True
 
-            # Pass 1 was 2024-scoped; the refined pass was April-2025-scoped — a
-            # genuinely different, date-scoped filter, not a blind broaden. Each
-            # date-filtered spec is now paired with an unfiltered recall twin
-            # (same query, filters stripped) so a wrong filter can't silently
-            # exclude the answer — hence four vector searches: pass-1 filtered +
-            # twin, then refined filtered + twin.
+            # The refined pass used a different date filter, not a blind broaden.
+            # Each date-filtered spec is paired with an unfiltered recall twin so
+            # a wrong filter can't silently exclude the answer, hence four vector
+            # searches: pass-1 filtered + twin, then refined filtered + twin.
             assert len(spy.vector_filters) == 4
             assert spy.vector_filters[0].date_from == "2024-01-01"  # pass 1 filtered
             assert spy.vector_filters[1].date_from is None  # pass 1 twin
@@ -311,8 +291,8 @@ class TestRefineByReplan:
             store_reader.close()
 
     def test_noop_guard_skips_second_retrieve_and_judge(self, tmp_path: Any) -> None:
-        """When the re-plan resolves to the SAME specs as pass 1, the no-op guard
-        runs exactly ONE final synthesise on the existing evidence — no second
+        """When the re-plan resolves to the same specs as pass 1, the no-op guard
+        runs exactly one final synthesise on the existing evidence — no second
         retrieve, no second judge."""
         settings = make_pipeline_settings(
             tmp_path, SEARCH_MAX_REFINEMENTS=1, SEARCH_GATE_JUDGE=True

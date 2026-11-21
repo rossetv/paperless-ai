@@ -1,7 +1,7 @@
-"""Tests for common.config — core daemon settings.
+"""Tests for common.config core daemon settings.
 
-Indexer settings live in test_config_index.py; search-server settings live
-in test_config_search.py (§3.1 500-line ceiling split).
+Indexer and search-server settings are in test_config_index.py and
+test_config_search.py.
 """
 
 from __future__ import annotations
@@ -18,11 +18,8 @@ _MINIMAL_ENV = {
     "OPENAI_API_KEY": "sk-test",
 }
 
-# A fully-local deployment (LLM and embeddings both ollama) may omit
-# OPENAI_API_KEY, but it must set EMBEDDING_PROVIDER=ollama explicitly — the
-# embedding provider is independent of LLM_PROVIDER and defaults to openai. Most
-# of these tests supply the key anyway because they exercise unrelated ollama
-# defaults; the key is harmless when present.
+# Embeddings default to openai regardless of LLM_PROVIDER, so the key stays
+# required here; tests that omit it also set EMBEDDING_PROVIDER=ollama.
 _MINIMAL_OLLAMA_ENV = {
     "PAPERLESS_TOKEN": "tok-123",
     "OPENAI_API_KEY": "sk-test",
@@ -71,8 +68,6 @@ _SIMPLE_DEFAULTS = [
 
 
 class TestDefaults:
-    """Settings constructed with the minimal env should have correct defaults."""
-
     @pytest.mark.parametrize(
         "attr, expected", _SIMPLE_DEFAULTS, ids=[a for a, _ in _SIMPLE_DEFAULTS]
     )
@@ -135,8 +130,6 @@ _CUSTOM_ENV_VARS = [
 
 
 class TestCustomEnvVars:
-    """Every env var can be overridden from its default."""
-
     @pytest.mark.parametrize(
         "env_key, env_val, attr, expected",
         _CUSTOM_ENV_VARS,
@@ -165,12 +158,7 @@ class TestMissingRequired:
             _build(mocker, {"PAPERLESS_TOKEN": "tok"})
 
     def test_openai_api_key_required_when_embedding_provider_is_openai(self, mocker):
-        """OPENAI_API_KEY is required when OpenAI is used by EITHER provider.
-
-        Under LLM_PROVIDER=ollama the LLM is local, but an explicit
-        EMBEDDING_PROVIDER=openai means embeddings still go to OpenAI, so the
-        key is required (CODE_GUIDELINES §10.8, §15.4).
-        """
+        """Embeddings on OpenAI need the key even when the LLM is local."""
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(
                 mocker,
@@ -182,12 +170,6 @@ class TestMissingRequired:
             )
 
     def test_openai_api_key_optional_when_both_providers_are_ollama(self, mocker):
-        """A fully-local deployment (LLM + embeddings ollama) may omit the key.
-
-        EMBEDDING_PROVIDER is independent and defaults to openai, so a local
-        deployment must set it to ollama explicitly; then no call ever reaches
-        OpenAI and OPENAI_API_KEY is not required (resolves to an empty string).
-        """
         s = _build(
             mocker,
             {
@@ -200,8 +182,6 @@ class TestMissingRequired:
         assert s.EMBEDDING_PROVIDER == "ollama"
 
     def test_openai_api_key_required_when_only_llm_provider_is_openai(self, mocker):
-        """OPENAI_API_KEY is required when the LLM uses OpenAI even if embeddings
-        are local (EMBEDDING_PROVIDER=ollama)."""
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(
                 mocker,
@@ -215,31 +195,21 @@ class TestMissingRequired:
     def test_openai_api_key_required_when_llm_ollama_but_embeddings_default(
         self, mocker
     ):
-        """LLM_PROVIDER=ollama alone leaves embeddings on the openai default, so
-        OPENAI_API_KEY is still required until EMBEDDING_PROVIDER is set local."""
+        """LLM_PROVIDER=ollama alone leaves embeddings on the openai default."""
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(mocker, {"PAPERLESS_TOKEN": "tok", "LLM_PROVIDER": "ollama"})
 
     def test_empty_paperless_token_is_treated_as_missing(self, mocker):
-        """An empty PAPERLESS_TOKEN must fail at validation, not at runtime.
-
-        Regression for the Wave 4 boundary: an admin saving an empty secret
-        through the Settings PUT used to round-trip the empty string into the
-        config table, and every daemon then authenticated to Paperless with
-        ``""`` until an admin manually fixed it.
-        """
+        """Fail at validation rather than authenticate every daemon with ``""``."""
         with pytest.raises(ValueError, match="PAPERLESS_TOKEN"):
             _build(mocker, {**_MINIMAL_ENV, "PAPERLESS_TOKEN": ""})
 
     def test_whitespace_only_openai_api_key_is_treated_as_missing(self, mocker):
-        """A whitespace-only required secret is rejected — same as empty."""
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             _build(mocker, {**_MINIMAL_ENV, "OPENAI_API_KEY": "   "})
 
 
 class TestSettingsRepr:
-    """`Settings.__repr__` masks every secret value (CODE_GUIDELINES §7.4)."""
-
     def test_repr_masks_secret_keys(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         text = repr(s)
@@ -250,7 +220,6 @@ class TestSettingsRepr:
         assert "OPENAI_API_KEY='********'" in text
 
     def test_str_masks_secret_keys(self, mocker):
-        """`str(Settings)` masks too — both surfaces share the redaction."""
         s = _build(mocker, _MINIMAL_ENV)
         assert "tok-123" not in str(s)
         assert "sk-test" not in str(s)
@@ -277,7 +246,6 @@ class TestOllamaConfig:
         assert s.OLLAMA_BASE_URL == "http://gpu:11434/v1/"
 
     def test_ollama_still_loads_openai_api_key_when_present(self, mocker):
-        """A supplied OPENAI_API_KEY is still loaded under ollama (harmless)."""
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.OPENAI_API_KEY == "sk-test"
 
@@ -287,23 +255,16 @@ class TestOllamaConfig:
 
 
 class TestEmbeddingProvider:
-    """EMBEDDING_PROVIDER resolution: defaults to openai, independent of
-    LLM_PROVIDER, overridable."""
-
     def test_defaults_to_openai_when_llm_provider_is_openai(self, mocker):
-        """The prod default: EMBEDDING_PROVIDER is openai."""
         s = _build(mocker, _MINIMAL_ENV)
         assert s.EMBEDDING_PROVIDER == "openai"
 
     def test_defaults_to_openai_independent_of_llm_provider(self, mocker):
-        """The embedding provider is independent: it stays openai by default even
-        when the chat provider is ollama, so flipping chat never moves
-        embeddings (and never triggers a re-embed)."""
+        """Switching the chat provider must not move embeddings and force a re-embed."""
         s = _build(mocker, _MINIMAL_OLLAMA_ENV)
         assert s.EMBEDDING_PROVIDER == "openai"
 
     def test_explicit_override_selects_the_embedding_provider(self, mocker):
-        """An explicit EMBEDDING_PROVIDER selects it, decoupled from the chat one."""
         s = _build(
             mocker,
             {**_MINIMAL_ENV, "LLM_PROVIDER": "openai", "EMBEDDING_PROVIDER": "ollama"},
@@ -317,20 +278,16 @@ class TestEmbeddingProvider:
         assert s2.EMBEDDING_PROVIDER == "openai"
 
     def test_blank_override_falls_back_to_openai_default(self, mocker):
-        """A blank EMBEDDING_PROVIDER (cleared in the UI) falls back to the openai
-        default, not a crash."""
+        """A value cleared in the UI arrives blank and must not crash."""
         s = _build(mocker, {**_MINIMAL_OLLAMA_ENV, "EMBEDDING_PROVIDER": "  "})
         assert s.EMBEDDING_PROVIDER == "openai"
 
     def test_invalid_value_rejected(self, mocker):
-        """Junk fails closed at config-build time, naming the key."""
         with pytest.raises(ValueError, match="EMBEDDING_PROVIDER must be"):
             _build(mocker, {**_MINIMAL_ENV, "EMBEDDING_PROVIDER": "anthropic"})
 
 
 class TestValidation:
-    """Invalid config values raise ValueError."""
-
     def test_invalid_provider_raises(self, mocker):
         with pytest.raises(ValueError, match="LLM_PROVIDER must be"):
             _build(mocker, {**_MINIMAL_ENV, "LLM_PROVIDER": "anthropic"})
@@ -368,11 +325,8 @@ class TestValidation:
         with pytest.raises(ValueError, match="MAX_RETRY_BACKOFF_SECONDS must be >= 1"):
             _build(mocker, {**_MINIMAL_ENV, "MAX_RETRY_BACKOFF_SECONDS": value})
 
-    # COMMON-03: a handful of required numeric settings used to flow straight
-    # through _get_int_env with no floor, so a typo'd negative was accepted and
-    # only blew up later (a negative httpx timeout fails at request time, a
-    # negative DPI corrupts rasterisation). §1.11 says fail closed and loud at
-    # startup — each must reject a non-positive value naming the variable.
+    # Reject at startup: a negative timeout fails only at request time and a
+    # negative DPI corrupts rasterisation.
     @pytest.mark.parametrize(
         "env_key, value",
         [
@@ -392,9 +346,7 @@ class TestValidation:
 
 
 class TestBlankNumericFallsBackToDefault:
-    """COMMON-20: a blanked numeric field (the Settings UI round-trips "")
-    falls back to the coded default consistently, instead of crashing the
-    required-int path while the optional-int path silently defaults."""
+    """The Settings UI round-trips a cleared numeric field as ""."""
 
     @pytest.mark.parametrize(
         "env_key, expected_default",
@@ -417,8 +369,6 @@ class TestBlankNumericFallsBackToDefault:
 
 
 class TestOcrImageDetail:
-    """OCR_IMAGE_DETAIL is a validated {low, high, auto} enum, default high."""
-
     def test_defaults_to_high(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
         assert s.OCR_IMAGE_DETAIL == "high"
@@ -434,9 +384,7 @@ class TestOcrImageDetail:
 
 
 class TestOcrReasoningEffort:
-    """OCR_REASONING_EFFORT is a validated {none, low, medium, high, xhigh} enum,
-    default none — OCR is perception, not reasoning, and the highest-volume
-    call in the system, so the default spends zero reasoning tokens."""
+    """OCR is perception and the highest-volume call, so it defaults to none."""
 
     def test_defaults_to_none(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -496,8 +444,6 @@ _POSITIVE_OR_NONE = [
 
 
 class TestPositiveOrNone:
-    """Tags that accept only positive ints or None."""
-
     @pytest.mark.parametrize(
         "env_key, env_val, expected",
         _POSITIVE_OR_NONE,
@@ -531,8 +477,6 @@ class TestClassifyClamping:
 
 
 class TestSearchKeyDailyTokenQuota:
-    """SEARCH_KEY_DAILY_TOKEN_QUOTA defaults to 0 (disabled) and clamps negatives."""
-
     def test_defaults_to_zero_disabled(self, mocker):
         s = _build(mocker, dict(_MINIMAL_ENV))
         assert s.SEARCH_KEY_DAILY_TOKEN_QUOTA == 0
@@ -625,12 +569,12 @@ class TestBoolEnvParsing:
     def test_blank_falls_back_to_default(
         self, mocker, env_key, expected_default, blank
     ):
-        """A blank boolean means "unset", exactly as it does for the numeric
-        parsers (COMMON-20). ``STALE_LOCK_RECOVERY=`` in a compose file is
-        seeded verbatim into the config table by ``appdb.config.seed_from_env``;
-        raising here would fail every daemon's boot *and* every Settings save
-        (which rebuilds the whole merged Settings to validate), with no way back
-        through the UI."""
+        """A blank boolean means unset, as for the numeric parsers.
+
+        ``STALE_LOCK_RECOVERY=`` in a compose file is seeded verbatim into the
+        config table; raising would fail every daemon's boot and every Settings
+        save, with no way back through the UI.
+        """
         s = _build(mocker, {**_MINIMAL_ENV, env_key: blank})
         assert getattr(s, env_key) is expected_default
 
@@ -715,7 +659,7 @@ class TestLlmMaxConcurrent:
         assert s.LLM_MAX_CONCURRENT == 0
 
     def test_env_zero_overrides_the_new_default(self, mocker):
-        """Setting LLM_MAX_CONCURRENT=0 still selects unbounded, beating the default."""
+        """0 selects unbounded even though the default is bounded."""
         s = _build(mocker, {**_MINIMAL_ENV, "LLM_MAX_CONCURRENT": "0"})
         assert s.LLM_MAX_CONCURRENT == 0
 
@@ -736,37 +680,28 @@ class TestOpenAiFlexTier:
 
 
 class TestAppDbPath:
-    """The APP_DB_PATH bootstrap setting (web-redesign spec §4.1)."""
-
     def test_app_db_path_defaults_to_data_app_db(self, mocker):
-        """APP_DB_PATH defaults to /data/app.db when the env var is unset."""
         s = _build(mocker, _MINIMAL_ENV)
         assert s.APP_DB_PATH == "/data/app.db"
 
     def test_app_db_path_is_read_from_the_environment(self, mocker):
-        """APP_DB_PATH is taken verbatim from the environment when set."""
         s = _build(mocker, {**_MINIMAL_ENV, "APP_DB_PATH": "/custom/accounts.db"})
         assert s.APP_DB_PATH == "/custom/accounts.db"
 
 
 def test_bootstrap_keys_are_the_two_database_paths() -> None:
-    """BOOTSTRAP_KEYS is exactly the two env-only database-path variables."""
     from common.config import BOOTSTRAP_KEYS
 
     assert BOOTSTRAP_KEYS == frozenset({"APP_DB_PATH", "INDEX_DB_PATH"})
 
 
 def test_secret_keys_cover_the_two_secrets() -> None:
-    """SECRET_KEYS names every secret-bearing config key — SEARCH_API_KEY is
-    retired by Wave 3 and is not one of them."""
     from common.config import SECRET_KEYS
 
     assert SECRET_KEYS == frozenset({"OPENAI_API_KEY", "PAPERLESS_TOKEN"})
 
 
 def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
-    """Both OCR knobs are persisted via the Settings API but are neither
-    secrets nor reindex keys — they change only the next OCR request."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
     for key in ("OCR_IMAGE_DETAIL", "OCR_REASONING_EFFORT"):
@@ -776,9 +711,6 @@ def test_ocr_detail_and_reasoning_are_config_keys_only() -> None:
 
 
 def test_relevance_tier_keys_are_config_only() -> None:
-    """The three tier cut-points are persisted via the Settings API but are
-    neither secrets nor reindex keys — they change only how the next search
-    badges its results, never how documents are chunked or embedded."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
     for key in (
@@ -792,8 +724,6 @@ def test_relevance_tier_keys_are_config_only() -> None:
 
 
 def test_identity_aware_is_config_only() -> None:
-    """SEARCH_IDENTITY_AWARE is persisted via the Settings API but is neither a
-    secret nor a reindex key — it changes only the next search."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
     assert "SEARCH_IDENTITY_AWARE" in CONFIG_KEYS
@@ -802,26 +732,6 @@ def test_identity_aware_is_config_only() -> None:
 
 
 def test_config_keys_has_ninety_entries() -> None:
-    """CONFIG_KEYS is the 90-key universe.
-
-    SEARCH_JUDGE_KEEP_THRESHOLD was removed: the judge's boolean ``keep`` is now
-    the sole gate; ``score`` is used only for source ranking (Phase 3A refactor).
-    SEARCH_PLANNER_TAXONOMY_LIMIT was added to feed the planner the live taxonomy.
-    STALE_LOCK_RECOVERY was added so a multi-replica deployment can disable the
-    unconditional startup stale-lock sweep. EMBEDDING_PROVIDER was added so a
-    fully-local deployment can embed via Ollama instead of always OpenAI.
-    SEARCH_KEY_DAILY_TOKEN_QUOTA was added as the per-API-key daily LLM-spend cap.
-    PRICING_REFRESH_URL and PRICING_REFRESH_INTERVAL_HOURS were added for the
-    refreshable, locally-cached model-price book (default disabled = bundled seed).
-    The five per-step provider keys (OCR_PROVIDER, CLASSIFY_PROVIDER,
-    SEARCH_PLANNER_PROVIDER, SEARCH_JUDGE_PROVIDER, SEARCH_ANSWER_PROVIDER) were
-    added so each AI step picks OpenAI/Ollama independently (default seeds from
-    LLM_PROVIDER), bringing the count from 81 to 86. OPENAI_FLEX_TIER was added
-    to toggle the OpenAI Flex service tier for the two background daemons,
-    bringing the count to 87. OCR_SKIP_BORN_DIGITAL, OCR_BORN_DIGITAL_MIN_CHARS,
-    and OCR_BORN_DIGITAL_TAG_ID were added so a born-digital PDF's embedded text
-    layer can skip the OCR round-trip, bringing the count to 90.
-    """
     from common.config import CONFIG_KEYS
 
     assert len(CONFIG_KEYS) == 90
@@ -861,8 +771,6 @@ def test_config_keys_has_ninety_entries() -> None:
 
 
 def test_judge_keys_are_config_only() -> None:
-    """The judge gate + model knobs are persisted via the Settings API but are
-    neither secrets nor reindex keys — they change only the next search."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
     for key in (
@@ -877,7 +785,6 @@ def test_judge_keys_are_config_only() -> None:
 
 
 def test_search_judge_rationales_defaults_true_and_parses_false(mocker) -> None:
-    """SEARCH_JUDGE_RATIONALES defaults to True and parses the string "false"."""
     settings_default = _build(mocker, _MINIMAL_ENV)
     assert settings_default.SEARCH_JUDGE_RATIONALES is True
 
@@ -886,10 +793,7 @@ def test_search_judge_rationales_defaults_true_and_parses_false(mocker) -> None:
 
 
 class TestPricingRefreshConfig:
-    """PRICING_REFRESH_URL / PRICING_REFRESH_INTERVAL_HOURS — the price-book knobs."""
-
     def test_defaults_are_disabled_and_daily(self, mocker) -> None:
-        """The default is the behaviour-preserving one: no URL, 24h interval."""
         settings = _build(mocker, _MINIMAL_ENV)
         assert settings.PRICING_REFRESH_URL == ""
         assert settings.PRICING_REFRESH_INTERVAL_HOURS == 24
@@ -944,8 +848,6 @@ class TestPricingRefreshConfig:
         assert settings.PRICING_REFRESH_INTERVAL_HOURS == 1
 
     def test_pricing_keys_are_config_only(self) -> None:
-        """Both keys persist via the Settings API but are neither secrets nor
-        reindex keys."""
         from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
         for key in ("PRICING_REFRESH_URL", "PRICING_REFRESH_INTERVAL_HOURS"):
@@ -955,22 +857,18 @@ class TestPricingRefreshConfig:
 
 
 def test_config_keys_excludes_the_bootstrap_keys() -> None:
-    """The bootstrap keys are not config-table keys."""
     from common.config import BOOTSTRAP_KEYS, CONFIG_KEYS
 
     assert not (BOOTSTRAP_KEYS & CONFIG_KEYS)
 
 
 def test_secret_keys_are_all_config_keys() -> None:
-    """Every secret key is a real config-table key."""
     from common.config import CONFIG_KEYS, SECRET_KEYS
 
     assert SECRET_KEYS <= CONFIG_KEYS
 
 
 def test_reindex_keys_are_the_chunking_and_embedding_keys() -> None:
-    """REINDEX_KEYS is exactly the keys whose change needs a full re-index;
-    every one is a real config key."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS
 
     assert REINDEX_KEYS == frozenset(
@@ -993,9 +891,7 @@ _OLLAMA_URL = "http://gpu.lan:11434/v1/"
 
 
 class TestPerStepProviders:
-    """Each AI step picks its provider independently; an absent per-step key
-    seeds from LLM_PROVIDER (the judge from the planner), so a deployment that
-    set only LLM_PROVIDER is byte-for-byte unchanged."""
+    """An absent per-step key seeds from LLM_PROVIDER (the judge from the planner)."""
 
     def test_default_to_openai_when_unset(self, mocker):
         s = _build(mocker, _MINIMAL_ENV)
@@ -1085,8 +981,6 @@ class TestPerStepProviders:
 
 
 def test_per_step_provider_keys_are_config_only() -> None:
-    """The five per-step provider keys persist via the Settings API but are
-    neither secrets nor reindex keys (a chat-provider change needs no re-embed)."""
     from common.config import CONFIG_KEYS, REINDEX_KEYS, SECRET_KEYS
 
     for key in _STEP_PROVIDER_KEYS:
@@ -1096,11 +990,9 @@ def test_per_step_provider_keys_are_config_only() -> None:
 
 
 def test_born_digital_defaults() -> None:
-    """OCR_SKIP_BORN_DIGITAL defaults on, with a 1-char text floor and no tag.
+    """The 1-char floor only separates "has a text layer" from "none".
 
-    The floor separates "has a text layer" from "none" (spec D4); 1 is that
-    boundary. The original 50 sent a 59-page booklet to vision OCR over a
-    44-char cover page (2026-08-15).
+    A higher floor sends a long PDF with a short cover page to vision OCR.
     """
     s = make_settings()
     assert s.OCR_SKIP_BORN_DIGITAL is True
@@ -1109,12 +1001,10 @@ def test_born_digital_defaults() -> None:
 
 
 def test_min_chars_rejects_zero() -> None:
-    """OCR_BORN_DIGITAL_MIN_CHARS must be at least 1 — zero would treat every
-    page as born-digital regardless of extracted text."""
+    """Zero would treat every page as born-digital."""
     with pytest.raises(ValueError):
         make_settings(OCR_BORN_DIGITAL_MIN_CHARS="0")
 
 
 def test_tag_id_parses_positive_int() -> None:
-    """OCR_BORN_DIGITAL_TAG_ID parses a positive integer from the environment."""
     assert make_settings(OCR_BORN_DIGITAL_TAG_ID="17").OCR_BORN_DIGITAL_TAG_ID == 17

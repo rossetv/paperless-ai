@@ -15,21 +15,12 @@ export interface SettingsListFieldProps {
   placeholder?: string;
   /** When true the field is shown but cannot be edited. */
   disabled?: boolean;
-  /** Additional class names to merge onto the wrapper. */
   className?: string;
 }
 
 /**
- * A pill-list field for the Settings screen.
- *
- * Renders each item as a numbered pill with a remove button. Below the pills,
- * an inline input lets the user type a new entry (confirmed via Enter or the
- * "Add" button). Up/down arrow buttons on each pill reorder the list.
- *
- * Follows the same label/id contract as {@link SettingsTextField}: the visible
- * label lives on the enclosing `Row`; this component exposes `aria-label` only.
- *
- * Tier: components/primitives. Allowed deps: lib/, styles/.
+ * Pill-list field: numbered, reorderable pills with remove buttons, plus an
+ * inline input to add an entry. The visible label lives on the enclosing `Row`.
  */
 export function SettingsListField({
   id,

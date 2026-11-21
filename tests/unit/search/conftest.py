@@ -1,20 +1,7 @@
 """Shared fixtures and helpers for the search unit tests.
 
-Several ``search`` test files are split across two modules for the 500-line
-ceiling (CODE_GUIDELINES §3.1) — ``test_core`` / ``test_core_sources``,
-``test_planner`` / ``test_planner_model_fallback``,
-``test_synthesizer`` / ``test_synthesizer_model_fallback``,
-``test_api`` / ``test_api_healthz``.  The construct helpers each split-pair
-shares live here so every test file imports one definition rather than
-redeclaring it:
-
-- :func:`build_search_core` — re-exported from :mod:`tests.helpers.search`,
-  since the integration tests need the same wiring.
-- :func:`build_planner` — a ``QueryPlanner`` whose ``_create_completion`` is
-  patched with a scripted response (or ``side_effect``).
-- :func:`build_synthesizer` — the same for a ``Synthesizer``.
-- :func:`build_test_client` — a FastAPI ``TestClient`` over the real
-  ``create_app`` with mock core and store reader.
+``build_search_core`` is re-exported from :mod:`tests.helpers.search`, which the
+integration tests also use.
 """
 
 from __future__ import annotations
@@ -38,15 +25,8 @@ __all__ = [
 def build_planner(settings: MagicMock, response_content: str | None) -> QueryPlanner:
     """Build a QueryPlanner whose ``_create_completion`` returns *response_content*.
 
-    Patches the instance's ``_create_completion`` with a single-return mock —
-    the planner takes only ``settings``, so its LLM transport is patched on the
-    instance, mirroring ``tests/unit/classifier``.  For multi-call ``side_effect``
-    scenarios (model fallback), build a bare ``QueryPlanner`` and assign
-    ``_create_completion`` directly.
-
-    Args:
-        settings: A Settings-like mock (use ``make_search_settings``).
-        response_content: The raw LLM content the single call returns.
+    For multi-call ``side_effect`` scenarios (model fallback), build a bare
+    ``QueryPlanner`` and assign ``_create_completion`` directly.
     """
     planner = QueryPlanner(settings)
     planner._create_completion = MagicMock(  # type: ignore[method-assign]
@@ -56,14 +36,7 @@ def build_planner(settings: MagicMock, response_content: str | None) -> QueryPla
 
 
 def build_synthesizer(settings: MagicMock, response_content: str | None) -> Synthesizer:
-    """Build a Synthesizer whose ``_create_completion`` returns *response_content*.
-
-    The synthesiser counterpart of :func:`build_planner`.
-
-    Args:
-        settings: A Settings-like mock (use ``make_search_settings``).
-        response_content: The raw LLM content the single call returns.
-    """
+    """Build a Synthesizer whose ``_create_completion`` returns *response_content*."""
     synthesizer = Synthesizer(settings)
     synthesizer._create_completion = MagicMock(  # type: ignore[method-assign]
         return_value=make_chat_completion(response_content)
@@ -79,25 +52,10 @@ def build_test_client(
 ) -> Any:
     """Build a FastAPI TestClient over the real ``create_app``.
 
-    Mocks the core and the store reader by default; a test that needs scripted
-    behaviour passes its own.  The base URL is ``https://testserver`` so the
-    ``Secure`` session cookie is forwarded on follow-up requests — the real
-    server always runs behind HTTPS (spec §7.3).
-
-    ``app.db`` is the unique-per-call path baked into the *settings* mock by
-    ``make_search_settings``; ``create_app`` migrates it at startup, so the app
-    starts in first-run setup mode with no users, isolated from other tests.
-
-    Args:
-        settings: A Settings-like mock (use ``make_search_settings``).
-        core: An optional pre-built SearchCore stub; defaults to a MagicMock
-            whose ``answer`` returns ``make_search_result()``.
-        store_reader: An optional pre-built StoreReader stub; defaults to a
-            MagicMock with a populated facet set, index stats, and a passing
-            ``quick_check``.
-
-    Returns:
-        A ``fastapi.testclient.TestClient`` wrapping the configured app.
+    The core and store reader default to mocks. The base URL is HTTPS so the
+    ``Secure`` session cookie is sent on follow-up requests. ``app.db`` is the
+    unique-per-call path from ``make_search_settings``, so each app starts in
+    first-run setup mode with no users.
     """
     from fastapi.testclient import TestClient
 
@@ -111,11 +69,8 @@ def build_test_client(
     if core is None:
         core = MagicMock()
         core.answer.return_value = make_search_result()
-    # The /api/search handler reads ``SEARCH_MAX_CONCURRENT`` off the live
-    # core's settings to keep the semaphore in step with hot-loaded config
-    # (web-redesign §5, Wave 4). Point the stub core's ``settings`` at the
-    # test settings so it looks the shape of a real core; a test that wants
-    # a different concurrency cap overrides ``core.settings`` itself.
+    # The /api/search handler reads ``SEARCH_MAX_CONCURRENT`` off the live core's
+    # settings; a test that wants a different cap overrides ``core.settings``.
     core.settings = settings
     if store_reader is None:
         store_reader = MagicMock()

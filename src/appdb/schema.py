@@ -1,20 +1,4 @@
-"""SQLite schema definition for the application database (``app.db``).
-
-This module owns the DDL for every ``app.db`` table and index, and exposes
-:func:`ensure_schema`, which delegates to the versioned migration runner in
-:mod:`appdb.migrations`. ``SCHEMA_VERSION`` is the highest migration version
-the current code knows; it is the single source of truth the migration
-runner records in ``meta``.
-
-The Wave 1 schema (migration v1) is the ``users`` and ``sessions`` tables of
-spec §4.2. Wave 2 adds ``recent_searches`` (migration v2); Wave 3 adds
-``api_keys`` and Wave 4 adds ``config`` as further migrations — each a new
-entry in :data:`appdb.migrations.MIGRATIONS`, never an edit to v1. Migration
-v7 adds ``api_key_usage`` (the per-key daily LLM spend quota). Migration v8
-adds ``model_pricing`` (the locally cached, refreshable model-price book).
-
-Allowed deps: sqlite3, appdb.migrations. Forbidden: store, search, daemons.
-"""
+"""DDL for every ``app.db`` table, applied by :mod:`appdb.migrations`."""
 
 from __future__ import annotations
 
@@ -24,17 +8,9 @@ from appdb.migrations import run_migrations
 
 SCHEMA_VERSION: int = 8
 
-# Migration v1 DDL — the users and sessions tables of spec §4.2, plus the
-# three sessions indexes. Every statement uses IF NOT EXISTS so the migration
-# is idempotent, although the runner only applies it when schema_version < 1.
-#
-# users: human accounts. password_hash is an argon2id encoded string. role
-# and status are CHECK-constrained to the allowed values so a bad write fails
-# at the database, not silently. username is UNIQUE NOT NULL.
-#
-# sessions: server-side sessions. token_hash is the SHA-256 hex of the
-# opaque cookie token — the raw token is never stored. user_id cascades on
-# delete so removing a user atomically revokes every session they hold.
+# v1: users and sessions. role and status are CHECK-constrained so a bad write
+# fails at the database. sessions.token_hash is the SHA-256 hex of the cookie
+# token, which is never stored; deleting a user revokes all their sessions.
 SCHEMA_V1: str = """
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -79,11 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
     ON sessions (expires_at);
 """
 
-# Migration v2 DDL — the recent_searches table (web-redesign §5). One row per
-# search a signed-in user runs; the search server keeps at most ~20 newest
-# rows per user. user_id REFERENCES users(id) ON DELETE CASCADE so deleting
-# an account drops their search history atomically. The composite index on
-# (user_id, created_at) serves the per-user "newest first" list directly.
+# v2: recent_searches, one row per search a signed-in user runs.
 SCHEMA_V2: str = """
 CREATE TABLE IF NOT EXISTS recent_searches (
     id          INTEGER PRIMARY KEY,
@@ -97,21 +69,10 @@ CREATE INDEX IF NOT EXISTS idx_recent_searches_user_created
     ON recent_searches (user_id, created_at);
 """
 
-# Migration v3 DDL — the api_keys table (web-redesign §5; Wave 3). A
-# programmatic credential for the REST and MCP surfaces.
-#
-# key_hash is the SHA-256 hex of the raw key; the raw key (sk-pls-...) is
-# never stored, so a database leak yields no usable credential. key_hash is
-# UNIQUE — the bearer auth path looks a key up by this column. key_prefix is
-# the first ~12 characters of the raw key, kept purely so the UI can show
-# "sk-pls-AbC1..." without holding the secret.
-#
-# owner_user_id REFERENCES users(id) ON DELETE CASCADE: deleting a user
-# atomically destroys every key they own. scopes is a comma-separated list
-# drawn from api,mcp,admin. revoked_at being non-NULL means the key is dead;
-# expires_at being non-NULL and in the past also kills it. request_count and
-# last_used_at are updated by a throttled "touch" so auth is not a write per
-# request.
+# v3: api_keys, credentials for the REST and MCP surfaces. Only the SHA-256 of
+# the raw key is stored, so a database leak yields no usable credential;
+# key_prefix lets the UI show "sk-pls-AbC1..." without the secret. A key is dead
+# once revoked_at is set or expires_at has passed.
 SCHEMA_V3: str = """
 CREATE TABLE IF NOT EXISTS api_keys (
     id             INTEGER PRIMARY KEY,
@@ -136,17 +97,9 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_owner_user_id
 """
 
 
-# Migration v4 DDL — the config table (web-redesign spec §5, Wave 4). It holds
-# the application's runtime configuration as raw string values keyed by the
-# canonical environment-variable name. Wave 4 moves all 51 config settings out
-# of environment variables and into this table; the two bootstrap variables
-# APP_DB_PATH and INDEX_DB_PATH stay in the environment because they tell the
-# process where this database lives.
-#
-# value is stored as TEXT and is the exact string form the env-var would have
-# had — common.config parses and validates it, so the database stays a dumb
-# store. updated_at is an ISO-8601 UTC timestamp of the last write, surfaced
-# by the Settings screen.
+# v4: config, raw env-var strings keyed by name; common.config parses them.
+# APP_DB_PATH and INDEX_DB_PATH stay in the environment because they say where
+# this database lives.
 SCHEMA_V4: str = """
 CREATE TABLE IF NOT EXISTS config (
     key        TEXT PRIMARY KEY,
@@ -156,23 +109,10 @@ CREATE TABLE IF NOT EXISTS config (
 """
 
 
-# Migration v5 DDL — the Index dashboard's cross-process state (web-redesign
-# spec §5, Wave 6).
-#
-# daemon_status: one heartbeat row per daemon. Each of the four daemons
-# (ocr, classifier, indexer, search) upserts its row on every work cycle.
-# The dashboard's running/idle/stopped state is NOT stored — it is derived
-# at read time from last_heartbeat recency, so a crashed daemon that writes
-# nothing is correctly reported "stopped" without anyone having to write
-# that. processed_count is a monotonic throughput counter the daemon owns.
-#
-# reconcile_activity: an append-only log of the indexer's reconcile/sweep
-# cycles, so the dashboard can show "Recent activity". index.db keeps only
-# the latest reconcile timestamp (one value, overwritten) and is destroyed
-# by the destructive "Rebuild" action — this history lives in app.db
-# precisely so a rebuild does not erase it. kind is CHECK-constrained to the
-# two cycle kinds; summary is a JSON object of the SyncReport/SweepReport
-# counts.
+# v5: the Index dashboard's cross-process state. daemon_status stores no
+# running/idle/stopped state; it is derived from last_heartbeat at read time.
+# reconcile_activity lives here, not in index.db, so "Rebuild" does not erase
+# it; summary is a JSON object of SyncReport/SweepReport counts.
 SCHEMA_V5: str = """
 CREATE TABLE IF NOT EXISTS daemon_status (
     name            TEXT PRIMARY KEY
@@ -196,20 +136,10 @@ CREATE TABLE IF NOT EXISTS reconcile_activity (
 """
 
 
-# Migration v7 DDL — the api_key_usage table (per-key daily LLM spend quota).
-#
-# One row per (api_key_id, usage_date) pair, where usage_date is the UTC
-# calendar date (YYYY-MM-DD) the spend was recorded on. tokens is the
-# cumulative LLM token count and calls the cumulative completed-query count
-# the key consumed on that day; both are advanced by an upsert so a day's
-# bucket grows in place rather than stacking a row per query.
-#
-# api_key_id REFERENCES api_keys(id) ON DELETE CASCADE: deleting (or hard-
-# deleting) a key atomically drops its whole usage history — the cap is a
-# property of a live credential, not an audit log that must outlive it. The
-# composite PRIMARY KEY (api_key_id, usage_date) is the upsert conflict target
-# and serves the per-key, per-day lookup the pre-request check performs
-# directly, so no separate index is needed.
+# v7: api_key_usage, per-key daily LLM spend (usage_date is the UTC date).
+# Usage cascades with its key: the cap belongs to a live credential, not an
+# audit log. The composite primary key is the upsert target and serves the
+# per-day lookup, so no separate index is needed.
 SCHEMA_V7: str = """
 CREATE TABLE IF NOT EXISTS api_key_usage (
     api_key_id  INTEGER NOT NULL
@@ -222,24 +152,9 @@ CREATE TABLE IF NOT EXISTS api_key_usage (
 """
 
 
-# Migration v8 DDL — the model_pricing table (the cached, refreshable USD
-# model-price book).
-#
-# One row per priced model. input_per_mtok / output_per_mtok are the USD list
-# prices per million tokens, mirroring search.pricing.ModelPrice. The
-# provenance columns are denormalised onto every row rather than split into a
-# separate metadata table: the whole cache is replaced atomically on each
-# refresh (appdb.model_pricing.save_cached_prices truncates then re-inserts in
-# one BEGIN IMMEDIATE transaction), so every row always shares one consistent
-# (fetched_at, source, as_of) — there is never a mixed-provenance state to
-# normalise away, and a single SELECT loads both the prices and where they came
-# from.
-#
-# as_of is the price list's own effective date (YYYY-MM-DD, from the seed or the
-# refresh payload). source is the provenance: the literal 'bundled' for the seed
-# table, or the refresh URL the prices were fetched from. fetched_at is the
-# ISO-8601 UTC timestamp the row was written (when the cache was last refreshed).
-# model is the PRIMARY KEY so a model name appears at most once.
+# v8: model_pricing, the cached USD price book. The provenance columns are
+# denormalised onto every row because the whole cache is replaced atomically,
+# so rows never disagree and one SELECT loads prices and provenance together.
 SCHEMA_V8: str = """
 CREATE TABLE IF NOT EXISTS model_pricing (
     model           TEXT PRIMARY KEY,
@@ -253,21 +168,9 @@ CREATE TABLE IF NOT EXISTS model_pricing (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Bring ``app.db`` up to the latest schema by running pending migrations.
-
-    Delegates to :func:`appdb.migrations.run_migrations`, which reads the
-    stored ``schema_version`` from ``meta`` (treating a missing table or row
-    as version 0), applies every migration whose version exceeds it in
-    ascending order, and persists the new version after each.
-
-    Safe to call repeatedly: when the database is already current it is a
-    no-op.
-
-    Args:
-        conn: An open connection from :func:`appdb.connection.connect`.
+    """Bring ``app.db`` up to the latest schema; a no-op when already current.
 
     Raises:
-        appdb.migrations.AppDbError: The database's ``schema_version`` is
-            higher than :data:`SCHEMA_VERSION` — it was written by newer code.
+        appdb.migrations.AppDbError: The database was written by newer code.
     """
     run_migrations(conn)

@@ -16,36 +16,22 @@ export interface SelectProps<T extends string = string> {
   id: string;
   /** Visible label rendered above the control. */
   label?: string;
-  /** The available options. */
   options: ReadonlyArray<SelectOption<T>>;
   /** Currently selected value (controlled). */
   value?: T;
   /** Text shown when no option is selected. */
   placeholder?: string;
-  /** Whether the control is non-interactive. */
   disabled?: boolean;
   /** Called with the new value when the user selects an option. */
   onChange: (value: T) => void;
-  /** Additional class names to merge onto the root wrapper. */
   className?: string;
 }
 
 /**
- * Accessible custom dropdown select.
+ * Accessible custom dropdown implementing the ARIA combobox-with-listbox pattern.
  *
- * Implements the ARIA combobox pattern with listbox:
- * - role="combobox" on the trigger button (aria-haspopup="listbox")
- * - role="listbox" on the dropdown container
- * - role="option" + aria-selected on each item
- *
- * Keyboard support:
- * - Click / Enter / Space / ArrowDown on the trigger — opens the list
- * - ArrowDown / ArrowUp — move the highlighted option
- * - Enter — selects the highlighted option
- * - Escape — closes without selecting
- *
- * Generic over the option value type T so callers get typed onChange callbacks.
- * App-agnostic — does not know about documents, facets, or search.
+ * Enter, Space or ArrowDown on the trigger opens the list; ArrowUp/Down move the
+ * highlight, Enter selects and Escape closes without selecting.
  */
 export function Select<T extends string = string>({
   id,

@@ -20,7 +20,6 @@ from ocr.image_converter import ImageConversionError, PageSource, open_page_sour
 
 
 def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
-    """Create valid PNG bytes from a small image."""
     img = Image.new("RGB", (width, height), color="red")
     buf = BytesIO()
     img.save(buf, format="PNG")
@@ -28,7 +27,6 @@ def _make_png_bytes(width: int = 10, height: int = 10) -> bytes:
 
 
 def _make_tiff_bytes(num_frames: int = 3) -> bytes:
-    """Create valid multi-frame TIFF bytes."""
     frames = [Image.new("RGB", (10, 10), color=c) for c in ("red", "green", "blue")]
     buf = BytesIO()
     frames[0].save(
@@ -38,7 +36,6 @@ def _make_tiff_bytes(num_frames: int = 3) -> bytes:
 
 
 def _make_jpeg_bytes() -> bytes:
-    """Create valid JPEG bytes."""
     img = Image.new("RGB", (10, 10), color="blue")
     buf = BytesIO()
     img.save(buf, format="JPEG")
@@ -69,7 +66,6 @@ class TestBytesToImagesPng:
 
         with open_page_source(png_bytes, "image/png") as source:
             page = source.load_page(0)
-            # Assert — result should be a usable image with correct dimensions
             assert page.size == (10, 10)
             assert page.mode in ("RGB", "RGBA", "L")
 
@@ -110,8 +106,7 @@ class TestBytesToImagesPdf:
 
         # The page count is known up front without loading any page.
         assert len(source) == 2
-        # Streamed to a temp folder, paths returned, scaled to OCR_MAX_SIDE when
-        # supplied (None here means "natural DPI" so size is omitted).
+        # Streamed to a temp folder as paths; without max_side, size is omitted.
         mock_convert.assert_called_once()
         args, kwargs = mock_convert.call_args
         assert args == (pdf_bytes,)
@@ -150,12 +145,11 @@ class TestBytesToImagesPdf:
 
     @patch("ocr.image_converter.convert_from_bytes")
     def test_pdf_content_type_with_charset(self, mock_convert):
-        # Arrange — content type might include extra params
         mock_convert.return_value = []
 
         open_page_source(b"fake", "application/pdf; charset=utf-8")
 
-        # Assert — still detected as PDF because "pdf" is in the string
+        # Still detected as PDF despite the parameters.
         mock_convert.assert_called_once()
 
     @patch("ocr.image_converter.shutil.rmtree")
@@ -186,11 +180,10 @@ class TestBytesToImagesInvalid:
 
 class TestBytesToImagesUnknownType:
     def test_unknown_type_attempts_image_open(self):
-        # Arrange — use valid PNG bytes with a weird content type
         png_bytes = _make_png_bytes()
 
         with open_page_source(png_bytes, "application/octet-stream") as source:
-            # Assert — should still work because Pillow can read it
+            # Pillow sniffs the format whatever the content type says.
             assert len(source) == 1
             assert isinstance(source.load_page(0), Image.Image)
 
@@ -270,7 +263,6 @@ class TestPageSourceLifecycle:
         source = open_page_source(png_bytes, "image/png")
 
         source.close()
-        # Second close must not raise.
         source.close()
 
     def test_pdf_load_page_deletes_temp_file(self, tmp_path):
@@ -317,12 +309,11 @@ class TestPageSourceLifecycle:
 
 
 class TestPdfRasterisationErrors:
-    """H4: pdf2image failures are translated to ImageConversionError.
+    """pdf2image failures are translated to ImageConversionError.
 
-    None of the pdf2image / Poppler exceptions inherit from
-    ImageConversionError, so they must be wrapped at the rasterisation
-    boundary so the worker's ``except ImageConversionError`` branch fires,
-    error-tags the document, and removes it from the queue.
+    No pdf2image or Poppler exception inherits from it, so they are wrapped at
+    the rasterisation boundary; the worker's ``except ImageConversionError``
+    branch then error-tags the document and removes it from the queue.
     """
 
     @pytest.mark.parametrize(
@@ -353,8 +344,7 @@ class TestPdfRasterisationErrors:
         with pytest.raises(ImageConversionError) as exc_info:
             open_page_source(b"%PDF fake", "application/pdf")
 
-        # The chain must be preserved so operators can diagnose the root cause
-        # (CODE_GUIDELINES §6.3).
+        # The chain must be preserved so operators can diagnose the root cause.
         assert exc_info.value.__cause__ is original
 
     @patch("ocr.image_converter.shutil.rmtree")
@@ -378,7 +368,7 @@ class TestPdfRasterisationErrors:
 
 
 class TestPdfTimeout:
-    """L1: convert_from_bytes receives the timeout kwarg when requested."""
+    """convert_from_bytes receives the timeout kwarg when one is requested."""
 
     @patch("ocr.image_converter.convert_from_bytes")
     def test_timeout_forwarded_to_convert_from_bytes(self, mock_convert):
@@ -405,7 +395,7 @@ class TestPdfTimeout:
 
 
 class TestTiffStreaming:
-    """M6: multi-frame TIFF frames are streamed via temp files, not held in RAM.
+    """Multi-frame TIFF frames are streamed via temp files, not held in RAM.
 
     The streaming path mirrors the PDF strategy: each frame is saved to a
     temp PNG file, and the PageSource returns them one at a time from disk,
@@ -416,7 +406,6 @@ class TestTiffStreaming:
         tiff_bytes = _make_tiff_bytes(num_frames=3)
 
         with open_page_source(tiff_bytes, "image/tiff") as source:
-            # The path-backed backing is used for multi-frame images.
             assert len(source._paths) == 3
             assert len(source._images) == 0
 
@@ -491,7 +480,7 @@ class TestPageModeNormalisation:
     """Every page leaves the converter in a mode the provider can resize and PNG-encode.
 
     Pillow cannot thumbnail large I;16 images or write I/CMYK/YCbCr/... as PNG,
-    so a 16-bit greyscale or CMYK scan used to fail OCR at the provider.
+    so such scans would otherwise fail OCR at the provider.
     """
 
     @_SIXTEEN_BIT_MODES

@@ -1,5 +1,4 @@
-// ESLint 9 flat config.
-// Encodes the five-layer boundary rules from CODE_GUIDELINES §12.3.
+// ESLint 9 flat config, including the layer-boundary rules for src/.
 import js from '@eslint/js';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
@@ -9,15 +8,12 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-  // Base JS recommended rules
   js.configs.recommended,
 
-  // Global ignores
   {
     ignores: ['dist/**', 'node_modules/**', '.storybook/**', 'storybook-static/**'],
   },
 
-  // TypeScript source files
   {
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: {
@@ -35,37 +31,20 @@ export default [
       'react-hooks': reactHooks,
     },
     settings: {
-      // TypeScript-aware import resolver — required so eslint-plugin-boundaries
-      // can resolve TS imports (no .js extension) to their absolute paths and
-      // classify them into the correct layer.  Without this, the node resolver
-      // fails to find .ts files, the dependency is marked UNKNOWN, and the
-      // element-types rule silently skips it (§12.3).
+      // Without a TS resolver, boundaries cannot resolve extensionless TS
+      // imports, marks them UNKNOWN, and silently skips them.
       'import/resolver': {
         typescript: {
           alwaysTryTypes: true,
           project: './tsconfig.json',
         },
       },
-      // Map src/ sub-directories to layer names used in the boundary rules.
-      //
-      // Each layer of the §12.3 stack is its OWN element type — the three
-      // component tiers (primitives / layout / patterns) are distinct, not
-      // collapsed into one `components`, because §12.3 forbids a page from
-      // reaching a primitive directly while allowing it to reach layout.
-      // A single `components` type cannot express that.
-      //
-      // Order matters: eslint-plugin-boundaries matches the FIRST pattern, so
-      // the three specific `src/components/<tier>/**` globs are listed before
-      // any broader path could shadow them.
-      //
-      // The composition root — App.tsx, routes.tsx, main.tsx — is classified
-      // as the `app` element type (NOT ignored), so its imports are still
-      // checked against the matrix.
+      // The component tiers are separate types because a page may reach layout
+      // but not a primitive. boundaries matches the first pattern, so the
+      // specific component globs must come before any broader one. The
+      // composition root is typed `app`, not ignored, so its imports are checked.
       'boundaries/elements': [
         { type: 'styles',               pattern: 'src/styles/**' },
-        // lib/ — framework-agnostic leaf helpers (e.g. the `cn` class-name
-        // join). Imports nothing; importable by every layer, so it sits next
-        // to styles/ at the bottom of the stack (§12.3).
         { type: 'lib',                  pattern: 'src/lib/**' },
         { type: 'components-primitives', pattern: 'src/components/primitives/**' },
         { type: 'components-layout',     pattern: 'src/components/layout/**' },
@@ -82,60 +61,33 @@ export default [
       ],
     },
     rules: {
-      // no-undef is redundant under TypeScript — tsc already proves every
-      // identifier is defined, and the ESLint rule produces false positives on
-      // browser and test globals. typescript-eslint advises disabling it.
+      // tsc already checks identifiers; this rule false-positives on globals.
       'no-undef': 'off',
 
-      // TypeScript recommended rules (spread manually for flat-config compatibility)
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
 
-      // React
       'react/react-in-jsx-scope': 'off',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
 
-      // Layer-boundary rules — CODE_GUIDELINES §12.3.
-      //
-      // The stack flows strictly downward. Within components/, the three tiers
-      // also form a downward stack: patterns → layout → primitives → styles.
-      //
-      //   app          → pages, features, api, hooks, styles, lib
-      //   pages        → features, components-layout, api, hooks  (NOT primitives, NOT patterns)
-      //   features     → any components-*, api, hooks, styles, lib
-      //   patterns     → patterns, layout, primitives, hooks, styles, lib
-      //   layout       → layout, primitives, hooks, styles, lib
-      //   primitives   → primitives, hooks, styles, lib
-      //   api / hooks  → leaves: nothing from application layers (hooks/lib only)
-      //   styles / lib → nothing
-      //
-      // §12.3 names hooks/ "generic hooks importable by components, features,
-      // and pages" — so the component tiers may import hooks/, the same as the
-      // styles/ and lib/ leaves.
-      //
-      // A type may always import its own type (a primitive importing another
-      // primitive, etc.) — that is intra-layer composition, not a boundary cross.
+      // Imports flow downward only; within components/ the tiers stack as
+      // patterns → layout → primitives. hooks/, styles/ and lib/ are leaves
+      // every component tier may use.
       'boundaries/element-types': [
         'error',
         {
           default: 'disallow',
           message:
             'Layer-boundary violation: ${file.type} cannot import from ${dependency.type}. ' +
-            'Dependencies must flow downward only (CODE_GUIDELINES §12.3).',
+            'Dependencies must flow downward only.',
           rules: [
-            // styles/ — the bottom of the stack; imports nothing.
             { from: 'styles', allow: [] },
 
-            // lib/ — framework-agnostic leaf helpers; may import api/ for
-            // type-only deps (e.g. parseSearchParams returns FilterRequest).
-            // No component or page imports permitted.
+            // api/ for type-only deps (parseSearchParams returns FilterRequest).
             { from: 'lib', allow: ['api'] },
 
-            // Component tiers — each may import lower tiers, plus the
-            // cross-cutting leaves: hooks/ (§12.3 names hooks importable by
-            // components), styles/, and lib/.
             {
               from: 'components-primitives',
               allow: ['components-primitives', 'hooks', 'styles', 'lib'],
@@ -153,24 +105,17 @@ export default [
                 'hooks',
                 'styles',
                 'lib',
-                // Connected patterns (e.g. FilterControls) may import the api
-                // layer for their own data-hooks/types — mirrors the hooks→api
-                // allowance (eefa1a8). Narrow exception, not a licence for every
-                // pattern to reach into api.
+                // Narrow exception: connected patterns such as FilterControls
+                // use their own api hooks and types.
                 'api',
               ],
             },
 
-            // api/ — cross-cutting leaf; no application-layer imports.
             { from: 'api', allow: ['api', 'lib'] },
 
-            // hooks/ — cross-cutting leaf; may import api/ so that domain
-            // hooks such as useAuth can wrap TanStack Query hooks from api/.
-            // No component or page imports are permitted.
+            // api/ so domain hooks such as useAuth can wrap its query hooks.
             { from: 'hooks', allow: ['hooks', 'api', 'lib'] },
 
-            // features/ — the only layer that knows the domain; may use any
-            // component tier plus the cross-cutting leaves and styles.
             {
               from: 'features',
               allow: [
@@ -185,19 +130,15 @@ export default [
               ],
             },
 
-            // pages/ — compose features + layout only. A page may NOT reach a
-            // primitive or a pattern directly: a missing visual must become a
-            // feature, never be solved on the page. This is the structural
-            // guarantee against per-page design drift (§12.3).
+            // No primitives or patterns: a missing visual becomes a feature
+            // rather than being built on the page, which prevents design drift.
             {
               from: 'pages',
               allow: ['pages', 'features', 'components-layout', 'api', 'hooks', 'lib'],
             },
 
-            // app/ — the composition root: routes + providers. Mounts pages and
-            // features, wires the API/hooks, and pulls in global styles.
-            // components-layout is also allowed so the bootstrap loading screen
-            // (FullPageLoading) can be rendered before any page has mounted.
+            // components-layout for the FullPageLoading screen shown before any
+            // page mounts.
             {
               from: 'app',
               allow: ['app', 'pages', 'features', 'components-layout', 'api', 'hooks', 'styles', 'lib'],

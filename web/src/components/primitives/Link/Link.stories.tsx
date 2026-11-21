@@ -35,7 +35,7 @@ export const Inline: Story = {
     variant: 'inline',
   },
   decorators: [
-    // Plain <p> — global.css (loaded in preview.ts) supplies body typography.
+    // Plain <p>; global.css supplies the body typography.
     (Story) => (
       <p>
         This paragraph contains an <Story /> within body copy.

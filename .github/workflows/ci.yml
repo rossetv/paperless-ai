@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
 
-# Cancel any in-flight run for the same branch/PR when a new one is triggered.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -42,9 +41,7 @@ jobs:
           pip install .
 
       - name: Run tests with coverage
-        # -n auto distributes the suite across the runner's cores (pytest-xdist).
-        # pytest-cov combines the per-worker coverage data automatically, so the
-        # --cov-fail-under gate still measures the whole suite.
+        # pytest-cov merges the xdist workers' data, so the gate covers the whole suite.
         run: pytest -q -n auto --cov=common --cov=ocr --cov=classifier --cov=store --cov=indexer --cov=search --cov-report=term-missing --cov-fail-under=70
 
       - name: Type-check (all packages)
@@ -95,7 +92,7 @@ jobs:
         run: pip install "bandit[toml]==1.9.4"
 
       - name: bandit
-        # `-ll` reports MEDIUM severity and above (LOW noise filtered out).
+        # `-ll`: MEDIUM severity and above.
         run: bandit -r src/ -ll -f txt
 
   dependency-audit:
@@ -115,12 +112,9 @@ jobs:
           cache: "pip"
 
       - name: Install project + pip-audit
-        # No lockfile in this repo, so audit the actual installed environment
-        # (resolved from pyproject) rather than a hashed requirements file.
-        # Upgrade pip AND setuptools first — both ship pre-installed in the
-        # GHA Python env pip-audit scans, and the bundled copies routinely
-        # carry known CVEs the latest releases have fixed (pip historically;
-        # setuptools 79.0.1 / PYSEC-2026-3447 red-flagged main on 2026-07-15).
+        # No lockfile, so audit the installed environment. pip and setuptools
+        # are upgraded first: the runner's bundled copies are scanned too and
+        # often carry CVEs that newer releases fix.
         run: |
           python -m pip install --upgrade pip setuptools
           pip install .
@@ -154,9 +148,7 @@ jobs:
         run: npm ci
 
       - name: Audit production dependencies
-        # --omit=dev: only production deps matter for deployed risk.
-        # --audit-level=high: treat high/critical as a build failure; moderate
-        # and below are noise in a vite/react dev toolchain.
+        # Only production deps ship; moderate and below are noise here.
         run: npm audit --omit=dev --audit-level=high
 
       - name: Type-check
@@ -173,13 +165,9 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.platform }})
-    # Gate the image build on every check-job, not just tests. A lint, bandit
-    # or pip-audit regression is not an excuse to ship.
     needs: [tests, lint, security-scan, dependency-audit, frontend]
-    # Build each architecture on a NATIVE runner — no QEMU emulation. GitHub's
-    # free arm64 runners (ubuntu-24.04-arm, available on public repos) build the
-    # linux/arm64 image on real arm64 silicon; the two arches run concurrently
-    # and the tagged multi-arch manifest is assembled in docker-merge.
+    # Each architecture builds on a native runner (no QEMU); docker-merge then
+    # assembles the tagged multi-arch manifest.
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -220,19 +208,14 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: false
-          # Tests run once in the dedicated `tests` job above; the image build
-          # never re-runs pytest.
+          # The `tests` job already ran pytest.
           build-args: |
             RUN_TESTS=0
-          # Per-architecture cache scope so the two matrix jobs don't clobber
-          # each other's GitHub Actions cache.
+          # Per-architecture scope so the matrix jobs don't clobber each other's cache.
           cache-from: type=gha,scope=${{ matrix.pair }}
           cache-to: type=gha,mode=max,scope=${{ matrix.pair }}
-          # build-push-action v6+ generates provenance/SBOM attestations by
-          # default. Keep them off: provenance fetches the PR's git context from
-          # the public endpoint, which 500s on Dependabot PRs, and the extra
-          # manifest entries complicate the push-by-digest path below. PR builds
-          # only need to prove the Dockerfile compiles natively on each arch.
+          # Attestations off: provenance fetches git context that 500s on
+          # Dependabot PRs, and the extra manifest entries break push-by-digest.
           provenance: false
           sbom: false
 
@@ -250,10 +233,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.pair }}
           cache-to: type=gha,mode=max,scope=${{ matrix.pair }}
-          # Push the per-arch image by digest only; the tagged manifest list is
-          # assembled in docker-merge. Provenance/SBOM attestations stay off —
-          # they'd add manifest entries that break the push-by-digest +
-          # imagetools-create flow, and provenance 500s on Dependabot PRs.
+          # Attestations off, as in the PR build.
           provenance: false
           sbom: false
 
@@ -275,8 +255,6 @@ jobs:
 
   docker-merge:
     name: Docker manifest
-    # Runs only after BOTH architecture builds succeed, then assembles and pushes
-    # the tagged multi-arch manifest list from the per-architecture digests.
     needs: docker
     if: github.event_name == 'push'
     runs-on: ubuntu-latest

@@ -1,23 +1,8 @@
-"""Tests for search.planner — parsing the LLM planner response.
+"""Tests for search.planner: parsing the LLM planner response.
 
-Verifies the QueryPlanner parsing contract (spec §6.1):
-- A well-formed mock LLM response is parsed into the expected RetrievalPlan.
-- A multi-spec response produces multiple PlannedSpec objects with the right
-  modes, semantic/keywords, filter_guess fields, and rationale strings.
-- A malformed / empty / non-JSON response degrades to the safe fallback plan.
-- The fallback plan is a RetrievalPlan with a single broad semantic spec.
-- More than SEARCH_PLANNER_MAX_SPECS specs in the response → capped.
-- Clarify response → ClarifyNeeded when the gate is on.
-- String-valued list fields are not iterated character-by-character (I1).
-- A list/dict value for a scalar filter field becomes None, not its repr (I2).
-
-Model selection, the AI_MODELS fallback chain, and the "every API error
-degrades, plan() never raises" contract are in
-:mod:`test_planner_model_fallback` (split for the 500-line ceiling, §3.1).
-
-LLM mocking: QueryPlanner subclasses OpenAIChatMixin; ``build_planner`` (see
-conftest.py) patches the instance's ``_create_completion`` with a fake —
-mirroring ``tests/unit/classifier`` — never via constructor injection.
+Model selection and the fallback chain are in :mod:`test_planner_model_fallback`.
+``build_planner`` patches the instance's ``_create_completion``; the planner has
+no constructor injection for its LLM transport.
 """
 
 from __future__ import annotations
@@ -40,7 +25,7 @@ from tests.unit.search.conftest import build_planner
 
 
 def _clarify_json(reason: str = "Query is too vague.") -> str:
-    """Return a well-formed clarify JSON response (new planner shape)."""
+    """Return a well-formed clarify JSON response."""
     return _json.dumps({"specs": [], "clarify": {"reason": reason}})
 
 
@@ -65,11 +50,6 @@ def _assert_is_fallback_plan(plan: RetrievalPlan, raw_query: str) -> None:
     assert spec.keywords == ()
     assert spec.filter_guess == EMPTY_FILTER_CANDIDATES
     assert "fallback" in spec.rationale
-
-
-# ---------------------------------------------------------------------------
-# Well-formed multi-spec response
-# ---------------------------------------------------------------------------
 
 
 class TestWellFormedResponse:
@@ -252,11 +232,6 @@ class TestWellFormedResponse:
         assert "VAT" in plan.specs[0].keywords
 
 
-# ---------------------------------------------------------------------------
-# Plan-width cap
-# ---------------------------------------------------------------------------
-
-
 class TestPlanWidthIsCapped:
     """The number of specs is capped at SEARCH_PLANNER_MAX_SPECS.
 
@@ -322,11 +297,6 @@ class TestPlanWidthIsCapped:
         assert len(plan.specs) == 8
 
 
-# ---------------------------------------------------------------------------
-# Relative-date language
-# ---------------------------------------------------------------------------
-
-
 class TestRelativeDateLanguage:
     """Date strings from the LLM end up in filter_guess.date_from/date_to."""
 
@@ -360,11 +330,6 @@ class TestRelativeDateLanguage:
 
         assert plan.specs[0].filter_guess.date_from is None
         assert plan.specs[0].filter_guess.date_to is None
-
-
-# ---------------------------------------------------------------------------
-# Malformed / empty / non-JSON response: safe fallback
-# ---------------------------------------------------------------------------
 
 
 class TestFallbackOnBadResponse:
@@ -434,13 +399,10 @@ class TestFallbackOnBadResponse:
         assert isinstance(plan, RetrievalPlan)
 
     def test_empty_specs_list_produces_broad_semantic_fallback(self) -> None:
-        """A valid response with ``"specs": []`` yields the broad-semantic spec (H3).
+        """A valid response with ``"specs": []`` yields the broad-semantic spec.
 
-        The pipeline invariant is "a plan always carries at least one spec". A
-        model returning an empty specs list (well-formed JSON, just no specs)
-        must not leave a spec-less plan with nothing to retrieve — the planner
-        substitutes the single broad-semantic fallback on the raw query, exactly
-        as the malformed-response path does.
+        A plan always carries at least one spec, so the planner substitutes the
+        broad-semantic fallback on the raw query, as for a malformed response.
         """
         payload = _json.dumps({"specs": []})
         planner = build_planner(make_search_settings(), payload)
@@ -450,10 +412,9 @@ class TestFallbackOnBadResponse:
         _assert_is_fallback_plan(plan, "find boiler warranty")
 
     def test_specs_of_only_non_dict_junk_produces_fallback(self) -> None:
-        """A specs list of only non-dict junk is filtered to empty → fallback (H3).
+        """A specs list of only non-dict junk is filtered to empty → fallback.
 
-        The parser drops non-dict items; if that leaves the list empty the same
-        broad-semantic back-fill must apply so the plan is never spec-less.
+        The parser drops non-dict items; the same broad-semantic back-fill applies.
         """
         payload = _json.dumps({"specs": ["not-a-spec", 42, None]})
         planner = build_planner(make_search_settings(), payload)
@@ -463,17 +424,11 @@ class TestFallbackOnBadResponse:
         _assert_is_fallback_plan(plan, "array junk query")
 
 
-# ---------------------------------------------------------------------------
-# I1 — string-valued list fields are not iterated character-by-character
-# ---------------------------------------------------------------------------
-
-
 class TestStringValuedListFields:
     """An LLM that emits a bare string for a list field must not poison retrieval.
 
-    Finding I1: ``tuple(str(t) for t in "invoice")`` yields
-    ``('i','n','v','o','i','c','e')``.  The planner coerces a bare string into
-    a single-element list instead.
+    ``tuple(str(t) for t in "invoice")`` would yield single characters, so the
+    planner wraps a bare string in a one-element list.
     """
 
     def test_string_keywords_becomes_single_keyword(self) -> None:
@@ -555,16 +510,11 @@ class TestStringValuedListFields:
         assert plan.specs[0].keywords == ()
 
 
-# ---------------------------------------------------------------------------
-# I2 — _str_or_none rejects containers rather than repr-ing them
-# ---------------------------------------------------------------------------
-
-
 class TestStrOrNoneRejectsContainers:
     """A list/dict value for a scalar filter field must not become its repr.
 
-    Finding I2: ``str(["npower", "EDF"]).strip()`` produces the filter
-    candidate ``"['npower', 'EDF']"`` which resolves against nothing.
+    ``str(["npower", "EDF"])`` would produce a filter candidate that resolves
+    against nothing.
     """
 
     def test_list_correspondent_becomes_none(self) -> None:
@@ -616,11 +566,6 @@ class TestStrOrNoneRejectsContainers:
         plan = build_planner(make_search_settings(), payload).plan("the raw query")
 
         assert plan.specs[0].filter_guess.document_type is None
-
-
-# ---------------------------------------------------------------------------
-# Mode defaulting — malformed mode falls back to "semantic"
-# ---------------------------------------------------------------------------
 
 
 class TestModeCoercion:
@@ -677,11 +622,6 @@ class TestModeCoercion:
         assert plan.specs[0].mode == "semantic"
 
 
-# ---------------------------------------------------------------------------
-# System prompt byte-stability
-# ---------------------------------------------------------------------------
-
-
 class TestPlannerDateInUserTurn:
     """The planner sends a byte-stable system prompt and the date in the user turn."""
 
@@ -700,11 +640,6 @@ class TestPlannerDateInUserTurn:
         import re
 
         assert re.search(r"\d{4}-\d{2}-\d{2}", user) is not None
-
-
-# ---------------------------------------------------------------------------
-# Adequacy gate (Layer 1) — ClarifyNeeded vs RetrievalPlan, fail-open
-# ---------------------------------------------------------------------------
 
 
 class TestAdequacyGate:
@@ -753,11 +688,8 @@ class TestAdequacyGate:
     def test_gate_off_ignores_clarify_json(self) -> None:
         """When SEARCH_GATE_ADEQUACY=False a clarify JSON produces a RetrievalPlan.
 
-        _clarify_json emits specs=[] so the gate is bypassed (the clarify object
-        is not extracted) and the parser falls through to the plan path. With
-        the gate off the pipeline must proceed rather than ask the user to
-        clarify — and an empty specs list is substituted with the broad-semantic
-        fallback spec so the "a plan always has >=1 spec" invariant holds.
+        _clarify_json emits specs=[], so with the gate off the parser falls through to
+        the plan path and the empty list is back-filled with the broad-semantic spec.
         """
         planner = build_planner(
             make_search_settings(SEARCH_GATE_ADEQUACY=False),
@@ -766,8 +698,6 @@ class TestAdequacyGate:
         outcome = planner.plan("life")
 
         assert isinstance(outcome, RetrievalPlan)
-        # Gate is off: the clarify object is ignored. specs=[] is back-filled
-        # with the broad-semantic fallback so the plan is never spec-less.
         assert outcome.clarify is None
         assert len(outcome.specs) == 1
         assert outcome.specs[0].semantic == "life"
@@ -825,11 +755,6 @@ class TestAdequacyGate:
         assert isinstance(outcome, RetrievalPlan)
 
 
-# ---------------------------------------------------------------------------
-# Usage sink forwarding
-# ---------------------------------------------------------------------------
-
-
 class TestPlannerUsageSink:
     """planner.plan forwards a usage_sink into the shared completion helper."""
 
@@ -870,11 +795,6 @@ class TestPlannerUsageSink:
         planner = build_planner(make_search_settings(), planner_response_json())
         outcome = planner.plan("a query")
         assert isinstance(outcome, RetrievalPlan)
-
-
-# ---------------------------------------------------------------------------
-# Asker forwarding
-# ---------------------------------------------------------------------------
 
 
 class TestPlannerAsker:

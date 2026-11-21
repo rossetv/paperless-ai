@@ -1,9 +1,4 @@
-"""Tests for appdb.reconcile_activity — the reconcile-cycle activity log.
-
-Covers: record_cycle appends a row; read_recent returns rows newest-first and
-honours the limit; the summary dict round-trips through JSON; ok is stored as
-0/1 and read back as a bool; an empty table reads as an empty list.
-"""
+"""Tests for appdb.reconcile_activity, the reconcile-cycle activity log."""
 
 from __future__ import annotations
 
@@ -46,11 +41,10 @@ def test_record_cycle_then_read_round_trips(conn) -> None:
 
 
 def test_record_cycle_keeps_the_log_bounded(conn) -> None:
-    """The append-only log never grows past _ACTIVITY_CAP rows.
+    """The log never grows past _ACTIVITY_CAP rows.
 
-    Regression guard for the unbounded-table leak: a long-lived indexer records
-    a cycle every few minutes for months, so record_cycle must trim as it
-    appends rather than letting the table grow without limit.
+    A long-lived indexer records a cycle every few minutes for months, so
+    record_cycle trims as it appends.
     """
     total = reconcile_activity._ACTIVITY_CAP + 25
     for i in range(total):
@@ -66,7 +60,6 @@ def test_record_cycle_keeps_the_log_bounded(conn) -> None:
 
     count = conn.execute("SELECT COUNT(*) FROM reconcile_activity").fetchone()[0]
     assert count == reconcile_activity._ACTIVITY_CAP
-    # The newest cycle survives; the oldest has been trimmed away.
     newest = reconcile_activity.read_recent(conn, limit=1)[0]
     assert newest.detail == f"cycle {total - 1}"
 
@@ -83,7 +76,6 @@ def test_read_recent_returns_newest_first(conn) -> None:
             detail=f"cycle {n}",
         )
     rows = reconcile_activity.read_recent(conn, limit=10)
-    # The last-appended row (cycle 2) comes back first.
     assert [row.detail for row in rows] == ["cycle 2", "cycle 1", "cycle 0"]
 
 
@@ -104,7 +96,6 @@ def test_read_recent_honours_the_limit(conn) -> None:
 
 
 def test_record_cycle_stores_a_failed_cycle(conn) -> None:
-    """ok=False round-trips as a bool."""
     reconcile_activity.record_cycle(
         conn,
         kind="sweep",
@@ -132,13 +123,7 @@ def test_summary_round_trips_an_empty_dict(conn) -> None:
 
 
 def test_parse_summary_skips_non_int_values_without_raising(conn) -> None:
-    """A summary with a non-integer value must not crash read_recent.
-
-    This is the MAJOR 2 regression guard: _parse_summary's int() coercion was
-    outside the try block, so a malformed stored value (e.g. a list) would
-    raise TypeError and propagate through read_recent → 500 on the dashboard.
-    """
-    # Write a manually crafted row with a non-integer summary value.
+    """A malformed stored summary value is skipped; it must not 500 the dashboard."""
     conn.execute(
         "INSERT INTO reconcile_activity "
         "(kind, started_at, finished_at, ok, summary, detail) "
@@ -154,9 +139,7 @@ def test_parse_summary_skips_non_int_values_without_raising(conn) -> None:
     )
     conn.commit()
 
-    # read_recent must not raise; the bad key is silently skipped.
     rows = reconcile_activity.read_recent(conn, limit=10)
     assert len(rows) == 1
-    # "failed" is valid and must be present; "indexed" is skipped.
     assert rows[0].summary == {"failed": 0}
     assert "indexed" not in rows[0].summary

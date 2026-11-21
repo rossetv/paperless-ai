@@ -1,8 +1,6 @@
-"""Tests for search.prompts — schemas, response-format gating, and ordering.
+"""Tests for search.prompts: schemas, response-format gating and prompt ordering.
 
-Covers RAG-06 (strict json_schema response_format for planner + synthesiser)
-and RAG-09 (planner system prompt byte-stability + synth delimiter ordering).
-The LLM is never called here — these are pure prompt/string builders.
+Pure prompt/string builders; the LLM is never called.
 """
 
 from __future__ import annotations
@@ -26,11 +24,9 @@ from tests.helpers.factories import make_taxonomy_entry as _entry
 class TestPlannerSchema:
     """The planner schema is a strict json_schema mirroring the plan-or-clarify union.
 
-    The schema uses a required-superset strategy (matching the synthesiser): all
-    fields required, ``clarify`` is ``object | null`` and is null for a normal
-    plan; ``specs`` carries the planned searches for a plan and is empty for a
-    clarify response.  This preserves OpenAI strict mode (required == properties)
-    while letting the parser discriminate at runtime.
+    Every field is required (OpenAI strict mode needs required == properties);
+    ``clarify`` is null for a plan and ``specs`` is empty for a clarify response,
+    so the parser discriminates at runtime.
     """
 
     def test_schema_is_strict(self) -> None:
@@ -46,7 +42,7 @@ class TestPlannerSchema:
         assert props == required
 
     def test_schema_models_the_retrieval_plan_keys(self) -> None:
-        """The new schema has 'specs' (array of PlannedSpec) and 'clarify'."""
+        """The schema has 'specs' (array of PlannedSpec) and 'clarify'."""
         props = PLANNER_JSON_SCHEMA["schema"]["properties"]
         assert {"specs", "clarify"} <= set(props)
 
@@ -113,14 +109,14 @@ class TestResponseFormatGating:
 
 
 class TestPlannerSystemPromptByteStable:
-    """The planner system prompt no longer interpolates {today} (RAG-09)."""
+    """The planner system prompt does not interpolate {today}."""
 
     def test_system_prompt_contains_expected_content(self) -> None:
         assert "search-query planning engine" in PLANNER_SYSTEM_PROMPT
 
     def test_system_prompt_has_no_date_placeholder(self) -> None:
         assert "{today}" not in PLANNER_SYSTEM_PROMPT
-        # No concrete date leaked in either — it lives in the user turn now.
+        # No concrete date in either; the date lives in the user turn.
         assert "Today's date is 20" not in PLANNER_SYSTEM_PROMPT
 
     def test_system_prompt_is_a_non_empty_string(self) -> None:
@@ -257,13 +253,11 @@ class TestPlannerSystemPromptGuidance:
 
 class TestSynthesiserUserMessageInjectionSafety:
     """The synthesiser user message frames chunk text so it cannot escape its
-    data region or forge the control boundary (SRCH-01, CODE_GUIDELINES §10.2).
+    data region or forge the control boundary.
 
-    The defence: the question and instructions sit BEFORE the untrusted data,
-    and the data block is fenced with an unpredictable per-message nonce that a
-    document chunk cannot reproduce — so a chunk that embeds a literal
-    ``---\\nQuestion: ...`` (or any other boundary-shaped text) reads as data,
-    never as a fresh control marker.
+    The question and instructions sit BEFORE the untrusted data, and the data block
+    is fenced with a per-message nonce a chunk cannot reproduce, so boundary-shaped
+    text inside a chunk reads as data, never as a control marker.
     """
 
     def test_question_precedes_the_chunk_data(self) -> None:
@@ -378,7 +372,7 @@ class TestSynthesiserIdentity:
 
 
 class TestSynthesiserEvidenceGatingPrompt:
-    """The system prompt evidence-gates and instructs reconciliation (Phase 3B).
+    """The system prompt evidence-gates and instructs reconciliation.
 
     The synthesiser must assert only what the chunks state — refusing to
     substitute the nearest available period/entity for the one asked — and must
@@ -401,17 +395,16 @@ class TestSynthesiserEvidenceGatingPrompt:
         assert "compare" in lower or "attribute" in lower
 
     def test_system_prompt_still_carries_the_final_mode_rule(self) -> None:
-        # The final-mode rule must survive the Phase-3B additions.
+        # The final-mode rule is still present.
         assert "FINAL" in SYNTHESISER_SYSTEM_PROMPT
 
 
 class TestSynthesiserUserMessageMetadataHeaders:
     """Each labelled chunk header carries the document's title + date when known.
 
-    The metadata comes from our own store (``documents_by_id``), stays in the
-    control text of the labelled header (already our text, not chunk content),
-    and so adds no injection surface — a document missing metadata falls back to
-    the bare ``[id]`` label, preserving the pre-metadata behaviour.
+    The metadata comes from our own store and sits in our header text, not chunk
+    content, so it adds no injection surface; a document without metadata gets the
+    bare ``[id]`` label.
     """
 
     def test_header_includes_title_and_date_when_supplied(self) -> None:

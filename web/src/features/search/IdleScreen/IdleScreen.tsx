@@ -16,19 +16,9 @@ export interface IdleScreenProps {
 }
 
 /**
- * The search idle screen — the hero.
- *
- * A centred hero: a display headline, the large `SearchField`, a row of
- * quick-filter chips, the recent-searches strip and the index-status footer.
- * Quick-filter chips and recent-search rows both call `onSearch`.
- *
- * Recent searches come from `useRecentSearches`; any error simply omits the
- * strip (the `RecentSearchStrip` primitive renders `null` for an empty list).
- * The status footer is shown only once `useStats` has resolved.
- *
- * Composed from: SearchScreenLayout, Stack, SearchField, Text,
- * RecentSearchStrip, IndexStatusFooter.
- * Own CSS module provides the count-highlight and suggestion-pill classes.
+ * The search idle screen: hero headline, search field, quick-filter chips,
+ * recent searches and the index-status footer. A recent-searches error just
+ * omits the strip (`RecentSearchStrip` renders nothing for an empty list).
  */
 export function IdleScreen({ onSearch }: IdleScreenProps): React.ReactElement {
   const recent = useRecentSearches();

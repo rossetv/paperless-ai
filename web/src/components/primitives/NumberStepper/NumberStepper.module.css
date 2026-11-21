@@ -1,18 +1,6 @@
 /*
- * NumberStepper primitive — CSS Module.
- *
- * A numeric input flanked by − / + stepper buttons, with an optional unit
- * suffix rendered as a divided cell INSIDE the bordered control (between
- * the value and the + button). The native spin-buttons of <input
- * type="number"> are hidden — the − / + buttons replace them with a
- * larger hit target.
- *
- * Keeping the suffix inside the bordered control means the stepper's right
- * edge — the + button — is always at column-right whether the row carries a
- * unit (chars/s/px) or no unit at all. That way every row's control
- * primitive (stepper, text input, select) right-aligns at the same x.
- *
- * All values come exclusively from design tokens (var(--…)).
+ * The unit suffix sits inside the bordered control, so the + button is always at
+ * the right edge and every settings row's control right-aligns at the same x.
  */
 
 .stepper {
@@ -33,7 +21,6 @@
   opacity: var(--opacity-disabled);
 }
 
-/* ── A − or + button. ── */
 .button {
   position: relative;
   padding: var(--spacing-6) var(--spacing-10);
@@ -49,12 +36,8 @@
     transform var(--duration-fast) var(--easing-out);
 }
 
-/* Transparent expanded hit-area (DD-4 compact-control exception).
-   Expands the tap zone to ≥44px tall centred on the button without
-   changing the visual footprint. The .stepper overflow:hidden clips
-   anything extending outside the container bounds, so the effective
-   target height is min(44px, container height) — still larger than
-   the text-only button area before this change. */
+/* Transparent hit area that expands the tap zone towards 44 px without changing
+   the visual footprint; .stepper's overflow:hidden clips it to the container. */
 .button::before {
   content: '';
   position: absolute;
@@ -79,14 +62,13 @@
   background-color: var(--colour-button-light-bg);
 }
 
-/* Tactile press — a quick darker fill + scale-down, matching the Button
-   primitive's press feel (DESIGN.md §4). */
+/* Press: a darker fill and a scale-down, matching Button. */
 .button:active:not(:disabled) {
   background-color: var(--colour-button-active-bg);
   transform: scale(0.92);
 }
 
-/* Reduced motion — keep the colour shift, drop the scale (DESIGN.md §4). */
+/* Reduced motion: keep the colour shift, drop the scale. */
 @media (prefers-reduced-motion: reduce) {
   .button {
     transition: background-color var(--duration-fast) var(--easing-out);
@@ -97,8 +79,7 @@
   }
 }
 
-/* ── Value cell — wraps the numeric input and the optional unit suffix.
- *    Sits between the − and + buttons and carries the dividing borders. ── */
+/* Sits between the − and + buttons and carries the dividing borders. */
 .value-cell {
   display: inline-flex;
   align-items: stretch;
@@ -106,7 +87,6 @@
   border-right: var(--spacing-1) solid var(--colour-border-button);
 }
 
-/* ── The value field — a flat number input. ── */
 .input {
   /* Hide the browser's native number spin-buttons — the − / + buttons replace them. */
   appearance: textfield;
@@ -132,9 +112,7 @@
   outline-offset: calc(-1 * var(--spacing-1));
 }
 
-/* ── Inline unit suffix — sits between the value field and the + button,
- *    divided from the + button by a hairline border so it reads as part
- *    of the bordered control rather than a trailing label. ── */
+/* Divided from the + button by a hairline so it reads as part of the control. */
 .suffix {
   display: inline-flex;
   align-items: center;

@@ -1,9 +1,4 @@
-"""Tests for search.index_service — the pure Index-dashboard shaping logic.
-
-Covers: resolve_daemon_statuses fills every missing daemon in as 'stopped'
-and always returns the four known daemons; overall_health is 'ok' when all
-daemons are live, 'degraded' when some are stopped, 'down' when all are.
-"""
+"""Tests for search.index_service, the Index-dashboard shaping logic."""
 
 from __future__ import annotations
 

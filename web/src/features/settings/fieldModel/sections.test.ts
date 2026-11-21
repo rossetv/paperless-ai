@@ -1,4 +1,3 @@
-// vitest here uses explicit imports (no globals) — matches the repo convention (e.g. cn.test.ts).
 import { describe, it, expect } from 'vitest';
 import { SETTINGS_SECTIONS } from './sections';
 

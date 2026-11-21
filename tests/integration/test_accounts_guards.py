@@ -1,18 +1,7 @@
-"""Integration tests for the self / last-admin guards (web-redesign §4.8).
+"""Integration tests proving the self / last-admin guards surface as 409 over HTTP.
 
-Exercises the real FastAPI app through ``TestClient`` against a real
-``tmp_path`` ``app.db``. The guard predicates are unit-tested in
-``tests/unit/search/test_accounts.py``; these tests prove they are wired into
-the PATCH/DELETE handlers and surface as 409 over HTTP.
-
-Coverage:
-- An admin cannot delete / suspend / demote themselves (409).
-- The sole admin cannot be deleted / suspended / demoted (409) — over HTTP
-  the sole admin is necessarily the actor, so this is the self path; the
-  pure last-admin branch (a different admin acting) is unreachable through
-  the API and is covered by the test_accounts.py unit tests.
-- With two admins, deleting / demoting one of them succeeds.
-- A self display-name edit (touching neither role nor status) is allowed.
+The guard predicates themselves are unit-tested in
+``tests/unit/search/test_accounts.py``.
 """
 
 from __future__ import annotations
@@ -110,12 +99,9 @@ def test_admin_cannot_demote_themselves(tmp_path: Path) -> None:
 def test_sole_admin_cannot_be_deleted(tmp_path: Path) -> None:
     """The only admin cannot be deleted through DELETE /api/users/{id}.
 
-    With exactly one admin, that admin is both the last admin and — because
-    only an admin can reach the route — necessarily the actor. The handler's
-    guard rejects the deletion 409. (The pure last-admin-only branch, where a
-    *different* admin acts, is unreachable over HTTP: any other actor able to
-    pass the admin gate is themselves an admin, making two admins. That
-    branch is covered by the unit tests in test_accounts.py.)
+    Over HTTP the sole admin is necessarily the actor, since any other actor
+    past the admin gate would be a second admin. The pure last-admin branch is
+    covered by the unit tests in test_accounts.py.
     """
     settings = make_settings(tmp_path)
     seed_store(settings)
@@ -138,11 +124,7 @@ def test_sole_admin_cannot_be_deleted(tmp_path: Path) -> None:
 
 
 def test_sole_admin_cannot_be_suspended(tmp_path: Path) -> None:
-    """The only admin cannot be suspended through PATCH /api/users/{id}.
-
-    As with deletion, the sole admin cannot be suspended: the guard rejects
-    it 409. The actor is necessarily that same admin (HTTP reachability).
-    """
+    """The only admin cannot be suspended through PATCH /api/users/{id}."""
     settings = make_settings(tmp_path)
     seed_store(settings)
     app_db = open_app_db(tmp_path)
@@ -186,7 +168,7 @@ def test_sole_admin_cannot_be_demoted(tmp_path: Path) -> None:
 
 
 def test_a_non_last_admin_can_be_deleted(tmp_path: Path) -> None:
-    """With two admins, one admin deleting the OTHER admin succeeds (204)."""
+    """With two admins, one admin deleting the other admin succeeds (204)."""
     settings = make_settings(tmp_path)
     seed_store(settings)
     app_db = open_app_db(tmp_path)

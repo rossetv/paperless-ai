@@ -1,12 +1,3 @@
-/*
- * PdfFrame primitive — CSS Module.
- *
- * Embeds a PDF in an <iframe> on a dark page backdrop. The browser's native
- * PDF viewer (inside the iframe) handles rendering, paging and zoom.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .wrapper {
   width: 100%;
   height: 100%;

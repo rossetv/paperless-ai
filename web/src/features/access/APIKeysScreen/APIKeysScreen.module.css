@@ -1,15 +1,3 @@
-/*
- * APIKeysScreen feature component — CSS Module.
- *
- * Layout-only styling for the API-key management screen: the name + prefix
- * cell, the scope cluster, ghost-pill row-action buttons, the footer note,
- * the loading / error states. The page chrome comes from SettingsLayout;
- * the table from the Table primitive; the empty state from EmptyState.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
-/* ── Name + key cell. ── */
 .key-cell {
   min-width: 0;
 }
@@ -39,26 +27,22 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Scope cluster. ── */
 .scopes {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-2);
 }
 
-/* ── Expiry label tones. ── */
 .expiry-expired {
   color: var(--colour-status-danger-fg);
 }
 
-/* ── Row action cluster — right-aligned ghost pills. ── */
 .row-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-4);
 }
 
-/* ── Footer note — small, low-key reminder under the table. ── */
 .note {
   margin-top: var(--spacing-10);
   padding: var(--spacing-9) var(--spacing-13);

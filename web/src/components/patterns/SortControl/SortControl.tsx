@@ -16,30 +16,20 @@ export interface SortControlProps<T extends string = string> {
   id: string;
   /** The muted prefix label on the trigger, e.g. "Sort". */
   label: string;
-  /** The available sort options. */
   options: ReadonlyArray<SortOption<T>>;
   /** The currently selected value (controlled). */
   value: T;
   /** Called with the chosen value when the user picks a menu item. */
   onChange: (value: T) => void;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
 /**
- * Inline labelled sort dropdown.
+ * Inline labelled sort dropdown (`{label}: {selected} ▾`) using the ARIA menu
+ * pattern with `menuitemradio` items.
  *
- * A bordered surface pill — `{label}: {selected} ▾` — that opens a small
- * radio menu beneath it. Implements the ARIA menu pattern: the trigger is a
- * `<button>` with `aria-haspopup="menu"` + `aria-expanded`; the menu is a
- * `role="menu"` of `role="menuitemradio"` items carrying `aria-checked`.
- *
- * The menu closes on selection, on `Escape`, and on a pointer-down outside
- * the control. Picking an item calls `onChange` (even when the same value is
- * re-picked — the parent may treat that as a no-op).
- *
- * Domain-free and generic over the value type `T`. Tier: components/patterns
- * (CODE_GUIDELINES §12.3). Allowed deps: the Icon primitive, lib/.
+ * Closes on selection, Escape or an outside pointer-down. Re-picking the current
+ * value still calls `onChange`.
  */
 export function SortControl<T extends string = string>({
   id,

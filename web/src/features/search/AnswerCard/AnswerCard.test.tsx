@@ -92,9 +92,7 @@ describe('AnswerCard', () => {
   });
 
   it('resolves a [document_id] marker to the source 1-based index', async () => {
-    // The synthesiser emits raw paperless document ids in citation markers,
-    // not 1-based positions. The card should resolve [684] against the
-    // sources list and render a citation with the source's 1-based index.
+    // The synthesiser emits Paperless document ids in markers, not positions.
     const handler = vi.fn();
     render(
       <AnswerCard
@@ -104,8 +102,6 @@ describe('AnswerCard', () => {
         onCitationActivate={handler}
       />,
     );
-    // 684 is the second source — 1-based index 2 — so the affordance is
-    // labelled "View source 2".
     const button = screen.getByRole('button', { name: /view source 2/i });
     expect(button).toBeInTheDocument();
     await userEvent.click(button);
@@ -134,10 +130,6 @@ describe('AnswerCard', () => {
     expect(screen.getByText(/refined once/i)).toBeInTheDocument();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Retry states — clarify and no_match
-// ---------------------------------------------------------------------------
 
 describe('AnswerCard retry states', () => {
   const retryStats: SearchStats = { llm_calls: 1, latency_ms: 50, refined: false };
@@ -172,7 +164,6 @@ describe('AnswerCard retry states', () => {
 
   it('does NOT render a citations block for a clarify result', () => {
     renderRetry('clarify', 'Please be more specific.');
-    // No "Synthesised from N sources" footer, no citation marks.
     expect(screen.queryByText(/synthesised from/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /view source/i })).not.toBeInTheDocument();
   });
@@ -209,7 +200,6 @@ describe('AnswerCard retry states', () => {
         outcomeKind="answered"
       />,
     );
-    // Normal AnswerSurface renders the provenance footer.
     expect(screen.getByText(/1 source/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /view source 1/i })).toBeInTheDocument();
   });
@@ -228,7 +218,6 @@ describe('AnswerCard retry states', () => {
         }}
       />,
     );
-    // The answer-card aggregate shows the whole-query tokens and dollar cost.
     expect(screen.getByText('3.4k tok · $0.012')).toBeInTheDocument();
   });
 

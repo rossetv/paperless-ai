@@ -23,21 +23,17 @@ describe('PdfFrame', () => {
   });
 
   it('does not lock the iframe with sandbox=""', () => {
-    // Chrome's native PDF viewer refuses to render under a fully-locked
-    // sandbox — the iframe paints blank. The active-content vector is
-    // already neutralised by the backend pinning Content-Type:
-    // application/pdf with X-Content-Type-Options: nosniff
-    // (document_routes.py), so the sandbox layer is dropped.
+    // Chrome's native PDF viewer paints blank under a fully locked sandbox. The
+    // backend pins Content-Type: application/pdf with nosniff
+    // (src/search/document_routes/_proxy.py), so the iframe carries no sandbox.
     render(<PdfFrame src="/api/documents/9823/pdf" title="t" />);
     const frame = screen.getByTitle('t');
     expect(frame).not.toHaveAttribute('sandbox');
   });
 
-  // Failure is detected by a load timeout: a refused-framing or stalled stream
-  // never fires `load` *or* a reliable `error` event (the iframe `error` event
-  // is famously inconsistent across browsers — that unreliability is exactly
-  // why the timeout is the authoritative signal). The iframe still carries an
-  // `onError` handler as a cheap early-out for the browsers that do fire it.
+  // A refused-framing or stalled stream fires neither `load` nor a reliable
+  // `error`, so a load timeout is the authoritative failure signal; `onError` is
+  // only an early-out for browsers that do fire it.
   describe('load-failure reporting', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());

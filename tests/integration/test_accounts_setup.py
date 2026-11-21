@@ -1,17 +1,4 @@
-"""Integration tests for the first-run setup flow (web-redesign §4.8).
-
-Exercises the real FastAPI app through ``TestClient`` against a real
-``tmp_path`` ``app.db`` with no users — the server is in setup mode.
-
-Coverage:
-- GET /api/setup/status reports needed=true on a fresh database.
-- POST /api/setup with the correct token creates the first admin (201) and
-  that user has the admin role and active status.
-- POST /api/setup a second time returns 409 — setup is over.
-- GET /api/setup/status flips to needed=false once the admin exists.
-- POST /api/setup with a wrong token returns 403 and creates nothing.
-- The created admin can then log in.
-"""
+"""Integration tests for the first-run setup flow against an empty app.db."""
 
 from __future__ import annotations
 
@@ -29,13 +16,7 @@ from tests.integration.accounts_helpers import (
 
 
 def _setup_token(client) -> str:
-    """Return the in-memory setup token the app generated at build time.
-
-    ``create_app`` attaches an ``AppState`` to ``app.state``; its
-    ``setup_state.token`` is the one-off token logged to the container in
-    production. In a test there are no container logs to scrape, so it is
-    read straight off the live app object.
-    """
+    """Return the one-off setup token, which production only writes to the logs."""
     token = client.app.state.app_state.setup_state.token
     assert token is not None, "expected the app to be in setup mode"
     return token
@@ -193,13 +174,8 @@ def test_concurrent_setup_requests_produce_exactly_one_admin(
 ) -> None:
     """Two concurrent POST /api/setup calls must not create two admin accounts.
 
-    ``user_store.create_initial_admin`` uses a single
-    ``INSERT … SELECT … WHERE NOT EXISTS`` statement that SQLite evaluates
-    atomically under its write lock: the second concurrent caller sees a
-    non-empty table inside the same statement and inserts zero rows, causing
-    ``_setup`` to return 409. This test simulates the race with threads —
-    one must succeed (201) and the other must fail (409); exactly one user
-    row must exist afterwards.
+    ``create_initial_admin`` is a single ``INSERT … WHERE NOT EXISTS`` that
+    SQLite runs atomically, so one call gets 201 and the other 409.
     """
     import threading
 
@@ -214,9 +190,7 @@ def test_concurrent_setup_requests_produce_exactly_one_admin(
         lock = threading.Lock()
 
         def attempt(username: str) -> None:
-            # Password must be at least 12 characters (_PASSWORD_MIN in
-            # search.validation); the plan used "pw" which is too short and
-            # would yield 422 before reaching any race-condition logic.
+            # A password under 12 characters would 422 before reaching the race.
             r = client.post(
                 "/api/setup",
                 json={

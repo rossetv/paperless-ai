@@ -2,9 +2,8 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { DocumentPreviewScreen } from './DocumentPreviewScreen';
 
 /**
- * The in-app PDF viewer. The iframe points at the live `/api/documents/{id}/
- * pdf` proxy, which Storybook cannot serve — the chrome and sidebar are the
- * reference here.
+ * Storybook cannot serve the `/api/documents/{id}/pdf` proxy the iframe points
+ * at, so only the chrome and sidebar are a reference here.
  */
 const meta = {
   title: 'Features/Search/DocumentPreviewScreen',

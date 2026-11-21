@@ -1,22 +1,4 @@
-"""Tests for indexer.daemon.main() and the _interruptible_wait helper.
-
-Behavioural promises tested:
-
-- A contended flock causes main() to exit non-zero; a successful lock
-  acquisition lets main() proceed.
-- _interruptible_wait returns False on shutdown or after the full duration,
-  and returns True (deleting the sentinel) when a manual-trigger sentinel is
-  present.
-- _interruptible_wait calls beat_idle on the cycle_recorder at _IDLE_BEAT_INTERVAL
-  intervals so the daemon heartbeat stays fresh during a 300 s reconcile wait.
-- A manual trigger the wait consumes still forces a deletion sweep on the next
-  _run_loop cycle (the real wait, not a patched one).
-
-The remaining _run_loop behaviours live in test_daemon.py and
-test_daemon_reload.py — the daemon's tests are split across three files for
-the 500-line ceiling (CODE_GUIDELINES §3.1).  The shared mock builders and the
-``_reset_shutdown`` autouse fixture come from tests/unit/indexer/conftest.py.
-"""
+"""Tests for indexer.daemon.main() and the _interruptible_wait helper."""
 
 from __future__ import annotations
 
@@ -36,25 +18,15 @@ from tests.helpers.factories import make_settings_obj
 from tests.unit.indexer.conftest import make_daemon_reconciler
 
 
-# ---------------------------------------------------------------------------
-# main() — flock acquisition decides whether the daemon starts
-# ---------------------------------------------------------------------------
-
-
 def test_main_exits_nonzero_when_lock_contended(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """main() calls sys.exit with a non-zero code when the flock is already held."""
     from indexer.lock import IndexerLockError
 
-    # Patch acquire_writer_lock to simulate a contended lock.
     monkeypatch.setattr(
         "indexer.daemon._boot.acquire_writer_lock",
         lambda path: (_ for _ in ()).throw(IndexerLockError("lock held")),
     )
-    # daemon.main() now calls current_settings() (the hot-load accessor), so
-    # the stand-in is patched directly on the daemon module — Wave 4 switched
-    # the entry point off Settings.from_environment().
     settings = make_settings_obj(INDEX_DB_PATH=str(tmp_path / "index.db"))
     monkeypatch.setattr(
         "indexer.daemon._boot.current_settings", lambda *a, **kw: settings
@@ -73,7 +45,6 @@ def test_main_exits_nonzero_when_lock_contended(
 def test_main_proceeds_when_lock_acquired(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """main() does not exit non-zero when the flock is successfully acquired."""
     lock_file = tmp_path / "index.db.lock"
     lock_handle = open(str(lock_file), "wb")
 
@@ -112,24 +83,17 @@ def test_main_proceeds_when_lock_acquired(
         monkeypatch.setattr(
             "indexer.daemon._boot.Reconciler", lambda **kwargs: make_daemon_reconciler()
         )
-        # Force the loop to exit immediately on entry.
+        # The loop exits on entry.
         shutdown_mod.request_shutdown()
 
         from indexer import daemon
 
-        # Should not raise SystemExit.
         daemon.main()
     finally:
         lock_handle.close()
 
 
-# ---------------------------------------------------------------------------
-# _interruptible_wait
-# ---------------------------------------------------------------------------
-
-
 def test_interruptible_wait_returns_false_on_shutdown(tmp_path: Path) -> None:
-    """_interruptible_wait returns False (no manual trigger) when shutdown fires."""
     sentinel_path = tmp_path / "reconcile.request"
 
     shutdown_mod.request_shutdown()
@@ -141,10 +105,8 @@ def test_interruptible_wait_returns_false_on_shutdown(tmp_path: Path) -> None:
 def test_interruptible_wait_returns_false_when_full_duration_elapses(
     tmp_path: Path,
 ) -> None:
-    """_interruptible_wait returns False after the full wait with no sentinel/shutdown."""
     sentinel_path = tmp_path / "reconcile.request"
 
-    # Use a very short wait so the test finishes quickly.
     triggered = _interruptible_wait(
         seconds=_WAKE_CHECK_INTERVAL * 0.5, sentinel_path=sentinel_path
     )
@@ -155,7 +117,6 @@ def test_interruptible_wait_returns_false_when_full_duration_elapses(
 def test_interruptible_wait_deletes_sentinel_and_returns_true(
     tmp_path: Path,
 ) -> None:
-    """Sentinel present at the start of _interruptible_wait → returns True, deleted."""
     sentinel_path = tmp_path / "reconcile.request"
     sentinel_path.touch()
 
@@ -168,35 +129,20 @@ def test_interruptible_wait_deletes_sentinel_and_returns_true(
 def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
     tmp_path: Path,
 ) -> None:
-    """A 300 s reconcile interval must keep the indexer's heartbeat fresh.
-
-    This is the BLOCKER 2 regression guard.  The default stale-after window is
-    90 s; with RECONCILE_INTERVAL = 300 s the indexer's heartbeat would expire
-    between cycles.  _interruptible_wait must call beat_idle on the recorder at
-    least once per _IDLE_BEAT_INTERVAL seconds so the dashboard reads "idle"
-    continuously rather than "stopped".
-
-    The test advances a fake monotonic clock in slices of _IDLE_BEAT_INTERVAL
-    and verifies that beat_idle is called at each interval boundary inside a
-    300 s wait — without the 300 s actually elapsing.
+    """The stale-after window is 90 s, so a 300 s wait must beat idle at least
+    once per _IDLE_BEAT_INTERVAL or the dashboard would read "stopped".
     """
     sentinel_path = tmp_path / "reconcile.request"
     recorder = MagicMock()
 
-    # We simulate 300 s worth of monotonic time via time.monotonic patches so
-    # the test returns immediately.  Each call to time.monotonic() advances the
-    # fake clock by _WAKE_CHECK_INTERVAL to drive the loop forward, while
-    # time.sleep is a no-op.
+    # Each time.monotonic() call advances a fake clock by _WAKE_CHECK_INTERVAL
+    # and time.sleep is a no-op, so the 300 s wait returns immediately.
     TOTAL_WAIT = 300.0
     start = 1000.0  # arbitrary epoch offset
 
-    # Produce enough fake-clock readings for the loop plus a sentinel check.
-    # The loop ticks in _WAKE_CHECK_INTERVAL increments; we need enough values
-    # to simulate the full 300 s wait.  Add a few extras so the generator does
-    # not run dry.
+    # Extra readings so the iterator never runs dry: the loop reads the clock
+    # more than once per iteration.
     ticks = int(TOTAL_WAIT / _WAKE_CHECK_INTERVAL) + 10
-    # Two calls per iteration (once for the beat check, once for remaining calc)
-    # plus the initial deadline call and a few guards.
     clock_readings = [start + i * _WAKE_CHECK_INTERVAL for i in range(ticks * 3 + 20)]
     clock_iter = iter(clock_readings)
 
@@ -210,9 +156,7 @@ def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
                 cycle_recorder=recorder,
             )
 
-    # beat_idle must have been called roughly once per _IDLE_BEAT_INTERVAL.
-    # The final slice may end at the deadline before the last beat fires, so
-    # we allow one fewer call than the exact quotient.
+    # The final slice may end at the deadline before the last beat fires.
     minimum_beats = int(TOTAL_WAIT / _IDLE_BEAT_INTERVAL) - 1
     assert recorder.beat_idle.call_count >= minimum_beats, (
         f"Expected at least {minimum_beats} beat_idle calls for a "
@@ -222,21 +166,14 @@ def test_interruptible_wait_beats_idle_during_long_reconcile_interval(
     assert recorder.beat_idle.call_count > 0, "beat_idle was never called"
 
 
-# ---------------------------------------------------------------------------
-# The wait's manual trigger reaches the next cycle
-# ---------------------------------------------------------------------------
-
-
 def test_manual_trigger_consumed_by_the_wait_forces_the_next_cycle_sweep(
     tmp_path: Path,
 ) -> None:
     """A reconcile.request landing mid-cycle forces a sweep on the next cycle.
 
-    Regression: the real _interruptible_wait consumes the sentinel when it
-    wakes, so the next cycle's own sentinel check finds nothing — the loop must
-    carry the wait's True result into that cycle or the forced sweep is lost.
-    The wait is deliberately NOT patched, and the clock stays at 1.0 so the
-    sweep interval never elapses: only the manual trigger can cause a sweep.
+    The real (unpatched) wait consumes the sentinel, so the loop must carry the
+    wait's True result into the next cycle.  The clock stays at 1.0, so only the
+    manual trigger can cause a sweep.
     """
     sentinel_path = tmp_path / "reconcile.request"
     reconciler = make_daemon_reconciler()

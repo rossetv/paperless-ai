@@ -1,11 +1,3 @@
-/**
- * Smoke tests for the App component.
- *
- * App delegates routing to AppRoutes; this test verifies the provider tree
- * is wired and the bootstrap gate routes an unauthenticated, set-up install
- * to the login page.
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

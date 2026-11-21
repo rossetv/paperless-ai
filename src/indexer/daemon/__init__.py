@@ -1,7 +1,4 @@
-"""Indexer reconciliation daemon — package entry point.
-
-Runs the semantic-search indexer: acquires the exclusive writer flock, performs
-preflight checks, constructs the Reconciler, and enters the reconciliation loop.
+"""Indexer reconciliation daemon entry point.
 
 Boot order::
 
@@ -13,19 +10,8 @@ Boot order::
     5. Construct Reconciler and StoreWriter.
     6. Enter the reconciliation loop.
 
-Configuration is loaded from app.db (the config table) layered over the
-environment via common.config.current_settings, and re-checked at the top of
-every reconciliation cycle so a config change hot-loads (web-redesign §5).
-
-This package was split from a single ``daemon.py`` once it crossed the 500-line
-ceiling (CODE_GUIDELINES §3.1, §3.3): the boot sequence lives in :mod:`._boot`,
-the run-loop and its per-cycle body in :mod:`._loop`, and the inter-cycle wait
-and sentinel helpers in :mod:`._wait`.  This ``__init__`` is a thin re-export so
-``from indexer.daemon import main`` and the other historical import paths keep
-working.
-
-Allowed deps: store/ (StoreWriter), indexer/ (lock, reconciler), common/.
-Forbidden: imports from search/, sqlite3, httpx direct, bare openai calls.
+Settings are re-read at the top of every cycle, so a config change in app.db
+hot-loads.
 """
 
 from __future__ import annotations

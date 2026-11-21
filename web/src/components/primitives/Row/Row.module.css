@@ -1,13 +1,3 @@
-/*
- * Row primitive — CSS Module.
- *
- * One labelled setting: a fixed-width left column (label, optional hint,
- * optional monospace env tag) beside a flexible right column holding the
- * control. A hairline bottom border separates rows; the `last` row drops it.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .row {
   display: grid;
 
@@ -25,8 +15,6 @@
 .row-last {
   border-bottom: none;
 }
-
-/* ── Left column — label + hint + env tag. ── */
 
 /* Flex row so the reindex pill sits inline beside the label title. */
 .label-row {
@@ -64,7 +52,6 @@
   color: var(--colour-text-secondary);
 }
 
-/* ── Right column — the control, right-aligned and vertically centred. ── */
 .control {
   display: flex;
   flex-direction: column;
@@ -73,7 +60,6 @@
   min-width: 0;
 }
 
-/* ── Amber pill warning that saving this setting triggers an index rebuild. ── */
 .reindex-pill {
   display: inline-flex;
   align-items: center;
@@ -87,7 +73,6 @@
   white-space: nowrap;
 }
 
-/* ── "default" badge shown when a key is on its coded default. ── */
 .default-badge {
   display: inline-block;
   align-self: flex-start;

@@ -1,23 +1,8 @@
-"""Tests for search.core — the bounded agentic pipeline (answer() contract).
+"""Tests for search.core: the SearchCore.answer() contract.
 
-Verifies the SearchCore.answer contract (spec §6.3):
-- A normal query makes exactly plan + one synthesise = 2 LLM calls.
-- A query whose exploratory synthesis returns NeedsMore triggers one
-  refinement → exactly 3 LLM calls, and SearchStats.refined is True.
-- The LLM call count NEVER exceeds 3 under any path — the worst case is
-  tested with the refinement budget deliberately raised.
-- Empty retrieval (even after broaden_plan) returns a "no matches"
-  SearchResult with NO synthesis call — only the planner ran.
-
-Source assembly, retrieve(), UI filters, and embedding-failure degradation are
-covered in :mod:`test_core_sources` — this file would otherwise pass the
-500-line ceiling (CODE_GUIDELINES §3.1).
-
-The scripted LLM driver (``ScriptedLLMClient``) distinguishes a planner call
-from a synthesiser call by the system prompt, so one driver serves the whole
-pipeline while the test asserts how many calls of each kind were made.  The
-core is assembled by ``build_search_core`` (see conftest.py): real planner,
-retriever, and synthesiser stages over mock store / embedding clients.
+Retrieval, source assembly, UI filters and embedding-failure degradation are in
+:mod:`test_core_sources`. ``ScriptedLLMClient`` tells planner calls from
+synthesiser calls by the system prompt, so one driver serves the whole pipeline.
 """
 
 from __future__ import annotations
@@ -72,11 +57,6 @@ def _embedding_client() -> MagicMock:
     embedding_client = MagicMock()
     embedding_client.embed.return_value = [[0.1, 0.2, 0.3]]
     return embedding_client
-
-
-# ---------------------------------------------------------------------------
-# Normal query — plan + one synthesise = exactly 2 LLM calls
-# ---------------------------------------------------------------------------
 
 
 class TestNormalQuery:
@@ -180,15 +160,10 @@ class TestNormalQuery:
         assert len(result.sources) == 1
 
 
-# ---------------------------------------------------------------------------
-# Refinement — exploratory NeedsMore → exactly 3 LLM calls, refined=True
-# ---------------------------------------------------------------------------
-
-
 class TestRefinement:
-    """An exploratory NeedsMore triggers one refinement: 3 LLM calls total."""
+    """An exploratory NeedsMore triggers one refinement: 4 LLM calls total."""
 
-    def test_needs_more_triggers_exactly_three_llm_calls(self) -> None:
+    def test_needs_more_triggers_one_refinement_pass(self) -> None:
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[
@@ -208,10 +183,8 @@ class TestRefinement:
         )
         core.answer("when does my boiler warranty expire?")
 
-        # Phase 2: a refinement now re-plans before re-synthesising. With no
-        # scripted re-plan response the re-plan resolves to the same specs as
-        # pass 1 (the no-op path), so the pass is re-plan + one final synthesise:
-        # planner + exploratory synth + re-plan + final synth = 4.
+        # With no scripted re-plan response the re-plan is a no-op (same specs as
+        # pass 1): planner + exploratory synth + re-plan + final synth = 4.
         assert llm_client.planner_calls == 1
         assert llm_client.replan_calls == 1
         assert llm_client.synthesiser_calls == 2
@@ -283,20 +256,13 @@ class TestRefinement:
         assert result.stats.refined is False
 
 
-# ---------------------------------------------------------------------------
-# Hard ceiling — the LLM call count NEVER exceeds 3 under any path
-# ---------------------------------------------------------------------------
-
-
 class TestPerQueryBudget:
-    """The pipeline never exceeds the per-query LLM-call ceiling, and the
-    refinement loop genuinely runs the configured number of passes (spec §6.3).
+    """The pipeline never exceeds the per-query LLM-call ceiling.
 
-    Phase 2: each refinement pass costs a re-plan plus a synthesise (plus a
-    re-judge when that gate is on). With the judge gate off, the ceiling is
-    ``2 + 2 * SEARCH_MAX_REFINEMENTS``. These tests script no re-plan response,
-    so every pass is a no-op (re-plan resolves to the same specs as pass 1) —
-    re-plan + synthesise, no second retrieve.
+    Each refinement pass costs a re-plan plus a synthesise (plus a re-judge when
+    that gate is on), so with the judge off the ceiling is
+    ``2 + 2 * SEARCH_MAX_REFINEMENTS``. No re-plan response is scripted, so every
+    pass is a no-op re-plan + synthesise with no second retrieve.
     """
 
     def test_call_count_equals_ceiling(self) -> None:
@@ -354,11 +320,6 @@ class TestPerQueryBudget:
         result = core.answer("a query")
 
         assert result.stats.llm_calls == llm_client.total_calls
-
-
-# ---------------------------------------------------------------------------
-# Empty retrieval — no-match short-circuit, no synthesis call
-# ---------------------------------------------------------------------------
 
 
 class TestEmptyRetrieval:
@@ -503,11 +464,6 @@ class TestEmptyRetrieval:
         assert len(result.sources) == 1
 
 
-# ---------------------------------------------------------------------------
-# H2: _specs_equal / _spec_search_key — rationale excluded from comparison
-# ---------------------------------------------------------------------------
-
-
 def _no_filter() -> SearchFilters:
     """A SearchFilters with all fields set to 'no restriction'."""
     return SearchFilters(
@@ -539,10 +495,8 @@ def _make_retrieval_spec(
 class TestSpecsEqual:
     """_specs_equal compares only search-determining fields; rationale is excluded.
 
-    The no-op guard in SearchCore._refine must fire when the re-plan produces
-    specs whose mode/semantic/keywords/filters are identical but whose rationale
-    string has changed — the re-plan regenerates rationale each call, so
-    including it would prevent the guard from ever firing on equivalent re-plans.
+    The re-plan regenerates rationale on every call, so comparing it would stop the
+    no-op guard in SearchCore._refine from ever firing.
     """
 
     def test_equal_specs_with_identical_rationale(self) -> None:

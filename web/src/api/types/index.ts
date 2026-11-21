@@ -1,12 +1,4 @@
-/**
- * Index-operations wire types — Wave 6.
- *
- * Daemon status, reconcile-activity history, failed documents, and the
- * rebuild endpoint. Mirrors `IndexStatusResponse`, `IndexActivityResponse`,
- * `IndexFailedResponse`, and `RebuildResponse` in `wire.py`.
- *
- * Allowed deps: none (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Index-operations wire types; they mirror `src/search/wire/index_dashboard.py`. */
 
 /**
  * The run-state of a worker daemon.
@@ -18,14 +10,10 @@
 export type DaemonState = 'running' | 'idle' | 'stopped';
 
 /**
- * One worker daemon's status, as published to the Index dashboard.
+ * One worker daemon's status (`DaemonStatusResponse`).
  *
- * Matches `DaemonStatusResponse` in `wire.py` exactly.
- *
- * `name` is the daemon identifier (ocr / classifier / indexer / search).
- * `detail` is a short human sentence describing the last activity.
- * `processed_count` is the daemon's monotonic throughput counter.
- * `last_heartbeat` is an ISO-8601 UTC timestamp.
+ * `name` is ocr / classifier / indexer / search; `detail` is a short sentence on
+ * the last activity; `processed_count` only grows; `last_heartbeat` is ISO-8601 UTC.
  */
 export interface DaemonStatus {
   name: string;
@@ -36,33 +24,22 @@ export interface DaemonStatus {
 }
 
 /**
- * The overall index health verdict.
- *
- * Matches the `health` field of `IndexStatusResponse` in `wire.py`.
- * `"ok"` — all daemons healthy; `"degraded"` — some daemons stopped;
- * `"down"` — all daemons stopped or index unreadable.
+ * The overall index health verdict: `"ok"` all daemons healthy, `"degraded"` some
+ * stopped, `"down"` all stopped or the index unreadable.
  */
 export type IndexHealthStatus = 'ok' | 'degraded' | 'down';
 
-/**
- * Response body for GET /api/index/status.
- *
- * Matches `IndexStatusResponse` in `wire.py` exactly.
- */
+/** Response body for GET /api/index/status. */
 export interface IndexStatusResponse {
   health: IndexHealthStatus;
   daemons: DaemonStatus[];
 }
 
 /**
- * One recorded reconcile or sweep cycle in the activity history.
+ * One recorded reconcile or sweep cycle (`ReconcileCycleResponse`).
  *
- * Matches `ReconcileCycleResponse` in `wire.py` exactly.
- *
- * `id` is a stable integer key for React lists. `kind` is `"sync"` or
- * `"sweep"`. `ok` drives the leading dot colour. `summary` is the cycle's
- * count map (e.g. `{"indexed": 3, "failed": 0}`). `started_at` /
- * `finished_at` are ISO-8601 UTC timestamps.
+ * `summary` is the cycle's count map, e.g. `{"indexed": 3, "failed": 0}`;
+ * timestamps are ISO-8601 UTC.
  */
 export interface ReconcileCycle {
   id: number;
@@ -74,22 +51,16 @@ export interface ReconcileCycle {
   detail: string;
 }
 
-/**
- * Response body for GET /api/index/activity.
- *
- * Matches `IndexActivityResponse` in `wire.py` exactly.
- */
+/** Response body for GET /api/index/activity. */
 export interface IndexActivityResponse {
   cycles: ReconcileCycle[];
 }
 
 /**
- * One document that failed OCR, classification or indexing.
+ * One document that failed OCR, classification or indexing (`FailedDocumentResponse`).
  *
- * Matches `FailedDocumentResponse` in `wire.py` exactly.
- *
- * `title` is `null` when the document has no indexed row.
- * `failure_count` is the number of consecutive cycles it has failed.
+ * `title` is `null` when the document has no indexed row; `failure_count` counts
+ * consecutive failed cycles.
  */
 export interface FailedDocument {
   document_id: number;
@@ -103,12 +74,8 @@ export interface IndexFailedResponse {
 }
 
 /**
- * Response body for POST /api/index/rebuild.
- *
- * Matches `RebuildResponse` in `wire.py` exactly.
- *
- * `accepted` is true when the sentinel was written successfully.
- * `detail` is a human-readable note describing what happens next.
+ * Response body for POST /api/index/rebuild. `accepted` is true when the rebuild
+ * sentinel was written; `detail` says what happens next.
  */
 export interface RebuildResponse {
   accepted: boolean;

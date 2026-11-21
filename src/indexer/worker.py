@@ -1,19 +1,7 @@
-"""Per-document indexing worker for the semantic-search reconciler.
+"""Per-document indexing worker: gate, hash, then metadata-only update or re-embed.
 
-Implements the per-document indexing steps described in SPEC §5.3:
-1. Gate — skip empty content or error-tagged documents.
-2. Hash — SHA-256 of the OCR content.
-3. Hash gate — if unchanged, call update_metadata only (no re-embed).
-4. Full path — chunk, embed, upsert_document.
-
-``DocumentIndexer`` is instantiated once per reconciliation cycle and shared
-across worker threads.  It holds NO per-document mutable state; all state is
-passed through method arguments so it is safe to call ``index_document`` from
-multiple threads concurrently.
-
-Allowed deps: indexer.chunker, store.models, store.writer,
-    common.clock, common.config, common.embeddings, common.paperless.
-Forbidden: sqlite3, httpx, openai direct calls, imports from search/.
+``DocumentIndexer`` holds no per-document state, so one instance is shared
+across the worker threads.
 """
 
 from __future__ import annotations
@@ -56,19 +44,9 @@ class IndexOutcome(enum.Enum):
 
 
 class DocumentIndexer:
-    """Stateless per-document indexing worker.
+    """Stateless per-document indexing worker, safe to share across threads.
 
-    One instance is created per reconciliation cycle and shared across the
-    :class:`~concurrent.futures.ThreadPoolExecutor` worker threads.  No
-    per-document mutable state is held on ``self``; every operation is passed
-    through method arguments.
-
-    Args:
-        settings: Application settings.  ``ERROR_TAG_ID``, ``CHUNK_SIZE``,
-            and ``CHUNK_OVERLAP`` are read during ``index_document``.
-        store_writer: The write-side store API.  A single instance is shared
-            across threads; its internal lock serialises transactions.
-        embedding_client: The batched embedding client.  Thread-safe.
+    The shared *store_writer* serialises transactions with its own lock.
     """
 
     def __init__(
@@ -86,51 +64,19 @@ class DocumentIndexer:
         doc: PaperlessDocument,
         existing: IndexState | None,
     ) -> IndexOutcome:
-        """Index one Paperless document according to SPEC §5.3.
+        """Index one Paperless document; *existing* is ``None`` on first index.
 
-        Args:
-            doc: A Paperless document as returned by the API — see
-                :class:`~common.paperless.PaperlessDocument` for the shape.
-            existing: The document's current state in the store, or ``None``
-                if this is a first-time index.
-
-        Returns:
-            ``SKIPPED`` — content empty, error tag present, or content that
-            produced zero chunks (e.g. only OCR page markers); no hash stored.
-            ``METADATA_ONLY`` — content hash unchanged; metadata updated.
-            ``INDEXED`` — full chunk + embed + upsert completed.
-
-        Raises:
-            Any exception from :class:`~store.writer.StoreWriter` or
-            :class:`~common.embeddings.EmbeddingClient` propagates to the
-            caller.  The reconciler isolates per-document failures (SPEC §5.7).
+        Store and embedding errors propagate; the reconciler isolates them per
+        document.
         """
         document_id: int = doc["id"]
 
-        # --- Step 1: Gate ---
-        # _indexable_content returns the OCR text when the document is
-        # indexable, or None when it must be skipped (empty content or error
-        # tag); the gate and the content extraction are one operation so the
-        # type checker sees a concrete str on the indexing path.
         content = _indexable_content(doc, self._settings.ERROR_TAG_ID)
         if content is None:
-            # A document that was previously indexed but has since become
-            # un-indexable (its OCR content was cleared, or an operator applied
-            # the error tag) must have its stale rows pruned — otherwise search
-            # keeps serving chunks for content that no longer exists, and the
-            # deletion sweep cannot reach it because the document still exists in
-            # Paperless (IDX-01). A document that was never indexed (no existing
-            # row) is a pure no-op skip. The prune is one transaction in the
-            # StoreWriter; a crash mid-delete rolls back to the prior version.
-            #
-            # Both branches return SKIPPED intentionally: the stale-prune path
-            # (existing is not None) and the pure no-op skip path share the same
-            # outcome so SyncReport tallies remain simple.  The log event
-            # distinguishes them — ``worker.stale_document_pruned`` vs
-            # ``worker.document_skipped`` — for operators who need to tell the
-            # two apart.  A dedicated PRUNED variant would require a separate
-            # SyncReport counter, which is an observable behaviour change out of
-            # scope for this refactor; defer if per-path tallying becomes needed.
+            # A previously indexed document that became un-indexable (content
+            # cleared, error tag applied) must be pruned: it still exists in
+            # Paperless, so the deletion sweep would never remove its chunks.
+            # Both paths return SKIPPED; the log event tells them apart.
             if existing is not None:
                 self._store_writer.delete_documents((document_id,))
                 log.info(
@@ -146,14 +92,11 @@ class DocumentIndexer:
             )
             return IndexOutcome.SKIPPED
 
-        # --- Step 2: Hash ---
         content_hash = hashlib.sha256(content.encode()).hexdigest()
 
-        # --- Step 3: Hash gate ---
         meta = _build_meta(doc, content_hash)
 
         if existing is not None and existing.content_hash == content_hash:
-            # Content unchanged — only metadata columns need updating.
             self._store_writer.update_metadata(meta)
             log.debug(
                 "worker.metadata_only",
@@ -161,7 +104,6 @@ class DocumentIndexer:
             )
             return IndexOutcome.METADATA_ONLY
 
-        # --- Step 4: Chunk + embed + upsert ---
         return self._index_full(document_id, meta, content, existing)
 
     def _index_full(
@@ -173,23 +115,9 @@ class DocumentIndexer:
     ) -> IndexOutcome:
         """Chunk, embed, and upsert a document whose content hash has changed.
 
-        Step 4 of SPEC §5.3.  Guards against the zero-chunk edge case (content
-        that passes the whitespace gate but the chunker strips to nothing — the
-        most common cause is content consisting solely of OCR page markers such
-        as ``"--- Page 1 ---\\n--- Page 2 ---"``).  When no chunks are produced
-        we must NOT upsert: doing so would write a ``documents`` row with
-        ``chunk_count=0`` and store a ``content_hash``, causing the hash gate on
-        every subsequent cycle to classify the document as ``METADATA_ONLY``,
-        permanently hiding it from search (IDX-M1).
-
-        Args:
-            document_id: The Paperless document id (for logging).
-            meta: The :class:`~store.models.DocumentMeta` already built for
-                this document, including the new ``content_hash``.
-            content: The gated, non-empty OCR text (already confirmed to have
-                passed the whitespace and error-tag gates).
-            existing: The document's current store state, or ``None`` on first
-                index.
+        Content that chunks to nothing (e.g. only OCR page markers) must not be
+        upserted: the stored hash would make every later cycle treat it as
+        ``METADATA_ONLY``, hiding the document from search for good.
         """
         text_chunks = chunk_text(
             content,
@@ -198,8 +126,7 @@ class DocumentIndexer:
         )
 
         if not text_chunks:
-            # Zero-chunk guard (IDX-M1): prune any existing row and skip so a
-            # later cycle can re-attempt once Paperless supplies real content.
+            # Skip without a stored hash so a later content change is indexed.
             if existing is not None:
                 self._store_writer.delete_documents((document_id,))
                 log.info(
@@ -237,22 +164,8 @@ class DocumentIndexer:
         return IndexOutcome.INDEXED
 
 
-# ---------------------------------------------------------------------------
-# Module-level helpers (private)
-# ---------------------------------------------------------------------------
-
-
 def _indexable_content(doc: PaperlessDocument, error_tag_id: int | None) -> str | None:
-    """Return the OCR content to index, or ``None`` if the document is skipped.
-
-    Applies the SPEC §5.3 step-1 gate: a document is skipped when its
-    ``content`` is absent, ``None``, or whitespace-only (not yet OCR'd), or
-    when *error_tag_id* is set and applied to the document.
-
-    Returning the content rather than a bare boolean lets the caller extract
-    the OCR text in the same step it checks the gate, so the indexing path
-    works with a concrete ``str``.
-    """
+    """Return the OCR content to index, or ``None`` if it is blank or error-tagged."""
     content = doc.get("content")
     if not content or not content.strip():
         return None
@@ -264,16 +177,10 @@ def _indexable_content(doc: PaperlessDocument, error_tag_id: int | None) -> str 
 def _normalise_date(value: str | None, *, document_id: int, field: str) -> str | None:
     """Normalise a Paperless ``created`` / ``modified`` value to UTC ISO-8601.
 
-    Delegates to :func:`common.clock.normalise_paperless_timestamp` — the
-    single Paperless-timestamp normaliser.  When the value is present but
-    unparseable the normaliser returns it verbatim; that anomaly is logged
-    here at WARNING before the verbatim value is stored, matching how the
-    reconciler's watermark advance logs the same upstream quirk (SPEC §4.1).
+    An unparseable value is stored verbatim, but logged so the operator sees it.
     """
     normalised = normalise_paperless_timestamp(value)
     if value is not None and parse_paperless_timestamp(value) is None:
-        # Present but not an ISO-8601 timestamp — an upstream anomaly.  It is
-        # stored verbatim rather than dropped, but the operator must see it.
         log.warning(
             "worker.unparseable_date",
             document_id=document_id,
@@ -284,17 +191,10 @@ def _normalise_date(value: str | None, *, document_id: int, field: str) -> str |
 
 
 def _build_meta(doc: PaperlessDocument, content_hash: str) -> DocumentMeta:
-    """Build a :class:`~store.models.DocumentMeta` from a Paperless document.
-
-    Normalises ``created`` and ``modified`` to UTC ISO-8601 (SPEC §4.1).
-    ``correspondent`` and ``document_type`` in the Paperless API are integer
-    ids (or None); they map directly to ``correspondent_id`` / ``document_type_id``.
-    """
+    """Build a :class:`~store.models.DocumentMeta` from a Paperless document."""
     document_id = doc["id"]
     tags = doc.get("tags") or []
-    # An empty string is the store's sentinel for an absent ``modified``: the
-    # documents.modified column is NOT NULL, and Paperless practically always
-    # supplies the field, so a missing value is degenerate rather than expected.
+    # documents.modified is NOT NULL, so "" stands in for a missing value.
     modified = _normalise_date(
         doc.get("modified"), document_id=document_id, field="modified"
     )

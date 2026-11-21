@@ -1,38 +1,26 @@
 /**
- * EditableField — generic label + value row with inline editing.
- *
- * Renders a label alongside a value. When `canEdit` is true, clicking the
- * value switches it to an `<input>`. Pressing Enter or blurring commits the
- * new value; pressing Escape reverts to the original. Only fires `onCommit`
- * when the value actually changed.
+ * Label + value row with inline editing: click to edit, Enter or blur commits,
+ * Escape reverts. `onCommit` fires only when the value changed.
  */
 import React from 'react';
 import styles from './EditableField.module.css';
 
 export interface EditableFieldProps {
-  /** Column label shown to the left of the value. */
   label: string;
   /**
-   * Underlying value: pre-fills the `<input>`, drives change detection, and is
-   * passed to `onCommit`. For a `type="date"` field this must be `YYYY-MM-DD`
-   * so the native date input accepts it.
+   * Raw value the input edits and `onCommit` receives. For `type="date"` it
+   * must be `YYYY-MM-DD` so the native date input accepts it.
    */
   value: string;
   /**
-   * Human-readable text shown in view mode (read-only, and the editable view
-   * button). When omitted, `value` itself is displayed. Use this to show a
-   * formatted date (e.g. "13 Jan 2026") while `value` stays the raw ISO the
-   * input and `onCommit` operate on. An empty `value` still renders the
-   * placeholder regardless of `displayValue`.
+   * Text shown in view mode instead of `value`, e.g. a formatted date. An
+   * empty `value` still shows the placeholder.
    */
   displayValue?: string;
-  /** Whether the field can be clicked into edit mode. */
   canEdit: boolean;
-  /** Text shown when `value` is empty. Defaults to '—'. */
+  /** Text shown when `value` is empty. */
   placeholder?: string;
-  /** HTML input type forwarded to the underlying `<input>`. Defaults to 'text'. */
   type?: 'text' | 'number' | 'date';
-  /** Called with the new value after a successful commit. Not called on revert or no-change. */
   onCommit: (next: string) => void;
 }
 
@@ -45,15 +33,11 @@ export function EditableField({
   type = 'text',
   onCommit,
 }: EditableFieldProps): React.ReactElement {
-  // View-mode text: the human-readable display when supplied, else the raw
-  // value. An empty value always shows the placeholder, never a formatted
-  // empty string.
   const shownText = displayValue ?? value;
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(value);
 
-  // Keep the draft in sync when the upstream value changes while not editing
-  // (e.g. an external save refreshes the document).
+  // Sync the draft when the upstream value changes, but not mid-edit.
   React.useEffect(() => {
     if (!editing) setDraft(value);
   }, [value, editing]);
@@ -63,7 +47,6 @@ export function EditableField({
     if (draft !== value) onCommit(draft);
   }
 
-  // ── Read-only mode ──────────────────────────────────────────────────────────
   if (!canEdit) {
     return (
       <div className={styles['row']}>
@@ -75,7 +58,6 @@ export function EditableField({
     );
   }
 
-  // ── Edit mode ───────────────────────────────────────────────────────────────
   if (editing) {
     return (
       <div className={styles['row']}>
@@ -101,7 +83,6 @@ export function EditableField({
     );
   }
 
-  // ── View mode (editable) ────────────────────────────────────────────────────
   return (
     <div className={styles['row']}>
       <div className={styles['label']}>{label}</div>

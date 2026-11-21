@@ -18,10 +18,7 @@ log = structlog.get_logger(__name__)
 
 
 def dedupe_tags(tags: Iterable[str]) -> list[str]:
-    """
-    Deduplicate tags while preserving insertion order (case-insensitive).
-
-    Whitespace-only and empty strings are silently dropped.
+    """Deduplicate tags case-insensitively, keeping order and dropping blanks.
 
     >>> dedupe_tags(["Bills", "bills", " BILLS ", "Payslip"])
     ['Bills', 'Payslip']
@@ -46,13 +43,10 @@ def filter_redundant_tags(
     document_type: str,
     person: str,
 ) -> list[str]:
-    """
-    Remove tags that duplicate the correspondent, document type, or person.
+    """Remove tags that duplicate the correspondent, document type, or person.
 
-    Comparison uses :func:`normalise_simple` for document-type/person and
-    :func:`normalise_name` (which strips company suffixes) for the
-    correspondent, so *"Revolut Ltd"* as a tag is caught when the
-    correspondent is *"Revolut"*.
+    The correspondent is compared with company suffixes stripped, so a
+    *"Revolut Ltd"* tag is caught when the correspondent is *"Revolut"*.
     """
     correspondent_key = normalise_name(correspondent) if correspondent else ""
     document_type_key = normalise_simple(document_type) if document_type else ""
@@ -75,8 +69,7 @@ def filter_redundant_tags(
 
 
 def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
-    """
-    Remove tags whose normalised form is in :data:`BLACKLISTED_TAGS`.
+    """Remove tags whose normalised form is in :data:`BLACKLISTED_TAGS`.
 
     >>> filter_blacklisted_tags(["New", "AI", "Bills"])
     ['Bills']
@@ -89,15 +82,9 @@ def filter_blacklisted_tags(tags: Iterable[str]) -> list[str]:
 
 
 def extract_model_tags(text: str) -> list[str]:
-    """
-    Extract model name tags from ``Transcribed by model: …`` footers.
+    """Extract model names from every ``Transcribed by model: a, b`` footer.
 
-    The OCR daemon appends a footer like::
-
-        Transcribed by model: gpt-5.4-mini, o4-mini
-
-    This function parses all such footers (there may be more than one in
-    multi-run content) and returns a deduplicated list of model names.
+    Content OCR'd more than once can carry several footers.
     """
     matches = list(MODEL_FOOTER_RE.finditer(text))
     if not matches:
@@ -121,23 +108,11 @@ def enrich_tags(
     *,
     today: Callable[[], dt.date] = dt.date.today,
 ) -> list[str]:
-    """
-    Combine model-suggested tags with required tags and enforce the limit.
+    """Combine the LLM's tags with the required tags, capping the LLM's at *tag_limit*.
 
-    **Required tags** (always included, not counted toward *tag_limit*):
-    - OCR model markers extracted from the text footer.
-    - A year tag derived from *document_date* (falls back to the current year).
-    - The *default_country_tag* if configured.
-
-    **Optional tags** (the LLM's suggestions minus required ones):
-    - Capped to *tag_limit*.
-
-    Returns a lowercased, deduplicated list with required tags first.
-
-    Args:
-        today: The current-date source for the year-tag fallback. Defaults to
-            :func:`datetime.date.today`; tests inject a fixed date so the
-            fallback year is deterministic (CODE_GUIDELINES §11.4).
+    Required tags (OCR model names, the document year or today's, and
+    *default_country_tag*) come first and do not count toward the limit.
+    Returns a lowercased, deduplicated list.
     """
     tag_limit = max(0, tag_limit)
 

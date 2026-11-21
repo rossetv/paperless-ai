@@ -1,35 +1,21 @@
 /**
- * Route table for the Paperless AI SPA.
+ * Route table for the SPA.
  *
- * Real React-Router routes replace the former render-swap:
- *   - `/setup`                   — first-run setup, shown only while no users exist
- *   - `/login`                   — sign-in, shown only when unauthenticated
- *   - `/`                        — the search app, protected
- *   - `/library/document/:id`    — library document detail, protected
- *   - `/document/:id`            — shareable document view, protected
- *
- * A bootstrap gate resolves two server queries on load — `GET
- * /api/setup/status` then `GET /api/auth/me` — and the route guards below
- * redirect accordingly:
+ * A bootstrap gate resolves `GET /api/setup/status` then `GET /api/auth/me` on
+ * load, and the route guards redirect accordingly:
  *   - setup needed            → /setup
  *   - setup done, no session  → /login
  *   - authenticated           → the app
- *
- * `ProtectedRoute` and `BootstrapGate` live here because the `app` tier is
- * the only layer permitted to import pages + api + hooks together
- * (CODE_GUIDELINES §12.3 / eslint.config.js).
- *
- * Classified as the `app` element type in `eslint-plugin-boundaries`.
  */
 
 import React, { Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-// Eager — these are the entry-path pages hit on every load.
+// Eager: the entry-path pages hit on every load.
 import { SearchPage } from './pages/SearchPage';
 import { LoginPage } from './pages/LoginPage';
 import { SetupPage } from './pages/SetupPage';
 import { ErrorBoundary } from './components/layout/ErrorBoundary/ErrorBoundary';
-// Lazy — rarely-hit routes; split into separate async chunks.
+// Lazy: rarely-hit routes, split into separate chunks.
 const IndexPage = React.lazy(() =>
   import('./pages/IndexPage').then((m) => ({ default: m.IndexPage })),
 );
@@ -69,8 +55,8 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
   if (meQuery.isLoading) {
     return <FullPageLoading />;
   }
-  // Branch explicitly on query success — guards against silently rendering
-  // protected UI if the me query errors or returns without a user.
+  // Branch on success explicitly so an errored or user-less `me` never renders
+  // protected UI.
   if (!meQuery.isSuccess || meQuery.data.user === undefined) {
     return <Navigate to="/login" replace />;
   }
@@ -78,16 +64,11 @@ function ProtectedRoute({ children }: { children: React.ReactElement }): React.R
 }
 
 /**
- * Admin-only route guard — layered on `ProtectedRoute`.
+ * Admin-only route guard layered on `ProtectedRoute`: a non-admin is
+ * redirected to `/`.
  *
- * `ProtectedRoute` first enforces authentication (redirecting to `/login`
- * while loading or unauthenticated). Once a user is resolved, this guard
- * checks the role: a non-admin is redirected to `/` (the app root), an admin
- * sees `children`.
- *
- * The role check is purely a navigation convenience — every admin endpoint
- * is independently enforced server-side (spec §4.3). A user who reaches an
- * admin screen by other means still cannot perform admin actions.
+ * A navigation convenience only — every admin endpoint is enforced
+ * server-side.
  */
 function RequireAdmin({ children }: { children: React.ReactElement }): React.ReactElement {
   return (
@@ -129,10 +110,8 @@ function BootstrapGate({
 }): React.ReactElement {
   const setupQuery = useSetupStatus();
 
-  // Resolve setup-needed from query data regardless of loading state so hooks
-  // are called unconditionally. `undefined` while still loading — treated as
-  // "not yet known", which disables the me query (no point hitting /api/auth/me
-  // while setup state is unknown or while setup is actively required).
+  // Resolved regardless of loading state so hooks are called unconditionally.
+  // The me query stays disabled while setup state is unknown or setup is needed.
   const setupNeeded = setupQuery.data?.needed === true;
   const meQuery = useMe({ enabled: !setupNeeded });
 
@@ -142,20 +121,16 @@ function BootstrapGate({
   }
 
   if (setupNeeded) {
-    // Only the setup page is reachable until the first admin exists.
     return intent === 'setup' ? children : <Navigate to="/setup" replace />;
   }
 
-  // Setup is complete — /setup is no longer valid.
   if (intent === 'setup') {
     return <Navigate to="/login" replace />;
   }
 
-  // intent === 'login'. Render the login form immediately rather than a
-  // loading screen while `me` resolves: on a post-logout redirect the me
-  // query is mid-refetch (isLoading), and showing FullPageLoading here caused
-  // a blank loading frame between sign-out and the form. An already-resolved
-  // authenticated user is still bounced to the app below.
+  // intent === 'login'. Render the form without waiting for `me`: after a
+  // logout redirect the query is mid-refetch, and a loader would flash a blank
+  // frame between sign-out and the form.
   if (meQuery.data?.user !== undefined) {
     return <Navigate to="/" replace />;
   }
@@ -163,12 +138,8 @@ function BootstrapGate({
 }
 
 /**
- * Inner route body. Reads the current pathname so the `ErrorBoundary` can
- * reset automatically on navigation, isolating per-route crashes without
- * requiring a full page reload.
- *
- * `AppRoutes` (the public export) keeps `BrowserRouter` outside this
- * component so `useLocation` is available here.
+ * Inner route body. Reads the pathname so the `ErrorBoundary` resets on
+ * navigation, isolating per-route crashes without a full reload.
  */
 function RoutesBody(): React.ReactElement {
   const location = useLocation();
@@ -268,13 +239,7 @@ function RoutesBody(): React.ReactElement {
   );
 }
 
-/**
- * Top-level route table.
- *
- * `/` resolves through `BootstrapGate` semantics inside `ProtectedRoute`
- * plus an explicit setup check, so a fresh install lands on `/setup`, a
- * signed-out user on `/login`, and a signed-in user on `SearchPage`.
- */
+/** Top-level route table. */
 export function AppRoutes(): React.ReactElement {
   return <RoutesBody />;
 }

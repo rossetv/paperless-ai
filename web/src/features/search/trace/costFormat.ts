@@ -1,14 +1,4 @@
-/**
- * Token / cost formatting for the search-trace surfaces.
- *
- * Pure, unit-testable helpers that turn a phase's (or a whole query's) token
- * usage and priced cost into the compact chip labels shown on the live rail,
- * the folded trace panel and the answer-card footer. No React, no wire-JSON
- * shapes — just numbers in, display strings out. Split out of `phaseStages`
- * (FE-01) so the per-phase renderer stays under the file-length ceiling.
- *
- * Allowed deps: api/types only (CODE_GUIDELINES §12.3).
- */
+/** Token and cost chip labels for the live rail, trace panel and answer footer. */
 
 import type { Cost, CostSummary, TokenUsage } from '../../../api/types';
 
@@ -18,7 +8,6 @@ export function compactTokens(total: number): string {
     return String(total);
   }
   const thousands = total / 1000;
-  // One decimal below 10k (1.2k), none above (12k) — keeps the chip short.
   const text =
     thousands < 10 ? thousands.toFixed(1) : String(Math.round(thousands));
   return `${text.replace(/\.0$/, '')}k`;
@@ -64,12 +53,8 @@ export function formatCostLabel(
 }
 
 /**
- * The whole-query aggregate label from a `CostSummary` — tokens · cost (e.g.
- * "29k tok · $0.07"). Shown on the answer card footer and the "How this answer
- * was found" trace header so the user sees the total spend at a glance. The
- * cost segment mirrors `formatCostLabel`: a local (Ollama) provider reads "$0",
- * an unpriced total reads "—". Returns undefined when no LLM call was made
- * (zero tokens AND zero calls — nothing worth showing).
+ * The whole-query "tokens · cost" label (e.g. "29k tok · $0.07"), with the same
+ * cost rules as `formatCostLabel`. Undefined when no LLM call was made.
  */
 export function formatSummaryCostLabel(
   summary: CostSummary,
@@ -89,14 +74,10 @@ export function formatSummaryCostLabel(
   return `${tokensPart} · ${costPart}`;
 }
 
-/**
- * Return the ordinal suffix for a 1-based index: 1→"1st", 2→"2nd", 3→"3rd",
- * 4→"4th", …, 11→"11th", 12→"12th", 13→"13th", 21→"21st", etc.
- */
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 21 → "21st". */
 export function ordinal(n: number): string {
   const abs = Math.abs(n);
   const mod100 = abs % 100;
-  // Special-case the teens (11–13) which break the normal suffix pattern.
   if (mod100 >= 11 && mod100 <= 13) {
     return `${n}th`;
   }
@@ -108,10 +89,8 @@ export function ordinal(n: number): string {
 }
 
 /**
- * Format a wall-clock elapsed duration (milliseconds) as `m:ss` — e.g. 9 000 →
- * "0:09", 92 000 → "1:32". Driven from a real start timestamp by the live rail
- * so the counter tracks true elapsed time rather than per-frame increments.
- * Negative input is floored to zero (a clock that ran backwards reads "0:00").
+ * Elapsed milliseconds as `m:ss` (92 000 → "1:32"). A clock that ran backwards
+ * reads "0:00".
  */
 export function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));

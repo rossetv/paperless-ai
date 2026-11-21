@@ -1,15 +1,8 @@
 import { cn } from '../../../lib/cn';
 import styles from './Card.module.css';
 
-/**
- * Surface colour of the card.
- * 'default' — the light surface (--colour-surface).
- * 'dark'    — the dark "section" surface (--colour-surface-dark), for a dark
- *             band card on a light page (DESIGN.md §2).
- */
 export type CardSurface = 'default' | 'dark';
 
-/** Allowed HTML container elements. */
 export type CardElement = 'div' | 'article' | 'section' | 'aside';
 
 export interface CardProps {
@@ -20,33 +13,17 @@ export interface CardProps {
    */
   as?: CardElement;
   /**
-   * Surface colour — controls the background token.
-   * 'default' = light surface; 'dark' = the dark-section surface.
+   * Background surface: the light default, or the dark "section" surface for a
+   * dark band on a light page.
    */
   surface?: CardSurface;
-  /**
-   * When true, applies the single Apple card shadow (--shadow-card).
-   * Leave false for flat cards embedded within an already-elevated surface.
-   */
+  /** Applies the card shadow. Leave false for flat cards inside an already-elevated surface. */
   elevated?: boolean;
-  /** Card content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
-/**
- * Surface container with the DESIGN.md card treatment.
- *
- * Applies radius (--radius-standard, 8px), padding from tokens, and
- * optionally the single diffused card shadow.
- *
- * Card knows nothing about the domain — it is a generic layout surface.
- * Semantic content hierarchy is supplied by the caller via the `as` prop
- * and by the children.
- *
- * Card itself is not interactive; no focus ring is applied here.
- */
+/** Generic surface container with the standard card radius, padding and optional shadow. */
 export function Card({
   as: Element = 'div',
   surface = 'default',

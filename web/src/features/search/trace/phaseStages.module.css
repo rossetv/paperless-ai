@@ -1,52 +1,33 @@
-/*
- * Search-trace detail-node CSS Module.
- *
- * The planner/resolve/refine/replan phases render a multi-line detail node
- * (one short line per planned search, per resolved spec, etc.) inside the
- * PipelineStages `.detail` caption slot. Each line is a block-level span so the
- * lines stack vertically rather than running together.
- *
- * Tier: features (composition-only). Values come exclusively from design tokens.
- */
-
-/* One stacked line in a multi-line trace detail node. */
 .line {
   display: block;
 }
 
-/* Separate stacked lines slightly for legibility without changing the row gap. */
 .line + .line {
   margin-top: var(--spacing-1);
 }
 
-/* The leading metric in a phase summary line ("3 searches planned", "16 chunks",
-   "N filters resolved") — lifted to the secondary text colour so it reads a step
-   brighter than the tertiary remainder, a quiet emphasis (NOT a link colour). */
+/* A quiet emphasis one step brighter than the tertiary text, not a link colour. */
 .accent {
   color: var(--colour-text-secondary);
 }
 
-/* A vertical stack of body subrows (retrieved chunks / gated documents). */
 .sublist {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-6);
 }
 
-/* One body subrow: a leading dot then a flexible text column. */
 .subrow {
   display: flex;
   align-items: flex-start;
   gap: var(--spacing-6);
 }
 
-/* The leading dot on a body subrow — hidden to align all body text at the
-   same left edge (PipelineStages .stage-body provides the indent). */
+/* Hidden so all body text shares one left edge; .stage-body provides the indent. */
 .sdot {
   display: none;
 }
 
-/* The text column of a body subrow — title above snippet / bar. */
 .stext {
   display: flex;
   flex-direction: column;
@@ -54,14 +35,12 @@
   min-width: 0;
 }
 
-/* A subrow's document title line. */
 .stitle {
   font-family: var(--font-text);
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
 }
 
-/* The monospace similarity-score prefix on a subrow title. */
 .score {
   margin-right: var(--spacing-4);
   font-family: var(--font-mono);
@@ -69,8 +48,7 @@
   color: var(--colour-text-tertiary);
 }
 
-/* A retrieved chunk's snippet — a single clamped line that reveals the full
-   text in the shared ChunkPopover on hover / focus. */
+/* One clamped line; the shared ChunkPopover shows the full text on hover or focus. */
 .chunk-snip {
   display: block;
   margin-top: var(--spacing-1);
@@ -89,8 +67,6 @@
   outline-offset: var(--spacing-1);
 }
 
-/* The gate similarity bar — a thin track with an accent-filled inner element
-   whose width tracks the document's best vector similarity. */
 .bar {
   margin-top: var(--spacing-3);
   width: 100%;
@@ -108,19 +84,14 @@
   background-color: var(--colour-accent);
 }
 
-/* ── Planning redesign — per-query blocks ── */
-
-/* One query block inside the planning body. */
 .qblock {
   padding: var(--spacing-7) 0;
 }
 
-/* Thin top border between consecutive query blocks. */
 .qblock + .qblock {
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
-/* Meta row: ordinal label, mode badge, filter chips — all on one line. */
 .qmeta {
   display: flex;
   align-items: center;
@@ -129,7 +100,6 @@
   margin-bottom: var(--spacing-3);
 }
 
-/* Ordinal label — "1st query", "2nd query", etc. */
 .qord {
   font-size: var(--font-size-nano);
   font-weight: var(--font-weight-micro-bold);
@@ -138,7 +108,6 @@
   text-transform: uppercase;
 }
 
-/* Mode badge base — a small pill. */
 .qmode {
   font-size: var(--font-size-nano);
   font-weight: var(--font-weight-micro-bold);
@@ -148,19 +117,16 @@
   border-radius: var(--radius-pill);
 }
 
-/* Keyword mode — accent blue wash. */
 .qmode-keyword {
   background-color: var(--colour-accent-wash);
   color: var(--colour-link);
 }
 
-/* Semantic mode — neutral grey. */
 .qmode-semantic {
   background-color: var(--colour-status-neutral-bg);
   color: var(--colour-text-secondary);
 }
 
-/* Filter chip — a small rounded pill showing one planner filter guess. */
 .qfilter {
   font-size: var(--font-size-nano);
   padding: var(--spacing-1) var(--spacing-6);
@@ -169,27 +135,21 @@
   color: var(--colour-text-secondary);
 }
 
-/* The filter chip's keyword label (e.g. "type") — dimmer than the value. */
 .qfilter-key {
   color: var(--colour-text-tertiary);
 }
 
-/* Query text — in curly quotes, secondary colour. */
 .qtext {
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
 }
 
-/* Rationale line — smaller, tertiary, on its own line below the query. */
 .qwhy {
   margin-top: var(--spacing-1);
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
 }
 
-/* Context line above a re-plan / refine query list — the gap hint, the action
- * taken, or the carried-over count. Matches the query-text scale; an optional
- * leading key ("Gap", "Action") is dimmed like a filter-chip label. */
 .qhint {
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
@@ -203,26 +163,18 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Resolving redesign — per-query status chips ──
- * Mirrors the planning step: one block per query, each filter shown as a chip
- * annotated with its fate (kept / loosened / dropped + why). */
-
-/* One query block inside the resolve body. */
 .fblock {
   padding: var(--spacing-7) 0;
 }
 
-/* Thin top border between consecutive query blocks (matches .qblock). */
 .fblock + .fblock {
   border-top: var(--spacing-1) solid var(--colour-border);
 }
 
-/* The block header — carries the ordinal label (reuses .qord). */
 .fhead {
   margin-bottom: var(--spacing-3);
 }
 
-/* One filter row: status mark, chip, then the muted annotation. */
 .frow {
   display: flex;
   align-items: baseline;
@@ -231,25 +183,22 @@
   padding: var(--spacing-1) 0;
 }
 
-/* Status mark — a small leading glyph. Decorative; outcome is also carried by
-   the chip styling and annotation text. */
+/* Decorative; the chip styling and annotation carry the outcome too. */
 .mark {
   flex: none;
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro-bold);
 }
 
-/* Kept / loosened — a quiet tick in the tertiary body colour. */
 .mark-kept {
   color: var(--colour-text-tertiary);
 }
 
-/* Dropped — a cross in the danger colour. */
 .mark-drop {
   color: var(--colour-status-danger-fg);
 }
 
-/* Filter chip — same skin as the planning chip (.qfilter). */
+/* Same skin as the planning chip (.qfilter). */
 .fchip {
   display: inline-flex;
   align-items: baseline;
@@ -261,17 +210,14 @@
   color: var(--colour-text-secondary);
 }
 
-/* The chip's dimension label (e.g. "type") — dimmer than the value. */
 .dim {
   color: var(--colour-text-tertiary);
 }
 
-/* The chip's resolved value (the taxonomy name / date / id). */
 .val {
   color: var(--colour-text-secondary);
 }
 
-/* Dropped chip — dashed danger outline, no fill; the value is struck through. */
 .fchip-dropped {
   background-color: transparent;
   border: var(--spacing-1) dashed var(--colour-status-danger-bg);
@@ -283,19 +229,16 @@
   text-decoration-color: var(--colour-status-danger-fg);
 }
 
-/* The trailing annotation — "loosened from …" / drop reason. */
 .annot {
   font-size: var(--font-size-micro);
   color: var(--colour-text-tertiary);
 }
 
-/* Drop-reason annotation — same tertiary weight (no alarm); the chip carries
-   the danger signal. */
+/* No alarm in the text; the chip carries the danger signal. */
 .annot-drop {
   color: var(--colour-text-tertiary);
 }
 
-/* "No filters proposed" — a quiet placeholder for a query that resolved nothing. */
 .nofilters {
   padding: var(--spacing-1) 0;
   font-size: var(--font-size-micro);

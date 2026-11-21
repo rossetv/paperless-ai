@@ -1,10 +1,4 @@
-"""Tests for appdb migration v3 — the api_keys table.
-
-Covers: a fresh database reaches schema version 3; the api_keys table and
-its two indexes exist; the column set matches the spec; the owner_user_id
-foreign key cascades on user delete; the key_hash UNIQUE constraint rejects
-a duplicate; the migration is idempotent.
-"""
+"""Tests for app.db migration v3, the api_keys table."""
 
 from __future__ import annotations
 
@@ -47,7 +41,6 @@ def _schema_version(c: sqlite3.Connection) -> int:
 
 
 def test_schema_version_constant_is_at_least_three() -> None:
-    """The code's declared schema version includes the api_keys migration."""
     assert SCHEMA_VERSION >= 3
 
 
@@ -88,7 +81,7 @@ def test_api_keys_has_its_indexes(conn) -> None:
 
 
 def test_key_hash_unique_constraint_rejects_a_duplicate(conn) -> None:
-    """Two rows cannot share a key_hash — auth looks a key up by it."""
+    """Auth looks a key up by its hash, so two rows cannot share one."""
     run_migrations(conn)
     conn.execute(
         "INSERT INTO users "
@@ -111,7 +104,6 @@ def test_key_hash_unique_constraint_rejects_a_duplicate(conn) -> None:
 
 
 def test_owner_user_id_cascades_on_user_delete(conn) -> None:
-    """Deleting a user destroys every api_keys row they own."""
     run_migrations(conn)
     conn.execute(
         "INSERT INTO users "

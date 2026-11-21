@@ -28,7 +28,7 @@ describe('MatchCard', () => {
     // staleTime: Infinity prevents background refetching of the primed cache entry,
     // so we can assert the network is not called at all.
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-    // Cache key shape: ['search', SearchRequest] — matches queryKeys.search(req) in hooks.ts.
+    // Must match queryKeys.search(req) in api/hooks.
     qc.setQueryData(['search', { query: 'invoice', filters: EMPTY_FILTERS }], {
       answer: '…',
       sources: [

@@ -17,7 +17,6 @@ export interface ActivityRowProps {
   cycle: ReconcileCycle;
   /** When true the bottom divider is dropped (the last row in a list). */
   last?: boolean;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
@@ -27,8 +26,6 @@ export interface ActivityRowProps {
  * A leading status dot (ok/error tone), a relative `started_at` time, the
  * cycle `kind` + `detail` label, and a compact summary of counts. The `ok`
  * flag drives the dot colour.
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — takes a domain wire type.
  */
 export function ActivityRow({
   cycle,

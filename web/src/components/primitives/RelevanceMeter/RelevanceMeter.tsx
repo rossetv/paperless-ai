@@ -3,9 +3,8 @@ import { cn } from '../../../lib/cn';
 import styles from './RelevanceMeter.module.css';
 
 /**
- * Qualitative relevance tier. Mirrors `RelevanceTier` in `api/types/search.ts`
- * — kept local so this primitive has no upward dependency on the api layer
- * (CODE_GUIDELINES §12.3). Must be kept in sync with the api type.
+ * Mirrors `RelevanceTier` in `api/types/search.ts`; kept local so this primitive
+ * does not depend on the api layer. Keep the two in sync.
  */
 export type RelevanceTier = 'strong' | 'good' | 'partial' | 'weak';
 
@@ -22,25 +21,13 @@ const DOT_COUNT = 4;
 export interface RelevanceMeterProps {
   /** The qualitative relevance tier from the search backend. */
   tier: RelevanceTier;
-  /** Additional class names merged onto the root element. */
   className?: string;
 }
 
 /**
- * The relevance badge: a four-dot meter (filled dots = match strength) plus a
- * label — "Strong / Good / Partial / Weak match".
- *
- * Replaces the raw RRF "relevance · 0.05" number, which read as a misleadingly
- * tiny score even for a perfect hit. The dots give an at-a-glance scale; the
- * label spells the tier out.
- *
- * DESIGN.md: monochrome only — filled dots use `--colour-text-primary`, empty
- * dots the faint `--colour-border`; no status colour (the blue accent is
- * reserved for interactive elements). Mirrors the PipelineStages status dots.
- * The dots are decorative (`aria-hidden`); the visible label AND the root
- * title/aria-label carry the meaning for assistive tech (UI-09).
- *
- * Tier: components/primitives — presentational, no data fetching.
+ * Relevance badge: a four-dot meter plus a "Strong / Good / Partial / Weak match"
+ * label. The dots are aria-hidden; the label and the root's aria-label carry the
+ * meaning.
  */
 export function RelevanceMeter({
   tier,

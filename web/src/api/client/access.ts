@@ -1,10 +1,6 @@
 /**
- * User-management and API-key endpoint functions — Wave 3 (Access Control).
- *
- * Admin-only on the server. The frontend still calls them — a 403 surfaces
- * as `ApiError` and is handled by the route guard, not hidden here.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
+ * User-management and API-key endpoints. Admin-only on the server: a 403
+ * surfaces as `ApiError` and is handled by the route guard, not hidden here.
  */
 
 import type {
@@ -19,10 +15,6 @@ import type {
   ApiKeyEnvelope,
 } from '../types';
 import { BASE_URL, request } from './core';
-
-// ---------------------------------------------------------------------------
-// User-management endpoints
-// ---------------------------------------------------------------------------
 
 /** GET /api/users — list every user account. */
 export async function getUsers(): Promise<UsersResponse> {
@@ -64,10 +56,6 @@ export async function updateUser(
 export async function deleteUser(id: number): Promise<void> {
   return request<void>(`${BASE_URL}/api/users/${id}`, { method: 'DELETE' });
 }
-
-// ---------------------------------------------------------------------------
-// API-key endpoints
-// ---------------------------------------------------------------------------
 
 /** GET /api/api-keys — list the API keys visible to the caller. */
 export async function getApiKeys(): Promise<ApiKeysResponse> {

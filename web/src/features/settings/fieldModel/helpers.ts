@@ -1,9 +1,4 @@
-/**
- * Helper functions over the settings field model — key enumeration, field
- * look-up, and value parsing/serialisation.
- *
- * Tier: features/ — leaf module, no deps outside the settings feature.
- */
+/** Helpers over the settings field model: key enumeration, field look-up, value parsing. */
 
 import type { ConditionalControl, ConfigValue, SettingsField } from './types';
 import {
@@ -14,15 +9,9 @@ import {
 } from './sections';
 
 /**
- * The three rows for one Search sub-step (Planner / Judge / Answer): its
- * provider, its model (an OpenAI dropdown or a free-text Ollama model, keyed on
- * that sub-step's provider), and its reasoning effort (shown only on OpenAI).
- * Each sub-step chooses its provider and model independently — mix freely, e.g.
- * a local judge with a cloud answer.
- *
- * Lives here (not in `sections.ts`) so that file stays a logic-free pure-data
- * literal under §3.1 (FE-06); the option lists it spreads are imported back
- * from `sections.ts`, which holds the shared declarative data.
+ * The provider, model and reasoning-effort rows for one Search sub-step (Planner / Judge /
+ * Answer). Each sub-step picks its provider and model independently, e.g. a local judge with a
+ * cloud answer.
  */
 export function searchStageFields(stage: {
   key: 'PLANNER' | 'JUDGE' | 'ANSWER';
@@ -42,8 +31,6 @@ export function searchStageFields(stage: {
       key: `SEARCH_${stage.key}_MODEL`,
       label: `${stage.label} model`,
       hint: 'OpenAI: pick a model. Ollama: type a pulled model.',
-      // A dropdown of the OpenAI models when this sub-step is on OpenAI; a
-      // free-text field for an Ollama model otherwise.
       control: {
         kind: 'conditional',
         on: provider,
@@ -62,11 +49,8 @@ export function searchStageFields(stage: {
 }
 
 /**
- * Every config key the model defines, flattened in display order.
- *
- * Includes keys from both `group.fields` and `group.advanced` (when present).
- * For any `select` field that carries a `reasoningKey`, that sub-key is also
- * included so `useUnsavedSettings` seeds and serialises it correctly.
+ * Every config key the model defines, in display order, including advanced fields and each
+ * select's `reasoningKey` (so `useUnsavedSettings` seeds and serialises it).
  */
 export function allFieldKeys(): string[] {
   return SETTINGS_SECTIONS.flatMap((section) =>
@@ -89,22 +73,17 @@ export function allFieldKeys(): string[] {
 /**
  * Look up a field descriptor by config key, or `undefined` if unknown.
  *
- * Searches `group.fields` and `group.advanced` across every section.
- * If the key is not a direct field key but matches the `reasoningKey` of a
- * `select` control, returns a synthetic `SettingsField` with a `segmented`
- * control over `reasoningOptions` — so `parseValue` treats it as a string
- * and `toDraft` seeds it from the draft.
+ * A select's `reasoningKey` yields a synthetic `segmented` field over `reasoningOptions`, so
+ * `parseValue` treats it as a string and `toDraft` seeds it.
  */
 export function fieldByKey(key: string): SettingsField | undefined {
   for (const section of SETTINGS_SECTIONS) {
     for (const group of section.groups) {
       const allFields = [...group.fields, ...(group.advanced ?? [])];
 
-      // Direct match first.
       const direct = allFields.find((f) => f.key === key);
       if (direct) return direct;
 
-      // Synthetic match: a select whose reasoningKey === key.
       for (const field of allFields) {
         if (
           field.control.kind === 'select' &&
@@ -128,13 +107,8 @@ export function fieldByKey(key: string): SettingsField | undefined {
 }
 
 /**
- * Parse a wire string value to the typed value the field's control needs.
- *
- * Dispatches on the field's control kind: `number` → `number`, `toggle` →
- * `boolean`, `list` → `string[]` (comma-separated, trimmed), everything else
- * → the string unchanged. A `null` wire value (key on its coded default)
- * parses to the control's empty value, so an unedited field round-trips as
- * unchanged.
+ * Parse a wire string to the typed value the field's control needs. A `null` wire value parses
+ * to the control's empty value, so an unedited field round-trips as unchanged.
  */
 export function parseValue(field: SettingsField, raw: string | null): ConfigValue {
   const control = field.control;
@@ -149,32 +123,21 @@ export function parseValue(field: SettingsField, raw: string | null): ConfigValu
     if (raw === null || raw.trim() === '') return [];
     return raw.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
   }
-  // A `conditional` control parses by the kind it resolves to. Every conditional
-  // in the model today resolves only to string-typed controls (select/text), so
-  // the string parse below is correct — but assert that invariant rather than
-  // letting a future number/list/toggle variant silently mis-parse as a string
-  // and break dirty-tracking (FE-66).
+  // Every conditional resolves only to string-typed controls, so it parses as a string. Assert
+  // that, so a number/list/toggle variant cannot silently mis-parse and break dirty-tracking.
   if (control.kind === 'conditional') {
     assertConditionalIsStringTyped(field.key, control);
   }
   return raw ?? '';
 }
 
-/** Control kinds whose parsed value is a plain string (so a `conditional`
- *  resolving only to these is safely string-parsed by {@link parseValue}). */
 const STRING_CONTROL_KINDS: ReadonlySet<string> = new Set([
   'text',
   'select',
   'secret',
 ]);
 
-/**
- * Assert every variant and the fallback of a conditional control resolve to a
- * string-typed control. {@link parseValue} parses a conditional as a string;
- * this guards the invariant that lets it. Throws (model authoring error) the
- * moment a conditional wraps a number/list/toggle variant — better a loud
- * failure than a silently mis-typed baseline.
- */
+/** Throws (a model authoring error) if any variant or the fallback is not string-typed. */
 function assertConditionalIsStringTyped(
   key: string,
   control: ConditionalControl,
@@ -191,13 +154,7 @@ function assertConditionalIsStringTyped(
   }
 }
 
-/**
- * Serialise a typed draft value back to the wire string the backend stores.
- *
- * The inverse of {@link parseValue}: a `string[]` joins with `, `, a boolean
- * becomes `'true'`/`'false'`, a number is stringified, a string passes
- * through. The config table is string-only, so the PUT body carries strings.
- */
+/** The inverse of {@link parseValue}: the config table stores only strings. */
 export function serialiseValue(value: ConfigValue): string {
   if (Array.isArray(value)) return value.join(', ');
   if (typeof value === 'boolean') return value ? 'true' : 'false';

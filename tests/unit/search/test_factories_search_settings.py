@@ -1,8 +1,7 @@
-"""Guard: make_search_settings carries the Area-3 SEARCH_* defaults.
+"""Guard: make_search_settings sets the SEARCH_* defaults explicitly.
 
-A MagicMock auto-creates any attribute as a truthy mock, so the new
-flag/numeric settings must be set explicitly or downstream search tests
-silently misbehave (CODE_GUIDELINES §11.5).
+A MagicMock auto-creates any attribute as a truthy mock, so an unset flag would
+make downstream search tests silently misbehave.
 """
 
 from __future__ import annotations

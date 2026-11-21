@@ -1,18 +1,7 @@
-"""Tests for search.planner — model selection and the AI_MODELS fallback chain.
+"""Tests for search.planner: model selection and the model fallback chain.
 
-Verifies:
-- The configured SEARCH_PLANNER_MODEL is the model requested.
-- Exactly one LLM call is made per plan() invocation (per model attempt).
-- When the primary model raises an OpenAI error, the next in AI_MODELS is tried.
-- Every OpenAI API error — retryable AND non-retryable (AuthenticationError,
-  etc.) — degrades to the fallback plan; plan() never raises (findings C1/C2).
-
-Response-parsing behaviour is in :mod:`test_planner` (split for the 500-line
-ceiling, §3.1).
-
-LLM mocking: QueryPlanner subclasses OpenAIChatMixin; these tests build a bare
-QueryPlanner and assign ``_create_completion`` a ``side_effect`` mock directly,
-since they script multiple model attempts in one call.
+These build a bare QueryPlanner and assign ``_create_completion`` a
+``side_effect`` mock, since they script several model attempts per call.
 """
 
 from __future__ import annotations
@@ -42,11 +31,6 @@ def _assert_is_fallback_plan(plan: RetrievalPlan, raw_query: str) -> None:
     assert spec.semantic == raw_query
     assert spec.keywords == ()
     assert spec.filter_guess == EMPTY_FILTER_CANDIDATES
-
-
-# ---------------------------------------------------------------------------
-# Model selection: SEARCH_PLANNER_MODEL is the model requested
-# ---------------------------------------------------------------------------
 
 
 class TestModelSelection:
@@ -82,11 +66,6 @@ class TestModelSelection:
         assert planner._create_completion.call_count == 1  # type: ignore[attr-defined]
 
 
-# ---------------------------------------------------------------------------
-# AI_MODELS fallback chain: fallback model is tried on error
-# ---------------------------------------------------------------------------
-
-
 class TestModelFallback:
     """When the primary model raises an OpenAI error, the next in AI_MODELS is tried."""
 
@@ -113,19 +92,11 @@ class TestModelFallback:
         assert any(s.semantic == "fallback worked" for s in plan.specs)
 
 
-# ---------------------------------------------------------------------------
-# C1/C2 — every OpenAI API error degrades to the fallback; plan() never raises
-# ---------------------------------------------------------------------------
-
-
 class TestApiErrorNeverEscapes:
     """plan() catches every openai.APIError subclass — retryable or not.
 
-    Finding C1/C2: the old hand-rolled loop caught only the retryable errors
-    plus BadRequestError, so AuthenticationError / PermissionDeniedError /
-    NotFoundError propagated out of plan() and turned every search into an
-    unhandled 500.  The migration to OpenAIChatMixin catches the whole
-    openai.APIError family as the terminal skip-model branch.
+    An AuthenticationError, PermissionDeniedError or NotFoundError escaping plan()
+    would turn every search into an unhandled 500.
     """
 
     def test_authentication_error_degrades_to_fallback(self) -> None:
@@ -306,7 +277,7 @@ class TestPlannerReadsClassifyModels:
         """A planner on Ollama must NOT fall back through an OpenAI CLASSIFY_MODELS
         list — those models belong to a different endpoint and would 404 on the
         Ollama client. When the providers differ the planner only tries its own
-        model, then degrades (spec §4.4)."""
+        model, then degrades."""
         settings = make_search_settings(
             SEARCH_PLANNER_PROVIDER="ollama",
             CLASSIFY_PROVIDER="openai",

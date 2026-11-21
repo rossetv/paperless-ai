@@ -8,43 +8,22 @@ import { cn } from '../../../lib/cn';
 import styles from './PdfViewerCard.module.css';
 
 export interface PdfViewerCardProps {
-  /** Paperless-ngx document ID — used to build the proxy PDF URL. */
   documentId: number;
-  /** Document title — surfaced as the iframe's accessible title. */
+  /** Used for the iframe's accessible title. */
   title: string;
-  /**
-   * Full Paperless-ngx URL for the document detail page.
-   * When null the "Open in Paperless" action is omitted.
-   */
+  /** Paperless-ngx document page; null omits "Open in Paperless". */
   paperlessUrl: string | null;
-  /**
-   * Suggested filename for the Download anchor (e.g. "Allianz Invoice 2026.pdf").
-   * Sets the `download` attribute so the browser uses this name rather than
-   * deriving one from the proxy URL path (which ends in "/pdf", producing "pdf.pdf").
-   */
+  /** Without it the browser names the file "pdf.pdf" from the proxy URL. */
   downloadFilename: string;
 }
 
 /**
- * Self-contained card that embeds the PDF viewer for a single document.
+ * Card that embeds the PDF viewer for one document; pager and zoom come from
+ * the browser's native PDF chrome.
  *
- * The document-level actions (Download, Open in Paperless) live in the page's
- * `DocumentActions` row under the title — not on this card — so the viewer is
- * just the framed page. When the frame fails to load, the same `DocumentActions`
- * are offered inside the error state as escape hatches (Download is the in-app
- * action, Open in Paperless the demoted external link — UI-24 / DD-3).
- *
- * The PDF iframe sits over an app-owned dark backdrop: the viewport fills with
- * --colour-surface-dark so an unloaded iframe never flashes bright white. When
- * the frame reports a load failure (a 4xx/5xx proxy response, a refused-framing
- * response, or a stalled stream — all of which would otherwise show the
- * browser's grey error box), an app-owned dark error EmptyState is rendered
- * *over* the frame, with the same Download / Open-in-Paperless escape hatches.
- * The user never sees the bare grey iframe box (UI-03).
- *
- * Pager and zoom are intentionally absent; the browser's native PDF chrome handles them.
- *
- * Tier: features/document (CODE_GUIDELINES §12.3). Imports from components/* and api/.
+ * When the frame reports a load failure (4xx/5xx proxy response, refused
+ * framing, stalled stream), a dark error state with the `DocumentActions`
+ * escape hatches covers it, so the user never sees the browser's grey error box.
  */
 export function PdfViewerCard({
   documentId,

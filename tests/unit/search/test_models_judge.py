@@ -1,4 +1,4 @@
-"""Tests for the per-document judge verdict shapes (Phase 2, Task 5)."""
+"""Tests for the per-document judge verdict shapes."""
 
 from __future__ import annotations
 

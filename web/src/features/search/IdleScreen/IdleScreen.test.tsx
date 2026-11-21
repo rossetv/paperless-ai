@@ -13,11 +13,9 @@ import { useRecentSearches, useStats } from '../../../api/hooks';
 const mockRecent = useRecentSearches as ReturnType<typeof vi.fn>;
 const mockStats = useStats as ReturnType<typeof vi.fn>;
 
-/** A minimal "successful query" stub for a react-query result. */
 function ok<T>(data: T) {
   return { data, isSuccess: true, isLoading: false, isError: false, error: null };
 }
-/** A minimal "errored query" stub. */
 function failed() {
   return {
     data: undefined,
@@ -55,8 +53,6 @@ describe('IdleScreen', () => {
 
   it('renders the hero subtitle with the formatted document count', () => {
     render(<IdleScreen onSearch={() => {}} />);
-    // The subtitle renders when stats resolve. The count (14238) must be
-    // formatted with thousands separators per British locale — "14,238".
     expect(screen.getByText(/semantic \+ keyword search/i)).toBeInTheDocument();
     expect(screen.getByText('14,238')).toBeInTheDocument();
   });
@@ -101,15 +97,13 @@ describe('IdleScreen', () => {
   });
 
   it('renders a relative-time label for each recent search', () => {
-    // relativeTime() reads `new Date()` for "now"; pin it so the label is
-    // deterministic. The search ran two hours before this fixed instant.
+    // relativeTime() reads `new Date()`; pin "now" two hours after the search.
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-22T12:00:00Z'));
     try {
       render(<IdleScreen onSearch={() => {}} />);
-      // Regression guard: the wire field is `created_at`. When it was read
-      // as the non-existent `searched_at`, relativeTime() got `undefined`
-      // and returned '' — the label silently never rendered.
+      // The wire field is `created_at`; reading any other field makes
+      // relativeTime() return '' and the label silently disappears.
       expect(screen.getByText('2h ago')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();

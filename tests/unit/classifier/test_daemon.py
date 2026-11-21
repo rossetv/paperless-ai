@@ -26,13 +26,10 @@ def _settings(**overrides):
 
 
 def _doc(id, tags=None):
-    """Shorthand for a document dict."""
     return make_document(id=id, tags=tags or [])
 
 
 class TestMainConfigError:
-    """main() with a config error exits gracefully."""
-
     @patch("classifier.daemon.bootstrap_daemon", return_value=None)
     def test_returns_on_config_error(self, mock_bootstrap):
         result = main()
@@ -49,8 +46,6 @@ class TestMainConfigError:
 
 
 class TestIterDocsToClassifyValid:
-    """Yields documents that pass all filter checks."""
-
     def test_yields_valid_document(self):
         client = make_mock_paperless()
         settings = _settings(
@@ -82,8 +77,6 @@ class TestIterDocsToClassifyValid:
 
 
 class TestIterDocsSkipsNonIntegerId:
-    """Documents without an integer id are skipped."""
-
     def test_skips_none_id(self):
         client = make_mock_paperless()
         settings = _settings(CLASSIFY_PRE_TAG_ID=444, CLASSIFY_POST_TAG_ID=None)
@@ -116,8 +109,6 @@ class TestIterDocsSkipsNonIntegerId:
 
 
 class TestIterDocsSkipsAlreadyClassified:
-    """Documents with the post tag are skipped and stale pre-tag removed."""
-
     def test_skips_doc_with_post_tag(self):
         client = make_mock_paperless()
         settings = _settings(
@@ -154,15 +145,12 @@ class TestIterDocsSkipsAlreadyClassified:
         )
 
     def test_skips_post_tag_without_pre_tag_in_tag_set(self):
-        """Document has post tag but not pre tag — still skipped."""
         client = make_mock_paperless()
         settings = _settings(
             CLASSIFY_PRE_TAG_ID=444,
             CLASSIFY_POST_TAG_ID=555,
             CLASSIFY_PROCESSING_TAG_ID=None,
         )
-        # The document is returned by get_documents_by_tag(444) but tags
-        # field shows both 444 and 555
         doc = _doc(1, tags=[444, 555])
         client.get_documents_by_tag.return_value = [doc]
 
@@ -172,8 +160,6 @@ class TestIterDocsSkipsAlreadyClassified:
 
 
 class TestIterDocsSkipsAlreadyClaimed:
-    """Documents already claimed (processing tag present) are skipped."""
-
     def test_skips_doc_with_processing_tag(self):
         client = make_mock_paperless()
         settings = _settings(
@@ -189,7 +175,6 @@ class TestIterDocsSkipsAlreadyClaimed:
         assert result == []
 
     def test_not_skipped_when_processing_tag_not_configured(self):
-        """No processing tag configured means no skip."""
         client = make_mock_paperless()
         settings = _settings(
             CLASSIFY_PRE_TAG_ID=444,
@@ -205,8 +190,6 @@ class TestIterDocsSkipsAlreadyClaimed:
 
 
 class TestProcessDocument:
-    """_process_document builds a ClassificationProcessor under run_per_document."""
-
     @patch("classifier.daemon.ClassificationProvider")
     @patch("common.per_document.PaperlessClient")
     @patch("classifier.daemon.ClassificationProcessor")
@@ -247,8 +230,6 @@ class TestProcessDocument:
 
 
 class TestProcessAndRecord:
-    """_process_and_record feeds each document's outcome to the circuit breaker."""
-
     @patch("classifier.daemon._process_document")
     def test_saved_outcome_records_a_success(self, mock_process):
         mock_process.return_value = WriteBackOutcome.SAVED
@@ -293,8 +274,6 @@ class TestProcessAndRecord:
 
 
 class TestTaxonomyRefreshAsBatchHook:
-    """TaxonomyCache.refresh is passed as before_each_batch."""
-
     @patch("classifier.daemon.ensure_schema")
     @patch("classifier.daemon.connect_app_db")
     @patch("classifier.daemon.bootstrap_daemon")
@@ -331,14 +310,11 @@ class TestTaxonomyRefreshAsBatchHook:
         main()
 
         assert captured_before_batch is not None
-        # Call the hook — it should invoke taxonomy_cache.refresh()
         captured_before_batch([_doc(1)])
         taxonomy_instance.refresh.assert_called_once()
 
 
 class TestMainCleanup:
-    """Clients are closed on exit."""
-
     @patch("classifier.daemon.ensure_schema")
     @patch("classifier.daemon.connect_app_db")
     @patch("classifier.daemon.bootstrap_daemon")
@@ -369,7 +345,7 @@ class TestMainCleanup:
 
 
 class _FakeListClient:
-    """Stub for the daemon's list_client whose close() is a no-op."""
+    """Stub client that records whether close() was called."""
 
     def __init__(self) -> None:
         self.closed = False
@@ -379,8 +355,7 @@ class _FakeListClient:
 
 
 def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
-    """_reload_if_changed rebuilds the daemon state when config_version moves,
-    and is a no-op when it has not."""
+    """_reload_if_changed rebuilds the daemon state only when config_version moves."""
     from appdb import config as config_store
     from appdb.connection import connect
     from appdb.schema import ensure_schema
@@ -426,7 +401,7 @@ def test_reload_if_changed_swaps_state_on_a_config_change(tmp_path) -> None:
         breaker = WriteBackCircuitBreaker(failures_before_halt=1)
         breaker.record_failure()
         assert breaker.is_tripped() is True
-        # No config change — _reload_if_changed leaves state.settings as-is.
+        # No config change: state is left as-is.
         _reload_if_changed(state, breaker)
         assert state.settings is settings
         assert state.list_client is list_client

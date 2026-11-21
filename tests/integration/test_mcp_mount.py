@@ -1,27 +1,10 @@
-"""The MCP endpoint must be live over the real ASGI mount (regression).
+"""Regression test: the MCP endpoint must be live over the real ASGI mount.
 
-Two wiring bugs once made ``/mcp`` non-functional in production while every
-existing test stayed green:
-
-1. **Double prefix.** ``create_app`` mounts the MCP app under ``/mcp`` while
-   ``FastMCP.streamable_http_app()`` *also* served at its default ``/mcp``, so
-   the live endpoint was ``/mcp/mcp`` and ``/mcp`` fell through to the SPA
-   catch-all (405 to a POST).
-2. **Dead task group.** A mounted ASGI sub-app's lifespan is never run by the
-   parent, so the streamable session manager's task group was never started and
-   every authenticated request raised ``RuntimeError: Task group is not
-   initialized`` → HTTP 500.
-
-Neither surfaced because the unit tests drive ``build_mcp_app`` *standalone*
-(no mount, no lifespan) and assert only the 401 auth boundary, while the
-protocol round-trips use the in-memory transport (no HTTP, no session manager).
-
-This test closes that gap: it builds the **whole** app via ``create_app``,
-runs the lifespan (the ``with TestClient(...)`` context manager), authenticates
-with an ``mcp``-scoped API key, and POSTs a real ``initialize`` to ``/mcp``.
-A 200 is reachable only when the path is exactly ``/mcp`` *and* the session
-manager's task group is live — it fails on 404 (wrong path), 405 (SPA
-catch-all), and 500 (dead task group) alike.
+Unit tests drive ``build_mcp_app`` standalone, so they miss two wiring failures:
+a doubled ``/mcp/mcp`` path that lets ``/mcp`` fall through to the SPA
+catch-all, and a mounted sub-app whose lifespan never starts the session
+manager's task group (500). A real ``initialize`` returns 200 only when both
+are right.
 """
 
 from __future__ import annotations
@@ -41,7 +24,7 @@ from tests.integration.accounts_helpers import (
 )
 from tests.helpers.search import mint_api_key
 
-# The streamable-HTTP transport requires the client to accept BOTH media types;
+# The streamable-HTTP transport requires the client to accept both media types;
 # omitting either yields 406 Not Acceptable before the handler runs.
 _MCP_ACCEPT = "application/json, text/event-stream"
 _INITIALIZE = {
@@ -72,8 +55,8 @@ def test_mcp_initialize_succeeds_through_the_real_mount(tmp_path: Path) -> None:
         settings, core=make_mock_core(), store_reader=StoreReader(settings)
     )
 
-    # The context manager runs the app's lifespan, which starts the MCP session
-    # manager's task group — without it the request 500s (bug 2).
+    # The context manager runs the lifespan, which starts the MCP session
+    # manager's task group; without it the request 500s.
     with TestClient(
         app, raise_server_exceptions=False, base_url="https://testserver"
     ) as client:

@@ -1,15 +1,7 @@
-"""Shared helpers for the Wave 5 Library integration tests.
+"""Helpers for the Library integration tests.
 
-Wave 1's ``tests/integration/accounts_helpers.py`` seeds a single document —
-enough for auth routing but not for exercising the Library's pagination and
-sorting.  This module reuses that helper's app-building and account-seeding
-code and adds one Wave-5-specific piece: :func:`seed_library_store`, which
-seeds a handful of documents with distinct titles, correspondents, types,
-tags and dates so a browse query has something to page, sort and filter.
-
-Note: the legacy ``SEARCH_API_KEY`` bearer was retired in Wave 3.  Tests that
-need a bearer token should use :func:`mint_bearer` to create a DB-backed API
-key after opening ``app.db``.
+Re-exports the account helpers and adds :func:`seed_library_store`, which seeds
+enough distinct documents to page, sort and filter.
 """
 
 from __future__ import annotations
@@ -20,8 +12,7 @@ from unittest.mock import MagicMock
 from store.models import ChunkInput, DocumentMeta, TaxonomyEntry
 from store.writer import StoreWriter
 
-# Re-export the Wave 1 helpers the Library tests use, so a test file imports
-# everything from one module.
+# Re-exported so a Library test imports everything from one module.
 from tests.integration.accounts_helpers import (  # noqa: F401
     build_account_client,
     login,
@@ -33,8 +24,7 @@ from tests.integration.accounts_helpers import (  # noqa: F401
 )
 from tests.helpers.search import mint_api_key
 
-# A tiny axis-aligned embedding; the Library never exercises retrieval
-# geometry, so any non-empty vector of the right width is fine.
+# The Library never exercises retrieval geometry; any vector of the right width works.
 _AXIS_A: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)
 
 # The taxonomy ids the seeded documents reference.
@@ -47,12 +37,9 @@ TAG_2024 = 101
 
 
 def seed_library_store(settings: MagicMock) -> None:
-    """Seed the index with five documents for the Library browse tests.
+    """Seed the index with five documents that differ on every sort and filter key.
 
-    The documents differ in title, correspondent, document type, tags and
-    ``created`` date so a single seeded store can exercise sorting (by every
-    sort key), pagination, and every filter dimension.  A reconcile timestamp
-    is written so the store reports itself ready.
+    A reconcile timestamp is written so the store reports itself ready.
 
     Documents (id · title · correspondent · type · tags · created):
       1 · "Annual Report"      · British Gas  · Letter  · {2024}            · 2024-11-02
@@ -60,9 +47,6 @@ def seed_library_store(settings: MagicMock) -> None:
       3 · "Census Letter"      · Water Board  · Letter  · {}                · 2023-07-01
       4 · "Direct Debit Form"  · Water Board  · Invoice · {utilities}       · 2022-01-09
       5 · "Energy Statement"   · British Gas  · Invoice · {utilities,2024}  · 2024-08-20
-
-    Args:
-        settings: The settings mock from :func:`make_settings`.
     """
     writer = StoreWriter(settings)
     try:
@@ -164,23 +148,9 @@ def seed_library_store(settings: MagicMock) -> None:
 
 
 def mint_bearer(app_db: sqlite3.Connection) -> str:
-    """Mint a DB-backed API key and return the raw bearer token string.
+    """Create an admin and an ``api``-scoped key for it; return the raw bearer token.
 
-    Creates an admin user and mints an ``api``-scoped key against it.  The
-    returned string is the full ``sk-pls-...`` key — send it as
-    ``Authorization: Bearer <token>``.
-
-    The ``api`` scope is required because the real app wires
-    ``GET /api/documents`` with ``require_api_scope`` (not bare
-    ``require_role``), so a bearer caller must hold the scope as well as the
-    role.
-
-    Args:
-        app_db: The open, migrated ``app.db`` connection that the test app is
-            also using.
-
-    Returns:
-        The raw ``sk-pls-...`` key string.
+    ``GET /api/documents`` requires the ``api`` scope as well as the role.
     """
     from appdb.passwords import hash_password
     from appdb.users import create as create_user

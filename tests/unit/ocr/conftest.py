@@ -1,11 +1,4 @@
-"""Shared builders for the ocr.worker unit tests.
-
-``test_worker`` is split across two files for the 500-line ceiling
-(CODE_GUIDELINES §3.1) — ``test_worker`` covers the ``process()`` lifecycle and
-``test_worker_internals`` the per-method helpers.  The processor and image
-builders both files use live here so each imports one definition rather than
-redeclaring it, mirroring ``tests/integration/conftest.py``.
-"""
+"""Shared builders for the ocr.worker unit tests."""
 
 from __future__ import annotations
 
@@ -56,11 +49,9 @@ def make_image() -> Image.Image:
 
 
 def make_page_source(images: list[Image.Image]) -> PageSource:
-    """Wrap in-memory images in a PageSource (the non-PDF backing).
+    """Wrap in-memory images in a PageSource, the backing non-PDF documents use.
 
-    The worker consumes PDFs (path-backed, streamed) and non-PDFs (in-memory)
-    through the same :class:`PageSource` interface, so the unit tests exercise
-    the in-memory backing — which loads each image as-is and closes it on
-    ``close()`` — rather than mocking the type.
+    PDFs and non-PDFs share the :class:`PageSource` interface, so the tests use
+    the real in-memory backing rather than mocking the type.
     """
     return PageSource(images=list(images))

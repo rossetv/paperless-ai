@@ -1,28 +1,8 @@
 """Integration tests for the per-API-key daily LLM-token spend quota.
 
-Exercises the full enforcement path through the real FastAPI app via TestClient.
-The SearchCore is stubbed so no real LLM calls are made; a real migrated app.db
-backs the quota read/write so the actual SQLite paths are exercised end-to-end.
-
-Coverage:
-1. DISABLED-DEFAULT (most important): SEARCH_KEY_DAILY_TOKEN_QUOTA=0 writes NO
-   api_key_usage rows — the default deployment is completely unaffected.
-2. ENFORCEMENT 429: an API-key caller's searches succeed until the daily token cap
-   is reached, then /api/search returns HTTP 429 with a Retry-After header BEFORE
-   the pipeline runs.
-3. STREAM ENDPOINT 429: /api/search/stream enforces the same 429 rejection.
-4. COOKIE CALLER NOT LIMITED: a browser/cookie caller is never rejected and never
-   recorded, even with a positive quota.
-5. RECORDING + PER-KEY ISOLATION: a completed search by key A adds tokens to key A's
-   daily bucket; key B's bucket is unaffected.
-6. 429 RESPONSE SHAPE: the response carries a Retry-After header and a structured
-   JSON detail body.
-
-Note on the MCP path: the MCP harness uses an in-process transport that does not
-easily allow per-request bearer-token injection in the quota-relevant path (the
-middleware sets the ContextVar, but the in-memory session does not drive the full
-auth flow per tool call). The MCP quota enforcement is covered at the unit level in
-tests/unit/search/test_spend_quota.py (check_quota / record_usage / mcp_api_key_id).
+The SearchCore is stubbed; a real migrated app.db backs the quota reads and
+writes. The in-memory MCP transport cannot inject a per-request bearer token,
+so MCP enforcement is covered in tests/unit/search/test_spend_quota.py.
 """
 
 from __future__ import annotations
@@ -54,31 +34,22 @@ from tests.helpers.factories import (
 from tests.helpers.search import mint_api_key
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
-
 def _build_app(
     tmp_path: Path,
     *,
     core: MagicMock,
     quota: int,
 ) -> FastAPI:
-    """Build a FastAPI app with the search router over a real tmp_path app.db.
+    """Mount only the search router over a real tmp_path app.db.
 
-    Mirrors the pattern in test_routes_record_search.py: mounts only the search
-    router (no full create_app) so we can control every dependency precisely.
-    The SEARCH_KEY_DAILY_TOKEN_QUOTA value is injected via the settings mock so
-    the handler picks it up from core.settings, matching the production flow.
+    Skipping ``create_app`` keeps every dependency under the test's control.
     """
     app_db_path = str(tmp_path / "app.db")
     settings = make_search_settings(
         APP_DB_PATH=app_db_path,
         SEARCH_KEY_DAILY_TOKEN_QUOTA=quota,
     )
-    # The search handler reads quota from core.settings, so the core's settings
-    # must carry the same quota value.
+    # The search handler reads the quota from core.settings.
     core.settings = settings
 
     app = FastAPI()
@@ -124,12 +95,7 @@ def _ensure_app_db(tmp_path: Path) -> str:
 
 
 def _make_core(total_tokens: int = 500) -> MagicMock:
-    """A stub SearchCore returning a fixed result with a controllable token total.
-
-    *total_tokens* is the value the handler will record against the key's daily
-    bucket — the mechanism the quota enforcement tests use to deterministically
-    push a key's bucket over the cap.
-    """
+    """A stub SearchCore whose result costs *total_tokens* against the key's bucket."""
     core = MagicMock()
     core.answer.return_value = make_search_result(
         answer="The bill is £198.00.",
@@ -236,21 +202,15 @@ def _login_as_cookie_user(
     client.cookies.set(SESSION_COOKIE_NAME, session.token)
 
 
-# ---------------------------------------------------------------------------
-# 1. DISABLED-DEFAULT ZERO-I/O
-# ---------------------------------------------------------------------------
-
-
 class TestDisabledQuotaZeroIO:
-    """SEARCH_KEY_DAILY_TOKEN_QUOTA=0 (the default) must write NO api_key_usage rows."""
+    """SEARCH_KEY_DAILY_TOKEN_QUOTA=0 (the default) must write no api_key_usage rows."""
 
     def test_api_key_search_writes_no_usage_rows_when_quota_disabled(
         self, tmp_path: Path
     ) -> None:
         """A successful API-key search with quota=0 must leave api_key_usage empty.
 
-        This is the behaviour-preserving guarantee: every deployment that has not
-        opted in to a positive quota pays zero quota-related I/O on the search path.
+        A deployment that has not opted in pays no quota I/O on the search path.
         """
         _ensure_app_db(tmp_path)
         core = _make_core(total_tokens=500)
@@ -263,7 +223,6 @@ class TestDisabledQuotaZeroIO:
             headers=_bearer(raw_key),
         )
         assert response.status_code == 200
-        # The most important assertion: the table is completely empty.
         assert _usage_count(tmp_path) == 0, (
             "api_key_usage table must be empty when the quota is disabled (0); "
             "quota I/O is unconditionally skipped when SEARCH_KEY_DAILY_TOKEN_QUOTA=0"
@@ -285,11 +244,6 @@ class TestDisabledQuotaZeroIO:
         )
         assert response.status_code == 200
         assert _usage_count(tmp_path) == 0
-
-
-# ---------------------------------------------------------------------------
-# 2. ENFORCEMENT — 429 before the pipeline runs
-# ---------------------------------------------------------------------------
 
 
 class TestQuotaEnforcement429:
@@ -326,19 +280,12 @@ class TestQuotaEnforcement429:
             headers=_bearer(raw_key),
         )
         assert response.status_code == 429
-        # The pipeline must NOT have been called.
         core.answer.assert_not_called()
 
     def test_search_returns_429_after_crossing_quota_via_queries(
         self, tmp_path: Path
     ) -> None:
-        """Successive real queries accumulate tokens until the cap is crossed.
-
-        Quota is set just below two queries' combined token cost so the first
-        succeeds (records 300 tokens → bucket at 300 < 400) and the second is
-        rejected (bucket at 300 >= 400 — wait, that's still under; set quota
-        exactly equal to one query's tokens so the second call is rejected).
-        """
+        """Successive real queries accumulate tokens until the cap is crossed."""
         _ensure_app_db(tmp_path)
         # Each query costs 400 tokens; quota is 400 — the first query fills the
         # bucket exactly, the second is rejected.
@@ -383,11 +330,6 @@ class TestQuotaEnforcement429:
         )
         assert response.status_code == 429
         core.answer.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# 3. 429 RESPONSE SHAPE
-# ---------------------------------------------------------------------------
 
 
 class TestQuota429ResponseShape:
@@ -435,11 +377,6 @@ class TestQuota429ResponseShape:
         assert "quota" in body["detail"].lower() or "token" in body["detail"].lower()
 
 
-# ---------------------------------------------------------------------------
-# 4. COOKIE CALLER NOT LIMITED
-# ---------------------------------------------------------------------------
-
-
 class TestCookieCallerNotLimited:
     """A browser/cookie caller is never rejected and never recorded."""
 
@@ -476,11 +413,6 @@ class TestCookieCallerNotLimited:
         response = client.post("/api/search/stream", json={"query": "gas bill"})
         assert response.status_code == 200
         assert _usage_count(tmp_path) == 0
-
-
-# ---------------------------------------------------------------------------
-# 5. RECORDING + PER-KEY ISOLATION
-# ---------------------------------------------------------------------------
 
 
 class TestRecordingAndPerKeyIsolation:
@@ -553,6 +485,4 @@ class TestRecordingAndPerKeyIsolation:
             headers=_bearer(raw_key),
         )
         assert response.status_code == 200
-        # Give the worker thread time to complete the best-effort write (it runs
-        # after the stream closes, so we just need to wait for the response body).
         assert _tokens_used_today(tmp_path, key_id) == 175

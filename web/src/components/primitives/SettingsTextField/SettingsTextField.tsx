@@ -21,29 +21,13 @@ export interface SettingsTextFieldProps {
   readOnly?: boolean;
   /** Optional element pinned to the right edge — e.g. a "Reveal" button. */
   suffix?: React.ReactNode;
-  /** Additional class names to merge onto the wrapper. */
   className?: string;
 }
 
 /**
- * The Apple-form text field used across the Settings screen.
- *
- * A controlled primitive. Intentionally distinct from the generic `Input`:
- *   - No `<label>` element — the settings `Row` owns the visible label and
- *     the `htmlFor` association; this component exposes `aria-label` only.
- *   - Supports a monospace face (`mono` prop) for URLs, tokens, identifiers.
- *   - Supports an inline suffix slot for "Reveal" buttons.
- *   - Uses the smaller settings-form sizing (see CSS module).
- *   - No `error` prop — settings validation is handled at the Row level.
- *
- * The split from `Input` is justified (W7 audit decision): merging would
- * either add rarely-used props to `Input` or require a `variant` that
- * changes its fundamental label-ownership contract. Keeping them separate
- * keeps both APIs honest.
- *
- * `readOnly` renders bootstrap config keys that exist but cannot be edited.
- *
- * Tier: components/primitives. Allowed deps: lib/, styles/.
+ * Controlled text field for the Settings screen. Unlike `Input` it renders no
+ * `<label>` (the settings `Row` owns it), has no `error` prop, and supports a
+ * monospace face and an inline suffix such as a "Reveal" button.
  */
 export function SettingsTextField({
   id,

@@ -52,7 +52,7 @@ describe('ConnectionCard', () => {
     render(makeCard({ onTest }));
     await userEvent.click(screen.getByRole('button', { name: /^Test Paperless-ngx$/i }));
     expect(onTest).toHaveBeenCalledTimes(1);
-    // Body should still be hidden — test click must not toggle card
+    // The Test click must not toggle the card.
     expect(screen.queryByTestId('card-body')).not.toBeVisible();
   });
 

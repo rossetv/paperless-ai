@@ -1,12 +1,3 @@
-/*
- * CitationMark primitive — CSS Module.
- *
- * The small circular numbered citation chip used inline in the synthesised
- * answer prose. A real <button>: keyboard-operable and focus-ringed.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .citation-mark {
   display: inline-flex;
   align-items: center;

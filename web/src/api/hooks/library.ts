@@ -1,12 +1,4 @@
-/**
- * Library and document-editing query and mutation hooks — Wave 7/8/9.
- *
- * Covers the single-document fetch (shareable URLs), optimistic metadata patch,
- * AI re-classification / re-transcription, and permanent deletion.
- *
- * Allowed deps: @tanstack/react-query, client, types, hooks/keys
- * (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Document hooks: single fetch, optimistic metadata patch, AI re-runs and deletion. */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
@@ -21,12 +13,8 @@ import type { LibraryDocument, DocumentPatch } from '../types';
 import { queryKeys } from './keys';
 
 /**
- * `useQuery` for one document's metadata — GET /api/documents/{id}.
- *
- * Used by the document-preview route components that mount from a shareable
- * URL (`/document/:id`, `/library/document/:id`) when there is no cached
- * library list to read from. The query is disabled when `documentId` is
- * `null` (e.g. whilst the route param is being parsed).
+ * One document's metadata — GET /api/documents/{id}, for routes opened from a
+ * shareable URL. Disabled while `documentId` is `null`.
  */
 export function useDocument(
   documentId: number | null,
@@ -35,30 +23,18 @@ export function useDocument(
     queryKey: queryKeys.document(documentId ?? 0),
     queryFn: () => getDocument(documentId as number),
     enabled: documentId !== null,
-    // A 404 (stale shared link) or 401 (expired session) is deterministic —
-    // retrying just doubles the round-trip before the page renders the
-    // error state. Matches the convention used by sibling error-prone hooks.
+    // A 404 (stale shared link) or 401 (expired session) won't change on retry.
     retry: false,
   });
 }
 
 /**
- * Partially update a document's metadata — PATCH /api/documents/{id}.
+ * Partially update a document's metadata — PATCH /api/documents/{id}, optimistically.
  *
- * Uses optimistic UI: on mutation start the cache is updated immediately with
- * the fields we can merge directly (title, created). On error the snapshot is
- * rolled back. On settle (success or error) the cache entry is invalidated so
- * a background refetch picks up the reconciled server state.
- *
- * The server response is NOT written directly into the cache in `onSuccess`
- * because Paperless-ngx has a reconcile lag — the PATCH response still carries
- * pre-edit values until the next indexer cycle. Writing it would visibly revert
- * the user's edit immediately after a successful save.
- *
- * `tags`, `correspondent_id`, and `document_type_id` are id-based in the patch
- * but name-based on `LibraryDocument`, so they cannot be merged optimistically
- * without a full taxonomy look-up. The invalidation in `onSettled` handles them
- * once the reconcile cycle completes.
+ * Title and date are merged into the cache at once and rolled back on error. The
+ * PATCH response is not written to the cache: it carries pre-edit values until
+ * the next reconcile and would revert the edit. Tags, correspondent and type are
+ * ids in the patch but names on `LibraryDocument`, so they wait for the refetch.
  */
 export function useUpdateDocument(): UseMutationResult<
   LibraryDocument,
@@ -94,37 +70,28 @@ export function useUpdateDocument(): UseMutationResult<
 }
 
 /**
- * Trigger AI re-classification for a document — POST /api/documents/{id}/reclassify.
+ * Queue AI re-classification — POST /api/documents/{id}/reclassify.
  *
- * One-shot fire-and-forget: queues a backend job and resolves. Carries no
- * cache invalidation — the document title/type will update on the next
- * reconcile cycle. Throws `Unauthenticated` on 401 and `ApiError` on 403+.
+ * No invalidation: the new title and type arrive with the next reconcile cycle.
  */
 export function useReclassifyDocument(): UseMutationResult<void, Error, number> {
   return useMutation({ mutationFn: reclassifyDocument });
 }
 
 /**
- * Trigger AI re-transcription (OCR) for a document — POST /api/documents/{id}/retranscribe.
+ * Queue AI re-transcription (OCR) — POST /api/documents/{id}/retranscribe.
  *
- * One-shot fire-and-forget: queues a backend job and resolves. No cache
- * invalidation needed — content updates arrive on the next reconcile cycle.
+ * No invalidation: the new content arrives with the next reconcile cycle.
  */
 export function useRetranscribeDocument(): UseMutationResult<void, Error, number> {
   return useMutation({ mutationFn: retranscribeDocument });
 }
 
 /**
- * Permanently delete a document — DELETE /api/documents/{id}.
+ * Permanently delete a document — DELETE /api/documents/{id}. Admin-only.
  *
- * Admin-only. On success:
- * - Removes the `['document', id]` cache entry so a stale back-navigation
- *   does not show a ghost document.
- * - Invalidates `['documents']` so the library list reflects the deletion.
- * - Invalidates `['search']` so cached search results no longer include the
- *   deleted document.
- *
- * The calling component is responsible for navigating away after onSuccess.
+ * Drops the document's cache entry (so back-navigation shows no ghost) and
+ * invalidates the library list and search results. The caller navigates away.
  */
 export function useDeleteDocument(): UseMutationResult<void, Error, number> {
   const qc = useQueryClient();

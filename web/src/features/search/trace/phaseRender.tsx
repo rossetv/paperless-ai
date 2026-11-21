@@ -1,36 +1,7 @@
 /**
- * Per-phase rendering of search-trace phases as `PipelineStages` rows.
- *
- * The live `LoadingScreen` rail and the folded `SearchTracePanel` show the SAME
- * per-phase information — the planner's rewritten query, the retrieval counts,
- * the vector-gate outcome, the judge's per-document verdicts, the synthesis
- * mode, plus a token/cost chip on every LLM phase. This module is the single
- * source of that mapping, so the two surfaces never drift.
- *
- * `phaseToStages(records, activePhase)` turns the streamed `PhaseRecord[]` (plus
- * the currently-running phase, if any) into `PipelineStage[]`. A record's
- * free-form `detail` map is read defensively (via `detailAccessors`): a missing
- * or wrong-typed key simply renders nothing rather than throwing, since
- * `detail` is wire JSON. Token / cost formatting lives in `costFormat`.
- *
- * Split out of the former monolithic 1181-line `phaseStages.tsx` (FE-01) so the
- * pure cost formatters (`costFormat`) and the defensive wire-JSON accessors
- * (`detailAccessors`) sit in their own unit-testable modules.
- *
- * Allowed deps: react, api/types, components/primitives (PipelineStages types,
- * Text), sibling costFormat/detailAccessors, own CSS module (§12.3).
+ * Renders search-trace phases as `PipelineStages` rows. The live rail and the
+ * folded trace panel both use this mapping, so the two never drift.
  */
-
-// rationale: over the §3.1 500-line ceiling. This is the residual per-phase
-// RENDER layer after the two pure concerns (cost formatting, wire-JSON access)
-// were extracted — nine phases, each with a one-line summary, a rich expandable
-// body and a fallback detail node, plus the small structural helpers (query
-// blocks, filter chips, kept/dropped filter rows) those bodies share. The phases
-// are one cohesive surface kept in lock-step between the live rail and the folded
-// trace; a file-per-phase split would scatter that shared vocabulary across many
-// tiny modules without making any one easier to reason about. The scannability
-// the ceiling protects comes here from the per-phase `switch`es and the section
-// banners, not from a smaller line count.
 
 import React from 'react';
 import type { PhaseRecord, SearchPhase } from '../../../api/types';
@@ -53,8 +24,7 @@ import {
 } from './detailAccessors';
 import styles from './phaseStages.module.css';
 
-/** A human-readable label for each phase, used when streaming a `phase_start`
- *  before its done-record (which carries the server's own label) arrives. */
+/** Labels for an active phase, before its record (with the server's label) arrives. */
 const PHASE_LABELS: Record<SearchPhase, string> = {
   plan: 'Planning the query',
   resolve: 'Resolving filters',
@@ -67,16 +37,7 @@ const PHASE_LABELS: Record<SearchPhase, string> = {
   cache: 'Served from cache',
 };
 
-// ---------------------------------------------------------------------------
-// Planner / resolve / refine detail rendering
-// ---------------------------------------------------------------------------
-
-/**
- * Render an ordered list of short text lines as a stacked block. Each line is
- * its own block-level span so the lines stack vertically inside the row's
- * caption-styled `.detail` slot. Returns null for an empty list so the caller
- * can fall back.
- */
+/** Stacks short text lines; null for an empty list so the caller can fall back. */
 function lines(items: React.ReactNode[]): React.ReactNode {
   if (items.length === 0) {
     return null;
@@ -92,7 +53,6 @@ function lines(items: React.ReactNode[]): React.ReactNode {
   );
 }
 
-/** Format an inclusive ISO date range, or a single bound, or null when absent. */
 function formatDateRange(from: string | null, to: string | null): string | null {
   if (from !== null && to !== null) {
     return `${from}→${to}`;
@@ -106,7 +66,6 @@ function formatDateRange(from: string | null, to: string | null): string | null 
   return null;
 }
 
-/** One filter chip — a dim key label ("from"/"type"/"tags") and its value. */
 function filterChip(key: string, label: string, value: string): React.ReactNode {
   return (
     <span key={key} className={styles['qfilter']}>
@@ -117,10 +76,8 @@ function filterChip(key: string, label: string, value: string): React.ReactNode 
 }
 
 /**
- * Build the filter chips for one query block. Reads either the planner's
- * free-text guesses (`correspondent`/`document_type`/`tags` strings — plan and
- * replan) or resolved taxonomy ids (`correspondent_id`/… — refine); the two
- * shapes are disjoint, so the same renderer serves all three phases.
+ * Filter chips for one query block. Plan and replan carry free-text guesses,
+ * refine carries resolved ids; the shapes are disjoint, so one renderer serves all.
  */
 function filterChips(filters: Record<string, unknown>): React.ReactNode[] {
   const chips: React.ReactNode[] = [];
@@ -164,11 +121,7 @@ function filterChips(filters: Record<string, unknown>): React.ReactNode[] {
   return chips;
 }
 
-/**
- * Render a list of search specs as styled query blocks — ordinal label, mode
- * badge, filter chips, the query in curly quotes, and the rationale beneath.
- * Shared by the plan, replan and refine phases so all three look identical.
- */
+/** Search specs as query blocks, shared by the plan, replan and refine phases. */
 function queryBlocksNode(specs: Record<string, unknown>[]): React.ReactNode {
   const blocks = specs.map((spec, i): React.ReactNode => {
     const query = fieldStr(spec, 'query') ?? '';
@@ -200,8 +153,7 @@ function queryBlocksNode(specs: Record<string, unknown>[]): React.ReactNode {
   return <>{blocks}</>;
 }
 
-/** A context line above a re-plan / refine query list — an optional dim key
- *  ("Gap", "Action") followed by the value, styled to match the trace body. */
+/** A context line ("Gap", "Action") above a replan or refine query list. */
 function hintLine(key: string | null, value: string): React.ReactNode {
   return (
     <div className={styles['qhint']}>
@@ -223,11 +175,7 @@ function planNode(d: Record<string, unknown>): React.ReactNode {
   return queryBlocksNode(specs);
 }
 
-/**
- * Render the resolve phase: per-spec resolved taxonomy ids / date bounds and
- * the guesses that did not resolve to a real id. The detail carries `resolved`
- * (a list with ids and ISO dates) and `dropped` (per-spec dropped name lists).
- */
+/** Plain-text resolve detail: resolved ids per spec, then the dropped guesses. */
 function resolveNode(d: Record<string, unknown>): React.ReactNode {
   const resolved = objList(d, 'resolved');
   const dropped = objList(d, 'dropped');
@@ -267,11 +215,6 @@ function resolveNode(d: Record<string, unknown>): React.ReactNode {
   return lines(rows);
 }
 
-/**
- * Render the refine phase body: the synthesiser's gap, the action taken, the
- * new searches the re-plan added (as styled query blocks), and how many
- * documents carried over — matching the planning phase's styling.
- */
 function refineBodyNode(d: Record<string, unknown>): React.ReactNode {
   const gap = str(d, 'gap');
   const action = str(d, 'action');
@@ -288,11 +231,7 @@ function refineBodyNode(d: Record<string, unknown>): React.ReactNode {
   );
 }
 
-/**
- * Render the replan phase body: the gap hint that drove the re-plan and the new
- * searches it produced as styled query blocks (matching the planning phase), or
- * a note that it asked to clarify (which refinement ignores).
- */
+/** New searches, or a note that the replan asked to clarify (refinement ignores it). */
 function replanBodyNode(d: Record<string, unknown>): React.ReactNode {
   if (bool(d, 'clarify')) {
     return hintLine(
@@ -310,12 +249,7 @@ function replanBodyNode(d: Record<string, unknown>): React.ReactNode {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Per-phase one-line summary (the always-visible row text)
-// ---------------------------------------------------------------------------
-
-/** Pluralise a noun by count: 1 → "1 chunk", 2 → "2 chunks". Handles the
- *  "-ch → -ches" case (search → searches) used by the planner summary. */
+/** 1 → "1 chunk", 2 → "2 chunks"; handles "search" → "searches". */
 function plural(count: number, noun: string): string {
   if (count === 1) {
     return `${count} ${noun}`;
@@ -324,9 +258,10 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${suffix}`;
 }
 
-/** Does one resolved spec carry at least one real, resolved filter? Tolerates
- *  both the new object wire ({correspondent: {id,name,method}}) and the legacy
- *  id wire ({correspondent_id: 7}). */
+/**
+ * Accepts both the object shape ({correspondent: {id, name, method}}) and the
+ * legacy id shape ({correspondent_id: 7}).
+ */
 function specHasResolvedFilter(spec: Record<string, unknown>): boolean {
   const hasObj =
     spec['correspondent'] != null ||
@@ -343,11 +278,7 @@ function specHasResolvedFilter(spec: Record<string, unknown>): boolean {
   return hasObj || hasLegacy || dateRange !== null;
 }
 
-/**
- * "<head> · K keyword, S semantic" — the count summary shared by the plan and
- * replan phases. `head` carries the accent-styled lead ("3 searches planned",
- * "2 searches re-planned"); the keyword/semantic tail is appended plainly.
- */
+/** "<head> · K keyword, S semantic", with `head` accent-styled. */
 function searchModeSummary(
   specs: Record<string, unknown>[],
   head: string,
@@ -377,10 +308,8 @@ function searchModeSummary(
 }
 
 /**
- * The one-line summary for a phase — the always-visible row text in the
- * collapsible trace and the only text shown in the lean live rail. Each phase
- * compresses its outcome to a single readable line; phases without a bespoke
- * summary fall back to `phaseDetailNode`.
+ * A phase's one-line summary: the always-visible row text in the trace and the
+ * only text on the live rail.
  */
 export function phaseSummary(record: PhaseRecord): React.ReactNode {
   const d = record.detail;
@@ -391,7 +320,7 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
       }
       const specs = objList(d, 'specs');
       if (specs.length === 0) {
-        // Older shape / clarify: fall back to the legacy rewritten-query line.
+        // Legacy shape or clarify: no specs, only a rewritten query.
         return phaseDetailNode(record);
       }
       return searchModeSummary(specs, plural(specs.length, 'search') + ' planned');
@@ -465,8 +394,6 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
       );
     }
     case 'judge': {
-      // Wrap the judge's headline ("No document judged relevant" / "Kept K,
-      // dropped D") in the same quiet emphasis as the other phase summaries.
       const node = phaseDetailNode(record);
       return typeof node === 'string' ? (
         <span className={styles['accent']}>{node}</span>
@@ -479,19 +406,14 @@ export function phaseSummary(record: PhaseRecord): React.ReactNode {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Per-phase expandable body nodes (the rich detail shown when expanded)
-// ---------------------------------------------------------------------------
-
-// Short chip label per resolved/dropped filter dimension — matches the verbs
-// used by the planning step's chips ("from"/"type"/"tags").
+// Matches the planning step's chip labels.
 const RESOLVE_DIM_LABEL: Record<string, string> = {
   correspondent: 'from',
   document_type: 'type',
   tags: 'tags',
 };
 
-// Human noun per dimension, for the "no matching …" drop reason.
+// For the "no matching …" drop reason.
 const RESOLVE_DIM_NOUN: Record<string, string> = {
   correspondent: 'correspondent',
   document_type: 'document type',
@@ -499,9 +421,8 @@ const RESOLVE_DIM_NOUN: Record<string, string> = {
 };
 
 /**
- * One "kept" filter row: a ✓ mark, a neutral chip (dimension + value), and an
- * optional muted annotation (e.g. `loosened from "Deed"`). The mark is
- * decorative — the outcome is also carried by the chip styling and annotation.
+ * A kept filter row with an optional annotation (e.g. `loosened from "Deed"`).
+ * The ✓ is decorative; the chip styling carries the outcome too.
  */
 function keptFilterRow(
   key: string,
@@ -526,11 +447,7 @@ function keptFilterRow(
   );
 }
 
-/**
- * One "dropped" filter row: a ✕ mark, a dashed chip with the struck-through
- * value, and the drop reason. Keeps the filter visible under its query rather
- * than hiding it in a query-less list.
- */
+/** A dropped filter row: struck-through chip plus the reason it was dropped. */
 function droppedFilterRow(
   key: string,
   dim: string | null,
@@ -555,18 +472,10 @@ function droppedFilterRow(
 }
 
 /**
- * Render the resolve phase body as one block per planned query, mirroring the
- * planning step. Each block lists *all* of that query's filters as status chips:
- * kept (✓), loosened (✓ + `loosened from "…"`), or dropped (✕, struck chip +
- * the reason it could not be matched). A query that proposed nothing shows
- * "No filters proposed".
- *
- * Dropped guesses are grouped under the query that proposed them via their
- * `spec_index`; an older trace whose drops lack a `spec_index` falls back to a
- * trailing "Dropped" block so a drop is never silently hidden.
- *
- * Supports both the new object wire (`{correspondent, document_type, tags}`
- * with `{id, name, method}`) and the legacy id wire (falls back to `#id`).
+ * The resolve body: one block per planned query listing every filter as kept,
+ * loosened or dropped. Drops are grouped by `spec_index`; legacy drops without
+ * one go in a trailing block so none is hidden. Legacy id-only specs render as
+ * `#id`.
  */
 function resolveBodyNode(
   d: Record<string, unknown>,
@@ -578,7 +487,6 @@ function resolveBodyNode(
     return null;
   }
 
-  /** The planner's free-text guess for a filter key on the spec at `index`. */
   function guessFor(index: number, key: string): string | null {
     const planSpec = planSpecs[index];
     if (planSpec === undefined) {
@@ -588,14 +496,11 @@ function resolveBodyNode(
     return fieldStr(filters, key);
   }
 
-  // Index resolved specs by their query position (fallback to array order).
   const resolvedByIndex = new Map<number, Record<string, unknown>>();
   resolved.forEach((spec, i) => {
     resolvedByIndex.set(fieldNum(spec, 'spec_index') ?? i, spec);
   });
 
-  // Group dropped guesses by the query that proposed them; drops without a
-  // spec_index (older traces) collect into a trailing block.
   const droppedByIndex = new Map<number, Record<string, unknown>[]>();
   const orphanDrops: Record<string, unknown>[] = [];
   dropped.forEach((entry) => {
@@ -609,7 +514,6 @@ function resolveBodyNode(
     droppedByIndex.set(idx, bucket);
   });
 
-  /** Kept rows for one resolved spec, across every filter dimension. */
   function keptRowsFor(
     spec: Record<string, unknown>,
     index: number,
@@ -632,7 +536,6 @@ function resolveBodyNode(
           return;
         }
       }
-      // Legacy id wire fallback.
       const legacyId = fieldNum(spec, `${key}_id`);
       if (legacyId !== null) {
         rows.push(keptFilterRow(`${key}-${index}`, dim, `#${legacyId}`));
@@ -642,7 +545,6 @@ function resolveBodyNode(
     renderField('correspondent', 'from', 'correspondent');
     renderField('document_type', 'type', 'document_type');
 
-    // Tags — new object wire (one row per tag), with a legacy id-list fallback.
     const tagObjs = objList(spec, 'tags');
     if (tagObjs.length > 0) {
       tagObjs.forEach((tag, ti) => {
@@ -673,7 +575,6 @@ function resolveBodyNode(
     return rows;
   }
 
-  /** Dropped rows for one query's dropped guesses. */
   function droppedRowsFor(
     entries: Record<string, unknown>[],
     index: number,
@@ -697,7 +598,7 @@ function resolveBodyNode(
         rows.push(droppedFilterRow(`drop-${index}-${di}`, dim, name, annot));
         return;
       }
-      // Legacy dropped wire: {spec_index, names: [...]} — no field or reason.
+      // Legacy shape {spec_index, names}: no field or reason.
       fieldStrList(entry, 'names').forEach((nm, ni) => {
         rows.push(
           droppedFilterRow(`dropn-${index}-${di}-${ni}`, null, nm, 'no match'),
@@ -707,8 +608,7 @@ function resolveBodyNode(
     return rows;
   }
 
-  // Total query count: trust the planner's spec list; fall back to the highest
-  // index seen in the data when plan specs were not threaded in.
+  // Fall back to the highest index seen when plan specs were not passed in.
   const dataMax = Math.max(
     -1,
     ...resolvedByIndex.keys(),
@@ -740,7 +640,6 @@ function resolveBodyNode(
     );
   });
 
-  // Orphan drops (no spec_index) — never hide them; show in a trailing block.
   if (orphanDrops.length > 0) {
     blocks.push(
       <div key="q-orphan" className={styles['fblock']}>
@@ -756,10 +655,8 @@ function resolveBodyNode(
 }
 
 /**
- * Render the retrieve phase body — one subrow per retrieved chunk: a dot, the
- * document title with a monospace similarity-score prefix, and the snippet as
- * a focusable `.chunk-snip` element carrying the full text in data-attributes
- * for the shared ChunkPopover.
+ * One row per retrieved chunk. The snippet carries the full text in data
+ * attributes for the shared ChunkPopover.
  */
 function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
   const chunks = objList(d, 'chunks');
@@ -771,8 +668,7 @@ function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
       {chunks.map((chunk, i) => {
         const title = fieldStr(chunk, 'title') ?? `Document ${fieldNum(chunk, 'document_id') ?? '?'}`;
         const snippet = fieldStr(chunk, 'snippet') ?? '';
-        // The popover reveals the full chunk text; fall back to the snippet for
-        // an older payload that did not carry the untruncated `text`.
+        // Older payloads carry no untruncated `text`.
         const fullText = fieldStr(chunk, 'text') ?? snippet;
         const sim = fieldNum(chunk, 'vector_similarity');
         const scoreText = sim !== null ? sim.toFixed(2) : '';
@@ -805,11 +701,7 @@ function retrieveBodyNode(d: Record<string, unknown>): React.ReactNode {
   );
 }
 
-/**
- * Render the gate phase body — one subrow per evaluated document: a dot, the
- * title, and a similarity bar whose fill width tracks the best vector
- * similarity for that document.
- */
+/** One row per evaluated document, with a bar for its best vector similarity. */
 function gateBodyNode(d: Record<string, unknown>): React.ReactNode {
   const documents = objList(d, 'documents');
   if (documents.length === 0) {
@@ -844,10 +736,8 @@ function gateBodyNode(d: Record<string, unknown>): React.ReactNode {
 }
 
 /**
- * The expandable body node for a phase, or null when the phase has nothing to
- * expand (its summary line carries everything). `planSpecs` threads the
- * planner's free-text guesses into the resolve body so loosened matches can
- * name what they loosened from.
+ * A phase's expandable body, or null when the summary says it all. `planSpecs`
+ * lets the resolve body name what a loosened match was loosened from.
  */
 export function phaseBodyNode(
   record: PhaseRecord,
@@ -864,30 +754,20 @@ export function phaseBodyNode(
     case 'gate':
       return gateBodyNode(d);
     case 'judge':
-      // The judge's verdict list (with the View control) is rendered by
-      // PipelineStages from the `verdicts` field, so there is no separate body.
+      // PipelineStages renders the verdict list from `verdicts`.
       return null;
     case 'replan':
       return replanBodyNode(d);
     case 'refine':
       return refineBodyNode(d);
     default:
-      // synthesise / cache carry their whole detail in the summary line (via
-      // phaseDetailNode), so they have no separate body — a duplicate body would
-      // render the same lines twice.
+      // synthesise and cache show everything in the summary line; a body would
+      // repeat it.
       return null;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Per-phase detail node
-// ---------------------------------------------------------------------------
-
-/**
- * The rich detail node for one phase, rendered under its label. Returns null
- * when there is nothing useful to show (the row then falls back to its plain
- * `detail` string, which is empty for live phases).
- */
+/** The detail node rendered under a phase's label, or null when there is nothing to show. */
 export function phaseDetailNode(record: PhaseRecord): React.ReactNode {
   const d = record.detail;
   switch (record.phase) {
@@ -946,28 +826,14 @@ export function phaseDetailNode(record: PhaseRecord): React.ReactNode {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Phase → stage mapping
-// ---------------------------------------------------------------------------
-
 /**
- * Map the streamed phases onto `PipelineStage[]` for the rail / trace panel.
- *
- * Each completed `PhaseRecord` becomes a `done` row with its detail node, cost
- * chip and (for judge) verdict sublist. When `activePhase` is set and has not
- * yet produced a record, a trailing `active` row is appended so the rail shows
- * the in-flight phase "in progress". Pass `activePhase = null` for a finished
- * trace (every row `done`).
- *
- * @param records     The completed phases, in order.
- * @param activePhase The phase currently running, or null.
+ * Maps completed phases to `done` rows, plus a trailing `active` row for
+ * `activePhase`. Pass null for a finished trace.
  */
 export function phaseToStages(
   records: PhaseRecord[],
   activePhase: SearchPhase | null,
 ): PipelineStage[] {
-  // The planner's per-spec free-text guesses, threaded into the resolve body so
-  // loosened taxonomy matches can name what they were loosened from.
   const planRecord = records.find((r) => r.phase === 'plan');
   const planSpecs =
     planRecord !== undefined ? objList(planRecord.detail, 'specs') : [];
@@ -991,9 +857,7 @@ export function phaseToStages(
     };
   });
 
-  // Append the in-flight phase as an active row when it has no record yet. The
-  // last recorded phase can equal activePhase only transiently; the reducer
-  // clears activePhase on phase_done, so a duplicate row cannot persist.
+  // No duplicate row can persist: the reducer clears activePhase on phase_done.
   if (activePhase !== null) {
     stages.push({
       label: PHASE_LABELS[activePhase],

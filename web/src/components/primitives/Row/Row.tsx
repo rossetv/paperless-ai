@@ -29,22 +29,13 @@ export interface RowProps {
    * label title to warn the user that saving will trigger a full index rebuild.
    */
   requiresReindex?: boolean;
-  /** The control element(s) for the right column. */
   children: React.ReactNode;
-  /** Additional class names to merge onto the row. */
   className?: string;
 }
 
 /**
- * One labelled setting inside a {@link SettingsCard}.
- *
- * A two-column grid: a fixed-width label column (label, optional hint,
- * optional `env` config-key tag) and a flexible control column. The label is
- * a `<label htmlFor>` when `controlId` is supplied — so the hit target
- * includes the text — and a plain `<span>` otherwise.
- *
- * Purely presentational. Tier: components/primitives. Allowed deps: lib/,
- * styles/.
+ * One labelled setting inside a {@link SettingsCard}: a fixed-width label column
+ * beside a flexible control column.
  */
 export function Row({
   label,

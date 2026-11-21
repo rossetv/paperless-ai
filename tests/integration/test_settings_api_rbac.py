@@ -1,15 +1,4 @@
-"""Integration tests: Settings test-connection and RBAC (web-redesign §5).
-
-Covers POST /api/settings/test-connection against a mocked Paperless
-count_documents call (success with a document count, bad token, unreachable
-host), the new per-service probes (openai, ollama), backward-compatibility of
-omitting ``service``, and the RBAC gates on all three Settings endpoints — a
-member is 403, an unauthenticated caller is 401.
-
-Also covers:
-- Fix 1: _probe_ollama hits the /models endpoint, not the bare base URL
-- Fix 2: missing credential short-circuits before the probe is called
-"""
+"""Integration tests for Settings test-connection and the Settings role gates."""
 
 from __future__ import annotations
 
@@ -197,13 +186,11 @@ def test_test_connection_openai_bad_key(tmp_path) -> None:
 
 
 def test_probe_openai_uses_a_bounded_timeout() -> None:
-    """The OpenAI probe client must carry REQUEST_TIMEOUT, not the SDK default (M13).
+    """The OpenAI probe client must carry REQUEST_TIMEOUT, not the SDK default.
 
-    Without an explicit timeout the OpenAI SDK applies a 600s read timeout, so a
-    hung endpoint pins a FastAPI threadpool worker for up to ten minutes — a few
-    concurrent admin probes then starve every synchronous handler. The fix
-    passes ``timeout=REQUEST_TIMEOUT`` to both the SDK and its inner httpx
-    client (mirroring common/library_setup). This asserts both layers are bound.
+    The SDK's 600s default lets a hung endpoint pin a threadpool worker for ten
+    minutes, so a few concurrent probes starve every synchronous handler. Both
+    the SDK and its inner httpx client must be bounded.
     """
     from unittest.mock import MagicMock as _MagicMock
     from unittest.mock import patch
@@ -299,23 +286,18 @@ def test_test_connection_ollama_unreachable(tmp_path) -> None:
         app_db.close()
 
 
-# ---------------------------------------------------------------------------
-# Fix 1: _probe_ollama must use the /models endpoint, not the bare base URL
-# ---------------------------------------------------------------------------
+# _probe_ollama must use the /models endpoint, not the bare base URL.
 
 
 def test_probe_ollama_uses_models_endpoint(tmp_path) -> None:
     """_probe_ollama hits {base_url}/models, not the bare base URL.
 
-    A real Ollama server returns 404 for GET /v1/ (the bare base).  A mock
-    transport that 404s on the base URL and 200s on /models proves the probe
-    is correct — the function must succeed (not raise) when /models is up.
+    A real Ollama server returns 404 for GET /v1/, so the probe must not use it.
     """
     import httpx
 
     from search.settings_routes import _probe_ollama
 
-    # Build minimal Settings with OLLAMA_BASE_URL ending in /v1/
     base_url = "http://ollama-host:11434/v1/"
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -326,7 +308,6 @@ def test_probe_ollama_uses_models_endpoint(tmp_path) -> None:
 
     transport = httpx.MockTransport(handler)
 
-    # Patch httpx.Client to use our mock transport
     real_client_init = httpx.Client.__init__
 
     def patched_init(self, *args, **kwargs):
@@ -358,7 +339,7 @@ def test_probe_ollama_uses_models_endpoint(tmp_path) -> None:
                     "LLM_PROVIDER": "ollama",
                 }
             )
-        # Must NOT raise — the /models path returns 200.
+        # Must not raise: the /models path returns 200.
         _probe_ollama(probe_settings)
 
 
@@ -395,9 +376,7 @@ def test_probe_ollama_raises_on_404_at_models_endpoint(tmp_path) -> None:
             _probe_ollama(probe_settings)
 
 
-# ---------------------------------------------------------------------------
-# Fix 2: missing / sentinel credential short-circuits before the probe
-# ---------------------------------------------------------------------------
+# A missing or sentinel credential short-circuits before the probe.
 
 
 def test_test_connection_openai_no_key_skips_probe(tmp_path) -> None:

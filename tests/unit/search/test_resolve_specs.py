@@ -1,16 +1,8 @@
-"""Tests for search.retriever.resolve_specs — per-spec filter resolution.
+"""Tests for search.retriever.resolve_specs, per-spec filter resolution.
 
-Verifies, for the multi-spec retrieval overhaul:
-- A planned spec's free-text correspondent / document-type / tag guesses are
-  resolved against the live taxonomy to real ids; unresolvable guesses drop to
-  None / are omitted.
-- A non-ISO temporal guess ("April 2025") is run through the deterministic date
-  extractor; ISO bounds the planner supplied pass straight through; a malformed
-  ISO guess with no other temporal text is dropped to None.
-- ``ui_filters`` is a global constraint that *intersects* the resolved spec —
-  it narrows (the later date_from, the earlier date_to, a UI correspondent
-  overriding the spec's, a union of tag ids) but never widens.
-- Spec metadata — order, mode, semantic, keywords, rationale — is preserved.
+``ui_filters`` is a global constraint that intersects each resolved spec: it
+narrows (later date_from, earlier date_to, its correspondent overriding the
+spec's, a union of tag ids) but never widens.
 """
 
 from __future__ import annotations
@@ -59,11 +51,6 @@ def _semantic_spec(
         ),
         rationale=rationale,
     )
-
-
-# ---------------------------------------------------------------------------
-# Name resolution
-# ---------------------------------------------------------------------------
 
 
 def test_resolves_correspondent_and_document_type_and_month_year() -> None:
@@ -136,11 +123,6 @@ def test_unresolvable_tag_is_dropped_resolvable_tags_kept() -> None:
     assert resolved[0].filters.tag_ids == (7,)
 
 
-# ---------------------------------------------------------------------------
-# Dates: ISO pass-through, deterministic extraction, malformed dropping
-# ---------------------------------------------------------------------------
-
-
 def test_iso_bounds_pass_through_unchanged() -> None:
     """Planner-supplied ISO bounds are validated and passed straight through."""
     spec = _semantic_spec(date_from="2025-04-01", date_to="2025-04-30")
@@ -161,11 +143,6 @@ def test_malformed_iso_with_no_other_temporal_text_drops_to_none() -> None:
 
     assert resolved[0].filters.date_from is None
     assert resolved[0].filters.date_to is None
-
-
-# ---------------------------------------------------------------------------
-# UI intersection — narrows, never widens
-# ---------------------------------------------------------------------------
 
 
 def test_ui_date_to_intersects_to_the_earlier_bound() -> None:
@@ -240,11 +217,6 @@ def test_ui_date_from_takes_the_later_bound() -> None:
     assert resolved[0].filters.date_to == "2025-04-30"
 
 
-# ---------------------------------------------------------------------------
-# Spec metadata preservation across multiple specs
-# ---------------------------------------------------------------------------
-
-
 def test_order_and_metadata_preserved_across_specs() -> None:
     """mode / semantic / keywords / rationale and order survive resolution."""
     spec_a = PlannedSpec(
@@ -277,11 +249,6 @@ def test_order_and_metadata_preserved_across_specs() -> None:
     assert resolved[1].keywords == ("invoice", "2025")
     assert resolved[1].rationale == "second rationale"
     assert resolved[1].filters.document_type_id == 155
-
-
-# ---------------------------------------------------------------------------
-# H1: deterministic date safety net on the raw query
-# ---------------------------------------------------------------------------
 
 
 def _broad_spec(semantic: str = "find something") -> PlannedSpec:
@@ -447,25 +414,17 @@ class TestDateSafetyNet:
         assert resolved[2].filters.date_to == "2025-04-30"
 
 
-# ---------------------------------------------------------------------------
-# H3: empty plan + dated query must not crash the safety net
-# ---------------------------------------------------------------------------
-
-
 class TestEmptyPlanSafetyNet:
     """An empty ``RetrievalPlan(specs=())`` must never crash resolve_specs.
 
-    The planner can return ``RetrievalPlan(specs=())`` for an LLM response of
-    ``{"specs": []}`` (e.g. a clarify-shaped reply with the adequacy gate off).
-    core then calls ``resolve_specs(..., query=...)``; if the query names a
-    period the deterministic date safety net fires with an empty resolved list.
-    The old ``resolved[0]`` indexed an empty list → IndexError → 500 on a
-    billable endpoint. The safety net now synthesises a broad-semantic base from
-    the raw query instead.
+    The planner returns it for ``{"specs": []}`` (e.g. a clarify-shaped reply with
+    the adequacy gate off). If the query names a period the date safety net fires
+    with an empty resolved list and must synthesise a broad-semantic base from the
+    raw query rather than index into it.
     """
 
     def test_empty_plan_with_dated_query_does_not_raise(self) -> None:
-        """The exact reproduction: empty plan + a year in the query must not raise."""
+        """An empty plan + a year in the query must not raise."""
         resolved = resolve_specs(
             RetrievalPlan(specs=()),
             _facets(),
@@ -540,11 +499,6 @@ class TestEmptyPlanSafetyNet:
         assert len(resolved) == 1
         assert resolved[0].filters.date_from == "2025-01-01"
         assert resolved[0].filters.correspondent_id == 42
-
-
-# ---------------------------------------------------------------------------
-# Unfiltered recall twins (max_specs)
-# ---------------------------------------------------------------------------
 
 
 def _empty_filters(filters: object) -> bool:

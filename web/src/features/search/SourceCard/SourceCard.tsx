@@ -11,52 +11,24 @@ import type { SourceDocument } from '../../../api/types';
 import { thumbKindForDocumentType } from '../../../components/primitives/DocThumb/thumbKind';
 
 /**
- * Placeholder DocThumb body-row indices (0-based) highlighted when a source
- * card is in the default or highlighted state (FE-59). These drive the accent
- * lines inside the fallback SVG thumbnail — not matched content from the wire.
+ * Accent rows (0-based) in the fallback SVG thumbnail. Decorative only, not
+ * matched content from the wire.
  */
 const MATCHED_ROWS_HIGHLIGHTED = [3, 4, 7];
 const MATCHED_ROWS_DEFAULT = [5, 6];
 
 export interface SourceCardProps {
-  /** The source document to display. */
   source: SourceDocument;
-  /**
-   * 1-based citation index corresponding to the [n] markers in the AnswerCard.
-   * Shown as the badge so the user can cross-reference citations to sources.
-   */
+  /** 1-based citation index, matching the [n] markers in the AnswerCard. */
   index: number;
-  /**
-   * When true, visually highlights the card — used by the parent when the
-   * user activates a CitationMark pointing to this source.
-   */
+  /** Set when the user activates a CitationMark pointing at this source. */
   highlighted?: boolean;
-  /**
-   * Called with the document id when "View" is activated. The page opens
-   * the in-app document-preview viewer for that id.
-   */
   onPreview: (documentId: number) => void;
 }
 
 /**
- * Single search-result source card, restyled to the handoff design.
- *
- * Composes the `SourceCardSurface` shell (the two-column grid with the
- * thumbnail + citation badge) with: the `DocumentMeta` meta row, a
- * display-font title, the highlighted matched-content snippet, a "View"
- * button that opens the in-app viewer, and the relevance score.
- *
- * Note: `source.paperless_url` is present on the wire type but intentionally
- * not rendered — all document access goes through the in-app
- * DocumentPreviewScreen.
- *
- * Wrapped in `React.memo` — the `SourceList` parent can re-render (e.g. when
- * `highlightedIndex` changes for a different card) without touching every
- * sibling card whose props haven't changed.
- *
- * Composed from: SourceCardSurface, Text, Button, Stack, DocumentMeta,
- * SnippetText. No own CSS module (§12.5 — features layer is
- * composition-only).
+ * One search-result source card. `source.paperless_url` is deliberately not
+ * rendered: all document access goes through the in-app DocumentPreviewScreen.
  */
 function SourceCardInner({
   source,
@@ -73,20 +45,20 @@ function SourceCardInner({
       highlighted={highlighted}
     >
       <Stack direction="vertical" gap={5}>
-        {/* Single-line meta row — correspondent · type · created */}
+        {/* Meta row */}
         <DocumentMeta source={source} />
 
-        {/* Title — display-font emphasis */}
+        {/* Title */}
         {source.title !== null && source.title !== undefined && (
           <Text as="strong" variant="card-title">
             {source.title}
           </Text>
         )}
 
-        {/* Highlighted matched-content snippet */}
+        {/* Matched-content snippet */}
         <SnippetText text={source.snippet} />
 
-        {/* Actions row — preview + the relevance badge */}
+        {/* Actions */}
         <Stack direction="horizontal" gap={6} align="center" wrap>
           <Button
             variant="primary"
@@ -103,9 +75,7 @@ function SourceCardInner({
 }
 
 /**
- * Memoised export — re-renders only when source data, index, highlight state,
- * or the preview callback reference changes. The parent `SourceList` passes a
- * stable `onPreview` from the page level so memo holds across re-renders
- * triggered by `highlightedIndex` changing on other cards.
+ * Memoised so a `highlightedIndex` change in `SourceList` only re-renders the
+ * affected cards; relies on the page passing a stable `onPreview`.
  */
 export const SourceCard = React.memo(SourceCardInner);

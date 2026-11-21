@@ -1,27 +1,8 @@
-"""Pydantic request/response models for the search HTTP API (spec §7.1).
+"""Pydantic request/response models for the search HTTP API.
 
-This package is the **HTTP boundary** of the search server: it is the only place
-Pydantic models live in the search package (``CODE_GUIDELINES.md`` §5.6). Once an
-HTTP request is validated here, the internal pipeline works entirely with frozen
-dataclasses from :mod:`search.models` and :mod:`store.models`; once a result
-leaves the pipeline, the ``to_*`` converters here map it back to the wire shape.
-
-The boundary was a single 1187-line module that mixed eight unrelated feature
-areas; it is now split one concept per file (§3.1, §3.3), with this thin
-``__init__`` re-exporting every public name so ``from search.wire import X`` is
-unchanged for every importer:
-
-- :mod:`~search.wire.search` — ``POST /api/search`` models + converters.
-- :mod:`~search.wire.library` — Library browse models + the browse-query converter.
-- :mod:`~search.wire.facets` — facets, stats, taxonomy, recent-search models.
-- :mod:`~search.wire.accounts` — login / setup / user models + converter.
-- :mod:`~search.wire.api_keys` — API-key models + converter.
-- :mod:`~search.wire.settings` — Settings API models + payload bounds.
-- :mod:`~search.wire.index_dashboard` — Index dashboard models.
-
-Allowed deps: pydantic, search.models, search.validation, search.api_keys
-    (scope constants), store (SearchFilters), store.models, common.paperless_types.
-Forbidden: FastAPI, sqlite3, any I/O.
+The only place the search package uses Pydantic: requests are validated here
+into the frozen dataclasses the pipeline works with, and the ``to_*``
+converters map results back to the wire shape.
 """
 
 from __future__ import annotations

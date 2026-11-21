@@ -1,12 +1,6 @@
-"""Integration test: the full API-key lifecycle (web-redesign §5).
+"""Integration tests for the API-key lifecycle: mint, use, edit, list and revoke.
 
-Drives the real search FastAPI app over a real ``tmp_path`` ``app.db`` and a
-real seeded ``index.db``: an admin signs in, mints a key via
-``POST /api/api-keys``, the raw key authenticates a ``/api/*`` request, the
-key is edited via ``PATCH /api/api-keys/{id}``, listed, then revoked via
-``DELETE /api/api-keys/{id}``, and the same key is afterwards rejected with
-401. Also asserts the full raw key is returned exactly once and never
-re-exposed by the list or edit endpoints.
+The raw key must be returned exactly once and never re-exposed afterwards.
 """
 
 from __future__ import annotations
@@ -26,10 +20,7 @@ from tests.integration.accounts_helpers import (
 
 @pytest.fixture()
 def setup(tmp_path):
-    """Build the app with a seeded store and one admin past first-run setup.
-
-    Returns the TestClient and the open app.db connection.
-    """
+    """Return a client and app.db for an app with a seeded store and one admin."""
     settings = make_settings(tmp_path)
     seed_store(settings)
     app_db = open_app_db(tmp_path)
@@ -44,7 +35,7 @@ def setup(tmp_path):
 
 
 def _as_admin(client):
-    """Sign the client in as the seeded admin; return nothing."""
+    """Sign the client in as the seeded admin."""
     response = login(client, username="admin", password="admin-password")
     assert response.status_code == 200, response.text
 
@@ -104,18 +95,14 @@ def test_revoked_key_is_rejected(setup) -> None:
     raw_key = created["secret"]
     key_id = created["api_key"]["id"]
 
-    # Drop the session cookie so only the bearer key can authenticate — this
-    # ensures the revocation check is actually exercised rather than the
-    # session cookie silently masking the revoked credential.
+    # Drop the session cookie so it cannot mask the revoked bearer key.
     client.cookies.clear()
 
     # The key works before revocation.
     before = client.get("/api/stats", headers={"Authorization": f"Bearer {raw_key}"})
     assert before.status_code == 200
 
-    # Revoke it (re-authenticate via the key itself, then immediately drop auth
-    # and verify rejection; but the revoke endpoint requires key-management
-    # scope — use a fresh admin login instead).
+    # The key has only the api scope, so revoke through an admin session.
     login_resp = login(client, username="admin", password="admin-password")
     assert login_resp.status_code == 200
     deleted = client.delete(f"/api/api-keys/{key_id}")

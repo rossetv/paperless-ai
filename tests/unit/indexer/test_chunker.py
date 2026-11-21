@@ -1,9 +1,4 @@
-"""Tests for indexer.chunker.
-
-Verifies TextChunk shape, chunk_text splitting behaviour, overlap correctness,
-paragraph-boundary preference, page_hint extraction from OCR page markers, and
-edge cases (empty input, contiguous chunk_index).
-"""
+"""Tests for indexer.chunker."""
 
 from __future__ import annotations
 
@@ -28,20 +23,13 @@ class TestTextChunkShape:
         assert chunk.page_hint is None
 
     def test_is_frozen(self) -> None:
-        """Mutating a declared field on the frozen dataclass is rejected."""
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
         with pytest.raises(FrozenInstanceError):
             chunk.text = "modified"  # type: ignore[misc]
 
     def test_slots_prevent_arbitrary_attributes(self) -> None:
-        """slots=True rejects assignment to an undeclared attribute.
-
-        The exception type depends on the interpreter.  Python 3.11 has a
-        CPython bug in the frozen ``__setattr__`` of a slots dataclass: it
-        fails with ``TypeError`` ("super(type, obj): obj must be an instance
-        or subtype of type").  Python 3.13.18 raises ``FrozenInstanceError``,
-        a subclass of ``AttributeError``.  Either one is a rejection, so the
-        test accepts both rather than pinning one interpreter's bug.
+        """Accepts TypeError too: CPython 3.11's frozen slots ``__setattr__`` raises
+        it instead of ``FrozenInstanceError``.
         """
         chunk = TextChunk(chunk_index=0, text="hello", page_hint=None)
         with pytest.raises((TypeError, AttributeError)):
@@ -89,8 +77,7 @@ class TestChunkTextSizeConstraint:
     """Each chunk's text length must not exceed chunk_size."""
 
     def test_all_chunks_within_chunk_size(self) -> None:
-        # Build a long document without paragraphs so we force multiple chunks.
-        content = "word " * 2000  # ~10000 chars
+        content = "word " * 2000  # ~10000 chars, no paragraphs
         chunks = chunk_text(content, chunk_size=500, overlap=50)
         for chunk in chunks:
             assert len(chunk.text) <= 500, (
@@ -107,16 +94,13 @@ class TestChunkTextOverlap:
     """Adjacent chunks share exactly `overlap` characters at their boundary."""
 
     def test_adjacent_chunks_share_overlap_suffix_and_prefix(self) -> None:
-        # Build a document long enough to produce at least two chunks.
-        # No paragraph breaks so chunks are split on character boundaries.
+        # No paragraph breaks, so chunks split on character boundaries.
         content = "abcde " * 500  # 3000 chars
         chunk_size = 200
         overlap = 40
         chunks = chunk_text(content, chunk_size=chunk_size, overlap=overlap)
         assert len(chunks) >= 2
 
-        # The last `overlap` characters of chunk N must appear at the start
-        # of chunk N+1.
         for i in range(len(chunks) - 1):
             tail = chunks[i].text[-overlap:]
             head = chunks[i + 1].text[:overlap]
@@ -128,8 +112,6 @@ class TestChunkTextOverlap:
         content = "x" * 1000
         chunks = chunk_text(content, chunk_size=200, overlap=0)
         assert len(chunks) >= 2
-        # Reconstruct original: concatenation of all chunk texts should equal
-        # the original content (no overlap means no repetition).
         assert "".join(c.text for c in chunks) == content
 
 
@@ -137,32 +119,21 @@ class TestChunkTextParagraphBoundaryPreference:
     """Chunks prefer to break on blank-line paragraph boundaries."""
 
     def test_breaks_at_paragraph_boundary_not_mid_paragraph(self) -> None:
-        # Two clearly separated paragraphs; chunk_size chosen so that the
-        # first paragraph fits but extending to the second would exceed it.
         para1 = "Alpha " * 40  # 240 chars
         para2 = "Beta " * 40  # 200 chars
         content = para1.rstrip() + "\n\n" + para2.rstrip()
 
-        # chunk_size=300 means para1 (240 chars) fits, but para1+para2 (~442) does not.
+        # para1 alone fits 300 chars; para1 + para2 (~442) does not.
         chunks = chunk_text(content, chunk_size=300, overlap=0)
         assert len(chunks) >= 2
-        # The first chunk should end at the paragraph boundary, not mid-word.
         assert not chunks[0].text.endswith("Alpha Alpha Alpha Al")
 
     def test_no_mid_word_split_when_paragraph_boundary_available(self) -> None:
-        # Three paragraphs; each fits within chunk_size on its own.
         paragraphs = ["Word " * 30 for _ in range(3)]  # 150 chars each
         content = "\n\n".join(p.rstrip() for p in paragraphs)
 
         chunks = chunk_text(content, chunk_size=200, overlap=0)
-        # Every chunk boundary should align with a paragraph, so no chunk
-        # should end mid-word (i.e. no chunk ends with a partial word).
         for chunk in chunks:
-            # A mid-word break would leave a trailing non-space character
-            # that is not a sentence-end or punctuation. The simplest check:
-            # none of the chunk texts should contain the exact paragraph
-            # joiner "\n\n" in the middle if it was a clean split.
-            # Verify instead that each text, when stripped, is non-empty.
             assert chunk.text.strip()
 
 
@@ -181,14 +152,12 @@ class TestChunkTextPageHint:
             assert chunk.page_hint is None
 
     def test_page_hint_set_from_single_page_marker(self) -> None:
-        # Mimic a multi-page document where page 1 marker precedes the text.
         content = "--- Page 1 ---\nFirst page content here."
         chunks = chunk_text(content, chunk_size=200, overlap=0)
         assert len(chunks) >= 1
         assert chunks[0].page_hint == 1
 
     def test_page_hint_correct_for_each_page(self) -> None:
-        # Build a document with two pages, each long enough for its own chunk.
         page1 = "Alpha content. " * 50  # ~750 chars
         page2 = "Beta content. " * 50  # ~700 chars
         content = self._make_multipage_content([page1, page2])
@@ -196,14 +165,11 @@ class TestChunkTextPageHint:
         chunks = chunk_text(content, chunk_size=500, overlap=0)
         assert len(chunks) >= 2
 
-        # First chunk(s) should have page_hint=1; later chunk(s) page_hint=2.
-        # Verify the first chunk is from page 1 and at least one chunk is page 2.
         assert chunks[0].page_hint == 1
         page2_chunks = [c for c in chunks if c.page_hint == 2]
         assert len(page2_chunks) >= 1
 
     def test_page_hint_propagates_to_chunks_within_same_page(self) -> None:
-        # Page 1 has enough text for multiple chunks.
         page1 = "Word content here. " * 100  # ~1900 chars
         content = self._make_multipage_content([page1])
 
@@ -213,18 +179,16 @@ class TestChunkTextPageHint:
             assert chunk.page_hint == 1
 
     def test_page_hint_advances_when_marker_encountered(self) -> None:
-        # Four pages: verify hint changes at each page boundary.
         pages = ["Content for page %d. " % i * 20 for i in range(1, 5)]
         content = self._make_multipage_content(pages)
 
         chunks = chunk_text(content, chunk_size=300, overlap=0)
         hints = [c.page_hint for c in chunks]
-        # All hints should be in the range 1–4 and should be non-decreasing.
         assert all(h is not None and 1 <= h <= 4 for h in hints)
         assert hints == sorted(hints)
 
     def test_page_hint_with_model_name_in_header(self) -> None:
-        # Mimic include_page_models=True format: "--- Page N (model) ---"
+        # The include_page_models=True header format.
         content = "--- Page 3 (gpt-5.4-mini) ---\nContent on page three."
         chunks = chunk_text(content, chunk_size=200, overlap=0)
         assert chunks[0].page_hint == 3
@@ -250,41 +214,28 @@ class TestChunkTextChunkIndex:
 
 
 class TestChunkTextOverlapPrefixOverflow:
-    """A paragraph that overflows only once the overlap prefix is prepended.
+    """A paragraph that fits chunk_size alone but overflows with the overlap prefix.
 
-    Regression: ``_assemble_chunks`` used to emit the carried-over overlap
-    prefix as a chunk and retry the paragraph without advancing whenever the
-    paragraph fit ``chunk_size`` alone but not alongside that prefix.  The
-    overlap prefix never shrinks, so the retry overflowed identically every
-    time — an infinite loop that grew the ``chunks`` list until the indexer
-    process was OOM-killed.  The fix drops the overlap for that one seam.
+    The overlap prefix never shrinks, so retrying such a paragraph with it
+    loops forever; the chunker drops the overlap for that one seam.
     """
 
     def test_paragraph_overflowing_only_with_overlap_terminates(self) -> None:
-        """The trigger case is chunked in bounded time, not looped on.
-
-        ``"A" * 20`` fills a 20-char chunk; its 10-char overlap tail plus the
-        ``"\\n\\n"`` separator plus ``"B" * 15`` is 27 chars — over chunk_size —
-        yet ``"B" * 15`` fits a chunk on its own.  That is the exact condition
-        that used to loop forever.
-        """
+        """10-char overlap + separator + ``"B" * 15`` is 27 chars, over chunk_size."""
         content = ("A" * 20) + "\n\n" + ("B" * 15)
         chunks = chunk_text(content, chunk_size=20, overlap=10)
-        # Both paragraphs are captured intact, in order, with no runaway.
         assert [c.text for c in chunks] == ["A" * 20, "B" * 15]
         assert [c.chunk_index for c in chunks] == [0, 1]
 
     def test_overflow_case_respects_chunk_size(self) -> None:
-        """Every emitted chunk still respects chunk_size on the trigger path."""
         content = ("A" * 20) + "\n\n" + ("B" * 15)
         chunks = chunk_text(content, chunk_size=20, overlap=10)
         for chunk in chunks:
             assert len(chunk.text) <= 20
 
     def test_multiple_consecutive_trigger_paragraphs_terminate(self) -> None:
-        """Several back-to-back trigger paragraphs each resolve and advance."""
-        # Four paragraphs each in the (chunk_size - overlap - 2, chunk_size]
-        # band, so every one overflows when the overlap prefix is prepended.
+        # Each paragraph is in the (chunk_size - overlap - 2, chunk_size] band,
+        # so every one overflows when the overlap prefix is prepended.
         content = "\n\n".join(letter * 18 for letter in "ABCD")
         chunks = chunk_text(content, chunk_size=20, overlap=10)
         assert [c.text for c in chunks] == [
@@ -295,21 +246,14 @@ class TestChunkTextOverlapPrefixOverflow:
         ]
 
 
-# ---------------------------------------------------------------------------
-# IDX-02: oversized-chunk character cap
-# ---------------------------------------------------------------------------
-
-
 class TestOversizedChunkCap:
     """No emitted chunk exceeds _MAX_CHUNK_CHARS, even with a huge chunk_size."""
 
     def test_no_chunk_exceeds_the_character_cap(self) -> None:
-        """A single paragraph far larger than the cap is hard-split under it."""
         from indexer.chunker import _MAX_CHUNK_CHARS
 
-        # One unbroken token-free blob (no blank lines, no spaces) larger than
-        # the cap. chunk_size is set huge so the paragraph-aware pass would emit
-        # it as ONE oversized chunk without the cap.
+        # No blank lines or spaces and a huge chunk_size: without the cap the
+        # paragraph-aware pass would emit one oversized chunk.
         blob = "A" * (_MAX_CHUNK_CHARS * 3 + 17)
         chunks = chunk_text(blob, chunk_size=_MAX_CHUNK_CHARS * 4, overlap=0)
 
@@ -317,7 +261,6 @@ class TestOversizedChunkCap:
         assert all(len(chunk.text) <= _MAX_CHUNK_CHARS for chunk in chunks)
 
     def test_split_chunks_have_contiguous_indices(self) -> None:
-        """After the cap split, chunk_index is contiguous from 0."""
         from indexer.chunker import _MAX_CHUNK_CHARS
 
         blob = "B" * (_MAX_CHUNK_CHARS * 2 + 5)
@@ -326,7 +269,6 @@ class TestOversizedChunkCap:
         assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
 
     def test_split_preserves_page_hint(self) -> None:
-        """Sub-chunks inherit the parent chunk's page_hint."""
         from indexer.chunker import _MAX_CHUNK_CHARS
 
         body = "C" * (_MAX_CHUNK_CHARS * 2)
@@ -337,7 +279,6 @@ class TestOversizedChunkCap:
         assert all(c.page_hint == 4 for c in chunks)
 
     def test_split_reassembles_to_the_original_text(self) -> None:
-        """Concatenating the sub-chunks reproduces the oversized chunk's text."""
         from indexer.chunker import _MAX_CHUNK_CHARS
 
         blob = "D" * (_MAX_CHUNK_CHARS * 2 + 13)
@@ -346,15 +287,9 @@ class TestOversizedChunkCap:
         assert "".join(c.text for c in chunks) == blob
 
     def test_normal_document_is_untouched_by_the_cap(self) -> None:
-        """A document whose chunks are all under the cap is unchanged.
-
-        With the production CHUNK_SIZE (2000) well under the 6000 cap, the cap
-        pass is a pure pass-through and the chunk boundaries are identical.
-        """
+        """With the production CHUNK_SIZE (2000) under the cap, the cap is a no-op."""
         content = "\n\n".join(f"Paragraph {i} body text." for i in range(50))
         capped = chunk_text(content, chunk_size=2000, overlap=256)
 
         assert all(len(c.text) <= 2000 for c in capped)
-        # Every chunk is under the cap, so none was split — indices contiguous,
-        # count matches a direct re-run (determinism).
         assert capped == chunk_text(content, chunk_size=2000, overlap=256)

@@ -1,15 +1,8 @@
-"""Shared helpers for the search-pipeline integration tests.
+"""Store-seeding helpers and embedding geometry for the search-pipeline tests.
 
-The ``test_search_pipeline`` integration tests are split across two files for
-the 500-line ceiling (CODE_GUIDELINES §3.1) — ``test_search_pipeline`` and
-``test_search_pipeline_refinement``.  The store-seeding helpers and the
-embedding geometry they both use live here so each file imports one definition
-rather than redeclaring it, mirroring ``tests/unit/indexer/conftest.py``.
-
-The geometry: every document is embedded onto one of a small set of orthogonal
-unit vectors.  A query embedded onto the same axis as a document has cosine
-distance 0 to it (nearest); onto a different axis, distance 1.  This makes
-vector search deterministic without needing real embeddings.
+Every document is embedded onto one of a few orthogonal unit vectors. A query on
+the same axis as a document has cosine distance 0 to it; on a different axis,
+distance 1. That makes vector search deterministic without real embeddings.
 """
 
 from __future__ import annotations
@@ -32,12 +25,7 @@ AXIS_REFINED: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0)
 
 
 def make_pipeline_settings(tmp_path: Any, **overrides: Any) -> MagicMock:
-    """Build a settings mock the store, the pipeline stages, and core all read.
-
-    Args:
-        tmp_path: The pytest ``tmp_path`` for the index database.
-        **overrides: Any further Settings field overrides.
-    """
+    """Build a settings mock the store, the pipeline stages, and core all read."""
     return make_search_settings(
         INDEX_DB_PATH=str(tmp_path / "index.db"),
         EMBEDDING_DIMENSIONS=PIPELINE_DIMENSIONS,
@@ -68,19 +56,7 @@ def seed_pipeline_document(
     document_type_id: int | None = None,
     created: str = "2024-01-15T00:00:00+00:00",
 ) -> None:
-    """Upsert one document with a single chunk into the real store.
-
-    Args:
-        store_writer: The real StoreWriter to upsert through.
-        document_id: The document id.
-        title: The document title.
-        text: The single chunk's text.
-        embedding: The chunk's embedding vector (one of the AXIS_* constants).
-        correspondent_id: An optional taxonomy correspondent id.
-        document_type_id: An optional taxonomy document-type id.
-        created: The document's ISO-8601 ``created`` timestamp; lets a test seed
-            documents that only fall within a date-scoped retrieval filter.
-    """
+    """Upsert one document with a single chunk into the real store."""
     meta = DocumentMeta(
         id=document_id,
         title=title,

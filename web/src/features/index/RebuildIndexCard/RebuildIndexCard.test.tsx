@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import type { UseMutationResult } from '@tanstack/react-query';
 import { RebuildIndexCard } from './RebuildIndexCard';
 
-// --- Mock the rebuild mutation -------------------------------------------
 vi.mock('../../../api/hooks', () => ({
   useRebuildIndex: vi.fn(),
 }));
@@ -36,11 +35,9 @@ function makeMutation(
 }
 
 /**
- * Wait for the Modal's focus-trap requestAnimationFrame to settle by asserting
- * that focus has moved inside the dialog. Waiting only for `!== document.body`
- * is insufficient — the open button holds focus briefly after the click, before
- * the RAF fires and moves focus into the dialog. Typing before the RAF settles
- * causes characters to go to the wrong element.
+ * Wait until focus is inside the dialog. `!== document.body` is not enough: the
+ * open button keeps focus until the focus-trap rAF fires, and typing earlier
+ * sends characters to the wrong element.
  */
 async function waitForModalFocus(): Promise<void> {
   await waitFor(() => {

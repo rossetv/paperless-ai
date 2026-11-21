@@ -1,14 +1,3 @@
-/*
- * TextArea primitive — CSS Module.
- *
- * The wrapper, label, and error-message styling come from the shared
- * FormField scaffolding (FormField.module.css); this module owns only the
- * <textarea> element, which composes the shared input shell and adds
- * vertical resize behaviour.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .textarea {
   composes: control from '../FormField/FormField.module.css';
   padding: var(--spacing-6) var(--spacing-10);
@@ -19,7 +8,6 @@
   resize: none;
 }
 
-/* Error state — border colour changes; aria-invalid is set in the component. */
 .textarea-error {
   composes: control-error from '../FormField/FormField.module.css';
 }

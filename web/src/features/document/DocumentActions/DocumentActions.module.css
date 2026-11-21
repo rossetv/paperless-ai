@@ -1,14 +1,3 @@
-/*
- * DocumentActions — CSS Module.
- *
- * A horizontal row of document-level actions: the bordered Download button
- * (primary, in-app) and the quiet inline "Open in Paperless" external link.
- * Moved here from PdfViewerCard so the header row and the PDF error fallback
- * share one definition.
- *
- * All values reference design tokens exclusively.
- */
-
 .actions {
   display: flex;
   align-items: center;
@@ -16,10 +5,7 @@
   flex-wrap: wrap;
 }
 
-/*
- * Download — the in-app action — keeps the bordered button treatment so it
- * carries the primary emphasis (UI-24 / DD-3).
- */
+/* Download, the in-app action, keeps the bordered button for primary emphasis. */
 .action {
   display: inline-flex;
   align-items: center;
@@ -42,10 +28,8 @@
 }
 
 /*
- * Open in Paperless — leaving the app — is demoted to a quiet inline external
- * link (Link primitive) so the in-app Download keeps primary emphasis
- * (UI-24 / DD-3). Only layout/icon alignment lives here; colour comes from the
- * Link primitive's own tokens.
+ * Open in Paperless leaves the app, so it is a quiet inline link. Only layout
+ * lives here; colour comes from the Link primitive.
  */
 .external-action {
   display: inline-flex;

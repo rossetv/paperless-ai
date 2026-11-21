@@ -12,52 +12,22 @@ import type { FilterRequest, SearchResponse } from '../../../api/types';
 import styles from './ResultsScreen.module.css';
 
 export interface ResultsScreenProps {
-  /** The query that produced the result — recapped in the inline field. */
   query: string;
-  /** The active filters — passed to the filter rail. */
   filters: FilterRequest;
-  /** The resolved search response. */
   result: SearchResponse;
-  /**
-   * Total matched document count — shown in the active-filters strip.
-   * Pass `result.sources.length` when there is no separate total; pass a
-   * server-supplied total when available.
-   */
+  /** Matched document count for the active-filters strip. */
   docCount: number;
-  /** Called when the user changes a filter. */
   onFiltersChange: (filters: FilterRequest) => void;
-  /**
-   * Called with a new query when the user submits the recap search field —
-   * the parent re-runs the search, so a second search needs no reload.
-   */
   onSearch: (query: string) => void;
-  /** Called when the user activates "Clear all" in the active-filters strip. */
   onClearFilters: () => void;
-  /** Called with a 1-based index when a citation marker is activated. */
+  /** Called with the 1-based index of the activated citation. */
   onCitationActivate: (index: number) => void;
-  /** Called with a document id when a source's preview action is activated. */
   onPreview: (documentId: number) => void;
-  /**
-   * 1-based index of the source to highlight, set when a citation is
-   * activated. When undefined, no source is highlighted.
-   */
+  /** 1-based index of the source to highlight after a citation is activated. */
   highlightedIndex?: number;
 }
 
-/**
- * The search results screen.
- *
- * The rail+content layout: the filter rail, then a query recap, the
- * `AnswerCard` with its inline citations (and a whole-query cost chip), a
- * "Sources" header, the list of `SourceCard`s, and the `SearchTracePanel`
- * disclosure (the folded per-phase reasoning trace with token/dollar cost).
- * Citation activation and document preview are delegated to the parent via
- * callbacks.
- *
- * Composed from: SearchScreenLayout, Stack, SearchField, Text, FilterControls,
- * AnswerCard, SourceList, SearchTracePanel, ActiveFiltersStrip.
- * Own CSS module resets heading margin so the Sources heading fits the Stack gap.
- */
+/** The search results screen: answer, sources and the folded search trace. */
 export function ResultsScreen({
   query,
   filters,
@@ -73,10 +43,7 @@ export function ResultsScreen({
   const { answer, sources, stats, cost, trace, outcome_kind } = result;
   const isAnswered = outcome_kind === 'answered';
 
-  /**
-   * Handles a citation activation: highlights the source card AND opens its
-   * document preview. The 1-based index maps to `sources[index - 1]`.
-   */
+  /** A citation both highlights its source card and opens its preview. */
   function handleCitationActivate(index: number): void {
     onCitationActivate(index);
     const source = sources[index - 1];
@@ -93,9 +60,7 @@ export function ResultsScreen({
       }
     >
       <Stack direction="vertical" gap={10}>
-        {/* Query recap — editable: submitting it re-runs the search with the
-            new query, so a second search needs no browser reload. Keyed by
-            `query` so it re-seeds whenever a fresh search lands. */}
+        {/* Keyed by `query` so it re-seeds whenever a fresh search lands. */}
         <SearchField
           key={query}
           id="results-search"
@@ -103,15 +68,14 @@ export function ResultsScreen({
           onSubmit={onSearch}
         />
 
-        {/* Active-filters chip strip — renders nothing when no filters are
-            set, so this is safe to include unconditionally. */}
+        {/* Active filters */}
         <ActiveFiltersStrip
           filters={filters}
           docCount={docCount}
           onClearAll={onClearFilters}
         />
 
-        {/* Synthesised answer — or a retry nudge for clarify/no_match. */}
+        {/* Answer, or a retry nudge for clarify/no_match */}
         <AnswerCard
           answer={answer}
           sources={sources}
@@ -121,14 +85,10 @@ export function ResultsScreen({
           onCitationActivate={handleCitationActivate}
         />
 
-        {/* Sources block — only when the pipeline actually answered. For
-            clarify/no_match the sources array is empty and the nudge card
-            already explains what to do, so the section would be meaningless. */}
+        {/* For clarify/no_match sources are empty and the nudge card says what to do. */}
         {isAnswered && (
           <>
-            {/* Sources — a real heading carries the role; sub-heading is the
-                22 px display variant matching the design (MAJOR 2). The caption
-                sits alongside as a sibling, not inside the <h2>. */}
+            {/* The caption is a sibling of the <h2>, not part of the heading. */}
             <Stack direction="horizontal" gap={6} align="baseline">
               <h2 className={styles['sources-heading']}>
                 <Text as="span" variant="sub-heading">
@@ -148,9 +108,7 @@ export function ResultsScreen({
           </>
         )}
 
-        {/* Reasoning-trace transparency — the folded per-phase trace with
-            per-step and total token/dollar cost. Supersedes the old query-plan
-            summary: the plan's rewritten query is the trace's first phase. */}
+        {/* Search trace */}
         <SearchTracePanel
           phases={trace.phases}
           cost={cost}

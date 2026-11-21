@@ -48,8 +48,6 @@ export const CollapsedByDefault: Story = {
 export const WithRichContent: Story = {
   args: {
     title: 'Tags',
-    // Real Chip primitives — the story exercises the pattern with genuine
-    // library components rather than ad-hoc styled tag spans.
     children: (
       <Stack direction="horizontal" gap={3} wrap>
         {['Invoice', 'Receipt', 'Contract', 'Letter', 'Statement'].map((tag) => (

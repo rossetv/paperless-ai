@@ -15,8 +15,7 @@ from .shutdown import is_shutdown_requested
 
 log = structlog.get_logger(__name__)
 
-# Daemon-level fault isolation: catch transient network/API errors so the
-# polling loop survives temporary outages without crashing.
+# Transient network/API errors the polling loop survives.
 _DAEMON_LOOP_EXCEPTIONS = PAPERLESS_CALL_EXCEPTIONS
 
 T = TypeVar("T")
@@ -27,12 +26,9 @@ class CycleOutcome:
     """The outcome of one poll iteration, passed to an ``on_cycle`` hook.
 
     Attributes:
-        processed: How many work items the iteration dispatched to the
-            thread pool. Zero on an idle or halted poll.
+        processed: Work items dispatched to the thread pool.
         idle: True when the poll found no work.
-        halted: True when the poll was skipped because ``halt_check`` reported
-            the daemon halted (e.g. the write-back circuit breaker tripped). No
-            work is fetched or processed on a halted poll.
+        halted: True when ``halt_check`` skipped the poll entirely.
     """
 
     processed: int
@@ -47,43 +43,21 @@ def _process_batch(
     daemon_name: str,
     halt_check: Callable[[], str | None] | None,
 ) -> int:
-    """Process a batch of work items concurrently, halt-aware and chunked.
+    """Process *items* concurrently in sub-batches of ``max_workers``.
 
-    The batch is dispatched in bounded sub-batches of ``max_workers`` items
-    into a single ``ThreadPoolExecutor`` (one pool per poll, not per sub-batch).
-    Between sub-batches — and again immediately before each worker runs its
-    item — ``halt_check`` is consulted: once it reports a reason (the write-back
-    circuit breaker has tripped, or shutdown was requested) no further items are
-    dispatched and any already-submitted worker short-circuits before spending
-    LLM/vision tokens.
+    ``halt_check`` runs between sub-batches and before each item, so a circuit
+    breaker that trips mid-pass over a deep queue wastes at most one sub-batch
+    of LLM calls instead of one per queued document. A halted skip is not a
+    failure. One item's exception is logged and does not affect the others.
 
-    This is the second half of the circuit breaker's promise. ``_poll_once``
-    stops *new* polls once the breaker trips, but a single first pass over a
-    deep, already-materialised queue would otherwise submit every document up
-    front and burn one LLM call each before the next poll's ``halt_check`` ran.
-    Chunking plus the per-item pre-call check bounds that first-pass burn to at
-    most one in-flight sub-batch.
-
-    A halted skip is **not** a failure: the item is simply not processed, so the
-    daemon's write-back-outcome reporting (and therefore the breaker's failure
-    streak) is never touched. The queued documents wait, untouched, for the
-    daemon to resume.
-
-    Exceptions raised while processing one item are logged but do not prevent
-    other items in the same sub-batch from completing (per-document isolation,
-    CODE_GUIDELINES §6.4 site 2).
-
-    Returns:
-        The number of items dispatched to a worker (i.e. not skipped by a halt).
-        A halt part-way through a batch yields a count below ``len(items)``.
+    Returns the number of items actually run (fewer than ``len(items)`` after a
+    halt).
     """
     dispatched = 0
 
     def _run_one(item: T) -> bool:
         if halt_check is not None and halt_check() is not None:
-            # Tripped while this item sat in the pool queue: skip before the
-            # LLM/vision call. Returning False marks it as not-run; it is not a
-            # failure and the breaker's streak is untouched.
+            # Halted while queued: skip before the LLM call, without a failure.
             return False
         process_item(item)
         return True
@@ -93,8 +67,6 @@ def _process_batch(
     ) as executor:
         for start in range(0, len(items), max_workers):
             if halt_check is not None and halt_check() is not None:
-                # The breaker tripped (or shutdown began) between sub-batches:
-                # stop dispatching. Remaining items stay queued for a later poll.
                 break
             chunk = items[start : start + max_workers]
             future_to_item = {executor.submit(_run_one, item): item for item in chunk}
@@ -104,11 +76,7 @@ def _process_batch(
                     if future.result():
                         dispatched += 1
                 except Exception:
-                    # rationale: per-document worker-dispatch boundary
-                    # (CODE_GUIDELINES §6.4, site 2) — one document's failure
-                    # is logged with its traceback and isolated so the rest of
-                    # the batch still completes. The traceback is attached via
-                    # log.exception.
+                    # One document's failure must not stop the rest of the batch.
                     log.exception(
                         "Work item failed",
                         daemon=daemon_name,
@@ -130,11 +98,8 @@ def _poll_once(
 ) -> CycleOutcome:
     """Execute a single poll iteration. Returns the iteration's outcome."""
     if halt_check is not None and halt_check() is not None:
-        # The daemon is halted (the write-back circuit breaker has tripped).
-        # Skip fetching and processing so no LLM tokens are spent while the fault
-        # persists; the queued documents wait, untouched, for the daemon to
-        # resume. The breaker logs the trip once and ``on_cycle`` keeps the
-        # dashboard showing the halt, so no per-poll log is needed here.
+        # No per-poll log: the breaker logs the trip once and on_cycle keeps the
+        # dashboard showing the halt.
         return CycleOutcome(processed=0, idle=False, halted=True)
 
     items = fetch_work()
@@ -153,11 +118,7 @@ def _poll_once(
         max_workers=max_workers,
     )
 
-    # halt_check is threaded into the batch so a breaker that trips mid-pass
-    # stops dispatching the rest of an already-materialised queue, and any
-    # in-flight worker short-circuits before its LLM/vision call. ``dispatched``
-    # is what was actually processed — below len(items) when a halt cut the
-    # batch short — so the heartbeat reports real work, not the queue depth.
+    # Report what actually ran, not the queue depth.
     dispatched = _process_batch(
         items, process_item, max_workers, daemon_name, halt_check
     )
@@ -179,25 +140,14 @@ def run_polling_threadpool(
 ) -> None:
     """Run an infinite polling loop and process items concurrently in a thread pool.
 
-    This function intentionally keeps behaviour conservative and predictable.
-
     Args:
-        before_each_poll: Called once at the top of every poll iteration,
-            before ``fetch_work``. The tag daemons use it to re-check the
-            configuration and hot-reload config-derived resources between
-            polls (web-redesign §5). A hook exception is not swallowed by the
-            loop's ``try`` — it runs before the ``try`` — so a hook must not
-            raise on the recoverable path; ``current_settings()`` only raises
-            on a genuinely invalid stored config, which is a fatal condition
-            the daemon should not survive silently.
-        on_cycle: Invoked once after every poll iteration with that iteration's
-            CycleOutcome — the daemons use it to write a heartbeat. A callback
-            exception is isolated and logged; it never crashes the loop.
-        halt_check: Polled at the top of each iteration. When it returns a
-            reason string the iteration is skipped entirely — no work is fetched
-            or processed — and the outcome is marked ``halted``. The tag daemons
-            use it to stop pulling work once the write-back circuit breaker has
-            tripped. ``None`` (the default) means never halt.
+        before_each_poll: Called before each ``fetch_work``; the tag daemons
+            hot-reload config here. It runs outside the loop's ``try``, so an
+            exception (only an invalid stored config) is fatal by design.
+        on_cycle: Called after every poll with its outcome, e.g. to write a
+            heartbeat. Its exceptions are logged and swallowed.
+        halt_check: Returns a reason string to skip the poll entirely, e.g.
+            once the write-back circuit breaker has tripped.
     """
     poll_interval_seconds = max(1, int(poll_interval_seconds))
     max_workers = max(1, int(max_workers))
@@ -220,10 +170,7 @@ def run_polling_threadpool(
             _run_on_cycle(on_cycle, outcome, daemon_name)
             sleep(poll_interval_seconds)
         except _DAEMON_LOOP_EXCEPTIONS as exc:
-            # An expected, recoverable anomaly: a transient Paperless network
-            # or API failure. WARNING (not ERROR) per §7.3; exc_info=True
-            # attaches the traceback — log.error(str(exc)) would discard it
-            # (§7.5). The loop sleeps and the next poll retries.
+            # Expected and recoverable: the next poll retries.
             log.warning(
                 "Transient error in daemon loop; sleeping before retry",
                 daemon=daemon_name,
@@ -242,30 +189,17 @@ def _run_on_cycle(
     outcome: CycleOutcome,
     daemon_name: str,
 ) -> None:
-    """Invoke the optional per-cycle hook, isolating any failure.
-
-    The hook is observability (a heartbeat write); a bug in it must never
-    crash the polling loop. Any exception is logged with its traceback and
-    swallowed — exactly the fault-isolation rule the loop applies to a work
-    item (CODE_GUIDELINES §6.4).
-    """
+    """Invoke the optional per-cycle hook; a bug in it must never crash the loop."""
     if on_cycle is None:
         return
     try:
         on_cycle(outcome)
     except Exception:
-        # rationale: per-cycle hook boundary — a heartbeat-callback bug is
-        # isolated so the daemon's real polling loop survives it.
         log.exception("on_cycle hook failed", daemon=daemon_name)
 
 
 def _safe_item_summary(item: object) -> str:
-    """
-    Best-effort string for logging a work item.
-
-    The daemons usually pass dicts (Paperless documents) into the threadpool, but
-    tests may pass arbitrary objects.
-    """
+    """Best-effort string for logging a work item (usually a Paperless document)."""
     try:
         if isinstance(item, dict):
             if "id" in item:
@@ -273,8 +207,5 @@ def _safe_item_summary(item: object) -> str:
             return f"dict_keys={sorted(item.keys())}"
         return str(item)
     except (TypeError, ValueError, AttributeError):
-        # The only failures str()/sorted()/repr() formatting can realistically
-        # raise: unorderable dict keys (TypeError), a __str__/__repr__ that
-        # raises (TypeError/ValueError/AttributeError). A genuine programming
-        # bug outside that set is not swallowed.
+        # Unorderable keys or a raising __str__; other bugs still surface.
         return "<unprintable>"

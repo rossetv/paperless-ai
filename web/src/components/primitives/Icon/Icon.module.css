@@ -1,21 +1,11 @@
 /*
- * Icon primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- *
- * Icons render as Font Awesome `<i>` elements with a webfont glyph, so
- * `font-size` is the size knob (not width/height). They inherit colour from
- * `currentColor`, so no colour tokens are needed here.
+ * Font Awesome glyphs are a webfont, so font-size is the size knob. Icons
+ * inherit currentColor.
  *
  *   small  = calc(var(--spacing-6) * 2)  → 16 px
  *   medium = var(--spacing-13)           → 20 px
  *   large  = var(--spacing-14)           → 24 px
  *   xlarge = var(--size-icon-xlarge)     → 32 px
- *
- * Design note: Apple system icons are 17 pt at body size; 20 px medium aligns
- * with the 17 px body text while sitting on the 4 px grid (spacing-13 = 20 px).
- * The xlarge size is for empty-state and hero illustration contexts where the
- * icon is the focal element, not an inline glyph.
  */
 
 .icon {
@@ -24,8 +14,6 @@
   vertical-align: middle;
   line-height: var(--line-height-tight);
 }
-
-/* ── Size modifiers — font-size drives the webfont glyph size. ── */
 
 .small {
   font-size: calc(var(--spacing-6) * 2);

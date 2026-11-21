@@ -10,7 +10,6 @@ export interface SearchFieldProps {
   id: string;
   /** Visible label text rendered above the field. Omit to label externally. */
   label?: string;
-  /** Placeholder hint inside the field. */
   placeholder?: string;
   /** Controlled value. Supply alongside onChange for controlled usage. */
   value?: string;
@@ -19,9 +18,7 @@ export interface SearchFieldProps {
    * pre-filled with this text. Ignored when `value` (controlled) is set.
    */
   defaultValue?: string;
-  /** Whether the field and submit button are non-interactive. */
   disabled?: boolean;
-  /** Change handler for controlled usage. */
   onChange?: React.ChangeEventHandler<HTMLInputElement>;
   /**
    * Called with the current query string when the user submits.
@@ -29,20 +26,12 @@ export interface SearchFieldProps {
    * Does NOT fire when the value is empty.
    */
   onSubmit: (query: string) => void;
-  /** Additional class names to merge onto the root wrapper. */
   className?: string;
 }
 
 /**
- * Primary search-input pattern for the application.
- *
- * Styled using the Apple search-input style from DESIGN.md §4 — rounded field
- * with --radius-comfortable (11 px), a leading search icon, and an accessible
- * submit button. The label and field wrapper come from the shared `FormField`
- * scaffolding; this component composes Icon, IconButton, and FormField.
- *
- * Fires onSubmit(value) on Enter keypress and on submit button click.
- * An empty value does not trigger a submission.
+ * Search input with a leading icon and a submit button. Calls `onSubmit` on Enter
+ * or a submit click, never with an empty value.
  */
 export function SearchField({
   id,
@@ -55,10 +44,7 @@ export function SearchField({
   onSubmit,
   className,
 }: SearchFieldProps): React.ReactElement {
-  // Internal state for uncontrolled usage, seeded from `defaultValue` so the
-  // field can render pre-filled yet stay editable. When `value` is provided
-  // (controlled), this state is ignored and the controlled value drives the
-  // input.
+  // Uncontrolled state, seeded from `defaultValue`; ignored when `value` is set.
   const [internalValue, setInternalValue] = useState(defaultValue);
 
   // Use a ref to always read the latest value at submit time — avoids stale
@@ -94,7 +80,6 @@ export function SearchField({
     <FormField id={inputId} label={label} className={cn(styles['search-field'], className)}>
       {() => (
         <div className={styles['input-wrapper']}>
-          {/* Leading decorative search icon — aria-hidden, communicates intent visually */}
           <span className={styles['leading-icon']} aria-hidden="true">
             <Icon name="search" size="small" />
           </span>

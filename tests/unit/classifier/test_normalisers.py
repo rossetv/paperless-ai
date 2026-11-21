@@ -6,8 +6,6 @@ from classifier.normalisers import COMPANY_SUFFIXES, normalise_name, normalise_s
 
 
 class TestNormaliseSimple:
-    """Tests for normalise_simple(value)."""
-
     def test_lowercases_and_collapses_whitespace(self):
         assert normalise_simple("  Bank  Statement ") == "bank statement"
 
@@ -28,8 +26,6 @@ class TestNormaliseSimple:
 
 
 class TestNormaliseName:
-    """Tests for normalise_name(value)."""
-
     def test_strips_punctuation(self):
         assert normalise_name("Acme, Inc.") == "acme"
 
@@ -46,14 +42,13 @@ class TestNormaliseName:
         assert normalise_name("Widgets LLC") == "widgets"
 
     def test_strips_multiple_trailing_suffixes(self):
-        # "Co Ltd" -> strips "ltd" then "co"
         assert normalise_name("Acme Co Ltd") == "acme"
 
     def test_handles_empty_string(self):
         assert normalise_name("") == ""
 
     def test_preserves_core_name_parts(self):
-        # "ag" is not a recognized company suffix, so it stays
+        # "ag" is not a recognised company suffix.
         assert normalise_name("Deutsche Bank AG") == "deutsche bank ag"
 
     def test_strips_corporation(self):
@@ -66,17 +61,14 @@ class TestNormaliseName:
         assert normalise_name("BP PLC") == "bp"
 
     def test_name_with_dots_in_suffix(self):
-        # Punctuation is stripped, then suffixes removed
+        # Punctuation is stripped before suffixes are removed.
         assert normalise_name("Acme Ltd.") == "acme"
 
     def test_all_suffixes_result_in_empty(self):
-        # If the entire name is company suffixes
         assert normalise_name("Ltd Inc") == ""
 
 
 class TestCompanySuffixes:
-    """Tests for the COMPANY_SUFFIXES constant."""
-
     def test_is_frozenset(self):
         assert isinstance(COMPANY_SUFFIXES, frozenset)
 

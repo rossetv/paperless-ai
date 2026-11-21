@@ -12,8 +12,6 @@ from classifier.constants import (
 
 
 class TestPageHeaderRe:
-    """Tests for PAGE_HEADER_RE pattern."""
-
     def test_matches_simple_page_header(self):
         assert PAGE_HEADER_RE.search("--- Page 1 ---") is not None
 
@@ -41,8 +39,6 @@ class TestPageHeaderRe:
 
 
 class TestModelFooterRe:
-    """Tests for MODEL_FOOTER_RE pattern."""
-
     def test_matches_single_model(self):
         match = MODEL_FOOTER_RE.search("Transcribed by model: gpt-5.4-mini")
         assert match is not None
@@ -61,8 +57,6 @@ class TestModelFooterRe:
 
 
 class TestGenericDocumentTypes:
-    """Tests for GENERIC_DOCUMENT_TYPES constant."""
-
     def test_is_frozenset(self):
         assert isinstance(GENERIC_DOCUMENT_TYPES, frozenset)
 
@@ -78,8 +72,6 @@ class TestGenericDocumentTypes:
 
 
 class TestBlacklistedTags:
-    """Tests for BLACKLISTED_TAGS constant."""
-
     def test_is_frozenset(self):
         assert isinstance(BLACKLISTED_TAGS, frozenset)
 
@@ -93,8 +85,6 @@ class TestBlacklistedTags:
 
 
 class TestErrorPhrases:
-    """Tests for REFUSAL_PHRASES constant."""
-
     def test_is_tuple(self):
         assert isinstance(REFUSAL_PHRASES, tuple)
 

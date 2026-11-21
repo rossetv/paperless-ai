@@ -68,8 +68,6 @@ const SECTION: SectionModel = {
   ],
 };
 
-// ── Section with advanced fields ─────────────────────────────────────────────
-
 const SECTION_WITH_ADVANCED: SectionModel = {
   id: 'advanced-demo',
   title: 'Advanced Demo',
@@ -97,8 +95,6 @@ const SECTION_WITH_ADVANCED: SectionModel = {
     },
   ],
 };
-
-// ── Section with model+reasoning composite ───────────────────────────────────
 
 const SECTION_WITH_REASONING: SectionModel = {
   id: 'reasoning-demo',
@@ -254,8 +250,6 @@ describe('SettingsSection', () => {
     expect(screen.getByRole('button', { name: 'Test connection' })).toBeInTheDocument();
   });
 
-  // ── Advanced disclosure ───────────────────────────────────────────────────
-
   describe('advanced disclosure', () => {
     function renderAdvanced(overrides: Partial<Parameters<typeof SettingsSection>[0]> = {}) {
       return render(
@@ -280,7 +274,6 @@ describe('SettingsSection', () => {
 
     it('renders the Advanced disclosure summary with the field count', () => {
       renderAdvanced();
-      // The disclosure summary text is "Advanced · 1".
       expect(screen.getByText(/Advanced · \d/)).toBeInTheDocument();
     });
 
@@ -295,8 +288,6 @@ describe('SettingsSection', () => {
       expect(screen.getByText(/rebuilds the index on save/i)).toBeInTheDocument();
     });
   });
-
-  // ── Composite model+reasoning ─────────────────────────────────────────────
 
   describe('model+reasoning composite', () => {
     function renderReasoning(overrides: Partial<Parameters<typeof SettingsSection>[0]> = {}) {

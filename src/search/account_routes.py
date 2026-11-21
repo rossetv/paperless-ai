@@ -1,7 +1,4 @@
-"""The account-management ``/api`` router for the search server (§4.6).
-
-Every Wave 1 account endpoint lives here, factored out of ``search/routes.py``
-so each router file stays focused and under the size ceiling:
+"""The account-management ``/api`` router: setup, login/logout, and users.
 
 - ``GET  /api/setup/status``  — public; is first-run setup still needed?
 - ``POST /api/setup``         — setup-token gated; create the first admin.
@@ -14,19 +11,9 @@ so each router file stays focused and under the size ceiling:
 - ``DELETE /api/users/{id}``  — admin; delete a user.
 - ``GET  /api/stats/public``  — public; minimal splash counts.
 
-The handlers are thin: they delegate to ``appdb``, ``search.sessions``,
-``search.setup``, ``search.accounts``, and the ``search.wire`` mappers, all
-of which are unit-tested in isolation. Errors use FastAPI's ``{"detail": ...}``
-shape.
-
 Every handler is a plain ``def`` (not ``async def``): the bodies call blocking
-SQLite and blocking argon2id password hashing, so FastAPI runs them in the
-threadpool — keeping that work off the event loop. Each takes its ``app.db``
-connection from the per-request :func:`~search.deps.get_app_db` dependency.
-
-Allowed deps: fastapi, structlog, appdb, common.config (Settings), search
-(sessions, setup, accounts, deps, appstate, cookies, login_throttle, wire),
-store (reader).
+SQLite and argon2id hashing, so FastAPI runs them in the threadpool, off the
+event loop.
 """
 
 from __future__ import annotations
@@ -72,30 +59,12 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The cookie name appears only via the helpers in search.cookies; no literal
-# here. The session-cookie security flags are owned there too.
-
 
 def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
-    """Build the account ``/api`` router (web-redesign §4.6).
+    """Build the account ``/api`` router.
 
-    The handlers close over *settings* (for the session-cookie TTL) and
-    *store_reader* (for the public stats endpoint), and reach everything else —
-    the per-request ``app.db`` connection, the setup state, the legacy key —
-    through FastAPI dependencies.
-
-    # rationale: 60+ executable lines — the body is ten route declarations,
-    # one per account endpoint, each an irreducible decorator + signature +
-    # delegation. Splitting the registrations across helpers would scatter one
-    # flat table of routes without making any of it clearer.
-
-    Args:
-        settings: Application settings; the login handler reads
-            ``SEARCH_SESSION_TTL`` for the "keep me signed in" cookie lifetime.
-        store_reader: The read-side store, backing ``GET /api/stats/public``.
-
-    Returns:
-        A configured :class:`~fastapi.APIRouter`.
+    *settings* supplies ``SEARCH_SESSION_TTL`` for the "keep me signed in"
+    cookie; *store_reader* backs ``GET /api/stats/public``.
     """
     router = APIRouter()
 
@@ -112,7 +81,7 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
         app_db: sqlite3.Connection = Depends(get_app_db),
         state: AppState = Depends(get_app_state),
     ) -> UserEnvelope:
-        """Create the first admin, gated by the setup token (§4.5).
+        """Create the first admin, gated by the setup token.
 
         Raises 409 once any user exists, 403 on a bad setup token.
         """
@@ -125,12 +94,11 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
         response: Response,
         app_db: sqlite3.Connection = Depends(get_app_db),
     ) -> UserEnvelope:
-        """Verify credentials and set the session cookie (§4.4).
+        """Verify credentials and set the session cookie.
 
         401 on bad credentials; 403 when the account is suspended; 429 when
         either the (client IP, username) pair or the username alone has too many
-        recent failures (HTTP-01; the per-username counter survives
-        X-Forwarded-For rotation, §10.6).
+        recent failures.
         """
         return _login(
             body,
@@ -211,27 +179,16 @@ def build_account_router(settings: Settings, store_reader: StoreReader) -> APIRo
     return router
 
 
-# ---------------------------------------------------------------------------
-# Handler bodies — free of FastAPI routing, easy to read and test
-# ---------------------------------------------------------------------------
-
-
 def _setup(
     body: SetupRequest, app_db: sqlite3.Connection, setup_state: SetupState
 ) -> UserEnvelope:
-    """Setup-handler body: token check, first-admin creation (§4.5).
+    """Check the setup token and create the first admin.
 
-    The TOCTOU race (two concurrent ``POST /api/setup`` both passing
-    ``is_setup_needed`` before either inserts) is closed by
-    ``user_store.create_initial_admin``, which executes a single
-    ``INSERT … SELECT … WHERE NOT EXISTS`` statement: SQLite evaluates the
-    sub-query and the insert atomically under its write lock, so the second
-    concurrent caller inserts zero rows and receives ``None``. That argument
-    holds because each request now uses its own ``app.db`` connection (see
-    :func:`~search.deps.get_app_db`); an atomic statement is per-connection
-    atomic, and the two racing setups are on distinct connections.
+    Two concurrent setups can both pass ``is_setup_needed``; the race is closed
+    by ``create_initial_admin``, a single ``INSERT … SELECT … WHERE NOT EXISTS``
+    that SQLite runs atomically, so the loser inserts nothing and gets ``None``.
     """
-    # Fast pre-flight check — avoids the INSERT on every request after setup.
+    # Cheap pre-check so every request after setup skips the INSERT.
     if not is_setup_needed(app_db):
         raise HTTPException(status_code=409, detail="Setup has already been completed.")
     if not verify_setup_token(setup_state, body.token):
@@ -260,24 +217,17 @@ def _login(
     *,
     remember_ttl_seconds: int,
 ) -> UserEnvelope:
-    """Login-handler body: throttle, authenticate, open a session, set the cookie.
+    """Throttle, authenticate, open a session, and set the cookie.
 
-    A bounded failed-attempt throttle (HTTP-01, §10.6) denies a key with 429
-    once it has accumulated a burst of failures, *before* any argon2 work — so
-    password login is not just argon2-cost-limited against an online guessing
-    campaign. Two counters guard it: per-(client IP, username) for the common
-    single-source case, and per-username (IP-independent) so a distributed
-    attack that rotates X-Forwarded-For — which is attacker-controllable while
-    SEARCH_FORWARDED_ALLOW_IPS defaults to "*" — is still bounded. A first
-    attempt and a successful login are never affected: the counters start at
-    zero and a success clears both.
+    The throttle denies with 429 before any argon2 work. It keeps two counters:
+    per-(client IP, username), and per-username so an attack that rotates
+    X-Forwarded-For (attacker-controlled while SEARCH_FORWARDED_ALLOW_IPS is
+    "*") is still bounded. A success clears both.
     """
     client_ip = request.client.host if request.client else None
     attempt_key = build_attempt_key(client_ip=client_ip, username=body.username)
     throttle = get_login_throttle()
     if throttle.is_locked(attempt_key):
-        # Too many recent failures for this (IP, username) pair or for this
-        # username across all IPs — deny without touching the password verifier.
         # Generic message, no account hints.
         log.warning("search.login_throttled", username=body.username)
         raise HTTPException(
@@ -309,11 +259,8 @@ def _login(
         user_id=user.id,
         ttl_seconds=ttl,
         user_agent=request.headers.get("user-agent"),
-        # request.client.host is the real client IP: the server runs uvicorn
-        # with proxy_headers=True (see search.api.main), so behind the
-        # nginx/Cloudflare deployment Starlette rewrites request.client from
-        # the trusted X-Forwarded-For header rather than the reverse-proxy
-        # socket peer.
+        # uvicorn runs with proxy_headers=True, so this is the client IP from
+        # the trusted X-Forwarded-For header, not the reverse proxy's.
         ip=request.client.host if request.client else None,
     )
     set_session_cookie(
@@ -328,11 +275,7 @@ def _login(
 
 
 def _auth_me(user: CurrentUser, app_db: sqlite3.Connection) -> UserEnvelope:
-    """auth/me-handler body: re-read the full user for the response.
-
-    ``get_current_user`` yields the slim :class:`CurrentUser`; the response
-    contract is the full user object, so the row is re-read here.
-    """
+    """Re-read the full user row; ``get_current_user`` yields only the slim one."""
     row = user_store.get_by_id(app_db, user.id)
     if row is None:
         # The session resolved a moment ago but the row is gone — treat it
@@ -342,11 +285,7 @@ def _auth_me(user: CurrentUser, app_db: sqlite3.Connection) -> UserEnvelope:
 
 
 def _stats_public(store_reader: StoreReader) -> PublicStatsResponse:
-    """stats/public-handler body: minimal splash counts.
-
-    Any store failure degrades to zeroes rather than a 500 — the splash
-    numbers are cosmetic (spec §4.7: "if it fails, the numbers are omitted").
-    """
+    """Return the splash counts; a store failure gives zeroes, not a 500."""
     try:
         stats = store_reader.get_stats()
         return PublicStatsResponse(
@@ -359,7 +298,7 @@ def _stats_public(store_reader: StoreReader) -> PublicStatsResponse:
 
 
 def _create_user(body: CreateUserRequest, app_db: sqlite3.Connection) -> UserEnvelope:
-    """create-user-handler body: hash the password, insert, map."""
+    """Hash the password and insert the user; 409 when the username is taken."""
     try:
         user = user_store.create(
             app_db,
@@ -385,17 +324,14 @@ def _update_user(
     actor: CurrentUser,
     app_db: sqlite3.Connection,
 ) -> UserEnvelope:
-    """update-user-handler body: existence check, then guarded atomic update.
+    """404 on an unknown user, else apply the guarded atomic update.
 
-    The 404 existence check and the guarded write are deliberately separate:
-    the guard read and the ``UPDATE`` are made atomic inside
-    :func:`~search.accounts.apply_guarded_update`, while the existence check
-    only decides 404-vs-proceed and need not share that transaction.
+    The existence check sits outside the guard's transaction on purpose: it only
+    decides 404-vs-proceed.
     """
     if user_store.get_by_id(app_db, user_id) is None:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    # A password reset is hashed before it reaches the store.
     password_hash = hash_password(body.password) if body.password is not None else None
     # `validate_role` and `validate_status` on the wire model have already
     # rejected anything outside the Role / UserStatus enums; the casts narrow
@@ -421,12 +357,11 @@ def _update_user(
 def _delete_user(
     user_id: int, actor: CurrentUser, app_db: sqlite3.Connection
 ) -> Response:
-    """delete-user-handler body: existence check, then guarded atomic delete."""
+    """404 on an unknown user, else apply the guarded atomic delete."""
     if user_store.get_by_id(app_db, user_id) is None:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    # The sessions foreign key cascades, so deleting the user also revokes
-    # every session they hold. The guard and the DELETE are atomic.
+    # The sessions foreign key cascades, so this also revokes their sessions.
     try:
         apply_guarded_delete(app_db, target_id=user_id, actor_id=actor.id)
     except GuardError as exc:

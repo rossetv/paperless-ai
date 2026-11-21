@@ -1,11 +1,4 @@
-"""Shared builders for the classifier unit tests.
-
-Several classifier source files have their tests split across two files for the
-500-line ceiling (CODE_GUIDELINES §3.1) — ``test_worker`` /
-``test_worker_metadata`` and ``test_provider`` / ``test_provider_compat``.  The
-builders those pairs share live here so each file imports one definition rather
-than redeclaring it, mirroring ``tests/integration/conftest.py``.
-"""
+"""Shared builders for the classifier unit tests."""
 
 from __future__ import annotations
 
@@ -44,7 +37,6 @@ def make_processor(
     classifier = MagicMock()
     taxonomy = MagicMock()
 
-    # Default classifier behaviour: successful classification
     result = make_classification_result()
     classifier.classify_text.return_value = (result, "gpt-5.4-mini")
     classifier.get_stats.return_value = {
@@ -57,7 +49,6 @@ def make_processor(
         "max_tokens_retries": 0,
     }
 
-    # Default taxonomy behaviour
     taxonomy.correspondent_names.return_value = ["Acme Corp"]
     taxonomy.document_type_names.return_value = ["Invoice"]
     taxonomy.tag_names.return_value = ["2025"]

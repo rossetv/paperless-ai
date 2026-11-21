@@ -9,8 +9,7 @@ import styles from './DaemonCard.module.css';
 /** Maps a daemon run-state to a StatusBadge tone and label. */
 const STATE_PRESENTATION: Record<DaemonState, { tone: StatusTone; label: string }> = {
   running: { tone: 'ok', label: 'Running' },
-  // Idle is a calm resting state, not a caution — a neutral grey badge, never
-  // the amber `warn` tone (which is reserved for genuine caution).
+  // Idle is a resting state, not a caution: neutral, never the amber `warn` tone.
   idle: { tone: 'neutral', label: 'Idle' },
   stopped: { tone: 'danger', label: 'Stopped' },
 };
@@ -18,7 +17,6 @@ const STATE_PRESENTATION: Record<DaemonState, { tone: StatusTone; label: string 
 export interface DaemonCardProps {
   /** The daemon's status, from GET /api/index/status. */
   daemon: DaemonStatus;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
@@ -29,10 +27,6 @@ export interface DaemonCardProps {
  * `detail` sentence, its cumulative `processed_count`, and a relative
  * "last seen" time derived from `last_heartbeat`. The run-state drives the
  * badge tone via `STATE_PRESENTATION`.
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — composes the StatusBadge
- * primitive, reuses `relativeTime` from lib/relativeTime, and takes a domain
- * wire type.
  */
 export function DaemonCard({ daemon, className }: DaemonCardProps): React.ReactElement {
   const { tone, label } = STATE_PRESENTATION[daemon.state];

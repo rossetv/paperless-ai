@@ -1,16 +1,8 @@
-/*
- * SearchTracePanel — screen-level layout for the trace disclosure summary row.
- *
- * Composition-only feature CSS (§11.2): structural layout and a small monospace
- * cost chip, all values from design tokens.
- */
-
-/* Outer wrapper — bottom margin so the panel is never flush with the page foot. */
+/* Keeps the panel off the page foot. */
 .panel {
   margin-bottom: var(--spacing-14);
 }
 
-/* Summary row — headline, then the whole-query cost chip. */
 .summary {
   display: inline-flex;
   align-items: center;

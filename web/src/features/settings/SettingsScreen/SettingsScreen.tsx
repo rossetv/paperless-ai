@@ -20,12 +20,9 @@ import { Toast } from '../../../components/patterns/Toast/Toast';
 /**
  * Parse the server's `SettingItem[]` into the typed draft the screen edits.
  *
- * Each item's string `value` is parsed per its field's control kind
- * (`parseValue`). When `value` is null (key on its coded default) and a
- * `default_value` is present, the coded default is used as the raw string so
- * the control shows a meaningful value rather than its empty state. An item
- * with no matching field model entry is skipped — the model is the source of
- * truth for what is editable.
+ * A null `value` (key on its coded default) falls back to `default_value`, so the control shows
+ * a real value rather than its empty state. Items with no field-model entry are skipped: the
+ * model decides what is editable.
  */
 function toDraft(items: SettingItem[]): SettingsDraft {
   const draft: SettingsDraft = {};
@@ -39,23 +36,17 @@ function toDraft(items: SettingItem[]): SettingsDraft {
   return draft;
 }
 
-/** The set of keys the server flags as needing a re-index when changed. */
 function reindexKeySet(items: SettingItem[]): Set<string> {
   return new Set(items.filter((i) => i.requires_reindex).map((i) => i.key));
 }
 
-/** The set of keys whose value is currently on the coded default (source=default). */
 function defaultKeySet(items: SettingItem[]): Set<string> {
   return new Set(items.filter((i) => i.source === 'default').map((i) => i.key));
 }
 
 /**
- * The inner screen, rendered once the settings have loaded.
- *
- * Split out so the draft hook (`useUnsavedSettings`) is only mounted with a
- * real baseline — never with a placeholder — which keeps the dirty-tracking
- * honest. `items` is the server's `SettingItem[]`; the baseline draft and the
- * re-index key set are derived from it.
+ * The screen once settings have loaded. Split out so `useUnsavedSettings` only ever mounts with
+ * a real baseline, never a placeholder, which keeps dirty-tracking honest.
  */
 function SettingsContent({
   items,
@@ -68,21 +59,13 @@ function SettingsContent({
   const { draft, setValue, changedKeys, isDirty, changedValues, discard } =
     useUnsavedSettings(baseline);
   const save = useUpdateSettings();
-  // A re-index-forcing save (embedding model / chunking) surfaces a toast so
-  // the operator knows their whole library is being re-embedded server-side.
+  // A re-index-forcing save (embedding model / chunking) shows a toast: the whole library is
+  // being re-embedded server-side.
   const [reindexNotice, setReindexNotice] = React.useState(false);
 
-  /**
-   * Apply a field change. A secret field reports `null` when the user is NOT
-   * replacing the key — in that case the draft must hold the baseline value
-   * (the server mask) so the key counts as unchanged; any string is the new
-   * secret.
-   */
   const handleChange = (key: string, value: ConfigValue | null): void => {
-    // `null` means "no change" (an untouched secret) — restore the baseline so
-    // the key counts as unchanged. The baseline lookup can be undefined for a
-    // key the model added but the server never sent; fall back to '' rather
-    // than laundering the undefined through a cast (FE-55).
+    // `null` is an untouched secret: restore the baseline (the server mask) so the key counts as
+    // unchanged. The baseline is undefined for a key the server never sent, hence the ''.
     const base = baseline[key];
     setValue(key, value === null ? (base ?? '') : value);
   };
@@ -97,8 +80,6 @@ function SettingsContent({
       { changes },
       {
         onSuccess: (data) => {
-          // The server forces a full rebuild when a re-index key changed; let
-          // the operator know their library is being re-embedded.
           if (data.reindex_triggered) setReindexNotice(true);
         },
       },
@@ -153,16 +134,8 @@ function SettingsContent({
 }
 
 /**
- * The Settings screen — every configuration value, editable in-app.
- *
- * Fetches the configuration, then renders the config sections inside
- * the shared `SettingsLayout`. The server's `SettingItem[]` is parsed into a
- * typed draft; unsaved edits are tracked against it, the sticky `SaveBar`
- * slides up when dirty, and Save sends only the changed keys each serialised
- * back to a string.
- *
- * Tier: features/ — composes layout + primitives + settings sub-features and
- * wires the settings hooks.
+ * The Settings screen: every configuration value, editable in-app. Save sends only the changed
+ * keys, each serialised back to a string.
  */
 export function SettingsScreen(): React.ReactElement {
   const query = useSettings();

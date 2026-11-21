@@ -16,22 +16,12 @@ export interface TooltipProps {
 }
 
 /**
- * Shows a short label on hover and keyboard focus of its child element.
- *
- * Accessibility behaviour:
- * - The tooltip element has role="tooltip".
- * - aria-describedby on the trigger is set to the tooltip's id when visible.
- * - Dismissed with Escape (per ARIA APG tooltip pattern).
- * - Hidden via conditional rendering (not just visibility) so screen readers
- *   do not encounter it when it is not triggered.
- *
- * All five trigger handlers (onMouseEnter, onMouseLeave, onFocus, onBlur,
- * onKeyDown) are merged with the child's existing handlers — the child's
- * handler fires first, then the tooltip's. No child handler is overwritten.
+ * Shows a short label on hover and keyboard focus of its child; Escape dismisses
+ * it. The tooltip is only rendered while visible, and its trigger handlers are
+ * merged with the child's own (the child's fires first).
  */
 export function Tooltip({ content, children }: TooltipProps): React.ReactElement {
   const [visible, setVisible] = useState(false);
-  // useId produces a stable, unique id per component instance.
   const tooltipId = useId();
 
   const show = useCallback(() => setVisible(true), []);
@@ -87,9 +77,8 @@ export function Tooltip({ content, children }: TooltipProps): React.ReactElement
     [children.props.onKeyDown],
   );
 
-  // Merge tooltip trigger handlers with the child's existing handlers.
-  // aria-describedby is only set when the tooltip is visible — when hidden
-  // the tooltip element is not in the DOM so the reference would dangle.
+  // aria-describedby is set only while visible: when hidden the tooltip is not
+  // in the DOM, so the reference would dangle.
   const triggerProps: Record<string, unknown> = {
     onMouseEnter: handleMouseEnter,
     onMouseLeave: handleMouseLeave,

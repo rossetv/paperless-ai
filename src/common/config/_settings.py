@@ -1,25 +1,4 @@
-"""The Settings shape and the builder that validates a mapping into it.
-
-:class:`Settings` is the single, immutable description of a process's
-configuration (CODE_GUIDELINES §5.2): frozen, so no code path mutates it
-mid-run. This module owns the :class:`Settings` dataclass, the
-provider-dependent defaults, and :func:`_build_settings`, which composes the
-pure parsers in :mod:`._parsers` into a validated, clamped :class:`Settings`.
-
-The DB-backed production entry points (:func:`load_settings`,
-:func:`current_settings`) live in :mod:`._loader`; they layer the ``app.db``
-config table over the environment, then call :func:`_build_settings` here.
-:meth:`Settings.from_environment` is the environment-only path, preserved for
-tests and any caller with no ``app.db``.
-"""
-
-# rationale: this file exceeds the 500-line ceiling (CODE_GUIDELINES §3.1).
-# The bulk is the Settings dataclass — an irreducibly flat enumeration of every
-# configuration field with its docstring. Splitting it would scatter the single
-# authoritative field list across modules without reducing genuine complexity;
-# _build_settings carries its own §3.1 rationale comment (line ~505). No
-# further decomposition is possible without either duplicating the field list
-# or introducing an indirection layer that adds cost without benefit.
+"""The frozen :class:`Settings` shape and the builder that validates into it."""
 
 from __future__ import annotations
 
@@ -59,39 +38,20 @@ from ._parsers import (
 
 log = structlog.get_logger(__name__)
 
-# One-shot deprecation guard: emit the AI_MODELS warning at most once per
-# process lifetime so the hot-load loop (which rebuilds Settings on every
-# config_version bump) does not spam the log. Module-level state is reset
-# between test runs because each test session re-imports the module, but that
-# is the intended behaviour — the flag prevents spam within a single run, not
-# across test isolation boundaries.
+# Warn about AI_MODELS once per process, not on every hot-load rebuild.
 _ai_models_deprecation_warned: bool = False
 
-# Default store path used by the indexer and search server.
 _DEFAULT_INDEX_DB_PATH = "/data/index.db"
-# Default application-database path. app.db holds accounts, sessions, and
-# (from later waves) config; it is separate from index.db so rebuilding the
-# search index never destroys accounts.
 _DEFAULT_APP_DB_PATH = "/data/app.db"
-
-# Default URLs used when environment variables are not set.
 _DEFAULT_PAPERLESS_URL = "http://paperless:8000"
 
-# The marker text written into a document's content when every vision model
-# refuses to transcribe it. A fixed constant, not configurable.
+# Written into a document's content when every vision model refuses it.
 _REFUSAL_MARK = "CHATGPT REFUSED TO TRANSCRIBE"
 
 
 @dataclass(frozen=True, slots=True)
 class _ProviderDefaults:
-    """The per-step model defaults for one provider.
-
-    Resolved per step in :func:`_default_models_for` so each step's model
-    default follows *its own* provider (not one global provider) — the change
-    that makes provider selection independent per step. The Ollama base URL is
-    no longer carried here: it is a single shared connection resolved once in
-    :func:`_build_settings` from the union of the step providers.
-    """
+    """The model defaults for one provider; each step uses its own provider's."""
 
     ocr_models: list[str]
     classify_models: list[str]
@@ -103,11 +63,7 @@ class _ProviderDefaults:
 def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefaults:
     """Return the model defaults for a step whose provider is *provider*.
 
-    Under ``ollama`` the defaults are the local Gemma set; under ``openai`` the
-    GPT set. These are only *defaults* — an explicit ``OCR_MODELS`` /
-    ``CLASSIFY_MODELS`` / ``SEARCH_*_MODEL`` value in *source* still wins in
-    :func:`_build_settings`. Fresh lists are built per call so no two
-    ``Settings`` instances share a mutable default list.
+    Fresh lists per call, so no two ``Settings`` share a mutable default.
     """
     if provider == "ollama":
         return _ProviderDefaults(
@@ -128,34 +84,22 @@ def _default_models_for(provider: Literal["openai", "ollama"]) -> _ProviderDefau
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """Immutable, fully-validated configuration for one process.
-
-    Built once via :meth:`from_environment` or :func:`load_settings`; never
-    mutated thereafter. Every field is set in a single constructor call, so
-    the type checker and the reader both see the complete shape in one place.
-    """
+    """Immutable, fully-validated configuration for one process."""
 
     PAPERLESS_URL: str
-    # Browser-facing base URL for Paperless-ngx document deep-links. Distinct
-    # from PAPERLESS_URL: the API may be reached over an internal address
-    # (e.g. http://paperless:8000) that the user's browser cannot resolve,
-    # while links rendered in the search UI need a public hostname.
+    # Browser-facing base for document deep-links; PAPERLESS_URL may be an
+    # internal address (e.g. http://paperless:8000) a browser cannot resolve.
     PAPERLESS_PUBLIC_URL: str
     PAPERLESS_TOKEN: str
 
     LLM_PROVIDER: Literal["openai", "ollama"]
     OLLAMA_BASE_URL: str | None
-    # OPENAI_API_KEY is required whenever OpenAI is used by EITHER the LLM
-    # provider OR the embedding provider; it may be empty only on a fully-local
-    # deployment where both are ollama (CODE_GUIDELINES §10.8, §15.4). Kept a
-    # plain ``str`` (never optional) — an unused fully-local deployment carries
-    # ``""`` rather than ``None``, so no call site grows a None-guard.
+    # Required whenever any step uses OpenAI. A fully-local deployment carries
+    # "" rather than None, so no call site needs a None-guard.
     OPENAI_API_KEY: str
 
-    # Per-step chat/vision provider. Each defaults to LLM_PROVIDER (the judge to
-    # the planner) so a deployment that set only LLM_PROVIDER is unchanged; set
-    # one explicitly to run that step on a different provider. The shared chat
-    # client registry (common.llm) routes each step to its provider's client.
+    # Per-step providers; each defaults to LLM_PROVIDER (the judge to the
+    # planner). common.llm routes each step to its provider's client.
     OCR_PROVIDER: Literal["openai", "ollama"]
     CLASSIFY_PROVIDER: Literal["openai", "ollama"]
     SEARCH_PLANNER_PROVIDER: Literal["openai", "ollama"]
@@ -200,7 +144,7 @@ class Settings:
 
     When ``True`` (the default), each tag daemon sweeps documents still carrying
     its processing-lock tag on startup and re-queues them — the crash-recovery
-    net for a daemon that died mid-document (CODE_GUIDELINES §1.12). The sweep is
+    net for a daemon that died mid-document. The sweep is
     unconditional (no age or owner check), so it is **unsafe with multiple
     replicas sharing one processing tag**: a restarting replica would steal a
     peer's live lock and re-spend LLM tokens on every rolling restart. Set
@@ -231,9 +175,7 @@ class Settings:
     CLASSIFY_HEADERLESS_CHAR_LIMIT: int
     CLASSIFY_REASONING_EFFORT: str
 
-    # Indexer / store settings (semantic-search spec §10)
     INDEX_DB_PATH: str
-    # Application-database path (web-redesign spec §4.1) — accounts/sessions.
     APP_DB_PATH: str
     EMBEDDING_PROVIDER: Literal["openai", "ollama"]
     """Provider that vectorises document chunks: ``openai`` or ``ollama``.
@@ -256,7 +198,6 @@ class Settings:
     CHUNK_SIZE: int
     CHUNK_OVERLAP: int
 
-    # Search-server settings (semantic-search spec §10)
     SEARCH_TOP_K: int
     SEARCH_MAX_REFINEMENTS: int
     SEARCH_PLANNER_MODEL: str
@@ -292,7 +233,6 @@ class Settings:
     negative values clamp to ``0`` (disabled).
     """
 
-    # Search/RAG token-cost settings (token-cost programme Area 3)
     SEARCH_PLANNER_REASONING_EFFORT: str
     SEARCH_ANSWER_REASONING_EFFORT: str
     SEARCH_CACHE_TTL_SECONDS: int
@@ -327,7 +267,7 @@ class Settings:
     """Reasoning effort for the judge (``none``/``low``/``medium``/``high``/``xhigh``).
     Defaults to ``none`` — a coarse on-topic classification that does not need
     deep reasoning; raise it if the judge bails or filters too aggressively."""
-    # Fail-fast gate knobs (search fail-fast spec §3)
+    # Fail-fast gates.
     SEARCH_GATE_ADEQUACY: bool
     """Enable the query-adequacy gate (Layer 1, folded into the planner call).
 
@@ -412,7 +352,7 @@ class Settings:
     the pre-identity behaviour. Inert until an account has a display name.
     """
 
-    # Multi-spec retrieval settings (multi-spec retrieval overhaul Phase 1)
+    # Multi-spec retrieval.
     SEARCH_PLANNER_MAX_SPECS: int
     """Cap on the number of :class:`~search.models.PlannedSpec`\\s per plan.
 
@@ -442,7 +382,7 @@ class Settings:
     the context window. Clamped to >= 1. Default ``3``.
     """
 
-    # Model-price book settings (refreshable, locally-cached pricing)
+    # Model-price book.
     PRICING_REFRESH_URL: str
     """Operator-provided URL serving the model-price refresh JSON, or ``""`` to disable.
 
@@ -473,9 +413,8 @@ class Settings:
     def from_environment(cls) -> Settings:
         """Build a :class:`Settings` from the process environment alone.
 
-        The environment-only path, preserved for tests and for any caller
-        that has no ``app.db``. Production processes use :func:`load_settings`
-        instead, which layers the ``config`` table over the environment.
+        For tests and callers with no ``app.db``; production uses
+        :func:`load_settings`.
 
         Raises:
             ValueError: A required variable is unset, or a value fails
@@ -486,11 +425,9 @@ class Settings:
     def __repr__(self) -> str:
         """Return a repr with every secret value masked.
 
-        The default dataclass repr serialises every field, so dropping a
-        Settings into a log line (``log.info("startup", settings=settings)``)
-        would leak ``OPENAI_API_KEY`` and ``PAPERLESS_TOKEN`` — never log a
-        secret (CODE_GUIDELINES §7.4, §10). The mask is the same sentinel the
-        Settings API uses, so the two surfaces present the same redaction.
+        The dataclass default would leak ``OPENAI_API_KEY`` and
+        ``PAPERLESS_TOKEN`` into any log line a Settings lands in. The mask
+        matches the one the Settings API uses.
         """
         parts = []
         for field_name in self.__dataclass_fields__:  # type: ignore[attr-defined]
@@ -508,11 +445,8 @@ class Settings:
 def build_settings(source: Mapping[str, str]) -> Settings:
     """Build a validated :class:`Settings` from a string mapping.
 
-    The public validation entry point: callers outside :mod:`common.config`
-    (the Settings route layer, the test-connection probe) use this to run the
-    same parsing/validation the daemon startup path uses on a candidate
-    configuration mapping. The underscore-prefixed :func:`_build_settings` is
-    preserved as a thin private alias for in-module call sites.
+    Public so the Settings routes and the test-connection probe can validate a
+    candidate configuration exactly as startup does.
     """
     return _build_settings(source)
 
@@ -520,25 +454,11 @@ def build_settings(source: Mapping[str, str]) -> Settings:
 def _build_settings(source: Mapping[str, str]) -> Settings:
     """Build a validated :class:`Settings` from a string mapping.
 
-    *source* is the merged configuration: for :func:`load_settings` it is the
-    ``config`` table layered over the process environment; for
-    :meth:`Settings.from_environment` it is ``os.environ`` alone. Parsing,
-    validation and clamping are identical either way — only the source of the
-    raw strings differs.
-
     Raises:
         ValueError: A required key is missing, or a value fails validation.
             The message names the offending key.
-
-    rationale: this function exceeds the 60-line body ceiling because it is an
-    irreducibly flat enumeration of every configuration key — one keyword per
-    setting. Splitting it would only scatter that single list across helpers
-    without lowering the real complexity (CODE_GUIDELINES §3.1).
     """
-    # Resolved first: these drive the provider-dependent defaults below.
     llm_provider = _resolve_llm_provider(source)
-    # EMBEDDING_PROVIDER defaults to openai independently of LLM_PROVIDER.
-    # Resolved here because it drives the OPENAI_API_KEY requirement below.
     embedding_provider = _resolve_embedding_provider(source)
     post_tag_id = _get_int_env(source, "POST_TAG_ID", 444)
     chunk_size = _require_at_least_one(
@@ -549,9 +469,6 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         "SEARCH_TOP_K", _get_int_env(source, "SEARCH_TOP_K", 10)
     )
 
-    # Per-step chat/vision providers. Each seeds from LLM_PROVIDER (the judge
-    # from the planner) so a deployment that set only LLM_PROVIDER is unchanged;
-    # each step's model default then follows its own provider.
     ocr_provider = _resolve_step_provider(source, "OCR_PROVIDER", llm_provider)
     classify_provider = _resolve_step_provider(
         source, "CLASSIFY_PROVIDER", llm_provider
@@ -566,9 +483,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         source, "SEARCH_ANSWER_PROVIDER", llm_provider
     )
 
-    # OLLAMA_BASE_URL is one shared connection. Resolve it whenever ANY step
-    # (chat or embedding) uses Ollama: the configured value, else the local
-    # default. An all-OpenAI deployment keeps it None (unchanged behaviour).
+    # One shared Ollama connection, resolved if any step uses Ollama.
     any_ollama = "ollama" in (
         ocr_provider,
         classify_provider,
@@ -589,15 +504,9 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
     default_answer_model = _default_models_for(answer_provider).answer_model
     default_judge_model = _default_models_for(judge_provider).judge_model
 
-    # Back-compat shim: AI_MODELS is the legacy key. If neither OCR_MODELS nor
-    # CLASSIFY_MODELS is set but AI_MODELS is, use its value as the default for
-    # both. Precedence: explicit new key > AI_MODELS legacy > provider default.
+    # Legacy AI_MODELS: explicit new key > AI_MODELS > provider default.
     legacy_models = _get_csv_env(source, "AI_MODELS", [], require_non_empty=False)
 
-    # One-shot deprecation warning: fire at most once per process lifetime when
-    # AI_MODELS is actually being used as a fallback for at least one of the new
-    # keys.  The flag prevents the hot-load loop from spamming the log on every
-    # config_version bump.
     global _ai_models_deprecation_warned
     if legacy_models and not _ai_models_deprecation_warned:
         _missing_new_keys = [
@@ -617,21 +526,13 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
                 missing_keys=_missing_new_keys,
             )
 
-    # CLASSIFY_PRE_TAG_ID defaults to POST_TAG_ID (an int). _get_int_env has an
-    # int default and treats blank as unset, so it returns a plain int — no
-    # int | None union to narrow away with an assert (COMMON-16, §17.2).
+    # Defaults to POST_TAG_ID, so the classifier picks up what OCR finished.
     classify_pre_tag_id = _get_int_env(source, "CLASSIFY_PRE_TAG_ID", post_tag_id)
 
-    # PAPERLESS_URL is the API base (often an internal address);
-    # PAPERLESS_PUBLIC_URL is the browser-facing base for document
-    # deep-links and falls back to PAPERLESS_URL when unset, so existing
-    # single-URL deployments are unaffected. Both are stored stripped of
-    # any trailing slash so callers can append paths cleanly.
+    # Stripped of trailing slashes so callers can append paths cleanly.
     paperless_url = source.get("PAPERLESS_URL", _DEFAULT_PAPERLESS_URL).rstrip("/")
     paperless_public_url = source.get("PAPERLESS_PUBLIC_URL", paperless_url).rstrip("/")
 
-    # The three relevance-badge cut-points are validated together (range and
-    # ordering) so a misconfigured tier fails closed at config-build time.
     tiers = _resolve_relevance_tiers(source)
 
     return Settings(
@@ -640,11 +541,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         PAPERLESS_TOKEN=_get_required_env(source, "PAPERLESS_TOKEN"),
         LLM_PROVIDER=llm_provider,
         OLLAMA_BASE_URL=ollama_base_url,
-        # Required whenever OpenAI is actually used by ANY step — the five
-        # chat/vision steps OR the embedding provider. A fully-local deployment
-        # (every step ollama) may omit it, so it defaults to "" there; every
-        # other config (any step on openai) keeps the required behaviour and
-        # fails closed at config-build time if the key is absent (§10.8, §1.11).
+        # Optional only when no step, chat or embedding, uses OpenAI.
         OPENAI_API_KEY=(
             _get_required_env(source, "OPENAI_API_KEY")
             if "openai"
@@ -720,10 +617,6 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         LLM_MAX_CONCURRENT=max(0, _get_int_env(source, "LLM_MAX_CONCURRENT", 4)),
         OPENAI_FLEX_TIER=_get_bool_env(source, "OPENAI_FLEX_TIER", True),
-        # Default True: a single-instance deployment keeps its crash-recovery
-        # sweep. A multi-replica deployment sets this False so a restarting
-        # replica does not steal a peer's live processing lock (see the field
-        # docstring and common.stale_lock).
         STALE_LOCK_RECOVERY=_get_bool_env(source, "STALE_LOCK_RECOVERY", True),
         OCR_DPI=_require_at_least_one("OCR_DPI", _get_int_env(source, "OCR_DPI", 300)),
         OCR_MAX_SIDE=_require_at_least_one(
@@ -742,8 +635,7 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         CLASSIFY_DEFAULT_COUNTRY_TAG=source.get(
             "CLASSIFY_DEFAULT_COUNTRY_TAG", ""
         ).strip(),
-        # Clamped >= 0 like its CLASSIFY_* siblings: a negative operator typo
-        # must not flow into the truncation logic (0 means "no char cap").
+        # A negative typo must not reach the truncation logic; 0 means no cap.
         CLASSIFY_MAX_CHARS=max(0, _get_int_env(source, "CLASSIFY_MAX_CHARS", 0)),
         CLASSIFY_MAX_TOKENS=max(0, _get_int_env(source, "CLASSIFY_MAX_TOKENS", 0)),
         CLASSIFY_TAG_LIMIT=max(0, _get_int_env(source, "CLASSIFY_TAG_LIMIT", 5)),
@@ -781,25 +673,21 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         SEARCH_MAX_REFINEMENTS=_resolve_search_max_refinements(source),
         SEARCH_PLANNER_MODEL=source.get("SEARCH_PLANNER_MODEL", default_planner_model),
         SEARCH_ANSWER_MODEL=source.get("SEARCH_ANSWER_MODEL", default_answer_model),
-        # 0.0.0.0 is deliberate: the server is auth-gated by sessions and
-        # API keys (CODE_GUIDELINES §10.1); binding all interfaces lets the
-        # operator restrict exposure at the reverse proxy / port map.
+        # 0.0.0.0 is deliberate: the server is auth-gated, and the operator
+        # restricts exposure at the reverse proxy / port map.
         SEARCH_SERVER_HOST=source.get("SEARCH_SERVER_HOST", "0.0.0.0"),  # nosec B104 - intentional default, auth-gated, exposure restricted by reverse proxy
         SEARCH_SERVER_PORT=_resolve_server_port(source),
-        # Which peers uvicorn trusts the X-Forwarded-For/-Proto headers from.
-        # Defaults to "*" — unchanged behaviour, correct behind a reverse
-        # proxy whose port is the only reachable one. Pin it to the proxy CIDR
-        # in production if the uvicorn port can be reached directly, so an
-        # attacker cannot spoof the client IP or the cookie Secure flag (§10.1).
+        # Peers whose X-Forwarded-For/-Proto uvicorn trusts. "*" is right only
+        # when the proxy is the sole route in; otherwise pin it to the proxy
+        # CIDR so a client cannot spoof its IP or the cookie Secure flag.
         SEARCH_FORWARDED_ALLOW_IPS=source.get("SEARCH_FORWARDED_ALLOW_IPS", "*"),
         SEARCH_SESSION_TTL=_require_at_least_one(
             "SEARCH_SESSION_TTL", _get_int_env(source, "SEARCH_SESSION_TTL", 604800)
         ),
         # 0 means unbounded, mirroring LLM_MAX_CONCURRENT.
         SEARCH_MAX_CONCURRENT=max(0, _get_int_env(source, "SEARCH_MAX_CONCURRENT", 4)),
-        # 0 (the default) disables the per-key daily token quota entirely — the
-        # search path then does zero quota-related DB I/O. A negative value
-        # clamps to 0 (disabled), so a typo never enables a surprise cap.
+        # 0 disables the quota; a negative typo clamps to 0 rather than
+        # enabling a surprise cap.
         SEARCH_KEY_DAILY_TOKEN_QUOTA=max(
             0, _get_int_env(source, "SEARCH_KEY_DAILY_TOKEN_QUOTA", 0)
         ),
@@ -824,46 +712,34 @@ def _build_settings(source: Mapping[str, str]) -> Settings:
         ),
         SEARCH_GATE_ADEQUACY=_get_bool_env(source, "SEARCH_GATE_ADEQUACY", True),
         SEARCH_GATE_RELEVANCE=_get_bool_env(source, "SEARCH_GATE_RELEVANCE", True),
-        # Default 0.60 — sits between off-topic noise (~0.54-0.58 on the large
-        # index, e.g. "popcorn recipe") and real matches (~0.65+), so blatantly
-        # off-topic queries fail fast instead of synthesising over junk. Floored
-        # at 0.0: a negative floor would never reject anything, same as 0.0, so
-        # clamping is more forgiving than raising.
+        # A negative floor rejects nothing, same as 0.0, so clamp rather than
+        # raise.
         SEARCH_RELEVANCE_MIN_SIMILARITY=max(
             0.0, _get_float_env(source, "SEARCH_RELEVANCE_MIN_SIMILARITY", 0.60)
         ),
-        # Badge cut-points (calibrated, validated together above). Independent of
-        # the gate floor: they describe how good a *shown* result is.
         SEARCH_RELEVANCE_TIER_STRONG=tiers.strong,
         SEARCH_RELEVANCE_TIER_GOOD=tiers.good,
         SEARCH_RELEVANCE_TIER_PARTIAL=tiers.partial,
-        # Floored at 0 — a negative char floor disables the Layer-0 guard, same
-        # as 0, so clamping matches the intent without refusing the daemon start.
+        # A negative floor disables the guard, same as 0, so clamp rather than
+        # refuse to start.
         SEARCH_MIN_QUERY_CHARS=max(
             0, _get_int_env(source, "SEARCH_MIN_QUERY_CHARS", 2)
         ),
         SEARCH_IDENTITY_AWARE=_get_bool_env(source, "SEARCH_IDENTITY_AWARE", True),
-        # Multi-spec retrieval settings — clamped >= 1 (Phase 1 overhaul).
         SEARCH_PLANNER_MAX_SPECS=max(
             1, _get_int_env(source, "SEARCH_PLANNER_MAX_SPECS", 8)
         ),
         SEARCH_PLANNER_TAXONOMY_LIMIT=max(
             0, _get_int_env(source, "SEARCH_PLANNER_TAXONOMY_LIMIT", 100)
         ),
-        # SEARCH_PER_SPEC_K defaults to the already-resolved SEARCH_TOP_K so the
-        # per-query candidate budget is unchanged in the single-spec case.
         SEARCH_PER_SPEC_K=max(
             1, _get_int_env(source, "SEARCH_PER_SPEC_K", search_top_k)
         ),
         SEARCH_MAX_CHUNKS_PER_DOC=max(
             1, _get_int_env(source, "SEARCH_MAX_CHUNKS_PER_DOC", 3)
         ),
-        # Empty (the default) disables price refresh: the book uses the bundled
-        # seed only and makes no network call. A non-empty value is validated as
-        # an absolute http/https URL at config-build time.
         PRICING_REFRESH_URL=_resolve_pricing_refresh_url(source),
-        # Clamped >= 1 so a 0/negative typo cannot turn the background refresh
-        # into a hot loop against the price-list host.
+        # Clamped so a 0/negative typo cannot hot-loop the price-list host.
         PRICING_REFRESH_INTERVAL_HOURS=max(
             1, _get_int_env(source, "PRICING_REFRESH_INTERVAL_HOURS", 24)
         ),

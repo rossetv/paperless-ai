@@ -1,21 +1,9 @@
-"""Forward-only versioned migration runner for the application database.
+"""Forward-only migration runner for ``app.db``.
 
-Owns the ordered :data:`MIGRATIONS` list and the logic that applies pending
-migrations to an ``app.db`` connection on startup. Each migration runs inside
-its own explicit ``BEGIN…COMMIT`` transaction; the ``schema_version`` in the
-``meta`` table is advanced inside that same transaction, so a crash mid-way
-rolls the whole step back.
-
-This is adapted from ``store.migrations`` — appdb deliberately does not share
-code with ``store`` (see the package docstring), so the machinery is copied
-and the exception type renamed to :class:`AppDbError`. Migrations are
-forward-only: ``app.db`` starts empty, so there is never data to migrate
-down; a new schema version is a new :data:`MIGRATIONS` entry, never an edit
-to an existing one.
-
-Allowed deps: sqlite3, structlog, appdb.schema (deferred import in the
-migration body to break the schema ↔ migrations import cycle). Forbidden:
-store, search, daemon packages.
+Each migration and its ``schema_version`` bump run in one transaction. The
+machinery is copied from ``store.migrations`` rather than shared so the two
+databases version independently. Add a new :data:`MIGRATIONS` entry; never edit
+an existing one.
 """
 
 from __future__ import annotations
@@ -29,10 +17,8 @@ from appdb.connection import utc_now_iso
 
 log = structlog.get_logger(__name__)
 
-# Substring SQLite puts in the OperationalError message when a queried table
-# does not exist. Used to tell "fresh database, no schema yet" apart from a
-# genuinely broken database (a malformed disk image, a locked file), which
-# raises a *different* OperationalError that must never be masked as fresh.
+# Tells "fresh database" apart from a broken one (malformed image, locked
+# file), whose different OperationalError must never be masked as fresh.
 _NO_SUCH_TABLE_MARKER = "no such table"
 
 
@@ -47,34 +33,18 @@ def _is_missing_table_error(exc: sqlite3.Error) -> bool:
 class AppDbError(Exception):
     """Base exception for application-database failures.
 
-    Raised when ``appdb`` meets a condition it cannot handle safely — most
-    notably a ``schema_version`` higher than any migration the running code
-    knows, which means the database was written by a newer release. Callers
-    that must distinguish specific failures subclass this type.
+    Notably raised for a ``schema_version`` newer than any known migration.
     """
 
 
 def _apply_schema_string(conn: sqlite3.Connection, schema: str) -> None:
     """Execute each ``CREATE``/``INSERT`` statement in *schema* on *conn*.
 
-    Strips ``--`` comment lines, splits *schema* on ``";"`` and executes every
-    non-empty statement via ``conn.execute``. ``conn.executescript`` is
-    deliberately avoided — it issues an implicit ``COMMIT`` before running,
-    which would break the atomicity of the surrounding transaction and could
-    leave the schema applied but ``schema_version`` un-advanced.
-
-    Comments are stripped before splitting: a ``";"`` inside a comment line
-    (e.g. ``-- …; the writer keeps…``) would otherwise produce a fragment
-    starting with plain text rather than a SQL keyword and break the migration.
-    This mirrors ``store.migrations._migrate_v1`` exactly (CODE_GUIDELINES
-    §2.2.1: a fix to one runner is applied to the sibling by hand).
-
-    This is a package-private helper called only by the ``_migrate_vN``
-    functions; it carries no deferred import because the callers do those.
-
-    Args:
-        conn: An open connection with an active transaction.
-        schema: A ``;``-separated string of SQL DDL/DML statements.
+    ``conn.executescript`` is avoided because its implicit ``COMMIT`` would
+    break the surrounding transaction and could leave the schema applied but
+    ``schema_version`` un-advanced. ``--`` comment lines are stripped before
+    splitting on ``";"`` because a ``;`` inside a comment would break a
+    statement. Keep in step with ``store.migrations._migrate_v1``.
     """
     comment_stripped = "\n".join(
         line for line in schema.splitlines() if not line.strip().startswith("--")
@@ -86,20 +56,7 @@ def _apply_schema_string(conn: sqlite3.Connection, schema: str) -> None:
 
 
 def _migrate_v1(conn: sqlite3.Connection) -> None:
-    """Apply the v1 schema: the users and sessions tables and their indexes.
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V1`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens.
-    ``conn.executescript`` is deliberately avoided — it issues an implicit
-    ``COMMIT`` before running, which would break the atomicity of the
-    surrounding transaction and could leave the schema applied but
-    ``schema_version`` un-advanced.
-
-    The import of ``SCHEMA_V1`` is deferred to this function body to break
-    the import cycle: ``appdb.schema`` imports :func:`run_migrations` from
-    this module, and this function needs ``SCHEMA_V1`` from ``appdb.schema``.
-    """
+    """Apply the v1 schema: the users and sessions tables and their indexes."""
     # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V1  # noqa: PLC0415
 
@@ -107,88 +64,32 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_v2(conn: sqlite3.Connection) -> None:
-    """Apply the v2 schema: the recent_searches table and its index.
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V2`
-    individually so every statement stays inside the single explicit
-    transaction :func:`run_migrations` opens — ``conn.executescript`` is
-    avoided for the same reason as in :func:`_migrate_v1` (it issues an
-    implicit ``COMMIT`` that would break the migration's atomicity).
-
-    The import of ``SCHEMA_V2`` is deferred to this function body to break
-    the ``appdb.schema`` <-> ``appdb.migrations`` import cycle, exactly as
-    :func:`_migrate_v1` defers ``SCHEMA_V1``.
-    """
-    # Deferred import breaks the schema <-> migrations circular dependency.
+    """Apply the v2 schema: the recent_searches table and its index."""
     from appdb.schema import SCHEMA_V2  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V2)
 
 
 def _migrate_v3(conn: sqlite3.Connection) -> None:
-    """Apply the v3 schema: the api_keys table and its two indexes.
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V3`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens.
-    ``conn.executescript`` is deliberately avoided — it issues an implicit
-    ``COMMIT`` first, which would break the atomicity of the surrounding
-    transaction.
-
-    The import of ``SCHEMA_V3`` is deferred to the function body to keep the
-    ``schema`` <-> ``migrations`` import cycle broken, exactly as
-    :func:`_migrate_v1` does.
-    """
-    # Deferred import breaks the schema <-> migrations circular dependency.
+    """Apply the v3 schema: the api_keys table and its two indexes."""
     from appdb.schema import SCHEMA_V3  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V3)
 
 
 def _migrate_v4(conn: sqlite3.Connection) -> None:
-    """Apply the v4 schema: the config key/value table (Wave 4).
-
-    Creates the ``config`` table and seeds the ``config_version`` row in the
-    ``meta`` table at ``0`` — the hot-load coordination counter that
-    :mod:`appdb.config` bumps on every config write so every process can
-    detect a change without a restart (web-redesign §5, Wave 4).
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V4`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens —
-    ``conn.executescript`` is avoided because it issues an implicit
-    ``COMMIT``. The ``config_version`` seed is one DML ``INSERT`` in the same
-    transaction; ``meta`` already exists from migration v1.
-
-    The import of ``SCHEMA_V4`` is deferred to the function body to break the
-    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
-    :func:`_migrate_v1` does.
-    """
-    # Deferred import breaks the schema <-> migrations circular dependency.
+    """Apply the v4 schema: the config table, and seed ``config_version`` at 0."""
     from appdb.schema import SCHEMA_V4  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V4)
-    # Seed the hot-load counter. INSERT OR IGNORE keeps the migration
-    # idempotent and never clobbers a value a running deployment has bumped.
+    # OR IGNORE: never clobber a counter a running deployment has bumped.
     conn.execute(
         "INSERT OR IGNORE INTO meta (key, value) VALUES ('config_version', '0')"
     )
 
 
 def _migrate_v5(conn: sqlite3.Connection) -> None:
-    """Apply the v5 schema: daemon_status and reconcile_activity (Wave 6).
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V5`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens —
-    ``conn.executescript`` is avoided because it issues an implicit
-    ``COMMIT``.
-
-    The import of ``SCHEMA_V5`` is deferred to the function body to break the
-    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
-    :func:`_migrate_v1` does.
-    """
-    # Deferred import breaks the schema <-> migrations circular dependency.
+    """Apply the v5 schema: the daemon_status and reconcile_activity tables."""
     from appdb.schema import SCHEMA_V5  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V5)
@@ -197,29 +98,17 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
 def _migrate_v6(conn: sqlite3.Connection) -> None:
     """Migrate AI_MODELS to OCR_MODELS and CLASSIFY_MODELS (config split).
 
-    If an ``AI_MODELS`` row exists in the ``config`` table, its value is
-    copied to ``OCR_MODELS`` (only if absent) and ``CLASSIFY_MODELS`` (only
-    if absent), then the ``AI_MODELS`` row is deleted. The ``config_version``
-    counter is bumped once so every running process detects the change on its
-    next hot-load check.
-
-    Idempotent: running it a second time finds no ``AI_MODELS`` row and makes
-    no further changes. This migration is called by :func:`run_migrations`
-    inside an explicit ``BEGIN…COMMIT`` transaction, so partial failures roll
-    back atomically.
+    The ``AI_MODELS`` value is copied to whichever of the two keys is absent,
+    then deleted, and ``config_version`` is bumped so running processes reload.
     """
     row = conn.execute("SELECT value FROM config WHERE key = 'AI_MODELS'").fetchone()
     if row is None:
-        return  # Nothing to migrate.
+        return
 
     legacy_value: str = row["value"]
-    # Use the package-wide timestamp helper so this migration writes updated_at
-    # in the same ISO-8601 format every other appdb write uses (utc_now_iso
-    # lives in appdb.connection — sqlite3 + datetime only, no forbidden deps).
     now = utc_now_iso()
 
-    # Insert OCR_MODELS and CLASSIFY_MODELS only when they are absent so we
-    # do not overwrite an operator who has already set one of them explicitly.
+    # Never overwrite a key an operator has already set explicitly.
     for key in ("OCR_MODELS", "CLASSIFY_MODELS"):
         existing = conn.execute("SELECT 1 FROM config WHERE key = ?", (key,)).fetchone()
         if existing is None:
@@ -228,12 +117,8 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
                 (key, legacy_value, now),
             )
 
-    # Remove the old key regardless.
     conn.execute("DELETE FROM config WHERE key = 'AI_MODELS'")
 
-    # Bump config_version so hot-loading processes rebuild their Settings.
-    # Inlined rather than imported from appdb.config to stay consistent with
-    # the rest of this module (all deps are sqlite3 + structlog only).
     conn.execute(
         "UPDATE meta SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) "
         "WHERE key = 'config_version'"
@@ -243,18 +128,7 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_v7(conn: sqlite3.Connection) -> None:
-    """Apply the v7 schema: the api_key_usage table (per-key daily spend quota).
-
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V7`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens —
-    ``conn.executescript`` is avoided because it issues an implicit ``COMMIT``.
-
-    The import of ``SCHEMA_V7`` is deferred to the function body to break the
-    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
-    :func:`_migrate_v1` does.
-    """
-    # Deferred import breaks the schema <-> migrations circular dependency.
+    """Apply the v7 schema: the api_key_usage table (per-key daily spend quota)."""
     from appdb.schema import SCHEMA_V7  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V7)
@@ -263,26 +137,16 @@ def _migrate_v7(conn: sqlite3.Connection) -> None:
 def _migrate_v8(conn: sqlite3.Connection) -> None:
     """Apply the v8 schema: the model_pricing table (cached model-price book).
 
-    Executes each DDL statement from :data:`appdb.schema.SCHEMA_V8`
-    individually via ``conn.execute`` so every statement stays inside the
-    single explicit transaction :func:`run_migrations` opens —
-    ``conn.executescript`` is avoided because it issues an implicit ``COMMIT``.
-
-    The import of ``SCHEMA_V8`` is deferred to the function body to break the
-    ``appdb.schema`` ↔ ``appdb.migrations`` import cycle, exactly as
-    :func:`_migrate_v1` does. The table is created empty: the price book seeds
-    from :data:`search.pricing.MODEL_PRICES` when the cache is empty, so there
-    is no seed INSERT to run here.
+    Created empty; the price book seeds itself from
+    :data:`search.pricing.MODEL_PRICES` when the cache is empty.
     """
-    # Deferred import breaks the schema <-> migrations circular dependency.
     from appdb.schema import SCHEMA_V8  # noqa: PLC0415
 
     _apply_schema_string(conn, SCHEMA_V8)
 
 
-# Ordered (version, migration_function) pairs. The version is the
-# schema_version written to meta after the migration commits. Entries must be
-# in strictly ascending version order; the runner relies on it.
+# (schema_version, migration) pairs in strictly ascending order; the runner
+# relies on it.
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate_v1),
     (2, _migrate_v2),
@@ -298,19 +162,11 @@ MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
 def run_migrations(conn: sqlite3.Connection) -> None:
     """Apply every pending migration to *conn* and advance ``schema_version``.
 
-    Reads ``meta.schema_version`` (treated as 0 when the ``meta`` table or its
-    row is absent — a fresh database has neither), then applies every
-    migration whose version exceeds the current one, in ascending order, each
-    inside its own ``BEGIN…COMMIT`` transaction. The new version is persisted
-    in ``meta`` inside that same transaction.
-
-    Args:
-        conn: An open connection from :func:`appdb.connection.connect`.
+    Each migration runs in its own transaction together with its version bump.
 
     Raises:
-        AppDbError: The stored ``schema_version`` exceeds the highest known
-            migration version — the database was written by newer code, and
-            proceeding could corrupt or misread the schema.
+        AppDbError: The stored ``schema_version`` is newer than any known
+            migration, so the database was written by a newer release.
     """
     current_version = _read_schema_version(conn)
     max_known_version = MIGRATIONS[-1][0]
@@ -338,8 +194,6 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         conn.execute("BEGIN")
         try:
             migration_fn(conn)
-            # Persist the new version in the same transaction so a crash
-            # rolls back to the pre-migration state entirely.
             conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(version),),
@@ -354,21 +208,8 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 def _read_schema_version(conn: sqlite3.Connection) -> int:
     """Return the stored ``schema_version``, or 0 for a fresh database.
 
-    Returns 0 when the ``meta`` table does not exist (a fresh database) or
-    when its ``schema_version`` row is absent. Any OperationalError other than
-    a missing ``meta`` table — a malformed disk image, a locked file —
-    propagates rather than being masked as version 0, so a corrupt or busy
-    ``app.db`` fails loud instead of being silently re-migrated (§1.11).
-
-    Args:
-        conn: An open SQLite connection.
-
-    Returns:
-        The stored ``schema_version`` as an integer, or 0 when absent.
-
-    Raises:
-        sqlite3.OperationalError: The query failed for a reason other than the
-            ``meta`` table being absent.
+    Any other OperationalError (malformed image, locked file) propagates, so a
+    corrupt or busy ``app.db`` fails loud instead of being re-migrated.
     """
     try:
         row = conn.execute(
@@ -376,7 +217,6 @@ def _read_schema_version(conn: sqlite3.Connection) -> int:
         ).fetchone()
     except sqlite3.OperationalError as exc:
         if _is_missing_table_error(exc):
-            # The meta table does not exist yet — a fresh database.
             return 0
         # A malformed or locked database must fail loud, never be re-migrated.
         raise

@@ -1,13 +1,6 @@
 /**
- * TaxonomyCombobox — searchable single-select with create-new option.
- *
- * Reused by the correspondent and document-type fields on the document page.
- * Closed state shows a trigger button with the selected item's name (or "—"
- * when nothing is selected). Open state renders a filtered text input plus a
- * listbox of matching options, via the FilterableListbox primitive.
- *
- * canEdit=false renders the selected item's name as static text; no button,
- * no chevron, no interaction.
+ * Searchable single-select with a create-new option, for the correspondent and
+ * document-type fields. Read-only mode shows the selected name as plain text.
  */
 import React, { useId } from 'react';
 import type { TaxonomyItem } from '../../../api/types';
@@ -16,21 +9,13 @@ import type { FilterableItem } from '../../../components/patterns/FilterableList
 import styles from './TaxonomyCombobox.module.css';
 
 export interface TaxonomyComboboxProps {
-  /** Column label shown to the left of the combobox. */
   label: string;
-  /** Full list of available items. */
   items: TaxonomyItem[];
-  /** ID of the currently selected item, or null if nothing is selected. */
   selectedId: number | null;
-  /** Whether the field can be opened and edited. */
   canEdit: boolean;
-  /**
-   * Called with the selected item's ID when the user picks an existing option,
-   * or with `null` when the user clicks the "Clear" option to remove the
-   * current selection.
-   */
+  /** Called with `null` when the user picks "Clear". */
   onSelect: (id: number | null) => void;
-  /** Called with the trimmed query string when the user clicks "Create <query>". */
+  /** Called with the trimmed query when the user picks "Create <query>". */
   onCreate: (name: string) => void;
 }
 
@@ -40,7 +25,6 @@ export function TaxonomyCombobox({
   const uid = useId();
   const selected = items.find((i) => i.id === selectedId) ?? null;
 
-  // ── Read-only mode ──────────────────────────────────────────────────────────
   if (!canEdit) {
     return (
       <div className={styles['row']}>

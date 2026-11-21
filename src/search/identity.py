@@ -9,17 +9,13 @@ multi-line instruction block or forge the synthesiser's data fence.
 The :data:`mcp_asker` ContextVar carries the resolved asker from the MCP auth
 middleware (raw ASGI, no FastAPI dependency injection) to the MCP tool handlers
 that run downstream in the same async context.
-
-Allowed deps: contextvars, typing (leaf module). Forbidden: common.config,
-fastapi, sqlite3.
 """
 
 from __future__ import annotations
 
 from contextvars import ContextVar
 
-# Carries the sanitised asker from the MCP auth middleware to the tool handlers
-# (the tools then apply the SEARCH_IDENTITY_AWARE gate via the live settings).
+# The tools apply the SEARCH_IDENTITY_AWARE gate themselves, from live settings.
 mcp_asker: ContextVar[str | None] = ContextVar("mcp_asker", default=None)
 
 # Upper bound on an injected display name — a name, not a paragraph.
@@ -37,8 +33,6 @@ def sanitise_display_name(name: str | None) -> str | None:
     if name is None:
         return None
     collapsed = " ".join(name.split())
-    # Strip the fence-marker characters so a name can never open or close the
-    # synthesiser's "<<<DATA nonce>>>" data region.
     collapsed = collapsed.replace("<<<", "").replace(">>>", "").strip()
     if not collapsed:
         return None

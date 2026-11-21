@@ -1,20 +1,4 @@
-"""Tests for store.writer.StoreWriter — lifecycle and bulk operations.
-
-Covers the writer behaviours outside the per-document write path:
-- construction creates the schema
-- get_index_state / get_all_document_ids report indexed documents
-- check_embedding_model wipes everything (incl. documents) on a model change,
-  so the next reconcile actually re-embeds rather than a metadata-only pass
-- refresh_taxonomy replaces the taxonomy wholesale
-- read_meta / write_meta round-trip
-- checkpoint runs without error
-- two threads calling upsert_document concurrently do not corrupt the store
-
-The per-document upsert / delete / update_metadata behaviours live in
-test_writer.py — the writer's tests are split across two files for the
-500-line ceiling (CODE_GUIDELINES §3.1).  Shared fixtures (``db_path``) come
-from tests/unit/store/conftest.py.
-"""
+"""Tests for StoreWriter lifecycle, embedding-model checks and bulk operations."""
 
 from __future__ import annotations
 
@@ -26,11 +10,6 @@ from tests.helpers.factories import make_chunks, make_document_meta
 from tests.helpers.store import open_writer
 
 
-# ---------------------------------------------------------------------------
-# Construction
-# ---------------------------------------------------------------------------
-
-
 class TestConstruction:
     def test_writer_initialises_without_error(self, db_path: str) -> None:
         writer = open_writer(db_path)
@@ -39,16 +18,10 @@ class TestConstruction:
     def test_writer_creates_schema_on_connect(self, db_path: str) -> None:
         writer = open_writer(db_path)
         writer.close()
-        # Schema must be present after construction — verify by reading a table.
         conn = connect(db_path)
         row = conn.execute("SELECT count(*) FROM documents").fetchone()
         conn.close()
         assert row[0] == 0
-
-
-# ---------------------------------------------------------------------------
-# get_index_state and get_all_document_ids
-# ---------------------------------------------------------------------------
 
 
 class TestIndexState:
@@ -85,25 +58,18 @@ class TestIndexState:
         assert ids == {1, 2}
 
 
-# ---------------------------------------------------------------------------
-# check_embedding_model
-# ---------------------------------------------------------------------------
-
-
 class TestCheckEmbeddingModel:
     def test_returns_true_on_first_run(self, db_path: str) -> None:
-        """First run has no prior value — the spec says first run returns True
-        (a rebuild is needed) and records the model."""
+        """With no stored model, a rebuild is needed and the model is recorded."""
         writer = open_writer(db_path, model="model-a", dimensions=4)
         result = writer.check_embedding_model()
         writer.close()
         assert result is True
 
     def test_returns_false_when_model_unchanged(self, db_path: str) -> None:
-        """After a successful check_embedding_model, calling it again returns False."""
         writer = open_writer(db_path, model="model-a", dimensions=4)
-        writer.check_embedding_model()  # first call — sets the model
-        result = writer.check_embedding_model()  # second call — model matches
+        writer.check_embedding_model()
+        result = writer.check_embedding_model()
         writer.close()
         assert result is False
 
@@ -132,11 +98,8 @@ class TestCheckEmbeddingModel:
     ) -> None:
         """A model change must wipe documents too, not just chunks.
 
-        Regression (IDX): keeping the document rows lets the reconcile's
-        content-hash check classify each document as unchanged and take a
-        metadata-only pass — re-embedding nothing and leaving the index
-        permanently empty. Documents, chunks, and chunks_fts must all be wiped
-        so the next sync re-fetches and re-embeds the whole archive.
+        Surviving document rows would pass the reconcile's content-hash check as
+        unchanged, so nothing would be re-embedded and the index would stay empty.
         """
         writer = open_writer(db_path, model="model-a", dimensions=4)
         writer.check_embedding_model()
@@ -158,7 +121,6 @@ class TestCheckEmbeddingModel:
         assert fts_count == 0, "chunks_fts must be wiped on a model change"
 
     def test_model_change_resets_watermark(self, db_path: str) -> None:
-        """On model change, modified_watermark must be cleared."""
         writer = open_writer(db_path, model="model-a", dimensions=4)
         writer.check_embedding_model()
         writer.write_meta("modified_watermark", "2024-01-01T00:00:00Z")
@@ -187,17 +149,11 @@ class TestCheckEmbeddingModel:
     def test_existing_openai_index_without_provider_meta_is_not_rebuilt(
         self, db_path: str
     ) -> None:
-        """Prod-upgrade regression: an index whose meta predates EMBEDDING_PROVIDER.
+        """An index with no embedding_provider meta reads as "openai" and is kept.
 
-        THE critical no-false-rebuild proof. A production OpenAI index built
-        before this feature has model + dimensions meta but NO embedding_provider
-        key. On upgrade, the configured provider is the default "openai". An
-        absent stored provider must read as "openai", so the identity matches and
-        check_embedding_model() returns False — no wipe, no surprise full re-embed
-        of the real, un-backed-up index.
+        Indexes built before EMBEDDING_PROVIDER existed lack the key; treating that
+        as a mismatch would wipe and fully re-embed a production index.
         """
-        # Seed an index the OLD way: model + dims meta, but deliberately NO
-        # embedding_provider key (mirroring a pre-feature index on disk).
         seed = open_writer(db_path, model="text-embedding-3-small", dimensions=1536)
         seed.write_meta("embedding_model", "text-embedding-3-small")
         seed.write_meta("embedding_dimensions", "1536")
@@ -205,7 +161,6 @@ class TestCheckEmbeddingModel:
         assert seed.read_meta("embedding_provider") is None  # precondition
         seed.close()
 
-        # Reopen with the default OpenAI config (provider="openai").
         writer = open_writer(
             db_path,
             model="text-embedding-3-small",
@@ -222,13 +177,9 @@ class TestCheckEmbeddingModel:
     def test_provider_switch_openai_to_ollama_triggers_rebuild(
         self, db_path: str
     ) -> None:
-        """Switching openai→ollama (same model/dims) must wipe and re-embed.
-
-        OpenAI and Ollama vectors are not comparable, so a provider switch must
-        rebuild even when the model name and dimensions are unchanged.
-        """
+        """OpenAI and Ollama vectors are not comparable, even for one model name."""
         seed = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="openai")
-        seed.check_embedding_model()  # stamps provider=openai, model, dims
+        seed.check_embedding_model()
         seed.upsert_document(make_document_meta(id=1), make_chunks(2))
         seed.close()
 
@@ -245,9 +196,8 @@ class TestCheckEmbeddingModel:
     def test_provider_switch_ollama_to_openai_triggers_rebuild(
         self, db_path: str
     ) -> None:
-        """The reverse switch (ollama→openai) also wipes and re-stamps."""
         seed = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="ollama")
-        seed.check_embedding_model()  # stamps provider=ollama
+        seed.check_embedding_model()
         seed.close()
 
         writer = open_writer(db_path, model="shared-model", EMBEDDING_PROVIDER="openai")
@@ -263,29 +213,23 @@ class TestCheckEmbeddingModel:
         seed = open_writer(
             db_path, model="nomic-embed-text", EMBEDDING_PROVIDER="ollama"
         )
-        seed.check_embedding_model()  # first run — stamps the identity
+        seed.check_embedding_model()
         seed.close()
 
         writer = open_writer(
             db_path, model="nomic-embed-text", EMBEDDING_PROVIDER="ollama"
         )
-        rebuild = writer.check_embedding_model()  # identity matches
+        rebuild = writer.check_embedding_model()
         writer.close()
 
         assert rebuild is False
 
     def test_first_run_stamps_the_provider(self, db_path: str) -> None:
-        """First run records the configured provider into meta explicitly."""
         writer = open_writer(db_path, model="model-a", EMBEDDING_PROVIDER="openai")
         writer.check_embedding_model()
         stored_provider = writer.read_meta("embedding_provider")
         writer.close()
         assert stored_provider == "openai"
-
-
-# ---------------------------------------------------------------------------
-# refresh_taxonomy
-# ---------------------------------------------------------------------------
 
 
 class TestRefreshTaxonomy:
@@ -313,7 +257,6 @@ class TestRefreshTaxonomy:
                 TaxonomyEntry(kind="tag", id=2, name="Receipt"),
             ]
         )
-        # Second call with different entries must fully replace the first.
         writer.refresh_taxonomy(
             [TaxonomyEntry(kind="correspondent", id=10, name="Acme")]
         )
@@ -335,11 +278,6 @@ class TestRefreshTaxonomy:
         count = conn.execute("SELECT count(*) FROM taxonomy").fetchone()[0]
         conn.close()
         assert count == 0
-
-
-# ---------------------------------------------------------------------------
-# read_meta / write_meta
-# ---------------------------------------------------------------------------
 
 
 class TestMeta:
@@ -365,11 +303,6 @@ class TestMeta:
         assert result == "v2"
 
 
-# ---------------------------------------------------------------------------
-# checkpoint
-# ---------------------------------------------------------------------------
-
-
 class TestCheckpoint:
     def test_checkpoint_does_not_raise(self, db_path: str) -> None:
         writer = open_writer(db_path)
@@ -378,17 +311,9 @@ class TestCheckpoint:
         writer.close()
 
 
-# ---------------------------------------------------------------------------
-# Thread safety: concurrent upserts do not corrupt the store
-# ---------------------------------------------------------------------------
-
-
 class TestConcurrentUpserts:
     def test_concurrent_upserts_do_not_corrupt(self, db_path: str) -> None:
-        """Two threads calling upsert_document concurrently must not corrupt the store.
-
-        The internal threading.Lock must serialise the transactions.
-        """
+        """The writer's internal lock must serialise concurrent upserts."""
         writer = open_writer(db_path)
         errors: list[Exception] = []
 
@@ -424,28 +349,20 @@ class TestConcurrentUpserts:
         assert chunk_count == 30
         assert fts_count == 30
         assert chunk_ids == fts_rowids, (
-            "§4.2 invariant violated after concurrent upserts"
+            "chunks and chunks_fts diverged after concurrent upserts"
         )
 
 
-# ---------------------------------------------------------------------------
-# Re-embed cost-guard — CRITICAL projected-scope log before the model-change wipe
-# ---------------------------------------------------------------------------
-
-
 def test_embedding_model_change_logs_projected_scope_at_critical(db_path: str) -> None:
-    """check_embedding_model logs a CRITICAL projected-cost line on a mismatch (IDX-04)."""
+    """check_embedding_model logs a CRITICAL projected-cost line on a mismatch."""
     import structlog.testing
 
-    # Seed an index under model "old-model".  check_embedding_model writes the
-    # embedding_model meta so the reopen below sees a genuine mismatch (not a
-    # first-run None), then upsert the chunks whose count the log projects.
+    # Stamp the model first so the reopen is a real mismatch, not a first run.
     writer = open_writer(db_path, model="old-model")
-    writer.check_embedding_model()  # writes embedding_model meta = "old-model"
+    writer.check_embedding_model()
     writer.upsert_document(make_document_meta(id=1), make_chunks(4))
     writer.close()
 
-    # Reopen under a DIFFERENT model → mismatch → wipe path.
     writer = open_writer(db_path, model="new-model")
     try:
         with structlog.testing.capture_logs() as captured:
@@ -453,7 +370,7 @@ def test_embedding_model_change_logs_projected_scope_at_critical(db_path: str) -
     finally:
         writer.close()
 
-    assert rebuilt is True  # behaviour unchanged: a mismatch still rebuilds
+    assert rebuilt is True
     critical = [e for e in captured if e["event"] == "store.full_reembed_projected"]
     assert len(critical) == 1
     assert critical[0]["log_level"] == "critical"
@@ -463,19 +380,14 @@ def test_embedding_model_change_logs_projected_scope_at_critical(db_path: str) -
 
 
 def test_embedding_model_match_logs_no_reembed_projection(db_path: str) -> None:
-    """When the model matches, no wipe and no projected-cost CRITICAL log.
-
-    The first call writes the model meta (a first-run mismatch); the assertion
-    is on the SECOND call, where the stored model already matches so no wipe and
-    no re-embed projection happen.
-    """
+    """When the stored model matches, no projected-cost CRITICAL log is emitted."""
     import structlog.testing
 
     writer = open_writer(db_path, model="same-model")
     try:
-        writer.check_embedding_model()  # first run — writes embedding_model meta
+        writer.check_embedding_model()
         with structlog.testing.capture_logs() as captured:
-            rebuilt = writer.check_embedding_model()  # model now matches
+            rebuilt = writer.check_embedding_model()
     finally:
         writer.close()
 

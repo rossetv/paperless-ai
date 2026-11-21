@@ -1,24 +1,7 @@
-"""Shared helpers for the Wave 1 account integration tests.
+"""Helpers for the account integration tests.
 
-The account integration tests (``test_accounts_setup``, ``test_accounts_auth``,
-``test_accounts_rbac``, ``test_accounts_guards``) all build the real search
-FastAPI app over a real ``tmp_path`` ``app.db`` and a real seeded
-``index.db``. The app-building, store-seeding and account-seeding code lives
-here so each file imports one definition, mirroring
-``tests/integration/conftest.py`` for the search pipeline.
-
-Two ways in:
-
-- :func:`build_account_client` builds the app and returns the ``TestClient``
-  plus the open ``app.db`` connection, so a test can inspect or mutate the
-  database directly (e.g. assert sessions were deleted).
-- :func:`seed_admin` / :func:`seed_user` insert a user straight through
-  ``appdb`` — bypassing the setup flow — for tests that need an existing
-  account without driving ``POST /api/setup``.
-
-``base_url="https://testserver"`` is used so the ``Secure`` session cookie is
-retained on follow-up requests (the cookie carries the ``Secure`` flag, which
-a plain ``http://`` test client would drop).
+They build the real search app over a ``tmp_path`` ``app.db`` and a seeded
+``index.db``, and seed users straight through ``appdb`` to skip first-run setup.
 """
 
 from __future__ import annotations
@@ -44,23 +27,13 @@ from tests.helpers.factories import (
     make_source_document,
 )
 
-# Embedding width — four keeps the seeded vector tiny; the integration tests
-# never exercise real retrieval geometry, only routing and auth.
+# These tests exercise routing and auth, never retrieval geometry.
 _DIMENSIONS = 4
 _AXIS_A: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)
 
 
 def make_settings(tmp_path: Path, **overrides: Any) -> MagicMock:
-    """Build a settings mock pointing at the ``tmp_path`` index store.
-
-    ``APP_DB_PATH`` is set to a ``tmp_path`` file too, although the account
-    tests pass an explicit in-tree ``app.db`` connection to
-    :func:`build_account_client` and never let ``create_app`` open one itself.
-
-    Args:
-        tmp_path: The pytest ``tmp_path`` directory.
-        **overrides: Any further ``Settings`` field overrides.
-    """
+    """Build a settings mock pointing the index and app databases at *tmp_path*."""
     return make_search_settings(
         INDEX_DB_PATH=str(tmp_path / "index.db"),
         APP_DB_PATH=str(tmp_path / "app.db"),
@@ -70,13 +43,9 @@ def make_settings(tmp_path: Path, **overrides: Any) -> MagicMock:
 
 
 def seed_store(settings: MagicMock) -> None:
-    """Seed the index store with one reconciled document and taxonomy.
+    """Seed the index with one document, taxonomy and a reconcile timestamp.
 
-    The reconcile timestamp is written so ``GET /api/healthz`` and the public
-    stats endpoint see a fully-ready store.
-
-    Args:
-        settings: The settings mock from :func:`make_settings`.
+    The timestamp makes healthz and the stats endpoint report a ready store.
     """
     writer = StoreWriter(settings)
     try:
@@ -112,9 +81,7 @@ def seed_store(settings: MagicMock) -> None:
 def make_mock_core() -> MagicMock:
     """Build a stub ``SearchCore`` returning one fixed source document.
 
-    The account integration tests only need ``/api/search`` to *succeed* once
-    a caller is authorised — the answer content is irrelevant — so the core
-    is a stub rather than the real pipeline.
+    Account tests only need ``/api/search`` to succeed once a caller is authorised.
     """
     core = MagicMock()
     core.answer.return_value = make_search_result(
@@ -131,9 +98,8 @@ def make_mock_core() -> MagicMock:
             ),
         ),
     )
-    # The /api/search handler reads SEARCH_MAX_CONCURRENT off the live core's
-    # settings to size the shared semaphore; give the stub a real int-typed
-    # settings object so set_limit receives an int, as the production core does.
+    # /api/search sizes its semaphore from core.settings.SEARCH_MAX_CONCURRENT,
+    # so the stub needs a real int there, not a MagicMock.
     core.settings = make_search_settings()
     return core
 
@@ -145,31 +111,12 @@ def build_account_client(
 ) -> TestClient:
     """Build a ``TestClient`` over the real app, sharing the test's ``app.db``.
 
-    The search app no longer holds a single shared ``app.db`` connection: it
-    opens one *per request* (see :func:`search.deps.get_app_db`). ``create_app``
-    is therefore given the ``app.db`` *path* — ``settings.APP_DB_PATH``, which
-    :func:`make_settings` points at ``tmp_path/app.db``, the same file
-    :func:`open_app_db` opened.
-
-    *app_db* is the test's own connection to that file: it is **not** handed to
-    the app — the caller keeps it purely to seed and inspect the database
-    directly. WAL mode means that connection sees every write the app's
-    per-request connections commit.
-
-    ``base_url="https://testserver"`` keeps the ``Secure`` session cookie on
-    follow-up requests.
-
-    Args:
-        settings: The settings mock from :func:`make_settings`; its
-            ``APP_DB_PATH`` is the ``app.db`` the app opens per request.
-        app_db: The test's own connection to that same ``app.db`` file, for
-            direct seeding and inspection — retained by the caller, not the app.
-        store_reader: A real :class:`~store.reader.StoreReader`.
-
-    Returns:
-        A :class:`~fastapi.testclient.TestClient` over the app.
+    The app opens its own connection to ``settings.APP_DB_PATH`` per request.
+    *app_db* is the test's connection to the same file, kept only for seeding
+    and inspection; under WAL it sees every write the app commits. The
+    ``https`` base URL keeps the ``Secure`` session cookie on follow-up requests.
     """
-    # app_db is intentionally not passed to create_app — see the docstring.
+    # Deliberately not passed to create_app, which opens its own connections.
     _ = app_db
     from search.api import create_app
 
@@ -182,15 +129,7 @@ def build_account_client(
 
 
 def open_app_db(tmp_path: Path) -> sqlite3.Connection:
-    """Open and migrate a fresh ``app.db`` under *tmp_path*.
-
-    Args:
-        tmp_path: The pytest ``tmp_path`` directory.
-
-    Returns:
-        An open, migrated :class:`sqlite3.Connection` with no users — the app
-        built over it starts in first-run setup mode.
-    """
+    """Open and migrate a fresh ``app.db`` with no users (first-run setup mode)."""
     conn = connect(str(tmp_path / "app.db"))
     ensure_schema(conn)
     return conn
@@ -203,17 +142,7 @@ def seed_user(
     password: str = "test-password",
     role: str = "member",
 ) -> User:
-    """Insert a user straight into *app_db*, bypassing the setup flow.
-
-    Args:
-        app_db: The open ``app.db`` connection.
-        username: The login name.
-        password: The plaintext password (hashed before storage).
-        role: The account role.
-
-    Returns:
-        The created :class:`~appdb.users.User`.
-    """
+    """Insert a user straight into *app_db*, bypassing the setup flow."""
     return create_user(
         app_db,
         username=username,
@@ -228,19 +157,7 @@ def seed_admin(
     username: str = "admin",
     password: str = "admin-password",
 ) -> User:
-    """Insert an admin user straight into *app_db*.
-
-    A convenience over :func:`seed_user` with ``role="admin"``, used by every
-    test that needs the deployment to be past first-run setup.
-
-    Args:
-        app_db: The open ``app.db`` connection.
-        username: The admin's login name.
-        password: The admin's plaintext password.
-
-    Returns:
-        The created admin :class:`~appdb.users.User`.
-    """
+    """Insert an admin user straight into *app_db*, putting it past first-run setup."""
     return seed_user(app_db, username=username, password=password, role="admin")
 
 
@@ -251,20 +168,7 @@ def login(
     password: str,
     remember: bool = False,
 ) -> Any:
-    """Drive ``POST /api/auth/login`` and return the raw response.
-
-    The client's cookie jar holds the ``search_session`` cookie afterwards on
-    success, so subsequent requests on the same client are authenticated.
-
-    Args:
-        client: The ``TestClient`` over the app.
-        username: The username to authenticate as.
-        password: The password to authenticate with.
-        remember: The "keep me signed in" flag.
-
-    Returns:
-        The :class:`httpx.Response` from the login call.
-    """
+    """Drive ``POST /api/auth/login``; on success the client holds the session."""
     return client.post(
         "/api/auth/login",
         json={

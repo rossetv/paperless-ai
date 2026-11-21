@@ -3,14 +3,9 @@ import type { SpacingScale } from '../spacing';
 import gapStyles from '../gap.module.css';
 import styles from './Stack.module.css';
 
-/** Flex direction of the stack. */
 export type StackDirection = 'vertical' | 'horizontal';
 
-/**
- * Gap between children; a step on the shared spacing-token scale.
- * Re-exported as an alias of `SpacingScale` so the gap scale has one
- * definition shared with Grid.
- */
+/** Gap between children, on the spacing scale shared with Grid. */
 export type StackGap = SpacingScale;
 
 /** Cross-axis alignment (align-items). */
@@ -22,10 +17,7 @@ export type StackJustify = 'start' | 'center' | 'end' | 'between' | 'around' | '
 export interface StackProps {
   /** Flex direction. Defaults to 'vertical'. */
   direction?: StackDirection;
-  /**
-   * Gap between children, mapped to the spacing token scale.
-   * Omit for no gap.
-   */
+  /** Gap between children on the spacing token scale. Omit for no gap. */
   gap?: StackGap;
   /** Cross-axis alignment. Omit to use the flexbox default (stretch). */
   align?: StackAlign;
@@ -33,21 +25,11 @@ export interface StackProps {
   justify?: StackJustify;
   /** Whether children should wrap onto multiple lines. Defaults to false. */
   wrap?: boolean;
-  /** Stack content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
-/**
- * Flexbox stack primitive.
- *
- * Provides vertical (column) or horizontal (row) stacking with gap values
- * drawn from the design token spacing scale. Optional alignment and
- * justification props map to standard flexbox values.
- *
- * App-agnostic: knows nothing about search or documents.
- */
+/** Flexbox stack with gaps from the spacing token scale. */
 export function Stack({
   direction = 'vertical',
   gap,

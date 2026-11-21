@@ -1,14 +1,3 @@
-/*
- * SaveStatusPill — CSS Module.
- *
- * A compact status pill displaying the document save state. The base geometry
- * is shared; status classes set the dot and button colours. The dot inherits
- * colour from the foreground via currentColor (except readonly, which sets
- * explicit colour). Error state is interactive (button).
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .pill {
   display: inline-flex;
   align-items: center;
@@ -27,14 +16,12 @@
   white-space: nowrap;
 }
 
-/* Error state is interactive: button semantics, pointer cursor */
 .pill-error {
   cursor: pointer;
   background-color: transparent;
   color: var(--colour-status-danger-fg);
 }
 
-/* ── Dot geometry — the leading coloured circle. ── */
 .dot {
   width: var(--size-status-dot);
   height: var(--size-status-dot);
@@ -42,7 +29,6 @@
   flex-shrink: 0;
 }
 
-/* ── Status states — dot colour ── */
 .pill-idle .dot,
 .pill-saved .dot {
   background-color: var(--colour-status-ok-fg);

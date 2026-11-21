@@ -1,12 +1,4 @@
-"""Tests for store.migrations — the versioned migration runner.
-
-Covers:
-- A fresh database ends at SCHEMA_VERSION after run_migrations()
-- run_migrations() is idempotent (calling it twice is a no-op)
-- schema_version is persisted in the meta table
-- A database whose meta.schema_version is higher than any known migration
-  raises StoreError (future-version guard)
-"""
+"""Tests for store.migrations, the versioned migration runner."""
 
 from __future__ import annotations
 
@@ -17,11 +9,6 @@ import pytest
 
 from store.migrations import MIGRATIONS, StoreError, run_migrations
 from store.schema import SCHEMA_VERSION, connect
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _get_schema_version(conn: sqlite3.Connection) -> int | None:
@@ -52,11 +39,6 @@ def _index_names(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in rows}
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def conn(tmp_path) -> sqlite3.Connection:
     """A fresh, configured connection with no schema applied."""
@@ -64,11 +46,6 @@ def conn(tmp_path) -> sqlite3.Connection:
     c = connect(db_path)
     yield c
     c.close()
-
-
-# ---------------------------------------------------------------------------
-# Fresh database reaches SCHEMA_VERSION
-# ---------------------------------------------------------------------------
 
 
 class TestFreshDatabase:
@@ -96,11 +73,6 @@ class TestFreshDatabase:
         assert "taxonomy" in _table_names(conn)
 
 
-# ---------------------------------------------------------------------------
-# Idempotency
-# ---------------------------------------------------------------------------
-
-
 class TestIdempotency:
     """run_migrations() is safe to call on an already-migrated database."""
 
@@ -117,11 +89,6 @@ class TestIdempotency:
         run_migrations(conn)
         run_migrations(conn)
         assert "documents" in _table_names(conn)
-
-
-# ---------------------------------------------------------------------------
-# schema_version persisted in meta
-# ---------------------------------------------------------------------------
 
 
 class TestSchemaVersionPersisted:
@@ -149,29 +116,15 @@ class TestSchemaVersionPersisted:
         assert len(set(versions)) == len(versions), "duplicate migration version"
 
 
-# ---------------------------------------------------------------------------
-# Migration atomicity
-# ---------------------------------------------------------------------------
-
-
 class TestMigrationAtomicity:
     """A migration's DDL and its schema_version write commit or roll back as one.
 
-    run_migrations() wraps each migration in an explicit BEGIN…COMMIT
-    transaction (rolling back on any failure). This guards two regressions:
-    conn.executescript() issuing an implicit COMMIT before executing, and a
-    bare ``with conn:`` failing to open a transaction at all so DDL would
-    autocommit individually.
+    Each migration runs in an explicit BEGIN…COMMIT: executescript() commits
+    implicitly, and a bare ``with conn:`` would let each DDL statement autocommit.
     """
 
     def test_failed_migration_rolls_back_completely(self, conn, monkeypatch) -> None:
-        """A migration that fails partway leaves the database wholly unchanged.
-
-        Injects a migration that creates a table and then raises, mimicking a
-        crash mid-migration. Afterwards neither the partial table nor an
-        advanced schema_version may survive — proving the whole migration is
-        one atomic transaction.
-        """
+        """A migration that fails partway leaves the database wholly unchanged."""
 
         def _failing_migration(c: sqlite3.Connection) -> None:
             c.execute("CREATE TABLE partial_migration_table (x INTEGER)")
@@ -181,19 +134,12 @@ class TestMigrationAtomicity:
         with pytest.raises(RuntimeError, match="simulated crash"):
             run_migrations(conn)
 
-        # The partial table must have been rolled back ...
         assert "partial_migration_table" not in _table_names(conn)
-        # ... and schema_version must not have advanced (meta never created).
+        # meta is never created, so schema_version reads as absent.
         assert _get_schema_version(conn) is None
 
     def test_schema_version_written_in_same_transaction_as_ddl(self, conn) -> None:
-        """After run_migrations, both the tables and schema_version exist.
-
-        The happy-path consistency check: the schema and the schema_version
-        row are both present and consistent after a successful run. The
-        crash/rollback path is covered by
-        test_failed_migration_rolls_back_completely.
-        """
+        """After run_migrations, both the tables and schema_version exist."""
         run_migrations(conn)
         version = _get_schema_version(conn)
         tables = _table_names(conn)
@@ -203,28 +149,16 @@ class TestMigrationAtomicity:
         assert "meta" in tables
 
     def test_v1_migration_uses_execute_not_executescript(self) -> None:
-        """_migrate_v1 must not call conn.executescript() on the connection.
-
-        executescript() issues an implicit COMMIT before executing, which breaks
-        the atomicity of the surrounding ``with conn:`` transaction.  The fix
-        is to call conn.execute() for each statement; this test verifies that
-        executescript is not called on the connection during migration.
-        """
+        """executescript() commits implicitly, breaking the migration's transaction."""
         import unittest.mock as _mock
         from store.migrations import _migrate_v1
 
         mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
-        # execute() must be called at least once (one per DDL statement).
         _migrate_v1(mock_conn)
         mock_conn.executescript.assert_not_called()
         assert mock_conn.execute.call_count >= 1, (
             "_migrate_v1 must use execute() for each DDL statement"
         )
-
-
-# ---------------------------------------------------------------------------
-# v2: idx_documents_indexed_at
-# ---------------------------------------------------------------------------
 
 
 class TestV2IndexedAtMigration:
@@ -235,12 +169,7 @@ class TestV2IndexedAtMigration:
         assert "idx_documents_indexed_at" in _index_names(conn)
 
     def test_existing_v1_database_gains_the_index_on_upgrade(self, conn) -> None:
-        """A database created at v1 (no indexed_at index) gains it at v2.
-
-        Simulates a deployed v1 database: build the schema, drop the v2 index,
-        and roll schema_version back to 1. Re-running migrations must apply v2
-        and create the index — the realistic in-place upgrade path.
-        """
+        """Simulate a deployed v1 database: drop the v2 index, roll the version to 1."""
         run_migrations(conn)
         conn.execute("DROP INDEX IF EXISTS idx_documents_indexed_at")
         conn.execute(
@@ -253,11 +182,6 @@ class TestV2IndexedAtMigration:
 
         assert _get_schema_version(conn) == 2
         assert "idx_documents_indexed_at" in _index_names(conn)
-
-
-# ---------------------------------------------------------------------------
-# Future-version guard
-# ---------------------------------------------------------------------------
 
 
 class TestFutureVersionGuard:
@@ -279,7 +203,6 @@ class TestFutureVersionGuard:
             run_migrations(conn)
 
     def test_store_error_message_is_informative(self, conn) -> None:
-        """StoreError message should mention the version numbers involved."""
         future_version = 9999
         conn.executescript(
             f"""
@@ -298,19 +221,11 @@ class TestFutureVersionGuard:
         assert issubclass(StoreError, Exception)
 
 
-# ---------------------------------------------------------------------------
-# Corrupt / locked database is not masked as fresh
-# ---------------------------------------------------------------------------
-
-
 class TestCorruptDatabaseFailsLoud:
     """_read_schema_version must only treat a missing meta table as version 0.
 
-    A genuine "no such table: meta" means a fresh database and is correctly
-    read as version 0. Any other OperationalError — a malformed disk image, a
-    locked file — must propagate rather than be swallowed as "fresh", which
-    would re-run every migration against a corrupt or busy database and mask
-    the damage (CODE_GUIDELINES.md §1.11 fail-loud).
+    Any other OperationalError (a malformed image, a locked file) must propagate;
+    reading it as "fresh" would re-run every migration against a corrupt database.
     """
 
     def test_missing_meta_table_is_read_as_version_zero(self) -> None:
@@ -333,7 +248,6 @@ class TestCorruptDatabaseFailsLoud:
             _read_schema_version(mock_conn)
 
     def test_run_migrations_does_not_mask_a_corrupt_database(self) -> None:
-        """A corrupt database must not be silently re-migrated from v1."""
         mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
         mock_conn.execute.side_effect = sqlite3.OperationalError(
             "database disk image is malformed"

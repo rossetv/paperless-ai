@@ -1,24 +1,8 @@
-"""Reconcile-activity recording and heartbeat for the indexer daemon.
+"""Reconcile-activity log and heartbeat for the indexer daemon, both in ``app.db``.
 
-The Index dashboard (web-redesign spec §5, Wave 6) needs two things from the
-indexer that live in ``app.db``: a daemon-status heartbeat, and a per-cycle
-"Recent activity" log. :class:`IndexerActivityRecorder` owns both — the
-indexer's reconciliation loop calls it after each incremental sync and each
-deletion sweep.
-
-Both writes are **best-effort**: a failure recording activity or beating the
-heartbeat must never crash the indexer, whose real job is keeping the search
-index correct. The :class:`~common.heartbeat.Heartbeat` already swallows its
-write errors; this class wraps the ``reconcile_activity`` write the same way.
-
-The ``ok`` flag on a recorded cycle means *the cycle completed*, not *every
-document succeeded*: a sync with per-document failures still ran to
-completion (the failures are isolated and retried — SPEC §5.7), so it is
-``ok=True`` with the failure count in the summary. Only a sweep that
-*aborted* — its Paperless enumeration failed — is ``ok=False``.
-
-Allowed deps: appdb (daemon_status, reconcile_activity), common.heartbeat,
-indexer.reconciler (the report dataclasses), structlog.
+Both writes are best-effort: a failure must never crash the indexer. A recorded
+cycle's ``ok`` means the cycle completed, not that every document succeeded; only
+an aborted sweep is ``ok=False``.
 """
 
 from __future__ import annotations
@@ -38,7 +22,6 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The name this daemon registers under in daemon_status.
 _DAEMON_NAME = "indexer"
 
 # Errors a best-effort reconcile_activity write swallows. A genuine bug
@@ -52,12 +35,7 @@ _ACTIVITY_WRITE_EXCEPTIONS: tuple[type[Exception], ...] = (
 class IndexerActivityRecorder:
     """Records the indexer's reconcile cycles and beats its heartbeat.
 
-    One instance is built at daemon startup over an open ``app.db``
-    connection and passed into the reconciliation loop.
-
-    Args:
-        conn: An open, migrated ``app.db`` connection. The recorder does not
-            own the connection's lifecycle — the daemon opens and closes it.
+    The recorder does not own *conn*; the daemon opens and closes it.
     """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
@@ -73,14 +51,8 @@ class IndexerActivityRecorder:
     ) -> None:
         """Record one incremental-sync cycle and beat the heartbeat.
 
-        The cycle is ``ok=True`` — an incremental sync that reaches its
-        ``SyncReport`` has completed; per-document failures are counted in
-        the summary, not treated as a cycle failure.
-
-        Args:
-            report: The cycle's :class:`~indexer.reconciler.SyncReport`.
-            started_at: ISO-8601 UTC timestamp the cycle began.
-            finished_at: ISO-8601 UTC timestamp the cycle ended.
+        Always ``ok=True``: per-document failures are counted in the summary,
+        not treated as a cycle failure.
         """
         summary = {
             "indexed": report.indexed,
@@ -113,13 +85,8 @@ class IndexerActivityRecorder:
     ) -> None:
         """Record one deletion-sweep cycle and beat the heartbeat.
 
-        The cycle is ``ok=False`` only when the sweep *aborted* — its
-        Paperless enumeration failed, so it pruned nothing (SPEC §5.4).
-
-        Args:
-            report: The cycle's :class:`~indexer.reconciler._sweep.SweepReport`.
-            started_at: ISO-8601 UTC timestamp the cycle began.
-            finished_at: ISO-8601 UTC timestamp the cycle ended.
+        ``ok=False`` only when the sweep aborted (its Paperless enumeration
+        failed, so it pruned nothing).
         """
         summary = {
             "pruned": report.pruned,
@@ -144,14 +111,8 @@ class IndexerActivityRecorder:
     def record_rebuild(self, *, started_at: str, finished_at: str) -> None:
         """Record an index rebuild and beat the heartbeat.
 
-        The rebuild itself only wipes the index; the full re-index happens in
-        the incremental sync that immediately follows. The recorded row is
-        ``kind="sync"`` (it precedes a sync) and ``ok=True``, with a detail
-        string an operator will recognise in the dashboard's activity list.
-
-        Args:
-            started_at: ISO-8601 UTC timestamp the rebuild began.
-            finished_at: ISO-8601 UTC timestamp the wipe finished.
+        The rebuild only wipes the index; the re-index happens in the sync that
+        follows, so the row is recorded as ``kind="sync"``.
         """
         detail = "index rebuilt — re-indexing the whole archive"
         self._record(
@@ -165,7 +126,7 @@ class IndexerActivityRecorder:
         self._heartbeat.beat(detail=detail)
 
     def beat_idle(self) -> None:
-        """Beat an idle indexer heartbeat — the loop is between cycles."""
+        """Beat an idle heartbeat while the loop is between cycles."""
         self._heartbeat.beat_idle()
 
     def _record(
@@ -190,10 +151,8 @@ class IndexerActivityRecorder:
                 detail=detail,
             )
         except _ACTIVITY_WRITE_EXCEPTIONS as exc:
-            # rationale: best-effort observability boundary — failing to log
-            # a reconcile cycle must never crash the indexer (web-redesign
-            # §5). WARNING: the index itself is unaffected; only the
-            # dashboard's activity history misses this row.
+            # Only the dashboard's activity history misses this row; the index
+            # itself is unaffected.
             log.warning(
                 "indexer.activity_write_failed",
                 kind=kind,

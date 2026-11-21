@@ -3,8 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { FieldControl } from './FieldControl';
 import type { SettingsField, ConfigValue } from '../fieldModel';
 
-// ── Fixtures ─────────────────────────────────────────────────────────────────
-
 const textField: SettingsField = {
   key: 'MY_TEXT',
   label: 'Text field',
@@ -87,8 +85,6 @@ const selectWithReasoningField: SettingsField = {
 };
 
 function noop(_key: string, _value: ConfigValue | null) {}
-
-// ── Basic dispatch ────────────────────────────────────────────────────────────
 
 describe('FieldControl', () => {
   it('renders a text input for kind=text', () => {
@@ -177,7 +173,7 @@ describe('FieldControl', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Reasoning' })).not.toBeInTheDocument();
   });
 
-  // ── Composite model+reasoning ─────────────────────────────────────────────
+  // Composite model + reasoning
 
   it('renders a Reasoning segmented beneath a select with reasoningKey', () => {
     render(
@@ -228,8 +224,7 @@ describe('FieldControl', () => {
   });
 
   it('renders no Reasoning segmented when reasoningKey is set but reasoningValue is not passed', () => {
-    // When the parent does not supply reasoningValue, the composite still renders
-    // the segmented — it just defaults to empty string for no selection.
+    // Without reasoningValue the segmented still renders, defaulting to '' (no selection).
     render(
       <FieldControl
         field={selectWithReasoningField}
@@ -238,11 +233,10 @@ describe('FieldControl', () => {
         controlId="setting-MY_MODEL"
       />,
     );
-    // Reasoning segmented should still render (reasoningValue defaults to '').
     expect(screen.getByRole('radiogroup', { name: 'Reasoning' })).toBeInTheDocument();
   });
 
-  // ── onChange wiring ───────────────────────────────────────────────────────
+  // onChange wiring
 
   it('fires onChange with the field key and new value for a text change', async () => {
     const onChange = vi.fn();

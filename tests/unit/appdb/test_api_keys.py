@@ -1,9 +1,4 @@
-"""Tests for appdb.api_keys — the ApiKey dataclass and key query functions.
-
-Covers create (returns a populated ApiKey; persists the row; defaults
-optional columns) and get_by_hash (hit, miss). The list / revoke / delete /
-touch functions are exercised in test_api_keys_admin.py.
-"""
+"""Tests for appdb.api_keys create and get_by_hash."""
 
 from __future__ import annotations
 

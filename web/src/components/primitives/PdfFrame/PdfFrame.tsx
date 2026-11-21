@@ -11,54 +11,32 @@ export interface PdfFrameProps {
    */
   title: string;
   /**
-   * Called once when the embedded PDF fails to load — either the iframe fires
-   * an `error` event, or it never fires `load` within the grace window (a
-   * refused-framing or stalled stream paints the browser's grey error box, not
-   * an `error` event, so a timeout is the only reliable signal). The caller
-   * renders its own app-owned fallback over the frame.
+   * Called once when the PDF fails to load: on an `error` event, or when `load`
+   * has not fired within LOAD_TIMEOUT_MS. The caller renders its own fallback
+   * over the frame.
    */
   onLoadError?: () => void;
-  /** Additional class names to merge onto the wrapper. */
   className?: string;
 }
 
 /**
- * Grace window before a frame that has not fired `load` is treated as failed.
- *
- * A refused-framing response or a stalled proxy stream never fires `load` *or*
- * `error` — the iframe just shows the browser's grey "refused to connect" box.
- * The timeout is the only signal that distinguishes "still loading" from
- * "wedged", so the caller can swap in an app-owned error state. Eight seconds
- * is long enough that a slow-but-healthy first paint is not misreported.
+ * Grace window before a frame that has not fired `load` counts as failed. A
+ * refused-framing response or stalled stream fires neither `load` nor `error`,
+ * so a timeout is the only signal; 8 s avoids misreporting a slow first paint.
  */
 const LOAD_TIMEOUT_MS = 8000;
 
 /**
- * An embedded PDF viewport.
+ * An embedded PDF, rendered by the browser's built-in viewer in an `<iframe>`.
  *
- * Renders the PDF in an `<iframe>` on a dark backdrop; the browser's built-in
- * PDF viewer handles rendering, page navigation and zoom. Keeping it an
- * `<iframe>` of the proxied stream is the simplest correct approach — no
- * `pdf.js` bundle, no extra dependency (web-redesign §5).
+ * The browser's grey error box would cover any backdrop drawn behind the frame,
+ * so failures are reported through `onLoadError` and the caller paints its own
+ * error state over the frame.
  *
- * Failure detection: the browser paints its own grey error placeholder for a
- * 4xx/5xx, a refused-framing response, or a stalled stream, and that box covers
- * any backdrop drawn *behind* the iframe. So the frame reports failure up via
- * `onLoadError` (an `error` event, or no `load` within `LOAD_TIMEOUT_MS`) and
- * the caller paints an app-owned dark error state *over* the frame — the user
- * never sees the bare browser box. A successful `load` cancels the timeout.
- *
- * Security: the upstream is pinned to `Content-Type: application/pdf` with
- * `X-Content-Type-Options: nosniff` by the backend (`document_routes.py`),
- * so a malicious `.html`/`.svg` in the Paperless library cannot be served as
- * active content into this iframe. An empty `sandbox=""` was previously
- * applied as defence in depth, but Chrome's native PDF viewer refuses to
- * render under a fully-locked sandbox — the iframe paints blank. Removing
- * the attribute restores rendering; the `nosniff` + pinned content-type
- * already prevents the active-content vector this sandbox was guarding
- * against (CODE_GUIDELINES §10).
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * No `sandbox` attribute: Chrome's PDF viewer paints blank under a fully locked
+ * sandbox. The backend pins `Content-Type: application/pdf` with
+ * `X-Content-Type-Options: nosniff` (src/search/document_routes/_proxy.py), so a
+ * malicious `.html`/`.svg` cannot be served as active content into this frame.
  */
 export function PdfFrame({
   src,

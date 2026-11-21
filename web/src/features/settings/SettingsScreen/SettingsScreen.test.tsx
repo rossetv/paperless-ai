@@ -82,9 +82,7 @@ const SETTINGS = {
 const SECRET = new Set(['PAPERLESS_TOKEN', 'OPENAI_API_KEY']);
 const REINDEX = new Set(['EMBEDDING_PROVIDER', 'EMBEDDING_MODEL', 'CHUNK_SIZE', 'CHUNK_OVERLAP']);
 
-/**
- * Convert the flat typed map above into the wire shape `{ settings: [...] }`.
- */
+/** Convert the flat map into the wire shape `{ settings: [...] }`. */
 function toSettingsBody(
   map: Record<string, unknown>,
   opts: { defaultKeys?: Set<string>; defaultValues?: Record<string, string> } = {},
@@ -168,7 +166,7 @@ describe('SettingsScreen', () => {
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
-    // No "AI providers" heading — provider choice lives on each step's card now.
+    // No "AI providers" heading: provider choice lives on each step's card.
     for (const name of [
       'Connections',
       'OCR',
@@ -201,8 +199,7 @@ describe('SettingsScreen', () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
-    // The SaveBar is always in the DOM but hidden via inert + CSS transform
-    // when there are no dirty fields.
+    // The SaveBar stays in the DOM, hidden via inert + CSS transform.
     const message = screen.queryByText(/unsaved change/i);
     if (message !== null) {
       expect(message.closest('[inert]')).not.toBeNull();
@@ -225,7 +222,6 @@ describe('SettingsScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /discard/i }));
     expect(topK).toHaveValue(10);
-    // After discard the SaveBar is hidden (inert) — not removed from DOM.
     const message = screen.queryByText(/unsaved change/i);
     if (message !== null) {
       expect(message.closest('[inert]')).not.toBeNull();
@@ -260,7 +256,6 @@ describe('SettingsScreen', () => {
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
-    // After a successful save the SaveBar slides back out (inert).
     await waitFor(() => {
       const message = screen.queryByText(/unsaved change/i);
       if (message !== null) {
@@ -284,9 +279,7 @@ describe('SettingsScreen', () => {
     await screen.findByRole('spinbutton', { name: 'Top K' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Top K' }));
     await userEvent.click(screen.getByRole('button', { name: /save changes/i }));
-    // The server forced a rebuild; the screen surfaces a re-indexing toast.
-    // Match the toast-unique phrase, not the per-field "requires re-indexing"
-    // notes that are always present for the re-index keys.
+    // Match the toast-only phrase, not the per-field "requires re-indexing" notes.
     expect(
       await screen.findByText(/re-embedding your library/i),
     ).toBeInTheDocument();
@@ -320,8 +313,7 @@ describe('SettingsScreen', () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Connections' });
-    // The ConnectionsPanel renders accordion cards — each has a Test button.
-    // All three services are always shown now, independent of LLM_PROVIDER.
+    // All three services are shown regardless of LLM_PROVIDER.
     expect(screen.getByRole('button', { name: 'Test Paperless-ngx' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Test OpenAI' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Test Ollama' })).toBeInTheDocument();
@@ -352,8 +344,7 @@ describe('SettingsScreen', () => {
   });
 
   it('cross-section conditional: EMBEDDING_PROVIDER=openai renders a combobox for Embedding model', async () => {
-    // SETTINGS seeds EMBEDDING_PROVIDER='openai', so the conditional control in
-    // the Indexing section should resolve to the select variant.
+    // SETTINGS seeds EMBEDDING_PROVIDER='openai', so the Indexing control resolves to a select.
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
     await screen.findByRole('heading', { level: 2, name: 'Indexing' });
@@ -361,9 +352,7 @@ describe('SettingsScreen', () => {
   });
 
   it('cross-section conditional: EMBEDDING_PROVIDER=ollama renders a textbox for Embedding model', async () => {
-    // Override EMBEDDING_PROVIDER to 'ollama'; the conditional control in Indexing
-    // must fall back to the free-text variant. EMBEDDING_PROVIDER now sits in the
-    // Indexing/embeddings group, right beside the model it gates.
+    // With 'ollama' the Indexing control falls back to free text.
     const ollamaSettings = { ...SETTINGS, EMBEDDING_PROVIDER: 'ollama' };
     mockFetchSequence([{ status: 200, body: toSettingsBody(ollamaSettings) }]);
     renderScreen();
@@ -374,8 +363,7 @@ describe('SettingsScreen', () => {
   it('reindex pill is present inside the Indexing region for the Embeddings card', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // The Embeddings card (now co-locating EMBEDDING_PROVIDER, a reindex key)
-    // lives in the Indexing region, so the amber pill must appear there.
+    // EMBEDDING_PROVIDER is a reindex key in the Indexing region, so the amber pill appears there.
     const indexingRegion = await screen.findByRole('region', { name: 'Indexing' });
     const pills = Array.from(indexingRegion.querySelectorAll('*')).filter(
       (el) => el.textContent?.match(/rebuilds the index on save/i),
@@ -465,11 +453,9 @@ describe('SettingsScreen', () => {
   it('shows the rebuild warning in SaveBar when a reindex key is edited', async () => {
     mockFetchSequence([{ status: 200, body: toSettingsBody(SETTINGS) }]);
     renderScreen();
-    // Wait for the Indexing section to render, then click Increase on Chunk size
     await screen.findByRole('spinbutton', { name: 'Chunk size' });
     await userEvent.click(screen.getByRole('button', { name: 'Increase Chunk size' }));
-    // The SaveBar uses aria-live="polite" on the outer div; scope the assertion
-    // inside it to avoid matching static reindex pills or hints elsewhere.
+    // Scope to the SaveBar (the aria-live region) to avoid matching static reindex pills/hints.
     const saveBar = document.querySelector('[aria-live="polite"]') as HTMLElement;
     expect(saveBar).not.toBeNull();
     expect(saveBar.textContent).toMatch(/rebuild|re-embed/i);

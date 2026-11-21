@@ -1,10 +1,7 @@
 """Tests for the search wire models in search.wire.search.
 
-Covers: SearchRequest enforces the query length bounds at the HTTP boundary —
-an empty or whitespace-only query is rejected with a ValidationError (HTTP-04,
-§10.4/§10.6), so it never reaches the bounded LLM pipeline and burns budget;
-a query over the maximum length is rejected; a valid query is trimmed of
-surrounding whitespace so the pipeline sees one normalised form (HTTP-07).
+SearchRequest rejects an empty, whitespace-only or over-long query at the HTTP
+boundary, so it never reaches the LLM pipeline, and trims a valid one.
 """
 
 from __future__ import annotations
@@ -52,12 +49,12 @@ def test_search_request_accepts_a_query_at_the_maximum_length() -> None:
 
 
 def test_filter_request_accepts_up_to_64_tag_ids() -> None:
-    """A filter naming up to 64 tags validates (L16)."""
+    """A filter naming up to 64 tags validates."""
     filters = FilterRequest(tag_ids=list(range(64)))
     assert len(filters.tag_ids) == 64
 
 
 def test_filter_request_rejects_over_64_tag_ids() -> None:
-    """A filter naming more than 64 tags is rejected, matching the GET bound (L16)."""
+    """A filter naming more than 64 tags is rejected, matching the GET bound."""
     with pytest.raises(ValidationError):
         FilterRequest(tag_ids=list(range(65)))

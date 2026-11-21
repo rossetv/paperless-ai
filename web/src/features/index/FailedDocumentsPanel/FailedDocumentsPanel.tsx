@@ -8,9 +8,8 @@ import styles from './FailedDocumentsPanel.module.css';
 export interface FailedDocumentsPanelProps {
   /** The failed documents, from GET /api/index/failed. */
   documents: FailedDocument[];
-  /** Called with a document id when its "View" button is pressed; opens the in-app DocumentPreviewScreen overlay. */
+  /** Called with a document id when its "View" button is pressed. */
   onOpen: (documentId: number) => void;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
@@ -20,13 +19,8 @@ export interface FailedDocumentsPanelProps {
  * Header with a count badge, a card per failed document (id chip, title,
  * failure count, "View" action). An empty list shows an all-clear line.
  *
- * The component is a pure render: `previewDocumentId` state lives in
- * `IndexScreen`, which passes `onOpen`. Retry is intentionally absent —
- * there is no `/api/index/failed/{id}/retry` endpoint; re-processing happens
- * automatically on the indexer's next reconcile cycle.
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — composes the StatusBadge
- * primitive and takes a domain wire type.
+ * There is no per-document retry: the indexer re-processes failed documents
+ * on its next reconcile cycle.
  */
 export function FailedDocumentsPanel({
   documents,

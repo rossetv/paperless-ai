@@ -1,20 +1,3 @@
-/*
- * Badge primitive — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Stylelint enforces this: no hex literals, no raw px/rem outside tokens.
- *
- * DESIGN.md documents one chromatic accent (Apple Blue) and a neutral palette.
- * Badge variants map to this system:
- *   neutral — light-surface background with secondary text (low emphasis)
- *   accent  — Apple Blue background with on-dark text (high emphasis)
- *
- * The previous success/warning/danger variants were removed because they were
- * visually indistinct from neutral/accent — a misleading API (NOTE 1 fix).
- *
- * Badge is non-interactive; no focus ring required.
- */
-
 .badge {
   display: inline-flex;
   align-items: center;
@@ -29,13 +12,11 @@
   white-space: nowrap;
 }
 
-/* ── Neutral — subtle, low-emphasis label ── */
 .neutral {
   background-color: var(--colour-button-light-bg);
   color: var(--colour-text-secondary);
 }
 
-/* ── Accent — Apple Blue, high-emphasis ── */
 .accent {
   background-color: var(--colour-accent);
   color: var(--colour-text-on-dark);

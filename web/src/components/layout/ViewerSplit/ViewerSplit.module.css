@@ -1,12 +1,3 @@
-/*
- * ViewerSplit layout primitive — CSS Module.
- *
- * The document-preview body split: a flexible page area and a fixed-width
- * metadata sidebar. Fills the height left by the viewer chrome bar.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .split {
   display: grid;
   grid-template-columns: 1fr var(--width-preview-sidebar);

@@ -12,7 +12,6 @@ import { validatePassword, validateUsername } from '../../../lib/credentials';
 import type { User, UpdateUserRequest } from '../../../api/types';
 import styles from './UserEditDrawer.module.css';
 
-/** Selectable RBAC roles. */
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'Admin' },
   { value: 'member', label: 'Member' },
@@ -30,7 +29,6 @@ export interface UserEditDrawerProps {
   onClose: () => void;
 }
 
-/** The drawer's editable form state. */
 interface FormState {
   username: string;
   displayName: string;
@@ -40,7 +38,6 @@ interface FormState {
   confirm: string;
 }
 
-/** Build the initial form state from the user (or blank for create). */
 function initialState(user: User | null): FormState {
   return {
     username: user?.username ?? '',
@@ -60,13 +57,6 @@ function initialState(user: User | null): FormState {
  * ("leave empty to keep"), and suspend / delete actions appear. All three
  * destructive paths are disabled for one's own account (`isSelf`). The
  * last-admin guard is enforced server-side — a rejection is surfaced inline.
- *
- * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
- * api/, hooks/, lib/.
- *
- * // rationale: single cohesive form — validation, submit, and destructive
- * // handlers all operate on the same user entity and share mutation state;
- * // extracting them would scatter closely coupled logic across files.
  */
 export function UserEditDrawer({
   user,
@@ -83,21 +73,16 @@ export function UserEditDrawer({
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
 
-  /** Patch one form field and clear its pending error. */
   function setField<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }));
     setFieldError((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  /** Validate; returns an error map (empty when valid).
-   *
-   * The username and password rules are the canonical `validateUsername` /
-   * `validatePassword` from the auth feature — the same checks the login and
-   * first-run-setup screens use — so the three screens never drift. The
-   * drawer adds only its own contextual gating: the username is validated on
-   * create only (it is read-only in edit mode), a password is required on
-   * create but optional on edit, and the confirm-field match is a
-   * drawer-local concern the shared validators do not cover.
+  /**
+   * Uses the auth feature's `validateUsername` / `validatePassword` so this
+   * form, login and first-run setup apply the same rules. Only the username
+   * (create only), password-required (create only) and confirm-match gating
+   * are local.
    */
   function validate(): Partial<Record<keyof FormState, string>> {
     const errors: Partial<Record<keyof FormState, string>> = {};
@@ -107,7 +92,6 @@ export function UserEditDrawer({
         errors.username = usernameError;
       }
     }
-    // A password is required on create; optional on edit.
     const wantsPassword = isCreate || form.password.length > 0;
     if (wantsPassword) {
       const passwordError = validatePassword(form.password);
@@ -120,7 +104,6 @@ export function UserEditDrawer({
     return errors;
   }
 
-  /** Submit — create or update. */
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setServerError(null);
@@ -164,7 +147,6 @@ export function UserEditDrawer({
     return body;
   }
 
-  /** Toggle the account's suspended / active status. */
   async function handleToggleStatus(): Promise<void> {
     if (user === null) return;
     setServerError(null);
@@ -263,7 +245,6 @@ export function UserEditDrawer({
           <div className={styles['destructive']}>
             {!isCreate && (
               <>
-                {/* Reversible — ghost weight (DD-3: secondary/ghost for cautionary) */}
                 <Button
                   variant="ghost"
                   size="small"
@@ -273,7 +254,6 @@ export function UserEditDrawer({
                 >
                   {suspendLabel}
                 </Button>
-                {/* Permanent — spatially separated and visually heavier (DD-3) */}
                 <span className={styles['destructive-separator']} aria-hidden="true" />
                 {confirmingDelete ? (
                   <Button

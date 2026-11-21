@@ -3,8 +3,8 @@ import { NoResultsScreen } from './NoResultsScreen';
 import type { SearchResponse } from '../../../api/types';
 
 /**
- * NoResultsScreen embeds `FilterControls`, which drives `useFacets`.
- * Storybook does not wire TanStack Query, so this is a structural reference.
+ * `FilterControls` needs TanStack Query, which Storybook does not wire, so this
+ * is a structural reference only.
  */
 
 const BASE_RESULT: SearchResponse = {

@@ -1,22 +1,8 @@
-"""Integration tests for the agentic search pipeline.
+"""Integration tests for the search pipeline over a real seeded store.
 
-These exercise the real :class:`~search.core.SearchCore` over the real
-planner, retriever, and synthesiser stages and a real
-:class:`~store.reader.StoreReader` reading a ``tmp_path`` SQLite store seeded
-through the real :class:`~store.writer.StoreWriter`.
-
-Only the LLM transport and the embedding client are mocked — every store
-transaction, every SQL query, RRF fusion, and filter resolution run for real.
-
-Coverage here: a full pipeline run answers a query citing a real seeded
-document; an empty store short-circuits with no synthesis call; ``retrieve()``
-returns real ranked sources without an answer.  The bounded refinement loop is
-covered in :mod:`test_search_pipeline_refinement` (split for the 500-line
-ceiling, CODE_GUIDELINES §3.1).
-
-The pipeline is assembled by ``build_search_core`` (tests.helpers.search): the
-planner and synthesiser are real with their ``_create_completion`` patched by a
-scripted driver, never via constructor injection.
+Only the LLM transport and the embedding client are mocked; SQL, RRF fusion and
+filter resolution run for real. The refinement loop is covered in
+:mod:`test_search_pipeline_refinement`.
 """
 
 from __future__ import annotations
@@ -48,11 +34,6 @@ from tests.integration.conftest import (
 from tests.integration.conftest import (
     seed_pipeline_document as _seed_document,
 )
-
-
-# ---------------------------------------------------------------------------
-# Full pipeline — a query is answered from a real seeded document
-# ---------------------------------------------------------------------------
 
 
 class TestFullPipelineAnswer:
@@ -109,8 +90,7 @@ class TestFullPipelineAnswer:
             store_reader.close()
 
     def test_source_carries_resolved_taxonomy_names(self, tmp_path: Any) -> None:
-        """SourceDocument correspondent/type names come from the real
-        taxonomy table joined at query time."""
+        """Source correspondent and type names come from the taxonomy at query time."""
         settings = _make_settings(tmp_path)
         store_writer = StoreWriter(settings)
         try:
@@ -197,11 +177,6 @@ class TestFullPipelineAnswer:
             store_reader.close()
 
 
-# ---------------------------------------------------------------------------
-# Empty retrieval — short-circuit against a real (empty) store
-# ---------------------------------------------------------------------------
-
-
 class TestEmptyRetrievalEndToEnd:
     """A query against an empty store short-circuits before synthesis."""
 
@@ -237,11 +212,6 @@ class TestEmptyRetrievalEndToEnd:
             assert result.answer != ""
         finally:
             store_reader.close()
-
-
-# ---------------------------------------------------------------------------
-# retrieve() — sources only, against a real store
-# ---------------------------------------------------------------------------
 
 
 class TestRetrieveOnlyEndToEnd:

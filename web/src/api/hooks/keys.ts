@@ -1,19 +1,6 @@
-/**
- * TanStack Query key factory — keeps cache keys consistent across all hook
- * modules and avoids magic strings.
- *
- * This module is the single source of truth for every query key used by the
- * hooks layer. All sibling hook modules import from here; no other file
- * should hard-code a query key array.
- *
- * Allowed deps: types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Query key factory: the one place query keys are defined, so no hook hard-codes one. */
 
 import type { SearchRequest, DocumentsQuery } from '../types';
-
-// ---------------------------------------------------------------------------
-// Internal factory — not exported; sibling modules import the typed object
-// ---------------------------------------------------------------------------
 
 export const queryKeys = {
   search: (req: SearchRequest) => ['search', req] as const,

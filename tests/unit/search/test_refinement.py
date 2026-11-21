@@ -1,10 +1,5 @@
-"""Tests for src/search/refinement.py.
+"""Tests for search.refinement: the pure plan and chunk helpers.
 
-Verifies the contract of the pure helpers:
-- broaden_plan: clears every spec's filter guess, preserves the rest.
-- merge_chunks: unions two retrieved-chunk rounds, de-duplicating by chunk id.
-- trivial_plan: builds the planner-fallback-shaped plan (RAG-08).
-- raw_rag_plan: builds the deterministic two-spec hybrid (vector + FTS) plan.
 All return new objects without mutating their inputs.
 """
 
@@ -53,11 +48,6 @@ def _populated_plan() -> RetrievalPlan:
         ),
         clarify=None,
     )
-
-
-# ---------------------------------------------------------------------------
-# broaden_plan
-# ---------------------------------------------------------------------------
 
 
 class TestBroadenPlan:
@@ -124,11 +114,6 @@ class TestBroadenPlan:
         assert broadened.specs == ()
 
 
-# ---------------------------------------------------------------------------
-# merge_chunks
-# ---------------------------------------------------------------------------
-
-
 class TestMergeChunks:
     """merge_chunks unions two retrieval rounds, de-duplicating by chunk id."""
 
@@ -159,7 +144,7 @@ class TestMergeChunks:
 
 
 class TestTrivialPlan:
-    """trivial_plan returns one broad semantic spec on the raw query (RAG-08)."""
+    """trivial_plan returns one broad semantic spec on the raw query."""
 
     def test_sole_spec_is_a_semantic_search_on_the_raw_query(self) -> None:
         plan = trivial_plan("council tax")

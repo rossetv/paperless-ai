@@ -1,21 +1,12 @@
-/*
- * APIKeyCreatePanel feature component — CSS Module.
- *
- * Panel-specific styles only: the name-field grid and the one-time
- * secret-reveal block. Scope rows, expiry chips, footer, and error banner
- * are shared via ScopeChecklist/ScopeChecklist.module.css.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Scope rows, expiry chips, footer and error banner live in ScopeChecklist.module.css. */
 
-/* ── Field grid. ── */
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-13);
 }
 
-/* ── Reveal panel. ── */
+/* One-time secret reveal. */
 .reveal {
   display: flex;
   flex-direction: column;

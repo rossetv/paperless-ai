@@ -16,31 +16,14 @@ export interface ModalProps {
   title: string;
   /** Called when the user dismisses the modal (close button, Escape, backdrop). */
   onClose: () => void;
-  /** Content rendered inside the modal panel. */
   children: React.ReactNode;
-  /** Additional class names to merge onto the dialog panel. */
   className?: string;
 }
 
 /**
- * Accessible overlay modal dialog.
- *
- * Accessibility contract:
- * - role="dialog" + aria-modal="true" on the panel element.
- * - aria-labelledby points to the rendered title.
- * - Focus is trapped inside the modal while it is open: Tab and Shift+Tab cycle
- *   within the focusable children; nothing outside receives focus.
- * - Escape key fires onClose.
- * - Clicking the backdrop fires onClose.
- * - Focus is saved on open and restored to the previously-focused element on close.
- *
- * The focus management (move-in, trap, restore, Escape) lives in the generic
- * `useFocusTrap` hook so Modal stays a thin, presentational component.
- *
- * Rendered via createPortal into document.body so the dialog sits above all
- * page stacking contexts regardless of where in the tree Modal is used.
- *
- * App-agnostic — carries no knowledge of documents, search, or facets.
+ * Accessible modal dialog, portalled into document.body so it sits above every
+ * stacking context. Focus is trapped while open (via `useFocusTrap`) and restored
+ * on close; Escape and backdrop clicks call `onClose`.
  */
 export function Modal({
   isOpen,
@@ -49,10 +32,8 @@ export function Modal({
   children,
   className,
 }: ModalProps): React.ReactElement | null {
-  // Ref to the dialog panel — used by the focus trap for queries and focus().
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // Stable title id for aria-labelledby.
   const titleId = React.useId();
 
   useFocusTrap(dialogRef, isOpen, onClose);
@@ -61,7 +42,6 @@ export function Modal({
 
   return createPortal(
     <div className={styles['overlay']}>
-      {/* Backdrop — clicking it dismisses the modal */}
       <div
         className={styles['backdrop']}
         data-testid="modal-backdrop"
@@ -69,7 +49,6 @@ export function Modal({
         onClick={onClose}
       />
 
-      {/* Dialog panel */}
       <dialog
         ref={dialogRef}
         role="dialog"
@@ -81,7 +60,6 @@ export function Modal({
         tabIndex={-1}
         open
       >
-        {/* Header */}
         <div className={styles['header']}>
           <h2 id={titleId} className={styles['title']}>
             {title}
@@ -95,7 +73,6 @@ export function Modal({
           </IconButton>
         </div>
 
-        {/* Body */}
         <div className={styles['body']}>{children}</div>
       </dialog>
     </div>,

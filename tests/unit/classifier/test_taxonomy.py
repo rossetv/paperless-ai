@@ -1,9 +1,4 @@
-"""Tests for classifier.taxonomy — the ``TaxonomyCache`` behaviour.
-
-The module-level helpers (``_index_items``, ``_match_item``,
-``_get_usage_count``, ``_top_names``) are covered in ``test_taxonomy_helpers``;
-this file is split off it for the 500-line ceiling (CODE_GUIDELINES §3.1).
-"""
+"""Tests for classifier.taxonomy ``TaxonomyCache``."""
 
 from __future__ import annotations
 
@@ -21,7 +16,6 @@ def _make_cache(
     tags=None,
     taxonomy_limit=100,
 ) -> TaxonomyCache:
-    """Create a TaxonomyCache with a mock PaperlessClient."""
     client = make_mock_paperless()
     client.list_correspondents.return_value = correspondents or []
     client.list_document_types.return_value = document_types or []
@@ -46,8 +40,6 @@ def _tag(id: int, name: str, count: int = 0, matching_algorithm=None) -> dict:
 
 
 class TestRefresh:
-    """refresh() populates internal caches from the client."""
-
     def test_refresh_populates_correspondent_names(self):
         cache = _make_cache(correspondents=[_corr(1, "Acme", 10), _corr(2, "Beta", 5)])
 
@@ -82,8 +74,6 @@ class TestRefresh:
 
 
 class TestNameLists:
-    """Cached name lists are sorted by usage and limited."""
-
     def test_correspondent_names_sorted_by_usage_descending(self):
         cache = _make_cache(
             correspondents=[
@@ -108,7 +98,6 @@ class TestNameLists:
         assert len(names) == 10
 
     def test_names_returns_copy(self):
-        """Mutating the returned list does not affect internal state."""
         cache = _make_cache(correspondents=[_corr(1, "Acme", 1)])
         cache.refresh()
 
@@ -119,8 +108,6 @@ class TestNameLists:
 
 
 class TestGetOrCreateCorrespondentId:
-    """Resolve or create correspondents by name."""
-
     def test_exact_match_returns_id(self):
         cache = _make_cache(correspondents=[_corr(42, "Acme Corp")])
         cache.refresh()
@@ -166,7 +153,6 @@ class TestGetOrCreateCorrespondentId:
         assert result is None
 
     def test_creation_failure_refreshes_and_retries_lookup(self):
-        """If creation fails, refresh cache and retry the lookup."""
         cache = _make_cache(correspondents=[])
         cache.refresh()
 
@@ -179,7 +165,6 @@ class TestGetOrCreateCorrespondentId:
         assert result == 88
 
     def test_creation_failure_raises_if_still_not_found(self):
-        """If creation fails and refresh doesn't reveal the item, re-raise."""
         cache = _make_cache(correspondents=[])
         cache.refresh()
         cache._client.create_correspondent.side_effect = OSError("gone")
@@ -190,8 +175,6 @@ class TestGetOrCreateCorrespondentId:
 
 
 class TestGetOrCreateDocumentTypeId:
-    """Resolve or create document types by name."""
-
     def test_exact_match_returns_id(self):
         cache = _make_cache(document_types=[_dtype(10, "Invoice")])
         cache.refresh()
@@ -243,8 +226,6 @@ class TestGetOrCreateDocumentTypeId:
 
 
 class TestGetOrCreateTagIds:
-    """Resolve or create multiple tags."""
-
     def test_resolves_existing_tags(self):
         cache = _make_cache(tags=[_tag(1, "2025"), _tag(2, "invoice")])
         cache.refresh()
@@ -266,7 +247,6 @@ class TestGetOrCreateTagIds:
         cache._client.create_tag.assert_called_once()
 
     def test_deduplicates_input_tags(self):
-        """Duplicate tags in input are deduplicated."""
         cache = _make_cache(tags=[_tag(1, "2025")])
         cache.refresh()
 
@@ -285,7 +265,6 @@ class TestGetOrCreateTagIds:
         assert ids == [77]
 
     def test_filters_none_ids(self):
-        """Tags with id=None in the response are filtered out."""
         cache = _make_cache(tags=[{"id": None, "name": "broken"}])
         cache.refresh()
 
@@ -337,7 +316,7 @@ class TestInferMatchingAlgorithm:
 
 
 class TestLockNotHeldAcrossHTTP:
-    """The lock must be released before HTTP creation calls (M7)."""
+    """The cache lock is released before HTTP creation calls."""
 
     def test_concurrent_create_does_not_double_create(self):
         """When two threads race to create the same correspondent only one
@@ -405,7 +384,6 @@ class TestLockNotHeldAcrossHTTP:
         def reader():
             create_started.wait(timeout=5)
             try:
-                # Reading the cache while a creator is mid-HTTP must not block.
                 names = cache.taxonomy_context().correspondents
                 read_result.append(names)
             except Exception as exc:
@@ -430,10 +408,7 @@ class TestLockNotHeldAcrossHTTP:
 
 
 class TestThreadSafety:
-    """Concurrent access should not corrupt internal state."""
-
     def test_concurrent_refresh_and_lookup(self):
-        """Multiple threads calling refresh() and name lookups."""
         client = make_mock_paperless()
         corrs = [_corr(i, f"Corr{i}", i) for i in range(20)]
         client.list_correspondents.return_value = corrs
@@ -461,23 +436,21 @@ class TestThreadSafety:
         assert errors == [], f"Thread errors: {errors}"
 
     def test_rlock_allows_reentrant_access(self):
-        """Verify the cache uses RLock (reentrant) not Lock."""
         cache = _make_cache(correspondents=[_corr(1, "Acme")])
         cache.refresh()
 
-        # Act — get_or_create_correspondent_id calls refresh() on failure,
-        # which also acquires the lock. With RLock this should not deadlock.
+        # On a create failure, get_or_create_correspondent_id calls refresh(),
+        # which re-acquires the lock; a plain Lock would deadlock here.
         cache._client.create_correspondent.side_effect = OSError("dup")
         cache._client.list_correspondents.return_value = [_corr(1, "Acme")]
 
-        # This would deadlock with a plain Lock instead of RLock
         result = cache.get_or_create_correspondent_id("Acme")
 
         assert result == 1
 
 
 class TestSuffixOnlyCorrespondentName:
-    """Correspondents whose names are entirely COMPANY_SUFFIXES (M8)."""
+    """Correspondents whose names are entirely company suffixes."""
 
     def test_suffix_only_name_matched_not_recreated_on_second_poll(self):
         """A correspondent named 'AS' (a company suffix) normalises to the
@@ -487,15 +460,12 @@ class TestSuffixOnlyCorrespondentName:
         cache.refresh()
         cache._client.create_correspondent.return_value = {"id": 99, "name": "AS"}
 
-        # First lookup — must find the existing item, not create.
         result_first = cache.get_or_create_correspondent_id("AS")
 
         assert result_first == 11
         cache._client.create_correspondent.assert_not_called()
 
     def test_suffix_only_name_second_poll_does_not_create_duplicate(self):
-        """Simulates two consecutive polls.  The correspondent is found each
-        time; create_correspondent must never be called."""
         cache = _make_cache(correspondents=[_corr(11, "AS")])
         cache.refresh()
 
@@ -507,8 +477,6 @@ class TestSuffixOnlyCorrespondentName:
 
 
 class TestCreationFailureReraise:
-    """When creation fails and refresh doesn't find the item, re-raise."""
-
     def test_document_type_creation_fails_and_not_found_reraises(self):
         cache = _make_cache()
         cache.refresh()

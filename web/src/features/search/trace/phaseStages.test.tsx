@@ -222,21 +222,16 @@ describe('phaseDetailNode — planner specs', () => {
       ms: 1,
     };
     const text = detailText(record);
-    // Ordinal labels
     expect(text).toContain('1st query');
     expect(text).toContain('2nd query');
-    // Mode labels
     expect(text).toContain('Keyword');
     expect(text).toContain('Semantic');
-    // Filter chips
     expect(text).toContain('from Npower');
     expect(text).toContain('type Invoice');
     expect(text).toContain('tags bills');
     expect(text).toContain('2024-01-01→2024-12-31');
-    // Query texts
     expect(text).toContain('npower energy 2024');
     expect(text).toContain('energy bills overview');
-    // Rationale
     expect(text).toContain('find the annual spend');
   });
 
@@ -342,7 +337,7 @@ describe('phaseDetailNode — refine', () => {
     expect(text).toContain('no figure for Q4');
     expect(text).toContain('Action');
     expect(text).toContain('re-planned: 1 new searches');
-    // Styled query block, not the old "New search 1:" line.
+    // Rendered as a query block, not a "New search 1:" line.
     expect(text).toContain('1st query');
     expect(text).toContain('Semantic');
     expect(text).toContain('Q4 invoice total');
@@ -476,7 +471,6 @@ describe('phaseToStages', () => {
   });
 });
 
-// Helper to create a plan record with N specs
 function makePlanRecord(numSpecs: number): PhaseRecord {
   return {
     phase: 'plan',
@@ -644,7 +638,7 @@ describe('phaseSummary', () => {
     expect(container.textContent).toContain('2 searches re-planned');
     expect(container.textContent).toContain('1 keyword');
     expect(container.textContent).toContain('1 semantic');
-    // The hint and per-query lines must NOT appear in the streaming summary.
+    // The summary omits the hint and per-query lines.
     expect(container.textContent).not.toContain('long winded hint');
   });
 
@@ -845,14 +839,13 @@ describe('phaseToStages summary/body split', () => {
     expect(text).toContain('Deed');
     expect(text).toContain('no match — nearest Property Deed, Trust Deed');
     expect(text).toContain('ambiguous — matched Employment Contract, Contract of Employment');
-    // No query-less flat "Dropped (no match): …" line any more.
+    // Drops sit under their query, not on a flat "Dropped (no match)" line.
     expect(text).not.toContain('Dropped (no match)');
   });
 
   it('resolve: a dropped guess renders under the query that proposed it, not a flat trailing line', () => {
-    // The bug fix: the planner asked for a Spain tag on the 1st query; it does
-    // not resolve, so it must appear under "1st query" — alongside the kept
-    // (loosened) type filter — not as a query-less "Dropped: Spain" line.
+    // The unresolved Spain tag from the 1st query must appear under that query,
+    // beside its kept (loosened) type filter.
     const planRecord: PhaseRecord = {
       phase: 'plan',
       label: 'Planning the query',
@@ -877,18 +870,16 @@ describe('phaseToStages summary/body split', () => {
     const { container } = render(<>{stage.body}</>);
     const text = container.textContent ?? '';
 
-    // The 1st-query block carries BOTH its kept type and its dropped tag.
     expect(text).toContain('1st query');
     expect(text).toContain('Property Deed');
     expect(text).toContain('loosened from "Deed"');
     expect(text).toContain('Spain');
     expect(text).toContain('no matching tag');
-    // The 2nd query, which proposed nothing, is still shown.
+    // A query that proposed nothing is still shown.
     expect(text).toContain('2nd query');
     expect(text).toContain('No filters proposed');
 
-    // The drop sits before the 2nd-query block — i.e. grouped under query 1,
-    // not appended as a trailing flat line.
+    // Grouped under query 1, not appended after the last block.
     expect(text.indexOf('Spain')).toBeLessThan(text.indexOf('2nd query'));
   });
 
@@ -920,7 +911,6 @@ describe('phaseToStages summary/body split', () => {
     expect(snip?.getAttribute('data-full')).toBe(
       'the full untruncated chunk passage that the popover must reveal',
     );
-    // Inline row still shows the short snippet.
     expect(snip?.textContent).toBe('truncated preview…');
   });
 
@@ -959,11 +949,8 @@ describe('phaseToStages summary/body split', () => {
       tokens: null, cost: null, ms: 1,
     };
     const stage = phaseToStages([record], null)[0]!;
-    // judge keeps its verdicts on the dedicated field; the body is left to
-    // PipelineStages, which renders the verdict list (with the View control)
-    // from `verdicts` so it does not duplicate with `body`.
+    // PipelineStages renders the verdict list from `verdicts`, so no body.
     expect(stage.body == null).toBe(true);
-    // verdicts still populated for back-compat
     expect(stage.verdicts).toBeDefined();
     expect(stage.verdicts!.length).toBe(1);
   });

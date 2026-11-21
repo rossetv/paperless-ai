@@ -2,30 +2,21 @@ import React from 'react';
 import styles from './DocumentTitle.module.css';
 
 export interface DocumentTitleProps {
-  /** The document title; renders a fallback when null. */
+  /** Renders a fallback when null. */
   title: string | null;
-  /** Whether the current user may edit the title. */
   canEdit: boolean;
-  /**
-   * Called with the trimmed new title when the user commits an edit.
-   * Not called on revert, Escape, or when the value is unchanged.
-   */
+  /** Called with the trimmed title; not on Escape or when unchanged. */
   onChange: (next: string) => void;
 }
 
-/**
- * Document title heading with optional inline editing.
- *
- * Read-only (`canEdit=false`): renders a plain `<h1>` — correct heading
- * semantics for assistive tech.
- *
- * Editable (`canEdit=true`): the `<h1>` carries `role="button"` and responds
- * to click / Enter by switching to an `<input>`. Blur or Enter commits the
- * value (only fires `onChange` when it actually changed); Escape reverts.
- */
 /** Smallest font scale before a still-too-long title is left to ellipsise. */
 const MIN_TITLE_SCALE = 0.5;
 
+/**
+ * Document title heading with optional inline editing. When editable, the
+ * `<h1>` acts as a button that swaps to an `<input>`; blur or Enter commits,
+ * Escape reverts.
+ */
 export function DocumentTitle({
   title,
   canEdit,
@@ -34,10 +25,9 @@ export function DocumentTitle({
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(title ?? '');
 
-  // Adaptive heading size: shrink the font just enough to keep a long title on
-  // one line (the design preferred over wrapping). Text width is proportional
-  // to font-size, so scaling by clientWidth/scrollWidth fits in a single pass;
-  // a title beyond the floor ellipsises rather than becoming unreadable.
+  // Shrink the font just enough to keep a long title on one line. Text width is
+  // proportional to font-size, so scaling by clientWidth/scrollWidth fits in a
+  // single pass; a title beyond the floor ellipsises.
   const headingRef = React.useRef<HTMLHeadingElement>(null);
   const [scale, setScale] = React.useState(1);
 
@@ -45,7 +35,6 @@ export function DocumentTitle({
     const el = headingRef.current;
     if (el === null) return undefined;
     const fit = (): void => {
-      // Measure at full size, then derive the scale that fits the row width.
       el.style.setProperty('--title-scale', '1');
       const { scrollWidth, clientWidth } = el;
       if (clientWidth === 0 || scrollWidth <= clientWidth) {
@@ -63,9 +52,8 @@ export function DocumentTitle({
     return () => observer.disconnect();
   }, [title, editing]);
 
-  // Keep draft in sync when the parent document is refreshed (e.g. post-save),
-  // but never clobber an in-progress edit: a cache refresh while the user is
-  // typing must not overwrite their unsaved draft (FE-24).
+  // Sync the draft when the document refreshes, but never clobber an edit in
+  // progress.
   React.useEffect(() => {
     if (!editing) setDraft(title ?? '');
   }, [title, editing]);
@@ -105,9 +93,8 @@ export function DocumentTitle({
       onKeyDown={
         canEdit
           ? (e) => {
-              // Enter and Space both enter edit mode; preventDefault on both so
-              // Space doesn't scroll the page and the activation matches a
-              // native button's keyboard contract (FE-25).
+              // Match a native button: Enter and Space activate, and Space
+              // must not scroll the page.
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 setEditing(true);

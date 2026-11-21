@@ -59,7 +59,6 @@ describe('SearchTracePanel', () => {
 
   it('shows a tokens · cost whole-query chip in the summary', () => {
     render(<SearchTracePanel phases={PHASES} cost={COST} />);
-    // The header aggregate carries the whole-query tokens and dollar cost.
     expect(screen.getByText('2.1k tok · $0.006')).toBeInTheDocument();
   });
 
@@ -72,7 +71,6 @@ describe('SearchTracePanel', () => {
 
   it('shows the per-phase cost chips', () => {
     render(<SearchTracePanel phases={PHASES} cost={COST} />);
-    // The planner phase carries its own chip.
     expect(screen.getByText('1.2k tok · $0.004')).toBeInTheDocument();
   });
 
@@ -164,23 +162,16 @@ describe('SearchTracePanel', () => {
     ];
     const { container } = render(<SearchTracePanel phases={phases} cost={COST} />);
     const text = container.textContent ?? '';
-    // Plan body: query text and filter chips ("from " key + "Npower" value are
-    // in separate spans, so we assert on container.textContent rather than
-    // getByText, which requires a single matching element).
+    // Chip keys and values are separate spans, so assert on textContent.
     expect(text).toContain('npower energy 2024');
     expect(text).toContain('from');
     expect(text).toContain('Npower');
-    // The resolve body renders the legacy id wire as a "from" chip with the id
-    // "#7" (no name on the legacy shape); the new object wire would show the
-    // resolved name instead. The chip's label and value are separate spans, so
-    // assert on each rather than the concatenation.
+    // The legacy id-only resolve shape carries no name, so the chip shows "#7".
     expect(text).toContain('#7');
-    // The legacy {spec_index, names} drop is grouped under its query and shown
-    // as a struck chip with a "no match" reason, not a flat trailing line.
+    // A legacy {spec_index, names} drop shows as a struck "no match" chip.
     expect(text).toContain('Mystery Co');
     expect(text).toContain('no match');
-    // Refine body: short summary line + styled context lines + a styled query
-    // block (matching the planning phase), not the old flat "New search 1:" dump.
+    // New refine searches render as query blocks, not "New search 1:" lines.
     expect(text).toContain('1 search added');
     expect(text).toContain('no Q4 figure');
     expect(text).toContain('Q4 invoice total');

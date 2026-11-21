@@ -1,12 +1,3 @@
-/*
- * SnippetText primitive — CSS Module.
- *
- * Renders a matched-content excerpt as body text; `**bold**` runs become
- * accent <mark> highlights so the matched phrase stands out.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .snippet {
   margin: 0;
   font-family: var(--font-text);
@@ -18,7 +9,6 @@
   text-wrap: pretty;
 }
 
-/* Highlighted matched phrase. */
 .mark {
   background-color: var(--colour-accent-wash);
   color: var(--colour-link);
@@ -28,7 +18,6 @@
   font-weight: var(--font-weight-body-emphasis);
 }
 
-/* Empty-snippet notice. */
 .empty {
   color: var(--colour-text-tertiary);
 }

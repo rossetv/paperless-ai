@@ -17,9 +17,7 @@ export interface DocThumbProps {
    * "matched chunk" marker. Defaults to no highlighted rows.
    */
   matched?: number[];
-  /** Test hook. */
   'data-testid'?: string;
-  /** Additional class names to merge onto the wrapper. */
   className?: string;
 }
 
@@ -37,16 +35,8 @@ const BODY_START_Y = 30;
 const ROW_HEIGHT = 5;
 
 /**
- * A small SVG mockup of a document page.
- *
- * Purely decorative artwork (the svg is `aria-hidden`): a header block, a
- * hairline rule, a body of grey line-stripes with the `matched` rows drawn in
- * accent blue, and — for statements and invoices — a footer totals band.
- *
- * Used inside `SourceCard` and the document-preview page rail. App-agnostic:
- * it carries no document data, only a `kind` and the matched-row indices.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Decorative SVG mockup of a document page: a header, body line-stripes with the
+ * `matched` rows in accent, and a footer band for statements and invoices.
  */
 export function DocThumb({
   kind = 'statement',

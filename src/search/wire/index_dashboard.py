@@ -1,14 +1,4 @@
-"""Pydantic wire models for the Index dashboard API (web-redesign §5, Wave 6).
-
-The response shapes for ``GET /api/index/status``, ``/api/index/activity``,
-``/api/index/failed``, and ``POST /api/index/rebuild`` — daemon health tiles,
-reconcile-cycle activity, the failed-document list, and the rebuild-trigger
-outcome. A boundary module of the :mod:`search.wire` package
-(``CODE_GUIDELINES.md`` §5.6).
-
-Allowed deps: pydantic.
-Forbidden: FastAPI, sqlite3, any I/O.
-"""
+"""Wire models for the Index dashboard endpoints under ``/api/index``."""
 
 from __future__ import annotations
 
@@ -19,12 +9,11 @@ class DaemonStatusResponse(BaseModel):
     """One daemon's tile in the Index dashboard.
 
     Attributes:
-        name: The daemon name — ocr / classifier / indexer / search.
-        state: The derived state — running / idle / stopped.
-        detail: A short human string describing what the daemon last did.
-        processed_count: The daemon's monotonic throughput counter.
-        last_heartbeat: ISO-8601 UTC timestamp of the daemon's last
-            heartbeat — a long-past value for a daemon that never ran.
+        name: ``ocr``, ``classifier``, ``indexer`` or ``search``.
+        state: ``running``, ``idle`` or ``stopped``.
+        processed_count: A monotonic throughput counter.
+        last_heartbeat: ISO-8601 UTC; a long-past value for a daemon that
+            never ran.
     """
 
     name: str
@@ -35,12 +24,10 @@ class DaemonStatusResponse(BaseModel):
 
 
 class IndexStatusResponse(BaseModel):
-    """Body of ``GET /api/index/status`` — daemon health and per-daemon tiles.
+    """Body of ``GET /api/index/status``.
 
-    Attributes:
-        health: The overall verdict — ok / degraded / down.
-        daemons: One :class:`DaemonStatusResponse` per known daemon (always
-            four).
+    ``health`` is ``ok``, ``degraded`` or ``down``; ``daemons`` always has one
+    entry per known daemon.
     """
 
     health: str
@@ -51,13 +38,10 @@ class ReconcileCycleResponse(BaseModel):
     """One reconcile/sweep cycle in the Index dashboard's activity list.
 
     Attributes:
-        id: The cycle's id — also its chronological order.
+        id: Also the cycles' chronological order.
         kind: ``sync`` or ``sweep``.
-        started_at: ISO-8601 UTC timestamp the cycle began.
-        finished_at: ISO-8601 UTC timestamp the cycle ended.
         ok: Whether the cycle completed without aborting or erroring.
-        summary: The cycle's count map (the SyncReport/SweepReport fields).
-        detail: A short human one-liner describing the outcome.
+        summary: The SyncReport/SweepReport counts.
     """
 
     id: int
@@ -70,7 +54,7 @@ class ReconcileCycleResponse(BaseModel):
 
 
 class IndexActivityResponse(BaseModel):
-    """Body of ``GET /api/index/activity`` — recent reconcile cycles."""
+    """Body of ``GET /api/index/activity``: recent reconcile cycles."""
 
     cycles: list[ReconcileCycleResponse]
 
@@ -78,10 +62,8 @@ class IndexActivityResponse(BaseModel):
 class FailedDocumentResponse(BaseModel):
     """One document the indexer has failed to index.
 
-    Attributes:
-        document_id: The Paperless document id.
-        title: The document's title, or ``None`` when it has no indexed row.
-        failure_count: How many consecutive cycles it has failed.
+    ``title`` is ``None`` when the document has no indexed row;
+    ``failure_count`` counts consecutive failed cycles.
     """
 
     document_id: int
@@ -90,18 +72,13 @@ class FailedDocumentResponse(BaseModel):
 
 
 class IndexFailedResponse(BaseModel):
-    """Body of ``GET /api/index/failed`` — the failed-document list."""
+    """Body of ``GET /api/index/failed``."""
 
     documents: list[FailedDocumentResponse]
 
 
 class RebuildResponse(BaseModel):
-    """Body of ``POST /api/index/rebuild`` — the rebuild-trigger outcome.
-
-    Attributes:
-        accepted: Whether the rebuild request was accepted and triggered.
-        detail: A human-readable note describing what happens next.
-    """
+    """Body of ``POST /api/index/rebuild``."""
 
     accepted: bool
     detail: str

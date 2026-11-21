@@ -10,7 +10,6 @@ import styles from './SearchScreenLayout.module.css';
 export type SearchScreenVariant = 'centred' | 'rail';
 
 export interface SearchScreenLayoutProps {
-  /** Which content shell to render. */
   variant: SearchScreenVariant;
   /**
    * The filter-rail content. Required for the `rail` variant; ignored for
@@ -23,27 +22,16 @@ export interface SearchScreenLayoutProps {
    * gutter rather than the content column edge.
    */
   header?: React.ReactNode;
-  /** The main content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * The content shell for the Wave 2 search screens.
+ * Content shell for the search screens, below `AppNavBar`.
  *
- * Sits directly below `AppNavBar`. `centred` gives a single max-width column
- * (the idle and index-not-ready screens); `rail` gives a filter-rail +
- * content two-column grid that stacks on narrow viewports (the loading,
- * results and no-results screens).
- *
- * The optional `header` prop renders a full-width element above the columns
- * so page titles align to the page gutter on all variants.
- *
- * App-agnostic — it knows nothing about search. The screen features supply
- * the rail and the content.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * `centred` is a single max-width column (idle, index not ready); `rail` is a
+ * filter rail plus content grid that stacks on narrow viewports (loading,
+ * results, no results).
  */
 export function SearchScreenLayout({
   variant,

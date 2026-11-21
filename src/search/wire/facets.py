@@ -1,15 +1,4 @@
-"""Pydantic wire models for facets, index stats, taxonomy, and recent searches.
-
-The response shapes for ``GET /api/facets``, ``GET /api/stats``,
-``GET /api/stats/public``, ``GET /api/recent-searches``, and the taxonomy
-list/create endpoints, plus the converters from the store dataclasses and the
-Paperless taxonomy items. A boundary module of the :mod:`search.wire` package
-(``CODE_GUIDELINES.md`` §5.6).
-
-Allowed deps: pydantic, store.models (FacetSet, IndexStats),
-    common.paperless_types (PaperlessItem).
-Forbidden: FastAPI, sqlite3, any I/O.
-"""
+"""Wire models for facets, index stats, taxonomy and recent searches."""
 
 from __future__ import annotations
 
@@ -80,23 +69,15 @@ class TaxonomyItemResponse(BaseModel):
 class TaxonomyCreateRequest(BaseModel):
     """Body for ``POST /api/correspondents`` | ``/api/document-types`` | ``/api/tags``.
 
-    ``name`` is forwarded verbatim to Paperless, so it is length-bounded here:
-    1-255 characters (Paperless's own ``name`` column cap). An empty name is
-    rejected at the boundary rather than creating a blank taxonomy entry.
+    ``name`` is forwarded to Paperless, so it is capped at Paperless's own
+    255-character limit.
     """
 
     name: str = Field(min_length=1, max_length=255)
 
 
 def to_facets_response(facets: FacetSet) -> FacetsResponse:
-    """Convert a :class:`~store.models.FacetSet` to the wire model.
-
-    Args:
-        facets: The frozen dataclass from :meth:`~store.reader.StoreReader.list_facets`.
-
-    Returns:
-        A :class:`FacetsResponse` ready to serialise as JSON.
-    """
+    """Convert a :class:`~store.models.FacetSet` to the wire model."""
     return FacetsResponse(
         correspondents=[
             TaxonomyEntryResponse(kind=e.kind, id=e.id, name=e.name)
@@ -116,14 +97,7 @@ def to_facets_response(facets: FacetSet) -> FacetsResponse:
 
 
 def to_stats_response(stats: IndexStats) -> StatsResponse:
-    """Convert an :class:`~store.models.IndexStats` to the wire model.
-
-    Args:
-        stats: The frozen dataclass from :meth:`~store.reader.StoreReader.get_stats`.
-
-    Returns:
-        A :class:`StatsResponse` ready to serialise as JSON.
-    """
+    """Convert an :class:`~store.models.IndexStats` to the wire model."""
     return StatsResponse(
         document_count=stats.document_count,
         chunk_count=stats.chunk_count,
@@ -135,27 +109,14 @@ def to_stats_response(stats: IndexStats) -> StatsResponse:
 def paperless_item_to_response(item: PaperlessItem) -> TaxonomyItemResponse:
     """Convert one Paperless taxonomy item to the wire shape.
 
-    The Paperless API exposes the usage count under one of three field names
-    depending on version — ``document_count`` / ``documents_count`` /
-    ``documents`` (the last being a list of document ids).  We accept all three
-    and coerce strings to int defensively.  When only a ``documents`` list is
-    present we report 0: the list may be truncated on listing endpoints and
-    inferring the count from it would be misleading.
-
-    Args:
-        item: A :class:`~common.paperless_types.PaperlessItem` dict as
-            returned by :meth:`~common.paperless.PaperlessClient.list_correspondents`
-            and its siblings.
-
-    Returns:
-        A :class:`TaxonomyItemResponse` ready to serialise as JSON.
+    Paperless versions name the usage count ``document_count``,
+    ``documents_count`` or ``documents`` (a list of ids). With only the list
+    the count is 0, since the list may be truncated on listing endpoints.
     """
     raw: object = item.get("document_count")
     if raw is None:
         raw = item.get("documents_count")
     if raw is None:
-        # ``documents`` is a list of referencing document ids; we intentionally
-        # treat this as an unknown count rather than inferring len(list).
         raw = 0
     if isinstance(raw, str):
         count = int(raw) if raw.isdigit() else 0

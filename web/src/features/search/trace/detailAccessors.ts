@@ -1,12 +1,7 @@
 /**
- * Defensive accessors over a phase record's free-form `detail` map.
- *
- * `detail` is wire JSON — any key may be missing or wrong-typed. Every reader
- * here returns a safe fallback (null / [] / false) rather than throwing, so a
- * malformed payload simply renders nothing. Split out of `phaseStages` (FE-01)
- * so the per-phase renderer stays under the file-length ceiling.
- *
- * Allowed deps: api/types only (CODE_GUIDELINES §12.3).
+ * Defensive readers over a phase record's free-form `detail` wire JSON. Any key
+ * may be missing or wrong-typed, so each returns a fallback instead of throwing
+ * and a malformed payload just renders nothing.
  */
 
 import type { PhaseRecord } from '../../../api/types';

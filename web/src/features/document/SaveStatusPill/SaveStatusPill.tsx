@@ -17,21 +17,10 @@ const LABELS: Record<SaveStatus, string> = {
 };
 
 /**
- * Save status indicator pill — shows document save state.
+ * Document save-state pill: a coloured dot and a label.
  *
- * Renders a small capsule with a coloured dot and label:
- *   - idle/saved: green dot, "Saved"
- *   - saving: amber dot, "Saving…"
- *   - error: red dot, "Couldn't save — retry" (interactive button with retry)
- *   - readonly: grey dot, "View only"
- *
- * Error state renders as a native retry `<button>`. The button keeps its
- * default button role (overriding it with `role="alert"` would strip the
- * interactive semantics assistive tech relies on); the error itself is
- * announced via a separate polite live region rendered alongside it (FE-26).
- * Other states render as a span (role="status", aria-live="polite").
- *
- * Tier: features/document (leaf component, used by DocumentScreen).
+ * The error state is a retry `<button>` with a separate hidden alert beside it;
+ * putting `role="alert"` on the button itself would strip its button semantics.
  */
 export function SaveStatusPill({
   status,

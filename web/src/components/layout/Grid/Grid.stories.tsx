@@ -24,8 +24,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-// A grid cell is a real Card primitive — the story exercises the layout
-// component with genuine library components, not ad-hoc styled <div>s.
 const Cell = ({ label }: { label: string }) => <Card elevated>{label}</Card>;
 
 export const TwoColumns: Story = {

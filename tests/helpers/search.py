@@ -1,12 +1,4 @@
-"""Helpers for constructing search-pipeline objects in tests.
-
-The search ``core`` is assembled the same way in the unit tests (over mock
-store / embedding clients) and the integration tests (over a real temporary
-store): real planner, retriever, and synthesiser stages with the LLM transport
-patched by a scripted driver.  :func:`build_search_core` is that one wiring
-point, so neither the unit nor the integration tests re-hand-roll it
-(CODE_GUIDELINES §11.5) — it mirrors :mod:`tests.helpers.store`.
-"""
+"""Helpers for building search-pipeline objects and authenticated clients in tests."""
 
 from __future__ import annotations
 
@@ -31,20 +23,8 @@ def build_search_core(
 ) -> SearchCore:
     """Assemble a SearchCore with real pipeline stages over the given collaborators.
 
-    The planner and synthesiser are real — their ``_create_completion`` is
-    patched with the scripted driver's router, mirroring
-    ``tests/unit/classifier`` — and the retriever is real.  The *store_reader*
-    and *embedding_client* may be mocks (unit tests) or real objects
-    (integration tests); this helper does not care which.
-
-    Args:
-        settings: A Settings-like object (mock or real).
-        llm_client: The scripted driver routing planner vs synthesiser calls.
-        store_reader: The StoreReader the retriever and core query.
-        embedding_client: The EmbeddingClient the retriever uses.
-
-    Returns:
-        A ready-to-exercise :class:`~search.core.SearchCore`.
+    Every LLM stage's ``_create_completion`` is routed to *llm_client*; the
+    store reader and embedding client may be mocks or real objects.
     """
     planner = QueryPlanner(settings)
     planner._create_completion = llm_client.route  # type: ignore[method-assign]
@@ -70,21 +50,9 @@ def mint_api_key(
     scopes: str = "api",
     name: str = "test-key",
 ) -> str:
-    """Create an API key in *app_db* and return the raw key string.
+    """Generate, hash and store an API key in *app_db*; return the raw key.
 
-    For tests that need to authenticate a request as an API key. The key is
-    created the proper way — generated, hashed, and stored — so the bearer
-    path resolves it exactly as production would. The raw key is returned;
-    send it as ``Authorization: Bearer <raw key>``.
-
-    Args:
-        app_db: The app.db connection the test app is using.
-        owner_user_id: The id of the owning user (must already exist).
-        scopes: The comma-separated scope string for the key.
-        name: The key's label.
-
-    Returns:
-        The full raw ``sk-pls-...`` key.
+    The owning user must already exist. Send the key as a Bearer token.
     """
     from appdb.api_keys import create as create_key
     from search.api_keys import generate_raw_key, hash_key, key_display_prefix
@@ -109,20 +77,7 @@ def seed_user_and_login(
     password: str = "test-password",
     role: str = "admin",
 ) -> None:
-    """Create a user in *app_db* and log *client* in as them.
-
-    A convenience for tests that need an authenticated session against a
-    protected route. Creates the user directly through ``appdb`` (bypassing
-    the setup flow) and then drives ``POST /api/auth/login`` so the client's
-    cookie jar holds a real session cookie.
-
-    Args:
-        app_db: The app.db connection the test app is using.
-        client: A ``fastapi.testclient.TestClient`` over the app.
-        username: The username to create and log in as.
-        password: The password to set and authenticate with.
-        role: The role for the created user.
-    """
+    """Create a user directly in *app_db*, then log *client* in through the API."""
     from appdb.passwords import hash_password
     from appdb.users import create as create_user
 

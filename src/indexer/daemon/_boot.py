@@ -1,11 +1,4 @@
-"""Daemon boot sequence — flock, preflight, client construction, loop entry.
-
-The startup half of the indexer daemon (CODE_GUIDELINES §3.3): acquire the
-exclusive writer flock, run preflight (Paperless reachable, store writable,
-embedding model responds, embedding-model check), construct the long-lived
-clients and the Reconciler, and hand off to :func:`._loop._run_loop`.  The
-run-loop itself lives in :mod:`._loop`.
-"""
+"""Indexer boot: writer flock, preflight, client construction, loop entry."""
 
 from __future__ import annotations
 
@@ -33,11 +26,9 @@ from store.writer import StoreWriter
 
 log = structlog.get_logger(__name__)
 
-# Key used to embed a single token to verify the embedding model is reachable.
+# Embedded once at preflight to verify the embedding model responds.
 _PREFLIGHT_EMBED_TEXT = "ping"
 
-# Combined exception tuple for the preflight boundary — covers both Paperless
-# transport errors and embedding model failures so the except clause is typed.
 _PREFLIGHT_EXCEPTIONS: tuple[type[Exception], ...] = (
     *PAPERLESS_CALL_EXCEPTIONS,
     *EMBEDDING_FAILURE_EXCEPTIONS,
@@ -51,14 +42,11 @@ def main() -> None:
     or if preflight fails fatally.  Normal daemon operation never returns;
     it runs until SIGTERM / SIGINT.
     """
-    # The hot-load accessor reads APP_DB_PATH from the environment and layers
-    # the config table over it. _run_loop re-checks it every cycle, so a
-    # later config change is picked up with no restart (web-redesign §5).
+    # _run_loop re-reads settings every cycle, so later config changes hot-load.
     settings = current_settings()
     configure_logging(settings)
     setup_libraries(settings)
 
-    # --- Acquire exclusive writer flock (SPEC §3.2, CODE_GUIDELINES §1.12) ---
     lock_path = settings.INDEX_DB_PATH
     try:
         lock_handle = acquire_writer_lock(lock_path)
@@ -70,18 +58,14 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # APP_DB_PATH is the location the hot-load accessor watches every cycle.
-    # Resolved here and threaded down so the loop never re-reads os.environ.
+    # Resolved once and threaded down so the loop never re-reads os.environ.
     app_db_path = os.environ.get("APP_DB_PATH", "/data/app.db")
 
-    # The Index dashboard's app.db connection — for the heartbeat and the
-    # reconcile-activity log (web-redesign spec §5, Wave 6). Opened best-
-    # effort: if app.db is unreachable the indexer still runs; the recorder
-    # is simply None and the dashboard's indexer tile goes stale.
+    # For the heartbeat and activity log. Best-effort: without app.db the
+    # indexer still runs and the dashboard's indexer tile goes stale.
     app_db = _open_app_db(app_db_path)
 
-    # lock_handle is held open by this stack frame until finally closes it,
-    # which keeps the OS flock alive for the daemon's entire lifetime.
+    # Holding lock_handle open keeps the flock for the daemon's lifetime.
     try:
         _start_daemon(settings, app_db_path, app_db)
     finally:
@@ -97,36 +81,19 @@ def _start_daemon(
 ) -> None:
     """Run signal registration, preflight, and the reconciliation loop.
 
-    Separated from main() so tests can inject a fake lock without needing a
-    real flock on disk.
-
-    Args:
-        settings: Loaded application settings — the *initial* snapshot. The
-            reconciliation loop re-checks :func:`common.config.current_settings`
-            at the top of every cycle, so a later config change is picked up
-            with no restart (web-redesign §5).
-        app_db_path: Filesystem path to ``app.db`` — threaded through to the
-            loop so :func:`current_settings` watches the same file every cycle.
-        app_db: The open app.db connection for the dashboard recorder, or None
-            when app.db is unavailable.
+    Separated from main() so tests can run it without a real flock on disk.
+    *settings* is only the initial snapshot; *app_db* is ``None`` when app.db
+    is unavailable.
     """
     register_signal_handlers()
 
-    # ------------------------------------------------------------------
-    # Preflight (SPEC §5.7)
-    # ------------------------------------------------------------------
-    # Construct the long-lived clients ONCE here so preflight verifies the
-    # exact instances the daemon goes on to use — a throwaway client proves
-    # nothing about the one doing the real work.
+    # Preflight checks the same client instances the daemon goes on to use.
     paperless = PaperlessClient(settings)
     embedding_client = EmbeddingClient(settings)
     try:
         _run_preflight(paperless, embedding_client)
     except _PREFLIGHT_EXCEPTIONS:
-        # rationale: startup-preflight fatal boundary — a Paperless transport
-        # failure or embedding model error must stop the daemon before indexing
-        # begins (fail closed, CODE_GUIDELINES §1.11).  exc_info=True attaches
-        # the traceback that error=str(exc) would discard on this exit path.
+        # Fail closed before indexing begins.
         log.critical("indexer.preflight_failed", exc_info=True)
         paperless.close()
         sys.exit(2)
@@ -141,10 +108,7 @@ def _start_daemon(
                 advice="All chunks wiped; next reconciliation re-embeds everything.",
             )
     except StoreError:
-        # rationale: startup-preflight fatal boundary — a store error opening
-        # or migrating the index, or applying an embedding-model change, must
-        # stop the daemon before the loop runs (CODE_GUIDELINES §1.11).
-        # exc_info=True attaches the traceback; error=str(exc) would discard it.
+        # A store that cannot open, migrate or apply a model change is fatal.
         log.critical("indexer.store_preflight_failed", exc_info=True)
         paperless.close()
         store_writer.close()
@@ -166,7 +130,6 @@ def _start_daemon(
         embedding_model=settings.EMBEDDING_MODEL,
     )
 
-    # Build the dashboard recorder only when app.db is available.
     cycle_recorder = IndexerActivityRecorder(app_db) if app_db is not None else None
 
     try:
@@ -179,11 +142,9 @@ def _start_daemon(
             cycle_recorder=cycle_recorder,
         )
     finally:
-        # Note: a config change between cycles replaces ``reconciler`` and its
-        # paperless client; the old client is dereferenced and GC reclaims it
-        # (httpx pools release on finaliser + atexit). The ``paperless`` name
-        # here is the *startup* client — held so the original handle survives
-        # the loop body and can be closed deterministically on shutdown.
+        # A config change replaces the reconciler and its Paperless client,
+        # leaving the old one to GC. This closes the startup client, which is
+        # held here so it can be closed deterministically.
         paperless.close()
         store_writer.close()
 
@@ -191,12 +152,9 @@ def _start_daemon(
 
 
 def _open_app_db(app_db_path: str) -> sqlite3.Connection | None:
-    """Open the app.db connection for the dashboard, best-effort.
+    """Open and migrate app.db, or return ``None`` if it cannot be opened.
 
-    Returns an open, migrated connection, or ``None`` if app.db cannot be
-    opened — in which case the indexer runs without recording activity or a
-    heartbeat (web-redesign spec §5: the dashboard is never worth crashing a
-    daemon over).
+    The dashboard is never worth crashing the daemon over.
     """
     try:
         conn = connect_app_db(app_db_path)
@@ -211,23 +169,14 @@ def _run_preflight(
     paperless: PaperlessClient,
     embedding_client: EmbeddingClient,
 ) -> None:
-    """Verify Paperless reachability and the embedding model responds.
+    """Verify Paperless is reachable and the embedding model responds.
 
-    Raises on any fatal condition; the caller maps the exception to a
-    CRITICAL log and a non-zero exit.
-
-    Args:
-        paperless: The live PaperlessClient the daemon will use.
-        embedding_client: The live EmbeddingClient the daemon will use — the
-            same instance, so preflight verifies what actually does the work.
+    Raises on any fatal condition; the caller logs it and exits non-zero.
     """
     log.info("indexer.preflight_started")
 
-    # Verify Paperless is reachable.
     paperless.ping()
     log.info("indexer.preflight_paperless_ok")
 
-    # Verify the embedding model responds with a minimal single-token embed,
-    # exercising the very client the reconciler will go on to use.
     embedding_client.embed([_PREFLIGHT_EMBED_TEXT])
     log.info("indexer.preflight_embedding_ok")

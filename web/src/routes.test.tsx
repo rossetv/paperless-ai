@@ -1,13 +1,3 @@
-/**
- * Tests for the app routing shell.
- *
- * The shell:
- *  - shows a loading state while setup-status / auth are resolving
- *  - routes to /setup when first-run setup is needed
- *  - routes to /login when setup is done but the user is unauthenticated
- *  - renders the protected app (SearchPage) when authenticated
- */
-
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -16,7 +6,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
 import { AppRoutes } from './routes';
 
-// --- Mock the leaf pages so routing is tested in isolation -----------------
+// Leaf pages are mocked so routing is tested in isolation.
 vi.mock('./pages/LoginPage', () => ({
   LoginPage: () => React.createElement('div', { 'data-testid': 'login-page' }, 'Login'),
 }));
@@ -50,7 +40,6 @@ vi.mock('./pages/DocumentPage', () => ({
     React.createElement('div', { 'data-testid': 'document-page' }, 'Document'),
 }));
 
-// --- Mock the api hooks the shell calls -----------------------------------
 vi.mock('./api/hooks', () => ({
   useSetupStatus: vi.fn(),
   useMe: vi.fn(),

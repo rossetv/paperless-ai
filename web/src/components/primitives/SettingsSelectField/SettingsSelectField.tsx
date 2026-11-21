@@ -17,25 +17,17 @@ export interface SettingsSelectFieldProps {
   label: string;
   /** The currently-selected value. Controlled. */
   value: string;
-  /** The available options. */
   options: SettingsSelectOption[];
   /** Called with the chosen value when the selection changes. */
   onChange: (value: string) => void;
-  /** Whether the control is non-interactive. */
   disabled?: boolean;
-  /** Additional class names to merge onto the wrapper. */
   className?: string;
 }
 
 /**
- * A native `<select>` styled to match the Settings-screen form fields.
- *
- * A controlled primitive. If `value` is not present in `options` — a config
- * key may hold a model identifier the UI does not know about — that value is
- * injected as an extra option so it stays selectable and visible, never
- * silently dropped.
- *
- * Tier: components/primitives. Allowed deps: lib/, styles/.
+ * Native `<select>` styled like the other settings fields. A `value` missing
+ * from `options` (e.g. a model id the UI does not know) is added as an extra
+ * option so it is never silently dropped.
  */
 export function SettingsSelectField({
   id,

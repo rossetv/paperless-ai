@@ -1,11 +1,4 @@
-"""Tests for appdb.users — the User dataclass and user query functions.
-
-Covers create (returns a populated User; persists the row), get_by_username
-and get_by_id (hit and miss), the username UNIQUE constraint surfacing as a
-typed error, and timestamp population. Also covers create_initial_admin:
-inserts on an empty table, returns None on a non-empty table. The
-list/update/delete/count functions are exercised in test_users_admin.py.
-"""
+"""Tests for appdb.users create, lookups and create_initial_admin."""
 
 from __future__ import annotations
 
@@ -81,30 +74,20 @@ def test_create_rejects_a_duplicate_username(conn) -> None:
 
 
 def test_update_rolls_back_and_leaves_no_open_transaction_on_failure(conn) -> None:
-    """A mid-transaction failure rolls back cleanly via ``with conn:`` (§9.6).
+    """A failed UPDATE must roll back and leave no open transaction.
 
-    Regression for the bare-``conn.commit()`` write path: when the UPDATE
-    statement raises (here, an invalid ``role`` rejected by the table's CHECK
-    constraint), the ``with conn:`` context manager must roll back and leave the
-    connection with **no open transaction**. The old code reached ``conn.commit()``
-    only on the happy path, so a raised statement left the transaction dangling —
-    poisoning the very next writer on this connection with
-    "cannot start a transaction within a transaction". This test fails against
-    the bare-commit version and passes once the write is wrapped.
+    A dangling transaction would make the next writer on the connection fail
+    with "cannot start a transaction within a transaction".
     """
     created = create(conn, username="trent", password_hash="h", role="member")
 
-    # An invalid role is rejected by the users.role CHECK constraint, so the
-    # UPDATE raises *inside* the with-block. The Role type is a Literal — a type
-    # ignore lets the test pass a value the DB layer (not mypy) rejects.
+    # The users.role CHECK constraint rejects this role, so the UPDATE raises.
     with pytest.raises(sqlite3.IntegrityError):
         update(conn, created.id, role="superadmin")  # type: ignore[arg-type]
 
-    # The rollback ran: the connection is clean, not stuck mid-transaction.
     assert conn.in_transaction is False
 
-    # The next write on the same connection succeeds — proof the transaction was
-    # not left open — and the failed update left the row's prior state intact.
+    # The next write succeeds, and the failed update left the row intact.
     refreshed = update(conn, created.id, display_name="Trent")
     assert refreshed is not None
     assert refreshed.role == "member"
@@ -128,7 +111,7 @@ def test_get_by_id_returns_none_when_absent(conn) -> None:
 
 
 def test_user_carries_password_hash(conn) -> None:
-    """The User dataclass exposes password_hash for the login path."""
+    """The login path reads password_hash from the User."""
     create(conn, username="grace", password_hash="secret-hash", role="member")
     fetched = get_by_username(conn, "grace")
     assert fetched is not None
@@ -136,7 +119,6 @@ def test_user_carries_password_hash(conn) -> None:
 
 
 def test_create_initial_admin_inserts_on_empty_table(conn) -> None:
-    """create_initial_admin returns a User when the users table is empty."""
     user = create_initial_admin(
         conn,
         username="henry",
@@ -152,7 +134,6 @@ def test_create_initial_admin_inserts_on_empty_table(conn) -> None:
 
 
 def test_create_initial_admin_returns_none_when_user_already_exists(conn) -> None:
-    """create_initial_admin returns None when the users table is non-empty."""
     create(conn, username="first", password_hash="h", role="admin")
     result = create_initial_admin(
         conn,
@@ -160,6 +141,5 @@ def test_create_initial_admin_returns_none_when_user_already_exists(conn) -> Non
         password_hash="h2",
     )
     assert result is None
-    # Only the original row exists — no second insert happened.
     (count,) = conn.execute("SELECT COUNT(*) FROM users").fetchone()
     assert count == 1

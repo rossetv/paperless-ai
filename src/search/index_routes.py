@@ -1,31 +1,13 @@
-"""The Index operations-dashboard ``/api`` router for the search server.
-
-Four endpoints (web-redesign spec §5, Wave 6):
+"""The Index operations-dashboard ``/api`` router.
 
 - ``GET  /api/index/status``   — per-daemon status + overall health.
 - ``GET  /api/index/activity`` — recent reconcile/sweep cycles.
 - ``GET  /api/index/failed``   — documents the indexer has failed to index.
-- ``POST /api/index/rebuild``  — the destructive index rebuild.
+- ``POST /api/index/rebuild``  — the destructive index rebuild (admin only).
 
-RBAC (spec §4.3): the three reads require Read-only or above — viewing
-operational state is a read capability; the rebuild requires admin — it is
-destructive. The dependencies are Wave 1's :mod:`search.deps`.
-
-The handlers are thin: status/health shaping is :mod:`search.index_service`,
-``daemon_status`` / ``reconcile_activity`` I/O is :mod:`appdb`, the
-failed-document list is the injected :class:`~store.reader.StoreReader`, and
-the ``app.db`` connection is opened per request via
-:func:`~search.deps.get_app_db` — a ``sqlite3.Connection`` is never shared
-across requests.
-
-The rebuild never touches ``index.db`` — the indexer holds an exclusive
-flock on it. The handler writes a ``rebuild.request`` sentinel beside the
-index file; the indexer consumes it and performs the wipe. This is exactly
-the mechanism ``POST /api/reconcile`` uses for ``reconcile.request``.
-
-Allowed deps: fastapi, structlog, pathlib, appdb (daemon_status,
-reconcile_activity), common.config, search (deps, wire, index_service),
-store, store.reader.
+The rebuild never touches ``index.db``, which the indexer holds an exclusive
+flock on; it drops sentinel files the indexer consumes (see
+:mod:`search.index_sentinel`).
 """
 
 from __future__ import annotations
@@ -56,22 +38,11 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# How many reconcile-activity rows GET /api/index/activity returns.
 _ACTIVITY_LIMIT = 50
 
 
 def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRouter:
-    """Build the Index dashboard ``/api`` router (web-redesign spec §5).
-
-    Args:
-        settings: Application settings — ``INDEX_DB_PATH`` locates where the
-            rebuild sentinel is written.
-        store_reader: The read-side store, backing the failed-document list.
-
-    Returns:
-        A configured :class:`~fastapi.APIRouter`. The three GETs require
-        Read-only+, the rebuild POST requires admin.
-    """
+    """Build the Index dashboard ``/api`` router."""
     router = APIRouter()
     read_access = Depends(require_api_scope)
 
@@ -96,11 +67,7 @@ def build_index_router(settings: Settings, store_reader: StoreReader) -> APIRout
 
     @router.post("/api/index/rebuild", dependencies=[Depends(require_admin)])
     def index_rebuild() -> RebuildResponse:
-        """Trigger the destructive index rebuild (admin-only).
-
-        Writes the ``rebuild.request`` sentinel; the indexer consumes it and
-        wipes the index. Writes ONLY the sentinel — never ``index.db``.
-        """
+        """Trigger the destructive index rebuild (admin-only)."""
         return _index_rebuild(settings)
 
     return router
@@ -147,10 +114,9 @@ def _index_activity(app_db: sqlite3.Connection) -> IndexActivityResponse:
 def _index_failed(store_reader: StoreReader) -> IndexFailedResponse:
     """Build the GET /api/index/failed payload.
 
-    A not-yet-built index (the indexer has never run) has no schema; the
-    store raises :class:`~store.SchemaNotReadyError`. That is not an error
-    for this endpoint — a missing index simply means nothing has failed, so
-    it is reported as an empty list.
+    An index that has never been built raises
+    :class:`~store.SchemaNotReadyError`; nothing has failed yet, so that is an
+    empty list.
     """
     from store import SchemaNotReadyError
 
@@ -171,22 +137,11 @@ def _index_failed(store_reader: StoreReader) -> IndexFailedResponse:
 
 
 def _index_rebuild(settings: Settings) -> RebuildResponse:
-    """Rebuild handler body: write the rebuild + reconcile sentinels beside index.db.
+    """Write the rebuild sentinels beside index.db.
 
-    Writing ``rebuild.request`` schedules the destructive wipe; writing
-    ``reconcile.request`` at the same time wakes the indexer's
-    ``_interruptible_wait`` early so the rebuild is acted upon within the
-    wake-check interval rather than waiting a full ``RECONCILE_INTERVAL``
-    (up to 5 minutes by default).
-
-    Security: writes ONLY the two sentinel files — never the index database.
-    The indexer holds the exclusive writer flock and is the sole process that
-    mutates ``index.db``; it consumes the sentinels and performs the wipe.
-
-    Raises :class:`fastapi.HTTPException` (503) when the sentinel directory
-    does not exist or is not writable — which indicates a misconfigured
-    ``INDEX_DB_PATH`` rather than a transient error, so the admin needs a
-    useful message rather than a generic 500.
+    An unwritable sentinel directory means a misconfigured ``INDEX_DB_PATH``,
+    not a transient fault, so it is a 503 with a useful message rather than a
+    generic 500.
     """
     from fastapi import HTTPException
 

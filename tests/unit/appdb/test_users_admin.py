@@ -1,9 +1,4 @@
-"""Tests for the admin-facing appdb.users functions.
-
-Covers list_all (ordering, empty), update (partial: each field independently;
-updated_at advances; password_changed_at advances only on a password change),
-delete, count_all, count_admins, and record_login.
-"""
+"""Tests for the admin-facing appdb.users functions."""
 
 from __future__ import annotations
 

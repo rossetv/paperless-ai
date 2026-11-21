@@ -1,14 +1,8 @@
-"""Tests for the per-phase trace + cost telemetry wired through SearchCore.
+"""Tests for the per-phase trace and cost telemetry wired through SearchCore.
 
-The core threads an optional ``on_event`` callback and a ``_Telemetry``
-accumulator through the pipeline: every executed phase emits a ``PhaseStart``
-then a ``PhaseRecord``, and the assembled ``SearchTrace`` + ``CostSummary`` ride
-on ``SearchStats``. ``on_event=None`` (the default the existing tests use) keeps
-the pipeline byte-identical bar the now-populated trace/cost on the result.
-
-These tests reuse the scripted-LLM wiring from :mod:`test_core` (``build_search_core``
-with a ``ScriptedLLMClient``): the trace is asserted from the emitted events and
-from ``result.stats.trace`` so the two are pinned to agree.
+Each executed phase emits a ``PhaseStart`` then a ``PhaseRecord``; the assembled
+``SearchTrace`` and ``CostSummary`` ride on ``SearchStats``. Tests assert both
+the emitted events and ``result.stats.trace`` so the two stay in agreement.
 """
 
 from __future__ import annotations
@@ -378,15 +372,14 @@ class TestJudgeDetail:
         assert verdicts[1]["keep"] is True
         assert verdicts[2]["keep"] is False
         assert verdicts[2]["reason"] == "not relevant"
-        # The title is now resolved from the get_documents look-up that feeds
-        # the candidate metadata (the seeded IndexedDocument's title).
+        # The title comes from the get_documents look-up that feeds the candidate
+        # metadata (the seeded IndexedDocument's title).
         assert verdicts[1]["title"] == "A Document"
         # Each verdict carries the judge's per-document score (kept 0.9 / dropped 0.1).
         assert verdicts[1]["score"] == 0.9
         assert verdicts[2]["score"] == 0.1
-        # Each verdict carries a Paperless deep-link (Phase 3B) so the SPA can
-        # render a Preview link per judged document. Built from the same base
-        # URL + /documents/{id}/ route the SourceDocument link uses.
+        # Each verdict carries a Paperless deep-link, built like the SourceDocument
+        # link, so the SPA can render a Preview link per judged document.
         assert verdicts[1]["paperless_url"].endswith("/documents/1/")
         assert verdicts[2]["paperless_url"].endswith("/documents/2/")
         # The judge made one LLM call → its phase carries tokens.
@@ -442,9 +435,8 @@ class TestSynthesiseAndRefineDetail:
         core.answer("a query", on_event=events.append)
         phases = _phases(events)
         # plan, resolve, retrieve, gate (default-on), synthesise (exploratory),
-        # replan (Phase 2), refine (the marker), synthesise (final). With no
-        # scripted re-plan response the re-plan resolves to the same specs as
-        # pass 1 — the no-op path — so the refine marker reports noop and no
+        # replan, refine (the marker), synthesise (final). With no scripted re-plan
+        # response the re-plan is a no-op, so the refine marker reports noop and no
         # second retrieve/judge phase is emitted.
         assert phases == [
             "plan",

@@ -1,9 +1,4 @@
-/**
- * Search endpoint functions — run queries, fetch facets, stats, health, and
- * reconcile triggers.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Search, facets, stats, health, reconcile and document-asset URL endpoints. */
 
 import type {
   SearchRequest,
@@ -39,23 +34,12 @@ export async function getHealthz(): Promise<StatusResponse> {
   return request<StatusResponse>(`${BASE_URL}/api/healthz`, { method: 'GET' });
 }
 
-/**
- * POST /api/reconcile — trigger an immediate reconciliation cycle.
- *
- * Resolves on 202 Accepted; throws `Unauthenticated` on 401 and `ApiError`
- * on any other non-2xx. Routes through the shared `request` wrapper, which
- * skips body parsing for the empty 202 response.
- */
+/** POST /api/reconcile — trigger an immediate reconciliation cycle; resolves on 202. */
 export async function postReconcile(): Promise<void> {
   return request<void>(`${BASE_URL}/api/reconcile`, { method: 'POST' });
 }
 
-/**
- * GET /api/recent-searches — the signed-in user's recent query history.
- *
- * Newest entry first. Requires a session; throws `Unauthenticated` on 401.
- * The idle search screen calls this and degrades gracefully if it fails.
- */
+/** GET /api/recent-searches — the signed-in user's recent queries, newest first. */
 export async function getRecentSearches(): Promise<RecentSearchesResponse> {
   return request<RecentSearchesResponse>(
     `${BASE_URL}/api/recent-searches`,
@@ -64,28 +48,16 @@ export async function getRecentSearches(): Promise<RecentSearchesResponse> {
 }
 
 /**
- * Build the URL of the in-app PDF proxy for a document.
+ * URL of the PDF proxy (`GET /api/documents/{id}/pdf`), loaded by the preview `<iframe>`.
  *
- * `GET /api/documents/{id}/pdf` streams the original PDF (proxied from
- * Paperless-ngx by the Wave 2 backend). The document-preview viewer points an
- * `<iframe src>` at this URL; the browser's built-in PDF viewer renders it.
- * The session cookie is sent automatically with the iframe request because it
- * is a same-origin navigation — no `credentials` flag is needed (and a binary
- * stream must not be funnelled through the JSON `request` helper).
+ * A same-origin navigation sends the session cookie by itself, and a binary
+ * stream must not go through the JSON `request` helper.
  */
 export function documentPdfUrl(documentId: number): string {
   return `${BASE_URL}/api/documents/${documentId}/pdf`;
 }
 
-/**
- * Build the URL of the first-page thumbnail proxy for a document.
- *
- * `GET /api/documents/{id}/thumb` streams the document's first-page thumbnail
- * (proxied from Paperless-ngx by the search server). LibraryCard points an
- * `<img src>` at this URL; the session cookie is sent automatically because it
- * is a same-origin request — no `credentials` flag is needed (and a binary
- * stream must not be funnelled through the JSON `request` helper).
- */
+/** URL of the first-page thumbnail proxy (`GET /api/documents/{id}/thumb`) for an `<img>`. */
 export function documentThumbUrl(documentId: number): string {
   return `${BASE_URL}/api/documents/${documentId}/thumb`;
 }

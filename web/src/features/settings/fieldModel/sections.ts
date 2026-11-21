@@ -1,38 +1,14 @@
 /**
- * The settings sections, in pipeline display order.
- *
- * Each section contains one or more named sub-card groups, each group
- * containing an ordered list of field descriptors bound to one config key.
- * Groups may also carry an `advanced` array rendered inside a collapsed
- * "Advanced" disclosure beneath the primary fields.
- *
- * SelectControl fields may carry `reasoningKey`/`reasoningOptions` to render
- * a companion reasoning-effort segmented line beneath the model select.
- *
- * Adding or retiring a config key is a change to this file alone — the
- * screen components are generic.
- *
- * Tier: features/ — leaf module, no deps outside the settings feature.
+ * The declarative settings model. Adding or retiring a config key is a change to this file
+ * alone; the screen components are generic.
  */
-
-// rationale: pure data literal exempt under CODE_GUIDELINES §3.1 — this file
-// is the declarative settings model (the §3.1 sanctioned exemplar). It carries
-// no logic: the shared option lists and `SETTINGS_SECTIONS` are plain literals,
-// and the only function-shaped construct — `searchStageFields`, which expands
-// one Search sub-step into its three rows — lives in the sibling `helpers.ts`
-// and is imported here purely to keep the literal DRY (FE-06).
 
 import type { SettingsSection } from './types';
 import { searchStageFields } from './helpers';
 
-// ---------------------------------------------------------------------------
-// Shared option lists
-// ---------------------------------------------------------------------------
-
 /**
- * A small fixed model-identifier list, reused by the planner/answer/judge
- * selects. The 5.6 family leads (current defaults); the cheaper 5.4-era
- * models stay selectable as cost escape hatches — 5.6 is markedly dearer.
+ * Model choices for the planner/answer/judge selects. The 5.6 family are the defaults; the
+ * cheaper 5.4-era models stay as cost escape hatches, since 5.6 is markedly dearer.
  */
 export const MODEL_OPTIONS = [
   { value: 'gpt-5.6-luna', label: 'gpt-5.6-luna' },
@@ -45,11 +21,8 @@ export const MODEL_OPTIONS = [
 ];
 
 /**
- * OpenAI reasoning-effort tiers, matching the live API's supported set
- * (verified 2026-07-15; the SDK's `ReasoningEffort` literal lags it). Higher
- * tiers spend more reasoning tokens for better quality; OpenAI-only — the
- * value is ignored when the provider is Ollama. Reused by the OCR,
- * classifier, and search planner/answer/judge reasoning selects.
+ * OpenAI reasoning-effort tiers, matching the live API's supported set (verified 2026-07-15;
+ * the SDK's `ReasoningEffort` literal lags it). Ignored when the provider is Ollama.
  */
 export const REASONING_EFFORT_OPTIONS = [
   { value: 'none', label: 'None' },
@@ -60,32 +33,18 @@ export const REASONING_EFFORT_OPTIONS = [
 ];
 
 /**
- * The per-step provider toggle. Reused by every pipeline step so each picks
- * OpenAI or Ollama independently. The Ollama option is locked until
- * `OLLAMA_BASE_URL` is configured under Connections (`disabledWhenEmpty`) — a
- * step may not select a provider whose connection is missing.
+ * The per-step provider toggle, so each pipeline step picks OpenAI or Ollama independently.
+ * Ollama is locked until `OLLAMA_BASE_URL` is configured.
  */
 export const PROVIDER_OPTIONS = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'ollama', label: 'Ollama', disabledWhenEmpty: 'OLLAMA_BASE_URL' },
 ];
 
-/** The hint shown under every step's Provider row. */
 const PROVIDER_HINT = 'Where this step runs. Ollama needs its URL under Connections.';
 
-// ---------------------------------------------------------------------------
-// SETTINGS_SECTIONS — the ordered declarative model for the Settings screen
-// ---------------------------------------------------------------------------
-
-/**
- * The settings sections, in pipeline display order.
- *
- * The order and section ids match the SettingsSideNav Pipeline / Operations
- * groups. Each section contains one or more named groups (sub-cards). Field
- * order within a group follows the approved settings-redesign mock.
- */
+/** The settings sections in pipeline order; ids match the SettingsSideNav items. */
 export const SETTINGS_SECTIONS: SettingsSection[] = [
-  // ── 1. Connections ────────────────────────────────────────────────────────
   {
     id: 'connections',
     title: 'Connections',
@@ -153,7 +112,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 2. OCR ────────────────────────────────────────────────────────────────
   {
     id: 'ocr',
     title: 'OCR',
@@ -246,7 +204,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 3. Classification ─────────────────────────────────────────────────────
   {
     id: 'classification',
     title: 'Classification',
@@ -344,7 +301,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 4. Indexing ───────────────────────────────────────────────────────────
   {
     id: 'indexing',
     title: 'Indexing',
@@ -365,8 +321,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
             key: 'EMBEDDING_MODEL',
             label: 'Embedding model',
             hint: 'OpenAI: pick a model. Ollama: type a pulled embedding model (e.g. nomic-embed-text). Changing this re-embeds the library.',
-            // A dropdown of the OpenAI models when the embedding provider is
-            // OpenAI; a free-text field for an Ollama model otherwise.
             control: {
               kind: 'conditional',
               on: 'EMBEDDING_PROVIDER',
@@ -432,7 +386,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 5. Search ─────────────────────────────────────────────────────────────
   {
     id: 'search',
     title: 'Search',
@@ -563,7 +516,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 6. Automation & Daemons ───────────────────────────────────────────────
   {
     id: 'automation',
     title: 'Automation & Daemons',
@@ -672,7 +624,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
 
-  // ── 7. Logging ────────────────────────────────────────────────────────────
   {
     id: 'logging',
     title: 'Logging',

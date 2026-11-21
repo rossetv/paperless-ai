@@ -1,13 +1,4 @@
-"""Tests for indexer.worker.DocumentIndexer.
-
-Verifies the per-document indexing pipeline:
-- Gate: empty content → SKIPPED; error-tagged document → SKIPPED.
-- New document (no existing IndexState) → INDEXED (embed + upsert called).
-- Content unchanged (existing IndexState, same hash) → METADATA_ONLY
-  (embed NOT called, update_metadata called).
-- Content changed (existing IndexState, different hash) → INDEXED (re-embedded).
-- created/modified fields are normalised to UTC ISO-8601 in DocumentMeta.
-"""
+"""Tests for indexer.worker.DocumentIndexer."""
 
 from __future__ import annotations
 
@@ -20,28 +11,16 @@ from store.models import IndexState
 from tests.helpers.factories import make_paperless_document, make_settings_obj
 from tests.helpers.mocks import make_mock_embedding_client
 
-# Settings, the embedding client, and Paperless documents all come from the
-# shared factories (CODE_GUIDELINES §11.5).  make_settings_obj()'s defaults
-# already match what the worker reads — ERROR_TAG_ID=552, CHUNK_SIZE=2000,
-# CHUNK_OVERLAP=256 — so the no-argument case needs no overrides.
+# make_settings_obj() defaults to ERROR_TAG_ID=552, CHUNK_SIZE=2000 and
+# CHUNK_OVERLAP=256.
 
 _DEFAULT_DOC_CONTENT = "This is a test document with enough text to be chunked."
 
 
 def _make_doc(**overrides: Any) -> dict:
-    """Build a Paperless document with a worker-friendly default content body.
-
-    A thin wrapper over :func:`~tests.helpers.factories.make_paperless_document`
-    that defaults ``content`` to text long enough to chunk; the indexer-shaped
-    document is otherwise the shared factory's.
-    """
+    """Build a Paperless document whose default content is long enough to chunk."""
     overrides.setdefault("content", _DEFAULT_DOC_CONTENT)
     return make_paperless_document(**overrides)
-
-
-# ---------------------------------------------------------------------------
-# Gate: empty content
-# ---------------------------------------------------------------------------
 
 
 class TestGateEmptyContent:
@@ -77,11 +56,6 @@ class TestGateEmptyContent:
         assert indexer.index_document(doc, existing=None) is IndexOutcome.SKIPPED
 
 
-# ---------------------------------------------------------------------------
-# Gate: error tag
-# ---------------------------------------------------------------------------
-
-
 class TestGateErrorTag:
     """Documents carrying the ERROR_TAG_ID are skipped."""
 
@@ -99,7 +73,6 @@ class TestGateErrorTag:
         store_writer.upsert_document.assert_not_called()
 
     def test_error_tag_id_none_means_gate_disabled(self) -> None:
-        """When ERROR_TAG_ID is None the gate cannot trigger; document is indexed."""
         settings = make_settings_obj(ERROR_TAG_ID=None)
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
@@ -112,19 +85,11 @@ class TestGateErrorTag:
         store_writer.upsert_document.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-# Gate: a previously-indexed document that became un-indexable is pruned
-# ---------------------------------------------------------------------------
-
-
 class TestGatePrunesStaleDocument:
     """A document that was indexed but is now un-indexable has its rows pruned.
 
-    IDX-01: when the OCR content is emptied, or the error tag is applied, *after*
-    the document was indexed, the worker must delete its stale rows from the
-    store rather than silently SKIPPED — otherwise search keeps serving chunks
-    for content that no longer exists, and the deletion sweep cannot reach it
-    (the document still exists in Paperless).
+    The document still exists in Paperless, so the deletion sweep never reaches
+    it; without the prune, search keeps serving its stale chunks.
     """
 
     def _existing_state(self) -> IndexState:
@@ -147,7 +112,6 @@ class TestGatePrunesStaleDocument:
         embedding_client.embed.assert_not_called()
         store_writer.upsert_document.assert_not_called()
         store_writer.update_metadata.assert_not_called()
-        # The stale rows must be pruned.
         store_writer.delete_documents.assert_called_once_with((doc["id"],))
 
     def test_error_tagged_after_indexing_prunes_the_document(self) -> None:
@@ -162,7 +126,6 @@ class TestGatePrunesStaleDocument:
         store_writer.delete_documents.assert_called_once_with((doc["id"],))
 
     def test_never_indexed_unindexable_document_is_not_pruned(self) -> None:
-        """No existing row → SKIPPED is a pure no-op; nothing is deleted."""
         settings = make_settings_obj()
         store_writer = MagicMock()
         indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
@@ -172,11 +135,6 @@ class TestGatePrunesStaleDocument:
 
         assert outcome is IndexOutcome.SKIPPED
         store_writer.delete_documents.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# New document: full index path
-# ---------------------------------------------------------------------------
 
 
 class TestNewDocument:
@@ -213,11 +171,6 @@ class TestNewDocument:
 
         store_writer.upsert_document.assert_called_once()
         store_writer.update_metadata.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Unchanged hash: metadata-only path
-# ---------------------------------------------------------------------------
 
 
 class TestUnchangedHash:
@@ -269,11 +222,6 @@ class TestUnchangedHash:
         store_writer.upsert_document.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Changed hash: re-index path
-# ---------------------------------------------------------------------------
-
-
 class TestChangedHash:
     """When the content hash changes, the document is re-chunked and re-embedded."""
 
@@ -322,11 +270,6 @@ class TestChangedHash:
         store_writer.update_metadata.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Date normalisation
-# ---------------------------------------------------------------------------
-
-
 class TestDateNormalisation:
     """created and modified are normalised to UTC ISO-8601 in DocumentMeta."""
 
@@ -336,15 +279,12 @@ class TestDateNormalisation:
         store_writer = MagicMock()
         indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
         indexer.index_document(doc, existing=None)
-        # upsert_document is called as upsert_document(meta, chunks)
+        # upsert_document(meta, chunks)
         return store_writer.upsert_document.call_args[0][0]
 
     def test_modified_utc_zulu_passthrough(self) -> None:
-        """An already-UTC modified value is stored as an ISO-8601 string."""
         doc = _make_doc(modified="2024-06-01T12:00:00+00:00")
         meta = self._capture_meta(doc)
-        # Must be a valid ISO-8601 UTC string; exact format is normalised by
-        # datetime.fromisoformat + isoformat.
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
         assert (
@@ -353,49 +293,41 @@ class TestDateNormalisation:
         )
 
     def test_modified_offset_normalised_to_utc(self) -> None:
-        """A modified value with a non-UTC offset is converted to UTC."""
-        # +02:00 → 10:00 UTC
         doc = _make_doc(modified="2024-06-01T12:00:00+02:00")
         meta = self._capture_meta(doc)
         dt = datetime.fromisoformat(meta.modified)
         assert dt.tzinfo is not None
-        # 12:00 +02:00 = 10:00 UTC
         assert (
             dt.utctimetuple()
             == datetime(2024, 6, 1, 10, 0, 0, tzinfo=timezone.utc).utctimetuple()
         )
 
     def test_created_none_preserved(self) -> None:
-        """A None created date is stored as None."""
         doc = _make_doc(created=None)
         meta = self._capture_meta(doc)
         assert meta.created is None
 
     def test_created_date_only_normalised_to_utc_iso8601(self) -> None:
-        """A bare date string (YYYY-MM-DD) is normalised to midnight UTC ISO-8601."""
+        """A bare YYYY-MM-DD date becomes midnight UTC."""
         doc = _make_doc(created="2024-01-15")
         meta = self._capture_meta(doc)
         assert meta.created is not None
         dt = datetime.fromisoformat(meta.created)
-        # Must be UTC-aware and at midnight
         assert dt.tzinfo is not None
         assert dt.utctimetuple()[:3] == (2024, 1, 15)
 
     def test_created_datetime_with_offset_normalised(self) -> None:
-        """A created datetime with timezone offset is normalised to UTC."""
         doc = _make_doc(created="2024-01-15T10:00:00+02:00")
         meta = self._capture_meta(doc)
         assert meta.created is not None
         dt = datetime.fromisoformat(meta.created)
         assert dt.tzinfo is not None
-        # 10:00 +02:00 = 08:00 UTC
         assert (
             dt.utctimetuple()
             == datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc).utctimetuple()
         )
 
     def test_metadata_only_path_also_normalises_dates(self) -> None:
-        """Date normalisation applies on the METADATA_ONLY path too."""
         import hashlib
 
         settings = make_settings_obj()
@@ -420,18 +352,8 @@ class TestDateNormalisation:
         )
 
 
-# ---------------------------------------------------------------------------
-# Unparseable dates are logged, not silently swallowed
-# ---------------------------------------------------------------------------
-
-
 class TestUnparseableDateIsLogged:
-    """A Paperless date that does not parse is stored verbatim AND logged.
-
-    An unparseable upstream timestamp is a recoverable anomaly: the worker
-    keeps the value rather than dropping the field, but it must surface a
-    WARNING so the operator can see the bad data (SPEC §4.1, §7.3).
-    """
+    """An unparseable Paperless date is stored verbatim and logged as a warning."""
 
     def _index_and_capture_logs(self, doc: dict) -> tuple[object, list[dict]]:
         """Index *doc* and return the captured DocumentMeta and log events."""
@@ -449,9 +371,7 @@ class TestUnparseableDateIsLogged:
         doc = _make_doc(modified="not-a-real-timestamp")
         meta, captured = self._index_and_capture_logs(doc)
 
-        # The value is stored verbatim — the field is not dropped.
         assert meta.modified == "not-a-real-timestamp"
-        # A WARNING names the document, the field, and the offending value.
         warnings = [
             event for event in captured if event["event"] == "worker.unparseable_date"
         ]
@@ -461,7 +381,6 @@ class TestUnparseableDateIsLogged:
         assert warnings[0]["value"] == "not-a-real-timestamp"
 
     def test_parseable_dates_log_no_warning(self) -> None:
-        """A document with valid dates produces no unparseable-date warning."""
         doc = _make_doc(created="2024-01-15", modified="2024-06-01T12:00:00+00:00")
         _, captured = self._index_and_capture_logs(doc)
 
@@ -470,33 +389,19 @@ class TestUnparseableDateIsLogged:
         ]
 
 
-# ---------------------------------------------------------------------------
-# Zero-chunk guard: marker-only content must not create a blocking hash row
-# ---------------------------------------------------------------------------
-
-# OCR page markers are stripped by chunk_text; content consisting solely of
-# them passes the whitespace gate but yields zero chunks.  Without the guard
-# the worker would upsert a documents row with chunk_count=0 and store a
-# content_hash — permanently trapping the document in METADATA_ONLY with no
-# search results (IDX-M1).  The tests below verify the guard using the real
-# chunker so the test is coupled to the actual stripping behaviour, not a mock.
-
+# chunk_text strips OCR page markers, so marker-only content passes the
+# whitespace gate but yields zero chunks. These tests use the real chunker.
 _MARKERS_ONLY = "--- Page 1 ---\n--- Page 2 ---"
 
 
 class TestZeroChunkGuard:
     """Content that passes the whitespace gate but yields zero chunks is skipped.
 
-    IDX-M1: the worker must not upsert a chunk-less documents row whose stored
-    content_hash would block every future re-attempt.  Specifically:
-
-    * ``upsert_document`` is never called.
-    * No hash is stored → a later cycle with real content CAN be indexed.
-    * The outcome is ``SKIPPED``.
+    A chunk-less documents row would store a content_hash that traps the
+    document in METADATA_ONLY with no search results.
     """
 
     def test_marker_only_content_returns_skipped(self) -> None:
-        """Marker-only content is SKIPPED, not INDEXED."""
         settings = make_settings_obj()
         indexer = DocumentIndexer(settings, MagicMock(), make_mock_embedding_client())
 
@@ -506,7 +411,6 @@ class TestZeroChunkGuard:
         assert outcome is IndexOutcome.SKIPPED
 
     def test_marker_only_content_does_not_call_upsert(self) -> None:
-        """No documents row is written — no blocking hash is stored."""
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
@@ -520,7 +424,6 @@ class TestZeroChunkGuard:
         embedding_client.embed.assert_not_called()
 
     def test_marker_only_content_logs_warning(self) -> None:
-        """A WARNING is emitted so the operator can see the un-indexable document."""
         import structlog.testing
 
         settings = make_settings_obj()
@@ -539,7 +442,6 @@ class TestZeroChunkGuard:
         assert skipped_events[0]["reason"] == "indexed_content_produced_zero_chunks"
 
     def test_marker_only_new_document_does_not_delete(self) -> None:
-        """No existing row → nothing to prune; delete_documents must not be called."""
         settings = make_settings_obj()
         store_writer = MagicMock()
         indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
@@ -550,12 +452,6 @@ class TestZeroChunkGuard:
         store_writer.delete_documents.assert_not_called()
 
     def test_marker_only_previously_indexed_prunes_stale_row(self) -> None:
-        """An existing row for a now-marker-only document must be pruned.
-
-        Without pruning the stale row persists in the store and continues to
-        serve empty search results.  The existing row was created when the
-        document had real content; it must be deleted so the store is clean.
-        """
         settings = make_settings_obj()
         store_writer = MagicMock()
         indexer = DocumentIndexer(settings, store_writer, make_mock_embedding_client())
@@ -572,28 +468,18 @@ class TestZeroChunkGuard:
         store_writer.upsert_document.assert_not_called()
 
     def test_future_cycle_with_real_content_can_be_indexed(self) -> None:
-        """After a zero-chunk skip, a later cycle that supplies real content succeeds.
-
-        Because no hash is stored on the zero-chunk path, the hash gate never
-        fires and the document goes through the full chunk + embed + upsert path
-        on the next cycle.  This test simulates the two-cycle sequence:
-
-        Cycle 1 — marker-only: SKIPPED, nothing stored.
-        Cycle 2 — real content added: existing=None (no row was ever written),
-                  outcome INDEXED, upsert_document called.
-        """
+        """No hash is stored on the zero-chunk path, so the hash gate never fires."""
         settings = make_settings_obj()
         store_writer = MagicMock()
         embedding_client = make_mock_embedding_client()
         indexer = DocumentIndexer(settings, store_writer, embedding_client)
 
-        # Cycle 1: marker-only content, no row written.
         doc_cycle1 = _make_doc(content=_MARKERS_ONLY)
         outcome1 = indexer.index_document(doc_cycle1, existing=None)
         assert outcome1 is IndexOutcome.SKIPPED
         store_writer.upsert_document.assert_not_called()
 
-        # Cycle 2: real content arrives — existing=None because cycle 1 wrote nothing.
+        # existing=None because cycle 1 wrote nothing.
         doc_cycle2 = _make_doc(content=_DEFAULT_DOC_CONTENT)
         outcome2 = indexer.index_document(doc_cycle2, existing=None)
         assert outcome2 is IndexOutcome.INDEXED

@@ -1,10 +1,3 @@
-/**
- * Tests for the ErrorBoundary component.
- *
- * Strategy: render a child component that throws on cue; assert that
- * the fallback UI is shown and the throwing child is not rendered.
- */
-
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -20,12 +13,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// A component that throws unconditionally.
 function Bomb(): React.ReactElement {
   throw new Error('test bomb');
 }
 
-// A component that throws only when `shouldThrow` is true.
 function ConditionalBomb({ shouldThrow }: { shouldThrow: boolean }): React.ReactElement {
   if (shouldThrow) {
     throw new Error('conditional bomb');
@@ -99,7 +90,6 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     );
 
-    // Boundary is in error state.
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
 
     // Changing the reset key clears the error — the safe child renders.

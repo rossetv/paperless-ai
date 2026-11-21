@@ -6,16 +6,12 @@ import styles from './SaveBar.module.css';
 export interface SaveBarProps {
   /** Number of fields with unsaved changes. Hidden when this is zero. */
   dirtyCount: number;
-  /** True while the save mutation is in-flight. */
   isPending: boolean;
-  /** Called when the user clicks Discard. */
   onDiscard: () => void;
-  /** Called when the user clicks Save. */
   onSave: () => void;
   /**
-   * When true, at least one changed key requires a full search-index rebuild.
-   * The caption swaps to an amber warning so the operator knows saving will
-   * re-embed the whole library.
+   * At least one changed key requires a full search-index rebuild; the caption becomes an amber
+   * warning that saving will re-embed the whole library.
    */
   reindexPending?: boolean;
 }
@@ -23,20 +19,9 @@ export interface SaveBarProps {
 /**
  * Sticky bottom glass bar that slides up when there are unsaved settings.
  *
- * Hidden via the `.bar-hidden` CSS class (translateY(100%) + visibility:hidden)
- * when `dirtyCount === 0`; slides in when dirty. Shows a warning dot, an
- * unsaved-changes count, a caption, and Discard / Save buttons.
- *
- * The bar element carries `aria-live="polite"` and `aria-atomic="true"` so
- * screen readers announce the unsaved-changes count when it changes.
- * When hidden, the `inert` property (set imperatively via ref — not a React
- * prop, as `inert` is only in @types/react experimental) removes all
- * descendants from the tab order and suppresses AT announcements.
- * `aria-hidden` is intentionally absent — WAI-ARIA §6.6 forbids it on
- * containers that hold focusable descendants.
- *
- * Tier: features/settings — composes primitives, no domain knowledge beyond
- * the unsaved-count contract.
+ * `aria-live` announces the unsaved count as it changes. When hidden, `inert` removes the
+ * buttons from the tab order and silences them for assistive tech; `aria-hidden` is deliberately
+ * not used, as WAI-ARIA forbids it on containers with focusable descendants.
  */
 export function SaveBar({
   dirtyCount,
@@ -48,8 +33,8 @@ export function SaveBar({
   const isHidden = dirtyCount === 0;
   const barRef = useRef<HTMLDivElement>(null);
 
-  // `inert` is a DOM property not yet in stable @types/react — set it
-  // imperatively so we avoid both `any` casts and the experimental import.
+  // `inert` is not in stable @types/react; setting it imperatively avoids an `any` cast and the
+  // experimental types import.
   useEffect(() => {
     const el = barRef.current;
     if (el === null) return;

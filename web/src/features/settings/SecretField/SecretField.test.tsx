@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SecretField } from './SecretField';
 
-// The real server mask — matches SECRET_MASK in settings_routes.py.
+// Matches SECRET_MASK in settings_routes.py.
 const MASK = '********';
 
 describe('SecretField', () => {
@@ -75,7 +75,7 @@ describe('SecretField', () => {
     await userEvent.type(screen.getByLabelText('API token'), 'abc');
     await userEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(screen.getByLabelText('API token')).toHaveValue(MASK);
-    // Cancelling reverts the key to "unchanged" — onChange is called with null.
+    // Cancel reverts the key to "unchanged".
     expect(onChange).toHaveBeenLastCalledWith(null);
   });
 

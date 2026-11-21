@@ -1,10 +1,7 @@
 """OpenAI-compatible classification provider with model fallback.
 
-Parameter compatibility (stripping a param a model rejects, with a per-model
-process cache) is handled by the shared :class:`~common.llm.OpenAIChatMixin`
-adaptive layer — this provider no longer carries its own. It always *requests*
-temperature and (for OpenAI) a ``json_schema`` response format; the shared
-layer strips whatever a given model rejects and caches the discovery.
+It always requests temperature and (on OpenAI) a ``json_schema`` response
+format; :class:`~common.llm.OpenAIChatMixin` strips whatever a model rejects.
 """
 
 from __future__ import annotations
@@ -31,8 +28,7 @@ log = structlog.get_logger(__name__)
 class ClassificationProvider(OpenAIChatMixin):
     """Classifies document text using OpenAI-compatible chat completions."""
 
-    # reasoning_effort strips are intentionally not counted here — the provider
-    # opts into only the three param-retry counters it surfaces to the caller.
+    # reasoning_effort strips are deliberately not counted.
     _STAT_KEYS = (
         "attempts",
         "api_errors",
@@ -58,11 +54,9 @@ class ClassificationProvider(OpenAIChatMixin):
         taxonomy: TaxonomyContext,
         truncation_note: str | None = None,
     ) -> tuple[ClassificationResult | None, str]:
-        """
-        Classify OCR text with taxonomy context, returning ``(result, model_used)``.
+        """Classify OCR text, returning ``(result, model_used)``.
 
-        Tries each model in ``settings.CLASSIFY_MODELS`` in order.  Returns
-        ``(None, "")`` when all models fail.
+        Tries each of ``CLASSIFY_MODELS`` in order; ``(None, "")`` if all fail.
         """
         if not text.strip():
             log.warning("classification.empty_content")
@@ -107,23 +101,17 @@ class ClassificationProvider(OpenAIChatMixin):
         taxonomy: TaxonomyContext,
         truncation_note: str | None,
     ) -> str:
-        # STABLE PREFIX — byte-identical across every document in a batch, so
-        # OpenAI's prompt cache keys on it. Tag-limit guidance, then the three
-        # taxonomy lists. Nothing per-document appears above this point.
+        # Stable prefix: byte-identical for every document in a batch, so
+        # OpenAI's prompt cache can key on it. Nothing per-document goes here.
         parts: list[str] = [
             self._tag_limit_guidance(),
             self._taxonomy_block(taxonomy),
         ]
 
-        # VARIABLE SUFFIX — per-document content, last so it never shifts the
-        # cacheable prefix. The note (if any) precedes the transcription; the
-        # transcription is always the final segment, wrapped in a fresh
-        # per-request nonce fence so untrusted document text cannot forge the
-        # boundary or be read as an instruction (CODE_GUIDELINES §10.2 — the
-        # system prompt tells the model that everything between the matching
-        # nonce fences is data only). The nonce is generated here, after the
-        # content exists, so the content cannot contain it; it lives only in
-        # this per-document suffix, never in the cacheable prefix above.
+        # Per-document suffix. The transcription goes last, inside a fresh nonce
+        # fence so untrusted text cannot forge the boundary or pass as an
+        # instruction; the nonce is made after the content exists, so the
+        # content cannot contain it.
         if truncation_note:
             parts.append(truncation_note)
         fence = build_data_fence(label=DOCUMENT_FENCE_LABEL)
@@ -147,13 +135,8 @@ class ClassificationProvider(OpenAIChatMixin):
     def _taxonomy_block(self, taxonomy: TaxonomyContext) -> str:
         """Return the stable taxonomy lists for the cacheable prefix.
 
-        No per-document content is interpolated here, so the block is identical
-        for every document in a batch — which is what lets OpenAI cache it.
-
-        When ``CLASSIFY_TAXONOMY_LIMIT`` is a positive cap, a trailing note tells
-        the model the lists are the most-used names only and the archive may hold
-        more — so if the right name is not shown it should still give the correct
-        name (the cache resolves or creates it afterwards).
+        With a positive ``CLASSIFY_TAXONOMY_LIMIT`` the lists are truncated, so a
+        note tells the model to give the right name even when it is not shown.
         """
         limit = self.settings.CLASSIFY_TAXONOMY_LIMIT
         cap_note = (
@@ -178,15 +161,9 @@ class ClassificationProvider(OpenAIChatMixin):
     ) -> dict[str, object]:
         """Build the chat-completion params, always requesting temperature.
 
-        ``reasoning_effort`` and the ``json_schema`` response format are
-        OpenAI-only, so both are gated on the classify step's *own* provider:
-        omitted entirely when ``CLASSIFY_PROVIDER`` is not ``openai`` (an Ollama
-        step never pays the wasted 400 round-trip the compat layer would
-        otherwise need to discover the rejection). On OpenAI a model that still
-        rejects one has it stripped/cached by :meth:`_create_with_compat`.
-        ``max_tokens`` is requested only when ``CLASSIFY_MAX_TOKENS > 0``.
-        ``service_tier`` is likewise provider-gated like ``reasoning_effort``;
-        flex floors the per-call timeout (see :func:`common.llm.service_tier_params`).
+        ``reasoning_effort``, ``response_format`` and ``service_tier`` are
+        OpenAI-only, so they are omitted for other providers rather than costing
+        a rejected round-trip for the compat layer to discover.
         """
         params: dict[str, object] = {
             "model": model,

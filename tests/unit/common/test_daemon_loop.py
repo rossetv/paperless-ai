@@ -10,7 +10,7 @@ MODULE = "common.daemon_loop"
 
 
 def _make_shutdown_after(n_iterations: int):
-    """Return an is_shutdown_requested replacement that returns False n times, then True."""
+    """Stand-in for is_shutdown_requested: False n times, then True."""
     counter = {"calls": 0}
 
     def _is_shutdown():
@@ -27,8 +27,6 @@ def _make_sleep_noop():
 
 
 class TestRunPollingThreadpool:
-    """Tests for run_polling_threadpool()."""
-
     def test_processes_batch_items_via_process_item_callable(self):
         items = [{"id": 1}, {"id": 2}]
         fetch_work = MagicMock(return_value=items)
@@ -124,7 +122,6 @@ class TestRunPollingThreadpool:
             )
 
         process_item.assert_not_called()
-        # Sleep was still called (error recovery sleep)
         mock_sleep.assert_called()
 
     def test_idle_logging_only_once(self):
@@ -145,7 +142,7 @@ class TestRunPollingThreadpool:
                 sleep=mock_sleep,
             )
 
-        # Assert — "No work found" logged only once despite two idle iterations
+        # Two idle iterations, one log line.
         idle_calls = [
             c for c in mock_log.info.call_args_list if "No work found" in str(c)
         ]
@@ -156,7 +153,6 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        # Act — should not raise even without before_each_batch
         with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
             run_polling_threadpool(
                 daemon_name="test",
@@ -192,7 +188,6 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        # Act — max_workers=0 should be clamped to 1 and still work
         with patch(f"{MODULE}.is_shutdown_requested", _make_shutdown_after(1)):
             run_polling_threadpool(
                 daemon_name="test",
@@ -224,8 +219,7 @@ class TestRunPollingThreadpool:
         process_item.assert_not_called()
 
     def test_halt_check_skips_fetch_and_processing(self):
-        # When halt_check reports a reason, the poll fetches and processes
-        # nothing — the guarantee that a halted daemon spends no LLM tokens.
+        # A halted daemon must fetch and process nothing, so it spends no LLM tokens.
         fetch_work = MagicMock(return_value=[{"id": 1}])
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
@@ -288,13 +282,11 @@ class TestRunPollingThreadpool:
         process_item = MagicMock()
         mock_sleep = _make_sleep_noop()
 
-        # We need is_shutdown_requested to return False once (to enter loop),
-        # True on second call (to exit loop), then True for the final check
+        # False on the first call to enter the loop, True afterwards to exit.
         call_count = {"n": 0}
 
         def _shutdown():
             call_count["n"] += 1
-            # First call: enter loop; second call onwards: exit
             return call_count["n"] > 1
 
         with (
@@ -321,9 +313,8 @@ class TestRunPollingThreadpool:
 class TestHaltMidQueue:
     """A breaker that trips mid-pass stops further LLM calls within the batch.
 
-    These cover the M2 fix: ``_poll_once`` only skips *new* polls, so a deep
-    already-materialised queue is bounded by the per-item pre-call halt check
-    and the chunked dispatch inside ``_process_batch``.
+    ``_poll_once`` only skips new polls, so an already-fetched queue is bounded
+    by the per-item halt check and the chunked dispatch in ``_process_batch``.
     """
 
     def test_a_trip_mid_batch_stops_processing_remaining_items(self):
@@ -385,9 +376,8 @@ class TestHaltMidQueue:
         assert set(processed).issubset({0, 1})
 
     def test_processed_count_reflects_dispatched_not_queue_depth(self):
-        # When a halt cuts a batch short, on_cycle's outcome.processed must be
-        # the number actually dispatched — the heartbeat reports real work, not
-        # the materialised queue depth.
+        # When a halt cuts a batch short, outcome.processed is the number actually
+        # dispatched, so the heartbeat reports real work, not the queue depth.
         from common.daemon_loop import CycleOutcome
 
         items = [{"id": i} for i in range(10)]
@@ -418,8 +408,6 @@ class TestHaltMidQueue:
         assert outcomes[0].idle is False
 
     def test_no_halt_check_processes_the_whole_queue(self):
-        # Regression: with no halt_check the entire materialised queue is still
-        # processed exactly once — the conservative non-breaker path is unchanged.
         items = [{"id": i} for i in range(7)]
         process_item = MagicMock()
 
@@ -437,8 +425,6 @@ class TestHaltMidQueue:
 
 
 class TestSafeItemSummary:
-    """Tests for _safe_item_summary()."""
-
     def test_returns_doc_id_for_dict_with_id(self):
         item = {"id": 42, "title": "Test"}
 
@@ -475,8 +461,7 @@ class TestSafeItemSummary:
 
 
 def test_before_each_poll_runs_at_the_top_of_every_iteration() -> None:
-    """run_polling_threadpool calls before_each_poll once per poll, before
-    fetch_work — the hot-load boundary for the tag daemons."""
+    """before_each_poll is the hot-load boundary for the tag daemons."""
     from common.daemon_loop import run_polling_threadpool
     from common.shutdown import request_shutdown, reset_shutdown
 
@@ -508,8 +493,6 @@ def test_before_each_poll_runs_at_the_top_of_every_iteration() -> None:
 
 
 def test_on_cycle_is_called_after_each_poll_with_the_outcome() -> None:
-    """run_polling_threadpool invokes on_cycle once per poll, passing the
-    processed-item count and the idle flag for that iteration."""
     from common.daemon_loop import CycleOutcome, run_polling_threadpool
     from common.shutdown import reset_shutdown
 
@@ -549,7 +532,6 @@ def test_on_cycle_is_called_after_each_poll_with_the_outcome() -> None:
 
 
 def test_a_failing_on_cycle_callback_does_not_crash_the_loop() -> None:
-    """A buggy on_cycle hook is isolated — the loop keeps running."""
     from common.daemon_loop import run_polling_threadpool
     from common.shutdown import reset_shutdown
 

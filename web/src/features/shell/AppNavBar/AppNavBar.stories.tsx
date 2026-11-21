@@ -1,11 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { AppNavBar } from './AppNavBar';
 
-/**
- * AppNavBar drives `useAuth` / `useLogout` and uses React-Router links.
- * Storybook does not wire TanStack Query or a router, so this story is a
- * visual reference only; behavioural coverage lives in the test suite.
- */
+/** Storybook does not wire TanStack Query or a router, so this is a visual reference only. */
 const meta = {
   title: 'Features/Shell/AppNavBar',
   component: AppNavBar,
@@ -15,7 +11,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The authenticated app navigation bar. */
 export const Default: Story = {
   decorators: [
     (Story) => (

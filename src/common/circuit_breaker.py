@@ -1,16 +1,8 @@
 """A circuit breaker that halts a daemon when Paperless write-backs keep failing.
 
-Each tag daemon spends LLM tokens on a document *before* it writes the result
-back to Paperless. When every write-back is rejected the same way — a
-misconfigured field, a deleted tag, a Paperless API change — working through the
-rest of the queue would spend one LLM call per document and save none of them.
-Quarantining each document stops it looping forever, but a queue of thousands
-would still burn thousands of calls in a single pass.
-
-This breaker is the guard against that one-pass burn. It counts *consecutive*
-write-back failures and, once they reach the threshold, reports itself tripped so
-the daemon stops pulling new work until the fault is fixed. One success resets the
-count, so a single bad document never trips it — only a sustained run does.
+Each document costs an LLM call before its write-back, so when every write-back
+is rejected the same way, working through the queue burns tokens for nothing.
+The breaker trips after consecutive failures; one success resets the count.
 """
 
 from __future__ import annotations
@@ -26,8 +18,7 @@ log = structlog.get_logger(__name__)
 # high enough that an unlucky cluster of unrelated failures does not false-trip.
 DEFAULT_FAILURES_BEFORE_HALT = 3
 
-# The heartbeat detail a halted daemon shows on the dashboard, and the reason
-# string its ``halt_check`` returns. Names the cause and the fix in one line.
+# The heartbeat detail a halted daemon shows, and its halt_check reason.
 HALTED_DETAIL = (
     "halted: Paperless keeps rejecting write-backs — fix the cause "
     "(see logs) then change config or restart"
@@ -37,11 +28,8 @@ HALTED_DETAIL = (
 class WriteBackCircuitBreaker:
     """Halts document processing after consecutive Paperless write-backs fail.
 
-    One instance is shared across a daemon's worker threads, so every state
-    change is guarded by a lock — the one sanctioned in-process singleton the
-    threading rules allow (CODE_GUIDELINES §8.5). The state is per-daemon and
-    in-process: two daemon instances each keep their own breaker and halt
-    independently (CODE_GUIDELINES §1.12).
+    Shared across a daemon's worker threads, so state changes take a lock. The
+    state is in-process: each daemon instance halts independently.
     """
 
     def __init__(
@@ -51,7 +39,7 @@ class WriteBackCircuitBreaker:
             raise ValueError("failures_before_halt must be >= 1")
         self._failures_before_halt = failures_before_halt
         self._lock = threading.Lock()
-        # Streak counts completion order, not document order (see docs/resilience.md).
+        # Workers run concurrently, so the streak is in completion order.
         self._consecutive_failures = 0
         self._tripped = False
 
@@ -61,7 +49,7 @@ class WriteBackCircuitBreaker:
             self._consecutive_failures = 0
 
     def record_failure(self) -> None:
-        """A write-back failed — extend the streak and trip once it hits the threshold."""
+        """A write-back failed — extend the streak and trip at the threshold."""
         with self._lock:
             self._consecutive_failures += 1
             reached_threshold = self._consecutive_failures >= self._failures_before_halt
@@ -87,10 +75,10 @@ class WriteBackCircuitBreaker:
             return self._tripped
 
     def reset(self) -> None:
-        """Clear the halt and the streak — called when the fault may be fixed.
+        """Clear the halt and the streak.
 
-        The daemons call this on a configuration change (a hot-reload), which is
-        the signal an operator has likely corrected the cause.
+        Daemons call this on a config change, the sign an operator has likely
+        fixed the cause.
         """
         with self._lock:
             if self._tripped:

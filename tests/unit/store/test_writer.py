@@ -1,19 +1,4 @@
-"""Tests for store.writer.StoreWriter — document write operations.
-
-Covers the per-document write path:
-- upsert then re-read yields identical chunks
-- chunks.id == chunks_fts.rowid for every chunk (the §4.2 invariant)
-- re-upserting the same document REPLACES chunks and FTS rows (no duplicates,
-  no orphans)
-- delete_documents removes the document, chunks, AND chunks_fts rows
-- update_metadata changes metadata without changing chunk_count or the chunks
-- a transaction that raises mid-way leaves the prior version fully intact
-
-The construction, embedding-model, taxonomy, meta, checkpoint, and concurrency
-behaviours live in test_writer_lifecycle.py — the writer's tests are split
-across two files for the 500-line ceiling (CODE_GUIDELINES §3.1).  Shared
-fixtures (``db_path``) come from tests/unit/store/conftest.py.
-"""
+"""Tests for the StoreWriter per-document write path."""
 
 from __future__ import annotations
 
@@ -25,11 +10,6 @@ from store.migrations import StoreError
 from store.schema import connect
 from tests.helpers.factories import make_chunks, make_document_meta
 from tests.helpers.store import open_writer
-
-
-# ---------------------------------------------------------------------------
-# upsert_document — round-trip correctness
-# ---------------------------------------------------------------------------
 
 
 class TestUpsertDocument:
@@ -74,13 +54,8 @@ class TestUpsertDocument:
         assert len(row[0]) > 0
 
 
-# ---------------------------------------------------------------------------
-# chunks.id == chunks_fts.rowid invariant (SPEC §4.2)
-# ---------------------------------------------------------------------------
-
-
 class TestChunksFtsRowidInvariant:
-    """Every chunks.id must equal the corresponding chunks_fts rowid (§4.2)."""
+    """Every chunks.id must equal its chunks_fts rowid."""
 
     def test_chunk_ids_equal_fts_rowids_after_upsert(self, db_path: str) -> None:
         writer = open_writer(db_path)
@@ -99,9 +74,7 @@ class TestChunksFtsRowidInvariant:
         }
         conn.close()
 
-        assert chunk_ids == fts_rowids, (
-            "chunks.id set must equal chunks_fts.rowid set — the §4.2 invariant"
-        )
+        assert chunk_ids == fts_rowids, "chunks.id set must equal chunks_fts.rowid set"
 
     def test_invariant_holds_for_multiple_documents(self, db_path: str) -> None:
         writer = open_writer(db_path)
@@ -118,17 +91,10 @@ class TestChunksFtsRowidInvariant:
         assert chunk_ids == fts_rowids
 
 
-# ---------------------------------------------------------------------------
-# Re-upsert replaces chunks (no duplicates, no orphans)
-# ---------------------------------------------------------------------------
-
-
 class TestReupsertReplacesChunks:
     def test_re_upsert_replaces_chunks_no_duplicates(self, db_path: str) -> None:
         writer = open_writer(db_path)
-        # First upsert: 3 chunks.
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
-        # Re-upsert with 2 chunks.
         writer.upsert_document(make_document_meta(id=1), make_chunks(2))
         writer.close()
 
@@ -141,14 +107,12 @@ class TestReupsertReplacesChunks:
 
     def test_re_upsert_removes_orphaned_fts_rows(self, db_path: str) -> None:
         writer = open_writer(db_path)
-        # First upsert: 3 chunks → 3 FTS rows.
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
         conn = connect(db_path)
         first_fts_count = conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
         conn.close()
         assert first_fts_count == 3
 
-        # Re-upsert with 1 chunk → FTS must shrink to 1.
         writer.upsert_document(make_document_meta(id=1), make_chunks(1))
         writer.close()
 
@@ -158,7 +122,6 @@ class TestReupsertReplacesChunks:
         assert fts_count == 1
 
     def test_re_upsert_invariant_still_holds(self, db_path: str) -> None:
-        """After re-upsert, chunks.id == chunks_fts.rowid for all remaining rows."""
         writer = open_writer(db_path)
         writer.upsert_document(make_document_meta(id=1), make_chunks(4))
         writer.upsert_document(make_document_meta(id=1), make_chunks(2))
@@ -171,11 +134,6 @@ class TestReupsertReplacesChunks:
         }
         conn.close()
         assert chunk_ids == fts_rowids
-
-
-# ---------------------------------------------------------------------------
-# delete_documents
-# ---------------------------------------------------------------------------
 
 
 class TestDeleteDocuments:
@@ -206,7 +164,7 @@ class TestDeleteDocuments:
         assert count == 0
 
     def test_delete_removes_chunks_fts_rows(self, db_path: str) -> None:
-        """chunks_fts rows must be removed explicitly — FK cascade does NOT cover them."""
+        """chunks_fts rows must be removed explicitly; the FK cascade misses them."""
         writer = open_writer(db_path)
         writer.upsert_document(make_document_meta(id=1), make_chunks(3))
         writer.delete_documents([1])
@@ -259,11 +217,6 @@ class TestDeleteDocuments:
         conn.close()
         assert remaining == {2}
         assert fts_count == 2
-
-
-# ---------------------------------------------------------------------------
-# update_metadata
-# ---------------------------------------------------------------------------
 
 
 class TestUpdateMetadata:
@@ -338,13 +291,10 @@ class TestUpdateMetadata:
         assert original_fts_rowids == new_fts_rowids
 
     def test_update_metadata_raises_when_document_is_absent(self, db_path: str) -> None:
-        """A metadata-only update of a missing document fails loud, not silently.
+        """A metadata-only update of a missing document raises.
 
-        The metadata-only path is taken because the content hash matched a
-        previously-indexed row; if that row was concurrently pruned the UPDATE
-        affects 0 rows. Returning success would diverge the index from the
-        reconciler's in-memory state — a latent "document silently missing"
-        bug — so the writer must raise (§1.11).
+        If the row was pruned concurrently the UPDATE affects 0 rows; reporting
+        success would leave the index out of step with the reconciler's state.
         """
         writer = open_writer(db_path)
         try:
@@ -357,7 +307,6 @@ class TestUpdateMetadata:
         """The rowcount guard does not break the normal present-document path."""
         writer = open_writer(db_path)
         writer.upsert_document(make_document_meta(id=7), make_chunks(2))
-        # Must not raise — the row exists, so exactly one row is updated.
         writer.update_metadata(make_document_meta(id=7, title="New"))
         writer.close()
 
@@ -367,23 +316,14 @@ class TestUpdateMetadata:
         assert row[0] == "New"
 
 
-# ---------------------------------------------------------------------------
-# Transaction atomicity: crash mid-upsert leaves prior version intact
-# ---------------------------------------------------------------------------
-
-
 class TestTransactionAtomicity:
     def test_failed_upsert_preserves_prior_version(
         self, db_path: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A mid-transaction failure in the real upsert_document must roll back cleanly.
+        """A mid-transaction failure in upsert_document rolls back cleanly.
 
-        We inject a failure into the real production method by monkeypatching
-        sqlite_vec.serialize_float32 to raise on its second call inside the
-        upsert.  This exercises the actual StoreWriter.upsert_document code
-        path, not a copy — confirming that SQLite's ``with conn:`` block rolls
-        back the entire transaction and leaves the prior version (2 chunks)
-        fully intact.
+        serialize_float32 is patched to raise on its second call, so the real
+        upsert fails partway through.
         """
         import sqlite_vec as _vec
 
@@ -391,7 +331,6 @@ class TestTransactionAtomicity:
 
         writer = open_writer(db_path)
 
-        # Establish the prior version: 2 chunks for document 1.
         writer.upsert_document(make_document_meta(id=1), make_chunks(2))
 
         conn = connect(db_path)
@@ -403,8 +342,6 @@ class TestTransactionAtomicity:
         assert prior_chunks == 2
         assert prior_fts == 2
 
-        # Monkeypatch serialize_float32 in the writer module to raise on the
-        # second call (first chunk succeeds; second raises — mid-transaction).
         call_count: list[int] = [0]
         original_serialize = _vec.serialize_float32
 
@@ -418,14 +355,12 @@ class TestTransactionAtomicity:
             writer_mod.sqlite_vec, "serialize_float32", _failing_serialize
         )
 
-        # Second upsert: 4 chunks, but it should fail mid-transaction and roll
-        # back.  The writer wraps the sqlite3 error in StoreError (§6.3).
+        # The writer wraps the sqlite3 error in StoreError.
         with pytest.raises(StoreError):
             writer.upsert_document(make_document_meta(id=1), make_chunks(4))
 
         writer.close()
 
-        # The prior version must be fully intact — chunks, FTS rows, document row.
         conn = connect(db_path)
         chunk_count = conn.execute(
             "SELECT count(*) FROM chunks WHERE document_id = 1"

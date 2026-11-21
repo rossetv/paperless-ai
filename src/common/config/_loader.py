@@ -1,15 +1,7 @@
-"""The DB-backed Settings loader and the version-keyed hot-load accessor.
+"""The ``app.db``-backed Settings loader and the version-keyed hot-load accessor.
 
-Layers the ``config`` table in ``app.db`` over the process environment and
-builds a :class:`~common.config._settings.Settings` from the merge — the
-production configuration path (web-redesign spec §5). :func:`load_settings` is
-the one-shot startup loader; :func:`current_settings` is the cheap hot-load
-accessor a polling daemon or the search server calls at a safe boundary to pick
-up saved configuration without a restart.
-
-This module depends on :mod:`._settings` (the :class:`Settings` shape and
-:func:`_build_settings`) and :mod:`._catalogue` (``CONFIG_KEYS``); the
-dependency flows one way, parsing below loading, so there is no cycle.
+:func:`load_settings` is the one-shot startup loader; :func:`current_settings`
+is called at a safe boundary to pick up saved configuration without a restart.
 """
 
 from __future__ import annotations
@@ -25,44 +17,16 @@ from ._settings import Settings, _build_settings
 def load_settings(app_db_path: str) -> Settings:
     """Build a validated :class:`Settings` from ``app.db`` and the environment.
 
-    The production configuration entry point (web-redesign spec §5). It layers
-    the ``config`` table over the process environment so that, for every key,
-    a value in the table wins, then an environment variable, then the coded
-    default.
-
-    On first run — when the ``config`` table is empty — it seeds the table
-    from the current environment (:func:`appdb.config.seed_from_env`), so a
-    deployment previously configured with environment variables keeps working
-    with no change and its settings become editable in the Settings screen.
-
-    The two bootstrap variables ``APP_DB_PATH`` and ``INDEX_DB_PATH`` are
-    never read from the table — they tell the process where its databases
-    live, so they stay environment-only.
-
-    Args:
-        app_db_path: Filesystem path to ``app.db``. Comes from the
-            ``APP_DB_PATH`` bootstrap environment variable (resolved by the
-            caller, normally :func:`common.bootstrap.bootstrap_process`).
-
-    Returns:
-        The validated :class:`Settings`.
+    For each key a table value wins, then an environment variable, then the
+    default. An empty table is first seeded from the environment, so an
+    env-configured deployment keeps working and becomes editable in Settings.
 
     Raises:
-        ValueError: A required key is missing from both the table and the
-            environment, or a stored value fails validation. The message
-            names the offending key.
+        ValueError: A required key is missing or a value fails validation; the
+            message names the key.
         appdb.migrations.AppDbError: ``app.db`` was written by newer code.
-
-    rationale: ``app.db`` is opened and closed within this function — the
-    loader needs only a transient connection. The search server opens its own
-    long-lived ``app.db`` connection for the Settings API; the daemons only
-    ever read config once, at startup, so a per-call connection is correct
-    and avoids leaking a handle a daemon would never use again.
     """
-    # Deferred imports: common is the leaf package, and importing appdb at
-    # module scope would run on every `import common.config`. A function-body
-    # import keeps the dependency where it is actually used and matches the
-    # relaxed import boundary (appdb is permitted; store is not).
+    # Deferred so a plain `import common.config` does not import appdb.
     from appdb import config as config_store  # noqa: PLC0415
     from appdb.connection import connect  # noqa: PLC0415
     from appdb.schema import ensure_schema  # noqa: PLC0415
@@ -75,32 +39,20 @@ def load_settings(app_db_path: str) -> Settings:
     finally:
         conn.close()
 
-    # Merge: the environment first, the config table layered on top — so a
-    # config-table value overrides an environment value. The bootstrap
-    # variables are environment-only, so they survive from os.environ; they
-    # are never in `stored` because seed_from_env only seeds CONFIG_KEYS.
     merged: dict[str, str] = dict(os.environ)
     merged.update(stored)
-    # The bootstrap variables are never in the config table, but app_db_path
-    # is known explicitly here — inject it so _build_settings resolves
-    # Settings.APP_DB_PATH to the path the caller actually used, regardless
-    # of whether APP_DB_PATH is set in the environment.
+    # Settings.APP_DB_PATH must be the path actually used, set in env or not.
     merged["APP_DB_PATH"] = app_db_path
     return _build_settings(merged)
 
 
-# Process-local hot-load cache: app.db path -> (config_version, Settings).
-# current_settings() rebuilds Settings only when the stored config_version
-# has advanced, so a polling daemon pays one cheap SELECT per check.
+# app.db path -> (config_version, Settings). Rebuilt only when the version
+# moves, so a polling daemon pays one cheap SELECT per check.
 _SETTINGS_CACHE: dict[str, tuple[int, Settings]] = {}
 
 
-# Lock serialising rebuilds of ``_SETTINGS_CACHE``. The dict ops themselves are
-# GIL-atomic, but two concurrent first-callers (or two callers landing on a
-# fresh ``config_version``) would otherwise both build a Settings and both
-# write — the loser's expensive build is wasted. The lock collapses that into
-# one builder per version. The lookup path stays lock-free; only the rebuild
-# is serialised.
+# Serialises rebuilds so concurrent callers on a new version build Settings once;
+# the lookup path stays lock-free.
 _SETTINGS_CACHE_LOCK = threading.Lock()
 
 
@@ -114,27 +66,17 @@ def _resolve_app_db_path(app_db_path: str | None) -> str:
 
 
 def _hot_load(resolved: str) -> tuple[int, Settings]:
-    """Core hot-load logic: snapshot, cache-check, rebuild-under-lock.
+    """Snapshot, check the cache, and rebuild under the lock if needed.
 
-    Returns ``(version, settings)`` where *version* is the ``config_version``
-    the returned :class:`Settings` was built from — they are always consistent
-    because both come from the same ``BEGIN DEFERRED`` snapshot.
-
-    Both :func:`current_settings` and :func:`current_settings_with_version`
-    delegate here so neither function ever reads ``_SETTINGS_CACHE`` without
-    holding the lock after a rebuild; the pair is written atomically inside
-    ``_SETTINGS_CACHE_LOCK`` and the return value comes from that same write,
-    not from a subsequent unlocked dict read.
+    Returns ``(version, settings)`` built from one ``BEGIN DEFERRED`` snapshot,
+    so the two always match.
     """
-    # Deferred import — see load_settings for the rationale.
     from appdb import config as config_store  # noqa: PLC0415
     from appdb.connection import connect  # noqa: PLC0415
     from appdb.schema import ensure_schema  # noqa: PLC0415
 
-    # Fast path: read the version under a snapshot, take the cache value if
-    # it matches. The snapshot also captures the config_table we will need
-    # if the version has moved, so we never re-open the DB on the rebuild
-    # path — the version and the data are consistent by construction.
+    # The snapshot also captures the data a rebuild needs, so the rebuild never
+    # re-opens the DB and cannot pair a version with other data.
     conn = connect(resolved)
     try:
         ensure_schema(conn)
@@ -146,29 +88,17 @@ def _hot_load(resolved: str) -> tuple[int, Settings]:
     if cached is not None and cached[0] == version:
         return cached
 
-    # Slow path under a lock: re-check the cache (another caller may have
-    # rebuilt while we waited), then build a Settings from the snapshot we
-    # took above and cache it under the version that snapshot reported. If
-    # the config table is empty we first seed it from the environment — that
-    # bumps config_version, so we re-snapshot and rebuild from the seeded
-    # data — and the cached pair is always (version, Settings-built-from-it).
+    # Re-check under the lock: another caller may have rebuilt while we waited.
     with _SETTINGS_CACHE_LOCK:
         cached = _SETTINGS_CACHE.get(resolved)
         if cached is not None and cached[0] == version:
             return cached
 
         if not config_table:
-            # First-run seed (web-redesign §5). The seed runs inside its own
-            # ``BEGIN IMMEDIATE`` and bumps config_version; re-snapshot so the
-            # cache key matches the post-seed version.
-            #
-            # Cross-process precondition (COMMON-04): on a fresh deployment
-            # every process (the daemons, the search server) can boot at once,
-            # all see an empty config table, and all call seed_from_env. That is
-            # only safe because seed_from_env is idempotent — it no-ops once any
-            # row exists and writes via INSERT ... ON CONFLICT, so a concurrent
-            # double-seed converges on the same env-derived values rather than
-            # corrupting the table. Do not relax that idempotency in appdb.
+            # Seeding bumps config_version, so re-snapshot to key the cache on
+            # the post-seed version. On a fresh deployment every process may
+            # seed at once; that is only safe because seed_from_env is
+            # idempotent (no-op once a row exists, upsert writes). Keep it so.
             conn = connect(resolved)
             try:
                 config_store.seed_from_env(
@@ -187,40 +117,11 @@ def _hot_load(resolved: str) -> tuple[int, Settings]:
 def current_settings(app_db_path: str | None = None) -> Settings:
     """Return the up-to-date :class:`Settings`, rebuilding it on a config change.
 
-    The hot-load accessor (web-redesign §5, Wave 4). Saving configuration does
-    not restart any process; instead every process calls this at a safe
-    boundary — a daemon at the top of its poll loop, the search server per
-    request — and gets a :class:`Settings` that reflects the latest saved
-    configuration.
-
-    It takes no argument in normal use: *app_db_path* defaults to the
-    ``APP_DB_PATH`` bootstrap environment variable (the same value
-    :func:`common.bootstrap.bootstrap_process` resolves), so every process
-    can simply ``from common.config import current_settings`` and call it.
-    The explicit parameter exists for tests, which point it at a temp file.
-
-    It is cheap to call repeatedly. It opens ``app.db`` and takes a single
-    snapshot of ``(config_version, config_table)`` via
-    :func:`appdb.config.snapshot_config_with_version` — one connection, one
-    ``BEGIN DEFERRED`` transaction — so the version and the data it describes
-    are always consistent. When that integer is unchanged since the last
-    call for this *app_db_path*, it returns the **cached** :class:`Settings`
-    untouched. Only when ``config_version`` has advanced (or on the first
-    call) does it rebuild from the snapshot and re-cache under the very
-    version the snapshot reported.
-
-    The cache is process-local module state. Cross-process coordination is the
-    shared ``config_version`` row alone — when one process writes config
-    through the Settings API, every other process sees the bumped version on
-    its next check and rebuilds. No signal, no IPC, no restart.
-
-    Args:
-        app_db_path: Filesystem path to ``app.db``. When ``None`` (the normal
-            case) it is read from the ``APP_DB_PATH`` environment variable,
-            with the same ``/data/app.db`` default the other entry points use.
-
-    Returns:
-        The current validated :class:`Settings`.
+    Called at a safe boundary (a daemon's poll loop, the search server per
+    request). Cheap: one snapshot read, and the cached :class:`Settings` is
+    returned unless ``config_version`` has moved. The shared ``config_version``
+    row is the only cross-process signal. *app_db_path* defaults to
+    ``APP_DB_PATH``; tests pass a temp file.
 
     Raises:
         ValueError: A stored value fails validation (same as
@@ -236,26 +137,10 @@ def current_settings_with_version(
 ) -> tuple[int, Settings]:
     """Return ``(config_version, Settings)`` atomically, rebuilding on change.
 
-    A thin companion to :func:`current_settings` for callers that need to key
-    a downstream cache against the *exact* version the settings snapshot was
-    built from. The version comes from the same ``BEGIN DEFERRED`` snapshot
-    used to read the config table, so it is guaranteed to match the data in
-    the returned :class:`Settings` — it cannot be a later version stamped onto
-    an earlier dataset.
-
-    The typical caller is :func:`search.api._resolve_search_core`: it caches a
-    ``SearchCore`` built from the settings and must key that cache against the
-    version the settings actually describe, so a concurrent admin write cannot
-    produce a ``(newer_version, core_from_older_settings)`` pair that sticks
-    until a *further* unrelated write bumps the counter again.
-
-    Args:
-        app_db_path: Filesystem path to ``app.db``. When ``None`` (the normal
-            case) it is read from the ``APP_DB_PATH`` environment variable.
-
-    Returns:
-        ``(config_version, Settings)`` where ``config_version`` is the
-        version the settings snapshot was built from.
+    For callers that key a downstream cache on the version (e.g.
+    :func:`search.api._resolve_search_core`): the version is the one the
+    settings were built from, so a concurrent write cannot leave a newer version
+    stuck to a cache entry built from older settings.
     """
     return _hot_load(_resolve_app_db_path(app_db_path))
 
@@ -265,11 +150,8 @@ def _merge_environment(
 ) -> dict[str, str]:
     """Layer *config_table* over ``os.environ`` for :func:`_build_settings`.
 
-    Mirrors the merge :func:`load_settings` performs, factored out so the
-    hot-load fast path can reuse it without re-opening ``app.db``: the table
-    value wins over an environment value, the bootstrap variables stay
-    environment-only, and ``APP_DB_PATH`` is forced to the *app_db_path* the
-    caller resolved (it is never in the table).
+    Same merge as :func:`load_settings`: the table wins over the environment
+    and ``APP_DB_PATH`` is forced to *app_db_path*.
     """
     merged: dict[str, str] = dict(os.environ)
     merged.update(config_table)

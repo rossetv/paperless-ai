@@ -1,13 +1,3 @@
-/*
- * ChunkPopover — the fixed-position full-chunk-text popover.
- *
- * Appears near the cursor (hover) or anchored below the snippet (focus).
- * Clamped to the viewport; max-height with internal scroll.
- * Transitions respect prefers-reduced-motion.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .popover {
   position: fixed;
   z-index: var(--z-tooltip);
@@ -28,8 +18,6 @@
   font-size: var(--font-size-caption);
   line-height: 1.55;
   color: var(--colour-text-secondary);
-
-  /* Start invisible and slightly shifted down. */
   opacity: 0;
   transform: translateY(var(--spacing-2));
   pointer-events: none;

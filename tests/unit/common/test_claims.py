@@ -8,8 +8,6 @@ from common.claims import claim_processing_tag
 
 
 class TestClaimProcessingTag:
-    """Tests for claim_processing_tag()."""
-
     def test_returns_true_immediately_when_tag_id_is_none(self):
         client = MagicMock()
 
@@ -26,8 +24,6 @@ class TestClaimProcessingTag:
     def test_successful_claim_refresh_check_patch_verify(self):
         client = MagicMock()
         tag_id = 99
-        # Step 1: refresh returns doc without the tag
-        # Step 4: verify returns doc with the tag
         client.get_document.side_effect = [
             {"tags": [10, 20]},  # step 1: refresh
             {"tags": [10, 20, 99]},  # step 4: verify
@@ -42,7 +38,6 @@ class TestClaimProcessingTag:
 
         assert result is True
         assert client.get_document.call_count == 2
-        # Step 3: patch was called with updated tags including tag_id
         call_args = client.update_document_metadata.call_args
         assert tag_id in call_args.kwargs["tags"]
 
@@ -63,7 +58,7 @@ class TestClaimProcessingTag:
     def test_returns_false_when_tag_already_present(self):
         client = MagicMock()
         tag_id = 50
-        client.get_document.return_value = {"tags": [10, 50]}  # tag already there
+        client.get_document.return_value = {"tags": [10, 50]}
 
         result = claim_processing_tag(
             client=client,

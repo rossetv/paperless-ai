@@ -11,7 +11,6 @@ import styles from './RebuildIndexCard.module.css';
 const CONFIRM_WORD = 'REBUILD';
 
 export interface RebuildIndexCardProps {
-  /** Additional class names to merge onto the root card. */
   className?: string;
 }
 
@@ -25,9 +24,6 @@ export interface RebuildIndexCardProps {
  *
  * Owns the `useRebuildIndex` mutation. `IndexScreen` renders this only for
  * an admin; the component itself carries no role check.
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — composes the Modal pattern,
- * the Button + Input primitives, and the rebuild mutation hook.
  */
 export function RebuildIndexCard({
   className,
@@ -52,8 +48,7 @@ export function RebuildIndexCard({
       await rebuild.mutateAsync();
       closeModal();
     } catch {
-      // The mutation's error state drives the in-modal error message; the
-      // modal stays open so the operator can retry or cancel.
+      // The mutation's error state shows in the modal, which stays open to retry.
     }
   }
 

@@ -3,10 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { FailedDocumentsPanel } from './FailedDocumentsPanel';
 import type { FailedDocument } from '../../../api/types';
 
-/**
- * Fixtures mirror `FailedDocumentResponse` in `wire.py` exactly.
- * Fields: document_id, title (string | null), failure_count.
- */
 const DOCS: FailedDocument[] = [
   {
     document_id: 8421,
@@ -55,7 +51,7 @@ describe('FailedDocumentsPanel', () => {
   it('calls onOpen with the document id when the Preview button is clicked', async () => {
     const onOpen = vi.fn();
     render(<FailedDocumentsPanel documents={DOCS} onOpen={onOpen} />);
-    // Each button now carries a unique aria-label — match on the first document's id.
+    // Each button has a per-document aria-label.
     const previewButton = screen.getByRole('button', {
       name: /view document 8421/i,
     });

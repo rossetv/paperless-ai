@@ -51,14 +51,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Populated list with multiple sources. */
 export const Populated: Story = {
   args: {
     sources,
   },
 };
 
-/** One source highlighted — simulates a CitationMark activation. */
+/** Simulates a CitationMark activation. */
 export const WithHighlight: Story = {
   args: {
     sources,
@@ -66,7 +65,6 @@ export const WithHighlight: Story = {
   },
 };
 
-/** Empty state — shown when the search returns no source documents. */
 export const Empty: Story = {
   args: {
     sources: [],

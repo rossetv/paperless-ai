@@ -14,49 +14,32 @@ import { CitationMark } from '../../../components/primitives/CitationMark/Citati
 import { formatSummaryCostLabel } from '../trace/phaseStages';
 
 export interface AnswerCardProps {
-  /** The synthesised answer text, with `[document_id]` inline citation markers
-   *  pointing at concrete source documents in the results. */
+  /** Synthesised answer with inline `[document_id]` citation markers. */
   answer: string;
-  /** The ranked sources — citation markers are resolved against this list by
-   *  matching `document_id`; the source's 1-based position in the list
-   *  becomes the user-facing citation index. */
-  sources: SourceDocument[];
-  /** Execution statistics — drives the provenance footer. */
-  stats: SearchStats;
   /**
-   * Whole-query token + cost totals — rendered as a chip in the answer
-   * footer. Optional so retry-state callers (clarify/no_match) and older tests
-   * need not supply it; omitted ⇒ no cost chip.
+   * Ranked sources. Markers resolve by `document_id`; the source's 1-based
+   * position becomes the citation index the user sees.
    */
+  sources: SourceDocument[];
+  /** Drives the provenance footer. */
+  stats: SearchStats;
+  /** Whole-query token and cost totals for the footer chip; omitted means no chip. */
   cost?: CostSummary;
   /**
-   * Discriminator for the result type.
-   * ``"answered"``  → normal answer + citations.
-   * ``"clarify"``   → retry state: nudge message only, no citations block.
-   * ``"no_match"``  → retry state: nudge message only, no citations block.
-   * Defaults to ``"answered"`` so existing callers that pre-date this field
-   * keep working unchanged.
+   * `"answered"` (default) renders the answer with citations; `"clarify"` and
+   * `"no_match"` render a retry nudge with no citations.
    */
   outcomeKind?: OutcomeKind;
-  /** Called with a 1-based source index when a citation marker is activated. */
+  /** Called with the 1-based source index of the activated citation. */
   onCitationActivate?: (index: number) => void;
 }
 
 type TextSegment = { type: 'text'; value: string };
-/** A parsed `[N]` marker — `docId` is the raw number from the answer text;
- *  callers resolve it to a 1-based source index against the `sources` array. */
+/** A parsed `[N]` marker; `docId` is the raw number, not yet a source index. */
 type CitationSegment = { type: 'citation'; docId: number };
 type Segment = TextSegment | CitationSegment;
 
-/**
- * Split an answer string into plain-text and citation segments.
- *
- * `[N]` runs become citation segments carrying the raw N (a document id, as
- * emitted by the synthesiser prompt); everything else is plain text. The
- * caller resolves each citation against the sources list — when an id has a
- * matching source the marker renders as a `CitationMark`, otherwise it is
- * shown verbatim so a stale id never becomes a dead control.
- */
+/** Split an answer into text and `[N]` citation segments (N is a document id). */
 function parseAnswer(answer: string): Segment[] {
   const segments: Segment[] = [];
   const pattern = /\[(\d+)\]/g;
@@ -81,14 +64,7 @@ function parseAnswer(answer: string): Segment[] {
   return segments;
 }
 
-/**
- * Short "what to try" hints shown below the nudge message in retry states.
- *
- * ``"clarify"``  — query was too vague; guide the user toward a more specific
- *                  phrasing before they re-submit.
- * ``"no_match"`` — retrieval failed; guide the user toward rephrasing or
- *                  broadening the query.
- */
+/** "What to try" hints shown below the nudge message in retry states. */
 const RETRY_HINT: Record<'clarify' | 'no_match', string> = {
   clarify:
     'Try including a document type, date range, or correspondent to narrow things down.',
@@ -97,20 +73,8 @@ const RETRY_HINT: Record<'clarify' | 'no_match', string> = {
 };
 
 /**
- * The synthesised-answer card, restyled to the search-redesign design.
- *
- * For ``outcome_kind === "answered"`` (the default) it composes the
- * ``AnswerSurface`` primitive (eyebrow + display prose + provenance footer)
- * with inline ``CitationMark``s resolved against the sources list.
- *
- * For ``"clarify"`` and ``"no_match"`` it renders a distinct, friendly
- * **retry state**: a ``Card`` containing the nudge message (from the ``answer``
- * field) and a short "what to try" hint. No citations or sources block is
- * shown — sources are empty for retry kinds.
- *
- * Composed from: AnswerSurface, CitationMark, Card, Icon, Stack, Text.
- * No own CSS module (§12.5 — features layer is composition-only).
- * All visual values come from design tokens (§12.4).
+ * The synthesised-answer card. For the clarify and no_match retry states the
+ * `answer` field carries the nudge message and sources are empty.
  */
 export function AnswerCard({
   answer,
@@ -120,7 +84,6 @@ export function AnswerCard({
   outcomeKind = 'answered',
   onCitationActivate,
 }: AnswerCardProps): React.ReactElement {
-  // ── Retry state (clarify / no_match) ─────────────────────────────────────
   if (outcomeKind === 'clarify' || outcomeKind === 'no_match') {
     const hint = RETRY_HINT[outcomeKind];
     return (
@@ -140,7 +103,6 @@ export function AnswerCard({
     );
   }
 
-  // ── Normal answered state ─────────────────────────────────────────────────
   const segments = parseAnswer(answer);
   const costLabel =
     cost !== undefined ? formatSummaryCostLabel(cost) : undefined;
@@ -157,9 +119,8 @@ export function AnswerCard({
           return <React.Fragment key={i}>{segment.value}</React.Fragment>;
         }
 
-        // Resolve the raw `[N]` document id to its 1-based position in the
-        // sources list. A reference to a document that didn't make the result
-        // set renders verbatim — never a dead control.
+        // A document that didn't make the result set renders verbatim rather
+        // than as a dead control.
         const sourceIndex = sources.findIndex(
           (s) => s.document_id === segment.docId,
         );

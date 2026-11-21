@@ -2,10 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { IndexHealthHero } from './IndexHealthHero';
 import type { IndexHealthStatus } from '../../../api/types';
 
-/**
- * Contract tests: IndexHealthHeroProps.health is `IndexHealthStatus`
- * ("ok" | "degraded" | "down") — the exact `wire.py` shape.
- */
 describe('IndexHealthHero', () => {
   it('renders a healthy headline for the "ok" verdict', () => {
     render(<IndexHealthHero health={'ok' as IndexHealthStatus} />);

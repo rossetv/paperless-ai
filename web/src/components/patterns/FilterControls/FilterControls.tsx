@@ -20,53 +20,28 @@ const TAG_PAGE_SIZE = 12;
 const TAG_SEARCH_DEBOUNCE_MS = 200;
 
 export interface FilterControlsProps {
-  /**
-   * The currently active filters. Controlled by the parent (SearchPage).
-   * FilterControls reads the current state to reflect it in the controls.
-   */
+  /** The active filters, controlled by the parent. */
   filters: FilterRequest;
-  /**
-   * Called with the updated FilterRequest whenever the user changes a filter.
-   * The parent is responsible for applying the new filters to the search.
-   */
+  /** Called with the updated filters whenever the user changes one. */
   onFiltersChange: (filters: FilterRequest) => void;
   /**
-   * Whether the wrapping "Filters" panel starts expanded. Defaults to true
-   * (open). Library passes `false` on narrow viewports so the rail collapses
-   * behind the "Filters" toggle and the document list is not pushed below the
-   * fold (UI-05).
+   * Whether the "Filters" panel starts expanded. Defaults to true. Library passes
+   * `false` on narrow viewports so the document list is not pushed below the fold.
    */
   defaultExpanded?: boolean;
 }
 
-/** Convert a TaxonomyEntry array into Select options. */
 function toOptions(entries: TaxonomyEntry[]): SelectOption<string>[] {
   return entries.map((e) => ({ value: String(e.id), label: e.name }));
 }
 
 /**
- * Filter controls panel driven by the /api/facets endpoint.
+ * Filter panel for correspondent, document type, tags and date range. Options
+ * come from useFacets, so only values present in the index are offered.
  *
- * Lets the user narrow the search by correspondent, document type, tags,
- * and date range. The available options come from useFacets — so only
- * values actually present in the index are offered.
- *
- * Loading state: Skeleton placeholders replace the controls while facets load.
- * Empty state: controls are rendered (with no options) but remain operable.
- *
- * Tag picker behaviour:
- *   - Selected tags are always pinned at the top.
- *   - Up to TAG_PAGE_SIZE unselected tags are shown alphabetically.
- *   - When the total exceeds selected + TAG_PAGE_SIZE, a "Show all (N)"
- *     button expands the list into a scrollable region capped by
- *     --max-height-tag-picker so the date range is never pushed off screen.
- *   - A debounced text input filters the visible tag list by name.
- *
- * Connected pattern (DESIGN.md §11.1): a presentational pattern that is
- * permitted to import the api layer (useFacets / FilterRequest / TaxonomyEntry).
- * Shared by features/search and features/library.
- *
- * Composed from: FilterPanel, Select, Chip, Skeleton, Stack, Input, Button.
+ * Selected tags are pinned at the top, followed by up to TAG_PAGE_SIZE unselected
+ * tags; "Show all (N)" expands the rest into a capped scroll region, and a
+ * debounced input filters the list by name.
  */
 export function FilterControls({
   filters,
@@ -77,9 +52,7 @@ export function FilterControls({
 
   // Tag search input — raw (undebounced) value drives the visible input.
   const [tagQuery, setTagQuery] = React.useState('');
-  // Debounced query used for actual filtering.
   const debouncedQuery = useDebounce(tagQuery, TAG_SEARCH_DEBOUNCE_MS);
-  // Whether the "Show all" state is active.
   const [expanded, setExpanded] = React.useState(false);
 
   function updateFilters(partial: Partial<FilterRequest>): void {
@@ -143,9 +116,6 @@ export function FilterControls({
   const selectedDocumentTypeValue =
     filters.document_type_id != null ? String(filters.document_type_id) : undefined;
 
-  // ── Tag picker logic ─────────────────────────────────────────────────────
-
-  // All tags sorted alphabetically for consistency.
   const allTagsSorted = [...facets.tags].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
@@ -153,7 +123,6 @@ export function FilterControls({
   // Tags the user has selected (always pinned at top, regardless of filter).
   const selectedTags = allTagsSorted.filter((t) => filters.tag_ids.includes(t.id));
 
-  // Unselected tags that match the current search query.
   const query = debouncedQuery.trim().toLowerCase();
   const unselectedFiltered = allTagsSorted.filter(
     (t) =>
@@ -161,24 +130,19 @@ export function FilterControls({
       (query === '' || t.name.toLowerCase().includes(query)),
   );
 
-  // How many unselected tags are hidden behind the toggle.
   const hiddenCount = Math.max(0, unselectedFiltered.length - TAG_PAGE_SIZE);
   const needsToggle = hiddenCount > 0;
 
-  // Chips to actually render in the unselected cluster.
   const visibleUnselected = expanded
     ? unselectedFiltered
     : unselectedFiltered.slice(0, TAG_PAGE_SIZE);
 
   const hasTags = facets.tags.length > 0;
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <FilterPanel title="Filters" defaultExpanded={defaultExpanded}>
       <Stack direction="vertical" gap={8}>
-        {/* Correspondent filter — avoid passing undefined to value under
-            exactOptionalPropertyTypes: use a conditional spread instead */}
+        {/* Conditional spread: exactOptionalPropertyTypes forbids passing undefined to value. */}
         <Select
           id="filter-correspondent"
           label="Correspondent"
@@ -188,7 +152,6 @@ export function FilterControls({
           onChange={handleCorrespondentChange}
         />
 
-        {/* Document type filter */}
         <Select
           id="filter-document-type"
           label="Document type"
@@ -198,14 +161,12 @@ export function FilterControls({
           onChange={handleDocumentTypeChange}
         />
 
-        {/* Tag picker — bounded chip cluster with search and expand toggle. */}
         {hasTags && (
           <div className={styles['tag-section']}>
             <span className={styles['section-label']} id="filter-tags-label">
               Tags
             </span>
 
-            {/* Search input — filters the unselected tag list by name. */}
             <Input
               id="filter-tags-search"
               label="Search tags"
@@ -216,7 +177,7 @@ export function FilterControls({
               autoComplete="off"
             />
 
-            {/* Chip cluster — selected pinned at top, then visible unselected. */}
+            {/* Selected tags pinned first, then the visible unselected ones. */}
             <div
               className={expanded ? styles['tag-list-scroll'] : undefined}
               role="group"
@@ -244,10 +205,7 @@ export function FilterControls({
               </div>
             </div>
 
-            {/* Expand / collapse toggle — only shown when there are hidden
-                tags. Ghost Button (FE-15) replaces the bespoke link button: it
-                carries the token focus ring and consistent styling. The visible
-                label ("Show all (N)" / "Show less") conveys the expanded state. */}
+            {/* The label ("Show all (N)" / "Show less") conveys the expanded state. */}
             {needsToggle && (
               <Button
                 variant="ghost"
@@ -262,7 +220,6 @@ export function FilterControls({
           </div>
         )}
 
-        {/* Date range — functional inputs for date_from / date_to filters */}
         <Stack direction="vertical" gap={4}>
           <Input
             id="filter-date-from"

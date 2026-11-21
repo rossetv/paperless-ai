@@ -1,16 +1,4 @@
-"""Tests for the multi-spec Retriever.retrieve — per-spec search and cross-spec RRF.
-
-Verifies the multi-spec overhaul of ``Retriever.retrieve``:
-- Each spec runs its own store search with its own ``SearchFilters``; the
-  recorded per-call filters prove the right spec drove each call.
-- A document hit by two specs out-ranks one hit by a single spec (RRF reward).
-- The output is capped at ``SEARCH_MAX_CHUNKS_PER_DOC`` chunks per document,
-  keeping the highest-scoring chunks.
-- The output spans at most ``SEARCH_TOP_K`` documents and is sorted by rrf_score.
-- Empty specs / no hits yield ``([], RetrievalSignal(None, False))``.
-- A keyword-only chunk has ``vector_similarity is None``; a vector-found chunk
-  carries a float similarity.
-"""
+"""Tests for the multi-spec Retriever.retrieve: per-spec search and cross-spec RRF."""
 
 from __future__ import annotations
 
@@ -115,11 +103,6 @@ def _retriever(store: _FakeStoreReader, **settings_overrides: object) -> Retriev
     return Retriever(settings, store, _FakeEmbedder())  # type: ignore[arg-type]
 
 
-# ---------------------------------------------------------------------------
-# Cross-spec fusion
-# ---------------------------------------------------------------------------
-
-
 def test_document_hit_by_two_specs_outranks_single_spec_hit() -> None:
     """A doc hit by two specs gets a higher fused rrf_score than a single-spec hit."""
     store = _FakeStoreReader(
@@ -179,11 +162,6 @@ def test_each_spec_passes_its_own_filters_to_the_store() -> None:
     assert by_query[("kw",)] is filters_kw
 
 
-# ---------------------------------------------------------------------------
-# Per-document chunk cap
-# ---------------------------------------------------------------------------
-
-
 def test_per_document_chunk_cap_keeps_highest_scoring_chunks() -> None:
     """A doc with 5 candidate chunks yields at most SEARCH_MAX_CHUNKS_PER_DOC chunks.
 
@@ -228,11 +206,6 @@ def test_returns_at_most_top_k_documents_sorted_by_score() -> None:
     assert scores == sorted(scores, reverse=True)
 
 
-# ---------------------------------------------------------------------------
-# Empty / signal
-# ---------------------------------------------------------------------------
-
-
 def test_empty_specs_yield_empty_result_and_default_signal() -> None:
     """No specs at all → ([], RetrievalSignal(None, False))."""
     store = _FakeStoreReader()
@@ -258,11 +231,6 @@ def test_no_hits_yield_empty_result_and_default_signal() -> None:
     assert chunks == []
     assert signal.best_vector_similarity is None
     assert signal.has_keyword_hit is False
-
-
-# ---------------------------------------------------------------------------
-# Per-chunk vector_similarity
-# ---------------------------------------------------------------------------
 
 
 def test_keyword_only_chunk_has_no_vector_similarity_vector_chunk_does() -> None:

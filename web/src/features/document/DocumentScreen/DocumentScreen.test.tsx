@@ -7,7 +7,6 @@ import type { UseMutationResult, UseQueryResult, UseMutateFunction } from '@tans
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
 import { DocumentScreen } from './DocumentScreen';
 
-// ── Mock all hooks used by DocumentScreen and its children ─────────────────
 vi.mock('../../../api/hooks', () => ({
   useUpdateDocument: vi.fn(),
   useCorrespondents: vi.fn(),
@@ -48,8 +47,6 @@ const mockUseRetranscribeDocument = useRetranscribeDocument as ReturnType<typeof
 const mockUseDeleteDocument = useDeleteDocument as ReturnType<typeof vi.fn>;
 const mockUseSearch = useSearch as ReturnType<typeof vi.fn>;
 
-// ── Fixtures ─────────────────────────────────────────────────────────────────
-
 const DOC: LibraryDocument = {
   id: 934,
   title: 'eBay Payslip 05/2026',
@@ -77,8 +74,6 @@ const ALL_TAGS: TaxonomyItem[] = [
   { id: 102, name: 'payroll', document_count: 30 },
   { id: 103, name: 'new-tag', document_count: 0 },
 ];
-
-// ── Helper builders ───────────────────────────────────────────────────────────
 
 function mutationStub(
   overrides: Partial<UseMutationResult<LibraryDocument, Error, { id: number; patch: object }>> = {},
@@ -172,8 +167,8 @@ function makeQueryClient(): QueryClient {
 
 function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } = {}) {
   const mutate = opts.mutate ?? vi.fn();
-  // vitest 4 types vi.fn() as a generic Mock that no longer auto-assigns to
-  // react-query's narrowly-typed mutate; cast to the expected signature.
+  // vitest types vi.fn() as a generic Mock that does not assign to
+  // react-query's narrowly typed mutate; cast to the expected signature.
   mockUseUpdateDocument.mockReturnValue(
     mutationStub({
       mutate: mutate as unknown as UseMutateFunction<
@@ -201,7 +196,6 @@ function renderScreen(opts: { role?: Role; mutate?: ReturnType<typeof vi.fn> } =
   };
 }
 
-/** Minimal pending-state stub for useSearch — no data yet, not errored. */
 function searchPendingStub(): UseQueryResult<never, Error> {
   return {
     data: undefined,
@@ -225,16 +219,11 @@ beforeEach(() => {
   mockUseReclassifyDocument.mockReturnValue(voidMutationStub());
   mockUseRetranscribeDocument.mockReturnValue(voidMutationStub());
   mockUseDeleteDocument.mockReturnValue(voidMutationStub());
-  // Default: useSearch returns pending so MatchCard renders a spinner (then
-  // resolves asynchronously). Overridden per-test where the full result matters.
+  // Pending by default; tests that need MatchCard content override it.
   mockUseSearch.mockReturnValue(searchPendingStub());
 });
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 describe('DocumentScreen', () => {
-  // ── Rendering baseline ────────────────────────────────────────────────────
-
   it('renders the title, submeta, PDF viewer, and details card', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026' })).toBeInTheDocument();
@@ -277,21 +266,16 @@ describe('DocumentScreen', () => {
     expect(screen.getByRole('link', { name: /search results/i })).toHaveAttribute('href', '/?q=invoice');
   });
 
-  // ── Download filename ─────────────────────────────────────────────────────
-
   it('Download anchor carries the document title as the suggested filename', () => {
     renderScreen({ role: 'readonly' });
-    // DOC.title = 'eBay Payslip 05/2026' — the "/" is stripped by sanitisation.
+    // The "/" in 'eBay Payslip 05/2026' is stripped.
     const link = screen.getByRole('link', { name: /^download$/i });
     expect(link.getAttribute('download')).toBe('eBay Payslip 052026.pdf');
   });
 
-  // ── Title editing ──────────────────────────────────────────────────────────
-
   it('changing the title fires PATCH with the new title on blur', async () => {
     const mutate = vi.fn();
     renderScreen({ role: 'member', mutate });
-    // role=member → canEdit=true renders the title as a button.
     fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
     const input = screen.getByDisplayValue('eBay Payslip 05/2026');
     fireEvent.change(input, { target: { value: 'Renamed' } });
@@ -310,13 +294,10 @@ describe('DocumentScreen', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  // ── Correspondent editing ──────────────────────────────────────────────────
-
   it('changing the correspondent fires PATCH with correspondent_id', async () => {
     const mutate = vi.fn();
     renderScreen({ role: 'member', mutate });
-    // TaxonomyCombobox trigger shows the correspondent name exactly.
-    // Use exact match to avoid colliding with the title button.
+    // Exact match, so it does not hit the title button.
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.click(screen.getByText('Revenue.ie'));
     await waitFor(() =>
@@ -324,12 +305,9 @@ describe('DocumentScreen', () => {
     );
   });
 
-  // ── Tag editing ────────────────────────────────────────────────────────────
-
   it('removing a tag fires PATCH with the updated tag id list', async () => {
     const mutate = vi.fn();
     renderScreen({ role: 'member', mutate });
-    // Remove the "ireland" tag.
     fireEvent.click(screen.getByRole('button', { name: /remove ireland/i }));
     await waitFor(() => expect(mutate).toHaveBeenCalled());
     const call = mutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
@@ -337,11 +315,8 @@ describe('DocumentScreen', () => {
     expect(call.patch.tags).not.toContain(101); // 101 = ireland
   });
 
-  // ── Readonly mode ──────────────────────────────────────────────────────────
-
   it('readonly user sees no edit affordances on the title', () => {
     renderScreen({ role: 'readonly' });
-    // Title must be a plain heading, not a button.
     expect(screen.getByRole('heading', { name: 'eBay Payslip 05/2026' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /ebay payslip 05\/2026/i })).not.toBeInTheDocument();
   });
@@ -356,8 +331,6 @@ describe('DocumentScreen', () => {
     expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
   });
 
-  // ── SaveStatusPill ─────────────────────────────────────────────────────────
-
   it('shows "View only" pill when role is readonly', () => {
     renderScreen({ role: 'readonly' });
     expect(screen.getByRole('status')).toHaveTextContent(/view only/i);
@@ -367,8 +340,6 @@ describe('DocumentScreen', () => {
     renderScreen({ role: 'member' });
     expect(screen.getByRole('status')).toHaveTextContent(/saved/i);
   });
-
-  // ── ActionsCard wiring ─────────────────────────────────────────────────────
 
   it('admin role sees ActionsCard with Delete button', () => {
     renderScreen({ role: 'admin' });
@@ -388,11 +359,9 @@ describe('DocumentScreen', () => {
   });
 
   it('successful delete navigates back to the breadcrumb target', async () => {
-    // Capture the onSuccess callback so we can invoke it manually and simulate
-    // a completed delete without a real network call.
+    // Captured so the test can complete the delete without a network call.
     let capturedOnSuccess: (() => void) | undefined;
 
-    // Typed through unknown to satisfy the strict UseMutateFunction signature.
     const deleteMutate = (vi.fn((
       _id: number,
       opts?: { onSuccess?: (data: void, vars: number, ctx: unknown) => void },
@@ -406,28 +375,23 @@ describe('DocumentScreen', () => {
 
     renderScreen({ role: 'admin' });
 
-    // Trigger the delete flow.
     fireEvent.click(screen.getByRole('button', { name: /^delete document/i }));
     const confirmBtn = await screen.findByRole('button', { name: /^delete$/i });
     fireEvent.click(confirmBtn);
 
     expect(deleteMutate).toHaveBeenCalledWith(934, expect.objectContaining({ onSuccess: expect.any(Function) }));
 
-    // Fire the onSuccess to simulate a completed delete.
     capturedOnSuccess?.();
-    // The navigate('/library') call happens — MemoryRouter absorbs it; we
-    // verify by confirming the modal is gone (delete flowed through).
+    // MemoryRouter absorbs the navigation; the closed modal shows the delete
+    // flowed through.
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     );
   });
 
-  // ── MatchCard integration ──────────────────────────────────────────────────
-
   it('renders MatchCard at the top of the sidebar when parent is search', () => {
     const mutate = vi.fn();
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
-    // Return a successful search with a matching source so the card shows content.
     mockUseSearch.mockReturnValue(queryOk({
       answer: '…',
       sources: [
@@ -458,7 +422,6 @@ describe('DocumentScreen', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    // MatchCard should show the citation meta for this source.
     expect(screen.getByText(/source 1 of 1/i)).toBeInTheDocument();
     expect(screen.getByText(/0\.85/)).toBeInTheDocument();
   });
@@ -478,12 +441,9 @@ describe('DocumentScreen', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    // Neither the citation meta nor the "didn't appear" message should be present.
     expect(screen.queryByText(/source \d+ of \d+/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/didn't appear in the results/i)).not.toBeInTheDocument();
   });
-
-  // ── Bug 4: Create correspondent/type selects the created item ─────────────
 
   it('creating a new correspondent patches it onto the document', async () => {
     const updateMutate = vi.fn();
@@ -491,7 +451,6 @@ describe('DocumentScreen', () => {
       _name: string,
       opts?: { onSuccess?: (data: TaxonomyItem) => void },
     ) => {
-      // Simulate the created item being returned.
       opts?.onSuccess?.({ id: 50, name: 'New Corp', document_count: 0 });
     });
 
@@ -502,14 +461,11 @@ describe('DocumentScreen', () => {
 
     renderScreen({ role: 'member', mutate: updateMutate });
 
-    // Open the correspondent combobox and type a new name that has no exact match.
     fireEvent.click(screen.getByRole('button', { name: 'eBay' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Corp' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
-    // The create mutation must have been called.
     expect(correspondentMutate).toHaveBeenCalledWith('New Corp', expect.objectContaining({ onSuccess: expect.any(Function) }));
-    // And on success, update must have been called with the new id.
     expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { correspondent_id: 50 } });
   });
 
@@ -529,7 +485,6 @@ describe('DocumentScreen', () => {
 
     renderScreen({ role: 'member', mutate: updateMutate });
 
-    // Open the document-type combobox and type a new name.
     fireEvent.click(screen.getByRole('button', { name: 'Payslip' }));
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'New Type' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
@@ -538,18 +493,13 @@ describe('DocumentScreen', () => {
     expect(updateMutate).toHaveBeenCalledWith({ id: 934, patch: { document_type_id: 60 } });
   });
 
-  // ── Bug 5: Tag create race uses latest cache state ────────────────────────
-
   it('createTagThenAdd uses the latest document from the cache to avoid clobbering concurrent creates', async () => {
-    // Simulate rapid tag creates: the first resolves with tag 200, the second
-    // with tag 201. Both should end up in the final patch.
     const updateMutate = vi.fn();
-    // createTag.mutate stubs — both invoke onSuccess synchronously.
+    // Resolves synchronously: tag 200 on the first call, 201 after.
     const tagMutate = vi.fn((
       _name: string,
       opts?: { onSuccess?: (data: TaxonomyItem) => void },
     ) => {
-      // First call returns tag 200; second returns tag 201.
       const callCount = (tagMutate as ReturnType<typeof vi.fn>).mock.calls.length;
       opts?.onSuccess?.({ id: callCount === 1 ? 200 : 201, name: _name, document_count: 0 });
     });
@@ -561,27 +511,21 @@ describe('DocumentScreen', () => {
 
     renderScreen({ role: 'member', mutate: updateMutate });
 
-    // Simulate opening TagEditor and creating two new tags.
-    // We use the DOM to trigger TagEditor's onCreate callback twice.
     const addButton = screen.getByRole('button', { name: /add tag/i });
     fireEvent.click(addButton);
     const input = screen.getByRole('combobox');
     fireEvent.change(input, { target: { value: 'alpha-tag' } });
     fireEvent.click(screen.getByRole('option', { name: /create/i }));
 
-    // First create was called — update must have been called once.
     expect(tagMutate).toHaveBeenCalledTimes(1);
     expect(updateMutate).toHaveBeenCalledTimes(1);
     const firstCall = updateMutate.mock.calls[0]?.[0] as { id: number; patch: { tags: number[] } };
     expect(firstCall.patch.tags).toContain(200);
   });
 
-  // ── M17: isPending guard prevents overlapping saves ────────────────────────
-
   it('discards a second mutate call while a save is already in flight', async () => {
     const mutate = vi.fn();
-    // Render with the mutation in pending state. We set up the mock directly
-    // rather than using renderScreen() because renderScreen overwrites it.
+    // Not renderScreen(): it would overwrite the pending mutation stub.
     mockUseUpdateDocument.mockReturnValue(
       mutationStub({
         mutate: mutate as unknown as UseMutateFunction<
@@ -608,23 +552,16 @@ describe('DocumentScreen', () => {
       </QueryClientProvider>,
     );
 
-    // The title renders as a button because canEdit is true (role=member).
-    // Click it, change the value, blur — commitTitle calls mutate() which
-    // the isPending guard should discard.
     fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
     const input = screen.getByDisplayValue('eBay Payslip 05/2026');
     fireEvent.change(input, { target: { value: 'Attempted while pending' } });
     fireEvent.blur(input);
 
-    // mutate must NOT have been called — the isPending guard stops it.
     await new Promise((r) => setTimeout(r, 50));
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  // ── Bug 8: Retry button re-fires the last attempted mutation ──────────────
-
   it('retry button re-fires the last attempted PATCH with the same args', async () => {
-    // Phase 1: render in idle state so the user can trigger a mutation.
     const mutate = vi.fn();
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate }));
 
@@ -636,7 +573,6 @@ describe('DocumentScreen', () => {
       </QueryClientProvider>,
     );
 
-    // Trigger a title change so lastAttemptRef is populated.
     fireEvent.click(screen.getByRole('button', { name: /ebay payslip 05\/2026/i }));
     const input = screen.getByDisplayValue('eBay Payslip 05/2026');
     fireEvent.change(input, { target: { value: 'Renamed' } });
@@ -646,7 +582,7 @@ describe('DocumentScreen', () => {
     const firstCallArgs = mutate.mock.calls[0]![0] as { id: number; patch: object };
     expect(firstCallArgs).toMatchObject({ id: 934, patch: { title: 'Renamed' } });
 
-    // Phase 2: re-render with the mutation in error state so the retry button appears.
+    // Re-render in the error state so the retry button appears.
     mockUseUpdateDocument.mockReturnValue(mutationStub({ mutate, isError: true, isIdle: false, status: 'error' }));
     rerender(
       <QueryClientProvider client={makeQueryClient()}>
@@ -656,11 +592,9 @@ describe('DocumentScreen', () => {
       </QueryClientProvider>,
     );
 
-    // The retry element is now visible — it renders as a button (see SaveStatusPill FE-26).
     const retryBtn = screen.getByRole('button', { name: /couldn't save/i });
     fireEvent.click(retryBtn);
 
-    // mutate must have been called a second time with the same args.
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
     const secondCallArgs = mutate.mock.calls[1]![0] as { id: number; patch: object };
     expect(secondCallArgs).toEqual(firstCallArgs);

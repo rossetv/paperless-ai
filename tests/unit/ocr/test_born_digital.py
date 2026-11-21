@@ -75,11 +75,9 @@ def test_parse_max_coverage_takes_largest_image_per_page():
     assert cov[1] == pytest.approx(1.0, abs=0.05)  # largest image ~ full page
 
 
-# PDFIMAGES above saturates to 1.0 on its very first row, so it can't tell max
-# from sum (both clip to 1.0). This fixture uses two page-1 images that each
-# cover ~0.5 of the page: under the correct `max` formula, coverage stays
-# ~0.5; under a `max -> sum` regression it would be ~1.0 (or clipped to 1.0),
-# and the assertion below would fail.
+# PDFIMAGES saturates to 1.0 on its first row, so it cannot tell max from sum.
+# Here two page-1 images each cover ~0.5 of the page: max gives ~0.5, a sum
+# would give ~1.0.
 PDFIMAGES_TWO_HALF_COVERAGE_IMAGES = (
     "page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio\n"
     "--------------------------------------------------------------------------------\n"
@@ -113,13 +111,13 @@ def test_parse_max_coverage_zero_ppi_row_still_marks_page_imaged():
 
 
 def test_parse_max_coverage_inline_image_row_parses():
-    # poppler prints an inline image (BI...EI) as `[inline]` -- and a non-Ref
-    # image object as `[none]` -- ONE token in the two-token "object ID" column,
-    # so the row has 15 fields, not 16. The ppi columns must therefore be read
-    # from the right; a fixed left index lands on the size column ("16B") and
-    # turned every such PDF into a fail-closed OCR. Row measured with poppler
-    # 26.03: a 4x4 inline logo drawn at 40x40 pt reports 7x7 ppi -> ~0.3% of A4,
-    # well below the 1.0 clamp so the assertion is sensitive to the parsed value.
+    # poppler prints an inline image (BI...EI) as `[inline]` and a non-Ref
+    # image object as `[none]`: one token in the two-token "object ID" column,
+    # so the row has 15 fields, not 16. The ppi columns must be read from the
+    # right; a fixed left index lands on the size column ("16B") and fails every
+    # such PDF closed to OCR. Row measured with poppler 26.03: a 4x4 inline logo
+    # drawn at 40x40 pt reports 7x7 ppi -> ~0.3% of A4, well below the 1.0 clamp
+    # so the assertion is sensitive to the parsed value.
     header = PDFIMAGES.split("\n", 2)[0] + "\n" + "-" * 40 + "\n"
     rows = header + (
         "   1     0 image       4     4  gray    1   8  image  no   [inline]       7     7   16B 100%\n"
@@ -151,10 +149,9 @@ def test_has_glyphless_real_font_false():
 
 
 def test_count_mangled_ligatures_counts_intraword_semicolons():
-    # The macOS Quartz + Calibri/Aptos ToUnicode bug (prod, 2026-08-07): the
-    # "ti" ligature glyph is mapped to ";" so pdftotext yields "mee;ng",
-    # "informa;on", "no;ce" -- a semicolon glued between two letters, which
-    # real prose never contains. Count them; each is a hit.
+    # macOS Quartz writes a broken ToUnicode map for Calibri/Aptos: the "ti"
+    # ligature becomes ";", so pdftotext yields "mee;ng", "informa;on",
+    # "no;ce". Real prose never glues a semicolon between two letters.
     text = "The mee;ng notes and the informa;on in this no;ce\fSec;on 2\f"
     assert _count_mangled_ligatures(text) == 4
 
@@ -166,14 +163,14 @@ def test_count_mangled_ligatures_ignores_legitimate_semicolons():
     assert _count_mangled_ligatures("") == 0
 
 
-# --- _run_probe hardening (real subprocesses via coreutils; POSIX) ---
+# The _run_probe tests run real coreutils subprocesses (POSIX only).
 def test_run_probe_nonzero_exit_raises():
     with pytest.raises(ProbeError):
         _run_probe(["false"], timeout=5)
 
 
 def test_run_probe_missing_binary_raises_and_warns_once():
-    # structlog is NOT routed through stdlib logging in this repo -> use capture_logs, assert == 1.
+    # structlog is not routed through stdlib logging here, so use capture_logs.
     from ocr.born_digital import _warned_missing
 
     _warned_missing.discard(
@@ -194,10 +191,8 @@ def test_run_probe_timeout_kills_a_spinner():
 
 
 def test_run_probe_output_cap_trips_on_a_flood():
-    # timeout is large so ONLY PROBE_MAX_OUTPUT_BYTES can raise within the
-    # test's runtime -- isolates the cap from the timeout path (with a small
-    # timeout like 5s, deleting the cap check would still pass via timeout).
-    # `yes` floods stdout, so the cap trips near-instantly regardless.
+    # The large timeout means only PROBE_MAX_OUTPUT_BYTES can raise in time;
+    # `yes` floods stdout, so the cap trips near-instantly.
     with pytest.raises(ProbeError, match="exceeded"):
         _run_probe(["yes"], timeout=60)
 
@@ -218,11 +213,10 @@ def test_born_digital_text_skips():
 
 
 def test_image_heavy_born_digital_max_lock_skips():
-    # Decision-level only: at this layer coverage is a pre-computed per-page dict
-    # (via the _probe_signals mock), so this does NOT exercise _parse_max_coverage's
-    # max-vs-sum behaviour -- see test_parse_max_coverage_is_max_not_sum for that.
-    # This locks that a page whose largest image is 0.41 (< COVERAGE_THRESHOLD)
-    # still skips, i.e. classify_original itself doesn't sum coverage across images.
+    # Coverage is pre-computed here by the _probe_signals mock, so this does not
+    # exercise _parse_max_coverage (see test_parse_max_coverage_is_max_not_sum).
+    # It locks that a page whose largest image is 0.41 (< COVERAGE_THRESHOLD)
+    # still skips.
     d = _decide([1443, 1443], {1: 0.0, 2: 0.41}, False)  # largest image 0.41 < COVERAGE
     assert d.skip is True
 
@@ -240,12 +234,11 @@ def test_inset_glyphless_scan_ocrs_via_glyphless():
 
 
 def test_mangled_text_layer_ocrs_even_when_otherwise_born_digital():
-    # Regression (prod, 2026-08-07): an Outlook-for-Mac "print to PDF"
-    # passed every presence signal (text on every page, no raster, no
-    # glyphless font) and was skipped -- but its text layer was garbage
-    # ("mee;ng", "le5er", "omce") because Quartz wrote a broken ToUnicode
-    # for the Calibri/Aptos ligatures. A text layer that mangled is not one
-    # worth keeping: route to vision OCR and name the reason and the count.
+    # An Outlook-for-Mac "print to PDF" passes every presence signal (text on
+    # every page, no raster, no glyphless font), but its text layer is garbage
+    # ("mee;ng", "le5er", "omce") because Quartz writes a broken ToUnicode for
+    # the Calibri/Aptos ligatures. Route it to vision OCR and name the reason
+    # and the count.
     d = _decide([1443, 1200, 900], {1: 0.02}, False, mangled=7)
     assert d.skip is False and d.reason == "mangled-text-layer"
     assert d.signals["mangled_hits"] == 7
@@ -283,8 +276,7 @@ def test_coverage_boundary():
 
 def test_blank_page_without_raster_is_exempt_from_text_floor():
     # A page with no text AND no raster is a blank verso/divider: nothing for a
-    # vision model to read, so it must not send the document to OCR (spec D3,
-    # blank-page clause).
+    # vision model to read, so it must not send the document to OCR.
     d = _decide([1443, 0], {1: 0.02}, False)
     assert d.skip is True and d.reason == "born-digital"
 
@@ -292,8 +284,8 @@ def test_blank_page_without_raster_is_exempt_from_text_floor():
 def test_textless_page_with_inset_raster_still_ocrs():
     # The exemption is for imageless pages only: 0 chars + any raster (even a
     # sub-COVERAGE inset one) is scan-like and keeps the text floor -- and the
-    # decision names the offending page, since min_page_chars may now come
-    # from an exempted blank page instead.
+    # decision names the offending page, since min_page_chars may come from an
+    # exempted blank page.
     d = _decide([1443, 0], {1: 0.02, 2: 0.3}, False)
     assert d.skip is False and d.reason == "low-text-page"
     assert d.signals["low_text_page"] == 2
@@ -303,18 +295,16 @@ def test_textless_page_with_inset_raster_still_ocrs():
 
 
 def test_pure_scan_still_ocrs_at_the_shipped_default():
-    # Lowering the floor to 1 must not weaken scan detection: 0 chars + a
-    # full-page raster fails at the shipped default too.
+    # A floor of 1 still catches scans: 0 chars plus a full-page raster fails
+    # at the shipped default.
     default = make_settings().OCR_BORN_DIGITAL_MIN_CHARS
     d = _decide([0, 0], {1: 1.0, 2: 1.0}, False, min_chars=default)
     assert d.skip is False and d.reason == "low-text-page"
 
 
 def test_sparse_cover_page_with_logo_skips_at_the_shipped_default():
-    # Regression (prod, 2026-08-15): a 59-page born-digital policy booklet whose
-    # cover carried 44 chars + a 26% logo raster went to full vision OCR under
-    # the old MIN_CHARS default of 50. At the shipped default a page with real
-    # text and a small raster must pass the floor.
+    # A born-digital booklet whose cover carries 44 chars and a 26% logo raster
+    # must pass the floor at the shipped default, not go to vision OCR.
     default = make_settings().OCR_BORN_DIGITAL_MIN_CHARS
     d = _decide([2138, 44, 1633], {2: 0.263}, False, min_chars=default)
     assert d.skip is True and d.reason == "born-digital"
@@ -329,7 +319,7 @@ def test_probe_failure_fails_safe_to_ocr():
 
 
 def test_per_probe_failure_including_pdffonts(monkeypatch):
-    # each of the four probes failing in turn -> fail-safe OCR (D6 "including pdffonts")
+    # Each of the four probes failing in turn must fail safe to OCR.
     for failing in ("pdfinfo", "pdftotext", "pdfimages", "pdffonts"):
 
         def side_effect(cmd, timeout, _f=failing):

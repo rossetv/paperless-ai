@@ -1,19 +1,12 @@
 /*
- * Design tokens — the single source of design values for the paperless-ai frontend.
+ * Design tokens: the single source of design values. Components read var(--…);
+ * Stylelint rejects hardcoded design values elsewhere.
  *
- * All values derive from the Apple-inspired design system documented in DESIGN.md.
- * Every component reads var(--…) from here. No hardcoded design value lives anywhere
- * else (Stylelint enforces this).
- *
- * Naming convention: British English throughout — --colour-*, not --color-*.
+ * British English names throughout: --colour-*, not --color-*.
  */
 
 :root {
-  /* ─────────────────────────────────────────────
-   * Colour roles
-   * Concrete values are supplied by themes.css;
-   * these fallbacks match the light theme.
-   * ───────────────────────────────────────────── */
+  /* Colour roles — light theme; dark overrides live in themes.css. */
 
   /* Page background */
   --colour-bg:                      #f5f5f7;
@@ -21,8 +14,7 @@
   /* Surface */
   --colour-surface:                 #fff;
 
-  /* Dark surface — for a dark "section" card on a light page (DESIGN.md §2).
-   * One honest token: the design system has a single dark card colour. */
+  /* Dark surface — for a dark "section" card on a light page. */
   --colour-surface-dark:            #272729;
 
   /* Text */
@@ -55,11 +47,7 @@
   /* Navigation glass */
   --colour-nav-bg:                  rgb(0 0 0 / 80%);
 
-  /* ─────────────────────────────────────────────
-   * SF Pro type scale
-   * Display = 20 px and above; Text = 19 px and below.
-   * All values from DESIGN.md §3 hierarchy table.
-   * ───────────────────────────────────────────── */
+  /* SF Pro type scale. Display = 20 px and above; Text = 19 px and below. */
 
   /* Font families */
   --font-display:  "SF Pro Display", "SF Pro Icons", "Helvetica Neue", helvetica, arial, sans-serif;
@@ -96,10 +84,9 @@
   --line-height-subheading:    1.19;
   --letter-spacing-subheading: 0.231px;
 
-  /* Section title — 22 px bold display; a section title below card level.
-     Used by the Text primitive 'sub-heading' variant (Results sources header).
-     Named distinctly from the 21 px --font-*-subheading set above, which was a
-     one-hyphen near-twin and easy to pick by mistake. */
+  /* Section title — 22 px bold display, below card level (Text 'sub-heading'
+     variant). Named apart from the 21 px --font-*-subheading set to avoid a
+     one-hyphen near-twin. */
   --font-size-section-title:      1.375rem;
   --font-weight-section-title:    700;
   --line-height-section-title:    1.19;
@@ -138,13 +125,9 @@
   --line-height-tight: 1;
 
   /*
-   * Button — 17 px, weight 400.
-   *
-   * Line-height is 1.2 (not the 2.41 typography reference in DESIGN.md §3):
-   * the 2.41 figure is for inline buttons sitting in body copy, where the
-   * relaxed baseline matters. Padding-based UI buttons take their height
-   * from §4's `padding: 8px 15px` spec — a 2.41 line-height inflates the
-   * box well past intent and made every CTA visibly oversized.
+   * Button — 17 px, weight 400. Line-height 1.2, not the 2.41 used for inline
+   * buttons in body copy: padded UI buttons take their height from padding,
+   * and 2.41 would oversize them.
    */
   --font-size-button:          1.0625rem;
   --font-weight-button:        400;
@@ -185,9 +168,7 @@
   --font-size-nav:             0.75rem;
   --font-weight-nav:           400;
 
-  /* ─────────────────────────────────────────────
-   * 8 px-based spacing scale (DESIGN.md §5)
-   * ───────────────────────────────────────────── */
+  /* 8 px-based spacing scale */
 
   --spacing-1:   2px;
   --spacing-2:   4px;
@@ -206,9 +187,7 @@
   --spacing-15:  28px;
   --spacing-16:  32px;
 
-  /* ─────────────────────────────────────────────
-   * Border radius ladder (DESIGN.md §5)
-   * ───────────────────────────────────────────── */
+  /* Border radius ladder */
 
   --radius-micro:       5px;    /* small containers, link tags */
   --radius-standard:    8px;    /* buttons, product cards, image containers */
@@ -217,9 +196,7 @@
   --radius-pill:        980px;  /* CTA links — the signature Apple capsule shape */
   --radius-circle:      50%;    /* media controls */
 
-  /* ─────────────────────────────────────────────
-   * Shadows (DESIGN.md §2 & §6)
-   * ───────────────────────────────────────────── */
+  /* Shadows */
 
   /* Elevated product cards — the one soft diffused shadow Apple uses */
   --shadow-card: rgb(0 0 0 / 22%) 3px 5px 30px 0px;
@@ -230,18 +207,13 @@
   /* Navigation glass backdrop */
   --backdrop-nav: saturate(180%) blur(20px);
 
-  /* ─────────────────────────────────────────────
-   * Motion — transition durations and easings
-   *
-   * Two short durations cover every interaction transition (hover, focus,
-   * press). Components must reference these rather than writing raw `s`/`ms`
-   * literals — Stylelint enforces it.
+  /*
+   * Motion. Components reference these instead of raw `s`/`ms` literals
+   * (Stylelint enforces it).
    *   --duration-fast     — micro feedback: press scale, colour swap
    *   --duration-standard — the default transition for hover/focus changes
    *   --duration-slow     — larger affordances: a panel chevron rotating
-   * Looping animations (spinner, skeleton shimmer) have their own durations
-   * below — they are intentionally longer and not interaction transitions.
-   * ───────────────────────────────────────────── */
+   */
 
   --duration-fast:        0.1s;
   --duration-standard:    0.15s;
@@ -262,18 +234,14 @@
   /* Panel transition duration — larger affordances: savebar slide, drawer open */
   --duration-panel:       0.25s;
 
-  /* ─────────────────────────────────────────────
-   * Z-index ladder
-   *
-   * A deliberately ordered stack so overlapping layers never collide.
-   * Each rung is spaced by 100 to leave room for future intermediate
-   * layers. Components must reference these — no ad-hoc integers.
-   *   base    — in-flow content and a modal panel within its overlay
-   *   nav     — the sticky navigation bar
-   *   dropdown— popout listboxes (Select)
-   *   tooltip — supplementary hover labels, above dropdowns
-   *   modal   — the full-viewport modal overlay, above everything
-   * ───────────────────────────────────────────── */
+  /*
+   * Z-index ladder, spaced by 100 to leave room for intermediate layers.
+   *   base     — in-flow content and a modal panel within its overlay
+   *   nav      — the sticky navigation bar
+   *   dropdown — popout listboxes (Select)
+   *   tooltip  — supplementary hover labels, above dropdowns
+   *   modal    — the full-viewport modal overlay, above everything
+   */
 
   --z-base:     0;
   --z-nav:      100;
@@ -281,11 +249,8 @@
   --z-tooltip:  300;
   --z-modal:    400;
 
-  /* ─────────────────────────────────────────────
-   * Breakpoints (DESIGN.md §8)
-   * CSS custom properties cannot be used inside @media queries, so these are
-   * provided as reference values. Actual media queries use raw values.
-   * ───────────────────────────────────────────── */
+  /* Breakpoints — reference values only: custom properties cannot be used
+   * inside @media queries, so the queries use raw values. */
 
   --bp-mobile-min:      360px;
   --bp-mobile-max:      480px;
@@ -297,13 +262,11 @@
   --bp-desktop-large:   1440px;
 
   /* Surface-swap breakpoint — below this the desktop nav-glass hides and the
-   * mobile top bar + bottom tab bar appear instead. Matches mediaman's 700 px
-   * reference. Actual @media queries use the raw value 699.98px (max-width). */
+   * mobile top bar + bottom tab bar appear. @media uses 699.98px (max-width). */
   --bp-mobile:          700px;
 
   /* Settings-rail chip-strip breakpoint — below this the left rail collapses
-   * into a sticky horizontal scroll strip. Matches mediaman's 960 px reference.
-   * Actual @media queries use the raw value 959.98px (max-width). */
+   * into a sticky horizontal scroll strip. @media uses 959.98px (max-width). */
   --bp-settings-rail:   960px;
 
   /* Mobile bottom tab bar — the visible bar height (excluding safe-area inset).
@@ -338,13 +301,10 @@
   --gap-settings-layout:     56px;   /* grid column gap between sidenav and content */
   --padding-settings-bottom: 140px;  /* content column bottom padding (space for SaveBar) */
 
-  /* Settings sticky-nav header offset — the vertical zone, measured from the
-   * viewport top, occupied by the nav glass plus the sticky rail's top gap.
-   * The scroll-spy (SettingsSideNav useAnchorScrollSpy) treats a section
-   * heading as "active" once it crosses this line, and section anchors scroll
-   * to land just below it. Currently a magic 140 px literal in SettingsSideNav;
-   * this token replaces it (consumed by FE-B12). Value preserves the existing
-   * behaviour exactly — do not retune here without re-checking the scroll-spy. */
+  /* Settings sticky-nav header offset — the zone below the viewport top taken
+   * by the nav glass plus the sticky rail's top gap. The scroll-spy marks a
+   * section active once its heading crosses this line, and anchors scroll to
+   * land just below it; re-check the scroll-spy before retuning. */
   --height-settings-sticky:  140px;
 
   /* Settings section-block (SettingsBlock) — section-level vertical rhythm. */
@@ -364,18 +324,12 @@
   --shadow-conn-err:          0 0 var(--spacing-6) var(--colour-status-danger-bg);
   --shadow-savebar-dot:       0 0 var(--spacing-8) var(--colour-status-warn-bg);
 
-  /* ─────────────────────────────────────────────
-   * Component dimensions
-   *
-   * Fixed sizes that overlay/panel components need and that the spacing
-   * scale does not supply directly. Each lives here so a component module
-   * never hardcodes a raw px — Stylelint enforces this.
-   * ───────────────────────────────────────────── */
+  /* Component dimensions the spacing scale does not supply. */
 
-  /* Minimum touch target — DESIGN.md §"Media controls": 44 × 44 px */
+  /* Minimum touch target — 44 × 44 px */
   --size-touch-target:  44px;
 
-  /* Section vertical padding — the spacious "cinematic" rhythm (DESIGN.md §5) */
+  /* Section vertical padding — the spacious "cinematic" rhythm */
   --spacing-section:    96px;
 
   /* Modal panel — max width of the centred dialog surface */
@@ -388,7 +342,7 @@
   /* EmptyState — caps the description line length for comfortable reading */
   --width-empty-state:  360px;
 
-  /* EmptyState icon circle — the tinted circular container (DESIGN.md §12.4 / UI-17) */
+  /* EmptyState icon circle — the tinted circular container */
   --size-empty-state-icon: 72px;
 
   /* Search input in page headers — narrower than the empty-state cap so the
@@ -410,20 +364,13 @@
   /* Select listbox — max height before the option list scrolls */
   --height-listbox:     240px;
 
-  /* ─────────────────────────────────────────────
-   * Icon / brand-glyph size scale (FE-43)
-   *
-   * A small named ladder for the brand mark and inline icons. Component props
-   * (Brand `size`, Avatar diameter, nav-bar logo) previously passed ad-hoc
-   * numeric literals — 20 / 22 / 26 / 28 — that Stylelint cannot police because
-   * they are TSX props, not CSS. These tokens give those call sites a named
-   * value to reference instead. Consumed by FE-B-icon-scale (LoginScreen 28,
-   * FirstRunSetup 26, AppNavBar 20, UserMenu Avatar 26, Brand default 22).
+  /*
+   * Icon / brand-glyph size scale, for TSX size props Stylelint cannot police.
    *   sm  — nav-bar brand mark
    *   md  — Brand primitive default
    *   lg  — first-run / user-menu avatar glyph
    *   xl  — login hero brand mark
-   * ───────────────────────────────────────────── */
+   */
   --size-icon-sm:       20px;
   --size-icon-md:       22px;
   --size-icon-lg:       26px;
@@ -442,9 +389,7 @@
   /* Loading / error / empty state containers (IndexScreen state-box, etc.) */
   --height-state-box:       160px;
 
-  /* ─────────────────────────────────────────────
-   * Interaction state opacities
-   * ───────────────────────────────────────────── */
+  /* Interaction state opacities */
 
   /* Disabled controls — reduces prominence without hiding entirely */
   --opacity-disabled: 0.48;
@@ -457,14 +402,9 @@
   --opacity-pressed: 0.7;
   --opacity-inactive: 0.6;
 
-  /* ─────────────────────────────────────────────
-   * Forced-dark surface — the Login / First-run "dark island"
-   *
-   * LoginScreen and FirstRunSetupScreen are intentionally dark in BOTH
-   * light and dark themes (spec §4.7, §6). These tokens are therefore
-   * theme-INDEPENDENT — defined once here on :root and NOT overridden in
-   * themes.css. Ordinary, theme-aware screens must not use them.
-   * ───────────────────────────────────────────── */
+  /* Forced-dark "dark island" for LoginScreen and FirstRunSetupScreen, which
+   * are dark in both themes. Not overridden in themes.css; theme-aware screens
+   * must not use these. */
 
   /* Page backdrop behind the dark island */
   --colour-dark-bg:             #000;
@@ -491,25 +431,17 @@
   --colour-dark-aurora-near:    rgb(0 113 227 / 30%);
   --colour-dark-aurora-far:     rgb(41 151 255 / 13%);
 
-  /* ─────────────────────────────────────────────
-   * Gradients
-   * ───────────────────────────────────────────── */
+  /* Gradients */
 
   /* Default avatar background — neutral grey gradient for users without a
-   * custom colour. The specific stops match the DESIGN.md avatar handoff. */
+   * custom colour. */
   --gradient-avatar-default:    linear-gradient(135deg, #5e6166, #2a2a2d);
 
   /* Card elevation shadow for the dark island */
   --shadow-dark-card:           0 30px 70px -24px rgb(0 0 0 / 70%);
 
-  /* ─────────────────────────────────────────────
-   * Wave 2 — Search redesign
-   *
-   * Values the redesigned search experience needs and the base scale does
-   * not supply. The accent-wash colour is theme-INDEPENDENT (identical in
-   * light and dark, like --colour-accent) — it is the 10%-alpha accent used
-   * for citation chips, highlighted marks and the highlighted-source ring.
-   * ───────────────────────────────────────────── */
+  /* Feature-specific values the base scale does not supply. The accent washes
+   * are identical in both themes, like --colour-accent. */
 
   /* 10%-alpha accent wash — citation chips, <mark> highlight, source ring */
   --colour-accent-wash:         rgb(0 113 227 / 10%);
@@ -530,7 +462,7 @@
   --shadow-source-highlight:
     0 1px 2px rgb(0 0 0 / 4%), 0 16px 36px -18px rgb(0 113 227 / 20%);
 
-  /* Document-thumbnail SVG — fixed artboard size (handoff DocThumb) */
+  /* Document-thumbnail SVG — fixed artboard size */
   --size-doc-thumb-width:       96px;
   --size-doc-thumb-height:      124px;
 
@@ -568,16 +500,9 @@
   --width-col-date-wide:        160px;  /* wider date column (last sign-in) */
   --width-col-expiry:           170px;  /* expiry / revoke-action column */
 
-  /* ─────────────────────────────────────────────
-   * Semantic status colours — for RoleBadge, StatusBadge, ScopePill.
-   *
-   * The core palette has ONE chromatic accent (Apple Blue). Access-control
-   * badges need to distinguish roles, account states and key scopes at a
-   * glance, so this set adds the minimum semantic colours. They are
-   * theme-INDEPENDENT — status meaning does not change between light and
-   * dark, so they are defined once here and not overridden in themes.css.
-   * Each pairs a translucent surface tint with a readable foreground.
-   * ───────────────────────────────────────────── */
+  /* Semantic status colours for RoleBadge, StatusBadge and ScopePill: a
+   * translucent tint plus a readable foreground. Identical in both themes
+   * (only the neutral tone is overridden in themes.css). */
 
   /* Positive / active — green */
   --colour-status-ok-bg:        rgb(52 199 89 / 12%);
@@ -606,26 +531,13 @@
   /* Status dot diameter — the leading dot inside a StatusBadge */
   --size-status-dot:            6px;
 
-  /* Connection provider glyph tile — a brand-NEUTRAL plinth for a service
-   * logo/initials (ConnectionCard .glyph). It must NOT be --colour-status-ok
-   * green: a green provider tile sits directly beside the green "Connected"
-   * status dot and the two greens muddle (UI-23 / DD-1d). This is a slate
-   * neutral distinct from both the status-ok green and the translucent grey
-   * used elsewhere, with white glyph text reading clearly on it. Like the
-   * status palette it is theme-INDEPENDENT — a brand plinth does not flip
-   * between light and dark — so it lives on :root and is not overridden in
-   * themes.css. Consumed by FE-B-conn-glyph (ConnectionCard .glyph-teal). */
+  /* Connection provider glyph tile — a slate neutral, deliberately not green:
+   * it sits beside the green "Connected" status dot and the two would muddle.
+   * Identical in both themes. */
   --colour-glyph-neutral:       #4b4d52;
 
-  /* ─────────────────────────────────────────────
-   * Settings form controls — Toggle, Segmented, NumberStepper, fields.
-   *
-   * The Settings screen recreates the handoff's Apple-style form controls.
-   * These tokens cover the values the existing palette does not: the green
-   * "on" colour of a Toggle, the neutral track behind an "off" Toggle, and
-   * the control-segment dimensions. The colours are theme-stable (a toggle
-   * is green-on in either theme), so they live on :root, not in themes.css.
-   * ───────────────────────────────────────────── */
+  /* Settings form controls — Toggle, Segmented, NumberStepper, fields.
+   * Identical in both themes (a toggle is green-on in either). */
 
   /* Toggle — the "on" track is iOS green; the "off" track is a neutral grey.
    * Chains to --colour-status-ready (same Apple Green, different semantic role). */
@@ -656,15 +568,8 @@
   --width-doc-sidebar-min:   280px;
   --width-doc-sidebar-max:   360px;
 
-  /* ─────────────────────────────────────────────
-   * Avatar palette — deterministic per-user background colours.
-   *
-   * The UsersScreen assigns a stable colour to each user avatar by cycling
-   * through this palette (user_id modulo 6). The six hues are the standard
-   * Apple system colour set — each distinct enough to differentiate users at
-   * a glance. They are theme-INDEPENDENT (same meaning in light and dark) and
-   * therefore defined once on :root, not in themes.css.
-   * ───────────────────────────────────────────── */
+  /* Avatar palette — UsersScreen picks a colour by user_id modulo 6.
+   * Identical in both themes. */
 
   --colour-avatar-0:   #3a6df0;   /* Apple Blue     */
   --colour-avatar-1:   #34c759;   /* Apple Green    */

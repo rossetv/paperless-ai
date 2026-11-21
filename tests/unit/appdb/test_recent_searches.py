@@ -1,11 +1,4 @@
-"""Tests for appdb.recent_searches — per-user recent-search history.
-
-Covers the contract: record inserts a row; list_for_user returns a user's
-searches newest-first; recording an identical query de-duplicates (the old
-row is removed, the query moves to the top); the per-user history is capped
-at MAX_PER_USER, oldest dropped; one user never sees another's searches;
-list_for_user honours an explicit limit; an empty history returns [].
-"""
+"""Tests for appdb.recent_searches, the per-user recent-search history."""
 
 from __future__ import annotations
 
@@ -36,7 +29,6 @@ def conn(tmp_path):
 
 
 def _user_id(conn: sqlite3.Connection, username: str) -> int:
-    """Return the id of the seeded user named *username*."""
     row = conn.execute(
         "SELECT id FROM users WHERE username = ?", (username,)
     ).fetchone()
@@ -44,7 +36,6 @@ def _user_id(conn: sqlite3.Connection, username: str) -> int:
 
 
 def test_record_returns_a_recent_search(conn) -> None:
-    """record returns the inserted row as a RecentSearch."""
     uid = _user_id(conn, "alice")
     result = record(conn, user_id=uid, query="gas bill")
     assert isinstance(result, RecentSearch)
@@ -62,7 +53,6 @@ def test_list_for_user_returns_the_recorded_query(conn) -> None:
 
 
 def test_list_for_user_is_newest_first(conn) -> None:
-    """Searches come back in reverse-chronological order."""
     uid = _user_id(conn, "alice")
     record(conn, user_id=uid, query="first")
     record(conn, user_id=uid, query="second")
@@ -72,7 +62,7 @@ def test_list_for_user_is_newest_first(conn) -> None:
 
 
 def test_recording_an_identical_query_deduplicates(conn) -> None:
-    """Re-running an identical query moves it to the top, no duplicate row."""
+    """Re-running a query moves it to the top instead of adding a duplicate."""
     uid = _user_id(conn, "alice")
     record(conn, user_id=uid, query="gas bill")
     record(conn, user_id=uid, query="water bill")
@@ -82,20 +72,17 @@ def test_recording_an_identical_query_deduplicates(conn) -> None:
 
 
 def test_history_is_capped_at_max_per_user(conn) -> None:
-    """Beyond MAX_PER_USER rows, the oldest searches are dropped."""
     uid = _user_id(conn, "alice")
     for i in range(MAX_PER_USER + 5):
         record(conn, user_id=uid, query=f"query-{i}")
     rows = list_for_user(conn, uid, limit=1000)
     assert len(rows) == MAX_PER_USER
-    # The five oldest (query-0 .. query-4) were evicted.
     queries = {r.query for r in rows}
     assert "query-0" not in queries
     assert f"query-{MAX_PER_USER + 4}" in queries
 
 
 def test_list_for_user_isolates_users(conn) -> None:
-    """One user's list never contains another user's searches."""
     alice = _user_id(conn, "alice")
     bob = _user_id(conn, "bob")
     record(conn, user_id=alice, query="alice query")
@@ -105,7 +92,6 @@ def test_list_for_user_isolates_users(conn) -> None:
 
 
 def test_list_for_user_honours_an_explicit_limit(conn) -> None:
-    """A smaller limit returns only that many newest rows."""
     uid = _user_id(conn, "alice")
     for i in range(10):
         record(conn, user_id=uid, query=f"q-{i}")
@@ -114,21 +100,13 @@ def test_list_for_user_honours_an_explicit_limit(conn) -> None:
 
 
 def test_list_for_user_empty_history_is_empty_list(conn) -> None:
-    """A user who has never searched gets an empty list."""
     uid = _user_id(conn, "alice")
     assert list_for_user(conn, uid) == []
 
 
 def test_record_is_atomic_when_the_trim_fails(conn, monkeypatch) -> None:
-    """A failure after the insert rolls back the whole record (delete + insert).
-
-    record claims the delete, insert and trim run inside one transaction. With
-    only a bare conn.commit() and no ``with conn:`` block, a failure in the
-    trim step would leave the new row committed-then-not — or, worse on a
-    future autocommit connection, the delete and insert partially applied.
-    Injecting a failure in _trim_to_cap and asserting the prior history is
-    wholly intact proves the transaction wraps all three statements.
-    """
+    """The delete, insert and trim share one transaction, so a trim failure
+    leaves the prior history untouched."""
     import appdb.recent_searches as recent_searches
 
     uid = _user_id(conn, "alice")
@@ -142,7 +120,5 @@ def test_record_is_atomic_when_the_trim_fails(conn, monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="simulated trim failure"):
         record(conn, user_id=uid, query="should be rolled back")
 
-    # The failed record must have changed nothing: neither the rolled-back new
-    # row nor a deletion of the original may survive.
     queries = [r.query for r in list_for_user(conn, uid)]
     assert queries == ["original"]

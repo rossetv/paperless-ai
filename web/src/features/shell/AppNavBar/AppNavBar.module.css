@@ -1,14 +1,5 @@
-/*
- * AppNavBar feature — CSS Module.
- *
- * Styles only the bits the layout NavBar does not own: the brand row
- * (Brand mark + wordmark) and the nav-link appearance. The glass bar itself,
- * its height and backdrop come from the layout NavBar.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* Only what the layout NavBar does not own; the glass bar itself comes from it. */
 
-/* ── Brand row — Brand mark beside the wordmark. ── */
 .brand {
   display: inline-flex;
   align-items: center;
@@ -35,7 +26,6 @@
   opacity: var(--opacity-disabled);
 }
 
-/* ── Nav links. ── */
 .link {
   color: var(--colour-text-on-dark);
   font-family: var(--font-text);
@@ -57,7 +47,6 @@
   font-weight: var(--font-weight-body-emphasis);
 }
 
-/* 2 px accent underline bar — matches design handoff lines 117-121. */
 .link-active::after {
   content: "";
   position: absolute;
@@ -77,7 +66,6 @@
   border-radius: var(--radius-micro);
 }
 
-/* ── Index-status pill. ── */
 .pill {
   display: inline-flex;
   align-items: center;

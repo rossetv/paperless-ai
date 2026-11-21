@@ -1,10 +1,4 @@
-"""Tests for appdb.migrations — the forward-only migration runner.
-
-Covers: a fresh database reaches SCHEMA_VERSION; the runner is idempotent;
-schema_version is persisted in meta; the users and sessions tables and their
-indexes exist after v1; a future schema_version raises AppDbError; a failing
-migration rolls back atomically (no partial table, no advanced version).
-"""
+"""Tests for appdb.migrations, the forward-only migration runner."""
 
 from __future__ import annotations
 
@@ -35,7 +29,6 @@ def _schema_version(conn: sqlite3.Connection) -> int | None:
 
 
 def _table_names(conn: sqlite3.Connection) -> set[str]:
-    """Return the names of every non-internal table in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
         "AND name NOT LIKE 'sqlite_%'"
@@ -44,7 +37,6 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 
 
 def _index_names(conn: sqlite3.Connection) -> set[str]:
-    """Return the names of every non-internal index in the database."""
     rows = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'index' "
         "AND name NOT LIKE 'sqlite_%'"
@@ -111,18 +103,16 @@ def test_future_schema_version_raises_appdb_error(conn) -> None:
 
 
 def test_missing_meta_table_is_read_as_version_zero() -> None:
-    """A genuine missing meta table reads as version 0 — a fresh database."""
     mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
     mock_conn.execute.side_effect = sqlite3.OperationalError("no such table: meta")
     assert _read_schema_version(mock_conn) == 0
 
 
 def test_corrupt_database_operational_error_propagates() -> None:
-    """A malformed/locked database must fail loud, not be masked as fresh.
+    """A malformed or locked database must fail loud, not be masked as fresh.
 
-    Swallowing a non-missing-table OperationalError as version 0 would re-run
-    every migration against a corrupt or busy app.db and hide the damage
-    (CODE_GUIDELINES.md §1.11).
+    Reading it as version 0 would re-run every migration against a corrupt or
+    busy app.db and hide the damage.
     """
     mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
     mock_conn.execute.side_effect = sqlite3.OperationalError(
@@ -133,7 +123,6 @@ def test_corrupt_database_operational_error_propagates() -> None:
 
 
 def test_run_migrations_does_not_mask_a_corrupt_database() -> None:
-    """run_migrations propagates a corrupt-database error rather than rebuilding."""
     mock_conn = _mock.MagicMock(spec=sqlite3.Connection)
     mock_conn.execute.side_effect = sqlite3.OperationalError(
         "database disk image is malformed"
@@ -143,7 +132,6 @@ def test_run_migrations_does_not_mask_a_corrupt_database() -> None:
 
 
 def test_users_role_check_constraint_rejects_a_bad_role(conn) -> None:
-    """The users.role CHECK constraint rejects a value outside the enum."""
     run_migrations(conn)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
@@ -154,8 +142,6 @@ def test_users_role_check_constraint_rejects_a_bad_role(conn) -> None:
 
 
 def test_failing_migration_rolls_back_atomically(conn, monkeypatch) -> None:
-    """A migration that raises partway leaves the database wholly unchanged."""
-
     def _failing(c: sqlite3.Connection) -> None:
         c.execute("CREATE TABLE partial (x INTEGER)")
         raise RuntimeError("simulated crash")
@@ -168,7 +154,6 @@ def test_failing_migration_rolls_back_atomically(conn, monkeypatch) -> None:
 
 
 def test_migration_v4_creates_the_config_table_during_full_migration(tmp_path) -> None:
-    """The config table is present after a full migration chain."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
@@ -185,7 +170,6 @@ def test_migration_v4_creates_the_config_table_during_full_migration(tmp_path) -
 
 
 def test_migration_v4_creates_the_config_table(tmp_path) -> None:
-    """Migration v4 creates a config table with the expected columns."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
@@ -201,7 +185,6 @@ def test_migration_v4_creates_the_config_table(tmp_path) -> None:
 
 
 def test_config_key_is_the_primary_key(tmp_path) -> None:
-    """The config table rejects a duplicate key — key is the primary key."""
     import sqlite3
 
     from appdb.connection import connect
@@ -225,7 +208,6 @@ def test_config_key_is_the_primary_key(tmp_path) -> None:
 
 
 def test_config_value_is_not_null(tmp_path) -> None:
-    """The config.value column is NOT NULL."""
     import sqlite3
 
     from appdb.connection import connect
@@ -244,7 +226,6 @@ def test_config_value_is_not_null(tmp_path) -> None:
 
 
 def test_migration_v4_seeds_config_version_zero(tmp_path) -> None:
-    """Migration v4 seeds a config_version row in meta, starting at 0."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
@@ -261,7 +242,6 @@ def test_migration_v4_seeds_config_version_zero(tmp_path) -> None:
 
 
 def test_migration_brings_schema_version_to_current(tmp_path) -> None:
-    """A fresh database migrates all the way to the current SCHEMA_VERSION."""
     from appdb.connection import connect
     from appdb.schema import SCHEMA_VERSION, ensure_schema
 
@@ -277,7 +257,6 @@ def test_migration_brings_schema_version_to_current(tmp_path) -> None:
 
 
 def test_migration_v5_creates_the_daemon_status_table(tmp_path) -> None:
-    """Migration v5 creates daemon_status with the expected columns."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
@@ -300,7 +279,6 @@ def test_migration_v5_creates_the_daemon_status_table(tmp_path) -> None:
 
 
 def test_migration_v5_creates_the_reconcile_activity_table(tmp_path) -> None:
-    """Migration v5 creates reconcile_activity with the expected columns."""
     from appdb.connection import connect
     from appdb.schema import ensure_schema
 
@@ -325,7 +303,6 @@ def test_migration_v5_creates_the_reconcile_activity_table(tmp_path) -> None:
 
 
 def test_daemon_status_name_is_the_primary_key(tmp_path) -> None:
-    """daemon_status rejects a duplicate name — name is the primary key."""
     import sqlite3
 
     from appdb.connection import connect

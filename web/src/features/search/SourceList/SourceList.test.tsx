@@ -37,25 +37,21 @@ describe('SourceList', () => {
 
   it('renders the EmptyState when sources is empty', () => {
     render(<SourceList sources={[]} onPreview={() => {}} />);
-    // EmptyState renders a message — verify no source cards and an empty indicator
     expect(screen.queryByRole('article')).not.toBeInTheDocument();
-    // The empty state message should be present
     expect(screen.getByText(/no sources/i)).toBeInTheDocument();
   });
 
   it('passes the correct 1-based citation index to each SourceCard', () => {
     const sources = [makeSource(1, 'First'), makeSource(2, 'Second')];
     render(<SourceList sources={sources} onPreview={() => {}} />);
-    // Each SourceCard renders its index as a badge (citation number)
+    // Each card shows its citation number as a badge.
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('calls onCitationActivate on the correct source when a card is highlighted', () => {
     const sources = [makeSource(1, 'First'), makeSource(2, 'Second')];
-    // highlightedIndex=1 means the first source (0-based) should be highlighted
     render(<SourceList sources={sources} highlightedIndex={1} onPreview={() => {}} />);
-    // Both cards are present regardless of highlight
     expect(screen.getByText('First')).toBeInTheDocument();
     expect(screen.getByText('Second')).toBeInTheDocument();
   });

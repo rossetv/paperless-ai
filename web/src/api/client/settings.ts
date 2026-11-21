@@ -1,11 +1,4 @@
-/**
- * Settings endpoint functions — Wave 4.
- *
- * Admin-only on the server. A non-admin caller gets a 403, surfaced as
- * `ApiError`; the route guard prevents a non-admin reaching the screen at all.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Settings endpoints. Admin-only on the server; a non-admin gets a 403 `ApiError`. */
 
 import type {
   SettingsResponse,

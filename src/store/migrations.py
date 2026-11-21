@@ -1,15 +1,7 @@
-"""Versioned migration runner for the search index store.
+"""Versioned migration runner for the search index, and the store's exceptions.
 
-Owns the ordered list of migration functions and the logic that applies
-pending migrations to a SQLite connection on startup.  Each migration runs
-inside its own transaction; the schema_version in meta is advanced after
-each one commits.
-
-This module also defines StoreError — the store package's base exception type.
-All other store modules raise StoreError (or a subclass) for domain failures.
-
-Allowed deps: sqlite3, store.schema (for _SCHEMA), structlog.
-Forbidden: imports from any package above store/ in the layer hierarchy.
+Each migration runs in its own transaction, which also advances
+``meta.schema_version``.
 """
 
 from __future__ import annotations
@@ -36,70 +28,27 @@ def _is_missing_table_error(exc: sqlite3.Error) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain exception
-# ---------------------------------------------------------------------------
-
-
 class StoreError(Exception):
-    """Base exception for all store-layer failures.
-
-    Raised when the store encounters a condition it cannot handle safely —
-    such as an unknown future schema version — that the caller must address.
-    Callers that need to distinguish specific failures subclass this type.
-    """
+    """Base exception for all store-layer failures."""
 
 
 class SchemaNotReadyError(StoreError):
     """The index database exists but its schema has not been created yet.
 
-    ``sqlite3.connect`` auto-creates an empty database file the moment a path
-    is opened, so a present-but-empty file does **not** mean the index is
-    ready: the indexer may not yet have run ``ensure_schema``.  A read against
-    such a database fails with ``no such table``.  The store raises this typed
-    subclass for that case so callers — notably the search server's
-    ``/api/healthz`` handler — can distinguish "indexer has not built the
-    index yet" from genuine corruption without inspecting ``sqlite3`` internals
-    (``CODE_GUIDELINES.md`` §8.2/§9.1).
+    ``sqlite3.connect`` creates an empty file on open, so an existing file does
+    not mean the indexer has run ``ensure_schema``. This lets callers such as
+    ``/api/healthz`` tell "not built yet" from corruption.
     """
-
-
-# ---------------------------------------------------------------------------
-# Migration functions (private)
-# ---------------------------------------------------------------------------
 
 
 def _migrate_v1(conn: sqlite3.Connection) -> None:
-    """Apply the v1 schema: all tables, virtual tables, and indexes.
-
-    Runs each DDL statement from _SCHEMA individually via conn.execute() so
-    that all DDL and the schema_version write in run_migrations() stay inside
-    the single explicit transaction that run_migrations() opens.
-    conn.executescript() issues an implicit COMMIT before executing, which
-    would break atomicity and allow a crash to leave the schema applied but
-    schema_version un-advanced.
-
-    Every statement uses IF NOT EXISTS so re-running is harmless, though the
-    migration runner only calls this when the stored schema_version is 0.
-
-    The import is deferred to the function body to break the mutual import
-    cycle: schema.py imports run_migrations from this module, and this
-    function needs _SCHEMA from schema.py.  A module-level import would cause
-    a circular ImportError; a local import resolves after both modules are
-    initialised.
-    """
-    # Local import to break the schema ↔ migrations circular dependency.
+    """Apply the v1 schema: all tables, virtual tables, and indexes."""
+    # Local import: schema.py imports run_migrations from this module.
     from store.schema import _SCHEMA  # noqa: PLC0415
 
-    # executescript() is deliberately avoided: it issues an implicit COMMIT
-    # before executing, breaking the atomicity of the surrounding transaction.
-    # Stripping comments first, then splitting on ";", and calling execute()
-    # for each non-empty statement keeps all DDL and the schema_version write
-    # in one atomic transaction.
-    #
-    # Comments must be stripped before splitting: a ";" inside a comment line
-    # (e.g. "-- …; the writer keeps…") would otherwise produce a broken fragment
-    # starting with plain text rather than a SQL keyword.
+    # Not executescript(): it issues an implicit COMMIT, which would break the
+    # transaction run_migrations() opened. Comments are stripped before splitting
+    # because a ";" inside a "--" line would produce a broken fragment.
     comment_stripped = "\n".join(
         line for line in _SCHEMA.splitlines() if not line.strip().startswith("--")
     )
@@ -112,55 +61,28 @@ def _migrate_v1(conn: sqlite3.Connection) -> None:
 def _migrate_v2(conn: sqlite3.Connection) -> None:
     """Add idx_documents_indexed_at for the Library's default "added" sort.
 
-    The browse view's default sort is ``ORDER BY indexed_at DESC, id DESC``;
-    without an index on ``indexed_at`` SQLite sorts the whole documents table on
-    every page request. ``IF NOT EXISTS`` makes this a no-op on a fresh database
-    (where _migrate_v1 already created the index from the current _SCHEMA), so
-    only databases created before v2 actually build it here.
+    Without it SQLite sorts the whole documents table on every page. On a fresh
+    database _migrate_v1 already created it, so ``IF NOT EXISTS`` makes this a no-op.
     """
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_documents_indexed_at ON documents (indexed_at)"
     )
 
 
-# ---------------------------------------------------------------------------
-# Migration registry
-# ---------------------------------------------------------------------------
-
-# Ordered list of (version, migration_function) pairs.  The version is the
-# schema_version value written to meta *after* the migration commits.  Entries
-# must be in strictly ascending version order; the runner relies on this.
+# (version, migration) pairs in strictly ascending order; the version is the
+# schema_version written once the migration commits.
 MIGRATIONS: list[tuple[int, Callable[[sqlite3.Connection], None]]] = [
     (1, _migrate_v1),
     (2, _migrate_v2),
 ]
 
 
-# ---------------------------------------------------------------------------
-# Runner
-# ---------------------------------------------------------------------------
-
-
 def run_migrations(conn: sqlite3.Connection) -> None:
     """Apply all pending migrations to *conn* and advance schema_version.
 
-    Reads meta.schema_version (treated as 0 when the meta table or its row
-    does not exist — a fresh database has neither).  Applies every migration
-    whose version is higher than the current version, in ascending order,
-    each inside its own ``with conn:`` transaction.  After each migration the
-    new schema_version is persisted in meta.
-
-    Raises StoreError when the stored schema_version is higher than the
-    highest known migration version.  This indicates a database written by a
-    newer code version; silently proceeding could corrupt or misinterpret the
-    schema.
-
-    Args:
-        conn: An open connection returned by store.schema.connect().
-
     Raises:
-        StoreError: The database's schema_version exceeds the maximum known
-            migration version.
+        StoreError: The stored schema_version is newer than any known migration,
+            i.e. the database was written by a newer version of the code.
     """
     current_version = _read_schema_version(conn)
     max_known_version = MIGRATIONS[-1][0]
@@ -181,19 +103,13 @@ def run_migrations(conn: sqlite3.Connection) -> None:
             version=version,
             previous_version=current_version,
         )
-        # An explicit BEGIN is required for atomicity. Under the sqlite3
-        # module's legacy transaction handling a DDL statement (CREATE TABLE /
-        # INDEX) triggers no implicit BEGIN, and a bare ``with conn:`` opens no
-        # transaction either — so without this each DDL statement would
-        # autocommit and a mid-migration failure would leave the schema
-        # half-applied. BEGIN makes the whole migration — every DDL statement
-        # plus the schema_version write — one transaction committed or rolled
-        # back as a unit.
+        # Explicit BEGIN: under sqlite3's legacy transaction handling DDL opens
+        # no implicit transaction, so each statement would autocommit and a
+        # failure would leave the schema half-applied.
         conn.execute("BEGIN")
         try:
             migration_fn(conn)
-            # Persist the new version inside the same transaction so a crash
-            # mid-migration rolls back to the pre-migration state entirely.
+            # Same transaction, so a crash rolls back the version with the DDL.
             conn.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(version),),
@@ -205,41 +121,16 @@ def run_migrations(conn: sqlite3.Connection) -> None:
         current_version = version
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
 def _read_schema_version(conn: sqlite3.Connection) -> int:
-    """Return the current schema_version from meta, or 0 for a fresh database.
-
-    Returns 0 when either the meta table does not exist (fresh database, no
-    schema applied yet) or when the schema_version row is absent. Any
-    OperationalError other than a missing meta table — a malformed disk image,
-    a locked file — propagates rather than being masked as version 0, so a
-    corrupt or busy database fails loud instead of being silently re-migrated
-    (§1.11).
-
-    Args:
-        conn: An open SQLite connection.
-
-    Returns:
-        The stored schema_version as an integer, or 0 if absent.
-
-    Raises:
-        sqlite3.OperationalError: The query failed for a reason other than the
-            meta table being absent.
-    """
+    """Return the current schema_version from meta, or 0 for a fresh database."""
     try:
         row = conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
     except sqlite3.OperationalError as exc:
         if _is_missing_table_error(exc):
-            # meta table does not exist yet — this is a fresh database.
             return 0
-        # Any other OperationalError — a malformed disk image, a locked file —
-        # must fail loud (§1.11). Masking it as version 0 would re-run every
-        # migration against a corrupt or busy database and hide the damage.
+        # A corrupt or locked database must not be masked as version 0, which
+        # would re-run every migration against it.
         raise
     return int(row[0]) if row is not None else 0

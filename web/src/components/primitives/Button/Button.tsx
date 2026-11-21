@@ -10,7 +10,6 @@ import styles from './Button.module.css';
  */
 export type ButtonVariant = 'primary' | 'secondary' | 'destructive' | 'ghost';
 
-/** Size scale — default renders at the standard button token size. */
 export type ButtonSize = 'default' | 'small';
 
 export interface ButtonProps {
@@ -18,27 +17,17 @@ export interface ButtonProps {
   variant?: ButtonVariant;
   /** Size scale. Defaults to 'default'. */
   size?: ButtonSize;
-  /** Whether the button is non-interactive. */
   disabled?: boolean;
   /** HTML button type attribute. Defaults to 'button'. */
   type?: 'button' | 'submit' | 'reset';
-  /** Click handler. */
   onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  /** Button label content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
   /** Accessible label override for icon-only or contextually unique buttons. */
   'aria-label'?: string;
 }
 
-/**
- * Generic primitive button.
- *
- * Uses semantic <button> for full keyboard accessibility.
- * Reads all design values from CSS tokens — no hardcoded colours or sizes.
- * Two variants: primary (accent-filled CTA) and secondary (outlined).
- */
+/** Generic button rendered as a native `<button>`. */
 export function Button({
   variant = 'primary',
   size = 'default',

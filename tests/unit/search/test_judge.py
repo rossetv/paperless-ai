@@ -19,11 +19,6 @@ from tests.helpers.factories import (
 from tests.helpers.llm import make_chat_completion
 
 
-# ---------------------------------------------------------------------------
-# Data-shape tests
-# ---------------------------------------------------------------------------
-
-
 def test_judge_candidate_holds_id_and_snippet() -> None:
     c = JudgeCandidate(document_id=7, snippet="boiler warranty terms")
     assert c.document_id == 7
@@ -39,11 +34,6 @@ def test_judge_verdict_defaults_not_degraded() -> None:
     )
     assert v.relevant_document_ids == frozenset({1, 2})
     assert v.degraded is False
-
-
-# ---------------------------------------------------------------------------
-# Prompt tests
-# ---------------------------------------------------------------------------
 
 
 def test_judge_system_prompt_is_recall_biased_and_routable() -> None:
@@ -74,11 +64,6 @@ def test_judge_response_format_is_openai_only() -> None:
     ollama_settings = make_search_settings(SEARCH_JUDGE_PROVIDER="ollama")
     assert _judge_response_format(openai_settings)["type"] == "json_schema"
     assert _judge_response_format(ollama_settings) is None
-
-
-# ---------------------------------------------------------------------------
-# RelevanceJudge stage tests (fixture helper)
-# ---------------------------------------------------------------------------
 
 
 def _judge_with(content: str | None) -> RelevanceJudge:
@@ -122,13 +107,10 @@ def test_judge_keeps_the_named_documents() -> None:
 def test_empty_verdicts_list_keeps_all_by_default() -> None:
     """An empty verdicts list → no explicit drops → all candidates default to keep=True.
 
-    This is the new recall-biased behaviour: the judge must explicitly drop a
-    document (``keep: false``) for it to be excluded. An omitted document is
-    assumed relevant.
+    A document is excluded only by an explicit ``keep: false``.
     """
     judge = _judge_with('{"verdicts": []}')
     verdict = judge.judge("warranty?", _CANDIDATES)
-    # No explicit drops → both candidates default to keep=True.
     assert verdict.relevant_document_ids == frozenset({1, 2})
     assert verdict.degraded is False
 
@@ -165,11 +147,6 @@ def test_empty_candidates_never_bails() -> None:
     assert verdict.degraded is True
 
 
-# ---------------------------------------------------------------------------
-# Phase 2 Task 7 — per-document verdict tests
-# ---------------------------------------------------------------------------
-
-
 def test_judge_parses_per_document_verdicts(judge_with_response) -> None:
     judge = judge_with_response(
         '{"verdicts": ['
@@ -189,11 +166,6 @@ def test_judge_fail_open_keeps_all_with_reason(judge_with_response) -> None:
     assert v.degraded is True
     assert {dv.document_id for dv in v.verdicts} == {1, 2}
     assert all(dv.keep for dv in v.verdicts)
-
-
-# ---------------------------------------------------------------------------
-# CLASSIFY_MODELS fallback tests
-# ---------------------------------------------------------------------------
 
 
 def test_judge_fallback_uses_classify_models() -> None:
@@ -312,11 +284,6 @@ def test_judge_usage_sink_receives_token_record(judge_with_response) -> None:
     assert isinstance(sink[0], LlmCallUsage)
 
 
-# ---------------------------------------------------------------------------
-# Service-tier forwarding tests
-# ---------------------------------------------------------------------------
-
-
 class TestJudgeServiceTierForwarded:
     """The judge pins the standard service tier on OpenAI, omits it elsewhere."""
 
@@ -345,11 +312,6 @@ class TestJudgeServiceTierForwarded:
 
         call = judge._create_completion.call_args  # type: ignore[attr-defined]
         assert "service_tier" not in call.kwargs
-
-
-# ---------------------------------------------------------------------------
-# Identity and date forwarding tests
-# ---------------------------------------------------------------------------
 
 
 def test_judge_forwards_asker_into_user_message() -> None:
@@ -397,7 +359,7 @@ def test_judge_forwards_today_into_user_message() -> None:
 
 
 def test_judge_message_unchanged_when_no_asker_or_today() -> None:
-    """judge() without asker/today produces a message unchanged from pre-identity."""
+    """Passing asker=None and today=None builds the same message as omitting them."""
     messages_with_none: list[list[dict]] = []
     messages_without: list[list[dict]] = []
 

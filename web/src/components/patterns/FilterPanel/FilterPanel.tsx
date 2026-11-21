@@ -10,23 +10,12 @@ export interface FilterPanelProps {
   children: React.ReactNode;
   /** Whether the panel is initially expanded. Defaults to true. */
   defaultExpanded?: boolean;
-  /** Additional class names to merge onto the root element. */
   className?: string;
 }
 
 /**
- * Collapsible panel container — generic titled wrapper that expands/collapses
- * its children on demand.
- *
- * Accessibility:
- * - The toggle button carries aria-expanded on every render.
- * - aria-controls points to the content region id so screen readers
- *   can announce the relationship.
- *
- * App-agnostic — carries no knowledge of search, documents, or filters.
- * The caller provides the content and the title.
- *
- * Composes the Icon primitive for the chevron toggle indicator.
+ * Collapsible titled panel. The toggle carries aria-expanded and aria-controls
+ * pointing at the content region.
  */
 export function FilterPanel({
   title,

@@ -32,8 +32,6 @@ describe('formatLongDate', () => {
   });
 
   it('formats the full offset timestamp the API actually returns', () => {
-    // The document Date arrives as "YYYY-MM-DDTHH:MM:SS+00:00" — the exact
-    // shape the operator saw rendered raw.
     expect(formatLongDate('2026-01-13T00:00:00+00:00')).toBe('13 January 2026');
     expect(formatLongDate('2026-05-22T01:30:00-05:00')).toBe('22 May 2026');
   });

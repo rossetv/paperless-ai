@@ -1,11 +1,6 @@
-"""Integration tests for the admin Settings API (web-redesign §5, Wave 4).
+"""Integration tests for GET and PUT /api/settings over a real app.db.
 
-Drives the three Settings endpoints through the real search FastAPI app over
-a real tmp_path app.db, reusing the Wave 1 account helpers. Covers the GET
-payload and secret masking/reveal, the PUT validate-persist round trip and
-its re-read response, the requires_reindex flag, and the RBAC gates
-(non-admin 403, unauthenticated 401). POST /api/settings/test-connection is
-covered in test_settings_api_rbac.py.
+Role gates and test-connection are covered in test_settings_api_rbac.py.
 """
 
 from __future__ import annotations
@@ -25,10 +20,7 @@ from tests.integration.accounts_helpers import (
 
 @pytest.fixture()
 def admin_client(tmp_path):
-    """A search app with a seeded admin, logged in, plus the open app.db.
-
-    Yields (client, app_db) so a test can inspect the config table directly.
-    """
+    """Yield ``(client, app_db)`` for a logged-in admin."""
     from store.reader import StoreReader
 
     settings = make_settings(tmp_path)
@@ -96,8 +88,7 @@ def test_put_settings_persists_a_change(admin_client) -> None:
 
 
 def test_put_settings_returns_the_full_reread_list(admin_client) -> None:
-    """PUT responds with the whole re-read settings list, with the change
-    reflected — the UI refreshes from this one response."""
+    """PUT responds with the whole re-read settings list, change included."""
     client, _ = admin_client
     response = client.put("/api/settings", json={"changes": {"OCR_DPI": "200"}})
     body = response.json()
@@ -128,10 +119,8 @@ def test_put_settings_changing_a_reindex_key_forces_a_rebuild(
 ) -> None:
     """Saving a re-index key (CHUNK_SIZE) forces a full rebuild.
 
-    The whole point of the feature: changing the chunking (or the embedding
-    model) makes the existing vectors stale, so the save must drop the
-    indexer's rebuild.request + reconcile.request sentinels and flag
-    reindex_triggered, rather than leaving the operator to remember to rebuild.
+    New chunking makes the existing vectors stale, so the save drops the
+    rebuild.request and reconcile.request sentinels and flags reindex_triggered.
     """
     client, _ = admin_client
     response = client.put("/api/settings", json={"changes": {"CHUNK_SIZE": "1000"}})
@@ -145,8 +134,7 @@ def test_put_settings_changing_a_reindex_key_forces_a_rebuild(
 def test_put_settings_changing_the_embedding_model_forces_a_rebuild(
     admin_client, tmp_path
 ) -> None:
-    """The motivating case: switching EMBEDDING_MODEL forces a rebuild so old
-    and new vectors never coexist."""
+    """Switching EMBEDDING_MODEL forces a rebuild so old and new vectors never mix."""
     client, _ = admin_client
     response = client.put(
         "/api/settings",
@@ -160,13 +148,10 @@ def test_put_settings_changing_the_embedding_model_forces_a_rebuild(
 def test_put_settings_refuses_when_rebuild_sentinel_write_fails(
     admin_client, tmp_path
 ) -> None:
-    """A re-index save whose rebuild cannot be scheduled does NOT persist (H2).
+    """A re-index save whose rebuild cannot be scheduled does not persist.
 
-    The fix: when a change touches a re-index key (EMBEDDING_MODEL / chunking),
-    the rebuild sentinel is scheduled BEFORE the config commits. If that write
-    raises OSError the whole save is refused (5xx) and rolled back — so a new
-    EMBEDDING_MODEL can never hot-load without its index wipe scheduled, which
-    would otherwise leave mixed-width vectors that make every search 500.
+    The sentinel is written before the config commits; otherwise a new
+    EMBEDDING_MODEL could hot-load over old-width vectors and every search 500.
     """
     from unittest.mock import patch
 
@@ -184,7 +169,7 @@ def test_put_settings_refuses_when_rebuild_sentinel_write_fails(
 
     # The save is refused with a 5xx — nothing persisted.
     assert response.status_code >= 500
-    # The new model was NOT written: a present-but-unwiped index of the old
+    # The new model was not written: a present-but-unwiped index of the old
     # width would otherwise make every vector search raise.
     assert config_store.get(app_db, "EMBEDDING_MODEL") is None
     # config_version did not move, so no process hot-loads a half-applied change.
@@ -264,8 +249,7 @@ def test_put_settings_persists_a_valid_relevance_tier(admin_client) -> None:
 
 
 def test_put_settings_with_no_changes_is_a_clean_noop(admin_client) -> None:
-    """An empty change set is a clean no-op: 200, the re-read list, and the
-    config_version is not bumped (nothing was written)."""
+    """An empty change set returns 200 and the list without bumping config_version."""
     client, app_db = admin_client
     before = config_store.get_config_version(app_db)
     response = client.put("/api/settings", json={"changes": {}})
@@ -281,9 +265,8 @@ def test_put_settings_rejects_the_masked_placeholder_as_a_secret_value(
 ) -> None:
     """The mask must never round-trip as a real secret.
 
-    The frontend correctly omits an unchanged secret, but a buggy or
-    compromised client could POST the placeholder and persist it as the
-    actual token. Reject the mask at the boundary; the table stays untouched.
+    The frontend omits an unchanged secret, but a buggy or hostile client could
+    send the placeholder and persist it as the actual token.
     """
     client, app_db = admin_client
     # Pre-seed a real token so the assertion that nothing is overwritten is
@@ -299,10 +282,7 @@ def test_put_settings_rejects_the_masked_placeholder_as_a_secret_value(
 def test_put_settings_rejects_an_empty_secret_value(admin_client) -> None:
     """An admin saving `PAPERLESS_TOKEN=""` must fail validation.
 
-    Regression for the boundary: an empty required secret used to pass and
-    every daemon then authenticated to Paperless with "" until manually
-    fixed. The build_settings boundary now rejects empty / whitespace-only
-    required secrets.
+    An empty required secret would make every daemon authenticate with "".
     """
     client, app_db = admin_client
     config_store.set_value(app_db, "PAPERLESS_TOKEN", "real-token")
@@ -314,15 +294,9 @@ def test_put_settings_rejects_an_empty_secret_value(admin_client) -> None:
 def test_put_settings_rejects_a_changes_mapping_above_the_size_cap(
     admin_client,
 ) -> None:
-    """A change set with more than the documented key cap is rejected.
-
-    Defense against a paste-bomb / DoS payload: the route uses Pydantic's
-    ``Field(max_length=...)`` on the dict to cap key count, and a validator
-    to cap each value's length. Both surface as a 422 from FastAPI.
-    """
+    """A change set with more keys than the cap is rejected 422 (DoS guard)."""
     client, _ = admin_client
-    # 101 keys (the cap is 100). The handler must reject before reaching
-    # validate_change_set / set_many.
+    # 101 keys; the cap is 100.
     response = client.put(
         "/api/settings",
         json={"changes": {f"BOGUS_{i}": "x" for i in range(101)}},
@@ -331,11 +305,7 @@ def test_put_settings_rejects_a_changes_mapping_above_the_size_cap(
 
 
 def test_put_settings_rejects_an_oversize_value(admin_client) -> None:
-    """A single value above the 8K cap is rejected.
-
-    A 100MB blob in one value would never reach SQLite — the validator on
-    ``UpdateSettingsRequest`` rejects it at the boundary.
-    """
+    """A single value above the 8K cap is rejected before it reaches SQLite."""
     client, _ = admin_client
     response = client.put(
         "/api/settings",
@@ -345,21 +315,16 @@ def test_put_settings_rejects_an_oversize_value(admin_client) -> None:
 
 
 def test_get_settings_audit_logs_a_successful_reveal(admin_client) -> None:
-    """`?reveal=true` writes a `search.settings_revealed` event.
+    """`?reveal=true` logs a `search.settings_revealed` event with actor and keys.
 
-    The event records the actor and the secret keys revealed — never their
-    values. The trail makes an after-the-fact leak attributable to one admin
-    session.
+    The values are never logged; the trail attributes a later leak to one admin.
     """
     from unittest.mock import patch
 
     client, app_db = admin_client
     config_store.set_value(app_db, "OPENAI_API_KEY", "sk-real-secret")
 
-    # The handler uses the module-level structlog binding. Wrapping its
-    # warning() with a spy is the most direct way to assert the audit event
-    # was emitted with the expected payload — caplog cannot reliably catch
-    # structlog's separate logger by default.
+    # caplog does not reliably capture structlog, so spy on the module logger.
     with patch("search.settings_routes.log") as mock_log:
         response = client.get("/api/settings", params={"reveal": "true"})
         assert response.status_code == 200
@@ -384,8 +349,7 @@ def test_get_settings_audit_logs_a_successful_reveal(admin_client) -> None:
 
 
 def test_get_settings_without_reveal_does_not_audit(admin_client) -> None:
-    """A normal (masked) GET emits no reveal audit event — the trail tracks
-    only intentional reveals."""
+    """A normal (masked) GET emits no reveal audit event."""
     from unittest.mock import patch
 
     client, app_db = admin_client
@@ -404,11 +368,9 @@ def test_get_settings_without_reveal_does_not_audit(admin_client) -> None:
 def test_get_settings_carries_coded_default_for_default_sourced_key(
     admin_client,
 ) -> None:
-    """A key on its coded default has a non-null default_value in the response.
+    """A key on its coded default reports that default in ``default_value``.
 
-    When `source` is ``"default"`` and `value` is ``None``, ``default_value``
-    must carry the coded default string — this is what the Settings screen uses
-    to display a meaningful value rather than the empty/zero state.
+    The Settings screen shows it instead of an empty value.
     """
     client, _ = admin_client
     response = client.get("/api/settings")

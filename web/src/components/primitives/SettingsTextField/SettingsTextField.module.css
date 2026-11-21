@@ -1,14 +1,3 @@
-/*
- * SettingsTextField primitive — CSS Module.
- *
- * The Apple-form text field used on the Settings screen: a soft-bordered
- * white pill with an optional monospace face and an optional inline suffix
- * slot (the suffix overlaps the right padding — used for a "Reveal" button).
- * Carries no <label> — the settings Row supplies the label.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .wrapper {
   position: relative;
   width: 100%;
@@ -40,20 +29,16 @@
   color: var(--colour-text-secondary);
 }
 
-/* Monospace face — for URLs, tokens, model identifiers. */
 .input-mono {
   font-family: var(--font-mono);
 }
 
-/* Reserve room on the right so text never slides under the suffix slot.
-   --padding-settings-field-trailing (64 px) comfortably clears a ~50 px
-   "Reveal" button positioned at right:8 px. --spacing-section (96 px) was
-   a semantic misuse of the vertical-rhythm token. */
+/* Room on the right so text never slides under the suffix:
+   --padding-settings-field-trailing (64 px) clears a ~50 px "Reveal" button at right:8 px. */
 .input-with-suffix {
   padding-right: var(--padding-settings-field-trailing);
 }
 
-/* ── The inline suffix slot — pinned to the right edge. ── */
 .suffix {
   position: absolute;
   top: 50%;

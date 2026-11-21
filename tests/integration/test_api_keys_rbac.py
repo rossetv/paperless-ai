@@ -1,14 +1,7 @@
-"""Integration test: API-key scope enforcement and RBAC (§5, §4.3).
+"""Integration tests for API-key scopes and key-management RBAC.
 
-Drives the real search app over a real ``app.db``/``index.db``. Proves:
-
-- scopes gate the surface — an API-only key cannot reach /mcp, an
-  MCP-only key cannot reach /api/* data routes;
-- a key never exceeds its owner's role;
-- key management follows §4.3 — a Read-only user cannot manage keys, a
-  Member manages only their own, an Admin lists and revokes every key;
-- editing is owner-only — even an Admin cannot edit another user's key
-  (the deliberate asymmetry against revoke).
+Scopes gate the /api and /mcp surfaces, a key never exceeds its owner's role,
+and editing is owner-only even for an admin, unlike revoking.
 """
 
 from __future__ import annotations
@@ -29,9 +22,9 @@ from tests.integration.accounts_helpers import (
 
 @pytest.fixture()
 def env(tmp_path):
-    """Build the app; seed an admin, a member and a read-only user.
+    """Return ``(client, app_db, ids)`` with an admin, a member and a read-only user.
 
-    Returns (client, app_db, ids) where ids maps role -> user id.
+    *ids* maps role to user id.
     """
     settings = make_settings(tmp_path)
     seed_store(settings)
@@ -46,11 +39,9 @@ def env(tmp_path):
     store_reader = StoreReader(settings)
     client = build_account_client(settings, app_db, store_reader)
     ids = {"admin": admin.id, "member": member.id, "readonly": readonly.id}
-    # Enter the client as a context manager so the app's lifespan runs — that is
-    # what starts the MCP streamable-HTTP session manager's task group. Without
-    # it, an authenticated /mcp request reaches the transport and 500s ("Task
-    # group is not initialized"), which would let test_mcp_scoped_key_passes_the
-    # _mcp_auth_gate pass on a 500 instead of a genuine non-401 transport reply.
+    # Run the lifespan so the MCP session manager's task group starts; without
+    # it an authenticated /mcp request 500s, and the MCP-scope test would pass
+    # on that 500 instead of a genuine non-401 transport reply.
     try:
         with client:
             yield client, app_db, ids
@@ -116,12 +107,12 @@ def test_mcp_scoped_key_passes_the_mcp_auth_gate(env) -> None:
     raw = _mint(app_db, owner_user_id=ids["member"], scopes="mcp")
     # A GET to /mcp with a valid MCP key passes the auth middleware; the MCP
     # transport itself may then answer non-2xx for a non-MCP-protocol GET,
-    # but it must NOT be the 401 the middleware returns on auth failure.
+    # but it must not be the 401 the middleware returns on auth failure.
     response = client.get("/mcp", headers=_bearer(raw))
     assert response.status_code != 401
 
 
-# --- key management RBAC (spec §4.3) -----------------------------------
+# --- key management RBAC -----------------------------------------------
 
 
 def test_readonly_user_cannot_list_keys(env) -> None:
@@ -163,7 +154,7 @@ def test_member_creates_and_lists_only_their_own_keys(env) -> None:
     created = client.post("/api/api-keys", json={"name": "mine", "scopes": ["api"]})
     assert created.status_code == 201
     listing = client.get("/api/api-keys").json()["keys"]
-    # The member sees ONLY their own key, not the admin's.
+    # The member sees only their own key, not the admin's.
     assert len(listing) == 1
     assert listing[0]["owner_id"] == ids["member"]
     assert listing[0]["name"] == "mine"
@@ -193,7 +184,7 @@ def test_member_cannot_revoke_another_users_key(env) -> None:
     login(client, username="member", password="member-pw-123")
     response = client.delete(f"/api/api-keys/{admin_key.id}")
     # A member may not revoke a key they do not own — 404 rather than 403
-    # so the existence of the key is not revealed (MINOR-1).
+    # so the existence of the key is not revealed.
     assert response.status_code == 404
 
 
@@ -251,14 +242,12 @@ def test_member_cannot_edit_another_users_key(env) -> None:
     login(client, username="member", password="member-pw-123")
     response = client.patch(f"/api/api-keys/{admin_key.id}", json={"name": "hijacked"})
     # A member may not edit a key they do not own — 404 rather than 403
-    # so the existence of the key is not revealed (MINOR-1).
+    # so the existence of the key is not revealed.
     assert response.status_code == 404
 
 
 def test_admin_cannot_edit_another_users_key(env) -> None:
-    """The deliberate asymmetry: an admin can *revoke* any key but may NOT
-    *edit* one they do not own — re-scoping a credential is the owner's
-    call. Contrast test_admin_can_revoke_any_users_key."""
+    """An admin can revoke any key but not edit one: re-scoping is the owner's call."""
     client, app_db, ids = env
     raw = _mint(app_db, owner_user_id=ids["member"], scopes="api")
     from appdb.api_keys import get_by_hash
@@ -272,18 +261,14 @@ def test_admin_cannot_edit_another_users_key(env) -> None:
         f"/api/api-keys/{member_key.id}",
         json={"scopes": ["api", "mcp", "admin"]},
     )
-    # Even an admin cannot edit someone else's key — owner-only. Returns 404
-    # rather than 403 so that key existence is not revealed (MINOR-1).
+    # 404 rather than 403, so key existence is not revealed.
     assert response.status_code == 404
 
 
 def test_admin_scope_key_owned_by_a_member_cannot_manage_keys(env) -> None:
-    """A key never exceeds its owner's role — even with the Admin scope, a
-    member-owned key only manages the member's own keys, and (since the
-    member role passes the management gate) it can at least list its own.
-    But it must not see every key the way a true admin does."""
+    """An admin-scoped key owned by a member lists only the member's own keys."""
     client, app_db, ids = env
-    # An Admin-scoped key owned by the MEMBER user.
+    # An admin-scoped key owned by the member.
     member_admin_key = _mint(app_db, owner_user_id=ids["member"], scopes="admin")
     # Another user's key exists.
     _mint(app_db, owner_user_id=ids["admin"], scopes="api")

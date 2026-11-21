@@ -1,10 +1,5 @@
-"""Search pipeline — the read side of the semantic search subsystem.
+"""Search pipeline: plan, retrieve (hybrid vector + keyword), refine, synthesise.
 
-This package implements the agentic-but-bounded retrieval pipeline:
-plan → retrieve (hybrid vector + keyword) → refine (up to SEARCH_MAX_REFINEMENTS times) → synthesise.
-
-Allowed dependencies: store/ (StoreReader), common/.
-Forbidden: indexer/, ocr/, classifier/. The core pipeline (planner, retriever,
-synthesizer, refinement, core) imports neither fastapi nor mcp — those belong
-only in api.py and mcp_server.py respectively.
+The core pipeline imports neither fastapi nor mcp; those live only in api.py and
+mcp_server.py.
 """

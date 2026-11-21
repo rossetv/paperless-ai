@@ -1,17 +1,4 @@
-"""Shared text-length constants for the search pipeline.
-
-The pipeline truncates a few strings before they go into a structured log
-event — a query, a synthesiser adjustment hint — so a log line stays a sane
-length.  The planner, the synthesiser, and the core all do this; the cap
-literals live here once rather than being respelled at each call site
-(``CODE_GUIDELINES.md`` §3.5).
-
-It also owns the RAG-08 ``is_trivial_query`` predicate — the query-shape test
-the core uses to decide whether a query is plain enough to skip the planner
-LLM call — kept here as the natural home for query-text helpers.
-
-Depends on: standard library only.
-"""
+"""Query-text helpers: log-truncation caps and the trivial-query predicate."""
 
 from __future__ import annotations
 
@@ -28,9 +15,8 @@ QUERY_LOG_PREFIX_CHARS = 60
 ADJUSTMENT_LOG_PREFIX_CHARS = 120
 
 
-# RAG-08: a query is "trivial" — worth skipping the planner LLM for — only when
-# it is short AND carries no temporal or entity signal the planner would help
-# with. Conservative by design: any doubt returns False and the planner runs.
+# A query is "trivial" (worth skipping the planner LLM for) only when it is
+# short and carries no temporal or entity signal. Any doubt runs the planner.
 _TRIVIAL_QUERY_MAX_WORDS = 3
 
 # Relative-date and temporal words that imply the planner should derive a date
@@ -77,20 +63,14 @@ _ENTITY_PUNCTUATION = re.compile(r"[@#/£$€%]")
 
 
 def is_trivial_query(query: str) -> bool:
-    """Return whether *query* is a short, signal-free keyword lookup (RAG-08).
+    """Return whether *query* is a short, signal-free keyword lookup.
 
     Trivial = at most ``_TRIVIAL_QUERY_MAX_WORDS`` words AND no digit, no
     temporal word, no identifier punctuation, and no proper-noun token beyond
     the first word (an interior capitalised word suggests an entity the planner
     would resolve). When trivial, the caller may skip the planner LLM call and
-    build the fallback-shaped plan directly — retrieval still runs vector + FTS
-    on the raw query, so nothing is lost (spec §4.6).
-
-    Args:
-        query: The raw user search query.
-
-    Returns:
-        True only when the query is safe to short-circuit; False on any doubt.
+    build the fallback-shaped plan directly; retrieval still runs vector + FTS
+    on the raw query, so nothing is lost.
     """
     words = query.split()
     if not words or len(words) > _TRIVIAL_QUERY_MAX_WORDS:
@@ -101,7 +81,6 @@ def is_trivial_query(query: str) -> bool:
         return False
     if any(word.casefold() in _TEMPORAL_WORDS for word in words):
         return False
-    # A capitalised token after the first word suggests a proper noun (entity).
     for word in words[1:]:
         if word[:1].isupper():
             return False

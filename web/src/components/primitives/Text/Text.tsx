@@ -2,11 +2,7 @@ import React from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './Text.module.css';
 
-/**
- * Typographic variant — each maps to one step of the SF Pro type scale
- * (DESIGN.md §3). Choosing a variant is choosing a reviewed type token, not
- * an ad-hoc font size.
- */
+/** Typographic variant; each maps to one step of the type scale. */
 export type TextVariant =
   | 'hero'
   | 'body-large'
@@ -43,9 +39,7 @@ export interface TextProps {
    * becomes the `dateTime` attribute so assistive tech can parse the date.
    */
   dateTime?: string;
-  /** Text content. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
@@ -57,15 +51,8 @@ function toneClass(tone: TextTone | undefined): string | undefined {
 }
 
 /**
- * The typography primitive.
- *
- * Renders text at one step of the design-system type scale. Every piece of
- * text in the application flows through `Text` (or another styled component)
- * so the type scale is applied deliberately — features no longer render raw
- * `<p>`/`<span>`/`<strong>` and inherit typography from global element CSS.
- *
- * Polymorphic via `as`: a paragraph, an inline span, an emphasised run, or a
- * `<time>` element. App-agnostic — knows nothing about the domain.
+ * Typography primitive: renders text at one step of the type scale, as a `p`,
+ * inline run or `<time>` (via `as`), instead of relying on global element styles.
  */
 export function Text({
   variant = 'body',

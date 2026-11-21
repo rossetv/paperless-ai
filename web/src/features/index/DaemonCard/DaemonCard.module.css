@@ -1,12 +1,3 @@
-/*
- * DaemonCard feature component — CSS Module.
- *
- * A card for one worker daemon: a header row (name + status badge), a role
- * sub-line, and an inset detail/throughput row. Theme-aware via tokens.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .card {
   display: flex;
   flex-direction: column;
@@ -16,7 +7,6 @@
   padding: var(--spacing-13) var(--spacing-14);
 }
 
-/* ── Header row — name on the left, status badge pushed right. ── */
 .header {
   display: flex;
   align-items: center;
@@ -36,7 +26,6 @@
   flex: 1;
 }
 
-/* ── Last-seen sub-line. ── */
 .role {
   margin: var(--spacing-2) 0 0;
   font-family: var(--font-text);
@@ -47,7 +36,6 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Detail/throughput row — spacing-only grouping, no nested border. ── */
 .metrics {
   display: flex;
   align-items: center;

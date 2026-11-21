@@ -9,17 +9,11 @@ import styles from './Skeleton.module.css';
  */
 export type SkeletonVariant = 'text' | 'rectangular' | 'circular';
 
-/**
- * Closed width set — proportions of the container. A skeleton never accepts a
- * free CSS length: its width is one of these named fractions so every loading
- * placeholder reads consistently.
- *   'full'   — 100%   'wide' — 75%   'half' — 50%   'narrow' — 33%
- */
+/** Width as a fraction of the container: full 100%, wide 75%, half 50%, narrow 33%. */
 export type SkeletonWidth = 'full' | 'wide' | 'half' | 'narrow';
 
 /**
- * Closed height set — each maps to a dedicated token in tokens.css. A skeleton
- * never accepts a free CSS length; its height is a named, token-backed size.
+ * Height, each backed by a token:
  *   'line'    — one line of caption-scale text   (--height-skeleton-line)
  *   'control' — a form control: Input, Select    (--height-skeleton-control)
  *   'block'   — a small content block            (--height-skeleton-block)
@@ -46,11 +40,9 @@ export interface SkeletonProps {
    * height from the CSS module applies.
    */
   height?: SkeletonHeight;
-  /** Additional class names to merge. */
   className?: string;
 }
 
-/** Builds the merged class list for a single skeleton bar. */
 function barClasses(
   variant: SkeletonVariant,
   width: SkeletonWidth | undefined,
@@ -67,15 +59,8 @@ function barClasses(
 }
 
 /**
- * Content-placeholder block for loading states.
- *
- * Purely decorative — aria-hidden="true" so screen readers skip it.
- * The shimmer animation respects prefers-reduced-motion: it is disabled
- * when the user has requested reduced motion, leaving a static placeholder.
- *
- * Sizing is a closed, token-backed API: `width` is a named fraction and
- * `height` maps to a dedicated token. There is no free-string length prop —
- * a skeleton's dimensions always come from tokens.css (§12.4).
+ * Decorative (aria-hidden) loading placeholder. Sizes come only from named,
+ * token-backed widths and heights, never free CSS lengths.
  */
 export function Skeleton({
   variant = 'rectangular',

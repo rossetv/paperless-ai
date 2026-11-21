@@ -1,24 +1,7 @@
-"""Integration tests for GET /api/documents — the Library browse endpoint.
+"""Integration tests for GET /api/documents, the Library browse endpoint.
 
-Exercises the real FastAPI app via ``TestClient`` against a real seeded
-``index.db`` and ``app.db``.  The five-document store from
-``tests.integration.library_helpers.seed_library_store`` gives every sort
-key, the pager, and every filter dimension something to act on.
-
-Coverage:
-- an authenticated Read-only user can list documents (paginated envelope)
-- an unauthenticated request is rejected 401
-- a DB-backed API-key Bearer token is accepted
-- pagination — page/page_size slice the result, total is the full count
-- sorting — by created, title, and added, ascending and descending
-- filtering — correspondent, document type, tags, date range
-- the in-library text query matches title and correspondent
-- each document carries metadata and a page count (no deep-link URL)
-- an out-of-range sort value is rejected 422
-
-Note: the legacy SEARCH_API_KEY bearer was retired in Wave 3.  Bearer-auth
-tests mint a real DB-backed API key via
-:func:`tests.integration.library_helpers.mint_bearer`.
+Runs against the five-document store from
+:func:`tests.integration.library_helpers.seed_library_store`.
 """
 
 from __future__ import annotations
@@ -41,11 +24,6 @@ from tests.integration.library_helpers import (
 def _bearer(key: str) -> dict[str, str]:
     """Return an Authorization header carrying a bearer token."""
     return {"Authorization": f"Bearer {key}"}
-
-
-# ---------------------------------------------------------------------------
-# Auth gating
-# ---------------------------------------------------------------------------
 
 
 class TestLibraryAuth:
@@ -111,11 +89,6 @@ class TestLibraryAuth:
         finally:
             store_reader.close()
             app_db.close()
-
-
-# ---------------------------------------------------------------------------
-# Pagination
-# ---------------------------------------------------------------------------
 
 
 class TestLibraryPagination:
@@ -193,11 +166,6 @@ class TestLibraryPagination:
         finally:
             store_reader.close()
             app_db.close()
-
-
-# ---------------------------------------------------------------------------
-# Sorting
-# ---------------------------------------------------------------------------
 
 
 class TestLibrarySorting:
@@ -294,11 +262,6 @@ class TestLibrarySorting:
         finally:
             store_reader.close()
             app_db.close()
-
-
-# ---------------------------------------------------------------------------
-# Filtering and the in-library text query
-# ---------------------------------------------------------------------------
 
 
 class TestLibraryFiltering:
@@ -443,16 +406,11 @@ class TestLibraryFiltering:
             app_db.close()
 
 
-# ---------------------------------------------------------------------------
-# The per-document payload
-# ---------------------------------------------------------------------------
-
-
 class TestLibraryDocumentPayload:
     """Each document carries the full Library-card payload."""
 
     def test_document_carries_metadata_and_page_count(self, tmp_path: Path) -> None:
-        """A document exposes names, tags, and page count — no deep-link URL."""
+        """A document exposes names, tags, page count and a Paperless deep-link."""
         settings = make_settings(tmp_path)
         seed_library_store(settings)
         app_db = open_app_db(tmp_path)
@@ -475,7 +433,6 @@ class TestLibraryDocumentPayload:
             assert doc["created"] == "2024-03-15T00:00:00Z"
             assert doc["page_count"] == 1
             assert set(doc["tags"]) == {"utilities", "2024"}
-            # Deep-link is server-built from settings.PAPERLESS_PUBLIC_URL.
             assert doc["paperless_url"].endswith("/documents/2/")
         finally:
             store_reader.close()
@@ -561,11 +518,6 @@ class TestLibraryDocumentPayload:
         finally:
             store_reader.close()
             app_db.close()
-
-
-# ---------------------------------------------------------------------------
-# Input-bounds validation
-# ---------------------------------------------------------------------------
 
 
 class TestLibraryInputBounds:

@@ -1,17 +1,4 @@
-"""Configuration, Paperless, and store-shape test factories.
-
-The ``tests.helpers.factories`` package re-exports every factory from its
-``__init__``; this submodule holds the ``Settings``, Paperless-document,
-``ClassificationResult``, and store-boundary (``DocumentMeta``, ``ChunkInput``,
-``SearchFilters``) builders.  Search-pipeline factories live in the sibling
-:mod:`tests.helpers.factories._search`.
-
-Every test that needs a domain object builds it through a factory here, so the
-one field a test actually cares about is the only one it has to spell out
-(CODE_GUIDELINES §11.5).  Irrelevant fields are filled with deterministic
-defaults.  Hand-rolled per-file builders are a smell: they drift, and the same
-literal (a settings field, an embedding vector) ends up copied across modules.
-"""
+"""Settings, Paperless-document, classification and store-write test factories."""
 
 from __future__ import annotations
 
@@ -29,32 +16,18 @@ _MINIMAL_ENV: dict[str, str] = {
     "OPENAI_API_KEY": "test-api-key",
 }
 
-# Default embedding width for tests.  The store, the worker, and the reconciler
-# all agree on a dimension; four keeps test vectors tiny and readable.  This is
-# the single home for the test embedding dimension and the unit-vector formula
-# below — no test re-spells ``1.0 / (dimensions ** 0.5)``.
+# Four dimensions keeps test vectors tiny and readable.
 DEFAULT_EMBEDDING_DIMENSIONS = 4
 
 
 def make_embedding(dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS) -> tuple[float, ...]:
-    """Return a deterministic unit-length all-equal float32 embedding vector.
-
-    Each component is ``1 / sqrt(dimensions)``, so the vector has length 1.
-    For test purposes any non-zero vector is valid; equal components eliminate
-    numerical surprise.  This is the one definition of the test embedding
-    literal — every factory and test that needs a vector calls it.
-    """
+    """Return a deterministic unit-length vector with all components equal."""
     component = 1.0 / (dimensions**0.5)
     return tuple(component for _ in range(dimensions))
 
 
 def make_settings(**overrides: str) -> Any:
-    """Create a ``Settings`` instance with minimal valid environment.
-
-    Any key in *overrides* is injected as an environment variable before
-    construction.  The returned object is a real ``Settings`` instance, built
-    via :meth:`Settings.from_environment`.
-    """
+    """Build a real ``Settings`` from a minimal env plus *overrides* as env vars."""
     from common.config import Settings
 
     env = {**_MINIMAL_ENV, **overrides}
@@ -63,13 +36,7 @@ def make_settings(**overrides: str) -> Any:
 
 
 def make_settings_obj(**overrides: Any) -> MagicMock:
-    """Create a MagicMock that behaves like a Settings object.
-
-    Useful when a test needs a Settings-like object without touching env vars.
-    The defaults span every daemon's fields — OCR, classifier, indexer, and
-    store — so this single factory replaces the per-file ``_make_settings``
-    builders the store and indexer tests used to hand-roll.
-    """
+    """Create a Settings-like MagicMock with defaults for every daemon's fields."""
     defaults = {
         "PAPERLESS_URL": "http://paperless:8000",
         "PAPERLESS_PUBLIC_URL": "http://paperless:8000",
@@ -145,18 +112,7 @@ def make_store_settings(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
     **overrides: Any,
 ) -> MagicMock:
-    """Create a Settings-like mock for the store and the indexer pipeline.
-
-    A thin convenience over :func:`make_settings_obj` that pins the three
-    fields a store-backed test always sets per case — the database path and
-    the embedding model and dimensions.
-
-    Args:
-        db_path: Filesystem path for ``INDEX_DB_PATH`` (usually ``tmp_path``).
-        model: Value for ``EMBEDDING_MODEL``.
-        dimensions: Value for ``EMBEDDING_DIMENSIONS``.
-        **overrides: Any further Settings field overrides.
-    """
+    """Create a Settings-like mock with the index DB path and embedding model set."""
     return make_settings_obj(
         INDEX_DB_PATH=db_path,
         EMBEDDING_MODEL=model,
@@ -166,11 +122,9 @@ def make_store_settings(
 
 
 def make_document(**overrides: Any) -> dict:
-    """Create a Paperless document dict with sensible defaults.
+    """Create a classifier-shaped Paperless document dict (with ``custom_fields``).
 
-    The classifier-shaped default — it carries ``custom_fields``.  Indexer
-    tests want the indexer-shaped document instead: see
-    :func:`make_paperless_document`.
+    Indexer tests want :func:`make_paperless_document` instead.
     """
     doc = {
         "id": 1,
@@ -200,22 +154,9 @@ def make_paperless_document(
 ) -> dict:
     """Create a Paperless document dict shaped for the indexer.
 
-    Mirrors :class:`~common.paperless.PaperlessDocument`: it carries the
-    ``content``, ``modified``, ``correspondent``, and ``document_type`` fields
-    the indexer reads, and defaults ``tags`` to empty rather than the
-    classifier's pre-tag.  This is the single Paperless-document builder the
-    worker, reconciler, and indexer-pipeline tests share.
-
-    Args:
-        doc_id: The document id.
-        content: OCR content; pass ``None`` to model an un-OCR'd document.
-        modified: The Paperless ``modified`` timestamp.
-        created: The Paperless ``created`` date.
-        title: The document title; defaults to ``"Document <id>"``.
-        tags: Applied tag ids; defaults to an empty list.
-        correspondent: The correspondent id, or ``None``.
-        document_type: The document-type id, or ``None``.
-        **overrides: Any further document-field overrides.
+    Mirrors :class:`~common.paperless.PaperlessDocument`; ``tags`` defaults to
+    empty rather than the classifier's pre-tag. Pass ``content=None`` to model
+    a document that has not been OCR'd.
     """
     doc: dict[str, Any] = {
         "id": doc_id,
@@ -255,11 +196,7 @@ def make_classification_result(**overrides: Any) -> ClassificationResult:
 
 
 def make_document_meta(**overrides: Any) -> Any:
-    """Create a DocumentMeta with sensible defaults.
-
-    All irrelevant fields are filled with deterministic values; callers
-    override only the field under test.
-    """
+    """Create a DocumentMeta with deterministic defaults."""
     from store.models import DocumentMeta
 
     defaults: dict[str, Any] = {
@@ -285,18 +222,7 @@ def make_chunk_input(
     dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS,
     **overrides: Any,
 ) -> Any:
-    """Create a single ChunkInput with a deterministic embedding vector.
-
-    The embedding is built by :func:`make_embedding` — the one home for the
-    test embedding literal.
-
-    Args:
-        chunk_index: Zero-based position within the parent document.
-        text: Chunk text content.
-        page_hint: Source page number, or None.
-        dimensions: Length of the synthesised embedding vector.
-        **overrides: Additional ChunkInput field overrides.
-    """
+    """Create a single ChunkInput with a deterministic embedding vector."""
     from store.models import ChunkInput
 
     fields: dict[str, Any] = {
@@ -317,11 +243,7 @@ def make_search_filters(
     document_type_id: int | None = None,
     tag_ids: tuple[int, ...] = (),
 ) -> Any:
-    """Create a SearchFilters with every field defaulting to "no restriction".
-
-    A reader test that exercises one filter passes only that keyword; the rest
-    stay unrestricted.  The all-default call models "no filter at all".
-    """
+    """Create a SearchFilters with every field defaulting to "no restriction"."""
     from store.models import SearchFilters
 
     return SearchFilters(
@@ -336,16 +258,7 @@ def make_search_filters(
 def make_chunks(
     count: int = 2, *, dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS
 ) -> list[Any]:
-    """Create *count* deterministic ChunkInput objects.
-
-    Each chunk gets a contiguous ``chunk_index`` from 0, a unique text body,
-    and a ``page_hint`` of ``chunk_index + 1``.  Replaces the per-file
-    ``_chunks`` list builders the store tests hand-rolled.
-
-    Args:
-        count: How many ChunkInput objects to build.
-        dimensions: Embedding width for every chunk.
-    """
+    """Create *count* ChunkInputs indexed from 0, with ``page_hint = index + 1``."""
     return [
         make_chunk_input(
             index,

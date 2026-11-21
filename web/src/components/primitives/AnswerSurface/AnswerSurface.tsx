@@ -13,28 +13,16 @@ export interface AnswerSurfaceProps {
   /** Whether the pipeline ran a refinement pass. Defaults to false. */
   refined?: boolean;
   /**
-   * A compact aggregate token label for the whole query (e.g. "29k tok").
-   * Rendered as a chip in the footer when present; omitted entirely when
-   * undefined (e.g. a cache hit with no spend).
+   * Compact token label for the whole query (e.g. "29k tok"), shown as a footer
+   * chip. Omitted when undefined, e.g. on a cache hit with no spend.
    */
   costLabel?: string;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * The synthesised-answer card shell.
- *
- * A bespoke surface: a "Synthesised answer" eyebrow with a spark glyph, the
- * answer prose (supplied as `children`, set in the display font), and a
- * provenance footer reporting the source count, the latency, and — when the
- * pipeline refined the answer — a "Refined once" marker.
- *
- * App-agnostic: it knows a source count and a latency, nothing about the
- * query. The `AnswerCard` feature supplies the prose.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
- * primitives (Icon), lib/.
+ * Synthesised-answer card: a spark eyebrow, the answer prose (`children`) and a
+ * provenance footer with the source count, latency and an optional "Refined once" marker.
  */
 export function AnswerSurface({
   children,

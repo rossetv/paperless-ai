@@ -1,14 +1,4 @@
-"""The reconciliation run-loop, its per-cycle body, and the hot-reload rebuild.
-
-The heart of the indexer daemon: :func:`_run_loop` drives :func:`_run_one_cycle`
-until shutdown is requested, threading the (hot-reloadable) reconciler, settings,
-and sweep clock through each iteration as an immutable :class:`_LoopState`.  The
-config hot-reload (web-redesign §5) rebuilds the config-derived clients between
-cycles via :func:`_rebuild_reconciler`.
-
-This is a module of the ``indexer.daemon`` package (CODE_GUIDELINES §3.3); the
-boot sequence lives in :mod:`._boot` and the inter-cycle wait in :mod:`._wait`.
-"""
+"""The indexer's reconciliation loop, per-cycle body, and hot-reload rebuild."""
 
 from __future__ import annotations
 
@@ -40,41 +30,21 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# The rebuild-sentinel file name. Written beside index.db by the search
-# server's POST /api/index/rebuild; consumed here at cycle entry to wipe and
-# re-index the whole archive (web-redesign spec §5, Wave 6).
+# Written beside index.db by the search server's POST /api/index/rebuild;
+# consumed at cycle entry to wipe and re-index the whole archive.
 _REBUILD_SENTINEL_NAME = "rebuild.request"
 
 
 def _rebuild_reconciler(settings: Settings, old: Reconciler) -> Reconciler:
     """Rebuild the Reconciler and its config-derived clients on a config change.
 
-    Hot-load boundary (web-redesign §5): when the ``config`` table changes the
-    indexer replaces its config-derived resources between cycles rather than
-    restarting. ``configure_logging`` and ``setup_libraries`` are re-applied so
-    the OpenAI client picks up a changed API key or base URL; the LLM
-    concurrency limiter is re-sized; the Paperless and embedding clients are
-    rebuilt from the new ``Settings``. The store writer is *not* config-derived
-    — the index database path is a bootstrap env-var — so the old writer is
-    reused via ``old.store_writer``.
+    Logging and library setup are re-applied so the OpenAI client picks up a
+    changed API key or base URL. The store writer is not config-derived (the
+    index path is a bootstrap env var), so *old*'s writer is reused.
 
-    The old reconciler's Paperless and embedding clients are explicitly closed
-    before the new ones are built, matching the pattern in the OCR and
-    classifier daemons (``ocr/daemon.py``, ``classifier/daemon.py``). Explicit
-    close is the project convention: it releases each ``httpx`` connection pool
-    deterministically and avoids assumptions about CPython finaliser timing for
-    any cycle the OpenAI SDK may introduce. The indexer loop is single-threaded
-    and rebuilds between cycles (no embed in flight), so closing the outgoing
-    clients here cannot race a concurrent use.
-
-    Args:
-        settings: The freshly loaded configuration.
-        old: The reconciler in use up to now — its ``store_writer`` is carried
-            over to the new instance.
-
-    Returns:
-        A new :class:`~indexer.reconciler.Reconciler` built from *settings*,
-        sharing the same :class:`~store.writer.StoreWriter` as *old*.
+    The old clients are closed explicitly to release their httpx pools
+    deterministically. The loop is single-threaded and rebuilds between cycles,
+    so the close cannot race an embed in flight.
     """
     old.paperless.close()
     old.embedding_client.close()
@@ -101,61 +71,17 @@ def _run_loop(
     clock: Callable[[], float] = time.monotonic,
     cycle_recorder: IndexerActivityRecorder | None = None,
 ) -> None:
-    """Run the reconciliation loop until shutdown is requested.
+    """Run reconciliation cycles sequentially until shutdown is requested.
 
-    Each iteration drives :func:`_run_one_cycle` — the real cycle body — and
-    then waits.  Per cycle:
+    Each iteration runs :func:`_run_one_cycle`, then waits
+    ``RECONCILE_INTERVAL`` seconds, waking early on shutdown or when a
+    manual-trigger sentinel (*sentinel_path*) appears. A sentinel consumed by
+    the wait forces the next cycle's deletion sweep.
 
-    0. Re-check :func:`common.config.current_settings`. When ``config_version``
-       has moved the loop rebuilds *reconciler* via :func:`_rebuild_reconciler`,
-       so a config save propagates with no restart (web-redesign §5). The
-       ``RECONCILE_INTERVAL`` and ``DELETION_SWEEP_INTERVAL`` used to schedule
-       this and every subsequent cycle are re-read from the live ``Settings``.
-    1. Check for a manual-trigger sentinel file — consume it if present.
-    2. Run ``reconciler.incremental_sync()``.
-    3. Run ``reconciler.deletion_sweep()`` if the sweep interval has elapsed
-       OR a manual trigger is pending — a sentinel consumed at entry, one the
-       previous wait consumed when it woke, or one a failed cycle left
-       unhonoured.
-    4. ``store_writer.checkpoint()``.
-    5. ``_interruptible_wait(settings.RECONCILE_INTERVAL)`` — returns early on
-       shutdown or if a new sentinel appears.  The wait consumes that
-       sentinel, so its ``True`` result marks the manual trigger pending in
-       the state handed to the next cycle.
-
-    Steps 2–4 run inside a cycle-level ``try/except Exception``: a transient
-    failure anywhere in the cycle is logged with its traceback and the loop
-    falls through to the wait, so the next cycle retries.  A cycle failure
-    never crashes the daemon, never advances the deletion-sweep clock, and
-    never drops a manual trigger: it stays pending until ``deletion_sweep()``
-    returns (an aborted sweep included).
-
-    The loop is sequential; cycles never overlap.
-
-    Args:
-        reconciler: The Reconciler instance — replaced by a fresh one if
-            :func:`current_settings` returns a new ``Settings`` on a cycle
-            boundary.
-        store_writer: The StoreWriter instance (used for checkpoint).
-        settings: The initial Settings — replaced by a fresh snapshot if
-            :func:`current_settings` returns a new value.
-        app_db_path: Filesystem path to ``app.db`` — the source the hot-load
-            accessor watches every cycle.
-        sentinel_path: Path to the manual-trigger sentinel file
-            (``<data-dir>/reconcile.request``).
-        clock: Monotonic-seconds source used to schedule the deletion sweep.
-            Defaults to :func:`time.monotonic`; tests inject a deterministic
-            clock to drive the sweep cadence without real elapsed time
-            (CODE_GUIDELINES §11.4).
-        cycle_recorder: Optional recorder that logs each sync/sweep cycle to
-            the reconcile-activity table and beats the indexer's daemon-status
-            heartbeat (web-redesign spec §5, Wave 6). None in tests; the
-            daemon supplies a real one.
+    *clock* (monotonic seconds) schedules the deletion sweep; tests inject a
+    fake one. *cycle_recorder* is ``None`` when app.db is unavailable.
     """
-    # The mutable state carried across iterations: the (hot-reloadable)
-    # reconciler and settings, and the monotonic time of the last completed
-    # sweep.  ``last_sweep_at`` starts at 0 so the first cycle is always far
-    # enough past it to run a deletion sweep.
+    # last_sweep_at starts at 0 so the first cycle always runs a deletion sweep.
     state = _LoopState(reconciler=reconciler, settings=settings, last_sweep_at=0.0)
 
     while not is_shutdown_requested():
@@ -168,14 +94,9 @@ def _run_loop(
             cycle_recorder=cycle_recorder,
         )
 
-        # Wait for the next cycle, waking early on shutdown or a new sentinel.
-        # The interval is read live from settings so a hot-loaded change to
-        # RECONCILE_INTERVAL takes effect from this wait onwards.  The
-        # cycle_recorder is passed so the wait can beat idle periodically and
-        # prevent the dashboard from reporting the indexer as "stopped" while
-        # it is simply sleeping between cycles.  A True result means the wait
-        # consumed a manual-trigger sentinel; it is marked pending in the state
-        # the next cycle reads, whose own sentinel check would find nothing.
+        # The recorder lets the wait beat idle, so the dashboard does not show
+        # a sleeping indexer as stopped. A True result means the wait consumed
+        # a sentinel, so the next cycle's own check would find nothing.
         if _interruptible_wait(
             seconds=float(state.settings.RECONCILE_INTERVAL),
             sentinel_path=sentinel_path,
@@ -187,27 +108,18 @@ def _run_loop(
 
 @dataclass(frozen=True, slots=True)
 class _LoopState:
-    """The state :func:`_run_one_cycle` reads in and threads out each iteration.
-
-    Frozen so a cycle returns a *new* state rather than mutating in place: the
-    loop reassigns ``state = _run_one_cycle(state, ...)``, which makes the
-    hot-reload replacement (a new ``reconciler`` + ``settings``) and the
-    sweep-clock advance explicit in the return value.
+    """The state :func:`_run_one_cycle` reads in and returns each iteration.
 
     Attributes:
-        reconciler: The current Reconciler — replaced by a fresh one when the
-            config hot-reloads.
-        settings: The current Settings snapshot — replaced on a config change.
+        reconciler: The current Reconciler, replaced on a config change.
+        settings: The current Settings snapshot, replaced on a config change.
         last_sweep_at: Monotonic seconds of the last deletion sweep to return;
-            advanced only once ``deletion_sweep()`` returns (an aborted sweep
-            included) so a cycle that raises never moves the sweep clock.
+            a cycle that raises never moves it.
         sweep_pending: A consumed manual trigger whose deletion sweep has not
-            yet run.  Set when a manual-trigger sentinel is consumed — by the
-            inter-cycle wait or at cycle entry — kept across a failed cycle,
-            and cleared once ``deletion_sweep()`` returns, so a cycle that
-            raises never drops a reconcile request.  An *aborted* sweep
-            (Paperless enumeration failed) returns normally and clears it;
-            the abort is recorded ``ok=False`` for the operator to re-trigger.
+            yet run. It survives a failed cycle and is cleared once
+            ``deletion_sweep()`` returns. An aborted sweep (Paperless
+            enumeration failed) returns normally and so clears it too; the
+            abort is recorded ``ok=False`` for the operator to re-trigger.
     """
 
     reconciler: Reconciler
@@ -225,65 +137,44 @@ def _run_one_cycle(
     clock: Callable[[], float],
     cycle_recorder: IndexerActivityRecorder | None,
 ) -> _LoopState:
-    """Run a single reconciliation cycle and return the next loop state.
+    """Run one reconciliation cycle and return the next loop state.
 
-    This is the real cycle body :func:`_run_loop` drives every iteration — the
-    hot-load config re-check, the sentinel consumption, the incremental sync,
-    the due-when deletion sweep, and the checkpoint — wrapped in the cycle-level
-    fault-isolation boundary.  It is a standalone function (not inlined in the
-    loop) so tests drive the *real* cycle directly rather than a hand-copied
-    parallel implementation (CODE_GUIDELINES §1.3, §11.4).
-
-    A manual trigger — a sentinel found at cycle entry, or ``state.sweep_pending``
-    — forces this cycle's deletion sweep regardless of the interval.
-
-    Returns:
-        A new :class:`_LoopState`: the reconciler and settings (replaced when
-        the config hot-reloaded this cycle), ``last_sweep_at`` (advanced only
-        if a sweep completed) and ``sweep_pending`` (cleared only if a sweep
-        completed).
+    The cycle re-checks config, consumes sentinels, runs the incremental sync,
+    the deletion sweep when due, and a checkpoint. A manual trigger (a sentinel
+    found now, or ``state.sweep_pending``) forces the sweep regardless of the
+    interval. Any exception is logged and the cycle ends, so the next retries.
     """
     reconciler = state.reconciler
     settings = state.settings
     last_sweep_at = state.last_sweep_at
 
-    # Hot-load boundary (web-redesign §5): re-check config_version. When it has
-    # moved, rebuild the config-derived resources for this and every later
-    # cycle. current_settings() returns the SAME cached object when nothing
-    # changed, so the `is` check is the whole cost.
+    # current_settings() returns the same cached object when nothing changed,
+    # so the `is` check is the whole cost.
     latest = current_settings(app_db_path)
     if latest is not settings:
         log.info("indexer.config_reloaded")
         reconciler = _rebuild_reconciler(latest, reconciler)
         settings = latest
 
-    # Consume a manual trigger at cycle entry — it forces a deletion sweep
-    # regardless of the interval (SPEC §5.8). The sentinel is consumed
-    # unconditionally (before the pending check, never short-circuited by it)
-    # so one written since the wait woke does not linger and cause a spurious
-    # extra wake.
+    # Consume the sentinel even when a sweep is already pending, so one written
+    # since the wait woke does not linger and cause a spurious extra wake.
     if _consume_sentinel(sentinel_path):
         log.info("indexer.manual_trigger_consumed")
         sweep_pending = True
     else:
         sweep_pending = state.sweep_pending
 
-    # Consume a rebuild trigger at cycle entry — wipe the index before this
-    # cycle's sync so the sync re-indexes the whole archive (web-redesign spec
-    # §5, Wave 6). The rebuild sentinel lives beside index.db, the same
-    # directory as the reconcile sentinel.
+    # A rebuild wipes the index before this cycle's sync, so the sync
+    # re-indexes the whole archive.
     rebuild_sentinel = sentinel_path.parent / _REBUILD_SENTINEL_NAME
     needs_rebuild = _consume_sentinel(rebuild_sentinel)
 
-    # Determine whether a deletion sweep is due this cycle. The interval is read
-    # live from settings so a hot-loaded change takes effect now.
     elapsed = clock() - last_sweep_at
     run_sweep = sweep_pending or elapsed >= settings.DELETION_SWEEP_INTERVAL
 
     try:
         if needs_rebuild:
             _run_rebuild(store_writer, cycle_recorder, settings=settings)
-        # Run incremental sync every cycle.
         sync_started = utc_now_iso()
         sync_report = reconciler.incremental_sync()
         log.info(
@@ -301,9 +192,8 @@ def _run_one_cycle(
                 finished_at=utc_now_iso(),
             )
 
-        # Run deletion sweep when due. Its clock and any pending manual trigger
-        # move only once deletion_sweep() returns, so a sweep that raises is
-        # retried — and still forced — next cycle.
+        # The sweep clock and pending trigger move only once deletion_sweep()
+        # returns, so a sweep that raises is retried, still forced, next cycle.
         if run_sweep:
             sweep_started = utc_now_iso()
             sweep_report = reconciler.deletion_sweep()
@@ -313,16 +203,9 @@ def _run_one_cycle(
 
         store_writer.checkpoint()
     except Exception:
-        # rationale: cycle-level fault isolation (CODE_GUIDELINES §6.4
-        # outer-boundary catch) — a transient failure anywhere in the cycle (a
-        # taxonomy-refresh network error, an incremental-paging drop, a
-        # malformed Paperless document, a StoreError) must not crash the daemon.
-        # The traceback is logged and the loop falls through to the wait so the
-        # next cycle retries — mirroring common/daemon_loop.run_polling_threadpool.
-        # last_sweep_at and sweep_pending are updated only once
-        # deletion_sweep() returns (an aborted sweep included), so a cycle that
-        # raises moves neither: a missed sweep is retried next cycle, and a
-        # pending manual trigger still forces it.
+        # A transient failure anywhere in the cycle (network, a malformed
+        # document, a StoreError) must not crash the daemon; the next cycle
+        # retries.
         log.exception("indexer.cycle_failed")
 
     return _LoopState(
@@ -360,17 +243,9 @@ def _run_rebuild(
 ) -> None:
     """Wipe the index in response to a consumed rebuild sentinel.
 
-    Calls :meth:`~store.writer.StoreWriter.rebuild_index` and records the
-    rebuild into the dashboard's activity log. A :class:`~store.StoreError`
-    from the wipe is logged and swallowed — a failed rebuild must not crash
-    the daemon; the operator can re-trigger it. The cycle's normal
-    incremental sync runs next regardless: on a successful wipe it re-indexes
-    everything; on a failed wipe it is an ordinary incremental sync.
-
-    *settings* is the cycle's **live** (hot-reloaded) config — not the
-    store_writer's boot settings, which the loop never replaces. Passing it
-    through means a rebuild triggered after a UI model switch stamps the new
-    model into meta, matching what the incremental sync will re-embed with.
+    A :class:`~store.StoreError` is logged and swallowed; the operator can
+    re-trigger. *settings* is the cycle's live config, not the writer's boot
+    settings, so a rebuild after a model switch stamps the new model into meta.
     """
     log.warning("indexer.rebuild_triggered")
     rebuild_started = utc_now_iso()
@@ -380,8 +255,6 @@ def _run_rebuild(
             embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
         )
     except StoreError:
-        # rationale: a rebuild failure is a recoverable operational error —
-        # logged with its traceback, not fatal. The operator re-triggers it.
         log.exception("indexer.rebuild_failed")
         return
     if cycle_recorder is not None:

@@ -4,13 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LibraryScreen } from './LibraryScreen';
 
 /*
- * LibraryScreen drives `useDocuments` and `useFacets`. Storybook has no
- * backend, so each story supplies its own QueryClient seeded with the cache
- * entries those hooks read. The query keys mirror `api/hooks.ts`:
- *   useFacets    → ['facets']
- *   useDocuments → ['documents', query]
- * Seeding `['facets']` and leaving documents to resolve to its error state
- * keeps the story self-contained.
+ * Storybook has no backend, so the story seeds the `['facets']` cache entry
+ * (key from `api/hooks.ts`) and lets the documents query fail.
  */
 function withSeededClient(facets: unknown): React.FC<{ children: React.ReactNode }> {
   return function Provider({ children }) {
@@ -40,11 +35,7 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-/**
- * The screen with facets seeded. `useDocuments` has no seeded data and
- * `retry` is off, so the document list resolves to its error state — the
- * story exercises the header, search field, rail and error block.
- */
+/** Facets seeded; the document list shows its error state. */
 export const Default: Story = {
   decorators: [
     (StoryFn) => {

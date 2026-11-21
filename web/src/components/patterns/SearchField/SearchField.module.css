@@ -1,17 +1,3 @@
-/*
- * SearchField pattern — CSS Module.
- *
- * The field wrapper and label come from the shared FormField scaffolding;
- * the input composes the shared input shell and only overrides the padding
- * to make room for the leading icon and trailing submit button.
- *
- * Design interpretation: the submit button uses the icon-button primitive
- * (Media Control style, circular) positioned at the trailing edge of the
- * field, matching the Apple compact search-bar pattern.
- * All values come exclusively from design tokens.
- */
-
-/* Field wrapper — the shared column field, stretched to full width. */
 .search-field {
   composes: field from '../../primitives/FormField/FormField.module.css';
   width: 100%;
@@ -32,8 +18,6 @@
   pointer-events: none;
 }
 
-/* The search input — shares the input shell, overriding only the padding to
-   leave room for the leading icon and the trailing submit button. */
 .input {
   composes: control from '../../primitives/FormField/FormField.module.css';
 
@@ -42,12 +26,10 @@
      --padding-search-input-trailing (52 px) clears the 44 px button at right:4 px. */
   padding: var(--spacing-6) var(--padding-search-input-trailing) var(--spacing-6) var(--padding-search-input-leading);
 
-  /* Remove the browser's default search-cancel button — the submit icon serves
-     this interaction; a second cancel affordance clutters the field. */
+  /* Hide the browser's own search-cancel button; a second affordance clutters the field. */
   appearance: none;
 }
 
-/* Remove WebKit search clear button */
 .input::-webkit-search-cancel-button {
   appearance: none;
 }
@@ -62,11 +44,8 @@
   align-items: center;
 }
 
-/* The submit button's visual circle is sized down to --size-icon-xl (28 px) so
-   it sits comfortably inside the search bar with ~6–7 px of breathing room on
-   each side. The tap-target area is preserved by the absolute-positioned
-   .trailing-button span which remains 44 px tall via the flex alignment of the
-   .input-wrapper. Only the rendered circle shrinks; behaviour is unchanged. */
+/* Only the visible circle shrinks to --size-icon-xl (28 px); the tap target
+   stays 44 px via the .trailing-button wrapper. */
 .submit-button {
   width: var(--size-icon-xl);
   height: var(--size-icon-xl);

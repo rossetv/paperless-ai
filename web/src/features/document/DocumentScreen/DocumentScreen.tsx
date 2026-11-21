@@ -1,19 +1,6 @@
 /**
- * DocumentScreen — full-page document composition (Wave C: actions wired up).
- *
- * Layout: centred container with breadcrumb, title row (DocumentTitle +
- * SaveStatusPill), submeta line, and a two-column grid (PDF viewer | sidebar).
- *
- * Sidebar: MetadataCard (correspondent, document type, document date) +
- * TagEditor card + ActionsCard (Re-classify, Re-transcribe; Delete for admin).
- *
- * The `role` prop replaces the previous `canEdit: boolean` — a single source of
- * truth from which canEdit is derived internally (`role !== 'readonly'`).
- *
- * Deferred from v1 (require extending the LibraryDocument wire shape):
- *   - Notes editing: `LibraryDocument.notes` is not yet returned by GET /api/documents.
- *   - Archive serial number editing: not in `LibraryDocument` either.
- * Both can be added in a follow-up task once the backend query is extended.
+ * Full-page document view: breadcrumb, editable title with save status, the
+ * PDF viewer, and a sidebar of metadata, tags and actions.
  */
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -48,13 +35,7 @@ import styles from './DocumentScreen.module.css';
 /** Characters that are illegal in filenames across Windows, macOS, and Linux. */
 const FILENAME_ILLEGAL_RE = /[/\\:*?"<>|]/g;
 
-/**
- * Derive a safe download filename from a document title.
- *
- * Strips filesystem-illegal characters, collapses leading/trailing whitespace,
- * and appends ".pdf". Falls back to "Document {id}.pdf" when the title is
- * absent or reduces to an empty string after sanitisation.
- */
+/** Safe "<title>.pdf" download name; "Document <id>.pdf" if the title sanitises to nothing. */
 function toDownloadFilename(title: string | null, id: number): string {
   const sanitised = (title ?? '').replace(FILENAME_ILLEGAL_RE, '').trim();
   return sanitised.length > 0 ? `${sanitised}.pdf` : `Document ${id}.pdf`;
@@ -63,42 +44,23 @@ function toDownloadFilename(title: string | null, id: number): string {
 export type { Role };
 
 export interface DocumentScreenProps {
-  /** The document to display. */
   document: LibraryDocument;
-  /** Which parent screen opened this document. */
+  /** Which screen opened this document. */
   parent: 'library' | 'search';
   /**
-   * Parent URL search-string (e.g. "?tag=12" or "?q=invoice") — included
-   * verbatim on the breadcrumb link so the parent's state is restorable.
+   * Parent URL search string (e.g. "?tag=12" or "?q=invoice"), kept verbatim on
+   * the breadcrumb link so the parent's state is restored.
    */
   parentSearch: string;
-  /**
-   * Access role of the signed-in user.
-   *
-   * - 'admin': full edit + delete access.
-   * - 'member': edit access, no delete.
-   * - 'readonly': view only, no editing or actions.
-   *
-   * `canEdit` is derived internally from this: `role !== 'readonly'`.
-   */
+  /** Admins can edit and delete, members can edit, readonly users only view. */
   role: Role;
 }
 
 /**
- * Full-page composition for a single document.
- *
- * `DocumentScreen` owns one `useUpdateDocument` mutation. The `saveStatus`
- * derived from the mutation lifecycle drives the `SaveStatusPill`. All editing
- * callbacks delegate to `update.mutate`, which writes to the
- * `['document', id]` cache and invalidates the library + search queries on
- * success.
- *
- * The `ActionsCard` fires reclassify / retranscribe / delete mutations; on
- * successful delete the component navigates to the breadcrumb href.
+ * Every edit goes through one `useUpdateDocument` mutation, whose lifecycle
+ * drives the `SaveStatusPill`. A successful delete navigates back to the
+ * breadcrumb target.
  */
-// rationale: single cohesive document view — mutations, tag-id resolution, breadcrumb
-// derivation, and sidebar composition all share `document`, `role`, and the single
-// `update` mutation lifecycle; extracting sub-units would scatter tightly coupled state.
 export function DocumentScreen({
   document,
   parent,
@@ -120,18 +82,13 @@ export function DocumentScreen({
   const qc = useQueryClient();
   const canEdit = role !== 'readonly';
 
-  // Track the last attempted mutation args so the retry button can re-fire it.
+  // The last attempted patch, so the retry button can re-fire it.
   const lastAttemptRef = React.useRef<{ id: number; patch: Parameters<typeof update.mutate>[0]['patch'] } | null>(null);
 
   /**
-   * Wrap update.mutate to record the attempt before firing.
-   *
-   * Guards against overlapping saves: if a save is already in flight, the
-   * second call is discarded. Concurrent calls read render-time snapshots of
-   * the document state and would clobber each other — e.g. a tag edit fired
-   * while a title save is pending would overwrite the title with the
-   * render-time value. The in-flight guard makes all edit affordances
-   * effectively single-write-at-a-time.
+   * Drops a save while another is in flight: both are built from render-time
+   * snapshots, so the second would clobber the first (e.g. a tag edit during a
+   * pending title save would write back the old title).
    */
   function mutate(args: Parameters<typeof update.mutate>[0]): void {
     if (update.isPending) return;
@@ -139,7 +96,7 @@ export function DocumentScreen({
     update.mutate(args);
   }
 
-  // Reset the mutation success state after 2 s so the pill cycles back to idle.
+  // Return the pill to idle 2 s after a successful save.
   React.useEffect(() => {
     if (!update.isSuccess) return;
     const id = window.setTimeout(() => update.reset(), 2_000);
@@ -157,16 +114,12 @@ export function DocumentScreen({
     parent === 'library' ? `/library${parentSearch}` : `/${parentSearch}`;
   const breadcrumbLabel = parent === 'library' ? 'Library' : 'Search results';
 
-  // Parse the parent search string into query + filters so MatchCard can look
-  // up this document's position in the search results that led here.
   const { query: parentQuery, filters: parentFilters } = React.useMemo(
     () => parseSearchParams(parentSearch),
     [parentSearch],
   );
 
-  // ── Tag id resolution ────────────────────────────────────────────────────
-  // `document.tags` carries name strings. We resolve ids by name from the tag
-  // list so the TagEditor (which operates on ids) can work correctly.
+  // `document.tags` holds names; TagEditor works on ids.
   const tagsByName = React.useMemo(
     () => new Map((tags.data ?? []).map((t) => [t.name, t])),
     [tags.data],
@@ -179,8 +132,6 @@ export function DocumentScreen({
         .filter((id): id is number => id !== undefined),
     [document.tags, tagsByName],
   );
-
-  // ── Mutation helpers ──────────────────────────────────────────────────────
 
   function commitTitle(next: string): void {
     mutate({ id: document.id, patch: { title: next === '' ? null : next } });
@@ -197,10 +148,8 @@ export function DocumentScreen({
   function createTagThenAdd(name: string): void {
     createTag.mutate(name, {
       onSuccess: (created) => {
-        // Read the latest cached document rather than the captured `currentTagIds`
-        // to avoid a clobber race when two "create new tag" actions fire in quick
-        // succession before either resolves — each would otherwise overwrite the
-        // other's tag with the stale render-time snapshot.
+        // Read the latest cached document, not the captured `currentTagIds`: two
+        // quick creates would otherwise each overwrite the other's tag.
         const latest = qc.getQueryData<{ id: number; tags: string[] }>(['document', document.id]);
         const latestTagIds = ((latest?.tags ?? document.tags) as string[])
           .map((tagName) => tagsByName.get(tagName)?.id)
@@ -313,7 +262,7 @@ export function DocumentScreen({
             onReclassify={(id) =>
               reclassify.mutate(id, {
                 onSuccess: () => {
-                  /* TODO(VR): show a success toast — tracked in WEB-16 */
+                  /* TODO(VR): show a success toast */
                 },
               })
             }

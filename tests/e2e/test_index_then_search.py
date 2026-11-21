@@ -1,34 +1,7 @@
-"""End-to-end tests for the full index-then-search flow.
+"""End-to-end tests: index from a mock Paperless, then search the same store.
 
-Exercises the complete pipeline — from a mock Paperless through the real
-:class:`~indexer.reconciler.Reconciler` and :class:`~store.writer.StoreWriter`
-into the real :class:`~search.core.SearchCore` — without hitting any live
-service.
-
-Two test cases (both ``@pytest.mark.e2e``, auto-applied by the conftest for
-any file under ``tests/e2e/``):
-
-``test_index_then_search_produces_a_non_empty_cited_answer``
-    The full pipeline indexes a small set of mock documents, then answers a
-    query from that same store and asserts a non-empty cited answer is returned.
-
-``test_a_deleted_document_is_pruned_and_no_longer_appears_in_results``
-    After a document is removed from the mock Paperless and a deletion sweep
-    runs, it is absent from the store and does not appear in a subsequent query.
-
-Deterministic retrieval
------------------------
-Each document's text is embedded onto a **distinct orthogonal axis** (e.g.
-(1,0,0,0) for the target document, (0,1,0,0) for a second document).  When the
-query is embedded onto the same axis as a document, the cosine distance to that
-document is 0 — the minimum — so vector search will rank it first regardless of
-the other documents in the store.  This scheme is borrowed verbatim from
-``tests/integration/test_search_pipeline.py``; it makes retrieval behaviour
-provable without real embeddings.
-
-The embedding mock (``_make_query_embedding_client``) returns the designated
-axis vector for every query string, matching the axis embedded into the target
-document's chunks by the reconciler's ``_make_embedding_client``.
+Each document is embedded onto its own orthogonal axis and the query onto the
+target's axis, so vector search ranks the target first without real embeddings.
 """
 
 from __future__ import annotations
@@ -47,37 +20,18 @@ from store.reader import StoreReader
 from store.writer import StoreWriter
 
 
-# ---------------------------------------------------------------------------
-# Embedding geometry — orthogonal axes, one per document role
-# ---------------------------------------------------------------------------
-# Documents embedded on different axes are maximally distant from each other.
-# A query embedded onto axis 0 is nearest to the document on axis 0 and
-# farthest from all others.  cos distance = 0 → rank 1.
-
 _DIMENSIONS = 4
 
 _AXIS_TARGET: tuple[float, ...] = (1.0, 0.0, 0.0, 0.0)  # boiler warranty doc
 _AXIS_OTHER: tuple[float, ...] = (0.0, 1.0, 0.0, 0.0)  # unrelated document
 _AXIS_TO_DELETE: tuple[float, ...] = (0.0, 0.0, 1.0, 0.0)  # document to delete
-# An axis that is orthogonal to all indexed documents — a query embedded here
-# will have cosine distance ≈ 1.0 to every stored chunk, giving a best_vector_
-# similarity of ≈ 0.5.  When SEARCH_RELEVANCE_MIN_SIMILARITY is set to 0.9
-# this signal falls below the floor and Layer 2 short-circuits synthesis.
+# Orthogonal to every indexed document: similarity ≈ 0.5 to every chunk, below
+# a 0.9 SEARCH_RELEVANCE_MIN_SIMILARITY floor.
 _AXIS_OFFTOPIC: tuple[float, ...] = (0.0, 0.0, 0.0, 1.0)
 
 
-# ---------------------------------------------------------------------------
-# Scripted LLM client — planner + synthesiser routing
-# ---------------------------------------------------------------------------
-
-
 class _ScriptedLLMClient:
-    """Routes ``_create_completion`` calls to scripted planner / synthesiser responses.
-
-    Distinguishes planner calls (system prompt contains "search-query planning
-    engine") from synthesiser calls by inspecting the system message.  The
-    same ``route`` method is patched onto both stages.
-    """
+    """Routes ``_create_completion`` calls by system prompt to scripted responses."""
 
     def __init__(
         self,
@@ -107,11 +61,6 @@ def _completion(content: str) -> Any:
     completion = MagicMock()
     completion.choices = [choice]
     return completion
-
-
-# ---------------------------------------------------------------------------
-# Canned LLM response builders
-# ---------------------------------------------------------------------------
 
 
 def _planner_json(semantic_queries: list[str]) -> str:
@@ -149,13 +98,10 @@ def _clarify_json(reason: str) -> str:
     return json.dumps({"clarify": {"reason": reason}})
 
 
-# ---------------------------------------------------------------------------
-# Test-object builders
-# ---------------------------------------------------------------------------
-
-
 def _make_settings(tmp_path: Any) -> MagicMock:
     """Return a settings mock satisfying both the reconciler and the search core."""
+    # A MagicMock turns unset attributes into truthy mocks, which silently break
+    # comparisons, slices and flags, so every field the pipeline reads is pinned.
     settings = MagicMock()
     settings.INDEX_DB_PATH = str(tmp_path / "index.db")
     settings.EMBEDDING_MODEL = "text-embedding-3-small"
@@ -170,49 +116,29 @@ def _make_settings(tmp_path: Any) -> MagicMock:
     settings.SEARCH_ANSWER_MODEL = "gpt-5.4"
     settings.CLASSIFY_MODELS = ["gpt-5.4-mini", "gpt-5.4"]
     settings.PAPERLESS_URL = "http://paperless.example:8000"
-    # Real ints so the @retry decorator on the planner / synthesiser is well-formed.
     settings.MAX_RETRIES = 3
     settings.MAX_RETRY_BACKOFF_SECONDS = 30
-    # Area-3 SEARCH_* settings: pin them so the auto-created MagicMock attributes
-    # do not (a) enable the result cache with a non-int TTL or (b) trip the
-    # weak-retrieval / trivial-query gates with MagicMock thresholds. Cache OFF
-    # and both kill-switches OFF mirror make_search_settings's test defaults.
     settings.SEARCH_CACHE_TTL_SECONDS = 0
     settings.SEARCH_SKIP_PLANNER_FOR_TRIVIAL = False
     settings.SEARCH_PLANNER_REASONING_EFFORT = "medium"
     settings.SEARCH_ANSWER_REASONING_EFFORT = "medium"
     settings.LLM_PROVIDER = "openai"
-    # Fail-fast gate knobs (Task 6): pin explicitly so the e2e assertions are
-    # not silently bypassed by MagicMock thresholds. Gates on, floor inert.
     settings.SEARCH_GATE_ADEQUACY = True
     settings.SEARCH_GATE_RELEVANCE = True
     settings.SEARCH_RELEVANCE_MIN_SIMILARITY = 0.0  # inert; offtopic test sets 0.9
-    # Relevance-badge cut-points — pin real floats so source assembly builds a
-    # well-formed RelevanceThresholds (a bare MagicMock attribute would break the
-    # similarity comparison).
     settings.SEARCH_RELEVANCE_TIER_STRONG = 0.70
     settings.SEARCH_RELEVANCE_TIER_GOOD = 0.66
     settings.SEARCH_RELEVANCE_TIER_PARTIAL = 0.60
     settings.SEARCH_MIN_QUERY_CHARS = 2
-    # Judge OFF by default in e2e (a real extra LLM call); the judge-specific
-    # e2e test opts in explicitly.
+    # The judge is an extra LLM call; off unless a test opts in.
     settings.SEARCH_GATE_JUDGE = False
     settings.SEARCH_JUDGE_MODEL = "gpt-5.4-mini"
     settings.SEARCH_JUDGE_REASONING_EFFORT = "low"
-    # Rationales ON mirrors the production default; pin a real bool so the
-    # judge prompt path exercises a deterministic branch rather than a mock.
     settings.SEARCH_JUDGE_RATIONALES = True
-    # Identity-awareness (Task 10): pin a real bool so the asker path exercises
-    # a deterministic gate rather than a truthy MagicMock attribute.
     settings.SEARCH_IDENTITY_AWARE = True
-    # Multi-spec retrieval knobs: pin real ints so the retriever's per-spec
-    # candidate cap and per-document cap, and the planner's spec cap, are
-    # comparisons against ints rather than auto-created MagicMock attributes.
     settings.SEARCH_PER_SPEC_K = 10
     settings.SEARCH_MAX_CHUNKS_PER_DOC = 3
     settings.SEARCH_PLANNER_MAX_SPECS = 8
-    # Names per taxonomy list fed to the planner — a real int so the alphabetical
-    # cap comparison isn't an auto-created MagicMock attribute.
     settings.SEARCH_PLANNER_TAXONOMY_LIMIT = 100
     return settings
 
@@ -240,42 +166,17 @@ def _make_doc(
 def _make_indexer_embedding_client(
     doc_to_axis: dict[int, tuple[float, ...]],
 ) -> MagicMock:
-    """An embedding client that assigns each document's chunks a deterministic axis.
+    """An embedding client that gives the *n*-th ``embed`` call the *n*-th axis.
 
-    The reconciler calls ``embed(texts)`` for the chunks of one document at a
-    time.  We route each call to the correct axis by tracking the call count and
-    mapping it to the document currently being indexed.
-
-    Because the reconciler fans documents across a thread pool, the call order
-    is not guaranteed when DOCUMENT_WORKERS > 1.  We therefore embed ALL
-    texts from ALL documents onto a pre-defined ordered list of axes derived
-    from *doc_to_axis*.  Each ``embed`` invocation yields the axis registered
-    for its sequential call number.
-
-    For this test DOCUMENT_WORKERS=2 but there are only three documents and
-    each gets exactly one chunk, so the three embed calls map to axes 0, 1, 2
-    in some order.  To make retrieval deterministic we embed the target document
-    on _AXIS_TARGET, the other on _AXIS_OTHER, and the deletable one on
-    _AXIS_TO_DELETE, but we cannot know the call order in a parallel pool.
-
-    To sidestep the ordering problem entirely: we embed EVERY chunk onto the
-    same axis whose FIRST component equals (1/sqrt(DIMENSIONS)).  The tests
-    distinguish documents by directing the *query* embedding onto the target
-    document's specific axis, not by comparing chunk-to-chunk distances.
-
-    However, this uniform approach would make all documents equally close to
-    every query, breaking deterministic retrieval.  Instead we use DOCUMENT_WORKERS=1
-    for the e2e fixture so documents are processed sequentially and the call
-    ordering is deterministic.
+    The reconciler embeds one document per call, so with DOCUMENT_WORKERS=1 the
+    axes follow the order of *doc_to_axis*. A parallel pool would scramble it.
     """
-    # Build an ordered sequence of axes matching the document order supplied.
     axes = list(doc_to_axis.values())
     call_counter = [0]
 
     client = MagicMock()
 
     def embed(texts: list[str]) -> list[list[float]]:
-        # One call per document (all its chunks in one batch).
         idx = call_counter[0] % len(axes)
         call_counter[0] += 1
         return [list(axes[idx]) for _ in texts]
@@ -296,12 +197,11 @@ def _make_paperless(
     documents: list[dict] | None = None,
     all_ids: list[int] | None = None,
 ) -> MagicMock:
-    """A mock PaperlessClient used by both the incremental sync and deletion sweep.
+    """A mock PaperlessClient for both the incremental sync and the deletion sweep.
 
-    ``iter_all_documents(modified_after=…)`` returns *documents* when the
-    ``modified_after`` keyword is present (incremental sync).  When the keyword
-    is absent (deletion sweep), it returns bare-id dicts built from *all_ids*.
-    ``document_exists`` returns False for every id (sweep: all candidates absent).
+    ``iter_all_documents`` returns *documents* when ``modified_after`` is passed
+    (incremental sync) and bare-id dicts from *all_ids* when it is not (sweep).
+    ``document_exists`` is False for every id.
     """
     paperless = MagicMock()
     docs = documents if documents is not None else []
@@ -316,7 +216,6 @@ def _make_paperless(
     paperless.list_correspondents.return_value = []
     paperless.list_document_types.return_value = []
     paperless.list_tags.return_value = []
-    # Default: every document_exists probe returns False (swept candidate is absent).
     paperless.document_exists.return_value = False
     return paperless
 
@@ -327,12 +226,7 @@ def _build_search_core(
     llm_client: _ScriptedLLMClient,
     query_embedding_client: MagicMock,
 ) -> SearchCore:
-    """Wire a SearchCore over the real pipeline stages with a scripted LLM.
-
-    The planner and synthesiser are real; their ``_create_completion`` is patched
-    with the scripted driver's router so no network call is made — replicating
-    the pattern from ``tests/integration/test_search_pipeline.py``.
-    """
+    """Wire a SearchCore over the real pipeline stages with a scripted LLM."""
     planner = QueryPlanner(settings)
     planner._create_completion = llm_client.route  # type: ignore[method-assign]
     retriever = Retriever(settings, store_reader, query_embedding_client)
@@ -350,35 +244,18 @@ def _build_search_core(
     )
 
 
-# ---------------------------------------------------------------------------
-# Test cases
-# ---------------------------------------------------------------------------
-
-
 class TestIndexThenSearch:
     """Full index → search flow against mocks, no live services."""
 
     def test_index_then_search_produces_a_non_empty_cited_answer(
         self, tmp_path: Any
     ) -> None:
-        """Indexing a set of mock documents and then running a query yields a
-        non-empty answer with at least one source citation drawn from the index.
-
-        The embedding geometry ensures vector search ranks the boiler warranty
-        document first for the boiler-warranty query: each document is embedded
-        onto a distinct orthogonal axis; the query is embedded onto the target
-        document's axis, so cosine distance = 0 for that document and 1 for all
-        others (SPEC §12, CODE_GUIDELINES §11.4).
-        """
+        """Indexing mock documents then querying yields a cited, non-empty answer."""
         settings = _make_settings(tmp_path)
-        # DOCUMENT_WORKERS=1 so indexing is sequential and the embed call order
-        # matches the document insertion order — the orthogonal-axis scheme
-        # requires knowing which axis each document gets.
+        # Sequential indexing keeps the embed call order equal to document order.
         settings.DOCUMENT_WORKERS = 1
 
         # ---- index phase ----
-        # Documents indexed in the order they are listed; with DOCUMENT_WORKERS=1
-        # the embedding client's call 0 → doc 1 (boiler, AXIS_TARGET), call 1 → doc 2.
         documents = [
             _make_doc(
                 doc_id=1,
@@ -391,9 +268,6 @@ class TestIndexThenSearch:
                 title="Council Tax Letter",
             ),
         ]
-        # The reconciler materialises the document list before fanning it out to
-        # the pool.  With DOCUMENT_WORKERS=1 processing is strictly sequential
-        # in the order of the materialised list, so axis assignments are stable.
         doc_to_axis = {1: _AXIS_TARGET, 2: _AXIS_OTHER}
         indexer_embedding_client = _make_indexer_embedding_client(doc_to_axis)
 
@@ -433,31 +307,19 @@ class TestIndexThenSearch:
         finally:
             store_reader.close()
 
-        # The answer must be non-empty and cite document 1.
         assert result.answer != ""
         assert len(result.answer) > 0
         source_ids = {source.document_id for source in result.sources}
         assert 1 in source_ids, f"expected document 1 in sources; got {source_ids}"
-        # The synthesiser's citation list must include document 1.
-        # The cited documents are a subset of the result's sources.
         assert any(source.document_id == 1 for source in result.sources)
 
     def test_a_deleted_document_is_pruned_and_no_longer_appears_in_results(
         self, tmp_path: Any
     ) -> None:
-        """After a document is removed from Paperless and a deletion sweep runs,
-        the document is absent from the store and does not surface in a
-        subsequent search query.
+        """A document removed from Paperless is swept from the store and search.
 
-        Steps:
-        1. Index three documents (target on AXIS_TARGET, unrelated on AXIS_OTHER,
-           deletable on AXIS_TO_DELETE).
-        2. Run a first query to confirm the deletable document is in the index
-           (sanity check — its axis is reached by a dedicated embedding).
-        3. Run a deletion sweep with Paperless reporting only the two kept docs.
-        4. Assert the deletable document's id is gone from the store.
-        5. Run the query again (query embedded onto AXIS_TO_DELETE) and confirm
-           the deleted document no longer appears in the results.
+        The query is embedded onto the deleted document's own axis, so it would
+        be the nearest hit if any of its chunks survived.
         """
         settings = _make_settings(tmp_path)
         settings.DOCUMENT_WORKERS = 1
@@ -499,7 +361,6 @@ class TestIndexThenSearch:
             assert store_writer.get_all_document_ids() == {1, 2, 3}
 
             # ---- sanity: document 3 is in the index before deletion ----
-            # (Verify via the store's id set — no search needed for this check.)
             assert 3 in store_writer.get_all_document_ids()
 
             # ---- deletion sweep: Paperless now only has docs 1 and 2 ----
@@ -529,10 +390,6 @@ class TestIndexThenSearch:
                     )
                 ],
             )
-            # Embed the query onto AXIS_TO_DELETE — the axis that was used for
-            # document 3.  After the sweep, vector search finds nothing on that
-            # axis (the chunk was deleted), so the retriever falls back to
-            # AXIS_TARGET / AXIS_OTHER documents or returns empty.
             core = _build_search_core(
                 settings,
                 store_reader,
@@ -551,28 +408,14 @@ class TestIndexThenSearch:
 
 
 class TestFailFastGates:
-    """End-to-end coverage of the three fail-fast gates (Layers 0, 1, 2).
+    """End-to-end coverage of the planner (Layer 1) and relevance (Layer 2) gates.
 
-    All three tests use the same two-document store seeded via the real
-    Reconciler / StoreWriter.  Only the LLM stages (planner + synthesiser) are
-    mocked; the retriever and store are real, so the relevance signals are
-    genuine.
-
-    Layer 0 (degenerate-input guard) is validated in unit tests; these cases
-    cover Layers 1 and 2 plus the normal answered path at integration depth.
+    The store and retriever are real, so the relevance signals are genuine.
+    Layer 0 (degenerate input) is covered by unit tests.
     """
 
-    # ------------------------------------------------------------------
-    # Shared fixture helpers
-    # ------------------------------------------------------------------
-
     def _seed_store(self, settings: MagicMock) -> None:
-        """Index two documents into the real store at *settings.INDEX_DB_PATH*.
-
-        Document 1 (boiler warranty) is embedded on ``_AXIS_TARGET``.
-        Document 2 (council tax) is embedded on ``_AXIS_OTHER``.
-        DOCUMENT_WORKERS=1 ensures sequential, deterministic axis assignment.
-        """
+        """Index doc 1 (boiler) on ``_AXIS_TARGET`` and doc 2 on ``_AXIS_OTHER``."""
         settings.DOCUMENT_WORKERS = 1
         documents = [
             _make_doc(
@@ -598,20 +441,10 @@ class TestFailFastGates:
         finally:
             store_writer.close()
 
-    # ------------------------------------------------------------------
-    # Layer 1: planner adequacy gate returns "clarify"
-    # ------------------------------------------------------------------
-
     def test_vague_query_returns_clarify_outcome(self, tmp_path: Any) -> None:
-        """A query the planner judges too vague is returned as outcome_kind='clarify'.
+        """A query the planner judges too vague returns 'clarify' with no synthesis.
 
-        The planner's scripted response carries a ``clarify`` payload.  The core
-        must surface ``outcome_kind='clarify'``, return no sources, and never
-        call the synthesiser — no synthesis call can occur before a clarify
-        short-circuit.
-
-        The real store is seeded (retrieval would succeed for an on-topic query)
-        to confirm the gate fires before any retrieval attempt.
+        The store is seeded, so an empty result proves the gate fired first.
         """
         settings = _make_settings(tmp_path)
         self._seed_store(settings)
@@ -647,22 +480,10 @@ class TestFailFastGates:
             "expected 0 for a clarify short-circuit"
         )
 
-    # ------------------------------------------------------------------
-    # Layer 2: relevance gate rejects weak retrieval signal
-    # ------------------------------------------------------------------
-
     def test_offtopic_query_returns_no_match_outcome(self, tmp_path: Any) -> None:
         """An off-topic query whose retrieval signal is too weak returns 'no_match'.
 
-        The query is embedded on ``_AXIS_OFFTOPIC``, which is orthogonal to
-        every indexed document's axis.  Cosine distance to every stored chunk
-        is therefore 1.0, giving best_vector_similarity ≈ 0.5.
-        ``SEARCH_RELEVANCE_MIN_SIMILARITY`` is set to 0.9, so the Layer-2 gate
-        fires: the core returns ``outcome_kind='no_match'`` with no sources and
-        skips synthesis entirely.
-
-        The planner returns a well-formed plan (not clarify) so only Layer 2
-        can produce the no_match outcome.
+        The planner returns a normal plan, so only Layer 2 can produce no_match.
         """
         settings = _make_settings(tmp_path)
         # Raise the relevance floor so the ≈0.5 off-topic signal falls below it.
@@ -701,19 +522,10 @@ class TestFailFastGates:
             "expected 0 for a Layer-2 no_match short-circuit"
         )
 
-    # ------------------------------------------------------------------
-    # Normal path: on-topic query returns answered with sources
-    # ------------------------------------------------------------------
-
     def test_ontopic_query_returns_answered_outcome_with_sources(
         self, tmp_path: Any
     ) -> None:
-        """An on-topic query produces outcome_kind='answered' with at least one source.
-
-        The query is embedded on ``_AXIS_TARGET`` so cosine distance to
-        document 1 (boiler warranty) is 0.0 — the best possible signal.
-        The planner returns a plan; the synthesiser returns an answered result.
-        """
+        """An on-topic query produces outcome_kind='answered' with sources."""
         settings = _make_settings(tmp_path)
         self._seed_store(settings)
 

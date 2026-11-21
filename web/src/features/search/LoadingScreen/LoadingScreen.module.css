@@ -1,4 +1,3 @@
-/** Flexible spacer that pushes sibling content to the far end of a row. */
 .spacer {
   flex: 1;
 }

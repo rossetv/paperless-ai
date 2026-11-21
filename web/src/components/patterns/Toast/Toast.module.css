@@ -1,18 +1,3 @@
-/*
- * Toast pattern — CSS Module.
- *
- * DESIGN.md uses a single chromatic accent (--colour-accent, Apple Blue).
- * There are no semantic status colour tokens. Two visually distinct variants:
- *
- *   .info  → --colour-accent left border (blue, informational)
- *   .error → --colour-text-primary left border (near-black, assertive)
- *
- * The previous .success rule was removed — it was visually identical to .info
- * (both used --colour-accent). See Toast.tsx for rationale.
- *
- * All values come exclusively from design tokens (§12.4).
- */
-
 .toast {
   display: flex;
   align-items: flex-start;
@@ -33,8 +18,6 @@
   box-sizing: border-box;
 }
 
-/* ── Variant left-border colours ─────────────────────────────────────────── */
-
 .info {
   border-left-color: var(--colour-accent);
 }
@@ -42,8 +25,6 @@
 .error {
   border-left-color: var(--colour-text-primary);
 }
-
-/* ── Icon ────────────────────────────────────────────────────────────────── */
 
 .icon {
   flex-shrink: 0;
@@ -60,13 +41,9 @@
   color: var(--colour-text-primary);
 }
 
-/* ── Message ─────────────────────────────────────────────────────────────── */
-
 .message {
   flex: 1;
 }
-
-/* ── Dismiss button ──────────────────────────────────────────────────────── */
 
 .dismiss-button {
   flex-shrink: 0;

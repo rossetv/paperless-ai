@@ -61,8 +61,7 @@ def test_judge_empty_verdict_bails_without_synthesis() -> None:
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("unreachable", citations=[])],
-        # Explicit drop of every candidate — the new per-document judge requires
-        # explicit verdicts to drop; an empty list would default to keep=True.
+        # The judge drops only on an explicit verdict; an empty list keeps all.
         judge_response=judge_response_json([], dropped_document_ids=[1, 2]),
     )
     result = _core(llm_client).answer("anything")
@@ -136,25 +135,13 @@ def test_judge_call_counts_against_the_budget() -> None:
     assert result.stats.llm_calls == 3
 
 
-# ---------------------------------------------------------------------------
-# Phase 3A/identity — keep-gate tests (score is for ranking only)
-# ---------------------------------------------------------------------------
-
-
 def test_judge_keep_true_with_low_score_is_retained() -> None:
-    """keep=true with a LOW score is retained — the score no longer gates inclusion.
-
-    The real-world bug this fixes: a DoiT payslip scored 0.31 ("ownership is
-    unclear") and was dropped, even though it genuinely belonged to the asker.
-    The judge's boolean ``keep`` is now the sole gate; ``score`` is used only
-    for source ranking.
-    """
+    """keep=true with a LOW score is retained; ``score`` only ranks sources."""
     reset_search_result_cache()
     llm_client = ScriptedLLMClient(
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("a [1][2].", citations=[1, 2])],
-        # Both kept; doc 2 has a very low score (0.31) — previously dropped by
-        # the 0.5 threshold, now retained because keep=true is the sole gate.
+        # Both kept: doc 2's low score (0.31) does not gate inclusion.
         judge_response=judge_response_json(
             verdicts=[
                 {"document_id": 1, "keep": True, "reason": "", "score": 0.9},
@@ -276,14 +263,12 @@ def test_judge_answered_result_leaves_candidate_count_none() -> None:
 def test_sources_are_ranked_by_judge_score_over_rrf() -> None:
     """A higher judge score outranks a higher RRF score in the source order.
 
-    Doc 2 has the stronger RRF (vector) score but the weaker judge score; doc 1
-    has the weaker RRF but the stronger judge verdict. The final sources must
-    lead with doc 1 — the judge's relevance ranking wins over the rank-based RRF.
+    Doc 2 has the stronger RRF (vector) score but the weaker judge score, so the
+    sources must lead with doc 1.
     """
     reset_search_result_cache()
     store_reader = _store_reader()
-    # Doc 2 wins on RRF (higher vector score) so it would lead under the old
-    # score-only ordering.
+    # Doc 2 wins on RRF (higher vector score).
     store_reader.vector_search.return_value = [
         make_chunk_hit(chunk_id=1, document_id=1, score=0.1),
         make_chunk_hit(chunk_id=2, document_id=2, score=0.9),
@@ -329,8 +314,7 @@ def test_sources_without_judge_scores_fall_back_to_rrf_order() -> None:
         embedding_client=_embedding_client(),
     )
     result = core.answer("warranty?")
-    # With no judge scores the order falls back entirely to the RRF/fused score,
-    # descending — exactly the pre-Phase-3B behaviour.
+    # With no judge scores the order falls back to the fused score, descending.
     scores = [s.score for s in result.sources]
     assert scores == sorted(scores, reverse=True)
 

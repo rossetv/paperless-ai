@@ -1,26 +1,14 @@
-/*
- * MatchCard — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * The card has an accent left-border to signal it is a search-context
- * artefact rather than plain metadata.
- */
-
-/* ── Base card ── */
 .card {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-10);
 }
 
-/* ── Match-found variant — uses an accent wash backdrop instead of a
-   raw-pixel left border (the stylelint disallowed-values rule forbids
-   `Npx` literals). The citation badge in the header gives the visual cue. */
+/* An accent wash marks the card as search context, not plain metadata. */
 .card-match {
   background: var(--colour-accent-wash);
 }
 
-/* ── Header row: citation badge + meta text ── */
 .header {
   display: flex;
   align-items: baseline;
@@ -28,19 +16,17 @@
   flex-wrap: wrap;
 }
 
-/* ── Meta text: "Source N of M · relevance X · query '…'" ── */
+/* "Source N of M · relevance X · query '…'" */
 .meta {
   font-size: var(--font-size-caption);
   color: var(--colour-text-secondary);
   line-height: var(--line-height-caption);
 }
 
-/* ── Snippet area ── */
 .snippet {
-  /* No extra treatment — SnippetText owns its own typography */
+  /* SnippetText owns its typography. */
 }
 
-/* ── "No match" message ── */
 .empty {
   font-size: var(--font-size-caption);
   color: var(--colour-text-tertiary);

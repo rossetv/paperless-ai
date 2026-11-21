@@ -1,11 +1,4 @@
-/**
- * Taxonomy endpoint functions — correspondents, document types, and tags.
- *
- * Covers GET (list all) and POST (create) for each of the three taxonomy
- * types. All three share the same `TaxonomyItem` response shape.
- *
- * Allowed deps: core, types (leaf module — CODE_GUIDELINES §12.3).
- */
+/** List and create endpoints for correspondents, document types and tags. */
 
 import type { TaxonomyItem } from '../types';
 import { BASE_URL, request } from './core';
@@ -25,12 +18,7 @@ export async function getTags(): Promise<TaxonomyItem[]> {
   return request<TaxonomyItem[]>(`${BASE_URL}/api/tags`, { method: 'GET' });
 }
 
-/**
- * POST /api/correspondents — create a new correspondent in Paperless-ngx.
- *
- * Returns the newly created correspondent (with its assigned id and zero
- * `document_count`).
- */
+/** POST /api/correspondents — create a correspondent in Paperless-ngx. */
 export async function createCorrespondent(name: string): Promise<TaxonomyItem> {
   return request<TaxonomyItem>(`${BASE_URL}/api/correspondents`, {
     method: 'POST',
@@ -39,12 +27,7 @@ export async function createCorrespondent(name: string): Promise<TaxonomyItem> {
   });
 }
 
-/**
- * POST /api/document-types — create a new document type in Paperless-ngx.
- *
- * Returns the newly created document type (with its assigned id and zero
- * `document_count`).
- */
+/** POST /api/document-types — create a document type in Paperless-ngx. */
 export async function createDocumentType(name: string): Promise<TaxonomyItem> {
   return request<TaxonomyItem>(`${BASE_URL}/api/document-types`, {
     method: 'POST',
@@ -53,12 +36,7 @@ export async function createDocumentType(name: string): Promise<TaxonomyItem> {
   });
 }
 
-/**
- * POST /api/tags — create a new tag in Paperless-ngx.
- *
- * Returns the newly created tag (with its assigned id and zero
- * `document_count`).
- */
+/** POST /api/tags — create a tag in Paperless-ngx. */
 export async function createTag(name: string): Promise<TaxonomyItem> {
   return request<TaxonomyItem>(`${BASE_URL}/api/tags`, {
     method: 'POST',

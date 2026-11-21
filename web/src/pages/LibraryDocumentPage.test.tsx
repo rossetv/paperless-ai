@@ -97,7 +97,6 @@ describe('LibraryDocumentPage', () => {
   it('shows the loading state while the document is loading', () => {
     vi.spyOn(client, 'getDocument').mockReturnValue(new Promise(() => {}));
     renderAt('/library/document/42');
-    // Spinner uses role="status".
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 

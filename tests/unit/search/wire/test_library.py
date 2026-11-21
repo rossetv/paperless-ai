@@ -230,7 +230,7 @@ class TestBrowseQueryParser:
 
 
 class TestDocumentPatchRequest:
-    """The PATCH body's length bounds on the verbatim-forwarded fields (L17)."""
+    """The PATCH body's length bounds on the verbatim-forwarded fields."""
 
     def test_accepts_an_empty_body(self) -> None:
         """An empty PATCH body is a valid no-op."""

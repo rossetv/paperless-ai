@@ -1,12 +1,6 @@
-"""Tests for search.login_throttle — the failed-login brute-force throttle.
+"""Tests for search.login_throttle, the failed-login brute-force throttle.
 
-Covers (HTTP-01, §10.6): a first attempt is never locked; a key locks only
-after a burst of failures inside the window; a success clears the counter so a
-legitimate login is never throttled; a stale trickle of failures outside the
-window does not trip the lock; an expired lockout clears; the map is bounded.
-
-The clock is injected so every timing assertion is deterministic (§11.7) — no
-``time.sleep`` anywhere.
+The clock is injected so timing assertions are deterministic.
 """
 
 from __future__ import annotations
@@ -56,7 +50,7 @@ def test_failures_below_the_threshold_do_not_lock() -> None:
 
 
 def test_a_burst_of_failures_locks_the_key() -> None:
-    """The threshold number of in-window failures locks the key (HTTP-01)."""
+    """The threshold number of in-window failures locks the key."""
     throttle = LoginThrottle(clock=_FakeClock())
     key = _key()
     for _ in range(_MAX_FAILURES_BEFORE_LOCKOUT):
@@ -117,7 +111,7 @@ def test_distinct_keys_are_tracked_independently() -> None:
 
 
 def test_the_tracked_map_is_bounded() -> None:
-    """The map never grows past the cap — oldest keys are evicted (§8.5)."""
+    """The map never grows past the cap — oldest keys are evicted."""
     throttle = LoginThrottle(clock=_FakeClock())
     for index in range(_MAX_TRACKED_KEYS + 50):
         throttle.record_failure(_key(username=f"user-{index}"))
@@ -130,20 +124,16 @@ def test_build_attempt_key_lowercases_username_and_defaults_ip() -> None:
     assert key == AttemptKey(client_ip="", username="alice")
 
 
-# ---------------------------------------------------------------------------
-# Per-username counter (MED, §10.6) — the IP-independent defence against an
-# X-Forwarded-For-rotating distributed brute force against one account.
-# ---------------------------------------------------------------------------
+# Per-username counter: the IP-independent defence against a brute force that
+# rotates X-Forwarded-For against one account.
 
 
 def test_per_username_counter_locks_despite_rotating_ips() -> None:
     """Rotating the IP per attempt still locks the account by username alone.
 
-    With ``SEARCH_FORWARDED_ALLOW_IPS="*"`` the client IP is attacker-controlled,
-    so every (IP, username) key is fresh and the per-(IP, username) counter
-    never trips. The source-IP-independent per-username counter must still bound
-    the attack: a burst of failures against one username, each from a different
-    IP, locks the account.
+    With ``SEARCH_FORWARDED_ALLOW_IPS="*"`` the client IP is attacker-controlled, so
+    every (IP, username) key is fresh; only the per-username counter can bound the
+    attack.
     """
     throttle = LoginThrottle(clock=_FakeClock())
     for index in range(_MAX_FAILURES_PER_USERNAME):

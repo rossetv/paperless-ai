@@ -1,4 +1,4 @@
-"""Tests for the telemetry value types added to search.models (Phase 1, Task 1)."""
+"""Tests for the telemetry value types in search.models."""
 
 from search.models import TokenUsage, Cost, PhaseRecord, SearchTrace, CostSummary
 

@@ -1,9 +1,7 @@
-"""Tests for the default-off RAG-08 (planner skip), RAG-10 (synth skip), and
-Layer 1 adequacy gate (Task 5: planner returns ClarifyNeeded).
+"""Tests for the opt-in planner and synth skips and the Layer 1 adequacy gate.
 
-Kill-switches default OFF, so the suite proves the gates only fire when an
-operator opts in, and the skip paths spend fewer LLM calls. The LLM is the
-ScriptedLLMClient; no real token is spent.
+The skip kill-switches default off; when on, the skip paths spend fewer LLM
+calls. The adequacy gate fires when the planner returns ClarifyNeeded.
 """
 
 from __future__ import annotations
@@ -95,10 +93,10 @@ class TestPlannerSkipWhenEnabled:
 
     def test_skip_path_skips_the_planner_call(self) -> None:
         reset_search_result_cache()
-        # Trivial query, the INITIAL planner call is skipped. The refinement
-        # re-plan is a separate LLM call and still fires (Phase 2): with one
-        # refinement and an always-NeedsMore synth the calls are exploratory
-        # synth + re-plan + final synth = 3, and zero *initial* planner calls.
+        # Trivial query, so the INITIAL planner call is skipped. The refinement
+        # re-plan is a separate LLM call and still fires: with one refinement and an
+        # always-NeedsMore synth the calls are exploratory synth + re-plan + final
+        # synth = 3, and zero *initial* planner calls.
         llm_client = ScriptedLLMClient(
             planner_response=planner_response_json(),
             synthesiser_responses=[needs_more_response_json("more")],
@@ -116,11 +114,6 @@ class TestPlannerSkipWhenEnabled:
         assert result.stats.llm_calls == 3
 
 
-# ---------------------------------------------------------------------------
-# Layer 1 adequacy gate — planner returns ClarifyNeeded → core short-circuits
-# ---------------------------------------------------------------------------
-
-
 def _clarify_planner_response() -> str:
     """Return a clarify JSON that the planner will parse into ClarifyNeeded."""
     return _json.dumps({"clarify": {"reason": "Query is too vague."}})
@@ -130,9 +123,8 @@ class TestAdequacyGateInCore:
     """When the planner returns ClarifyNeeded the core short-circuits before
     retrieval and synthesis, returning outcome_kind='clarify'.
 
-    Tests here use the ScriptedLLMClient so the planner is a real QueryPlanner
-    that receives the clarify JSON and returns ClarifyNeeded, exercising the
-    full core→planner→core path (not just a mocked planner).
+    The planner is a real QueryPlanner fed the clarify JSON, so the full
+    core-planner-core path runs.
     """
 
     def test_clarify_planner_response_produces_clarify_outcome_kind(self) -> None:
@@ -221,10 +213,8 @@ class TestAdequacyGateInCore:
     def test_retrieve_method_does_not_apply_the_adequacy_gate(self) -> None:
         """Pure-RAG retrieve() has no planner, so a vague query is NOT clarified.
 
-        The adequacy gate (Layer 1) lives inside the planner. ``retrieve()`` skips
-        the planner entirely, so even a query the planner would reject as vague is
-        retrieved rather than clarified — the calling agent decides what to do with
-        the ranked sources.
+        The adequacy gate lives in the planner, which retrieve() skips; the calling
+        agent decides what to do with the ranked sources.
         """
         reset_search_result_cache()
         llm_client = ScriptedLLMClient(

@@ -1,18 +1,7 @@
-"""Integration tests for the Wave 2 PDF proxy.
+"""Integration tests for the GET /api/documents/{id}/pdf proxy.
 
-Exercises GET /api/documents/{id}/pdf through the real search FastAPI app
-(built by ``create_app``) over a real ``tmp_path`` ``app.db`` and seeded
-``index.db``. Paperless-ngx itself is mocked: ``create_app`` builds the
-document router with the real ``PaperlessClient`` factory, so the Paperless
-client class is patched to a stub the factory then constructs.
-
-Coverage:
-- A signed-in user streams a document's PDF body, 200.
-- An unknown document id maps to 404.
-- An unreachable Paperless maps to 502.
-- An unauthenticated request is rejected 401.
-
-Wave 3 note: the legacy SEARCH_API_KEY bearer test is removed.
+``create_app`` builds the real ``PaperlessClient`` factory, so the client class
+itself is patched to a stub.
 """
 
 from __future__ import annotations
@@ -36,20 +25,14 @@ _PDF_BYTES = b"%PDF-1.7\nintegration pdf body\n%%EOF"
 
 
 class _StubPaperlessClient:
-    """A stand-in PaperlessClient whose download_stream is scripted.
-
-    Constructed by the real ``_default_paperless_factory`` once the
-    ``PaperlessClient`` name in ``search.document_routes`` is patched to this
-    class. Class attributes script the next ``download_stream`` outcome so a
-    test sets behaviour before issuing the request.
-    """
+    """A stand-in PaperlessClient whose ``download_stream`` outcome is set per test."""
 
     # Set by each test: either ("application/pdf", <bytes>) to stream, or an
     # exception instance to raise from download_stream.
     next_outcome: object = ("application/pdf", _PDF_BYTES)
 
     def __init__(self, _settings: object) -> None:
-        """Accept the settings argument the factory passes; ignore it."""
+        """Ignore the settings the factory passes."""
 
     def download_stream(self, _doc_id: int) -> tuple[str, Iterator[bytes]]:
         """Return the scripted stream, or raise the scripted exception."""
@@ -65,10 +48,7 @@ class _StubPaperlessClient:
 
 @pytest.fixture()
 def patched_paperless(monkeypatch: pytest.MonkeyPatch) -> type[_StubPaperlessClient]:
-    """Patch search.document_routes.PaperlessClient to the stub class.
-
-    Resets ``next_outcome`` to the default success before each test.
-    """
+    """Patch search.document_routes.PaperlessClient to the stub, reset to success."""
     _StubPaperlessClient.next_outcome = ("application/pdf", _PDF_BYTES)
     monkeypatch.setattr("search.document_routes.PaperlessClient", _StubPaperlessClient)
     return _StubPaperlessClient

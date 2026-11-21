@@ -1,11 +1,7 @@
-"""Pure parsing, validation, and clamping helpers for configuration values.
+"""Pure parsing and validation helpers for configuration values.
 
-Every helper takes a string mapping (the environment, or the config table
-layered over it) and returns a parsed, validated value — raising ``ValueError``
-naming the offending variable on bad input, fail-closed at config-build time
-(CODE_GUIDELINES §1.11, §6.6). No I/O, no state: these are the building blocks
-:func:`common.config._settings._build_settings` composes into a
-:class:`~common.config._settings.Settings`.
+Each takes a string mapping and raises ``ValueError`` naming the variable on bad
+input, so a misconfiguration fails at config-build time.
 """
 
 from __future__ import annotations
@@ -19,24 +15,15 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
-# Default Ollama base URL, used when LLM_PROVIDER=ollama and OLLAMA_BASE_URL is
-# unset. Lives here because the provider-default resolver in _settings imports
-# it; kept beside the parsers that share the "coded default" role.
+# Used when an Ollama provider is chosen and OLLAMA_BASE_URL is unset.
 _DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1/"
-
-# ---------------------------------------------------------------------------
-# String-mapping parsing helpers (pure functions)
-# ---------------------------------------------------------------------------
 
 
 def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
     """Return *var_name* from *source*, raising ``ValueError`` if it is unset.
 
-    An absent key, an empty string and a whitespace-only string are all
-    treated as "unset" — a required secret that round-trips ``""`` through
-    the Settings API (e.g. an admin saved ``PAPERLESS_TOKEN=""``) must be
-    rejected at this boundary rather than discovered when a daemon
-    authenticates with an empty token and Paperless answers 401.
+    Blank counts as unset: a secret saved as ``""`` through the Settings API
+    must be rejected here, not discovered when Paperless answers 401.
     """
     value = source.get(var_name)
     if value is None or not value.strip():
@@ -47,14 +34,8 @@ def _get_required_env(source: Mapping[str, str], var_name: str) -> str:
 def _get_int_env(source: Mapping[str, str], var_name: str, default: int) -> int:
     """Parse *var_name* from *source* as an integer, falling back to *default*.
 
-    An unset, empty, or whitespace-only value falls back to *default* — the
-    Settings UI round-trips a cleared numeric field as ``""``, so a blanked
-    field must mean "use the coded default" rather than crash the daemon on its
-    next hot-reload. This mirrors :func:`_get_optional_int_env`'s blank handling
-    so the required-int and optional-int paths agree (COMMON-20).
-
-    Raises a ``ValueError`` naming *var_name* when the value is set to a
-    non-blank string that is not a valid integer.
+    Blank also falls back: the Settings UI saves a cleared numeric field as
+    ``""``, which must mean "use the default", not crash the next hot-reload.
     """
     raw = source.get(var_name)
     if raw is None or not raw.strip():
@@ -116,16 +97,9 @@ def _get_csv_env(
 def _get_bool_env(source: Mapping[str, str], var_name: str, default: bool) -> bool:
     """Parse *var_name* from *source* as a boolean, falling back to *default*.
 
-    An unset, empty, or whitespace-only value falls back to *default*, matching
-    the numeric parsers (COMMON-20). A blank boolean is reachable and its
-    rejection was unrecoverable: ``STALE_LOCK_RECOVERY=`` in a compose file is
-    copied verbatim into the ``config`` table by ``appdb.config.seed_from_env``,
-    so raising here failed every daemon's boot *and* every Settings save (which
-    rebuilds the whole merged configuration to validate it) — leaving no way to
-    clear the value through the UI that wrote it.
-
-    Raises a ``ValueError`` naming *var_name* when the value is set to a
-    non-blank string that is not a recognised boolean.
+    Blank also falls back. A blank such as ``STALE_LOCK_RECOVERY=`` in a compose
+    file is seeded verbatim into the config table, and rejecting it would fail
+    every boot and every Settings save, leaving no way to fix it from the UI.
     """
     value = source.get(var_name)
     if value is None or not value.strip():
@@ -141,9 +115,8 @@ def _get_bool_env(source: Mapping[str, str], var_name: str, default: bool) -> bo
 def _get_float_env(source: Mapping[str, str], var_name: str, default: float) -> float:
     """Parse *var_name* from *source* as a float, falling back to *default*.
 
-    A non-numeric value raises a ``ValueError`` naming *var_name* — a typo'd
-    float cost knob fails loud at startup rather than silently defaulting
-    (CODE_GUIDELINES §1.11). Unset or blank falls back to *default*.
+    Blank falls back; a non-numeric value raises rather than silently
+    defaulting.
     """
     raw = source.get(var_name)
     if raw is None or not raw.strip():
@@ -166,7 +139,7 @@ def _resolve_llm_provider(source: Mapping[str, str]) -> Literal["openai", "ollam
     provider = source.get("LLM_PROVIDER", "openai")
     if provider not in ("openai", "ollama"):
         raise ValueError("LLM_PROVIDER must be 'openai' or 'ollama'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated above; mypy cannot narrow `str` to the Literal.
     return provider  # type: ignore[return-value]
 
 
@@ -175,16 +148,8 @@ def _resolve_embedding_provider(
 ) -> Literal["openai", "ollama"]:
     """Resolve and validate ``EMBEDDING_PROVIDER`` (defaults to ``openai``).
 
-    The embedding provider decides whether document chunks are vectorised by
-    OpenAI or a local Ollama model. It is **independent of ``LLM_PROVIDER``**
-    and defaults to ``openai`` — chat and embeddings are chosen separately, so
-    flipping the chat provider never moves the embedding space (and so never
-    triggers a re-embed). A fully-local deployment sets
-    ``EMBEDDING_PROVIDER=ollama`` explicitly.
-
-    A blank or unset value is the ``openai`` default; any non-blank value other
-    than ``openai`` / ``ollama`` fails closed naming the key (CODE_GUIDELINES
-    §1.11), mirroring :func:`_resolve_llm_provider`.
+    Independent of ``LLM_PROVIDER``, so switching the chat provider never moves
+    the embedding space and never forces a re-embed. Blank means ``openai``.
     """
     raw = source.get("EMBEDDING_PROVIDER")
     if raw is None or not raw.strip():
@@ -192,7 +157,7 @@ def _resolve_embedding_provider(
     provider = raw.strip()
     if provider not in ("openai", "ollama"):
         raise ValueError("EMBEDDING_PROVIDER must be 'openai' or 'ollama'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated above; mypy cannot narrow `str` to the Literal.
     return provider  # type: ignore[return-value]
 
 
@@ -204,11 +169,9 @@ def _resolve_step_provider(
     """Resolve a per-step provider key (``OCR_PROVIDER``, ``CLASSIFY_PROVIDER``,
     ``SEARCH_PLANNER_PROVIDER`` / ``_JUDGE_`` / ``_ANSWER_``).
 
-    Mirrors :func:`_resolve_embedding_provider`: a blank or unset value resolves
-    to *default* — the per-step keys seed from ``LLM_PROVIDER`` (and the judge
-    seeds from the planner) so an existing deployment that set only
-    ``LLM_PROVIDER`` keeps behaving identically. Any non-blank value other than
-    ``openai`` / ``ollama`` fails closed naming the key (CODE_GUIDELINES §1.11).
+    Blank resolves to *default*, which callers seed from ``LLM_PROVIDER`` (the
+    judge from the planner), so a deployment that set only ``LLM_PROVIDER``
+    behaves the same.
     """
     raw = source.get(key)
     if raw is None or not raw.strip():
@@ -216,7 +179,7 @@ def _resolve_step_provider(
     provider = raw.strip()
     if provider not in ("openai", "ollama"):
         raise ValueError(f"{key} must be 'openai' or 'ollama'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated above; mypy cannot narrow `str` to the Literal.
     return provider  # type: ignore[return-value]
 
 
@@ -225,7 +188,7 @@ def _resolve_log_format(source: Mapping[str, str]) -> Literal["json", "console"]
     log_format = source.get("LOG_FORMAT", "console")
     if log_format not in ("json", "console"):
         raise ValueError("LOG_FORMAT must be 'json' or 'console'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated above; mypy cannot narrow `str` to the Literal.
     return log_format  # type: ignore[return-value]
 
 
@@ -234,28 +197,21 @@ def _resolve_ocr_image_detail(
 ) -> Literal["low", "high", "auto"]:
     """Resolve and validate ``OCR_IMAGE_DETAIL`` (defaults to ``high``).
 
-    Mirrors the OpenAI chat-vision ``image_url.detail`` field. Defaulting to
-    ``high`` keeps the OCR request byte-identical to the value hardcoded before
-    this setting existed; an operator opts into the cheaper ``auto`` / ``low``
-    paths explicitly.
+    Mirrors OpenAI's ``image_url.detail``; the cheaper ``auto`` / ``low`` are
+    opt-in.
     """
     detail = source.get("OCR_IMAGE_DETAIL", "high")
     if detail not in ("low", "high", "auto"):
         raise ValueError("OCR_IMAGE_DETAIL must be 'low', 'high', or 'auto'")
-    # rationale: validated above; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated above; mypy cannot narrow `str` to the Literal.
     return detail  # type: ignore[return-value]
 
 
-# Allowed reasoning-effort values. Matches the live OpenAI API (verified
-# 2026-07-15 with one test call per value against gpt-5.6-sol/-terra/-luna and
-# gpt-5.4-mini): every current model reports supported values
-# none/low/medium/high/xhigh. "minimal" is gone from every current model and
-# is coerced to "none" below for configs saved before this change. "max" is
-# deliberately absent: the docs' model-index chips list it but the live API
-# rejects it on every 5.6 model, and a rejected effort gets stripped by the
-# compat layer so the model silently runs at its own default ("medium") —
-# more expensive than the operator asked for. Do not add values from docs
-# alone; verify against the live API first.
+# What the live OpenAI API accepts (checked 2026-07-15 against gpt-5.6-sol,
+# -terra, -luna and gpt-5.4-mini). "minimal" no longer exists and is coerced to
+# "none" below. "max" is listed in the docs but rejected by the API, and the
+# compat layer would strip it so the model silently runs at its pricier default.
+# Verify against the live API before adding a value.
 _REASONING_EFFORT_CHOICES: frozenset[str] = frozenset(
     {"none", "low", "medium", "high", "xhigh"}
 )
@@ -266,33 +222,14 @@ def _resolve_reasoning_effort(
 ) -> str:
     """Resolve and validate a reasoning-effort knob, returning a normalised string.
 
-    Shared by OCR, classify, and search-stage resolvers, each passing its own
-    step-specific *default*: OCR ``"none"`` and classify ``"low"`` spend the
-    minimum reasoning tier on their high-volume, low-deliberation calls, while
-    the search planner/answer stages keep ``"medium"`` — the models' own
-    default effort, a deliberate zero-cost no-op. The operator tunes the knob
-    up or down from the step's default to trade cost against reasoning depth.
-    A model that does not accept the parameter has it stripped and cached by
-    the shared adaptive-compat layer rather than failing the call
-    (foundation-llm-plumbing-design §4.1, spec §4.8).
-
-    Raises ``ValueError`` naming *var_name* on an unrecognised value so that
-    typos fail loud at startup rather than silently sending a wrong effort
-    (CODE_GUIDELINES §1.11).
-
-    Args:
-        source: The environment mapping.
-        var_name: The setting key — named in the error message on a bad value.
-        default: The coded default effort for this step (``"medium"`` unless
-            the caller passes its own step-specific default).
+    Each step passes its own *default*. A model that rejects the parameter has
+    it stripped by the adaptive-compat layer rather than failing the call. An
+    unrecognised value raises rather than silently sending the wrong effort.
     """
     effort = source.get(var_name, default).strip().lower()
     if effort == "minimal":
-        # Legacy tier removed by OpenAI (verified 2026-07-15). Validation
-        # fails closed at daemon startup AND on every Settings save, so
-        # raising here would brick a stored config the UI could no longer
-        # edit. "none" is the nearest current tier — minimal sat below "low"
-        # on the old scale.
+        # Raising would brick a stored config: validation runs on every boot
+        # and every Settings save. "none" is the nearest tier below "low".
         log.warning(
             "config.reasoning_effort_minimal_coerced",
             var_name=var_name,
@@ -313,20 +250,16 @@ def _resolve_ocr_reasoning_effort(
     """Resolve and validate ``OCR_REASONING_EFFORT`` (defaults to ``none``).
 
     Transcription is perception, not reasoning, and OCR is the highest-volume
-    call in the system (one per page), so the default spends zero reasoning
-    tokens. An operator opts *up* to ``low``+ if transcription quality on
-    complex layouts ever warrants it.
+    call (one per page), so the default spends no reasoning tokens.
     """
-    # rationale: validated by shared helper; mypy cannot narrow `str` → `Literal[...]`.
+    # Validated by the shared helper; mypy cannot narrow `str` to the Literal.
     return _resolve_reasoning_effort(source, "OCR_REASONING_EFFORT", default="none")  # type: ignore[return-value]
 
 
 def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
     """Resolve and validate ``CLASSIFY_REASONING_EFFORT`` (defaults to ``low``).
 
-    Schema-constrained extraction needs little deliberation, so the default
-    spends only the minimum reasoning tier rather than the model's own
-    ``medium`` default.
+    Schema-constrained extraction needs little deliberation.
     """
     return _resolve_reasoning_effort(source, "CLASSIFY_REASONING_EFFORT", default="low")
 
@@ -334,23 +267,15 @@ def _resolve_classify_reasoning_effort(source: Mapping[str, str]) -> str:
 def _resolve_search_reasoning_effort(
     source: Mapping[str, str], var_name: str, default: str = "medium"
 ) -> str:
-    """Resolve and validate a search-stage reasoning-effort knob.
-
-    Args:
-        source: The environment mapping.
-        var_name: The setting key (planner / answer / judge effort) — named in
-            the error on a typo.
-        default: The coded default effort (``"medium"`` unless specified; the
-            judge passes ``"low"``).
-    """
+    """Resolve and validate a search-stage reasoning-effort knob."""
     return _resolve_reasoning_effort(source, var_name, default)
 
 
 def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
     """Resolve and validate ``CHUNK_OVERLAP`` against *chunk_size*.
 
-    The overlap must be non-negative and strictly less than the chunk size,
-    otherwise a chunk could never advance past its own overlap.
+    The overlap must be below the chunk size, or a chunk could never advance
+    past its own overlap.
     """
     chunk_overlap = _get_int_env(source, "CHUNK_OVERLAP", 256)
     if not 0 <= chunk_overlap < chunk_size:
@@ -364,12 +289,10 @@ def _resolve_chunk_overlap(source: Mapping[str, str], chunk_size: int) -> int:
 def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
     """Resolve and validate ``SEARCH_MAX_REFINEMENTS`` — any non-negative count.
 
-    There is no hard cap: the operator sets the number of agentic refinement
-    passes from the UI. Each pass costs one planner (re-)call, one optional
-    judge call, and one synthesiser call, so the chat-call ceiling is
-    ``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` where ``j`` is 1 when
-    ``SEARCH_GATE_JUDGE`` is on — 6 calls at shipped defaults, not 3 — and
-    cost/latency scale with it. Only a negative value is rejected.
+    No upper cap. Each pass costs a planner call, an optional judge call and a
+    synthesiser call, so the chat-call ceiling is
+    ``(2 + j) * (1 + SEARCH_MAX_REFINEMENTS)`` with ``j`` = 1 when
+    ``SEARCH_GATE_JUDGE`` is on (6 calls at the defaults).
     """
     value = _get_int_env(source, "SEARCH_MAX_REFINEMENTS", 1)
     if value < 0:
@@ -379,12 +302,10 @@ def _resolve_search_max_refinements(source: Mapping[str, str]) -> int:
 
 @dataclass(frozen=True, slots=True)
 class RelevanceTiers:
-    """The three relevance-badge cut-point floats resolved together.
+    """The three relevance-badge cut-points.
 
-    Returned by :func:`_resolve_relevance_tiers` so the caller unpacks by
-    name (``tiers.strong``, ``tiers.good``, ``tiers.partial``) rather than
-    by position — guarding against a silent swap that would miscalibrate the
-    badges (CODE_GUIDELINES §5.8).
+    Named fields rather than a tuple, so a silent swap cannot miscalibrate the
+    badges.
     """
 
     strong: float
@@ -395,20 +316,10 @@ class RelevanceTiers:
 def _resolve_relevance_tiers(source: Mapping[str, str]) -> RelevanceTiers:
     """Resolve and validate the three relevance-badge cut-points together.
 
-    Parses ``SEARCH_RELEVANCE_TIER_STRONG`` / ``_GOOD`` / ``_PARTIAL`` (defaults
-    0.70 / 0.66 / 0.60, calibrated against a ``text-embedding-3-large`` @
-    3072-dim index — see the field docstrings for the caveat when running on
-    the default ``text-embedding-3-small`` / 1536-dim model) and enforces the
-    badge invariant ``0 ≤ partial ≤ good ≤ strong ≤ 1`` — each value is a
-    vector similarity in [0, 1], and the bands must not cross or a tier becomes
-    unreachable. A value outside the range, or one that breaks the ordering,
-    raises ``ValueError`` naming the offending key so the Settings API surfaces
-    a precise message (fail-closed at config-build time, CODE_GUIDELINES §1.11).
-    Equal adjacent cut-points are allowed (they collapse a band rather than
-    corrupt it).
-
-    Returns:
-        A :class:`RelevanceTiers` named triple — strong, good, partial.
+    Defaults 0.70 / 0.66 / 0.60 are calibrated on a
+    ``text-embedding-3-large`` 3072-dim index (see the field docstrings for the
+    1536-dim caveat). Enforces ``0 <= partial <= good <= strong <= 1``, since
+    crossed bands make a tier unreachable; equal cut-points just collapse a band.
     """
     strong = _get_float_env(source, "SEARCH_RELEVANCE_TIER_STRONG", 0.70)
     good = _get_float_env(source, "SEARCH_RELEVANCE_TIER_GOOD", 0.66)
@@ -443,17 +354,10 @@ def _resolve_server_port(source: Mapping[str, str]) -> int:
 def _resolve_pricing_refresh_url(source: Mapping[str, str]) -> str:
     """Resolve and validate ``PRICING_REFRESH_URL`` (defaults to ``""`` = disabled).
 
-    An empty, unset, or whitespace-only value means the price-refresh feature is
-    disabled — the price book uses the bundled seed only, makes no network call,
-    and prices the identical dollar figures the hardcoded table did. This is the
-    default and prod's configuration.
-
-    A non-empty value must be an absolute ``http``/``https`` URL with a host;
-    anything else (a bare path, a ``file://`` URL, a typo'd scheme) fails closed
-    naming the key (CODE_GUIDELINES §1.11, §10.8) rather than being discovered
-    when the first refresh fails. The URL is returned stripped of surrounding
-    whitespace; no trailing-slash normalisation is applied because it is fetched
-    verbatim, not used as a base for path joins.
+    Blank disables refresh: the bundled seed is used and no network call is
+    made. Otherwise it must be an absolute ``http``/``https`` URL with a host,
+    rejected now rather than on the first failed refresh. No trailing-slash
+    normalisation: the URL is fetched verbatim, never joined.
     """
     raw = source.get("PRICING_REFRESH_URL", "")
     url = raw.strip()

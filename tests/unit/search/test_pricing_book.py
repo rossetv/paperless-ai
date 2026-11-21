@@ -1,17 +1,7 @@
-"""Tests for search.pricing_book — the seed/cache/refresh model-price book.
+"""Tests for search.pricing_book, the seed/cache/refresh model-price book.
 
-The headline contract this proves:
-
-- **Behaviour-preserving default.** ``seed_price_book()`` yields exactly
-  ``MODEL_PRICES`` with ``as_of == SEED_PRICES_AS_OF`` and ``source == "bundled"``,
-  prices the identical dollars ``price_call`` produced against the bare constant
-  for every prod model, and touches no network.
-- **Cache mapping.** ``price_book_from_cache`` maps app.db floats to ModelPrice
-  and carries provenance through; ``to_cached_table`` is its inverse.
-- **Refresh.** ``refresh_price_book`` parses a valid USD payload into the right
-  table/as_of/source on a bounded timeout, and raises ``PricingRefreshError`` on
-  non-200, malformed JSON, missing/negative/non-numeric prices, and non-USD
-  currency.
+The default seed path must price exactly as the bare ``MODEL_PRICES`` constant
+and touch no network.
 """
 
 from __future__ import annotations
@@ -56,11 +46,6 @@ def _valid_payload() -> dict:
     }
 
 
-# --------------------------------------------------------------------------- #
-# Behaviour-preserving seed path
-# --------------------------------------------------------------------------- #
-
-
 def test_seed_book_equals_the_bundled_table_with_bundled_provenance() -> None:
     book = seed_price_book()
     assert book.table == MODEL_PRICES
@@ -93,14 +78,9 @@ def test_building_the_seed_book_makes_no_network_call() -> None:
     with respx.mock(assert_all_mocked=True) as mock:
         # No routes registered: any outbound HTTP would raise, failing the test.
         book = seed_price_book()
-        # effective_table() is the surface PART 2 wires into price_call.
+        # effective_table() is the table price_call is given.
         assert book.effective_table() == MODEL_PRICES
         assert mock.calls.call_count == 0
-
-
-# --------------------------------------------------------------------------- #
-# Cache mapping
-# --------------------------------------------------------------------------- #
 
 
 def test_price_book_from_cache_maps_floats_and_carries_provenance() -> None:
@@ -138,11 +118,6 @@ def test_to_cached_table_is_the_inverse_mapping() -> None:
     assert price_book_from_cache(cached).table == book.table
 
 
-# --------------------------------------------------------------------------- #
-# Refresh — success
-# --------------------------------------------------------------------------- #
-
-
 def test_refresh_parses_a_valid_payload_into_a_book() -> None:
     with respx.mock:
         respx.get(_URL).mock(return_value=httpx.Response(200, json=_valid_payload()))
@@ -158,7 +133,7 @@ def test_refresh_parses_a_valid_payload_into_a_book() -> None:
 
 
 def test_refresh_passes_a_bounded_timeout() -> None:
-    """The fetch carries a finite timeout (no unbounded wait, §8.7)."""
+    """The fetch carries a finite timeout (no unbounded wait)."""
     seen: dict[str, object] = {}
 
     def _capture(request: httpx.Request) -> httpx.Response:
@@ -178,9 +153,7 @@ def test_refresh_passes_a_bounded_timeout() -> None:
     assert DEFAULT_REFRESH_TIMEOUT_SECONDS > 0
 
 
-# --------------------------------------------------------------------------- #
-# Refresh — failure modes (all raise PricingRefreshError)
-# --------------------------------------------------------------------------- #
+# Refresh failure modes: each raises PricingRefreshError.
 
 
 def test_refresh_raises_on_non_200() -> None:
@@ -284,11 +257,6 @@ def test_refresh_raises_on_non_object_payload() -> None:
             refresh_price_book(_URL)
 
 
-# --------------------------------------------------------------------------- #
-# PriceBook surface
-# --------------------------------------------------------------------------- #
-
-
 def test_effective_table_returns_the_table() -> None:
     book = PriceBook(
         table={"m": ModelPrice(1.0, 4.0)},
@@ -297,11 +265,6 @@ def test_effective_table_returns_the_table() -> None:
         fetched_at="2026-01-01T00:00:00+00:00",
     )
     assert book.effective_table() == {"m": ModelPrice(1.0, 4.0)}
-
-
-# --------------------------------------------------------------------------- #
-# Current-price-book singleton (PART 2)
-# --------------------------------------------------------------------------- #
 
 
 def _other_book() -> PriceBook:

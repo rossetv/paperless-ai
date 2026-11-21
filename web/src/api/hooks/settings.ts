@@ -1,13 +1,4 @@
-/**
- * Settings query and mutation hooks — Wave 4.
- *
- * `useUpdateSettings` invalidates the settings query so the screen re-reads
- * the persisted state after a save — the PUT response is also the new state,
- * but invalidation keeps any other settings reader consistent.
- *
- * Allowed deps: @tanstack/react-query, client, types, hooks/keys
- * (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Settings query and mutation hooks. */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
@@ -28,7 +19,12 @@ export function useSettings(): UseQueryResult<SettingsResponse, Error> {
   });
 }
 
-/** Save changed configuration — PUT /api/settings. Invalidates the settings query. */
+/**
+ * Save changed configuration — PUT /api/settings.
+ *
+ * Invalidates the settings query even though the response is the new state, so
+ * every other settings reader stays consistent.
+ */
 export function useUpdateSettings(): UseMutationResult<
   SettingsResponse,
   Error,
@@ -43,12 +39,7 @@ export function useUpdateSettings(): UseMutationResult<
   });
 }
 
-/**
- * Probe the Paperless connection — POST /api/settings/test-connection.
- *
- * A one-shot mutation: it touches no query cache. The caller reads
- * `isPending` / `data` / `error` to drive the inline test-result UI.
- */
+/** Probe the Paperless connection — POST /api/settings/test-connection. Touches no cache. */
 export function useTestConnection(): UseMutationResult<
   TestConnectionResponse,
   Error,

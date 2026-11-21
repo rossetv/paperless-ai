@@ -17,25 +17,13 @@ export interface SourceCardSurfaceProps {
   matched?: number[];
   /** When true, lifts the card and adds an accent ring (top-ranked source). */
   highlighted?: boolean;
-  /** The card's content column. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * The bespoke source-result card shell.
- *
- * A two-column grid — a content column (`children`) and a thumbnail column
- * carrying a `DocThumb` with a circular citation badge overlapping its
- * top-left corner. `highlighted` lifts the card with an accent ring for the
- * top-ranked source. Stacks to one column on narrow viewports.
- *
- * App-agnostic: it knows a citation number and a thumbnail style, nothing
- * about documents. The `SourceCard` feature supplies the content column.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps:
- * primitives (DocThumb), lib/.
+ * Source-result card shell: a content column (`children`) beside a thumbnail
+ * with an overlapping citation badge. Stacks on narrow viewports.
  */
 export function SourceCardSurface({
   index,

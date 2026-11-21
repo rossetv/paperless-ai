@@ -1,14 +1,8 @@
-"""Per-request search telemetry: phase events + token/cost accumulation.
+"""Per-request search telemetry: phase events plus token/cost accumulation.
 
-A ``_Telemetry`` instance is created once per :meth:`SearchCore.answer` call. It
-turns each phase into a :class:`PhaseStart` + :class:`PhaseRecord` event pair
-(forwarded to the optional ``on_event`` sink for live streaming), summarises that
-phase's LLM token usage, prices it, and accumulates the whole-query
-:class:`CostSummary`. The assembled :class:`SearchTrace` and ``CostSummary`` ride
-on ``SearchStats`` so they are cacheable and reach every consumer.
-
-Allowed deps: search.models, search.pricing, search.pricing_book. Forbidden:
-I/O, FastAPI, LLM calls.
+One ``_Telemetry`` per :meth:`SearchCore.answer` call emits a
+:class:`PhaseStart` + :class:`PhaseRecord` pair per phase to the optional
+``on_event`` sink and accumulates the whole-query :class:`CostSummary`.
 """
 
 from __future__ import annotations
@@ -54,24 +48,13 @@ def _sum_usage(sink: Sequence[LlmCallUsage]) -> TokenUsage:
 class _Telemetry:
     """Accumulates the trace + cost for one search, emitting events as it goes.
 
-    The price book is resolved ONCE per search (at construction) — pinned for the
-    request so every call is priced against a single consistent table even if a
-    background refresh swaps the live book mid-search, and so the provenance the
-    cost summary reports matches the dollars it computed.
+    The price book is resolved once, at construction, so a background refresh
+    mid-search cannot split the pricing across two tables and the reported
+    provenance matches the dollars computed.
 
-    Each LLM call is priced against the provider recorded on its own
-    :class:`~common.llm.LlmCallUsage` (the endpoint that actually served it),
-    not a single telemetry-wide provider — so a mixed-provider query (e.g. the
-    judge on Ollama while the planner and answer run on OpenAI) costs each step
-    correctly instead of mispricing every call against one global provider.
-
-    Args:
-        on_event: Optional sink for live phase events (the streaming route). When
-            None, the telemetry still assembles the trace/cost for the result.
-        price_book: The price book to cost against. Defaults to the process-wide
-            live book (:func:`~search.pricing_book.get_current_price_book`) —
-            the bundled seed unless a cache/refresh replaced it. Injectable so
-            unit tests stay deterministic against a known table.
+    Each call is priced against the provider on its own
+    :class:`~common.llm.LlmCallUsage`, so a mixed-provider query (e.g. the judge
+    on Ollama, the rest on OpenAI) costs each step correctly.
     """
 
     def __init__(
@@ -81,8 +64,6 @@ class _Telemetry:
         price_book: PriceBook | None = None,
     ) -> None:
         self._on_event = on_event
-        # Resolve the live book once and pin it for the whole search (see the
-        # class docstring). Tests inject a known book to stay deterministic.
         self._price_book = (
             price_book if price_book is not None else get_current_price_book()
         )
@@ -162,13 +143,7 @@ class _Telemetry:
         return SearchTrace(phases=tuple(self._phases))
 
     def cost_summary(self) -> CostSummary:
-        """Produce the whole-query cost summary, stamped with price provenance.
-
-        ``prices_as_of`` / ``prices_source`` carry the as-of date and source of
-        the price book this search costed against (the pinned live book — the
-        bundled seed unless a refresh replaced it), so the UI can show "prices as
-        of <date>" alongside the dollar figure.
-        """
+        """Produce the whole-query cost summary, stamped with price provenance."""
         return CostSummary(
             tokens=self._tokens_total,
             usd=self._usd_total if self._usd_known else None,

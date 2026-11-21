@@ -1,12 +1,7 @@
-"""Tests for search.fetch.assemble_fetched — full-document fetch assembly.
+"""Tests for search.fetch.assemble_fetched, the full-document fetch assembly.
 
-Covers the spec §4.3 contract with a stub Paperless client and store reader:
-- happy path returns capped content + wrapper metadata + deep-link;
-- content over the cap is truncated and flagged with total/returned lengths;
-- a 404 (unknown/deleted id) becomes a per-id "not found", not an exception;
-- any other Paperless fault becomes a sanitised "fetch failed";
-- a per-id failure never aborts the rest of the batch;
-- metadata falls back to the Paperless response when the index has no row.
+A 404 becomes a per-id "not found", any other Paperless fault a sanitised
+"fetch failed", and a per-id failure never aborts the rest of the batch.
 """
 
 from __future__ import annotations

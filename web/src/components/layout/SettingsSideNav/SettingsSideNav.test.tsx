@@ -149,7 +149,6 @@ describe('SettingsSideNav', () => {
         <SettingsSideNav groups={GROUPS} />
       </MemoryRouter>,
     );
-    // No element with the eyebrow class should exist.
     expect(container.querySelector('[class*="eyebrow"]')).toBeNull();
   });
 });

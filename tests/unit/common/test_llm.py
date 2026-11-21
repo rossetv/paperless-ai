@@ -1,7 +1,6 @@
-"""Tests for common.llm — unique_models, extract_json_object, and _create_completion.
+"""Tests for common.llm helpers and the chat-completion compat layer.
 
-Model-fallback and retry/limiter integration tests live in
-test_llm_fallback.py (§3.1 500-line ceiling split).
+Model-fallback and retry tests are in test_llm_fallback.py.
 """
 
 from __future__ import annotations
@@ -51,8 +50,6 @@ class TestUniqueModels:
 
 
 class TestExtractJsonObject:
-    """Tests for the shared extract_json_object(text) LLM-output parser."""
-
     def test_valid_json_object(self):
         assert extract_json_object('{"title": "Invoice"}') == {"title": "Invoice"}
 
@@ -117,7 +114,7 @@ class _ProviderAwareClient(OpenAIChatMixin):
 
 
 class TestProviderRouting:
-    """A step's chat call routes to ITS provider's client, not a global one."""
+    """A step's chat call routes to its own provider's client, not a global one."""
 
     @pytest.fixture(autouse=True)
     def _restore_holder(self):
@@ -175,7 +172,6 @@ class TestCreateCompletion:
 
     @patch("common.llm.llm_limiter")
     def test_delegates_to_openai(self, mock_limiter, client):
-        """_create_completion passes kwargs through to the OpenAI client."""
         mock_openai = MagicMock()
         expected = MagicMock()
         mock_openai.chat.completions.create.return_value = expected
@@ -194,7 +190,6 @@ class TestCreateCompletion:
 
     @patch("common.llm.llm_limiter")
     def test_uses_llm_limiter(self, mock_limiter, client):
-        """_create_completion wraps the call in llm_limiter.acquire()."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
         client._create_completion(model="m")
@@ -203,7 +198,6 @@ class TestCreateCompletion:
 
     @patch("common.llm.llm_limiter")
     def test_extra_kwargs_forwarded(self, mock_limiter, client):
-        """All keyword arguments are forwarded to the OpenAI API."""
         mock_openai = MagicMock()
         _openai_holder.init("openai", mock_openai)
 
@@ -223,7 +217,6 @@ class TestCreateCompletion:
 
     @patch("common.llm.llm_limiter")
     def test_raises_when_client_not_initialized(self, mock_limiter, client):
-        """_create_completion raises RuntimeError when client is None."""
         _openai_holder._clients["openai"] = None
         with pytest.raises(RuntimeError, match="openai chat client not initialised"):
             client._create_completion(model="m")
@@ -443,7 +436,6 @@ class TestCreateWithCompat:
 
         assert result is not None
         assert client._create_completion.call_count == 2
-        # second call carries no temperature
         assert "temperature" not in client._create_completion.call_args.kwargs
         assert client.get_stats()["temperature_retries"] == 1
 
@@ -468,7 +460,7 @@ class TestCreateWithCompat:
             {"model": "m", "messages": [], "temperature": 0.2}, "m"
         )
 
-        # One call only — no wasted 400 round-trip — and temperature was pre-stripped.
+        # One call: no wasted 400 round-trip.
         assert client._create_completion.call_count == 1
         assert "temperature" not in client._create_completion.call_args.kwargs
 
@@ -544,7 +536,7 @@ class TestCreateWithCompat:
 
 
 class TestFlexCapacityPatience:
-    """_create_with_compat waits out RateLimitError on flex calls (spec D5)."""
+    """_create_with_compat waits out RateLimitError on flex calls."""
 
     @pytest.fixture()
     def provider(self):

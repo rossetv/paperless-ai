@@ -1,10 +1,4 @@
-"""Tests for the Index API wire models in search.wire.
-
-Covers: each Index model carries its fields; IndexStatusResponse wraps a list
-of daemon tiles; ReconcileCycleResponse's summary is a string-to-int map;
-FailedDocumentResponse accepts a null title; RebuildResponse carries the
-accepted flag and detail.
-"""
+"""Tests for the Index API wire models in search.wire."""
 
 from __future__ import annotations
 

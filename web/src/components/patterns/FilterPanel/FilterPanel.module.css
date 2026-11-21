@@ -1,14 +1,3 @@
-/*
- * FilterPanel pattern — CSS Module.
- *
- * A collapsible titled container. Styled after the Apple card style from
- * DESIGN.md §4: --radius-standard (8 px), light surface background,
- * no visible border (borders are rare in the Apple system).
- *
- * The chevron rotates to indicate collapsed vs expanded state.
- * All values come exclusively from design tokens.
- */
-
 .filter-panel {
   display: flex;
   flex-direction: column;

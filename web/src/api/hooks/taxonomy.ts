@@ -1,12 +1,6 @@
 /**
- * Taxonomy query and mutation hooks — correspondents, document types, tags.
- *
- * All three taxonomy lists are cached for 60 s and share the same
- * `TaxonomyItem` shape. Create mutations invalidate the relevant list so
- * pickers re-fetch the updated options.
- *
- * Allowed deps: @tanstack/react-query, client, types, hooks/keys
- * (leaf module — CODE_GUIDELINES §12.3).
+ * Correspondent, document-type and tag hooks. Lists are cached for 60 s; each
+ * create invalidates its list so pickers re-fetch.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -22,11 +16,7 @@ import {
 import type { TaxonomyItem } from '../types';
 import { queryKeys } from './keys';
 
-/**
- * All correspondents in Paperless-ngx — GET /api/correspondents.
- *
- * Cached for 60 s. Drives correspondent picker in the document edit panel.
- */
+/** All correspondents in Paperless-ngx — GET /api/correspondents. */
 export function useCorrespondents(): UseQueryResult<TaxonomyItem[], Error> {
   return useQuery({
     queryKey: queryKeys.correspondents(),
@@ -35,11 +25,7 @@ export function useCorrespondents(): UseQueryResult<TaxonomyItem[], Error> {
   });
 }
 
-/**
- * All document types in Paperless-ngx — GET /api/document-types.
- *
- * Cached for 60 s. Drives document-type picker in the document edit panel.
- */
+/** All document types in Paperless-ngx — GET /api/document-types. */
 export function useDocumentTypes(): UseQueryResult<TaxonomyItem[], Error> {
   return useQuery({
     queryKey: queryKeys.documentTypes(),
@@ -48,11 +34,7 @@ export function useDocumentTypes(): UseQueryResult<TaxonomyItem[], Error> {
   });
 }
 
-/**
- * All tags in Paperless-ngx — GET /api/tags.
- *
- * Cached for 60 s. Drives tag picker in the document edit panel.
- */
+/** All tags in Paperless-ngx — GET /api/tags. */
 export function useTags(): UseQueryResult<TaxonomyItem[], Error> {
   return useQuery({
     queryKey: queryKeys.tags(),
@@ -61,12 +43,7 @@ export function useTags(): UseQueryResult<TaxonomyItem[], Error> {
   });
 }
 
-/**
- * Create a correspondent in Paperless-ngx — POST /api/correspondents.
- *
- * Invalidates the correspondents query on success so pickers re-fetch the
- * updated list (including the newly created entry).
- */
+/** Create a correspondent in Paperless-ngx — POST /api/correspondents. */
 export function useCreateCorrespondent(): UseMutationResult<TaxonomyItem, Error, string> {
   const qc = useQueryClient();
   return useMutation({
@@ -77,12 +54,7 @@ export function useCreateCorrespondent(): UseMutationResult<TaxonomyItem, Error,
   });
 }
 
-/**
- * Create a document type in Paperless-ngx — POST /api/document-types.
- *
- * Invalidates the document-types query on success so pickers re-fetch the
- * updated list (including the newly created entry).
- */
+/** Create a document type in Paperless-ngx — POST /api/document-types. */
 export function useCreateDocumentType(): UseMutationResult<TaxonomyItem, Error, string> {
   const qc = useQueryClient();
   return useMutation({
@@ -93,12 +65,7 @@ export function useCreateDocumentType(): UseMutationResult<TaxonomyItem, Error, 
   });
 }
 
-/**
- * Create a tag in Paperless-ngx — POST /api/tags.
- *
- * Invalidates the tags query on success so pickers re-fetch the updated list
- * (including the newly created entry).
- */
+/** Create a tag in Paperless-ngx — POST /api/tags. */
 export function useCreateTag(): UseMutationResult<TaxonomyItem, Error, string> {
   const qc = useQueryClient();
   return useMutation({

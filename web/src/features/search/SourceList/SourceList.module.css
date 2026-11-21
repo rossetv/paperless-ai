@@ -1,11 +1,6 @@
-/**
- * SourceList — list reset + inter-card spacing.
- *
- * The <ol> resets the browser/global list chrome (global.css adds list padding,
- * margins and a secondary text colour) and lays the cards out as a flex column
- * with a gap. The gap — not an <li> margin — owns the spacing between cards;
- * `.item { margin: 0 }` neutralises the global `li` margin so it does not add
- * to the gap.
+/*
+ * Resets the list chrome global.css adds. The flex gap owns the spacing between
+ * cards, so `.item` zeroes the global `li` margin that would add to it.
  */
 .list {
   list-style: none;

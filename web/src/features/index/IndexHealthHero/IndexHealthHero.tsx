@@ -5,16 +5,11 @@ import type { IndexHealthStatus } from '../../../api/types';
 import styles from './IndexHealthHero.module.css';
 
 /**
- * The icon styling and glyph for each health verdict.
- *
- * Three distinct tones: `ok` reads green with a tick, `degraded` reads amber
- * (a caution — the index is still serving, just not at full strength), and
- * `down` reads red (a genuine failure). `degraded` is deliberately *not* red:
- * conflating a missed heartbeat with a total outage overstates the problem.
+ * `degraded` is amber, not red: the index is still serving, and a missed
+ * heartbeat should not read like a total outage.
  */
 type HealthTone = 'ok' | 'caution' | 'down';
 
-/** Human-readable label and tone for each health verdict. */
 const HEALTH_PRESENTATION: Record<
   IndexHealthStatus,
   { headline: string; detail: string; tone: HealthTone; glyph: 'check' | 'warning' }
@@ -42,19 +37,12 @@ const HEALTH_PRESENTATION: Record<
 export interface IndexHealthHeroProps {
   /** The overall index health verdict, from GET /api/index/status. */
   health: IndexHealthStatus;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
 /**
- * The Index dashboard health hero.
- *
- * A circular status icon (tick when ok, warning triangle otherwise), a
- * "Status" eyebrow + headline + detail. Three tones drive the icon tint:
- * green for `"ok"`, amber for `"degraded"` (caution, still serving) and red
- * for `"down"` (genuine failure).
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — takes a domain wire type.
+ * The Index dashboard health hero: a status icon (tick when ok, warning
+ * triangle otherwise) beside a "Status" eyebrow, headline and detail.
  */
 export function IndexHealthHero({
   health,

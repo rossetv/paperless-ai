@@ -1,13 +1,5 @@
-/*
- * DocThumb primitive — CSS Module.
- *
- * A fixed-size SVG mockup of a document page used inside source cards and the
- * document-preview page rail. The artboard size is fixed (the SVG viewBox is
- * authored at 96 x 124); the wrapper just supplies the surface, radius, border
- * and shadow.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* The SVG artboard is fixed at 96 x 124; this wrapper only supplies the
+   surface, radius, border and shadow. */
 
 .doc-thumb {
   width: var(--size-doc-thumb-width);
@@ -20,7 +12,6 @@
   flex-shrink: 0;
 }
 
-/* The SVG fills the wrapper exactly. */
 .canvas {
   display: block;
   width: 100%;

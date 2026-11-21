@@ -5,7 +5,6 @@ import type { LoginRequest, LoginResponse } from '../../../api/types';
 import { Unauthenticated, ApiError } from '../../../api/client';
 import { LoginScreen } from './LoginScreen';
 
-// --- Mock the api hooks ---------------------------------------------------
 vi.mock('../../../api/hooks', () => ({
   useLogin: vi.fn(),
 }));

@@ -2,13 +2,7 @@ import React from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './FormField.module.css';
 
-/**
- * The aria wiring a `FormField` hands to its control.
- *
- * The control spreads or reads these so the label, the error message, and the
- * `aria-invalid` / `aria-describedby` attributes are wired consistently — the
- * scaffolding that Input and TextArea previously hand-rolled identically.
- */
+/** The aria wiring a `FormField` hands to its control. */
 export interface FieldControlProps {
   /** Whether the field is currently showing a validation error. */
   hasError: boolean;
@@ -33,26 +27,18 @@ export interface FormFieldProps {
    * `aria-describedby`, an error class).
    */
   children: (control: FieldControlProps) => React.ReactNode;
-  /** Additional class names to merge onto the field wrapper. */
   className?: string | undefined;
   /**
-   * Surface the field is rendered on. `'dark'` switches the label, control
-   * border and control background to the forced-dark island tokens — used by
-   * LoginScreen / FirstRunSetupScreen. Defaults to `'light'`.
+   * `'dark'` switches the label and control to the forced-dark island tokens, as
+   * on the login and first-run setup screens. Defaults to `'light'`.
    */
   surface?: 'light' | 'dark' | undefined;
 }
 
 /**
- * Shared scaffolding for a labelled form control.
- *
- * Renders the column field wrapper, the `<label>`, and — when `error` is set —
- * the `role="alert"` error message, and passes the `aria-invalid` /
- * `aria-describedby` wiring to the control via render-prop children. Input,
- * TextArea, and SearchField consume it instead of each re-declaring an
- * identical wrapper, label, and error block.
- *
- * App-agnostic — a generic form primitive.
+ * Labelled form-control scaffolding: the field wrapper, the `<label>` and, when
+ * `error` is set, a `role="alert"` message. The aria wiring reaches the control
+ * through render-prop children.
  */
 export function FormField({
   id,

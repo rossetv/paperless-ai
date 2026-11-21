@@ -1,22 +1,4 @@
-"""Tests for indexer.daemon's hot-load, activity-recorder and rebuild paths.
-
-Behavioural promises tested:
-
-- The indexer builds its Settings through the hot-load accessor, so the
-  ``config`` table in app.db overrides the environment.
-- _run_loop records each sync and sweep through the optional cycle recorder,
-  and runs unchanged without one.
-- _run_one_cycle re-checks current_settings() every cycle and, when
-  config_version has moved, rebuilds the Reconciler exactly once (web-redesign
-  spec §5 hot-load contract); _rebuild_reconciler closes the outgoing clients.
-- A rebuild.request sentinel at cycle entry wipes the index before the sync;
-  without it rebuild_index is never called.
-
-The core loop, failure-isolation and sweep-cadence tests live in
-test_daemon.py — the daemon's tests are split across three files for the
-500-line ceiling (CODE_GUIDELINES §3.1).  The shared mock builders and the
-``_reset_shutdown`` autouse fixture come from tests/unit/indexer/conftest.py.
-"""
+"""Tests for indexer.daemon's hot-load, activity-recorder and rebuild paths."""
 
 from __future__ import annotations
 
@@ -30,8 +12,7 @@ from tests.unit.indexer.conftest import make_daemon_reconciler, make_daemon_sett
 
 
 def test_indexer_loads_settings_from_app_db(tmp_path: Path) -> None:
-    """The indexer builds Settings via the hot-load accessor, so the config
-    table overrides the environment — the indexer is on config-in-database."""
+    """The hot-load accessor lets the app.db config table override the env."""
     from appdb import config as config_store
     from appdb.connection import connect
     from appdb.schema import ensure_schema
@@ -51,14 +32,11 @@ def test_indexer_loads_settings_from_app_db(tmp_path: Path) -> None:
     with patch.dict(os.environ, env, clear=True):
         settings = current_settings()
 
-    # This is exactly the call indexer.daemon.main() now makes.
     assert settings.RECONCILE_INTERVAL == 777
     assert settings.APP_DB_PATH == app_db
 
 
 def test_run_loop_records_each_cycle_through_the_recorder() -> None:
-    """_run_loop calls the recorder's record_sync after the sync and
-    record_sweep after the sweep, with the cycle reports."""
     from pathlib import Path
     from unittest.mock import MagicMock
 
@@ -66,7 +44,6 @@ def test_run_loop_records_each_cycle_through_the_recorder() -> None:
     from indexer.reconciler import SyncReport
     from indexer.reconciler._sweep import SweepReport
 
-    # A reconciler whose two operations return canned reports.
     reconciler = MagicMock()
     reconciler.incremental_sync.return_value = SyncReport(
         indexed=2, metadata_only=0, skipped=0, failed=0, given_up=0
@@ -77,12 +54,9 @@ def test_run_loop_records_each_cycle_through_the_recorder() -> None:
     store_writer = MagicMock()
     recorder = MagicMock()
 
-    # A clock that advances so the first cycle runs a sweep, then a
-    # shutdown is requested so the loop exits after one cycle.
     settings = make_daemon_settings(deletion_sweep_interval=1)
 
-    # Clock returns 100.0 on the elapsed check (>= interval 1), then 100.0
-    # to record last_sweep_at.
+    # 100.0 for the elapsed check (>= interval 1), then 100.0 for last_sweep_at.
     ticks = iter([100.0, 100.0])
 
     def clock() -> float:
@@ -120,8 +94,6 @@ def test_run_loop_records_each_cycle_through_the_recorder() -> None:
 
 
 def test_run_loop_works_without_a_recorder() -> None:
-    """cycle_recorder is optional — the loop runs unchanged when it is None
-    (the existing behaviour is preserved)."""
     from pathlib import Path
     from unittest.mock import MagicMock
 
@@ -143,7 +115,6 @@ def test_run_loop_works_without_a_recorder() -> None:
             patch("indexer.daemon._loop._interruptible_wait", side_effect=fake_wait),
             patch("indexer.daemon._loop.current_settings", return_value=settings),
         ):
-            # Must not raise — cycle_recorder defaults to None.
             _run_loop(
                 reconciler=reconciler,
                 store_writer=MagicMock(),
@@ -156,15 +127,8 @@ def test_run_loop_works_without_a_recorder() -> None:
 
 
 def test_indexer_run_one_cycle_rebuilds_on_a_config_change(tmp_path: Path) -> None:
-    """_run_one_cycle re-checks config_version each cycle and, when it moves,
-    rebuilds the reconciler — the indexer hot-reloads with no restart.
-
-    This drives the REAL cycle body (CODE_GUIDELINES §1.3, §11.4): the same
-    _run_one_cycle the production loop calls, not a parallel re-implementation.
-    Two cycles are driven; a config write between them must trigger exactly one
-    rebuild, and the rebuilt reconciler must be threaded into the next cycle's
-    state.
-    """
+    """A config write between two cycles triggers exactly one reconciler rebuild,
+    and the rebuilt reconciler is threaded into the returned state."""
     from appdb import config as config_store
     from appdb.connection import connect
     from appdb.schema import ensure_schema
@@ -203,7 +167,6 @@ def test_indexer_run_one_cycle_rebuilds_on_a_config_change(tmp_path: Path) -> No
             "_rebuild_reconciler",
             side_effect=_record_rebuild,
         ):
-            # Cycle 1: config_version unchanged → no rebuild.
             state = _run_one_cycle(
                 state,
                 store_writer=store_writer,
@@ -214,13 +177,10 @@ def test_indexer_run_one_cycle_rebuilds_on_a_config_change(tmp_path: Path) -> No
             )
             assert sum(rebuilds) == 0
 
-            # A config write between cycles bumps config_version.
             bump_conn = connect(app_db)
             config_store.set_value(bump_conn, "RECONCILE_INTERVAL", "999")
             bump_conn.close()
 
-            # Cycle 2: config_version moved → exactly one rebuild, and the new
-            # reconciler is threaded into the returned state.
             state = _run_one_cycle(
                 state,
                 store_writer=store_writer,
@@ -237,9 +197,6 @@ def test_indexer_run_one_cycle_rebuilds_on_a_config_change(tmp_path: Path) -> No
 def test_run_loop_rebuilds_when_the_rebuild_sentinel_is_present(
     tmp_path: Path,
 ) -> None:
-    """When a rebuild.request sentinel exists at cycle entry, _run_loop
-    calls store_writer.rebuild_index() before the cycle's sync, then
-    deletes the sentinel."""
     reconciler = make_daemon_reconciler()
     store_writer = MagicMock()
     settings = make_daemon_settings()
@@ -264,20 +221,17 @@ def test_run_loop_rebuilds_when_the_rebuild_sentinel_is_present(
             sentinel_path=sentinel,
         )
 
-    # The rebuild ran with the cycle's live settings — the model/dims the
-    # re-embed will use are stamped into meta. Regression: a rebuild after a UI
-    # model switch must not leave stale meta that re-embeds twice on next boot.
+    # The rebuild stamps the live settings' model/dims into meta; stale meta
+    # after a UI model switch would re-embed everything again on next boot.
     store_writer.rebuild_index.assert_called_once_with(
         embedding_model=settings.EMBEDDING_MODEL,
         embedding_dimensions=settings.EMBEDDING_DIMENSIONS,
     )
     assert not rebuild_sentinel.exists()
-    # The sync ran after the rebuild.
     assert reconciler.incremental_sync.called
 
 
 def test_run_loop_does_not_rebuild_without_the_sentinel(tmp_path: Path) -> None:
-    """No rebuild.request sentinel → rebuild_index is never called."""
     reconciler = make_daemon_reconciler()
     store_writer = MagicMock()
     settings = make_daemon_settings()
@@ -301,13 +255,8 @@ def test_run_loop_does_not_rebuild_without_the_sentinel(tmp_path: Path) -> None:
 
 
 def test_rebuild_reconciler_closes_old_paperless_and_embedding_clients() -> None:
-    """On a config-change rebuild, both outgoing httpx clients are closed.
-
-    Regression guard for the EmbeddingClient hot-reload leak: old.paperless and
-    old.embedding_client must both be closed before the new reconciler is
-    built, releasing their connection pools deterministically rather than
-    leaving them to GC.
-    """
+    """Closing the outgoing httpx clients releases their pools instead of
+    leaving them to GC."""
     from indexer.daemon import _rebuild_reconciler
 
     old = MagicMock()

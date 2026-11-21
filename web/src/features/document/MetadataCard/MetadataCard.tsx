@@ -1,12 +1,7 @@
 /**
- * MetadataCard — document details sidebar card.
+ * Document details sidebar card: correspondent, document type and date.
  *
- * Renders three editable rows: Correspondent, Document type, and Document date.
- * Uses TaxonomyCombobox for the taxonomy pickers and EditableField for the date.
- *
- * ASN (archive serial number) and Notes are intentionally omitted from v1 because
- * `LibraryDocument` does not carry those fields (the GET response doesn't return
- * them). They can be added in a follow-up once the wire shape is extended.
+ * ASN and Notes are absent because `LibraryDocument` does not carry them.
  */
 import React from 'react';
 import type { LibraryDocument, TaxonomyItem } from '../../../api/types';
@@ -24,31 +19,19 @@ export interface MetadataPatch {
 }
 
 export interface MetadataCardProps {
-  /** The document being displayed/edited. */
   document: LibraryDocument;
-  /** Full correspondent list from the taxonomy endpoint. */
   correspondents: TaxonomyItem[];
-  /** Full document-type list from the taxonomy endpoint. */
   documentTypes: TaxonomyItem[];
-  /** Whether the current user may edit the fields. */
   canEdit: boolean;
-  /**
-   * Called with the changed field(s) when the user commits an edit.
-   * Each call carries only the fields that changed.
-   */
+  /** Each call carries only the fields that changed. */
   onPatch: (patch: MetadataPatch) => void;
-  /** Called with the name when the user creates a new correspondent inline. */
   onCreateCorrespondent: (name: string) => void;
-  /** Called with the name when the user creates a new document type inline. */
   onCreateDocumentType: (name: string) => void;
 }
 
 /**
- * Resolve a taxonomy item id from a name string.
- *
- * Returns null when the name is null or not found — the caller treats null as
- * "nothing selected". This name-based lookup is a known v1 limitation: a rename
- * in Paperless would break resolution until the next index reconcile.
+ * Resolve a taxonomy id by name; null means nothing selected. Known limitation:
+ * a rename in Paperless breaks the lookup until the next index reconcile.
  */
 function resolveId(items: TaxonomyItem[], name: string | null): number | null {
   if (name === null) return null;
@@ -56,13 +39,6 @@ function resolveId(items: TaxonomyItem[], name: string | null): number | null {
 }
 
 
-/**
- * Sidebar card showing correspondent, document type, and document date.
- *
- * In read-only mode (`canEdit=false`) all fields render as plain text.
- * In editable mode the taxonomy fields open a TaxonomyCombobox and the date
- * field uses EditableField with `type="date"`.
- */
 export function MetadataCard({
   document,
   correspondents,
@@ -74,10 +50,8 @@ export function MetadataCard({
 }: MetadataCardProps): React.ReactElement {
   const correspondentId = resolveId(correspondents, document.correspondent);
   const documentTypeId = resolveId(documentTypes, document.document_type);
-  // The API returns the document date as a full offset timestamp
-  // (`2026-01-13T00:00:00+00:00`). The editable input and the PATCH need the
-  // bare `YYYY-MM-DD`; the view text shows the formatted long date. An empty
-  // string drives the "No date" placeholder in both modes.
+  // The API sends a full offset timestamp; the date input and the PATCH need the
+  // bare `YYYY-MM-DD`. An empty string shows the "No date" placeholder.
   const dateValue = isoDateOnly(document.created);
   const dateDisplay = document.created === null ? '' : formatLongDate(document.created);
 

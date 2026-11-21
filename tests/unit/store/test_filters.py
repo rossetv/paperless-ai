@@ -1,18 +1,10 @@
-"""Tests for the date-range bug fix in store.reader._filters.build_filters.
+"""Tests for the date-range clauses of store.reader._filters.build_filters.
 
-Documents in index.db store ``created`` as a full ISO-8601 timestamp with a
-timezone suffix, e.g. ``"2025-04-25T00:00:00+00:00"``.  The date filters
-supplied by the search pipeline are bare ``YYYY-MM-DD`` strings.  A naïve
-lexicographic comparison (``d.created >= ?``) fails because the ``T…``
-suffix sorts *after* the bare date string, meaning the upper bound silently
-excludes every document dated on the last day of the range.
-
-The fix keeps a sargable plain-column comparison: ``d.created >= ?`` for the
-lower bound, and a half-open ``d.created < ?`` for the upper bound where the
-parameter is ``date_to`` advanced by one day.  This includes every timestamp
-on ``date_to`` while leaving ``idx_documents_created`` usable (a ``date()``
-wrapper would be non-sargable).  These tests confirm the correct behaviour by
-running the actual SQL against a real in-memory SQLite database.
+``created`` is stored as a full ISO-8601 timestamp while filters are bare
+``YYYY-MM-DD`` dates, so ``d.created <= date_to`` would exclude the last day of
+the range. The upper bound is a half-open ``d.created < date_to + 1 day``,
+which stays sargable on ``idx_documents_created``. The SQL runs against a real
+in-memory SQLite database.
 """
 
 from __future__ import annotations
@@ -41,9 +33,7 @@ def _make_filters(
 def _match(created: str, filters: SearchFilters) -> bool:
     """Return True if a row with *created* passes the SQL produced by *filters*.
 
-    Creates a single-row in-memory SQLite table aliased to ``d`` and executes
-    the WHERE clause returned by :func:`build_filters`.  The clause references
-    ``d.created``, so the FROM clause must use the alias ``d``.
+    The table is named ``d`` because the WHERE clause references ``d.created``.
     """
     where, params = build_filters(filters)
     db = sqlite3.connect(":memory:")
@@ -57,20 +47,15 @@ def _match(created: str, filters: SearchFilters) -> bool:
 
 
 def test_upper_bound_includes_same_day_with_tz_suffix() -> None:
-    """A stored timestamp on the bound date must be included by date_to."""
-    # "2025-04-25T00:00:00+00:00" must match date_to="2025-04-25".
-    # With the naïve ``d.created <= ?`` the stored timestamp sorts *after*
-    # the bare date string and the row is excluded — the bug this test pins.
+    # The stored timestamp sorts after the bare date, so ``<= date_to`` would miss it.
     assert _match("2025-04-25T00:00:00+00:00", _make_filters(date_to="2025-04-25"))
 
 
 def test_lower_bound_includes_same_day_with_tz_suffix() -> None:
-    """A stored timestamp on the bound date must be included by date_from."""
     assert _match("2025-04-25T00:00:00+00:00", _make_filters(date_from="2025-04-25"))
 
 
 def test_month_range_includes_mid_month_doc() -> None:
-    """A full-month range must include a document from a mid-month timestamp."""
     assert _match(
         "2025-04-25T00:00:00+00:00",
         _make_filters(date_from="2025-04-01", date_to="2025-04-30"),
@@ -78,7 +63,6 @@ def test_month_range_includes_mid_month_doc() -> None:
 
 
 def test_out_of_range_excluded() -> None:
-    """A document outside the upper bound must not be returned."""
     assert not _match(
         "2025-05-01T00:00:00+00:00",
         _make_filters(date_to="2025-04-30"),

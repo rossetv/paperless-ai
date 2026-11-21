@@ -33,7 +33,7 @@ log = structlog.get_logger(__name__)
 
 
 class OcrProcessor:
-    """Per-document OCR worker: returns the write-back outcome for the circuit breaker."""
+    """OCRs one Paperless document and reports its write-back outcome."""
 
     def __init__(
         self,
@@ -50,12 +50,10 @@ class OcrProcessor:
         self.title: str = doc.get("title") or "<untitled>"
 
     def process(self) -> WriteBackOutcome | None:
-        """Run the end-to-end OCR workflow for one document.
+        """Run the OCR workflow for one document.
 
-        Returns :attr:`WriteBackOutcome.SAVED` on a genuine write-back,
-        :attr:`WriteBackOutcome.QUARANTINED` on a permanent Paperless rejection,
-        or ``None`` when no transcription was saved (skipped, no pages, bad
-        content).
+        Returns ``SAVED``, ``QUARANTINED`` on a permanent Paperless rejection,
+        or ``None`` when no transcription was saved.
         """
         log.info("Processing document", doc_id=self.doc_id, title=self.title)
         self.ocr_provider.reset_stats()
@@ -92,7 +90,7 @@ class OcrProcessor:
             if stop:
                 # A clean skip is a success; a quarantine is not.
                 success = outcome is None
-                return outcome  # None (skipped) or WriteBackOutcome.QUARANTINED
+                return outcome
 
             pages = self._download_and_convert(current_tags)
             if pages is None:
@@ -102,8 +100,6 @@ class OcrProcessor:
                 page_count = len(pages)
                 page_results, failed_pages = self._ocr_pages_in_parallel(pages)
             finally:
-                # Owns the page source's whole lifetime: this releases the PDF
-                # temp directory (or the in-memory images) even if OCR raised.
                 pages.close()
 
             if failed_pages:
@@ -120,18 +116,12 @@ class OcrProcessor:
             )
             try:
                 outcome = self._update_paperless_document(full_text, models_used)
-                # Only a full successful write-back counts as success; the
-                # error-content path returns None, and QUARANTINED (caught below)
-                # is not a successful write (CODE_GUIDELINES §7.3 / L8 fix).
                 success = outcome is WriteBackOutcome.SAVED
                 return outcome
             except PAPERLESS_CALL_EXCEPTIONS as exc:
-                # The vision tokens for every page are already spent. A 4xx on
-                # the write-back is permanent — re-queuing would re-OCR the whole
-                # document next poll and burn the tokens again, forever.
-                # Quarantine it (error tag + the transcription we have) so it
-                # leaves the queue. Transient errors (5xx/network) re-raise for
-                # the daemon loop to retry once Paperless recovers.
+                # A 4xx is permanent: re-queuing would re-OCR the whole document,
+                # and spend the tokens, on every poll. Quarantine it with the
+                # transcription we have. Transient errors re-raise for a retry.
                 if not is_permanent_paperless_error(exc):
                     raise
                 log.error(
@@ -170,12 +160,11 @@ class OcrProcessor:
     def _try_skip_born_digital(
         self, document: dict
     ) -> tuple[bool, WriteBackOutcome | None]:
-        """Born-digital gate (spec D1–D6).
+        """Skip OCR for a born-digital PDF, tagging it done.
 
-        Returns ``(True, None)`` on a clean skip, ``(True,
-        WriteBackOutcome.QUARANTINED)`` on a permanent skip-write failure, or
-        ``(False, None)`` to fall through to the OCR path. Transient write
-        errors re-raise for the daemon loop to retry.
+        Returns ``(True, None)`` on a clean skip, ``(True, QUARANTINED)`` on a
+        permanent skip-write failure, or ``(False, None)`` to run OCR.
+        Transient write errors re-raise.
         """
         if not self.settings.OCR_SKIP_BORN_DIGITAL:
             return (False, None)
@@ -183,7 +172,7 @@ class OcrProcessor:
         if mime and "pdf" not in mime.lower():
             return (False, None)  # image upload -> scan -> OCR
         if not (document.get("content") or "").strip():
-            return (False, None)  # empty ngx content guard (D5)
+            return (False, None)  # no Paperless text layer to keep
         try:
             data, content_type = self.paperless_client.download_original(self.doc_id)
         except PAPERLESS_CALL_EXCEPTIONS:
@@ -214,7 +203,7 @@ class OcrProcessor:
             self.paperless_client.update_document_metadata(self.doc_id, tags=tags)
         except PAPERLESS_CALL_EXCEPTIONS as exc:
             if not is_permanent_paperless_error(exc):
-                raise  # transient -> loop retries
+                raise
             log.exception("born_digital.skip_write_rejected", doc_id=self.doc_id)
             finalise_document_with_error(
                 self.paperless_client,
@@ -233,10 +222,10 @@ class OcrProcessor:
         return (True, None)
 
     def _download_and_convert(self, current_tags: set[int]) -> PageSource | None:
-        """Download and open the document as a streamable :class:`PageSource`.
+        """Download the document as a :class:`PageSource`.
 
-        Returns ``None`` (and finalises with error or skips) when the document
-        cannot be decoded or has no pages.
+        Returns ``None`` when it cannot be decoded (error-tagging it) or has no
+        pages.
         """
         content, content_type = self.paperless_client.download_content(self.doc_id)
         try:
@@ -266,7 +255,7 @@ class OcrProcessor:
     def _ocr_pages_in_parallel(
         self, pages: PageSource
     ) -> tuple[list[PageResult], list[int]]:
-        """OCR all pages concurrently; return ``(page_results, failed_page_numbers)``."""
+        """OCR all pages concurrently; return the results and failed page numbers."""
         page_count = len(pages)
         with ThreadPoolExecutor(
             max_workers=self.settings.PAGE_WORKERS,
@@ -283,10 +272,8 @@ class OcrProcessor:
                 try:
                     results[index] = future.result()
                 except Exception:
-                    # rationale: per-page worker-dispatch boundary
-                    # (CODE_GUIDELINES §6.4, site 2) — one page's failure is
-                    # logged with its traceback and isolated as an error-marked
-                    # PageResult so the remaining pages still assemble.
+                    # One page's failure becomes an error-marked page so the
+                    # rest still assemble.
                     log.exception("OCR failed on page", page_num=index + 1)
                     failed_pages.append(index + 1)
                     results[index] = PageResult(
@@ -298,9 +285,7 @@ class OcrProcessor:
     def _ocr_one_page(self, pages: PageSource, index: int) -> PageResult:
         """Load page *index*, transcribe it, and free its bitmap.
 
-        The load is the memory-heavy step, so it happens inside the worker
-        thread (bounding resident pages to the pool size) and the image is
-        closed in a ``finally`` so a transcription failure cannot leak it.
+        Loading inside the worker thread bounds resident pages to the pool size.
         """
         image = pages.load_page(index)
         try:
@@ -318,9 +303,8 @@ class OcrProcessor:
     ) -> WriteBackOutcome | None:
         """Write *full_text* back to Paperless and swap the pipeline tags.
 
-        Returns :attr:`WriteBackOutcome.SAVED` on a real write-back, or
-        ``None`` for bad-content (empty, refusal, OCR error marker) — a neutral
-        outcome the circuit breaker must not count as a success.
+        Returns ``None`` for bad content (empty, refusal, OCR error marker),
+        which the circuit breaker must not count as a success.
         """
         if (
             not full_text.strip()
@@ -328,11 +312,9 @@ class OcrProcessor:
             or is_error_content(full_text, self.settings.OCR_REFUSAL_MARKERS)
         ):
             if is_shutdown_requested():
-                # A shutdown-aborted flex-capacity wait poisons page results
-                # with the refusal sentinel; error-tagging now would
-                # quarantine a healthy document on a routine deploy. Leave
-                # the PRE tag so the next boot re-attempts it instead
-                # (spec D5). A genuinely bad document re-tags on that run.
+                # A shutdown-aborted flex-capacity wait fills pages with the
+                # refusal sentinel; error-tagging would quarantine a healthy
+                # document on a routine deploy. Leave it queued for the next boot.
                 log.warning(
                     "OCR error content during shutdown; leaving document queued",
                     doc_id=self.doc_id,

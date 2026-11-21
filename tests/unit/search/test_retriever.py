@@ -1,19 +1,7 @@
-"""Tests for search.retriever — RRF fusion and the retrieve() entry point.
+"""Tests for search.retriever: RRF fusion and the retrieve() entry point.
 
-Verifies:
-- The RRF smoothing constant is the canonical 60.
-- RRF fusion of two ranked lists produces hand-computed expected scores.
-- A chunk appearing in multiple lists ranks above one appearing in only one.
-- retrieve() embeds every semantic spec in a single batch call.
-- An embedding failure degrades the affected query to empty — retrieve() never
-  raises (finding C3) — while keyword specs still contribute.
-- retrieve() returns a 2-tuple (chunks, RetrievalSignal) with correct signal
-  values from vector and keyword hits (Layer 2).
-
-The multi-spec behaviours (per-spec filters, cross-spec fusion, the per-document
-chunk cap, top-K document selection) are covered in
-:mod:`test_retriever_multispec`; per-spec filter resolution (``resolve_specs``)
-in :mod:`test_resolve_specs` (split for the 500-line ceiling, §3.1).
+Multi-spec behaviour is in :mod:`test_retriever_multispec` and ``resolve_specs``
+in :mod:`test_resolve_specs`.
 """
 
 from __future__ import annotations
@@ -79,19 +67,9 @@ def _retriever(top_k: int = 5) -> tuple[Retriever, MagicMock, MagicMock]:
     return retriever, store_reader, embedding_client
 
 
-# ---------------------------------------------------------------------------
-# RRF constant
-# ---------------------------------------------------------------------------
-
-
 def test_rrf_k_constant_is_sixty() -> None:
-    """_RRF_K must be the canonical 60 from spec §6.2."""
+    """_RRF_K must be the canonical RRF constant, 60."""
     assert _RRF_K == 60
-
-
-# ---------------------------------------------------------------------------
-# RRF fusion — hand-computed expected scores
-# ---------------------------------------------------------------------------
 
 
 def test_rrf_fusion_hand_computed_two_lists() -> None:
@@ -147,11 +125,6 @@ def test_chunk_in_multiple_lists_ranks_above_single_list() -> None:
     assert score_by_chunk[2] > score_by_chunk[1]
 
 
-# ---------------------------------------------------------------------------
-# retrieve — empty retrieval
-# ---------------------------------------------------------------------------
-
-
 def test_retrieve_empty_when_all_ranked_lists_are_empty() -> None:
     """retrieve returns ([], signal) when no chunks are found by any search method."""
     retriever, store_reader, embedding_client = _retriever(top_k=10)
@@ -166,11 +139,6 @@ def test_retrieve_empty_when_all_ranked_lists_are_empty() -> None:
     assert chunks == []
     assert signal.best_vector_similarity is None
     assert signal.has_keyword_hit is False
-
-
-# ---------------------------------------------------------------------------
-# retrieve — batch embedding of semantic specs
-# ---------------------------------------------------------------------------
 
 
 def test_retrieve_embeds_all_semantic_specs_in_one_batch() -> None:
@@ -188,17 +156,11 @@ def test_retrieve_embeds_all_semantic_specs_in_one_batch() -> None:
     assert "second query" in texts_embedded
 
 
-# ---------------------------------------------------------------------------
-# retrieve — embedding failures degrade to empty, never propagate (finding C3)
-# ---------------------------------------------------------------------------
-
-
 def _retryable_openai_error() -> openai.APIConnectionError:
     """A retryable OpenAI error — what embed() re-raises after exhausting retries.
 
-    The retriever catches ``EMBEDDING_FAILURE_EXCEPTIONS``, whose retryable
-    half is ``openai.APIError``; constructing one here is fixture-building for
-    a documented-catch contract, not a production openai call.
+    The retriever catches ``EMBEDDING_FAILURE_EXCEPTIONS``, whose retryable half is
+    ``openai.APIError``.
     """
     return openai.APIConnectionError(request=MagicMock())
 
@@ -206,11 +168,9 @@ def _retryable_openai_error() -> openai.APIConnectionError:
 class TestRetrieveEmbeddingFailure:
     """An embedding failure makes the query contribute nothing — retrieve never raises.
 
-    Finding C3: ``EmbeddingClient.embed`` raises ``EmbeddingError`` on a
-    non-retryable failure (bad key, 400) and re-raises a retryable OpenAI
-    error once its own retries are exhausted.  The retriever caught neither,
-    so a bad key or an embedding-endpoint outage turned every search into an
-    unhandled 500.  ``retrieve`` now degrades the affected query to empty.
+    ``EmbeddingClient.embed`` raises ``EmbeddingError`` on a non-retryable failure
+    (bad key, 400) and re-raises a retryable OpenAI error once its retries are
+    exhausted; either would otherwise turn every search into a 500.
     """
 
     def test_embedding_error_degrades_to_empty(self) -> None:
@@ -247,11 +207,6 @@ class TestRetrieveEmbeddingFailure:
 
         # The keyword hit survives even though vector embedding failed.
         assert {chunk.chunk_id for chunk in chunks} == {1}
-
-
-# ---------------------------------------------------------------------------
-# retrieve — RetrievalSignal (Layer 2)
-# ---------------------------------------------------------------------------
 
 
 class TestRetrievalSignal:

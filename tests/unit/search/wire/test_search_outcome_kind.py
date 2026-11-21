@@ -1,13 +1,7 @@
 """Tests for ``outcome_kind`` serialisation in ``search.wire.search``.
 
-Verifies that :func:`~search.wire.search.to_search_response` maps the
-``outcome_kind`` field from :class:`~search.models.SearchResult` to the wire
-model unchanged for all three discriminator values: ``"answered"``,
-``"clarify"``, and ``"no_match"``.
-
-The ``sources`` field is already empty for the retry kinds (tested by
-``test_core_fail_fast``); here we confirm the discriminator travels to the
-HTTP boundary correctly so the SPA can branch on it.
+The SPA branches on the discriminator, so each value must reach the wire
+response unchanged.
 """
 
 from __future__ import annotations

@@ -7,12 +7,11 @@ vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
 
-// ActiveFiltersStrip calls useFacets — mock it so the test has no query client.
+// ActiveFiltersStrip calls useFacets, which needs a query client.
 vi.mock('../ActiveFiltersStrip/ActiveFiltersStrip', () => ({
   ActiveFiltersStrip: () => null,
 }));
 
-// SearchTracePanel uses Disclosure — mock to a simple probe.
 vi.mock('../SearchTracePanel/SearchTracePanel', () => ({
   SearchTracePanel: ({ phases }: { phases: unknown[] }) =>
     phases.length > 0 ? (
@@ -78,8 +77,6 @@ function renderScreen(
 }
 
 describe('NoResultsScreen', () => {
-  // ── recap field ─────────────────────────────────────────────────────────────
-
   it('recaps the query in the search field', () => {
     renderScreen();
     expect(
@@ -102,8 +99,6 @@ describe('NoResultsScreen', () => {
     renderScreen();
     expect(screen.getByTestId('mock-filter-controls')).toBeInTheDocument();
   });
-
-  // ── clarify ─────────────────────────────────────────────────────────────────
 
   it('clarify — shows the planner clarify text and a narrowing-down caption', () => {
     renderScreen({
@@ -128,8 +123,6 @@ describe('NoResultsScreen', () => {
     expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /search without filters/i })).not.toBeInTheDocument();
   });
-
-  // ── no_match / judge_rejected ────────────────────────────────────────────────
 
   it('judge_rejected — shows candidate count in the message', () => {
     renderScreen({
@@ -167,8 +160,6 @@ describe('NoResultsScreen', () => {
     expect(screen.queryByRole('button', { name: /search without filters/i })).not.toBeInTheDocument();
   });
 
-  // ── no_match / empty_retrieval ───────────────────────────────────────────────
-
   it('empty_retrieval + filters set — shows filter-narrowed message and actions', () => {
     renderScreen(
       { outcome_kind: 'no_match', no_match_reason: 'empty_retrieval' },
@@ -192,8 +183,6 @@ describe('NoResultsScreen', () => {
     expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument();
   });
 
-  // ── no_match / weak_relevance ────────────────────────────────────────────────
-
   it('weak_relevance — shows rephrasing message', () => {
     renderScreen({ outcome_kind: 'no_match', no_match_reason: 'weak_relevance' });
     expect(
@@ -216,8 +205,6 @@ describe('NoResultsScreen', () => {
     );
     expect(screen.queryByRole('button', { name: /clear filters/i })).not.toBeInTheDocument();
   });
-
-  // ── trace panel ─────────────────────────────────────────────────────────────
 
   it('renders the trace panel for a no_match result with phases', () => {
     renderScreen({
@@ -246,8 +233,6 @@ describe('NoResultsScreen', () => {
     expect(screen.queryByTestId('mock-trace-panel')).not.toBeInTheDocument();
   });
 
-  // ── "Try instead" suggestions ────────────────────────────────────────────────
-
   it('renders a "Try instead" heading', () => {
     renderScreen();
     expect(screen.getByText(/try instead/i)).toBeInTheDocument();
@@ -266,8 +251,6 @@ describe('NoResultsScreen', () => {
     );
     expect(onSearch).toHaveBeenCalledWith('Invoices this month');
   });
-
-  // ── callback wiring ──────────────────────────────────────────────────────────
 
   it('fires onClearFilters when "Clear filters" is clicked', async () => {
     const onClearFilters = vi.fn();

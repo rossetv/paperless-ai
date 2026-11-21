@@ -1,18 +1,6 @@
-"""Tests for search.core — retrieve(), source assembly, filters, degradation.
+"""Tests for search.core: retrieve(), source assembly, UI filters, degradation.
 
-The companion to :mod:`test_core`, which covers the ``answer()`` bounded-loop
-contract.  This file covers the rest of ``search.core``:
-
-- ``retrieve()`` — the pure-RAG sources-only mode: a deterministic hybrid
-  (vector + FTS) plan, NO chat LLM call, an empty answer string, ranked sources.
-- SourceDocument assembly — resolved correspondent/type names, a correct
-  Paperless deep-link, a snippet, None taxonomy fields for a bare document.
-- ``ui_filters`` — bypass free-text resolution and reach the retriever.
-- Embedding-failure degradation — an embedding-backend failure degrades to the
-  no-match result instead of propagating a 500 (finding C3).
-
-Split from :mod:`test_core` for the 500-line ceiling (CODE_GUIDELINES §3.1).
-The core is assembled by ``build_search_core`` (see conftest.py).
+The ``answer()`` refinement contract is covered in :mod:`test_core`.
 """
 
 from __future__ import annotations
@@ -66,11 +54,6 @@ def _unreachable_synth_client() -> ScriptedLLMClient:
         planner_response=planner_response_json(),
         synthesiser_responses=[answered_response_json("must not happen", citations=[])],
     )
-
-
-# ---------------------------------------------------------------------------
-# retrieve() — pure-RAG sources-only mode, zero chat LLM calls
-# ---------------------------------------------------------------------------
 
 
 class TestRetrieveOnly:
@@ -164,11 +147,6 @@ class TestRetrieveOnly:
         assert result.stats.llm_calls == 0
 
 
-# ---------------------------------------------------------------------------
-# SourceDocument assembly — resolved names and a correct paperless_url
-# ---------------------------------------------------------------------------
-
-
 class TestSourceDocumentAssembly:
     """SourceDocuments carry resolved taxonomy names and a Paperless deep-link."""
 
@@ -250,13 +228,11 @@ class TestSourceDocumentAssembly:
 
 
 class TestSourcesReflectCitations:
-    """answer() returns the documents the answer actually cited (SRCH-02).
+    """answer() returns the documents the answer actually cited.
 
-    ``SearchResult.sources`` is documented as the *cited* source documents, and
-    the frontend resolves each ``[n]`` marker by matching ``document_id`` in
-    ``sources``. Returning every retrieved document — cited or not — breaks that
-    contract. The cited set is returned when the model emits parseable
-    citations; with none, the full retrieved set is the safe fallback.
+    The frontend resolves each ``[n]`` marker by ``document_id`` in ``sources``, so
+    uncited documents must not be returned. With no parseable citations the full
+    retrieved set is the fallback.
     """
 
     def _core_over_two_docs(self, *, citations: list[int]) -> SearchResult:
@@ -337,11 +313,6 @@ class TestSourcesReflectCitations:
         assert ordered_ids == [7, 8]
 
 
-# ---------------------------------------------------------------------------
-# UI filters are threaded through to retrieval
-# ---------------------------------------------------------------------------
-
-
 class TestUiFilters:
     """ui_filters bypass free-text resolution and reach the retriever."""
 
@@ -370,28 +341,20 @@ class TestUiFilters:
         )
         core.answer("a query", ui_filters=ui_filters)
 
-        # The UI filters are the authoritative global constraint: a spec guess
-        # that does not resolve (the empty test taxonomy drops "npower") leaves
-        # the UI's correspondent_id=55 as the only filter reaching vector_search.
-        # resolve_specs intersects per spec, so the object is rebuilt but its
-        # values equal the UI filters exactly.
+        # The UI filters are the authoritative constraint: the spec guess does not
+        # resolve (the empty test taxonomy drops "npower"), so only the UI's
+        # correspondent_id=55 reaches vector_search. resolve_specs rebuilds the
+        # filters object per spec, so compare by value.
         passed_filters = store_reader.vector_search.call_args[0][2]
         assert passed_filters == ui_filters
-
-
-# ---------------------------------------------------------------------------
-# Embedding failure — answer() degrades to the no-match result (finding C3)
-# ---------------------------------------------------------------------------
 
 
 class TestEmbeddingFailure:
     """An embedding-backend failure degrades to the no-match SearchResult.
 
-    Finding C3: an ``EmbeddingError`` (bad/expired key, embedding-endpoint
-    outage) raised inside retrieval used to propagate out of ``core.answer()``
-    as an unhandled 500.  The retriever now catches it and degrades the query
-    to empty; ``answer()`` then returns the ordinary "no matching documents"
-    result with no synthesis call.
+    An ``EmbeddingError`` (bad key, endpoint outage) inside retrieval must not
+    escape ``core.answer()`` as a 500; the query degrades to "no matching
+    documents" with no synthesis call.
     """
 
     def _store_reader_no_keyword_hits(self) -> MagicMock:

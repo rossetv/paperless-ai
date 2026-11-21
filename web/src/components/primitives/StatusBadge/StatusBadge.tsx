@@ -1,7 +1,6 @@
 import { cn } from '../../../lib/cn';
 import styles from './StatusBadge.module.css';
 
-/** The semantic tone of a StatusBadge — drives its colour. */
 export type StatusTone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral';
 
 export interface StatusBadgeProps {
@@ -13,19 +12,10 @@ export interface StatusBadgeProps {
   tone: StatusTone;
   /** The label — typically a single short word ("Active", "Suspended"). */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
-/**
- * Small status pill with a leading colour dot.
- *
- * Renders a non-interactive `<span>`: a coloured dot followed by the label.
- * The dot takes the tone's foreground colour via `currentColor`. Used for
- * account status and API-key state.
- *
- * Tier: components/primitives (CODE_GUIDELINES §12.3). Allowed deps: lib/.
- */
+/** Status pill with a leading dot in the tone's colour, e.g. account status or API-key state. */
 export function StatusBadge({
   tone,
   children,

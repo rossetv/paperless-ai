@@ -97,8 +97,8 @@ def _build_pdf(pages: list[bytes | None], *, tounicode: bytes | None = None) -> 
 
 
 def test_real_born_digital_with_blank_page_skips():
-    # Regression: under the pre-2026-08-15 rule the blank page (0 chars) tripped
-    # the text floor and sent the whole document to vision OCR.
+    # Regression: a blank page (0 chars) must not trip the text floor and send
+    # the whole document to vision OCR.
     d = classify_original(_build_pdf([_TEXT, None]), min_chars=1)
     assert d.skip is True and d.reason == "born-digital", d
     assert d.signals["pages"] == 2 and d.signals["min_page_chars"] == 0
@@ -107,9 +107,8 @@ def test_real_born_digital_with_blank_page_skips():
 def test_real_born_digital_with_inline_logo_skips():
     # Regression: pdfimages prints an inline image as `[inline]` (and a non-Ref
     # image object as `[none]`) -- one token where an XObject has two -- which
-    # the fixed-index ppi parse read as the size column -> ProbeError -> every
-    # such PDF fell to vision OCR. A text page with a small inline logo is
-    # born-digital and must skip.
+    # a fixed-index column parse misreads. A text page with a small inline logo
+    # is born-digital and must skip.
     d = classify_original(_build_pdf([_TEXT + b" " + _INLINE_LOGO]), min_chars=1)
     assert d.skip is True and d.reason == "born-digital", d
     assert 0.0 < d.signals["max_coverage"] < 0.05
@@ -123,11 +122,10 @@ def test_real_inline_image_only_page_still_ocrs():
 
 
 def test_real_mangled_ligature_text_layer_ocrs():
-    # Regression (prod, 2026-08-07): an Outlook-for-Mac print-to-PDF carried
-    # a Quartz-written ToUnicode that mapped the Calibri "ti" ligature to ";"
-    # -- pdftotext read "mee;ng" for "meeting", every presence signal said
-    # born-digital, and the garbage text layer was kept. Through real poppler:
-    # a broken CMap must send the document to vision OCR.
+    # Regression: an Outlook-for-Mac print-to-PDF carried a Quartz-written
+    # ToUnicode that maps the Calibri "ti" ligature to ";", so pdftotext reads
+    # "mee;ng" for "meeting" while every presence signal says born-digital. A
+    # broken CMap must send the document to vision OCR.
     text = b"BT /F1 12 Tf 72 770 Td (Minutes of the meeYng held on Monday) Tj ET"
     d = classify_original(_build_pdf([text], tounicode=_BROKEN_TOUNICODE), min_chars=1)
     assert d.skip is False and d.reason == "mangled-text-layer", d

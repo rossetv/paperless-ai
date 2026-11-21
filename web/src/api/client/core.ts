@@ -1,29 +1,12 @@
 /**
- * Core fetch infrastructure — base URL, error types, and the shared request
- * wrapper used by every typed endpoint in the api/client/ modules.
+ * Base URL, error types and the shared request wrapper behind every endpoint.
  *
- * Security invariant (spec §7.3, §9.2):
- *   - Every request sends `credentials: 'include'` so the signed `HttpOnly`
- *     session cookie is attached automatically by the browser.
- *   - No credential is ever stored in or shipped with the frontend bundle.
- *     Authentication is done via the login handshake → cookie; the JS bundle
- *     never sees or forwards any raw secret.
- *
- * Error model:
- *   - `Unauthenticated` — thrown on any 401 response; the app detects this
- *     class to route the user to the login screen.
- *   - `ApiError`        — thrown on any other non-2xx response.
- *   - 2xx              — resolved to the parsed JSON body (typed).
- *
- * Allowed deps: none (leaf module — CODE_GUIDELINES §12.3).
+ * A 401 throws `Unauthenticated` (the app routes to login); any other non-2xx
+ * throws `ApiError`; a 2xx resolves to the parsed JSON body.
  */
 
 /** The base URL for all API calls. Same-origin in production; proxied in dev. */
 export const BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? '';
-
-// ---------------------------------------------------------------------------
-// Error types
-// ---------------------------------------------------------------------------
 
 /**
  * Thrown when the server returns a 401 Unauthorised response.
@@ -59,27 +42,12 @@ export class ApiError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Internal fetch helper
-// ---------------------------------------------------------------------------
-
 /**
- * Core fetch wrapper: attaches `credentials: 'include'`, normalises errors,
- * and returns the parsed JSON body typed as `T`.
+ * Fetch with `credentials: 'include'`, normalise errors and return the JSON body as `T`.
  *
- * The `credentials: 'include'` flag ensures the signed `HttpOnly` session
- * cookie is sent with every cross-origin same-site request. Because the
- * cookie is `HttpOnly` the JS bundle cannot read or forward the raw key —
- * the browser is the only entity that sees it.
- *
- * A 202/204 response carries no body — `request` resolves to `undefined`
- * rather than attempting to parse one. An endpoint that returns no content
- * is typed `request<void>`.
- *
- * Additionally, a body-presence check guards against future endpoints that
- * return 200 with an empty body (e.g. a 304-equivalent or a no-content 200):
- * reading an empty body as JSON would throw a `SyntaxError`. The guard reads
- * the text first and skips JSON parsing when the body is empty.
+ * The session cookie is `HttpOnly`, so only the browser ever sees it. A 202, a
+ * 204 or an empty 2xx body resolves to `undefined` (type such endpoints
+ * `request<void>`) instead of failing in `JSON.parse`.
  */
 export async function request<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -94,13 +62,10 @@ export async function request<T>(url: string, init: RequestInit): Promise<T> {
     throw new ApiError(response.status);
   }
 
-  // 202 Accepted / 204 No Content explicitly carry no body.
   if (response.status === 202 || response.status === 204) {
     return undefined as T;
   }
 
-  // Guard against an empty body on any other 2xx — a `content-length: 0`
-  // header or an actually-empty body both indicate no JSON to parse.
   const contentLength = response.headers.get('content-length');
   if (contentLength === '0') {
     return undefined as T;
@@ -114,9 +79,7 @@ export async function request<T>(url: string, init: RequestInit): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    // A non-JSON 2xx body (proxy error page, CDN HTML, etc.) must not surface
-    // as a raw SyntaxError ("Unexpected token <") — throw a typed ApiError so
-    // the app's error-handling path handles it uniformly.
+    // A non-JSON 2xx body (e.g. a proxy error page) becomes an ApiError, not a raw SyntaxError.
     throw new ApiError(response.status, 'Server returned a non-JSON response');
   }
 }

@@ -78,10 +78,8 @@ describe('EditableField', () => {
         onCommit={onCommit}
       />,
     );
-    // View button reads as the formatted display text.
     const button = screen.getByRole('button', { name: '13 January 2026' });
     fireEvent.click(button);
-    // The input pre-fills with the raw value, not the display text.
     const input = screen.getByDisplayValue('2026-01-13');
     fireEvent.change(input, { target: { value: '2026-02-01' } });
     fireEvent.blur(input);

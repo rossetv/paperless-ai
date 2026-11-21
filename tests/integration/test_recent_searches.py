@@ -1,22 +1,4 @@
-"""Integration tests for Wave 2 per-user recent searches.
-
-Exercises the record-then-list flow through the real search FastAPI app over
-a real ``tmp_path`` ``app.db`` and seeded ``index.db``. ``POST /api/search``
-runs against the stub ``SearchCore`` that ``build_account_client`` wires, so
-no Paperless mock is needed.
-
-Coverage:
-- A successful signed-in search is recorded and listed by
-  GET /api/recent-searches.
-- Recent searches come back newest-first.
-- One user never sees another user's recent searches.
-- GET /api/recent-searches is rejected 401 when unauthenticated.
-
-Note: passwords use "alice-password" / "bob-password" (≥8 chars) because
-the LoginRequest validator enforces a minimum password length.
-
-Wave 3 note: the legacy SEARCH_API_KEY bearer test is removed.
-"""
+"""Integration tests for per-user recent searches: record, list and isolation."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""Tests for classifier.worker — the ``ClassificationProcessor.process()`` lifecycle.
-
-The content-truncation, tag-enrichment, custom-field, and stats helpers are
-covered in ``test_worker_metadata``; this file is split off it for the
-500-line ceiling (CODE_GUIDELINES §3.1).
-"""
+"""Tests for the classifier.worker ``ClassificationProcessor.process()`` lifecycle."""
 
 from __future__ import annotations
 
@@ -121,7 +116,7 @@ class TestProcessHappyPath:
 
 
 class TestProcessEarlyExits:
-    """Conditions that cause process() to exit before LLM classification."""
+    """Conditions that make process() exit before LLM classification."""
 
     @patch("classifier.worker.claim_processing_tag", return_value=False)
     @patch("classifier.worker.release_processing_tag")
@@ -160,7 +155,7 @@ class TestProcessEarlyExits:
         tags = proc.paperless_client.update_document_metadata.call_args.kwargs.get(
             "tags"
         )
-        assert 552 in tags  # ERROR_TAG_ID preserved
+        assert 552 in tags
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
@@ -205,8 +200,6 @@ class TestProcessEarlyExits:
 
 
 class TestProcessErrorPaths:
-    """Error finalisation triggered by empty/generic classification results."""
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_none_result_finalises_with_error(self, mock_release, mock_claim):
@@ -237,8 +230,8 @@ class TestProcessErrorPaths:
         proc.process()
 
         # A shutdown-aborted flex-capacity wait yields the same empty result
-        # as a genuine failure; the document must NOT be error-tagged — it
-        # keeps its queue tag and the next boot re-attempts it (spec D5).
+        # as a genuine failure; the document must not be error-tagged, so the
+        # next boot re-attempts it.
         proc.paperless_client.update_document_metadata.assert_not_called()
 
     @patch("classifier.worker.claim_processing_tag", return_value=True)
@@ -333,8 +326,6 @@ class TestProcessErrorPaths:
 
 
 class TestProcessLockRelease:
-    """The finally block releases the processing lock when claimed."""
-
     @patch("classifier.worker.claim_processing_tag", return_value=True)
     @patch("classifier.worker.release_processing_tag")
     def test_lock_released_on_success(self, mock_release, mock_claim):

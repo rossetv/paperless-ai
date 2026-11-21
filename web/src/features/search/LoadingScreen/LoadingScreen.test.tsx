@@ -2,8 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { LoadingScreen } from './LoadingScreen';
 import type { PhaseRecord } from '../../../api/types';
 
-// FilterControls drives useFacets; mock it to a static element so the
-// LoadingScreen test stays isolated from the facets API.
+// FilterControls drives useFacets; stub it out to stay off the facets API.
 vi.mock('../../../components/patterns/FilterControls/FilterControls', () => ({
   FilterControls: () => <div data-testid="mock-filter-controls" />,
 }));
@@ -92,7 +91,6 @@ describe('LoadingScreen', () => {
 
   it('renders the live elapsed counter', () => {
     renderLoading();
-    // Starts at 0:00 and ticks up — assert the m:ss counter format renders.
     expect(screen.getByText(/^\d+:\d{2}$/)).toBeInTheDocument();
   });
 
@@ -111,8 +109,7 @@ describe('LoadingScreen', () => {
     renderLoading({ phaseRecords: [PLAN_RECORD], activePhase: 'retrieve' });
     expect(screen.getByText(/Rewritten:/)).toBeInTheDocument();
     expect(screen.getByText(/npower bills 2024/)).toBeInTheDocument();
-    // The LLM phase carries a token/cost chip; the same figure also appears as
-    // the header's cumulative counter (one phase → counter equals the chip).
+    // With one phase the header's cumulative counter equals the phase chip.
     expect(
       screen.getAllByText('1.2k tok · $0.004').length,
     ).toBeGreaterThanOrEqual(1);
@@ -123,13 +120,11 @@ describe('LoadingScreen', () => {
       phaseRecords: [PLAN_RECORD, JUDGE_RECORD],
       activePhase: 'synthesise',
     });
-    // Summary lines are shown
     expect(screen.getByText(/planning the query/i)).toBeInTheDocument();
     expect(screen.getByText(/judging relevance/i)).toBeInTheDocument();
-    // Verdict details NOT shown in lean rail
+    // The live rail omits verdict details.
     expect(screen.queryByText('Annual statement')).toBeNull();
     expect(screen.queryByText('wrong year')).toBeNull();
-    // The synthesise phase is the active row.
     expect(screen.getByText(/synthesising the answer/i)).toBeInTheDocument();
   });
 
@@ -163,13 +158,11 @@ describe('LoadingScreen', () => {
       phaseRecords: [],
       activePhase: null,
     });
-    // no phases → no counter
     expect(screen.queryByText(/tok ·/)).toBeNull();
   });
 
   it('renders no rail before any phase has started', () => {
     const { container } = renderLoading({ phaseRecords: [], activePhase: null });
-    // No stages → no ordered list rendered inside the progress card.
     expect(container.querySelector('ol')).not.toBeInTheDocument();
   });
 });

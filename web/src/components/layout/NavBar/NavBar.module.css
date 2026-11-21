@@ -1,24 +1,4 @@
-/*
- * NavBar layout component — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Stylelint enforces this.
- *
- * DESIGN.md §4 Navigation / §6 Navigation Glass:
- *   - Background: rgba(0,0,0,0.8) translucent dark → --colour-nav-bg
- *   - backdrop-filter: saturate(180%) blur(20px) → --backdrop-nav
- *   - Height: 48px → --height-nav
- *   - Text: white, 12px SF Pro Text, weight 400 → --font-size-nav, --font-weight-nav
- *   - Sticky: floats above content regardless of section background
- *
- * DESIGN.md §7 Don't:
- *   - "Don't make the navigation opaque — the glass blur effect is essential"
- *   - The backdrop-filter is non-negotiable; if not supported, the fallback is
- *     a fully opaque dark background (still usable, no content bleed).
- *
- * Note: backdrop-filter requires a non-null background-color so the blur has a
- * surface to render on. --colour-nav-bg (rgba(0,0,0,0.8)) provides exactly that.
- */
+/* backdrop-filter needs a translucent background-color (--colour-nav-bg) to blur against. */
 
 .navbar {
   position: sticky;
@@ -26,7 +6,7 @@
   z-index: var(--z-nav);
   height: var(--height-nav);
   background-color: var(--colour-nav-bg);
-  backdrop-filter: var(--backdrop-nav); /* Glass navigation effect (DESIGN.md §6 Navigation Glass) */
+  backdrop-filter: var(--backdrop-nav);
   /* stylelint-disable-next-line property-no-vendor-prefix */
   -webkit-backdrop-filter: var(--backdrop-nav);
   color: var(--colour-text-on-dark);
@@ -35,8 +15,7 @@
   font-weight: var(--font-weight-nav);
 }
 
-/* ── Surface swap — hide the desktop glass bar on mobile.
-   MobileTopBar + BottomTabBar take over below 700 px. ── */
+/* MobileTopBar and BottomTabBar take over below 700 px. */
 @media (width <= 699.98px) {
   .navbar {
     display: none;
@@ -64,7 +43,6 @@
   gap: var(--spacing-8);
 }
 
-/* ── Centre links region — a row of nav links after the brand. ── */
 .links {
   display: flex;
   align-items: center;
@@ -72,7 +50,6 @@
   margin-inline-start: var(--spacing-13);
 }
 
-/* ── Flexible spacer — pushes .actions to the trailing edge. ── */
 .spacer {
   flex: 1;
 }

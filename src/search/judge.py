@@ -1,16 +1,10 @@
-"""LLM document-relevance judge — the Layer-3 pre-synthesis screen.
+"""LLM document-relevance judge, the pre-synthesis screen.
 
-The judge makes one LLM call on the cheap SEARCH_JUDGE_MODEL (falling back
-through CLASSIFY_MODELS) and returns one :class:`~search.models.DocVerdict` per
-candidate. It is recall-biased and fail-open: any failure — malformed, empty,
-unparseable, all-models-failed — returns a verdict that keeps EVERY candidate
-document (degraded=True), so a broken judge can only ever reduce the answer
-model's context when it is confident, never block a real answer.
-``judge()`` never raises.
-
-All LLM calls go through ``OpenAIChatMixin._create_completion``
-(CODE_GUIDELINES.md §8.1): the judge subclasses the mixin and inherits the
-shared OpenAI singleton, the ``@retry`` backoff, and the ``llm_limiter``.
+One call on the cheap SEARCH_JUDGE_MODEL returns a
+:class:`~search.models.DocVerdict` per candidate. It is recall-biased and
+fail-open: any failure keeps every candidate (``degraded=True``), so a broken
+judge can only narrow the answer model's context when it is confident, never
+block a real answer. ``judge()`` never raises.
 """
 
 from __future__ import annotations
@@ -42,11 +36,9 @@ _MAX_REASON_CHARS = 200
 def _parse_score(raw: object) -> float:
     """Coerce a raw model ``score`` into a clamped ``[0.0, 1.0]`` float.
 
-    A missing, non-numeric, or boolean value defaults to ``0.0`` — the judge
-    expressing no positive confidence — never trusting raw model output
-    unchecked (CODE_GUIDELINES §10.4). A genuine number outside the unit range
-    is clamped to the nearest bound. ``bool`` is rejected explicitly: it is an
-    ``int`` subclass, so ``True`` would otherwise read as the score ``1.0``.
+    A missing, non-numeric, or boolean value defaults to ``0.0``. ``bool`` is
+    rejected explicitly: it is an ``int`` subclass, so ``True`` would otherwise
+    read as ``1.0``.
     """
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return 0.0
@@ -56,21 +48,14 @@ def _parse_score(raw: object) -> float:
 class RelevanceJudge(OpenAIChatMixin):
     """Decide which retrieved documents could plausibly answer the query.
 
-    A pure function wrapped in a class for dependency injection; all state is in
-    the injected ``settings``, so instances are safe to share across threads.
-
-    Args:
-        settings: Supplies SEARCH_JUDGE_MODEL and CLASSIFY_MODELS for the fallback
-            chain, SEARCH_JUDGE_REASONING_EFFORT, SEARCH_JUDGE_RATIONALES, and
-            MAX_RETRIES / MAX_RETRY_BACKOFF_SECONDS for the inherited retry
-            decorator.
+    All state is in the injected ``settings``, so instances are safe to share
+    across threads.
     """
 
     _STAT_KEYS: tuple[str, ...] = ()
 
     def __init__(self, settings: Settings) -> None:
-        # ``self.settings`` is the attribute the @retry decorator reads via
-        # duck-typing — it must not be renamed.
+        # The @retry decorator reads ``self.settings`` by name; don't rename it.
         self.settings = settings
         self._init_stats()
 
@@ -90,24 +75,14 @@ class RelevanceJudge(OpenAIChatMixin):
     ) -> JudgeVerdict:
         """Return the relevant-document verdict for *query* over *candidates*.
 
-        One LLM call on SEARCH_JUDGE_MODEL. Fail-open on every failure path:
-        the returned verdict then keeps all candidate ids with ``degraded=True``.
-        Never raises.
+        Fail-open on every failure path: the verdict then keeps all candidate
+        ids with ``degraded=True``. Never raises.
 
         Args:
-            query: The user's original search query.
-            candidates: The document-level candidates (id + best-chunk snippet).
-            asker: Optional sanitised display name of the requesting user.
-                When set, an identity line is added to the user message so the
-                judge can resolve ownership — a document whose content belongs
-                to the asker is treated as relevant to "my …" queries even when
-                the title does not repeat their name.
-            today: Today's date in YYYY-MM-DD form, or ``None``. When set, a
-                date line is added to the user message so the judge can resolve
-                relative temporal language.
-            usage_sink: Optional list to receive one
-                :class:`~common.llm.LlmCallUsage` record capturing the token
-                usage for this call. Pass ``None`` to skip capture.
+            asker: Sanitised display name of the requester, so the judge can
+                treat the asker's own documents as relevant to "my …" queries.
+            today: ``YYYY-MM-DD``, so the judge can resolve relative dates.
+            usage_sink: Receives one :class:`~common.llm.LlmCallUsage` record.
         """
         all_ids = frozenset(c.document_id for c in candidates)
         if not all_ids:
@@ -148,9 +123,8 @@ class RelevanceJudge(OpenAIChatMixin):
                 else None
             ),
             response_format=_judge_response_format(self.settings),
-            # Explicit standard tier on OpenAI — never flex here (a human is
-            # waiting), and an explicit tier dodges the live-verified 401 on
-            # tierless requests (spec D4). Omitted for non-OpenAI providers.
+            # Explicit standard tier on OpenAI: never flex (a human is waiting),
+            # and tierless requests have been seen to 401.
             service_tier=(
                 "default" if self.settings.SEARCH_JUDGE_PROVIDER == "openai" else None
             ),
@@ -170,8 +144,8 @@ class RelevanceJudge(OpenAIChatMixin):
     ) -> JudgeVerdict:
         """Parse *raw* into a JudgeVerdict, failing open on any malformed shape.
 
-        Bail (empty kept, not degraded) ONLY when the model returned an explicit
-        verdict list AND every candidate's resolved ``keep`` is ``False``.
+        It is a bail (nothing kept, not degraded) only when the model returned
+        a verdict list and every candidate's resolved ``keep`` is ``False``.
 
         Missing candidates (the model omitted a document id) default to
         ``keep=True`` with an empty reason — recall-biased safe default. Reason
@@ -191,7 +165,6 @@ class RelevanceJudge(OpenAIChatMixin):
         if not isinstance(raw_verdicts, list):
             return self._fail_open(all_ids, reason="missing or non-list verdicts field")
 
-        # Build a lookup from the model's verdicts, validating each entry.
         model_verdicts: dict[int, tuple[bool, str, float]] = {}
         for item in raw_verdicts:
             if not isinstance(item, dict):
@@ -205,16 +178,13 @@ class RelevanceJudge(OpenAIChatMixin):
                 continue
             if not isinstance(reason, str):
                 reason = ""
-            # Cap reason length; never trust raw model text unchecked.
             reason = reason[:_MAX_REASON_CHARS]
             score = _parse_score(item.get("score"))
             if doc_id in all_ids:
                 model_verdicts[doc_id] = (bool(keep), reason, score)
 
-        # Build a DocVerdict for EVERY candidate. An omitted id defaults to
-        # keep=True, "" reason, score 0.0 — recall-biased: the judge not
-        # mentioning a doc is not an explicit drop. The score carries no gate
-        # weight; it is used only for source ranking (Phase 3B).
+        # An omitted id is kept: the judge not mentioning a doc is not an
+        # explicit drop. The score has no gate weight; it only ranks sources.
         doc_verdicts: list[DocVerdict] = []
         for candidate in candidates:
             if candidate.document_id in model_verdicts:
@@ -237,10 +207,8 @@ class RelevanceJudge(OpenAIChatMixin):
     def _fail_open(self, all_ids: frozenset[int], reason: str) -> JudgeVerdict:
         """Return a keep-everything verdict and log a warning.
 
-        Every fail-open verdict carries ``keep=True`` and ``score=1.0``. The
-        score is set to full confidence so source ranking (Phase 3B) does not
-        demote documents the judge could not evaluate — a degraded judge only
-        ever loses precision, never blocks an answer.
+        ``score=1.0`` so source ranking does not demote documents the judge
+        could not evaluate.
         """
         log.warning("judge.degraded_to_fail_open", reason=reason)
         return JudgeVerdict(

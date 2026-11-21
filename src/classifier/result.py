@@ -7,19 +7,13 @@ from dataclasses import dataclass
 from common.llm import extract_json_object
 
 
-# frozen dataclass: this is a structured value object constructed after parsing
-# LLM JSON output.  frozen=True enforces immutability so results can be safely
-# shared across threads and logged without risk of accidental mutation;
-# slots=True shaves memory and prevents attribute typos (CODE_GUIDELINES §5.2).
 @dataclass(frozen=True, slots=True)
 class ClassificationResult:
     """Immutable container for classification LLM output fields."""
 
     title: str
     correspondent: str
-    # tuple, not list: a frozen dataclass with a mutable list field is only
-    # half-frozen — result.tags.append(...) would silently mutate "frozen"
-    # state. A tuple makes the immutability contract real (CODE_GUIDELINES §5.2).
+    # A tuple, so the frozen dataclass cannot be mutated through tags.append().
     tags: tuple[str, ...]
     document_date: str
     document_type: str
@@ -50,19 +44,16 @@ def parse_classification_response(text: str) -> ClassificationResult:
 
     def get_str(key: str) -> str:
         value = data.get(key, "")
-        # Treat None as absent → empty string, as before.
         if value is None:
             return ""
-        # On providers without JSON-schema enforcement (Ollama, fallback models)
-        # the LLM can return scalars such as ``false`` or ``0`` for text fields.
-        # Coercing those to "False"/"0" would write nonsense taxonomy names into
-        # Paperless, so we treat non-string scalar types as absent instead.
-        # This guard is the real defence for the unstructured-output path.
+        # Without JSON-schema enforcement (Ollama, fallback models) the LLM can
+        # return ``false`` or ``0`` for text fields; writing "False" into
+        # Paperless would be nonsense, so non-string scalars count as absent.
         if isinstance(value, (bool, int, float)):
             return ""
         return str(value).strip()
 
-    # Coerce the tags field: the LLM sometimes returns a single string
+    # The LLM sometimes returns a single string instead of a list.
     tags_value = data.get("tags", [])
     if isinstance(tags_value, str):
         tags_list = [tags_value] if tags_value.strip() else []

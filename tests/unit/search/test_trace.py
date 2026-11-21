@@ -1,4 +1,4 @@
-"""Tests for the _Telemetry accumulator and phase events in search.trace (Task 4)."""
+"""Tests for the _Telemetry accumulator and phase events in search.trace."""
 
 from search.models import LlmCallUsage, PhaseRecord, TokenUsage
 from search.pricing import SEED_PRICES_AS_OF, ModelPrice
@@ -124,11 +124,6 @@ def test_non_llm_phase_has_no_tokens():
         now=lambda: 0.0,
     )
     assert events[0].tokens is None and events[0].cost is None
-
-
-# --------------------------------------------------------------------------- #
-# Price-book provenance (PART 2)
-# --------------------------------------------------------------------------- #
 
 
 def test_cost_summary_carries_seed_provenance_by_default():

@@ -1,4 +1,4 @@
-"""Tests for end-to-end classifier workflow."""
+"""End-to-end tests for the classifier workflow over a stateful Paperless mock."""
 
 from __future__ import annotations
 
@@ -91,16 +91,7 @@ class TestClassifierHappyPath:
     """Complete classification lifecycle with realistic data."""
 
     def test_complete_classification_workflow(self):
-        """
-        Full classification lifecycle:
-        1. Create ClassificationProcessor with mocks
-        2. Document has OCR content with page headers and model footer
-        3. Mock provider returns valid ClassificationResult
-        4. Taxonomy cache pre-populated with items
-        5. Run process()
-        6. Verify update_document_metadata called with correct fields
-        7. Verify processing tag released
-        """
+        """A classified document gets its metadata; the processing tag is released."""
         settings = _make_settings()
         ocr_content = _make_ocr_content(num_pages=3)
 
@@ -125,10 +116,8 @@ class TestClassifierHappyPath:
         )
         processor.process()
 
-        # Verify classifier was called
         classifier.classify_text.assert_called_once()
 
-        # Verify the final tag state includes expected items
         final_tags = set(state["tags"])
 
         # CLASSIFY_POST_TAG_ID should be present
@@ -137,7 +126,7 @@ class TestClassifierHappyPath:
         # Processing tag (600) should be released
         assert 600 not in final_tags
 
-        # Find the classification update call (the one with title)
+        # The classification update is the call that carries a title.
         classification_call = None
         for c in client.update_document_metadata.call_args_list:
             kwargs = c[1] if c[1] else {}
@@ -150,22 +139,19 @@ class TestClassifierHappyPath:
         )
         kwargs = classification_call[1]
 
-        # Verify title
         assert kwargs.get("title") == "Invoice from Acme Corp"
 
-        # Verify correspondent_id (Acme Corp exists with id=1)
+        # Acme Corp exists with id=1.
         assert kwargs.get("correspondent_id") == 1
 
-        # Verify document_type_id (Invoice exists with id=10)
+        # Invoice exists with id=10.
         assert kwargs.get("document_type_id") == 10
 
-        # Verify date
         assert kwargs.get("document_date") == "2025-06-15"
 
-        # Verify language
         assert kwargs.get("language") == "en"
 
-        # Verify custom fields (person field)
+        # The person custom field.
         custom_fields = kwargs.get("custom_fields")
         assert custom_fields is not None
         person_field = next((f for f in custom_fields if f["field"] == 7), None)
@@ -196,7 +182,6 @@ class TestClassifierHappyPath:
         )
         processor.process()
 
-        # New correspondent should be created
         client.create_correspondent.assert_called_once_with("Brand New Company")
 
     def test_classification_without_person_field(self):
@@ -220,7 +205,6 @@ class TestClassifierHappyPath:
         )
         processor.process()
 
-        # Find the classification update call
         classification_call = None
         for c in client.update_document_metadata.call_args_list:
             kwargs = c[1] if c[1] else {}
@@ -232,7 +216,6 @@ class TestClassifierHappyPath:
             "update_document_metadata was never called with 'title'"
         )
         kwargs = classification_call[1]
-        # custom_fields should be None (no person to set)
         assert kwargs.get("custom_fields") is None
 
 
@@ -240,11 +223,7 @@ class TestClassifierEmptyContent:
     """Document has empty or blank content."""
 
     def test_empty_content_requeues_for_ocr(self):
-        """
-        Document with empty content:
-        1. Run process()
-        2. Verify requeue (PRE_TAG_ID added back)
-        """
+        """A document with empty content is requeued for OCR (PRE_TAG_ID added back)."""
         settings = _make_settings()
 
         doc = make_document(id=42, tags=[444], content="")
@@ -262,7 +241,6 @@ class TestClassifierEmptyContent:
         )
         processor.process()
 
-        # Classifier should not have been called
         classifier.classify_text.assert_not_called()
 
         # Document should be requeued: PRE_TAG_ID in final tags
@@ -294,14 +272,9 @@ class TestClassifierRefusalContent:
     """Document content contains refusal markers."""
 
     def test_refusal_content_gets_error_tag(self):
-        """
-        When document content contains refusal markers:
-        1. Run process()
-        2. Verify error tag applied
-        """
+        """Content containing a model refusal gets the error tag."""
         settings = _make_settings()
 
-        # Content with a refusal phrase
         refusal_content = (
             "--- Page 1 ---\n"
             "I'm sorry, I can't assist with that.\n\n"
@@ -311,9 +284,8 @@ class TestClassifierRefusalContent:
         doc = make_document(id=42, tags=[444], content=refusal_content)
         client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
-        # The classifier will be called (content is not empty), and might
-        # return a valid result, but _apply_classification checks for
-        # needs_error_tag on the original content.
+        # The classifier still runs and may succeed; the error comes from
+        # checking the original content.
         classifier = _make_mock_classifier()
         taxonomy_cache = _make_taxonomy_cache(client)
 
@@ -326,7 +298,7 @@ class TestClassifierRefusalContent:
         )
         processor.process()
 
-        # Error tag should be in final state
+        # 552 is the error tag.
         assert 552 in state["tags"]
 
     def test_redacted_marker_content_gets_error_tag(self):
@@ -355,7 +327,7 @@ class TestClassifierRefusalContent:
         )
         processor.process()
 
-        # Error tag should be in final state
+        # 552 is the error tag.
         assert 552 in state["tags"]
 
     def test_generic_document_type_gets_error_tag(self):
@@ -366,7 +338,6 @@ class TestClassifierRefusalContent:
         doc = make_document(id=42, tags=[444], content=ocr_content)
         client, state = make_stateful_paperless(doc, with_taxonomy=True)
 
-        # Return a result with a generic document type
         result = make_classification_result(document_type="Document")
         classifier = _make_mock_classifier(result=result)
         taxonomy_cache = _make_taxonomy_cache(client)
@@ -380,7 +351,7 @@ class TestClassifierRefusalContent:
         )
         processor.process()
 
-        # Error tag should be in final state
+        # 552 is the error tag.
         assert 552 in state["tags"]
 
     def test_classifier_returns_none_gets_error_tag(self):
@@ -405,7 +376,7 @@ class TestClassifierRefusalContent:
         )
         processor.process()
 
-        # Error tag should be in final state
+        # 552 is the error tag.
         assert 552 in state["tags"]
 
     def test_already_claimed_document_skipped(self):
@@ -427,5 +398,4 @@ class TestClassifierRefusalContent:
         )
         processor.process()
 
-        # Classifier should not have been called
         classifier.classify_text.assert_not_called()

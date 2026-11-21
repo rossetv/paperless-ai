@@ -1,23 +1,7 @@
-"""Tests for search.document_routes — the PDF proxy route and document summary route.
+"""Tests for search.document_routes: the PDF proxy and the document routes.
 
-Exercises GET /api/documents/{id}/pdf through a tiny FastAPI app and
-TestClient with the AppState wired and a stubbed PaperlessClient, so the
-routing, auth gate, streaming and error mapping are all real. Covers: a
-signed-in user streams a document; the body and Content-Type are forwarded;
-an unknown id maps to 404; a Paperless network error maps to 502; an
-unauthenticated request is rejected 401.
-
-Also exercises GET /api/documents/{id} (the shareable-URL document summary
-endpoint added in Task 3): returns a DocumentSummaryResponse for a known id,
-404 for an unknown id, and 401 when unauthenticated.
-
-Adaptation from the plan: AppState takes app_db_path (a path string), not a
-live connection. The app is built with the tmp_path file; test fixtures seed
-data via a separate connection to the same file, matching the established
-pattern from test_deps.py.
-
-Wave 3 note: the legacy SEARCH_API_KEY bearer is retired. Tests that
-exercised the legacy bearer path have been removed.
+Runs through a tiny FastAPI app with the AppState wired and a stubbed
+PaperlessClient, so routing, auth gates, streaming and error mapping are real.
 """
 
 from __future__ import annotations
@@ -59,17 +43,10 @@ def _build_app(
 ) -> FastAPI:
     """A FastAPI app mounting the document router with a stubbed client.
 
-    The router is built with a *paperless_factory* that returns the supplied
-    stub, so no real Paperless call is made. An optional *store_reader* stub
-    is forwarded to ``build_document_router`` for the document-summary route.
-    An optional *settings* mock is forwarded to ``build_document_router`` so
-    that tests can configure tag-id attributes on the same object the router
-    sees; when omitted a fresh :class:`~unittest.mock.MagicMock` is created.
-
-    The centralised Paperless exception handlers (from
-    :func:`~search.api.register_paperless_exception_handlers`) are registered
-    on every test app so that tests covering the error-mapping behaviour see
-    the same handler as production code.
+    *paperless_factory* returns the supplied stub, so no real Paperless call is
+    made. *settings* defaults to a fresh MagicMock; pass one to configure tag ids
+    on the object the router sees. The production Paperless exception handlers are
+    registered so error-mapping tests see the real behaviour.
     """
     app = FastAPI()
     register_paperless_exception_handlers(app)
@@ -435,9 +412,8 @@ def test_get_document_includes_paperless_url(app_db_path, conn) -> None:
 def test_get_document_deeplink_uses_public_url(app_db_path, conn) -> None:
     """The deep-link is built from PAPERLESS_PUBLIC_URL, not the internal URL.
 
-    Regression: the button linked to the container-internal PAPERLESS_URL
-    (e.g. http://paperless:8000), unreachable from a browser. It must use the
-    browser-facing PAPERLESS_PUBLIC_URL.
+    The container-internal PAPERLESS_URL (e.g. http://paperless:8000) is
+    unreachable from a browser.
     """
     store_reader = MagicMock()
     store_reader.get_document_summary.return_value = _DOCUMENT_SUMMARY
@@ -483,9 +459,7 @@ def test_get_document_requires_auth(app_db_path) -> None:
     store_reader.get_document_summary.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
 # PATCH /api/documents/{id}
-# ---------------------------------------------------------------------------
 
 
 def _min_summary(doc_id: int) -> DocumentSummary:
@@ -502,12 +476,10 @@ def _min_summary(doc_id: int) -> DocumentSummary:
 
 
 class PaperlessStub:
-    """A minimal Paperless stub recording ``update_document_metadata`` and taxonomy calls.
+    """A minimal Paperless stub recording metadata updates and taxonomy calls.
 
-    Replaces ``MagicMock`` for PATCH tests that need to assert on what was
-    sent to Paperless, and for taxonomy GET/POST tests (correspondents,
-    document-types, tags).  Also supports ``get_document`` (pipeline tag-swap
-    tests) and ``delete_document`` (delete-document tests).
+    Also supports ``get_document`` (pipeline tag-swap tests) and
+    ``delete_document`` (delete-document tests).
     """
 
     def __init__(self) -> None:
@@ -522,10 +494,6 @@ class PaperlessStub:
         # When set, the corresponding method raises instead of returning a value.
         self.raise_on_get_document: Exception | None = None
         self.raise_on_update: Exception | None = None
-
-    # ------------------------------------------------------------------
-    # PATCH support
-    # ------------------------------------------------------------------
 
     def update_document_metadata(self, doc_id: int, **kwargs) -> None:
         """Record the call, or raise if ``raise_on_update`` is set."""
@@ -547,10 +515,6 @@ class PaperlessStub:
             f"expected kwargs {expected_kwargs!r}, got {actual_kwargs!r}"
         )
 
-    # ------------------------------------------------------------------
-    # Taxonomy list/create support
-    # ------------------------------------------------------------------
-
     def set_list_return(self, method_name: str, items: list) -> None:
         """Configure what a list_* method returns."""
         self._list_returns[method_name] = items
@@ -560,29 +524,23 @@ class PaperlessStub:
         self._create_returns[method_name] = item
 
     def list_correspondents(self) -> list:
-        """Return pre-configured correspondents list."""
         return self._list_returns.get("list_correspondents", [])
 
     def list_document_types(self) -> list:
-        """Return pre-configured document types list."""
         return self._list_returns.get("list_document_types", [])
 
     def list_tags(self) -> list:
-        """Return pre-configured tags list."""
         return self._list_returns.get("list_tags", [])
 
     def create_correspondent(self, name: str) -> dict:
-        """Record the call and return the pre-configured response."""
         self._create_calls.append(("create_correspondent", name))
         return self._create_returns.get("create_correspondent", {"id": 0, "name": name})
 
     def create_document_type(self, name: str) -> dict:
-        """Record the call and return the pre-configured response."""
         self._create_calls.append(("create_document_type", name))
         return self._create_returns.get("create_document_type", {"id": 0, "name": name})
 
     def create_tag(self, name: str) -> dict:
-        """Record the call and return the pre-configured response."""
         self._create_calls.append(("create_tag", name))
         return self._create_returns.get("create_tag", {"id": 0, "name": name})
 
@@ -591,10 +549,6 @@ class PaperlessStub:
         assert (method_name, name) in self._create_calls, (
             f"expected {method_name}({name!r}); calls were {self._create_calls}"
         )
-
-    # ------------------------------------------------------------------
-    # Pipeline tag-swap support (reclassify / retranscribe)
-    # ------------------------------------------------------------------
 
     def set_get_document_return(self, doc: dict) -> None:
         """Configure the dict returned by :meth:`get_document`."""
@@ -608,12 +562,7 @@ class PaperlessStub:
             return {"id": doc_id, "tags": []}
         return self._get_document_return
 
-    # ------------------------------------------------------------------
-    # Delete support
-    # ------------------------------------------------------------------
-
     def delete_document(self, doc_id: int) -> None:
-        """Record the delete call."""
         self._delete_calls.append(doc_id)
 
     def assert_delete_document_called_with(self, doc_id: int) -> None:
@@ -677,11 +626,7 @@ def test_patch_document_with_notes_field(app_db_path, conn) -> None:
 
 
 def test_patch_document_deeplink_uses_public_url(app_db_path, conn) -> None:
-    """The PATCH response deep-link is built from PAPERLESS_PUBLIC_URL.
-
-    Regression companion to the GET-summary case: the post-update summary must
-    also carry a browser-facing deep-link, not the container-internal one.
-    """
+    """The PATCH response deep-link is built from PAPERLESS_PUBLIC_URL."""
     paperless = PaperlessStub()
     store_reader = MagicMock()
     store_reader.get_document_summary.return_value = _min_summary(42)
@@ -760,9 +705,7 @@ def test_patch_document_null_clears_field(app_db_path, conn) -> None:
     paperless.assert_update_document_metadata_called_with(42, title=None)
 
 
-# ---------------------------------------------------------------------------
-# Taxonomy GET + POST  (/api/correspondents, /api/document-types, /api/tags)
-# ---------------------------------------------------------------------------
+# Taxonomy routes: /api/correspondents, /api/document-types, /api/tags
 
 
 @pytest.fixture()
@@ -912,11 +855,7 @@ def test_taxonomy_get_unauthenticated(unauthenticated_client) -> None:
     assert r.status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# POST /api/documents/{id}/reclassify
-# POST /api/documents/{id}/retranscribe
-# DELETE /api/documents/{id}
-# ---------------------------------------------------------------------------
+# Pipeline re-runs (reclassify, retranscribe) and DELETE /api/documents/{id}
 
 
 def test_reclassify_swaps_post_tag_for_pre_tag(
@@ -1009,12 +948,7 @@ def test_delete_document_unauthenticated(unauthenticated_client) -> None:
     assert unauthenticated_client.delete("/api/documents/42").status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# Centralised Paperless upstream error mapping (Bugs 6 & 7)
-# These tests verify the exception handlers registered by
-# register_paperless_exception_handlers map httpx errors to the correct HTTP
-# status codes rather than letting them surface as a generic 500.
-# ---------------------------------------------------------------------------
+# Paperless upstream errors map to 404/502 through the shared handlers.
 
 
 def test_reclassify_paperless_404_returns_404(
@@ -1022,9 +956,8 @@ def test_reclassify_paperless_404_returns_404(
 ) -> None:
     """If Paperless doesn't know the document, the SPA should see 404, not 500.
 
-    This covers Bug 6: _swap_pipeline_tag calls paperless.get_document, which
-    raises httpx.HTTPStatusError(404) for an unknown id.  The centralised
-    handler must map it to a 404 response.
+    _swap_pipeline_tag calls paperless.get_document, which raises
+    httpx.HTTPStatusError(404) for an unknown id.
     """
     settings.CLASSIFY_PRE_TAG_ID = 333
     settings.CLASSIFY_POST_TAG_ID = 444
@@ -1042,11 +975,7 @@ def test_reclassify_paperless_404_returns_404(
 def test_patch_paperless_upstream_500_returns_502(
     api_client, paperless_stub, settings
 ) -> None:
-    """A Paperless 5xx on PATCH /api/documents/{id} surfaces as 502, not 500.
-
-    This covers Bug 7: update_document_metadata raises httpx.HTTPStatusError(500).
-    The centralised handler must map it to 502 Bad Gateway.
-    """
+    """A Paperless 5xx on PATCH /api/documents/{id} surfaces as 502, not 500."""
     paperless_stub.raise_on_update = httpx.HTTPStatusError(
         "server error",
         request=httpx.Request("PATCH", "https://paperless.example/x"),
@@ -1063,8 +992,7 @@ def test_paperless_network_error_returns_502(
 ) -> None:
     """A network-level failure reaching Paperless surfaces as 502, not 500.
 
-    This covers Bug 7: the centralised httpx.RequestError handler must map
-    any ConnectError / timeout to 502 Bad Gateway.
+    Covers any httpx.RequestError, such as ConnectError or a timeout.
     """
     settings.CLASSIFY_PRE_TAG_ID = 333
     settings.CLASSIFY_POST_TAG_ID = 444

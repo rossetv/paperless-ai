@@ -1,10 +1,3 @@
-/**
- * Tests for the TanStack Query hooks (hooks.ts).
- *
- * Each hook is tested via a minimal QueryClient wrapper. `fetch` is mocked
- * globally; no real network calls are made.
- */
-
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -41,10 +34,6 @@ import {
 import type { SearchResponse, FacetsResponse, StatsResponse } from './types';
 import { EMPTY_TELEMETRY } from './types/__fixtures__/searchResponse';
 import { Unauthenticated, ApiError } from './client';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeWrapper(): React.FC<{ children: React.ReactNode }> {
   const client = new QueryClient({
@@ -95,10 +84,6 @@ const STATS_RESPONSE: StatsResponse = {
   embedding_model: 'text-embedding-3-small',
 };
 
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
 });
@@ -106,10 +91,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
-
-// ---------------------------------------------------------------------------
-// useSearch
-// ---------------------------------------------------------------------------
 
 describe('useSearch', () => {
   it('returns loading state initially then data on success', async () => {
@@ -149,15 +130,10 @@ describe('useSearch', () => {
       () => useSearch({ query: '' }),
       { wrapper: makeWrapper() },
     );
-    // With an empty query the hook should be disabled (pending state, not fetching)
     expect(result.current.isPending).toBe(true);
     expect(result.current.isFetching).toBe(false);
   });
 });
-
-// ---------------------------------------------------------------------------
-// useFacets
-// ---------------------------------------------------------------------------
 
 describe('useFacets', () => {
   it('returns loading state initially then data on success', async () => {
@@ -183,10 +159,6 @@ describe('useFacets', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useStats
-// ---------------------------------------------------------------------------
-
 describe('useStats', () => {
   it('returns loading state initially then data on success', async () => {
     mockFetch(200, STATS_RESPONSE);
@@ -210,10 +182,6 @@ describe('useStats', () => {
     expect(result.current.error).toBeInstanceOf(Unauthenticated);
   });
 });
-
-// ---------------------------------------------------------------------------
-// useLogin
-// ---------------------------------------------------------------------------
 
 const SAMPLE_USER = {
   id: 1,
@@ -249,10 +217,6 @@ describe('useLogin', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useLogout
-// ---------------------------------------------------------------------------
-
 describe('useLogout', () => {
   it('mutation starts idle', () => {
     const { result } = renderHook(() => useLogout(), { wrapper: makeWrapper() });
@@ -267,8 +231,7 @@ describe('useLogout', () => {
   });
 
   it('clears the entire query cache on settle (not just the me entry)', async () => {
-    // Shared-machine security: after logout, all cached query data must be
-    // gone — not just the me entry — so the next user cannot see stale data.
+    // Shared-machine security: logout must drop every cached query, not just `me`.
     mockFetch(204, null);
 
     const client = new QueryClient({
@@ -277,7 +240,6 @@ describe('useLogout', () => {
     const wrapper = ({ children }: { children: React.ReactNode }) =>
       React.createElement(QueryClientProvider, { client }, children);
 
-    // Seed several cache entries to simulate a signed-in user's state.
     client.setQueryData(['me'], { user: SAMPLE_USER });
     client.setQueryData(['documents', { page: 1 }], { documents: [] });
     client.setQueryData(['settings'], { settings: [] });
@@ -290,18 +252,12 @@ describe('useLogout', () => {
     result.current.mutate();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    // All cache entries must be gone after logout.
     expect(client.getQueryData(['me'])).toBeUndefined();
     expect(client.getQueryData(['documents', { page: 1 }])).toBeUndefined();
     expect(client.getQueryData(['settings'])).toBeUndefined();
-    // The cache must be completely empty.
     expect(client.getQueryCache().getAll()).toHaveLength(0);
   });
 });
-
-// ---------------------------------------------------------------------------
-// useMe
-// ---------------------------------------------------------------------------
 
 describe('useMe', () => {
   it('returns the current user on success', async () => {
@@ -319,10 +275,6 @@ describe('useMe', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useSetupStatus
-// ---------------------------------------------------------------------------
-
 describe('useSetupStatus', () => {
   it('returns { needed } on success', async () => {
     mockFetch(200, { needed: true });
@@ -331,10 +283,6 @@ describe('useSetupStatus', () => {
     expect(result.current.data?.needed).toBe(true);
   });
 });
-
-// ---------------------------------------------------------------------------
-// usePublicStats
-// ---------------------------------------------------------------------------
 
 describe('usePublicStats', () => {
   it('returns the public counts on success', async () => {
@@ -350,10 +298,6 @@ describe('usePublicStats', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
-
-// ---------------------------------------------------------------------------
-// useSetup
-// ---------------------------------------------------------------------------
 
 describe('useSetup', () => {
   it('mutation starts idle', () => {
@@ -376,10 +320,6 @@ describe('useSetup', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
-
-// ---------------------------------------------------------------------------
-// useRecentSearches
-// ---------------------------------------------------------------------------
 
 describe('useRecentSearches', () => {
   it('returns the recent searches on success', async () => {
@@ -406,10 +346,6 @@ describe('useRecentSearches', () => {
     expect(result.current.error).toBeInstanceOf(Unauthenticated);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Wave 3 — user-management hooks
-// ---------------------------------------------------------------------------
 
 describe('useUsers', () => {
   it('returns the user list on success', async () => {
@@ -467,10 +403,6 @@ describe('useDeleteUser', () => {
     expect(result.current.error).toBeInstanceOf(ApiError);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Wave 3 — API-key hooks
-// ---------------------------------------------------------------------------
 
 const SAMPLE_KEY = {
   id: 1,
@@ -533,10 +465,6 @@ describe('useDeleteApiKey', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 });
-
-// ---------------------------------------------------------------------------
-// Wave 4 — settings hooks
-// ---------------------------------------------------------------------------
 
 const SETTINGS_RESPONSE = {
   settings: [
@@ -628,16 +556,8 @@ describe('useDocuments', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Wave 6 — index-operations hooks
-// ---------------------------------------------------------------------------
-
 describe('index-operations hooks', () => {
-  /**
-   * STATUS_BODY mirrors `IndexStatusResponse` from `wire.py` exactly:
-   *   health: "ok" | "degraded" | "down"  (NOT an object)
-   *   daemons[].fields: name, state, detail, processed_count, last_heartbeat
-   */
+  /** Mirrors the backend `IndexStatusResponse`; `health` is a string verdict. */
   const STATUS_BODY = {
     health: 'ok',
     daemons: [
@@ -657,18 +577,12 @@ describe('index-operations hooks', () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // health is the wire.py string verdict, not an object
     expect(result.current.data?.health).toBe('ok');
     expect(result.current.data?.daemons[0]?.name).toBe('ocr');
     expect(result.current.data?.daemons[0]?.processed_count).toBe(412);
   });
 
   it('useIndexActivity resolves with cycles (not entries)', async () => {
-    /**
-     * Body mirrors `IndexActivityResponse` from `wire.py`:
-     *   cycles: list[ReconcileCycleResponse]
-     *   (id, kind, started_at, finished_at, ok, summary, detail)
-     */
     mockFetch(200, {
       cycles: [
         {
@@ -692,11 +606,6 @@ describe('index-operations hooks', () => {
   });
 
   it('useFailedDocuments resolves with the failed-document list — title nullable', async () => {
-    /**
-     * Body mirrors `IndexFailedResponse` from `wire.py`:
-     *   documents: list[FailedDocumentResponse]
-     *   (document_id, title: str|None, failure_count)
-     */
     mockFetch(200, {
       documents: [
         {
@@ -716,11 +625,6 @@ describe('index-operations hooks', () => {
   });
 
   it('useRebuildIndex resolves with the RebuildResponse body', async () => {
-    /**
-     * Body mirrors `RebuildResponse` from `wire.py`:
-     *   accepted: bool
-     *   detail: str
-     */
     mockFetch(200, {
       accepted: true,
       detail: 'Index rebuild triggered.',
@@ -730,7 +634,6 @@ describe('index-operations hooks', () => {
     });
     const response = await result.current.mutateAsync();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // result is NOT void — carries accepted + detail
     expect(response.accepted).toBe(true);
     expect(typeof response.detail).toBe('string');
   });
@@ -745,16 +648,8 @@ describe('index-operations hooks', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useDocument (Wave 7 — Shareable URLs)
-// ---------------------------------------------------------------------------
-
 import { useDocument } from './hooks';
 import * as client from './client';
-
-// ---------------------------------------------------------------------------
-// Wave 8/9 — taxonomy + document-patch hooks
-// ---------------------------------------------------------------------------
 
 import {
   useUpdateDocument,
@@ -803,14 +698,9 @@ describe('useDocument', () => {
       paperless_url: 'https://p.example/documents/0/',
     });
     renderHook(() => useDocument(null), { wrapper: makeWrapper() });
-    // The query is disabled — getDocument must not be called.
     expect(stub).not.toHaveBeenCalled();
   });
 });
-
-// ---------------------------------------------------------------------------
-// useUpdateDocument
-// ---------------------------------------------------------------------------
 
 describe('useUpdateDocument', () => {
   beforeEach(() => {
@@ -849,9 +739,8 @@ describe('useUpdateDocument', () => {
   });
 
   it('does not clobber the cache with the stale server response', async () => {
-    // The server returns a reconcile-lagged response with the old title.
-    // The cache must NOT be set to that stale value directly — onSettled
-    // invalidates instead, triggering a refetch when the reconcile catches up.
+    // The PATCH response lags the reconcile and carries the old title; it must
+    // not be written into the cache (onSettled invalidates instead).
     const staleServerResponse = {
       id: 42,
       title: 'STALE-FROM-SERVER',
@@ -863,14 +752,13 @@ describe('useUpdateDocument', () => {
       paperless_url: 'https://p.example/documents/42/',
     };
     vi.spyOn(client, 'patchDocument').mockResolvedValue(staleServerResponse);
-    // Also stub getDocument so the invalidation refetch doesn't error loudly.
+    // Stub getDocument so the invalidation refetch doesn't error.
     vi.spyOn(client, 'getDocument').mockResolvedValue(staleServerResponse);
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     const wrapper = ({ children }: { children: React.ReactNode }) =>
       React.createElement(QueryClientProvider, { client: qc }, children);
 
-    // Seed the cache with the current document.
     qc.setQueryData(['document', 42], {
       id: 42, title: 'current', correspondent: null, document_type: null,
       created: null, tags: [], page_count: null, paperless_url: '',
@@ -878,23 +766,16 @@ describe('useUpdateDocument', () => {
 
     const { result } = renderHook(() => useUpdateDocument(), { wrapper });
 
-    // Fire the mutation but don't await the settled state (which triggers a
-    // background refetch) — just check that the cache was never set to the
-    // stale server title directly.
+    // Don't await settle (it triggers a background refetch); only check the
+    // cache never held the stale server title.
     result.current.mutate({ id: 42, patch: { title: 'fresh' } });
 
-    // onMutate runs synchronously and sets the optimistic title.
     await waitFor(() => {
       const cached = qc.getQueryData<{ title: string | null }>(['document', 42]);
-      // After onMutate the cache has 'fresh' (optimistic merge), never 'STALE-FROM-SERVER'.
       expect(cached?.title).not.toBe('STALE-FROM-SERVER');
     });
   });
 });
-
-// ---------------------------------------------------------------------------
-// useCorrespondents
-// ---------------------------------------------------------------------------
 
 describe('useCorrespondents', () => {
   beforeEach(() => {
@@ -911,10 +792,6 @@ describe('useCorrespondents', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useDocumentTypes
-// ---------------------------------------------------------------------------
-
 describe('useDocumentTypes', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -930,10 +807,6 @@ describe('useDocumentTypes', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useTags
-// ---------------------------------------------------------------------------
-
 describe('useTags', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -948,10 +821,6 @@ describe('useTags', () => {
     expect(result.current.data?.[0]?.name).toBe('urgent');
   });
 });
-
-// ---------------------------------------------------------------------------
-// useCreateCorrespondent
-// ---------------------------------------------------------------------------
 
 describe('useCreateCorrespondent', () => {
   beforeEach(() => {
@@ -971,10 +840,6 @@ describe('useCreateCorrespondent', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useCreateDocumentType
-// ---------------------------------------------------------------------------
-
 describe('useCreateDocumentType', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -992,10 +857,6 @@ describe('useCreateDocumentType', () => {
     expect(result.current.data).toEqual(newItem);
   });
 });
-
-// ---------------------------------------------------------------------------
-// useCreateTag
-// ---------------------------------------------------------------------------
 
 describe('useCreateTag', () => {
   beforeEach(() => {

@@ -1,9 +1,4 @@
-"""Tests for search.auth — the post-Wave-3 authentication primitives.
-
-Covers extract_bearer (the header parser), api_key_caller (a live key
-resolves to its owner's CurrentUser; an unknown/revoked key and a None
-bearer resolve to None), and authorise_role (the RBAC ranking).
-"""
+"""Tests for search.auth: extract_bearer, api_key_caller and authorise_role."""
 
 from __future__ import annotations
 

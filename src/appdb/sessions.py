@@ -1,21 +1,8 @@
-"""Server-side sessions in the application database — the ``sessions`` table.
+"""Server-side sessions, the ``sessions`` table.
 
-This module owns the :class:`Session` dataclass and the typed query functions
-over the ``sessions`` table. Sessions are server-side (spec §2, "Sessions")
-so that suspending or deleting a user revokes their access *instantly* — a
-stateless token cannot be revoked.
-
-The cookie carries an opaque random token; this table stores only
-``sha256(token)`` (spec §4.2, §4.4). A database leak therefore does not yield
-usable session tokens. Hashing the cookie token into ``token_hash`` is the
-caller's job (the search server's auth layer); this module is told the hash.
-
-Expiry is *not* enforced by :func:`get_by_token_hash` — it returns a row even
-when ``expires_at`` is in the past, so the caller can both reject the request
-and prune the dead row. :func:`prune_expired` is the bulk sweep.
-
-Allowed deps: sqlite3, structlog. Forbidden: store, search, daemon packages,
-FastAPI.
+Server-side so that suspending or deleting a user revokes access instantly. Only
+``sha256(token)`` is stored, so a database leak yields no usable session; the
+caller does the hashing.
 """
 
 from __future__ import annotations
@@ -32,19 +19,9 @@ log = structlog.get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class Session:
-    """One row of the ``sessions`` table — a live server-side session.
+    """One row of the ``sessions`` table.
 
-    Attributes:
-        id: The integer primary key.
-        token_hash: The SHA-256 hex digest of the opaque cookie token. The
-            raw token is never stored.
-        user_id: The owning user's id; cascades on user deletion.
-        created_at: ISO-8601 UTC creation timestamp.
-        expires_at: ISO-8601 UTC expiry; the caller compares it to the clock.
-        last_seen_at: ISO-8601 UTC timestamp of the last request that used
-            this session.
-        user_agent: The ``User-Agent`` of the creating request, or ``None``.
-        ip: The client IP of the creating request, or ``None``.
+    ``user_agent`` and ``ip`` come from the request that created the session.
     """
 
     id: int
@@ -71,7 +48,6 @@ def _row_to_session(row: sqlite3.Row) -> Session:
     )
 
 
-# The column list shared by every SELECT.
 _SESSION_COLUMNS = (
     "id, token_hash, user_id, created_at, expires_at, last_seen_at, user_agent, ip"
 )
@@ -86,21 +62,7 @@ def create(
     user_agent: str | None = None,
     ip: str | None = None,
 ) -> Session:
-    """Insert a new session and return it fully populated.
-
-    ``created_at`` and ``last_seen_at`` are set to the current UTC time.
-
-    Args:
-        conn: An open, migrated ``app.db`` connection.
-        token_hash: The SHA-256 hex digest of the cookie token.
-        user_id: The owning user's id.
-        expires_at: The ISO-8601 UTC expiry timestamp.
-        user_agent: The creating request's ``User-Agent``, or ``None``.
-        ip: The creating request's client IP, or ``None``.
-
-    Returns:
-        The created :class:`Session`.
-    """
+    """Insert a new session and return it fully populated."""
     now = utc_now_iso()
     with conn:
         cursor = conn.execute(
@@ -116,8 +78,6 @@ def create(
         (cursor.lastrowid,),
     ).fetchone()
     if row is None:
-        # The row was just inserted on this connection — if it is missing the
-        # database is in an unrecoverable state.
         raise RowVanishedError(
             f"session {cursor.lastrowid} missing immediately after INSERT"
         )
@@ -127,12 +87,8 @@ def create(
 def get_by_token_hash(conn: sqlite3.Connection, token_hash: str) -> Session | None:
     """Return the session whose ``token_hash`` matches, or ``None``.
 
-    The row is returned even when ``expires_at`` is in the past — expiry is
-    the caller's check (so it can reject the request and prune the row).
-
-    Args:
-        conn: An open ``app.db`` connection.
-        token_hash: The SHA-256 hex digest to look up.
+    Expired rows are returned too, so the caller can both reject the request
+    and prune the row.
     """
     row = conn.execute(
         f"SELECT {_SESSION_COLUMNS} FROM sessions WHERE token_hash = ?",  # nosec B608 - _SESSION_COLUMNS is a module constant; token_hash bound via ?
@@ -144,13 +100,8 @@ def get_by_token_hash(conn: sqlite3.Connection, token_hash: str) -> Session | No
 def touch_last_seen(conn: sqlite3.Connection, token_hash: str, *, seen_at: str) -> None:
     """Set ``last_seen_at`` for the session with *token_hash* to *seen_at*.
 
-    The caller (the auth dependency) throttles this to roughly once every
-    five minutes per session, so it is not a write on every request.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        token_hash: The session's token hash.
-        seen_at: The ISO-8601 UTC timestamp to record.
+    The auth dependency throttles this to about once per five minutes per
+    session, so it is not a write on every request.
     """
     with conn:
         conn.execute(
@@ -160,28 +111,13 @@ def touch_last_seen(conn: sqlite3.Connection, token_hash: str, *, seen_at: str) 
 
 
 def delete(conn: sqlite3.Connection, token_hash: str) -> None:
-    """Delete the session with *token_hash*; a no-op when it does not exist.
-
-    This is the logout path.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        token_hash: The session's token hash.
-    """
+    """Delete the session with *token_hash* (logout); a no-op when absent."""
     with conn:
         conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
 
 
 def delete_for_user(conn: sqlite3.Connection, user_id: int) -> None:
-    """Delete every session owned by *user_id*.
-
-    This is how suspending or deleting a user revokes access instantly —
-    every session row of that user is removed.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        user_id: The owning user's id.
-    """
+    """Delete every session owned by *user_id*, revoking their access."""
     with conn:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     log.info("appdb.sessions_revoked", user_id=user_id)
@@ -190,16 +126,8 @@ def delete_for_user(conn: sqlite3.Connection, user_id: int) -> None:
 def prune_expired(conn: sqlite3.Connection, *, now_iso: str) -> int:
     """Delete every session whose ``expires_at`` is at or before *now_iso*.
 
-    Called opportunistically (e.g. at login) to keep the table from growing
-    without bound. Returns the number of rows removed.
-
-    Args:
-        conn: An open ``app.db`` connection.
-        now_iso: The ISO-8601 UTC cutoff; rows with ``expires_at <= now_iso``
-            are removed.
-
-    Returns:
-        The count of pruned rows.
+    Called opportunistically (e.g. at login) to keep the table bounded.
+    Returns the number of rows removed.
     """
     with conn:
         cursor = conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now_iso,))

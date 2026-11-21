@@ -1,4 +1,4 @@
-/** Remove default browser margin from the "Sources" heading so it sits flush within the Stack gap. */
+/* The Stack gap owns the spacing around the "Sources" heading. */
 .sources-heading {
   margin: 0;
 }

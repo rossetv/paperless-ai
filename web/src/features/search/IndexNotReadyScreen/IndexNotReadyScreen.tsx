@@ -9,18 +9,9 @@ export interface IndexNotReadyScreenProps {
 }
 
 /**
- * The search index-not-ready screen.
- *
  * Shown when a search returns 503 because the index is still being built for
- * the first time. A centred `EmptyState` explains the wait and offers a
- * "Retry now" action; the retry is delegated to the parent.
- *
- * The handoff also sketches a live progress bar, but the search server
- * publishes no indexing-progress endpoint in Wave 2 (that is Wave 6's
- * daemon-status work) — so this screen shows the explanatory state only.
- *
- * Composed from: SearchScreenLayout, EmptyState, Button. No own CSS module
- * (§12.5 — features layer is composition-only).
+ * the first time. There is no indexing-progress endpoint, so it explains the
+ * wait rather than showing progress.
  */
 export function IndexNotReadyScreen({
   onRetry,

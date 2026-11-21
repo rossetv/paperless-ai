@@ -11,20 +11,12 @@ export interface SettingsBlockProps {
   id?: string;
   /** The block body — a stack of `SettingsCard`s. */
   children: React.ReactNode;
-  /** Additional class names to merge onto the root. */
   className?: string;
 }
 
 /**
- * A settings section block — a large `<h2>` + right-aligned subtitle + bottom
- * hairline, followed by a stack of `SettingsCard`s in the body.
- *
- * This is the renamed replacement for `SectionCard`. It is no longer a card
- * itself — it is the named section divider that groups sub-cards together.
- * The sole consumer is `SettingsSection`.
- *
- * Purely presentational. Tier: components/primitives. Allowed deps: lib/,
- * styles/.
+ * A settings section: a large `<h2>` with a right-aligned subtitle and a bottom
+ * hairline, followed by a stack of `SettingsCard`s.
  */
 export function SettingsBlock({
   title,

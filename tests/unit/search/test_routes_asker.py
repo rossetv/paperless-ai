@@ -1,11 +1,4 @@
-"""Tests that the /api/search route resolves and forwards the asker.
-
-Verifies:
-- A session user with a display_name causes core.answer to receive asker=<name>.
-- A session user without a display_name causes core.answer to receive asker=None.
-- With SEARCH_IDENTITY_AWARE=False the asker is suppressed regardless of the name.
-- A dirty display_name (injection attempt) is sanitised before reaching core.answer.
-"""
+"""Tests that the /api/search route resolves and forwards the asker."""
 
 from __future__ import annotations
 

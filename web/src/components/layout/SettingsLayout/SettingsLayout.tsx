@@ -5,18 +5,9 @@ import type { SettingsNavGroup } from '../SettingsSideNav/SettingsSideNav';
 import styles from './SettingsLayout.module.css';
 
 /**
- * The settings nav groups.
- *
- * Three groups:
- *   "Pipeline" — the pipeline config sections (Connections, OCR, Classification,
- *     Indexing, Search), each an in-page anchor on the `/settings` route (links
- *     are `/settings#<anchor>`). Provider choice now lives on each step's card,
- *     so there is no standalone "AI providers" section.
- *   "Operations" — automation/daemons and logging, also in-page anchors.
- *   "Access control" — Users and API Keys, each their own routed page.
- *
- * Icons are assigned here because this component owns the nav-group shape;
- * SettingsSideNav is purely presentational.
+ * The settings nav groups. "Pipeline" and "Operations" items are in-page anchors
+ * on `/settings` (`/settings#<anchor>`); "Access control" items are routed pages.
+ * Icons are assigned here so SettingsSideNav stays presentational.
  */
 const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
   {
@@ -51,31 +42,20 @@ export interface SettingsLayoutProps {
   /** Optional one-line description shown under the title. */
   subtitle?: string;
   /**
-   * Optional top-right header slot — a primary CTA used by the access-control
-   * screens (Users, API Keys) where the page has a single dominant action.
-   * The settings screen does NOT use this slot — the sticky SaveBar carries
-   * Discard / Save instead.
+   * Optional top-right primary action, used by the access-control screens
+   * (Users, API Keys). The settings screen uses the sticky SaveBar instead.
    */
   actions?: React.ReactNode;
   /** The page body, rendered in the scrollable content region. */
   children: React.ReactNode;
-  /** Additional class names to merge onto the layout root. */
   className?: string;
 }
 
 /**
- * The shared shell of the settings / access-control area.
+ * Shell of the settings and access-control area: the {@link SettingsSideNav}
+ * rail beside a content column with a page header above `children`.
  *
- * Renders the {@link SettingsSideNav} rail beside a content column. The
- * content column has a page header (title, optional subtitle, optional
- * top-right actions slot) above a body that holds `children`.
- *
- * It deliberately does NOT render the app nav bar — the hosting page wraps
- * `SettingsLayout` in `AppNavBar`, exactly as every other authenticated page
- * does.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/,
- * components/primitives, other layout components.
+ * Does not render the app nav bar; the hosting page wraps it in `AppNavBar`.
  */
 export function SettingsLayout({
   title,

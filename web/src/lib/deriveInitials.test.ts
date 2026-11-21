@@ -10,7 +10,6 @@ describe('deriveInitials', () => {
   });
 
   it('falls back to the username when display_name is null', () => {
-    // 'alex.morgan' splits on '.' → ['alex', 'morgan'] → 'AM'
     expect(deriveInitials(null, 'alex.morgan')).toBe('AM');
   });
 
@@ -19,7 +18,6 @@ describe('deriveInitials', () => {
   });
 
   it('splits on dots in the username', () => {
-    // 'alex.morgan' splits on '.' → ['alex', 'morgan'] → first letters 'A' + 'M' = 'AM'
     expect(deriveInitials(null, 'alex.morgan')).toBe('AM');
   });
 

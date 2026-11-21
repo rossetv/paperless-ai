@@ -1,15 +1,3 @@
-/*
- * Text primitive — CSS Module.
- *
- * The single typographic primitive for the application. Every `variant` maps
- * to one step of the SF Pro type scale in tokens.css (DESIGN.md §3). Features
- * route their text through this component instead of rendering raw <p>/<span>/
- * <strong> and relying on global element styles — so typography is a reviewed,
- * token-driven choice, never an accident of the cascade.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
-
 .text {
   /* Reset element-level margins (a raw <p> carries a global bottom margin);
      spacing between text blocks is the caller's job, via a layout primitive. */
@@ -18,7 +6,7 @@
   color: var(--colour-text-primary);
 }
 
-/* ── Hero — 56 px semibold; the display headline on the idle search screen ── */
+/* Hero: 56 px semibold, the display headline on the idle search screen. */
 .hero {
   font-family: var(--font-display);
   font-size: var(--font-size-hero);
@@ -27,7 +15,7 @@
   letter-spacing: var(--letter-spacing-hero);
 }
 
-/* ── Body large — 24 px light; the hero subtitle / subnav scale ── */
+/* Body large: 24 px light, the hero subtitle / subnav scale. */
 .body-large {
   font-family: var(--font-display);
   font-size: var(--font-size-subnav);
@@ -36,7 +24,7 @@
   letter-spacing: var(--letter-spacing-subnav);
 }
 
-/* ── Body — 17 px regular; the default running-text style ── */
+/* Body: 17 px regular, the default running-text style. */
 .body {
   font-size: var(--font-size-body);
   font-weight: var(--font-weight-body);
@@ -44,7 +32,7 @@
   letter-spacing: var(--letter-spacing-body);
 }
 
-/* ── Body emphasis — 17 px semibold; for an emphasised run of body text ── */
+/* Body emphasis: 17 px semibold, an emphasised run of body text. */
 .body-emphasis {
   font-size: var(--font-size-body-emphasis);
   font-weight: var(--font-weight-body-emphasis);
@@ -52,7 +40,7 @@
   letter-spacing: var(--letter-spacing-body);
 }
 
-/* ── Sub-heading — 22 px semibold display; section title below card level ── */
+/* Sub-heading: 22 px semibold display, a section title below card level. */
 .sub-heading {
   font-family: var(--font-display);
   font-size: var(--font-size-section-title);
@@ -61,7 +49,7 @@
   letter-spacing: var(--letter-spacing-section-title);
 }
 
-/* ── Card title — 21 px bold; the heading of a card-sized content block ── */
+/* Card title: 21 px bold, the heading of a card-sized content block. */
 .card-title {
   font-family: var(--font-display);
   font-size: var(--font-size-card-title);
@@ -70,7 +58,7 @@
   letter-spacing: var(--letter-spacing-card-title);
 }
 
-/* ── Caption — 14 px regular; secondary text, metadata, timestamps ── */
+/* Caption: 14 px regular, secondary text, metadata, timestamps. */
 .caption {
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption);
@@ -79,7 +67,7 @@
   color: var(--colour-text-secondary);
 }
 
-/* ── Caption bold — 14 px semibold; an emphasised caption / small label ── */
+/* Caption bold: 14 px semibold, an emphasised caption or small label. */
 .caption-bold {
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-caption-bold);
@@ -87,7 +75,7 @@
   letter-spacing: var(--letter-spacing-caption);
 }
 
-/* ── Micro — 12 px regular; the smallest readable supporting text ── */
+/* Micro: 12 px regular, the smallest readable supporting text. */
 .micro {
   font-size: var(--font-size-micro);
   font-weight: var(--font-weight-micro);
@@ -96,7 +84,7 @@
   color: var(--colour-text-tertiary);
 }
 
-/* ── Tone modifiers — override the variant's default colour role ── */
+/* Tone modifiers override the variant's default colour. */
 .tone-secondary {
   color: var(--colour-text-secondary);
 }

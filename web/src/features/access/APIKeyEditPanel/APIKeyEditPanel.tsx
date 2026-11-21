@@ -23,14 +23,9 @@ export interface APIKeyEditPanelProps {
  * `useUpdateApiKey` (`PATCH /api/api-keys/{id}`) on submit. Editing never
  * re-reveals the secret, so a successful save simply closes the panel.
  *
- * The expiry control is a quick-pick — "Never" or a day-count from today.
- * Crucially, `expires_at` is **only included in the PATCH body when the
- * user explicitly selects a chip** — otherwise the field is omitted so the
- * server leaves the existing expiry unchanged. This prevents a silent
- * credential-lifetime downgrade when a user edits only the key name.
- *
- * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
- * api/, hooks/, lib/.
+ * `expires_at` is sent in the PATCH body only when the user explicitly picks
+ * an expiry chip; otherwise it is omitted and the server keeps the existing
+ * expiry, so editing just the name cannot silently change the key's lifetime.
  */
 export function APIKeyEditPanel({
   apiKey,
@@ -42,17 +37,14 @@ export function APIKeyEditPanel({
   const [scopes, setScopes] = React.useState<Set<ApiScope>>(
     new Set(apiKey.scopes),
   );
-  // expiryDays is the user's chosen day-count; null = "Never".
+  // null = "Never".
   const [expiryDays, setExpiryDays] = React.useState<number | null>(null);
-  // expiryTouched tracks whether the user has explicitly clicked a chip.
-  // When false the expiry field is omitted from the PATCH body so the server
-  // leaves the existing expires_at unchanged.
+  // False until the user clicks a chip; while false, expires_at is left out of the PATCH.
   const [expiryTouched, setExpiryTouched] = React.useState(false);
   const [nameError, setNameError] = React.useState<string | null>(null);
   const [scopeError, setScopeError] = React.useState<string | null>(null);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
-  /** Toggle a scope on or off. */
   function toggleScope(scope: ApiScope): void {
     setScopeError(null);
     setScopes((prev) => {
@@ -63,13 +55,11 @@ export function APIKeyEditPanel({
     });
   }
 
-  /** Select an expiry chip — marks the field as explicitly touched. */
   function selectExpiry(days: number | null): void {
     setExpiryDays(days);
     setExpiryTouched(true);
   }
 
-  /** Submit — save the edit. */
   async function handleSubmit(event: React.FormEvent): Promise<void> {
     event.preventDefault();
     setServerError(null);
@@ -89,8 +79,6 @@ export function APIKeyEditPanel({
         body: {
           name: name.trim(),
           scopes: [...scopes],
-          // Only include expires_at when the user explicitly changed it.
-          // Omitting the field leaves the server-side value unchanged.
           ...(expiryTouched ? { expires_at: expiryIso(expiryDays) } : {}),
         },
       });

@@ -6,7 +6,6 @@ import styles from './Tabs.module.css';
 export interface TabItem {
   /** Unique identifier for the tab, used for ARIA wiring and defaultActiveId. */
   id: string;
-  /** Visible label text on the tab. */
   label: string;
   /** Content rendered in the tab panel when this tab is active. */
   content: React.ReactNode;
@@ -17,29 +16,15 @@ export interface TabsProps {
   tabs: TabItem[];
   /** Id of the tab that should be active on first render. Defaults to the first tab. */
   defaultActiveId?: string;
-  /** Additional class names to merge onto the root element. */
   className?: string;
 }
 
 /**
- * Accessible tabbed interface.
+ * Accessible tabs (WAI-ARIA Tabs pattern) with automatic activation: arrow keys
+ * move focus, wrap at the ends, and activate the focused tab.
  *
- * Implements the ARIA Tabs pattern (WAI-ARIA 1.2):
- * - role="tablist" on the tab container
- * - role="tab" + aria-selected on each tab button
- * - role="tabpanel" + aria-labelledby on each panel
- *
- * Keyboard support (automatic activation model — focus change activates):
- * - ArrowRight / ArrowLeft — move focus between tabs and activate
- * - ArrowRight at the last tab wraps to the first
- * - ArrowLeft at the first tab wraps to the last
- * - Enter / Space on a focused tab — activate it
- *
- * Only the active panel is mounted (not just hidden); this is a common
- * trade-off that keeps the DOM lean. Use CSS-hidden panels if unmounting
- * loses important state (e.g. scroll position) — comment if changed.
- *
- * App-agnostic — does not know about search, documents, or any domain concept.
+ * Only the active panel is mounted, so inactive panels do not keep state such as
+ * scroll position.
  */
 export function Tabs({
   tabs,
@@ -51,7 +36,6 @@ export function Tabs({
     defaultActiveId !== undefined ? defaultActiveId : firstId,
   );
 
-  // Keep refs to each tab button for programmatic focus management
   const tabRefs = useRef<Array<HTMLButtonElement | null>>(
     Array.from({ length: tabs.length }, () => null),
   );

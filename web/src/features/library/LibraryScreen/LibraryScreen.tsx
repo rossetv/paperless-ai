@@ -21,13 +21,9 @@ import type {
 import styles from './LibraryScreen.module.css';
 
 /**
- * The sort options offered by the SortControl.
- *
- * ``added`` sorts by ``indexed_at`` (date the document was added to the
- * index); ``created`` sorts by the document's own creation date.
- * ``correspondent`` is absent — the backend does not support it; if it is
- * needed in future, add it to ``_SORT_COLUMNS`` and the ``Literal`` in
- * ``routes.py`` first.
+ * `added` sorts by `indexed_at`; `created` by the document's own date. Sorting
+ * by correspondent needs backend support first (`_SORT_COLUMNS` and the
+ * `Literal` in `routes.py`).
  */
 const SORT_OPTIONS: ReadonlyArray<{ value: DocumentSortField; label: string }> = [
   { value: 'added', label: 'Date added' },
@@ -52,11 +48,8 @@ function nameFor(entries: TaxonomyEntry[], id: number): string {
 }
 
 /**
- * Whether the viewport is narrow enough that SearchScreenLayout stacks the rail
- * above the content (the 834 px breakpoint in SearchScreenLayout.module.css).
- * On those viewports the filter rail starts collapsed so the document list and
- * header controls are not pushed below the fold (UI-05). Guarded for non-browser
- * environments (tests/SSR) where matchMedia is unavailable.
+ * True below SearchScreenLayout's 834px breakpoint, where the rail stacks above
+ * the content. matchMedia is missing in some test environments.
  */
 function isNarrowViewport(): boolean {
   return (
@@ -68,24 +61,11 @@ function isNarrowViewport(): boolean {
 
 
 /**
- * The Library browse screen.
+ * The Library browse screen. All state lives in the URL (`useLibraryUrlState`).
+ * Opening a card keeps the search string so going back restores the query.
  *
- * Derives all state from the URL via `useLibraryUrlState` — the URL is the
- * single source of truth for what the library shows. Renders the header
- * (title, total count, result range), the in-library `SearchField`, the
- * active-filter chip strip, the `FilterControls` rail, the `ViewToggle` and
- * `SortControl`, the document grid/list of `LibraryCard`s, and a pager.
- * Clicking a card navigates to `/library/document/:id` (route added in
- * Task 11) with the current search-string preserved so the back-navigation
- * restores the parent query state.
- *
- * Every change other than paging resets `page` to 1 — narrowing the results
- * must never strand the user on a now-empty page. The `ViewToggle` is
- * URL-persisted state but does not affect the query sent to the backend.
- *
- * Tier: features/library (CODE_GUIDELINES §12.3) — composes layout, patterns,
- * primitives, sibling features, the api hooks and lib/. No `pages` import
- * target reaches these patterns directly; `LibraryPage` hosts this screen.
+ * Every change other than paging resets `page` to 1, so narrowing the results
+ * never strands the user on an empty page.
  */
 export function LibraryScreen(): React.ReactElement {
   const { query, view, setQuery, setView, searchString } = useLibraryUrlState();
@@ -94,13 +74,10 @@ export function LibraryScreen(): React.ReactElement {
   const documents = useDocuments(query);
   const facets = useFacets();
 
-  // UI-05: on narrow viewports the rail stacks above the content, so start the
-  // filter panel collapsed (behind its "Filters" toggle) to keep the document
-  // list above the fold. Computed once at mount — the fold concern is about the
-  // initial layout, matching FilterPanel's defaultExpanded semantics.
+  // On narrow viewports start the rail collapsed to keep the documents above
+  // the fold. Read once at mount: it only concerns the initial layout.
   const [railDefaultExpanded] = React.useState(() => !isNarrowViewport());
 
-  // ── Query mutators — each resets to page 1 except the pager. ──
   function submitSearch(text: string): void {
     setQuery({ ...query, query: text.trim() === '' ? null : text.trim(), page: 1 });
   }
@@ -135,12 +112,7 @@ export function LibraryScreen(): React.ReactElement {
     });
   }
 
-  // ── Active-filter chip strip — resolves ids to names via the facets. ──
-  // rationale (FE-63): the chip-strip builder reads `query`, `facetData` and
-  // `setQuery` (each onRemove mutates a different filter dimension), so kept
-  // inline as a memoised value rather than extracted — pulling it into a helper
-  // would mean threading all three back in for no real reuse, leaving the body
-  // no shorter at the call site.
+  // Active-filter chips, with ids resolved to names via the facets.
   const facetData = facets.data;
   const activeChips = useMemo(() => {
     if (facetData === undefined) {
@@ -192,9 +164,7 @@ export function LibraryScreen(): React.ReactElement {
     return chips;
   }, [facetData, query, setQuery]);
 
-  // ── Stable navigation callback — hoisted out of JSX so LibraryCard's
-  //    React.memo can do a meaningful prop comparison. An inline arrow
-  //    recreated on every render would defeat the memo entirely. ──
+  // Stable so LibraryCard's React.memo is not defeated by a new arrow each render.
   const handleOpen = useCallback(
     (id: number) => {
       void navigate(`/library/document/${id}${searchString}`);
@@ -202,9 +172,7 @@ export function LibraryScreen(): React.ReactElement {
     [navigate, searchString],
   );
 
-  // ── Derived paging values. ──
-  // Use the server-echoed page_size when available so the pager is always
-  // consistent with what was actually returned, not the locally-held constant.
+  // Prefer the server-echoed page_size so the pager matches what was returned.
   const total = documents.data?.total ?? 0;
   const effectivePageSize = documents.data?.page_size ?? query.page_size;
   const pageCount = Math.max(1, Math.ceil(total / effectivePageSize));
@@ -254,14 +222,14 @@ export function LibraryScreen(): React.ReactElement {
   return (
     <SearchScreenLayout variant="rail" rail={rail} header={header}>
       <div className={styles['screen']}>
-        {/* ── In-library search ── */}
+        {/* In-library search */}
         <SearchField
           id="library-search"
           placeholder="Filter library… (try title, correspondent, or document type)"
           onSubmit={submitSearch}
         />
 
-        {/* ── Active-filter chip strip ── */}
+        {/* Active-filter chip strip */}
         {activeChips.length > 0 && (
           <div className={styles['chip-strip']}>
             <span className={styles['chip-strip-label']}>Filtered by</span>
@@ -285,7 +253,7 @@ export function LibraryScreen(): React.ReactElement {
           </div>
         )}
 
-        {/* ── Results ── */}
+        {/* Results */}
         {documents.isLoading ? (
           <div className={styles['state']}>
             <Spinner size="large" label="Loading documents" />
@@ -322,7 +290,7 @@ export function LibraryScreen(): React.ReactElement {
               ))}
             </div>
 
-            {/* ── Pager ── */}
+            {/* Pager */}
             <div className={styles['pager']}>
               <Button
                 variant="secondary"

@@ -1,7 +1,4 @@
-"""The API-key management ``/api`` router for the search server (§5, §4.3).
-
-Four endpoints, factored out of ``search/routes.py`` so each router file
-stays focused:
+"""The API-key management ``/api`` router.
 
 - ``GET    /api/api-keys``      — list keys. A Member sees their own; an
   admin sees every key.
@@ -13,29 +10,10 @@ stays focused:
 - ``DELETE /api/api-keys/{id}`` — revoke a key. The owner revokes their own;
   an admin revokes any.
 
-Handlers are thin: they delegate to ``appdb.api_keys``, ``appdb.users``,
-``search.api_keys`` (raw-key generation, hashing, scope serialisation) and
-the ``search.wire`` mappers. The role/scope bar is the
-``require_key_management`` dependency; the per-row ownership check (own key
-vs any key — and, for ``PATCH``, owner-only) is done in the handlers, which
-hold the row.
-
-The wire ``ApiKeyResponse`` carries ``owner_name`` — the owning user's
-display name — but the ``api_keys`` row stores only the owner's id. The
-handlers therefore look the owner up in the ``users`` table and pass the
-name to ``search.wire.to_api_key_response``.
-
-The raw key is generated, hashed and stored here; only its SHA-256 and
-display prefix are persisted. The full key is returned once in the
-``POST`` response and is then unrecoverable.
-
-The ``app.db`` connection is opened **per request** by the
-:func:`~search.deps.get_app_db` dependency and closed when the request ends —
-a ``sqlite3.Connection`` is never shared across requests, mirroring
-``account_routes`` and ``document_routes``.
-
-Allowed deps: fastapi, sqlite3, structlog, appdb, search (api_keys, deps,
-errors, sessions, wire).
+The role/scope bar is the ``require_key_management`` dependency; the per-row
+ownership check is done in the handlers, which hold the row. Only the key's
+SHA-256 and display prefix are stored, so the full key is unrecoverable after
+the ``POST`` response.
 """
 
 from __future__ import annotations
@@ -71,15 +49,7 @@ log = structlog.get_logger(__name__)
 
 
 def build_api_key_router() -> APIRouter:
-    """Build the API-key management ``/api`` router (web-redesign §5).
-
-    The handlers reach the ``app.db`` connection through the per-request
-    :func:`~search.deps.get_app_db` dependency and the caller's identity
-    through :func:`~search.deps.require_key_management`.
-
-    Returns:
-        A configured :class:`~fastapi.APIRouter`.
-    """
+    """Build the API-key management ``/api`` router."""
     router = APIRouter()
 
     @router.get("/api/api-keys")
@@ -106,7 +76,7 @@ def build_api_key_router() -> APIRouter:
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
     ) -> ApiKeyEnvelope:
-        """Edit a key (owner-only). 404 unknown; 403 not yours."""
+        """Edit a key (owner-only). 404 when unknown or not yours."""
         return _update_api_key(api_key_id, body, app_db, caller)
 
     @router.delete("/api/api-keys/{api_key_id}", status_code=204)
@@ -115,33 +85,17 @@ def build_api_key_router() -> APIRouter:
         app_db: sqlite3.Connection = Depends(get_app_db),
         caller: CurrentUser = Depends(require_key_management),
     ) -> Response:
-        """Revoke a key (owner or admin). 404 unknown; 403 not yours."""
+        """Revoke a key (owner or admin). 404 when unknown or not yours."""
         return _delete_api_key(api_key_id, app_db, caller)
 
     return router
 
 
-# ---------------------------------------------------------------------------
-# Handler bodies — free of FastAPI routing, easy to read and test
-# ---------------------------------------------------------------------------
-
-
 def _owner_name(app_db: sqlite3.Connection, owner_user_id: int) -> str:
-    """Resolve a key owner's display name from the ``users`` table.
+    """Return the owner's display name, else username, else ``"(unknown)"``.
 
-    The ``api_keys`` row stores only the owner's id, but the wire
-    :class:`~search.wire.ApiKeyResponse` carries ``owner_name`` too. This
-    looks the owner up and returns their display name, falling back to the
-    username when no display name is set. A missing owner cannot normally
-    occur — ``owner_user_id`` is an ``ON DELETE CASCADE`` foreign key — but
-    if the row is gone it returns a stable placeholder rather than raising.
-
-    Args:
-        app_db: The per-request ``app.db`` connection.
-        owner_user_id: The owning user's id (the key row's ``owner_user_id``).
-
-    Returns:
-        The owner's display name, their username, or ``"(unknown)"``.
+    A missing owner should not happen (the foreign key cascades on delete), but
+    a placeholder beats raising.
     """
     owner = user_store.get_by_id(app_db, owner_user_id)
     if owner is None:
@@ -152,11 +106,7 @@ def _owner_name(app_db: sqlite3.Connection, owner_user_id: int) -> str:
 def _list_api_keys(
     app_db: sqlite3.Connection, caller: CurrentUser
 ) -> ApiKeyListResponse:
-    """list-handler body: every key for an admin, own keys otherwise.
-
-    Each key is mapped to its wire shape with the owner's display name
-    resolved from the ``users`` table.
-    """
+    """Return every key for an admin, own keys otherwise."""
     if caller.role == "admin":
         keys = key_store.list_all(app_db)
     else:
@@ -171,18 +121,11 @@ def _list_api_keys(
 def _create_api_key(
     body: CreateApiKeyRequest, app_db: sqlite3.Connection, caller: CurrentUser
 ) -> CreatedApiKeyResponse:
-    """create-handler body: mint, hash, store, return the one-time key.
-
-    The key is always owned by *caller* — a Member cannot mint a key for
-    someone else, and an admin minting through this endpoint also owns the
-    result (admin-on-behalf-of is out of scope for Wave 3).
-    """
-    # serialise_scopes re-validates the scope list (wire.py validated it
-    # too) and yields the canonical comma-separated stored form.
+    """Mint, hash, and store a key owned by *caller*; return the one-time key."""
     try:
         scopes = serialise_scopes(body.scopes)
     except ValueError as exc:
-        # wire.py should have caught this; treat a slip as a 422-shaped 400.
+        # The wire model validates scopes too; this only catches a slip.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     raw_key = generate_raw_key()
@@ -197,8 +140,7 @@ def _create_api_key(
             expires_at=body.expires_at,
         )
     except DuplicateKeyHashError as exc:
-        # A SHA-256 collision on a 256-bit random key is astronomically
-        # unlikely; surface it as a 500-shaped retryable error rather than
+        # Astronomically unlikely for a 256-bit random key; fail rather than
         # pretend success.
         log.error("search.api_key_hash_collision")
         raise HTTPException(
@@ -211,9 +153,7 @@ def _create_api_key(
         api_key_id=created.id,
         owner_user_id=caller.id,
     )
-    # The full raw key is returned here, as `secret`, and never again. The
-    # key is owned by the caller, so its owner_name is the caller's display
-    # name — resolved (like the list handler) from the users table.
+    # The only time the raw key is ever returned.
     return CreatedApiKeyResponse(
         api_key=to_api_key_response(
             created, _owner_name(app_db, created.owner_user_id)
@@ -228,23 +168,15 @@ def _update_api_key(
     app_db: sqlite3.Connection,
     caller: CurrentUser,
 ) -> ApiKeyEnvelope:
-    """update-handler body: existence + owner-only check, then a partial edit.
+    """Apply a partial edit to a key the caller owns.
 
-    Editing a key is **owner-only** — unlike revoke, an admin may *not* edit
-    another user's key (re-scoping or renaming a credential is the owner's
-    call). Only ``name``, ``scopes`` and ``expires_at`` are mutable.
-
-    Pydantic's ``model_fields_set`` tells which fields the client actually
-    sent, so an absent field is left untouched while an explicit
-    ``expires_at: null`` clears the expiry — the two are indistinguishable
-    from the parsed value alone.
+    Unlike revoke, an admin may not edit another user's key: re-scoping or
+    renaming a credential is the owner's call. ``model_fields_set`` separates
+    an absent field (left alone) from an explicit ``expires_at: null`` (clears
+    the expiry).
     """
     record: ApiKey | None = key_store.get_by_id(app_db, api_key_id)
-    # Owner-only — an admin cannot edit someone else's key (they may only
-    # view and revoke it). This is stricter than the DELETE handler.
-    # Return 404 to a non-owner even when the key exists — a non-owner must
-    # not be able to distinguish "key not found" from "key found but not yours"
-    # (MINOR-1 id-enumeration defence).
+    # 404, not 403, for a non-owner, so key ids cannot be enumerated.
     if record is None:
         raise HTTPException(status_code=404, detail="API key not found.")
     if record.owner_user_id != caller.id:
@@ -255,28 +187,20 @@ def _update_api_key(
         )
         raise HTTPException(status_code=404, detail="API key not found.")
 
-    # Build the partial update from only the fields the client sent.
     sent = body.model_fields_set
     changes: dict[str, object] = {}
     if "name" in sent and body.name is not None:
         changes["name"] = body.name
     if "scopes" in sent and body.scopes is not None:
-        # serialise_scopes re-validates (wire.py validated it too) and yields
-        # the canonical comma-separated stored form.
         try:
             changes["scopes"] = serialise_scopes(body.scopes)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "expires_at" in sent:
-        # Present-and-null clears the expiry; present-with-a-value sets it.
         changes["expires_at"] = body.expires_at
 
     updated = key_store.update(app_db, api_key_id, **changes)
-    # The row existed at the top of this handler and update() re-reads it on
-    # the same connection — it cannot have vanished. An explicit raise (not an
-    # `assert`, stripped under `python -O` — §17.2) keeps the guarantee under
-    # optimisation: a row that vanished fails loud here, not as a later
-    # AttributeError.
+    # A raise rather than an assert, which `python -O` strips.
     if updated is None:
         raise RowVanishedError(f"api key {api_key_id} vanished during an update")
     log.info(
@@ -293,15 +217,13 @@ def _update_api_key(
 def _delete_api_key(
     api_key_id: int, app_db: sqlite3.Connection, caller: CurrentUser
 ) -> Response:
-    """delete-handler body: existence + ownership check, then revoke.
+    """Revoke a key; a non-admin may only revoke their own.
 
-    Revocation is a soft delete (``revoked_at`` is set); the row stays so the
-    UI keeps the key's history. A non-admin may only revoke a key they own.
+    Revocation is a soft delete (``revoked_at`` is set), so the UI keeps the
+    key's history.
     """
     record: ApiKey | None = key_store.get_by_id(app_db, api_key_id)
-    # A non-admin who does not own the key gets 404 regardless of whether
-    # the key exists, so they cannot enumerate key ids by observing the
-    # difference between 404 and 403 (MINOR-1 id-enumeration defence).
+    # 404, not 403, for a non-owner, so key ids cannot be enumerated.
     if record is None:
         raise HTTPException(status_code=404, detail="API key not found.")
     if caller.role != "admin" and record.owner_user_id != caller.id:

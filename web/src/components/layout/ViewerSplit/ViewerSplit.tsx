@@ -5,22 +5,15 @@ import styles from './ViewerSplit.module.css';
 export interface ViewerSplitProps {
   /** The fixed-width metadata sidebar content. */
   sidebar: React.ReactNode;
-  /** The flexible main content — the PDF page area. */
+  /** The flexible main content: the PDF page area. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * The document-preview body split.
- *
- * A two-column grid — a flexible page area (`children`) and a fixed-width
- * metadata sidebar — that fills the height below the viewer chrome bar and
- * stacks on narrow viewports.
- *
- * App-agnostic. The `DocumentPreviewScreen` feature supplies both regions.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/.
+ * Document preview body: a flexible page area beside a fixed-width metadata
+ * sidebar. Fills the height below the viewer chrome bar and stacks on narrow
+ * viewports.
  */
 export function ViewerSplit({
   sidebar,

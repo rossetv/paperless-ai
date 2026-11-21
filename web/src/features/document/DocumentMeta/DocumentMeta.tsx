@@ -5,26 +5,12 @@ import type { PreviewableDocument } from '../../../api/types';
 import { formatShortDate } from '../../../lib/formatDate';
 
 export interface DocumentMetaProps {
-  /**
-   * The document whose metadata is to be displayed.
-   * All fields except document_id, snippet, and score may be null —
-   * the component renders gracefully when any of them are absent.
-   */
   source: PreviewableDocument;
 }
 
 /**
- * Compact metadata row for a document.
- *
- * Renders correspondent, document type, and created date as inline badges/chips.
- * Missing (null) fields are silently omitted — a document with no correspondent
- * or type renders correctly with only the non-null fields shown.
- *
- * Uses a <time> element with a dateTime attribute for the created date so that
- * assistive technology and machine readers can parse the ISO date.
- *
- * Composed from: Badge, Stack.
- * No own CSS module (§12.5 — features layer is composition-only).
+ * Compact row of correspondent, document type and created date badges. Null
+ * fields are omitted.
  */
 export function DocumentMeta({ source }: DocumentMetaProps): React.ReactElement {
   return (

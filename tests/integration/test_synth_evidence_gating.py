@@ -1,22 +1,8 @@
-"""Integration tests for the evidence-gated, reconciling synthesiser (Phase 3B).
+"""Integration tests for the synthesiser's evidence-gating and reconciliation plumbing.
 
-These exercise the real :class:`~search.core.SearchCore` over the real planner,
-retriever, judge, and synthesiser stages and a real
-:class:`~store.reader.StoreReader` reading a ``tmp_path`` SQLite store. Only the
-LLM transport and the embedding client are mocked.
-
-The synthesiser model is scripted, so these tests verify *plumbing*, not model
-judgement:
-
-1. **Evidence-gating plumbing.** When only off-period documents are seeded
-   (February / January payslips for an April question), a scripted honest "no
-   April data" answer flows through as the result's answer — the pipeline does
-   not silently substitute a decoy — AND the user message the synthesiser
-   received carries the documents' title + date headers, so a real model would
-   have the metadata it needs to refuse the substitution.
-2. **Reconciliation plumbing.** When two genuinely-relevant documents are
-   present and the answer cites both, both citations flow through to the result's
-   sources.
+The synthesiser is scripted, so these check plumbing, not model judgement: an
+honest "no data" answer passes through unchanged, the synthesiser sees each
+document's title and date, and every citation reaches the sources.
 """
 
 from __future__ import annotations

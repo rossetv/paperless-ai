@@ -1,10 +1,4 @@
-"""Tests for appdb migration v7 — the api_key_usage table.
-
-Covers: a fresh database reaches schema version 7; the api_key_usage table
-exists with the expected columns; the composite (api_key_id, usage_date)
-primary key rejects a duplicate; the api_key_id foreign key cascades on key
-delete; tokens and calls default to 0; the migration is idempotent.
-"""
+"""Tests for app.db migration v7, the api_key_usage table."""
 
 from __future__ import annotations
 
@@ -39,7 +33,6 @@ def _schema_version(c: sqlite3.Connection) -> int:
 
 
 def _seed_key(c: sqlite3.Connection, api_key_id: int = 7) -> None:
-    """Insert a user and an api_keys row the usage rows can reference."""
     c.execute(
         "INSERT OR IGNORE INTO users "
         "(id, username, password_hash, role, created_at, updated_at) "
@@ -55,7 +48,6 @@ def _seed_key(c: sqlite3.Connection, api_key_id: int = 7) -> None:
 
 
 def test_schema_version_constant_is_at_least_seven() -> None:
-    """The code's declared schema version includes the api_key_usage migration."""
     assert SCHEMA_VERSION >= 7
 
 
@@ -77,7 +69,7 @@ def test_api_key_usage_table_has_the_expected_columns(conn) -> None:
 
 
 def test_composite_primary_key_rejects_a_duplicate(conn) -> None:
-    """(api_key_id, usage_date) is the primary key — one bucket per key per day."""
+    """One usage bucket per key per day."""
     run_migrations(conn)
     _seed_key(conn)
     conn.execute(
@@ -106,7 +98,6 @@ def test_tokens_and_calls_default_to_zero(conn) -> None:
 
 
 def test_api_key_id_cascades_on_key_delete(conn) -> None:
-    """Deleting an api_keys row destroys every usage row it owns."""
     run_migrations(conn)
     _seed_key(conn)
     conn.execute(

@@ -1,18 +1,7 @@
 import { cn } from '../../../lib/cn';
 import styles from './Badge.module.css';
 
-/**
- * Visual variant for the badge.
- *
- * DESIGN.md uses a single chromatic accent (Apple Blue) with no semantic
- * status colours. The two distinct visual treatments are:
- *   neutral — light-surface background, secondary text (low emphasis)
- *   accent  — Apple Blue background, on-dark text (high emphasis)
- *
- * Previous success/warning/danger variants were visually identical to
- * existing ones (success = accent, warning/danger used text-primary tones)
- * — a misleading API. They are removed to keep the API honest.
- */
+/** 'neutral' is low emphasis; 'accent' is high emphasis. */
 export type BadgeVariant = 'neutral' | 'accent';
 
 export interface BadgeProps {
@@ -20,27 +9,14 @@ export interface BadgeProps {
   variant?: BadgeVariant;
   /** Badge content — typically a short string or number. */
   children: React.ReactNode;
-  /** Additional class names to merge. */
   className?: string;
 }
 
 /**
- * Small inline status/count label.
+ * Small inline label for generic counts and tags.
  *
- * Renders as a <span> so it sits naturally in flowing text or flex layouts.
- * Reads all design values from CSS tokens — no hardcoded colours or sizes.
- * Not interactive; does not need a focus ring.
- *
- * Badge family (W7 audit decision):
- *   Badge        — generic, app-agnostic (neutral / accent variants only)
- *   RoleBadge    — domain-aware; RBAC role with distinct status-colour tokens
- *   StatusBadge  — domain-aware; semantic tone (ok/warn/danger/info) with a
- *                  leading colour dot
- *   ScopePill    — domain-aware; API-key scope in a monospace pill
- *
- * RoleBadge/StatusBadge/ScopePill are intentionally separate primitives: each
- * encodes domain knowledge (label maps, dot DOM) that does not belong in the
- * generic Badge. They are NOT duplicates — they are a documented badge family.
+ * RoleBadge, StatusBadge and ScopePill are separate primitives because each
+ * carries domain knowledge (label maps, a status dot) that does not belong here.
  */
 export function Badge({
   variant = 'neutral',

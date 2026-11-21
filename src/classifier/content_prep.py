@@ -6,17 +6,13 @@ import re
 
 from .constants import PAGE_HEADER_RE
 
-# Matches one or more digits — used to extract page numbers from headers.
 _DIGITS_RE: re.Pattern[str] = re.compile(r"\d+")
 
 
 def _split_footer(content: str) -> tuple[str, str]:
-    """
-    Split OCR content into ``(body, footer)`` around the model-info footer.
+    """Split OCR content into ``(body, footer)`` at the last model-info footer.
 
-    The footer starts at the last occurrence of ``\\n\\nTranscribed by model:``
-    and runs to the end of the string.  If no footer is found, *footer* is the
-    empty string.
+    *footer* is empty when there is none.
     """
     marker = "\n\nTranscribed by model:"
     index = content.rfind(marker)
@@ -26,11 +22,9 @@ def _split_footer(content: str) -> tuple[str, str]:
 
 
 def _extract_page_numbers(matches: list[re.Match[str]]) -> list[int]:
-    """
-    Return the page numbers embedded in a list of ``PAGE_HEADER_RE`` matches.
+    """Return the page numbers in ``PAGE_HEADER_RE`` matches.
 
-    Falls back to a 1-based sequential index when a header somehow lacks a
-    number (defensive — should not happen with well-formed OCR output).
+    A header without a number falls back to its 1-based position.
     """
     numbers: list[int] = []
     for match in matches:
@@ -43,8 +37,7 @@ def _extract_page_numbers(matches: list[re.Match[str]]) -> list[int]:
 
 
 def _format_page_ranges(page_numbers: list[int]) -> str:
-    """
-    Format a sorted list of page numbers as compact ranges.
+    """Format page numbers as compact ranges.
 
     >>> _format_page_ranges([1, 2, 3, 5, 7, 8])
     '1-3, 5, 7-8'
@@ -91,16 +84,10 @@ def max_char_truncation_note(limit: int) -> str:
 
 
 def truncate_content_by_chars(content: str, max_chars: int) -> str:
-    """
-    Truncate OCR content so the total result is at most *max_chars* characters,
-    preserving the footer.
+    """Truncate OCR content to at most *max_chars*, keeping the footer intact.
 
-    The footer is always kept intact.  The body is sliced so that
-    ``len(body_slice) + len(footer) <= max_chars``.  When the footer alone
-    exceeds *max_chars* the body is dropped entirely (body slice is empty).
-
-    Returns the original content unchanged when *max_chars* ≤ 0 or the
-    content is already within the limit.
+    Only the body is cut; if the footer alone exceeds *max_chars* the body is
+    dropped. *max_chars* <= 0 means no limit.
     """
     if max_chars <= 0 or len(content) <= max_chars:
         return content
@@ -115,16 +102,11 @@ def truncate_content_by_pages(
     tail_pages: int,
     headerless_char_limit: int,
 ) -> tuple[str, str | None]:
-    """
-    Truncate OCR content to the first *max_pages* and last *tail_pages*.
+    """Truncate OCR content to the first *max_pages* and last *tail_pages*.
 
-    Uses the ``--- Page N ---`` headers injected by the OCR daemon to identify
-    page boundaries.  When no headers are found, falls back to a character
-    limit (*headerless_char_limit*).
-
-    Returns:
-        A ``(truncated_content, truncation_note)`` tuple.  *truncation_note*
-        is ``None`` when no truncation was necessary.
+    Pages are found by the OCR daemon's ``--- Page N ---`` headers; without
+    them, falls back to *headerless_char_limit* characters. Returns
+    ``(content, note)``, with *note* ``None`` when nothing was cut.
     """
     if max_pages <= 0:
         return content, None
@@ -132,7 +114,6 @@ def truncate_content_by_pages(
     body, footer = _split_footer(content)
     matches = list(PAGE_HEADER_RE.finditer(body))
 
-    # No page headers → fall back to character truncation
     if not matches:
         truncated = truncate_content_by_chars(content, headerless_char_limit)
         if truncated == content:
@@ -144,16 +125,14 @@ def truncate_content_by_pages(
     if total_pages <= max_pages:
         return body + footer, None
 
-    # Slice the body into per-page segments.
-    # The first segment starts at 0 (capturing any preamble before the first
-    # page header); subsequent segments start at their header's match position.
+    # The first segment starts at 0 so any preamble before the first header
+    # stays with page one.
     segments: list[str] = []
     for idx, match in enumerate(matches):
         start = 0 if idx == 0 else match.start()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(body)
         segments.append(body[start:end])
 
-    # Build the set of page indices to include (head + tail)
     include = set(range(min(max_pages, total_pages)))
     tail_pages = max(0, tail_pages)
     if tail_pages:

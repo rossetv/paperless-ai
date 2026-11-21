@@ -14,13 +14,12 @@ from classifier.metadata import (
 )
 from classifier.result import ClassificationResult
 
-# A fixed "today" injected into the date helpers so the fallback-to-today
-# paths are deterministic regardless of the wall clock (CODE_GUIDELINES §11.4).
+# Injected as "today" so the fallback-to-today paths do not depend on the clock.
 _FIXED_TODAY = dt.date(2025, 5, 20)
 
 
 def _make_result(**overrides) -> ClassificationResult:
-    """Build a ClassificationResult with sensible empty defaults."""
+    """Build a ClassificationResult with every field empty unless overridden."""
     defaults = {
         "title": "",
         "correspondent": "",
@@ -35,8 +34,6 @@ def _make_result(**overrides) -> ClassificationResult:
 
 
 class TestParseDocumentDate:
-    """Tests for parse_document_date(value)."""
-
     def test_valid_iso_date(self):
         assert parse_document_date("2024-01-15") == "2024-01-15"
 
@@ -50,10 +47,6 @@ class TestParseDocumentDate:
         assert parse_document_date("not-a-date") is None
 
     def test_whitespace_only_returns_none(self):
-        # After strip, "   " becomes "" which hits the falsy check after strip
-        # Actually, the function checks `if not value` first, but "   " is truthy.
-        # Then it strips and tries to parse -- "   ".strip() == ""
-        # fromisoformat("") raises ValueError.
         assert parse_document_date("   ") is None
 
     def test_date_with_leading_trailing_whitespace(self):
@@ -72,11 +65,9 @@ class TestParseDocumentDate:
         assert parse_document_date("1900-01-01") == "1900-01-01"
 
     def test_far_future_date_rejected(self):
-        """A date like 9999-12-31 must be rejected as implausible."""
         assert parse_document_date("9999-12-31") is None
 
     def test_slightly_future_date_accepted(self):
-        """A date a few days in the future is within the window."""
         import datetime as dt
 
         soon = (dt.date.today() + dt.timedelta(days=10)).isoformat()
@@ -99,8 +90,6 @@ class TestParseDocumentDate:
 
 
 class TestResolveDateForTags:
-    """Tests for resolve_date_for_tags(result_date, existing_date)."""
-
     def test_prefers_result_date_when_valid(self):
         result = resolve_date_for_tags("2024-03-01", "2023-12-01")
         assert result == "2024-03-01"
@@ -133,8 +122,6 @@ class TestResolveDateForTags:
 
 
 class TestNormaliseLanguage:
-    """Tests for normalise_language(language)."""
-
     def test_two_letter_code(self):
         assert normalise_language("en") == "en"
 
@@ -168,8 +155,6 @@ class TestNormaliseLanguage:
 
 
 class TestUpdateCustomFields:
-    """Tests for update_custom_fields(existing, field_id, value)."""
-
     def test_upserts_existing_field(self):
         existing = [{"field": 1, "value": "old"}, {"field": 2, "value": "keep"}]
         result = update_custom_fields(existing, 1, "new")
@@ -196,8 +181,6 @@ class TestUpdateCustomFields:
 
 
 class TestIsEmptyClassification:
-    """Tests for is_empty_classification(result)."""
-
     def test_all_empty_fields_returns_true(self):
         result = _make_result()
         assert is_empty_classification(result) is True

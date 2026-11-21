@@ -1,26 +1,6 @@
 /**
- * ErrorBoundary — catches render-time throws and shows a friendly fallback.
- *
- * React only exposes error boundary semantics as a class component (no hook
- * equivalent). This is a thin, reusable wrapper that follows the project's
- * component conventions:
- *
- *   - Friendly fallback with a reload affordance so the user is never stuck
- *     on a blank screen.
- *   - `resetKeys` prop: when any value in the array changes the boundary
- *     automatically resets (e.g. on route change), giving a clean slate
- *     without requiring a full page reload.
- *   - The fallback is styled with design-token CSS custom properties; no
- *     hardcoded colours.
- *
- * Placement:
- *   - App root (`main.tsx`) — catches any catastrophic render failure.
- *   - Lazy-route wrapper in `routes.tsx` — isolates per-page crashes.
- *   - Trace / free-form JSON views — isolates widget-level crashes.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3) — placed here so the `app`
- * tier (routes, main) can import it; `components-patterns` is not in the
- * app allow-list (eslint-plugin-boundaries).
+ * Lives in components/layout so the app tier (routes, main) can import it:
+ * eslint-plugin-boundaries does not let the app tier import patterns.
  */
 
 import React from 'react';
@@ -28,10 +8,7 @@ import styles from './ErrorBoundary.module.css';
 
 interface Props {
   children: React.ReactNode;
-  /**
-   * When any value in this array changes, the boundary resets automatically.
-   * Useful for resetting after a route change without requiring a page reload.
-   */
+  /** When any value changes (e.g. on route change), the boundary resets. */
   resetKeys?: unknown[];
 }
 
@@ -40,13 +17,7 @@ interface State {
   error: Error | null;
 }
 
-/**
- * Class component error boundary.
- *
- * Catches render-time exceptions in the subtree and renders a recovery
- * fallback in place of the crashed UI. A "Reload page" button lets the user
- * escape without manually refreshing.
- */
+/** Catches render-time throws in its subtree and shows a fallback with a reload button. */
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);

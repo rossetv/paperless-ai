@@ -1,24 +1,7 @@
-"""Tests for search.mcp_server — the MCP endpoint (spec §7.2/§7.3).
+"""Tests for search.mcp_server, the MCP endpoint.
 
-Covers the public contract of ``build_mcp_app``:
-
-- ``semantic_search`` calls ``core.retrieve`` and returns sources without an
-  answer.
-- ``deep_search`` calls ``core.answer`` and returns the full result (answer +
-  sources).
-- An unauthenticated MCP request is rejected with HTTP 401 before any tool runs.
-- An ``mcp``-scoped API key authenticates; a key without the ``mcp`` scope is
-  rejected with HTTP 401 (web-redesign §5).
-- A tool call with a missing required argument is rejected cleanly (MCP error,
-  not a server crash).
-- A core exception carrying a filesystem path does not leak the path to the
-  MCP client (I3).
-- An over-length query/question is rejected with a clean tool error (MINOR 2).
-
-The MCP protocol tests use ``create_connected_server_and_client_session`` from
-``mcp.shared.memory`` for an in-process, transport-layer-free round-trip.
-Authentication tests use Starlette's ``TestClient`` against the ASGI app
-returned by ``build_mcp_app``.
+Tool tests use ``create_connected_server_and_client_session`` for an in-process
+round-trip; auth tests use Starlette's ``TestClient`` against the ASGI app.
 """
 
 from __future__ import annotations
@@ -38,9 +21,6 @@ from tests.helpers.factories import (
     make_source_document,
 )
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 # A junk bearer that resolves to no api_keys row — used by the rejection tests.
 _WRONG_KEY = "sk-pls-this-key-was-never-minted"
@@ -49,13 +29,9 @@ _WRONG_KEY = "sk-pls-this-key-was-never-minted"
 def build_mcp_app(core: object, settings: object, app_db_path: str) -> object:
     """Build the MCP app from a stub *core*, mirroring the production wiring.
 
-    ``build_mcp_app`` now takes a ``resolve_core`` callable (the per-request
-    hot-reload accessor) and a shared :class:`LazySemaphore`, not a captured
-    core. These tests drive a single stub core, so this shim hands the real
-    builder a ``resolve_core`` that returns that stub and a fresh per-app
-    semaphore — keeping the test bodies unchanged while exercising the new
-    signature. *settings* is accepted for call-site compatibility and unused
-    (the builder no longer reads it).
+    Hands the real builder a ``resolve_core`` that returns the stub and a fresh
+    per-app semaphore. *settings* is accepted for call-site compatibility and
+    unused.
     """
     del settings
     # Some tests pass a bare MagicMock core (no pinned settings); fall back to 0
@@ -67,11 +43,6 @@ def build_mcp_app(core: object, settings: object, app_db_path: str) -> object:
         app_db_path,
         search_semaphore=LazySemaphore(limit),
     )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _retrieve_result() -> SearchResult:
@@ -92,12 +63,7 @@ def _answer_result() -> SearchResult:
 
 
 def _make_settings() -> MagicMock:
-    """Create a Settings-like mock for the MCP server.
-
-    ``settings`` is passed to ``build_mcp_app`` but the auth middleware does
-    not read any setting directly — authentication is by session cookie or
-    ``mcp``-scoped API key (web-redesign §5).
-    """
+    """Create a Settings-like mock for the MCP server."""
     return make_search_settings()
 
 
@@ -117,13 +83,10 @@ def _make_core(
 
 
 def _app_db_path() -> str:
-    """A fresh migrated app.db file for MCP auth tests, returning its path.
+    """A fresh migrated app.db file with no credentials, returning its path.
 
-    ``build_mcp_app`` takes the ``app.db`` *path*; its auth middleware opens a
-    connection per request to resolve a session cookie or an API key. This
-    helper yields an empty migrated database — every credential check against
-    it fails, so it backs the unauthenticated / junk-bearer rejection tests.
-    The file is removed at process exit.
+    Every credential check against it fails, so it backs the unauthenticated and
+    junk-bearer rejection tests. The file is removed at process exit.
     """
     import atexit
     import os
@@ -142,20 +105,10 @@ def _app_db_path() -> str:
 
 
 def _app_db_with_key(scopes: str = "mcp") -> tuple[str, str]:
-    """A migrated app.db file holding an owner and one API key.
+    """A migrated app.db holding a Member owner and one API key with *scopes*.
 
-    Mirrors the ``app.db`` an authenticated MCP request resolves against: a
-    Member owner plus a single API key with the given *scopes*. The middleware
-    opens its own connection on the returned path, so the key is persisted and
-    committed before the path is handed back.
-
-    Args:
-        scopes: The comma-separated scope string for the minted key. Defaults
-            to ``"mcp"``; pass ``"api"`` to mint a key the MCP gate rejects.
-
-    Returns:
-        A ``(app_db_path, raw_key)`` pair — the database path for
-        ``build_mcp_app`` and the full raw key to send as a bearer token.
+    The middleware opens its own connection on the path, so the key is committed
+    before the path is returned. Returns ``(app_db_path, raw_key)``.
     """
     from appdb.api_keys import create as create_key
     from appdb.connection import connect
@@ -185,22 +138,14 @@ def _app_db_with_key(scopes: str = "mcp") -> tuple[str, str]:
     return path, raw
 
 
-# ---------------------------------------------------------------------------
-# M11 regression — MCP tools resolve the live core per call (hot-reload)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
 async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
-    """A tool call resolves the live core per dispatch, not a startup capture (M11).
+    """A tool call resolves the live core per dispatch, not a startup capture.
 
-    Before the fix, ``build_mcp_app`` captured the startup ``SearchCore`` in the
-    tool closures, so a saved settings change (answer model, API key,
-    SEARCH_MAX_CONCURRENT, identity-awareness) never reached MCP callers without
-    a restart — unlike the HTTP handler, which calls ``resolve_core`` per
-    request. This test drives a ``resolve_core`` that returns a *different* core
-    on the second call (as a config_version bump would) and asserts the second
-    tool call hits the new core, never the first.
+    Otherwise a saved settings change (answer model, API key,
+    SEARCH_MAX_CONCURRENT, identity-awareness) would not reach MCP callers until a
+    restart. The second resolve returns a different core, as a config_version bump
+    would.
     """
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -228,11 +173,6 @@ async def test_mcp_tool_call_after_config_bump_uses_the_new_core() -> None:
     core_v2.retrieve.assert_called_once()
     assert core_v1.retrieve.call_args.kwargs.get("query") == "first"
     assert core_v2.retrieve.call_args.kwargs.get("query") == "second"
-
-
-# ---------------------------------------------------------------------------
-# In-process MCP tool tests (via in-memory transport)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
@@ -390,11 +330,6 @@ async def test_deep_search_missing_required_question_is_rejected() -> None:
     core.answer.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Tool surface — the five-tool contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
 async def test_tools_list_exposes_the_expected_tools() -> None:
     """The MCP advertises exactly the expected tools and nothing retired."""
@@ -419,11 +354,6 @@ async def test_tools_list_exposes_the_expected_tools() -> None:
     # The retired tool names must be gone (clean break — no aliases).
     assert "query_documents" not in names
     assert "search_documents" not in names
-
-
-# ---------------------------------------------------------------------------
-# Authentication middleware tests (via Starlette TestClient)
-# ---------------------------------------------------------------------------
 
 
 def test_unauthenticated_request_is_rejected_with_401() -> None:
@@ -487,7 +417,7 @@ def test_mcp_scoped_api_key_passes_auth_layer() -> None:
 
 
 def test_api_key_without_mcp_scope_is_rejected_with_401() -> None:
-    """An API key lacking the ``mcp`` scope cannot reach /mcp (web-redesign §5)."""
+    """An API key lacking the ``mcp`` scope cannot reach /mcp."""
     core = _make_core()
     settings = _make_settings()
     # An "api"-only key: valid for the data routes, but not for the MCP surface.
@@ -526,21 +456,11 @@ def test_no_bearer_prefix_is_rejected() -> None:
     assert response.status_code == 401
 
 
-# ---------------------------------------------------------------------------
-# MAJOR-1 regression — cookie auth must refresh last_seen_at
-# ---------------------------------------------------------------------------
-
-
 def test_cookie_auth_refreshes_last_seen_at() -> None:
-    """A session-cookie MCP request must bump last_seen_at (MAJOR-1).
+    """A session-cookie MCP request must bump last_seen_at.
 
-    Before Wave 3 the MCP middleware called refresh_last_seen on a successful
-    cookie auth. Wave 3 regressed this by dropping the call. This test fails
-    if the second request does not update last_seen_at.
-
-    Strategy: create a session with a last_seen_at far in the past (beyond
-    the ~5-minute throttle window), issue two MCP requests with the cookie,
-    then assert the stored last_seen_at has moved forward.
+    The session starts with a last_seen_at past the ~5-minute throttle window, so
+    one authenticated request must move it forward.
     """
     from datetime import datetime, timedelta, timezone
 
@@ -578,7 +498,7 @@ def test_cookie_auth_refreshes_last_seen_at() -> None:
     asgi_app = build_mcp_app(core, settings, path)
     client = TestClient(asgi_app, raise_server_exceptions=False)
 
-    # First request — should pass auth and trigger a last_seen_at refresh.
+    # This request should pass auth and refresh last_seen_at.
     client.post(
         "/mcp",
         cookies={SESSION_COOKIE_NAME: issued.token},
@@ -594,7 +514,6 @@ def test_cookie_auth_refreshes_last_seen_at() -> None:
         },
     )
 
-    # Read last_seen_at after the request.
     conn2 = connect(path)
     row = get_by_token_hash(conn2, hash_token(issued.token))
     conn2.close()
@@ -605,19 +524,12 @@ def test_cookie_auth_refreshes_last_seen_at() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# I3 regression — core exceptions must not leak internals to the MCP client
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
 async def test_semantic_search_core_exception_does_not_leak_path() -> None:
-    """semantic_search must not expose filesystem paths in error text (I3).
+    """semantic_search must not expose filesystem paths in error text.
 
-    When ``core.retrieve`` raises an exception whose message contains a
-    filesystem path, the tool result must NOT include that path — only a
-    generic sanitised message.  This test fails if the bare ``str(exc)`` is
-    returned to the caller.
+    A core exception whose message contains a path must reach the client only as a
+    generic sanitised message, never as ``str(exc)``.
     """
     from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -648,11 +560,7 @@ async def test_semantic_search_core_exception_does_not_leak_path() -> None:
 
 @pytest.mark.anyio
 async def test_deep_search_core_exception_does_not_leak_path() -> None:
-    """deep_search must not expose filesystem paths in error text (I3).
-
-    Mirrors ``test_semantic_search_core_exception_does_not_leak_path`` for
-    the ``deep_search`` tool.
-    """
+    """deep_search must not expose filesystem paths in error text."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     secret_path = "/var/data/paperless/index.db"
@@ -678,14 +586,9 @@ async def test_deep_search_core_exception_does_not_leak_path() -> None:
     assert "search failed" in error_text.lower() or "error" in error_text.lower()
 
 
-# ---------------------------------------------------------------------------
-# MINOR 2 regression — over-length queries are rejected at the MCP boundary
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.anyio
 async def test_semantic_search_rejects_over_length_query() -> None:
-    """semantic_search must reject a query exceeding 4000 characters (MINOR 2)."""
+    """semantic_search must reject a query exceeding 4000 characters."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -709,7 +612,7 @@ async def test_semantic_search_rejects_over_length_query() -> None:
 
 @pytest.mark.anyio
 async def test_deep_search_rejects_over_length_question() -> None:
-    """deep_search must reject a question exceeding 4000 characters (MINOR 2)."""
+    """deep_search must reject a question exceeding 4000 characters."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -732,7 +635,7 @@ async def test_deep_search_rejects_over_length_question() -> None:
 
 @pytest.mark.anyio
 async def test_semantic_search_rejects_empty_query() -> None:
-    """An empty query is rejected at the boundary, never reaching the LLM (HTTP-04)."""
+    """An empty query is rejected at the boundary, never reaching the LLM."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -749,7 +652,7 @@ async def test_semantic_search_rejects_empty_query() -> None:
 
 @pytest.mark.anyio
 async def test_deep_search_rejects_whitespace_only_question() -> None:
-    """A whitespace-only question is rejected before any LLM spend (HTTP-04)."""
+    """A whitespace-only question is rejected before any LLM spend."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core()
@@ -766,7 +669,7 @@ async def test_deep_search_rejects_whitespace_only_question() -> None:
 
 @pytest.mark.anyio
 async def test_deep_search_trims_surrounding_whitespace() -> None:
-    """A valid question is trimmed so the pipeline sees one normalised form (HTTP-07)."""
+    """A valid question is trimmed so the pipeline sees one normalised form."""
     from mcp.shared.memory import create_connected_server_and_client_session
 
     core = _make_core(answer_result=_answer_result())

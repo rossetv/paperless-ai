@@ -1,10 +1,6 @@
 """Tests for the fetch_documents MCP tool.
 
-fetch_documents is a zero-LLM tool that fetches full OCR text live from Paperless
-through an injected per-request client. These tests drive it via the in-memory
-MCP transport with a stub paperless_factory, asserting: boundary validation
-(empty / >5 ids), the truncation flag, per-id "not found" for an unknown id, and
-that the per-request client is closed after use.
+Driven through the in-memory MCP transport with a stub paperless_factory.
 """
 
 from __future__ import annotations

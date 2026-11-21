@@ -1,9 +1,4 @@
-/**
- * Search, facets, stats, and recent-searches query hooks.
- *
- * Allowed deps: @tanstack/react-query, client, types, hooks/keys
- * (leaf module — CODE_GUIDELINES §12.3).
- */
+/** Search, facets, stats, library-list and recent-searches query hooks. */
 
 import { useQuery } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
@@ -25,12 +20,7 @@ import type {
 } from '../types';
 import { queryKeys } from './keys';
 
-/**
- * Execute a semantic search query.
- *
- * Disabled when `query` is empty so the hook stays in `pending` state without
- * issuing a request — avoids a pointless round-trip on initial render.
- */
+/** Run a search query; disabled (stays `pending`) while `query` is empty. */
 export function useSearch(
   req: SearchRequest,
 ): UseQueryResult<SearchResponse, Error> {
@@ -60,10 +50,8 @@ export function useStats(): UseQueryResult<StatsResponse, Error> {
 /**
  * Fetch a page of the library document list.
  *
- * `placeholderData` keeps the previous page on screen while the next page
- * loads — paging through the library does not flash an empty grid. The query
- * key includes the full `DocumentsQuery`, so changing any filter, the sort,
- * or the page produces a distinct cache entry.
+ * `placeholderData` keeps the previous page on screen while the next loads, so
+ * paging does not flash an empty grid.
  */
 export function useDocuments(
   query: DocumentsQuery,
@@ -76,12 +64,9 @@ export function useDocuments(
 }
 
 /**
- * The signed-in user's recent-search history — GET /api/recent-searches.
+ * The signed-in user's recent searches — GET /api/recent-searches.
  *
- * Drives the idle search screen's "Recent searches" strip. `retry: false` so
- * a 401 (session gone) resolves to an error state at once rather than
- * retrying; the idle screen treats any error as "no recent searches" and
- * simply omits the strip.
+ * `retry: false`: the idle screen treats any error as "no recent searches".
  */
 export function useRecentSearches(): UseQueryResult<RecentSearchesResponse, Error> {
   return useQuery({

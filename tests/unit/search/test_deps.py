@@ -1,15 +1,8 @@
-"""Tests for search.deps — the post-Wave-3 auth and scope dependencies.
+"""Tests for search.deps: the auth and scope dependencies.
 
-Exercised through a tiny FastAPI app and TestClient so the cookie/header
-plumbing is real. Covers: a session cookie and an API key both resolve;
-401 when neither is valid; require_role gates on role; the scope
-dependencies gate an API key on its scopes; a cookie caller is never
-scope-limited; require_admin needs both an admin role and the Admin scope.
-
-The app holds the ``app.db`` *path*, not a live connection — each request
-opens its own connection via ``get_app_db``. The test seeds users and keys
-through the fixture's separate connection to the same ``tmp_path/app.db``
-file; WAL mode means the per-request connections see the seeded rows.
+Runs through a tiny FastAPI app so the cookie/header plumbing is real. Each
+request opens its own app.db connection; WAL mode lets it see rows the fixture
+seeded through a separate connection.
 """
 
 from __future__ import annotations
@@ -43,10 +36,8 @@ from search.setup import SetupState
 def _db_path(conn: sqlite3.Connection) -> str:
     """Return the filesystem path of *conn*'s ``main`` database.
 
-    The app holds the ``app.db`` path and opens its own per-request
-    connection via ``get_app_db``; the test fixture owns a separate
-    connection to the same file. This bridges the fixture's connection back
-    to the path the app needs.
+    The app opens its own per-request connection from a path, so this maps the
+    fixture's connection back to that path.
     """
     rows = conn.execute("PRAGMA database_list").fetchall()
     return next(row[2] for row in rows if row[1] == "main")
@@ -133,9 +124,6 @@ def _bearer(raw_key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {raw_key}"}
 
 
-# --- get_current_user --------------------------------------------------
-
-
 def test_get_current_user_resolves_a_session_cookie(conn) -> None:
     token = _cookie_login(conn, role="member", username="alice")
     client = _client(conn)
@@ -176,9 +164,6 @@ def test_get_current_user_401_for_a_suspended_user(conn) -> None:
     assert client.get("/me").status_code == 401
 
 
-# --- require_role ------------------------------------------------------
-
-
 def test_require_role_allows_a_sufficient_role(conn) -> None:
     token = _cookie_login(conn, role="member")
     client = _client(conn)
@@ -195,9 +180,6 @@ def test_require_role_403s_an_insufficient_role(conn) -> None:
 
 def test_require_role_401s_when_unauthenticated(conn) -> None:
     assert _client(conn).get("/member-area").status_code == 401
-
-
-# --- require_admin -----------------------------------------------------
 
 
 def test_require_admin_allows_an_admin_cookie(conn) -> None:
@@ -231,9 +213,6 @@ def test_require_admin_403s_an_admin_scope_key_owned_by_a_member(conn) -> None:
     assert _client(conn).get("/admin-area", headers=_bearer(raw)).status_code == 403
 
 
-# --- require_api_scope -------------------------------------------------
-
-
 def test_api_scope_allows_a_cookie_user_without_any_scope(conn) -> None:
     """A logged-in human is never scope-limited."""
     token = _cookie_login(conn, role="readonly")
@@ -252,9 +231,6 @@ def test_api_scope_403s_a_key_without_the_api_scope(conn) -> None:
     assert _client(conn).get("/api-area", headers=_bearer(raw)).status_code == 403
 
 
-# --- require_api_scope_member -----------------------------------------
-
-
 def test_api_member_scope_403s_a_readonly_cookie(conn) -> None:
     token = _cookie_login(conn, role="readonly")
     client = _client(conn)
@@ -267,9 +243,6 @@ def test_api_member_scope_allows_a_member_key_with_api_scope(conn) -> None:
     assert (
         _client(conn).get("/api-member-area", headers=_bearer(raw)).status_code == 200
     )
-
-
-# --- require_mcp_scope -------------------------------------------------
 
 
 def test_mcp_scope_allows_a_key_with_the_mcp_scope(conn) -> None:

@@ -1,9 +1,1 @@
-/*
- * APIKeyEditPanel feature component — CSS Module.
- *
- * All form styles (sections, scope rows, expiry chips, footer, error banner)
- * are shared via ScopeChecklist/ScopeChecklist.module.css. This panel has no
- * panel-specific layout beyond what the shared Modal provides.
- *
- * All values come exclusively from design tokens (var(--…)).
- */
+/* All form styles live in ScopeChecklist/ScopeChecklist.module.css. */

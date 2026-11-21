@@ -1,22 +1,7 @@
-/*
- * Stack layout component — CSS Module.
- *
- * All values come exclusively from design tokens (var(--…)).
- * Stylelint enforces this.
- *
- * Stack is a flexbox primitive that replaces manual margin/padding stacking
- * patterns. Gap values map 1:1 to the spacing scale in tokens.css.
- *
- * DESIGN.md §5 Spacing System:
- *   - Base unit: 8px
- *   - Scale values: --spacing-1 through --spacing-14
- */
-
 .stack {
   display: flex;
 }
 
-/* ── Direction ── */
 .vertical {
   flex-direction: column;
 }
@@ -25,14 +10,12 @@
   flex-direction: row;
 }
 
-/* ── Alignment (cross-axis) ── */
 .align-start    { align-items: flex-start; }
 .align-center   { align-items: center;     }
 .align-end      { align-items: flex-end;   }
 .align-stretch  { align-items: stretch;    }
 .align-baseline { align-items: baseline;   }
 
-/* ── Justify (main-axis) ── */
 .justify-start   { justify-content: flex-start;    }
 .justify-center  { justify-content: center;        }
 .justify-end     { justify-content: flex-end;      }
@@ -40,6 +23,5 @@
 .justify-around  { justify-content: space-around;  }
 .justify-evenly  { justify-content: space-evenly;  }
 
-/* ── Wrap ── */
 .wrap   { flex-wrap: wrap;   }
 .nowrap { flex-wrap: nowrap; }

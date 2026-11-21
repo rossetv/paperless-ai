@@ -1,4 +1,4 @@
-"""Tests for the judge JSON schema and prompt (Phase 2, Task 6)."""
+"""Tests for the judge JSON schema and prompt."""
 
 from __future__ import annotations
 

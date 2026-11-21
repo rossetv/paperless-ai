@@ -1,9 +1,3 @@
-/**
- * Unit tests for `useDebounce`.
- *
- * Uses Vitest's fake-timer API so tests run synchronously without real delays.
- */
-
 import { renderHook, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useDebounce } from './useDebounce';
@@ -29,7 +23,6 @@ describe('useDebounce', () => {
     );
 
     rerender({ value: 'world' });
-    // 299 ms — still the old value
     act(() => { vi.advanceTimersByTime(299); });
     expect(result.current).toBe('hello');
   });

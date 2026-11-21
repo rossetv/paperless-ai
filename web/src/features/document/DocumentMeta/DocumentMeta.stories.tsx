@@ -43,17 +43,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** All metadata fields populated. */
 export const AllFields: Story = {
   args: { source: fullDocument },
 };
 
-/** Only the correspondent is present — document type and date are omitted. */
 export const CorrespondentOnly: Story = {
   args: { source: correspondentOnlyDocument },
 };
 
-/** No optional fields — renders gracefully as an empty row. */
+/** No optional fields: renders an empty row. */
 export const NoFields: Story = {
   args: { source: minimalDocument },
 };

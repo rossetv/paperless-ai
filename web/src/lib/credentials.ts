@@ -1,17 +1,7 @@
 /**
- * Shared username / password validators.
- *
- * Mirrors the server-side rules of the Wave 1 contract so the client gives
- * immediate feedback. Both the auth screens (`LoginScreen`,
- * `FirstRunSetupScreen`) and the admin access management (`UserEditDrawer`)
- * import these — the rules live here exactly once.
- *
- * Rules:
- *   - username: 3–64 characters, only `A-Z a-z 0-9 . _ -`
- *   - password: at least 12 characters
- *
- * Allowed deps: none. `lib/` is a leaf layer (CODE_GUIDELINES §12.3) — every
- * layer may import it; it imports nothing.
+ * Username / password validators mirroring the server-side rules, so the
+ * client gives immediate feedback: username 3–64 characters of
+ * `A-Z a-z 0-9 . _ -`; password at least 12 characters.
  */
 
 /** The permitted-username character pattern, mirroring the server. */

@@ -1,10 +1,4 @@
-"""Tests for search.sessions — opaque session tokens and the CurrentUser type.
-
-Covers the token primitives: new_token yields a high-entropy URL-safe string;
-two tokens differ; hash_token is SHA-256 hex, deterministic, and a different
-token hashes differently. Also the cookie-TTL selection (remember vs not) and
-the CurrentUser dataclass shape.
-"""
+"""Tests for search.sessions: opaque session tokens, cookie TTLs and CurrentUser."""
 
 from __future__ import annotations
 

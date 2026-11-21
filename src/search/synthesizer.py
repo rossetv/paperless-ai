@@ -1,34 +1,16 @@
-"""LLM answer synthesiser — Stage 3 of the search pipeline.
+"""LLM answer synthesiser: the final stage of the search pipeline.
 
-The synthesiser makes one LLM call using the configured SEARCH_ANSWER_MODEL
-(falling back through CLASSIFY_MODELS on failure) and parses the JSON response into
-either an ``Answered`` or a ``NeedsMore`` dataclass.
+One call to SEARCH_ANSWER_MODEL (falling back through CLASSIFY_MODELS) whose
+JSON response is parsed into an ``Answered`` or ``NeedsMore``.
 
-Design notes:
-- No Pydantic; parsing follows the manual pattern from classifier/result.py
-  (CODE_GUIDELINES.md §5.6).
-- Prompt-injection safety (CODE_GUIDELINES.md §10.2): retrieved chunk texts
-  are untrusted document content.  In the *user* message the question leads and
-  the chunks follow, fenced inside a data block delimited by an unpredictable
-  per-message nonce; the system prompt declares that everything between the
-  nonce fences is data to be analysed, never instructions to be followed.  A
-  chunk cannot reproduce the nonce, so it cannot forge the boundary (SRCH-01).
-- ``mode="exploratory"`` allows the model to return NeedsMore when context is
-  too thin.  ``mode="final"`` coerces the outcome to Answered — even on thin
-  context the model must answer or state that nothing was found.
-- On any bad LLM response: in ``"final"`` mode, degrades to Answered stating
-  the answer could not be produced; in ``"exploratory"`` mode, degrades to
-  NeedsMore with a generic adjustment.  Never raises on a bad LLM response.
-- All LLM calls go through ``OpenAIChatMixin._create_completion``
-  (CODE_GUIDELINES.md §8.1): the synthesiser subclasses the mixin and inherits
-  the shared OpenAI singleton, the ``@retry`` exponential backoff, and the
-  ``llm_limiter`` global concurrency limiter.  It iterates SEARCH_ANSWER_MODEL
-  then CLASSIFY_MODELS, mirroring ``classifier/provider.ClassificationProvider``.
-- A failing model — whether a retry-exhausted retryable error or a
-  non-retryable one (``AuthenticationError``, ``PermissionDeniedError``,
-  ``NotFoundError``, ``BadRequestError``) — is caught as ``openai.APIError``
-  and the next model is tried.  When every model fails the synthesiser
-  degrades gracefully.  ``synthesise()`` therefore never raises.
+- Retrieved chunks are untrusted. The question leads the user message and the
+  chunks follow inside a block fenced by a per-message nonce; the system prompt
+  says everything inside the fences is data, never instructions. A chunk cannot
+  reproduce the nonce, so it cannot forge the boundary.
+- ``mode="exploratory"`` may return NeedsMore when context is thin;
+  ``mode="final"`` always yields Answered, even if only to say nothing was found.
+- Every failure (each model erroring, or an unparseable response) degrades to a
+  safe outcome for the mode, so ``synthesise()`` never raises.
 """
 
 from __future__ import annotations
@@ -60,13 +42,11 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-# Fallback answer text used when the LLM returns unparseable content in final mode.
 _FALLBACK_FINAL_ANSWER = (
     "No answer could be produced: the retrieved context did not yield "
     "a parseable response."
 )
 
-# Fallback adjustment used when the LLM returns unparseable content in exploratory mode.
 _FALLBACK_EXPLORATORY_ADJUSTMENT = (
     "LLM response was unparseable; broadening the query may help."
 )
@@ -75,21 +55,9 @@ _FALLBACK_EXPLORATORY_ADJUSTMENT = (
 class Synthesizer(OpenAIChatMixin):
     """Synthesises a prose answer from retrieved chunks via one LLM call.
 
-    The synthesiser is a pure function wrapped in a class for dependency
-    injection.  All state is in the injected ``settings``; Synthesizer
-    instances are safe to share across threads.
-
-    LLM calls go through the inherited ``OpenAIChatMixin._create_completion``,
-    which owns the shared OpenAI client singleton, retry, and the concurrency
-    limiter (CODE_GUIDELINES.md §8.1).
-
-    Args:
-        settings: Application settings; supplies SEARCH_ANSWER_MODEL and
-            CLASSIFY_MODELS for the fallback chain, plus MAX_RETRIES /
-            MAX_RETRY_BACKOFF_SECONDS for the inherited retry decorator.
+    Stateless beyond the injected ``settings``, so safe to share across threads.
     """
 
-    # The synthesiser keeps no stats; an empty tuple satisfies the mixin contract.
     _STAT_KEYS: tuple[str, ...] = ()
 
     def __init__(self, settings: Settings) -> None:
@@ -113,34 +81,15 @@ class Synthesizer(OpenAIChatMixin):
         usage_sink: list[LlmCallUsage] | None = None,
         documents_by_id: dict[int, tuple[str | None, str | None]] | None = None,
     ) -> AnswerOutcome:
-        """Synthesise an answer for *query* using the retrieved *chunks*.
-
-        Makes one LLM call using SEARCH_ANSWER_MODEL, falling back through
-        CLASSIFY_MODELS on any API error.  On any parse failure or exhausted
-        fallback, degrades gracefully based on *mode*.
+        """Synthesise an answer for *query* from *chunks*. Never raises.
 
         Args:
-            query: The user's original search query.
-            chunks: Retrieved chunks to use as context.  Each chunk is labelled
-                with its source document id so the model can cite [n] references.
-            mode: Either ``"exploratory"`` (the model may return NeedsMore) or
-                ``"final"`` (the model must return Answered — coerced if needed).
-            asker: The sanitised asker identity, or None. When set, the user
-                message includes an identity directive in the control plane so
-                first-person references resolve to the asker.
-            usage_sink: Optional list to receive one
-                :class:`~common.llm.LlmCallUsage` record capturing the token
-                usage for this synthesise call (the search telemetry). ``None``
-                (the default) skips capture and keeps behaviour unchanged.
-            documents_by_id: Optional ``{document_id: (title, created)}`` look-up
-                (sourced from our index, not chunk text) used to enrich each
-                labelled chunk header with the document's title and date, so the
-                model can attribute and reconcile across documents (Phase 3B). A
-                document absent from the map falls back to the bare ``[id]``
-                label.
-
-        Returns:
-            An ``Answered`` or ``NeedsMore`` dataclass.  Never raises.
+            asker: The sanitised asker identity; when set, first-person
+                references in the query resolve to it.
+            usage_sink: Optional list that receives this call's token usage.
+            documents_by_id: Optional ``{document_id: (title, created)}`` from
+                the index (not chunk text), used to label each chunk with its
+                document's title and date. Missing documents get a bare ``[id]``.
         """
         labelled_chunks = [(chunk.document_id, chunk.text) for chunk in chunks]
         is_final = mode == "final"
@@ -180,7 +129,7 @@ class Synthesizer(OpenAIChatMixin):
             response_format=_synthesiser_response_format(self.settings),
             # Explicit standard tier on OpenAI — never flex here (a human is
             # waiting), and an explicit tier dodges the live-verified 401 on
-            # tierless requests (spec D4). Omitted for non-OpenAI providers.
+            # tierless requests. Omitted for non-OpenAI providers.
             service_tier=(
                 "default" if self.settings.SEARCH_ANSWER_PROVIDER == "openai" else None
             ),
@@ -193,24 +142,10 @@ class Synthesizer(OpenAIChatMixin):
 
         return self._parse_response(query, raw_content, mode=mode)
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
     def _parse_response(
         self, query: str, raw: str, *, mode: SearchMode
     ) -> AnswerOutcome:
-        """Parse *raw* into an AnswerOutcome, degrading gracefully on any error.
-
-        Args:
-            query: Original user query — used in logging.
-            raw: Raw text returned by the LLM.
-            mode: ``"exploratory"`` or ``"final"``.
-
-        Returns:
-            An ``Answered`` or ``NeedsMore`` dataclass, or the safe degraded
-            fallback.
-        """
+        """Parse *raw* into an AnswerOutcome, degrading gracefully on any error."""
         stripped = raw.strip()
         if not stripped:
             return self._degrade(mode, reason="LLM returned empty content")
@@ -235,9 +170,8 @@ class Synthesizer(OpenAIChatMixin):
             answer = raw_answer.strip()
             raw_citations = data.get("citations")
             cit_list = raw_citations if isinstance(raw_citations, list) else []
-            # Parse citations defensively: skip any element that cannot be
-            # coerced to int (e.g. "n/a", null).  A single junk element must
-            # not discard a valid answer.
+            # Skip citations that are not ints (e.g. "n/a", null): one junk
+            # element must not discard a valid answer.
             citations: tuple[int, ...] = tuple(
                 int(c)
                 for c in cit_list
@@ -254,7 +188,6 @@ class Synthesizer(OpenAIChatMixin):
                 )
             adjustment = raw_adjustment.strip()
             if mode == "final":
-                # In final mode, NeedsMore is not allowed — coerce to Answered.
                 log.warning(
                     "synthesiser.needs_more_in_final_mode",
                     query_prefix=query[:QUERY_LOG_PREFIX_CHARS],
@@ -274,20 +207,7 @@ class Synthesizer(OpenAIChatMixin):
         )
 
     def _degrade(self, mode: SearchMode, reason: str) -> AnswerOutcome:
-        """Return a safe fallback outcome and log a warning.
-
-        In ``"final"`` mode, returns an ``Answered`` stating the answer could
-        not be produced.  In ``"exploratory"`` mode, returns a ``NeedsMore``
-        with a generic broadening suggestion — the pipeline will either refine
-        or eventually call a final-mode synthesise.
-
-        Args:
-            mode: ``"exploratory"`` or ``"final"``.
-            reason: Human-readable explanation for the degradation.
-
-        Returns:
-            A safe ``AnswerOutcome``.
-        """
+        """Log *reason* and return the safe fallback outcome for *mode*."""
         log.warning(
             "synthesiser.degraded_to_fallback",
             reason=reason,

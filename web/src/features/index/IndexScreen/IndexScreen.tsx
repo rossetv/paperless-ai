@@ -34,24 +34,15 @@ const ACTIVITY_ROW_LIMIT = 5;
  * activity / failed-document / stats queries (the first two poll) and the
  * reconcile mutation.
  *
- * Holds `previewDocumentId` state: when a failed-document's "View" button
- * is clicked, `FailedDocumentsPanel` calls `onOpen(id)`, which sets this
- * state and renders the in-app `DocumentPreviewScreen` overlay.
+ * "View" on a failed document opens the in-app `DocumentPreviewScreen`
+ * overlay via `previewDocumentId`.
  *
- * The status query gates the whole dashboard: while it is loading a `Spinner`
- * shows; if it errors an `EmptyState` with a warning icon shows (consistent
- * with the Library and Search error patterns); otherwise the dashboard renders. The activity and failed-document panels degrade independently —
- * each renders an empty list rather than blocking the page.
+ * Only the status query gates the dashboard (spinner, then an error
+ * `EmptyState`); the activity and failed-document panels degrade to empty
+ * lists instead of blocking the page.
  *
- * The "Reconcile now" button is hidden for read-only callers — the backend
- * gates that endpoint on Member+ role, so showing it to readonly users would
- * produce a silent 403.
- *
- * Renders no `AppNavBar`: the `IndexPage` host wraps it, matching the Wave 1
- * page pattern.
- *
- * Tier: features/index (CODE_GUIDELINES §12.3) — composes primitives, the
- * index features, api hooks and `useAuth`.
+ * "Reconcile now" is hidden for read-only callers: the backend requires
+ * Member+ and would answer 403. The `IndexPage` host supplies the `AppNavBar`.
  */
 export function IndexScreen(): React.ReactElement {
   const { role } = useAuth();
@@ -140,10 +131,8 @@ export function IndexScreen(): React.ReactElement {
                     }
                   : {})}
               />
-              {/* No sub-line: the embedding dimension count is not exposed by
-                  GET /api/stats, so the tile shows only the model name rather
-                  than a hard-coded figure that is wrong for any non-default
-                  model (e.g. text-embedding-3-large = 3072). */}
+              {/* No dimension sub-line: GET /api/stats does not expose it, and a
+                  hard-coded figure is wrong for any non-default model. */}
               <StatTile value={stats.embedding_model ?? '—'} label="Embedding model" />
               <StatTile
                 value={
@@ -222,11 +211,8 @@ export function IndexScreen(): React.ReactElement {
         if (previewDoc === undefined) {
           return null;
         }
-        // Build the SourceDocument shape DocumentPreviewScreen expects.
-        // FailedDocument carries only id/title; correspondent,
-        // document_type, created, snippet, score and paperless_url get
-        // harmless defaults — Wave 7 reconciles the viewer interface so a
-        // failed-document row can open it without fabricating these.
+        // DocumentPreviewScreen expects a SourceDocument; FailedDocument carries
+        // only id/title, so the remaining fields get harmless defaults.
         const source = {
           document_id: previewDoc.document_id,
           title: previewDoc.title ?? '',

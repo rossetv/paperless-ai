@@ -7,16 +7,13 @@ import styles from './BottomTabBar.module.css';
 
 /** A single tab in the bottom navigation bar. */
 export interface BottomTabItem {
-  /** React Router target path. */
   to: string;
   /** Visible label beneath the icon. */
   label: string;
-  /** Icon to render above the label. */
   icon: IconName;
   /**
-   * When `true`, the tab only matches its route exactly — prevents `/` matching
-   * `/library`. Mirror of React Router's `end` prop on `<NavLink>`.
-   * Explicitly typed as `boolean | undefined` to satisfy `exactOptionalPropertyTypes`.
+   * Match the route exactly, so `/` does not match `/library` (React Router's `end`).
+   * Typed `boolean | undefined` for `exactOptionalPropertyTypes`.
    */
   end?: boolean | undefined;
 }
@@ -27,23 +24,13 @@ export interface BottomTabBarProps {
    * `AppNavBar` (with `adminOnly` items already removed for non-admin users).
    */
   items: BottomTabItem[];
-  /** Additional class names to merge onto the root element. */
   className?: string;
 }
 
 /**
  * Fixed bottom navigation bar for mobile viewports (< 700 px).
  *
- * Renders a row of stacked icon + label tabs using the glass-navigation
- * treatment (--colour-nav-bg + --backdrop-nav). Each tab is a React Router
- * `NavLink` that receives an `active` class when its route is current.
- *
- * Hidden at ≥ 700 px via media query — both the desktop `NavBar` and this
- * component are rendered into the DOM simultaneously; the surface swap is
- * purely CSS `display: none / flex`.
- *
- * Tier: components/layout (CODE_GUIDELINES §12.3). Allowed deps: lib/,
- * components/primitives, react-router-dom.
+ * Rendered alongside the desktop `NavBar`; CSS alone decides which one shows.
  */
 export function BottomTabBar({
   items,

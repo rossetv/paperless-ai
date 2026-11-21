@@ -1,18 +1,7 @@
-"""Integration tests for the Wave 2 thumbnail proxy.
+"""Integration tests for the GET /api/documents/{id}/thumb proxy.
 
-Exercises GET /api/documents/{id}/thumb through the real search FastAPI app
-(built by ``create_app``) over a real ``tmp_path`` ``app.db`` and seeded
-``index.db``. Paperless-ngx itself is mocked: ``create_app`` builds the
-document router with the real ``PaperlessClient`` factory, so the Paperless
-client class is patched to a stub the factory then constructs.
-
-Coverage:
-- A signed-in user streams a document thumbnail body, 200.
-- The response Content-Type is forwarded for a known image type (image/webp).
-- An unknown document id maps to 404.
-- An unreachable Paperless maps to 502.
-- A non-image content type from Paperless maps to 502.
-- An unauthenticated request is rejected 401.
+``create_app`` builds the real ``PaperlessClient`` factory, so the client class
+itself is patched to a stub.
 """
 
 from __future__ import annotations
@@ -37,20 +26,14 @@ _WEBP_BYTES = b"RIFF\x00\x00\x00\x00WEBP"
 
 
 class _StubPaperlessClient:
-    """A stand-in PaperlessClient whose thumb_stream is scripted.
-
-    Constructed by the real ``_default_paperless_factory`` once the
-    ``PaperlessClient`` name in ``search.document_routes`` is patched to this
-    class. Class attributes script the next ``thumb_stream`` outcome so a
-    test sets behaviour before issuing the request.
-    """
+    """A stand-in PaperlessClient whose ``thumb_stream`` outcome is set per test."""
 
     # Set by each test: either ("image/jpeg", <bytes>) to stream, or an
     # exception instance to raise from thumb_stream.
     next_outcome: object = ("image/jpeg", _THUMB_BYTES)
 
     def __init__(self, _settings: object) -> None:
-        """Accept the settings argument the factory passes; ignore it."""
+        """Ignore the settings the factory passes."""
 
     def thumb_stream(self, _doc_id: int) -> tuple[str, Iterator[bytes]]:
         """Return the scripted stream, or raise the scripted exception."""
@@ -66,10 +49,7 @@ class _StubPaperlessClient:
 
 @pytest.fixture()
 def patched_paperless(monkeypatch: pytest.MonkeyPatch) -> type[_StubPaperlessClient]:
-    """Patch search.document_routes.PaperlessClient to the stub class.
-
-    Resets ``next_outcome`` to the default success before each test.
-    """
+    """Patch search.document_routes.PaperlessClient to the stub, reset to success."""
     _StubPaperlessClient.next_outcome = ("image/jpeg", _THUMB_BYTES)
     monkeypatch.setattr("search.document_routes.PaperlessClient", _StubPaperlessClient)
     return _StubPaperlessClient

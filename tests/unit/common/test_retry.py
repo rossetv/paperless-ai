@@ -10,7 +10,7 @@ from common.retry import _sleep_backoff, retry
 
 
 class _FakeSettings:
-    """Minimal settings object satisfying the ``@retry`` decorator's duck-type contract."""
+    """The two settings the ``@retry`` decorator reads."""
 
     def __init__(self, max_retries: int = 3, max_backoff: int = 30):
         self.MAX_RETRIES = max_retries
@@ -115,7 +115,6 @@ class TestInvalidMaxRetries:
 
 class TestExceptionFiltering:
     def test_non_retryable_exception_propagates_immediately(self):
-        """ValueError is not retryable so it should not be caught."""
         call_count = 0
 
         def raise_value_error(self_inner):
@@ -133,7 +132,6 @@ class TestExceptionFiltering:
 
     @patch("common.retry._sleep_backoff")
     def test_retryable_timeout_error(self, mock_sleep):
-        """TimeoutError is retryable for the `flaky` method."""
         attempts = []
 
         def raise_timeout(self_inner, value):
@@ -214,7 +212,6 @@ class TestBackoffCap:
 
 class TestWraps:
     def test_function_name_preserved(self):
-        # The method on the class should preserve the original name
         assert _Client.flaky.__name__ == "flaky"
 
     def test_docstring_preserved(self):

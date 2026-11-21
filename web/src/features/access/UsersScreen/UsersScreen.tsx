@@ -18,12 +18,7 @@ import { formatShortDate } from '../../../lib/formatDate';
 import { deriveInitials } from '../../../lib/deriveInitials';
 import styles from './UsersScreen.module.css';
 
-/**
- * A fixed avatar palette — a deterministic colour per user id.
- *
- * References the --colour-avatar-N tokens from tokens.css so there is one
- * source of truth for these values (§12.4 — no hardcoded design values).
- */
+/** Avatar colours (the --colour-avatar-N tokens), picked deterministically per user id. */
 const AVATAR_PALETTE = [
   'var(--colour-avatar-0)',
   'var(--colour-avatar-1)',
@@ -33,7 +28,6 @@ const AVATAR_PALETTE = [
   'var(--colour-avatar-5)',
 ] as const;
 
-/** Pick a stable avatar colour for a user by id. */
 function avatarColour(id: number): string {
   // Modulo guarantees the index is in bounds; the fallback satisfies TypeScript.
   return AVATAR_PALETTE[id % AVATAR_PALETTE.length] ?? AVATAR_PALETTE[0];
@@ -46,9 +40,6 @@ function avatarColour(id: number): string {
  * box, and a {@link UserEditDrawer} for create / edit. Admin-gated by the
  * route guard — this component assumes the caller is an admin and renders
  * the current user (`useAuth`) with a "You" tag and disabled self-actions.
- *
- * Tier: features/access (CODE_GUIDELINES §12.3). Allowed deps: components/*,
- * api/, hooks/, lib/.
  */
 export function UsersScreen(): React.ReactElement {
   const usersQuery = useUsers();
@@ -61,13 +52,12 @@ export function UsersScreen(): React.ReactElement {
 
   const users = usersQuery.data?.users ?? [];
 
-  // Stat counts.
   const total = users.length;
   const active = users.filter((u) => u.status === 'active').length;
   const admins = users.filter((u) => u.role === 'admin').length;
   const suspended = users.filter((u) => u.status === 'suspended').length;
 
-  // Search filter — case-insensitive over name, username, email.
+  // Case-insensitive match over name, username and email.
   const needle = query.trim().toLowerCase();
   const filtered =
     needle.length === 0

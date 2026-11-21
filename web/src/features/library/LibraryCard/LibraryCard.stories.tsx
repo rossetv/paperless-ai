@@ -42,31 +42,18 @@ export const SparseMetadata: Story = {
   },
 };
 
-/**
- * Simulates the state when the real thumbnail could not be loaded — the
- * DocThumb SVG fallback is displayed instead.
- *
- * To trigger the fallback in the real app, the proxy returns a 404 or 502 and
- * the <img> onError handler flips `imageFailed` to true. In Storybook there is
- * no backend, so the image always errors; this story deliberately documents
- * that the fallback renders correctly.
- */
+/** Storybook has no backend, so the thumbnail always errors and the DocThumb fallback shows. */
 export const ThumbFallback: Story = {
   args: { document: { ...DOC, document_type: 'Invoice' } },
   name: 'Thumbnail fallback (DocThumb)',
 };
 
-/**
- * List-view layout — thumbnail is a fixed-width left column, metadata
- * occupies the remaining row width. The card has a resting surface so the
- * hover shadow reads against the page.
- */
 export const ListViewStatement: Story = {
   args: { document: DOC, view: 'list' },
   name: 'List view (statement)',
 };
 
-/** List view with sparse metadata — confirms ellipsis fires for long names. */
+/** A long correspondent name should truncate with an ellipsis. */
 export const ListViewSparse: Story = {
   args: {
     document: { ...DOC, title: null, correspondent: 'A Very Long Correspondent Name That Should Truncate', document_type: null, tags: [] },

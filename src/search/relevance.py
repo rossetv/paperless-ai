@@ -1,29 +1,15 @@
 """Map an absolute vector similarity to a qualitative relevance tier.
 
-The search UI shows a qualitative badge ("Strong / Good / Partial / Weak match")
-rather than a raw fused score, because the RRF score is rank-based and reads as
-a misleading near-zero number even for a perfect hit. The honest signal is the
-**absolute vector similarity** (``1 / (1 + cosine_distance)``) the retriever
-already computes; this module buckets it into four tiers.
+The UI shows a badge rather than the fused RRF score, which is rank-based and
+reads as a near-zero number even for a perfect hit. The tier comes from the
+absolute vector similarity (``1 / (1 + cosine_distance)``) instead.
 
-The cut-points are operator-tunable: they arrive as a
-:class:`RelevanceThresholds` built from the ``SEARCH_RELEVANCE_TIER_*`` config
-keys (defaults 0.70 / 0.66 / 0.60, calibrated against the live
-``text-embedding-3-large`` @ 3072-dim index — off-topic / vague queries cluster
-at ~0.54–0.58, broad matches at ~0.65, good matches at ~0.69–0.71, and strong /
-exact matches at ~0.70–0.74). This module owns no defaults of its own; the
-config layer is the single source of truth and validates the ordering, so a
-caller always passes a well-formed triple.
-
-The cut-points are deliberately **standalone**, not tied to
-``SEARCH_RELEVANCE_MIN_SIMILARITY`` (the Layer-2 gate floor). The gate decides
-what to *show*; the badge describes how *good* a shown result is — different
-jobs that want different cut-offs. A lenient gate floor (e.g. 0.5, to reject
-almost nothing and rely on the synthesiser) must not drag the "weak" badge down
-onto genuinely off-topic results.
-
-Allowed deps: dataclasses, typing (leaf module). Forbidden: common.config,
-fastapi, sqlite3.
+The cut-points come from the ``SEARCH_RELEVANCE_TIER_*`` config keys (defaults
+0.70 / 0.66 / 0.60, calibrated on ``text-embedding-3-large`` at 3072 dims:
+off-topic queries cluster at ~0.54–0.58, broad matches ~0.65, good ~0.69–0.71,
+strong ~0.70–0.74). They are independent of ``SEARCH_RELEVANCE_MIN_SIMILARITY``:
+the gate decides what to show, the badge how good a shown result is, so a
+lenient gate floor must not drag the "weak" badge onto off-topic results.
 """
 
 from __future__ import annotations
@@ -43,11 +29,8 @@ class RelevanceThresholds:
     ``>= strong`` → "strong", ``>= good`` → "good", ``>= partial`` → "partial",
     below ``partial`` → "weak".
 
-    Precondition: ``0 <= partial <= good <= strong <= 1``. The values originate
-    from the ``SEARCH_RELEVANCE_TIER_*`` config keys, which the config layer
-    validates at build time (:func:`common.config._parsers._resolve_relevance_tiers`),
-    so by the time a triple reaches this module the invariant already holds —
-    this dumb data holder does not re-validate.
+    Precondition: ``0 <= partial <= good <= strong <= 1``, validated by the
+    config layer, so it is not re-checked here.
     """
 
     strong: float
@@ -64,15 +47,6 @@ def relevance_tier(
     the literal term matched but no chunk was a semantic neighbour) is treated
     as "good": an exact-term match is a deliberate, solid signal even without a
     semantic score, and ranking it "weak" would understate it.
-
-    Args:
-        similarity: The document's best vector similarity in (0, 1], or None
-            when it was retrieved by keyword search alone.
-        thresholds: The operator-configured cut-points (config-validated to be
-            ordered ``partial <= good <= strong``).
-
-    Returns:
-        One of ``"strong"``, ``"good"``, ``"partial"``, ``"weak"``.
     """
     if similarity is None:
         return "good"

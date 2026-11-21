@@ -1,9 +1,7 @@
-"""Tests for the RAG-05 result cache wired into SearchCore.answer.
+"""Tests for the result cache wired into SearchCore.answer.
 
-A byte-identical repeat over an unchanged index makes zero further LLM calls;
-a changed index version, a no-match result, and a degraded result are not
-served from / written to the cache. The LLM is the ScriptedLLMClient; no real
-token is spent (CODE_GUIDELINES §11.4).
+A repeat over an unchanged index makes no further LLM calls; a changed index
+version recomputes and a degraded result is never cached.
 """
 
 from __future__ import annotations
@@ -124,14 +122,10 @@ class TestIndexChangeBustsCache:
         assert llm_client.total_calls == 4
 
     def test_in_place_reindex_same_counts_busts_cache(self) -> None:
-        """An in-place re-index (same counts, newer indexed_at) busts the cache (M10).
+        """An in-place re-index (same counts, newer indexed_at) busts the cache.
 
-        A document re-indexed in place — corrected OCR, re-classification — that
-        chunks to the same number of chunks leaves document_count and
-        chunk_count identical. Only ``MAX(documents.indexed_at)`` advances. The
-        index version now folds that content signal in, so the next identical
-        query recomputes rather than serving a stale answer until the TTL
-        expires (the bug M10 fixes).
+        Re-indexing a document to the same chunk count leaves both counts unchanged;
+        only ``MAX(documents.indexed_at)`` advances, and the index version folds it in.
         """
         reset_search_result_cache()
         store_reader = _store_reader(document_count=3, chunk_count=10)
@@ -209,8 +203,8 @@ class TestNoMatchCached:
         first = core.answer("matches nothing")
         # The no-match path makes only the planner call (1).
         assert llm_client.total_calls == 1
-        # A repeat over an unchanged index is now served from the (short-TTL)
-        # cache — the planner does not run again.
+        # A repeat over an unchanged index is served from the (short-TTL) cache;
+        # the planner does not run again.
         second = core.answer("matches nothing")
         assert llm_client.total_calls == 1
         assert first.answer == second.answer
