@@ -58,4 +58,25 @@ describe('DocumentTitle', () => {
     fireEvent.blur(screen.getByDisplayValue('An invoice'));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('returns focus to the title after Enter and after Escape', () => {
+    render(<DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />);
+    for (const key of ['Enter', 'Escape']) {
+      fireEvent.click(screen.getByRole('button', { name: /edit title/i }));
+      fireEvent.keyDown(screen.getByRole('textbox'), { key });
+      expect(screen.getByRole('button', { name: /edit title/i })).toHaveFocus();
+    }
+  });
+
+  it('does not pull focus back when blur commits because focus moved elsewhere', () => {
+    render(
+      <div>
+        <DocumentTitle title="An invoice" canEdit={true} onChange={() => {}} />
+        <button type="button">elsewhere</button>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /edit title/i }));
+    screen.getByRole('button', { name: 'elsewhere' }).focus();
+    expect(screen.getByRole('button', { name: 'elsewhere' })).toHaveFocus();
+  });
 });
