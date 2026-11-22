@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { SetupStatus, MeResponse } from './api/types';
-import { Unauthenticated } from './api/client';
+import { ApiError, Unauthenticated } from './api/client';
 import { AppRoutes, returnTarget } from './routes';
 
 // Leaf pages are mocked so routing is tested in isolation.
@@ -167,6 +167,16 @@ describe('AppRoutes', () => {
       meResult({ isError: true, error: new Unauthenticated(), data: { user: SAMPLE_USER } }),
     );
     renderAt('/library?tag=tax');
+    await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
+    expect(screen.getByTestId('where')).toHaveTextContent('/login');
+  });
+
+  it('sends a cached user to the login page when the re-check fails with 403 (suspended)', async () => {
+    mockUseSetupStatus.mockReturnValue(setupStatusResult({ isSuccess: true, data: { needed: false } }));
+    mockUseMe.mockReturnValue(
+      meResult({ isError: true, error: new ApiError(403, 'Account suspended'), data: { user: SAMPLE_USER } }),
+    );
+    renderAt('/index');
     await waitFor(() => expect(screen.getByTestId('login-page')).toBeInTheDocument());
     expect(screen.getByTestId('where')).toHaveTextContent('/login');
   });

@@ -39,7 +39,7 @@ const DocumentPage = React.lazy(() =>
 );
 import { FullPageLoading } from './components/layout/FullPageLoading/FullPageLoading';
 import { useSetupStatus, useMe } from './api/hooks';
-import { Unauthenticated } from './api/client';
+import { ApiError, Unauthenticated } from './api/client';
 import { useRouteAnnounce } from './hooks/useRouteAnnounce';
 
 /** Renders nothing; lives inside Suspense so it acts once the new page has rendered. */
@@ -50,11 +50,14 @@ function RouteAnnouncer({ fallback }: { fallback: React.RefObject<HTMLElement | 
 
 /**
  * Whether `me` names a signed-in user. A failed re-check (offline, 5xx, abort)
- * keeps the last known user; only a 401 signs them out.
+ * keeps the last known user; only a 401 or 403 (suspended account) signs them out.
  */
 function isSignedIn(meQuery: ReturnType<typeof useMe>): boolean {
   if (meQuery.data?.user === undefined) return false;
-  return meQuery.isSuccess || (meQuery.isError && !(meQuery.error instanceof Unauthenticated));
+  if (meQuery.isSuccess) return true;
+  const { error } = meQuery;
+  const refused = error instanceof Unauthenticated || (error instanceof ApiError && error.status === 403);
+  return meQuery.isError && !refused;
 }
 
 /**
