@@ -5,8 +5,10 @@ from __future__ import annotations
 import sqlite3
 import threading
 
+import pytest
 import structlog.testing
 
+from store.migrations import StoreError
 from store.models import TaxonomyEntry
 from store.schema import connect
 from tests.helpers.factories import make_chunks, make_document_meta
@@ -80,6 +82,27 @@ class TestBulkDelete:
         ]
         writer.close()
         assert remaining == [0, 0, 0]
+
+    def test_failed_delete_names_the_count_and_first_ten_ids_and_rolls_back(
+        self, db_path: str
+    ) -> None:
+        writer = open_writer(db_path)
+        for doc_id in range(1, 13):
+            writer.upsert_document(make_document_meta(id=doc_id), make_chunks(1))
+        writer._conn.execute(
+            "CREATE TRIGGER block_delete BEFORE DELETE ON documents "
+            "WHEN OLD.id = 12 BEGIN SELECT RAISE(ABORT, 'blocked'); END"
+        )
+        with pytest.raises(StoreError) as excinfo:
+            writer.delete_documents(range(1, 13))
+        remaining = writer._conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        fts_rows = writer._conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
+        writer.close()
+        assert str(excinfo.value) == (
+            "failed to delete 12 documents (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...)"
+        )
+        assert remaining == 12
+        assert fts_rows == 12
 
 
 class TestCheckEmbeddingModel:
